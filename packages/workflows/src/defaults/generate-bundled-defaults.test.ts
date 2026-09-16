@@ -51,8 +51,10 @@ function createRepo(): string {
 }
 
 function runScript(repoRoot: string): { exitCode: number; stderr: string } {
+  const env = { ...process.env, BUNDLED_DEFAULTS_REPO_ROOT: repoRoot };
+  delete env.NO_COLOR;
   const result = spawnSync('bun', [SCRIPT], {
-    env: { ...process.env, BUNDLED_DEFAULTS_REPO_ROOT: repoRoot },
+    env,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   return {
