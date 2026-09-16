@@ -2,16 +2,29 @@
  * Console-owned agent history renderer. Uses AgentHistoryItem only as data and
  * never imports Legacy React components.
  */
-import { useState, type ReactElement, type ReactNode } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
-import type { AgentHistoryItem } from '@/lib/agent-history';
+import {
+  initialToolExpanded,
+  toolRowView,
+  type AgentHistoryItem,
+  type BadgeTone,
+  type ToolOutcome,
+} from '@/lib/agent-history';
 import { formatToolIo } from '@/lib/pair-tool-transcript';
-
-import { formatDurationMs } from '../../lib/format';
+import { elideHeadline, FAMILY_CHIP_TOKEN } from '@/lib/tool-presentation';
 
 export const UNKNOWN_SCOPE_NOTICE =
   'Execution scope was not recorded; this history may include other executions of the same node.';
@@ -117,10 +130,55 @@ function LifecycleHistory({
   );
 }
 
-function toolOutcomeLabel(item: Extract<AgentHistoryItem, { kind: 'tool' }>): string {
-  if (item.outcome === 'running') return 'pending';
-  if (item.outcome === 'unknown') return 'missing-call';
-  return item.outcome;
+function glyphColor(outcome: ToolOutcome): string {
+  switch (outcome) {
+    case 'succeeded':
+      return 'var(--success)';
+    case 'failed':
+      return 'var(--error)';
+    case 'running':
+      return 'var(--running)';
+    case 'interrupted':
+      return 'var(--warning)';
+    case 'unknown':
+      return 'var(--text-secondary)';
+  }
+}
+
+function badgeColor(tone: BadgeTone): string {
+  switch (tone) {
+    case 'error':
+      return 'var(--error)';
+    case 'warning':
+      return 'var(--warning)';
+    case 'default':
+    case 'muted':
+      return 'var(--text-secondary)';
+  }
+}
+
+function useToolDisclosure(outcome: ToolOutcome): {
+  detailsRef: RefObject<HTMLDetailsElement | null>;
+  initialOpen: boolean;
+  markTouched: () => void;
+} {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const touchedRef = useRef(false);
+  const initialOpenRef = useRef(initialToolExpanded(outcome));
+
+  useEffect(() => {
+    if (!touchedRef.current && outcome === 'failed' && detailsRef.current !== null) {
+      detailsRef.current.open = true;
+    }
+  }, [outcome]);
+
+  return {
+    detailsRef,
+    initialOpen: initialOpenRef.current,
+    markTouched: (): void => {
+      touchedRef.current = true;
+    },
+  };
 }
 
 function ToolHistory({
@@ -135,6 +193,15 @@ function ToolHistory({
   const [loading, setLoading] = useState(false);
   const displayedOutput = fullOutput === undefined ? item.output : fullOutput;
   const displayedOutputState = fullOutput === undefined ? item.outputState : 'full';
+  const disclosure = useToolDisclosure(item.outcome);
+  const row = toolRowView(item, displayedOutputState);
+  const elided = elideHeadline(item.presentation.headline, item.presentation.headlineKind);
+  const chipToken = FAMILY_CHIP_TOKEN[item.presentation.family];
+  const chipStyle: CSSProperties = {
+    color: `var(${chipToken})`,
+    borderColor: `color-mix(in oklch, var(${chipToken}) 40%, transparent)`,
+    backgroundColor: 'var(--surface-elevated)',
+  };
 
   const loadFull = (): void => {
     setLoading(true);
@@ -151,51 +218,83 @@ function ToolHistory({
   };
 
   return (
-    <div
+    <details
+      ref={disclosure.detailsRef}
       data-tool-id={item.toolUseId}
-      className="ptool rounded-[var(--radius)] bg-surface-inset px-2.5 py-2"
+      open={disclosure.initialOpen || undefined}
+      className="ptool group rounded-[var(--radius)] bg-surface-inset px-2.5 py-2"
       style={{
         border: 'var(--rv-tool-card-border, 1px solid var(--border))',
         overflowWrap: 'anywhere',
       }}
     >
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="text-[11.5px] font-bold text-accent-bright">{item.name}</span>
-        <span className="text-[11px] text-text-secondary">{toolOutcomeLabel(item)}</span>
-        {displayedOutputState === 'truncated' ? (
-          <span className="text-[11px] text-status-warning">truncated</span>
-        ) : displayedOutputState === 'missing' ? (
-          <span className="text-[11px] text-text-muted">output missing</span>
-        ) : displayedOutputState === 'unknown' ? (
-          <span className="text-[11px] text-text-muted">output unknown</span>
-        ) : null}
-        {item.durationMs !== null ? (
-          <span className="text-[11px] text-text-secondary">
-            {formatDurationMs(item.durationMs)}
+      <summary
+        data-testid="tool-summary"
+        onClick={disclosure.markTouched}
+        className="flex min-h-6 min-w-0 list-none flex-nowrap items-center gap-2 [&::-webkit-details-marker]:hidden"
+      >
+        <span aria-hidden="true" className="shrink-0 group-open:hidden">
+          ▸
+        </span>
+        <span aria-hidden="true" className="hidden shrink-0 group-open:inline">
+          ▾
+        </span>
+        <span
+          role="img"
+          aria-label={row.outcomeLabel}
+          className="shrink-0"
+          style={{ color: glyphColor(item.outcome) }}
+        >
+          {row.glyph}
+        </span>
+        <span
+          aria-label={item.presentation.chipAriaLabel}
+          title={item.presentation.family}
+          className="shrink-0 rounded-sm border px-1 text-[11px] font-medium"
+          style={chipStyle}
+        >
+          {item.presentation.label}
+        </span>
+        {elided.kind === 'path' ? (
+          <span className="flex min-w-0 overflow-hidden">
+            <span className="min-w-0 truncate">{elided.head}</span>
+            <span className="shrink-0">{elided.tail}</span>
           </span>
-        ) : null}
-      </div>
-      {item.context.map(entry => (
-        <div key={entry.label} className="mt-0.5 text-[11px] text-text-secondary">
-          {entry.label}: {entry.value}
-        </div>
-      ))}
-      <details open className="mt-1.5">
-        <summary className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
+        ) : (
+          <span className="min-w-0 truncate">{elided.text}</span>
+        )}
+        <span className="ml-auto flex flex-nowrap items-center gap-1.5">
+          {row.badges.map(badge => (
+            <span
+              key={badge.text}
+              className={
+                badge.priority === 'sticky'
+                  ? 'shrink-0 text-[11px]'
+                  : 'min-w-0 shrink overflow-hidden text-[11px]'
+              }
+              style={{ color: badgeColor(badge.tone) }}
+            >
+              {badge.text}
+            </span>
+          ))}
+        </span>
+      </summary>
+      <div className="mt-1.5">
+        <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
           Input
-        </summary>
+        </div>
         <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
           {formatToolIo(item.input)}
         </pre>
-      </details>
-      <details open className="mt-1.5">
-        <summary className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
+      </div>
+      <div className="mt-1.5">
+        <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
           Output
-        </summary>
+        </div>
         <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
           {formatToolIo(displayedOutput)}
         </pre>
-      </details>
+      </div>
       {item.canLoadFullOutput ? (
         <button
           type="button"
@@ -218,7 +317,7 @@ function ToolHistory({
           </button>
         </div>
       ) : null}
-    </div>
+    </details>
   );
 }
 

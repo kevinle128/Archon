@@ -120,6 +120,7 @@ describe('console NFR4 isolation', () => {
       '@/lib/use-container-split-mode',
       '@/lib/pair-tool-transcript',
       '@/lib/project-text-transcript',
+      '@/lib/tool-presentation',
       '@/lib/run-graph',
       '@/lib/run-graph/constants',
       '@/lib/api.generated',

@@ -3,6 +3,8 @@ process.env.NODE_ENV = 'development';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
+import { buildAgentHistory } from '@/lib/agent-history';
+
 import type { LogRow } from './inspect/build-log-rows';
 import type { Run } from '../primitives/run';
 import type {
@@ -20,6 +22,7 @@ import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');
 const consoleNodeRoom = await import('./ConsoleNodeRoom');
+const consoleAgentHistoryList = await import('./inspect/ConsoleAgentHistoryList');
 
 const act = react.act;
 const createElement = react.createElement;
@@ -152,6 +155,47 @@ function assertNoConversationComposer(host: Element): void {
   const text = host.textContent ?? '';
   expect(text).not.toContain('ChatComposer');
   expect(text).not.toContain('Reply…');
+}
+
+function toolWire(args: {
+  id: string;
+  seq: number;
+  name: string;
+  toolUseId: string;
+  input?: unknown;
+  output?: unknown;
+  metadata: NonNullable<Extract<WorkflowNodeMessage, { kind: 'tool' }>['metadata']>;
+}): WorkflowNodeMessage {
+  const payload: { name: string; id: string; input?: unknown; output?: unknown } = {
+    name: args.name,
+    id: args.toolUseId,
+  };
+  if (args.input !== undefined) payload.input = args.input;
+  if (args.output !== undefined) payload.output = args.output;
+  return {
+    id: args.id,
+    seq: args.seq,
+    kind: 'tool',
+    payload,
+    created_at: CREATED_AT,
+    metadata: args.metadata,
+  };
+}
+
+function toolDetails(hostEl: Element, toolUseId: string): HTMLDetailsElement {
+  const el = hostEl.querySelector(`details[data-tool-id="${toolUseId}"]`);
+  if (el === null) {
+    throw new Error(`missing tool details ${toolUseId}`);
+  }
+  return el as unknown as HTMLDetailsElement;
+}
+
+function toolSummary(details: HTMLDetailsElement): HTMLElement {
+  const el = details.querySelector('[data-testid="tool-summary"]');
+  if (el === null) {
+    throw new Error('missing tool-summary');
+  }
+  return el as unknown as HTMLElement;
 }
 
 function ask(overrides: Partial<PendingInteraction> = {}): PendingInteraction {
@@ -999,7 +1043,7 @@ describe('ConsoleNodeRoom', () => {
     expect(host.querySelector('form')).toBeNull();
   });
 
-  test('renders assistant, tool, and lifecycle history with tool ids and expanded details', async () => {
+  test('renders assistant, tool, and lifecycle history with a closed tool disclosure', async () => {
     const longCmd = `bun test ${'x'.repeat(120)} src/lib/agent-history.test.ts`;
     await act(async () => {
       renderRoom({
@@ -1043,8 +1087,232 @@ describe('ConsoleNodeRoom', () => {
     expect(host.textContent).toContain('Bash');
     expect(host.textContent).toContain(longCmd);
     expect(host.textContent).toContain('completed');
-    expect(host.querySelector('[data-tool-id="tool-bash"]')).not.toBeNull();
-    expect(host.querySelector('details')?.hasAttribute('open')).toBe(true);
+    const details = toolDetails(host, 'tool-bash');
+    const summary = toolSummary(details);
+    expect(details.open).toBe(false);
+    expect(summary.textContent).toContain('Bash');
+    expect(summary.textContent).toContain(longCmd);
+    expect(summary.textContent).not.toMatch(/[{["]/);
+  });
+
+  test('renders a succeeded Read pair as a closed disclosure without raw output in the summary', async () => {
+    await act(async () => {
+      renderRoom({
+        showToolCalls: true,
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [
+            toolWire({
+              id: 'read-call',
+              seq: 1,
+              name: 'Read',
+              toolUseId: 'read-1',
+              input: { path: 'a.ts' },
+              metadata: { tool_phase: 'call' },
+            }),
+            toolWire({
+              id: 'read-result',
+              seq: 2,
+              name: 'Read',
+              toolUseId: 'read-1',
+              output: 'raw-output-secret',
+              metadata: { tool_phase: 'result' },
+            }),
+          ],
+        }),
+      });
+    });
+    await flushUntil(
+      'read row',
+      () => host.querySelector('details[data-tool-id="read-1"]') !== null
+    );
+    const details = toolDetails(host, 'read-1');
+    const summary = toolSummary(details);
+    const summaryText = summary.textContent ?? '';
+    expect(details.open).toBe(false);
+    expect(summaryText).toContain('✓');
+    expect(summaryText).toContain('Read');
+    expect(summaryText).toContain('a.ts');
+    expect(summaryText).not.toContain('raw-output-secret');
+    expect(summaryText).not.toMatch(/[{["]/);
+  });
+
+  test('renders a failed Bash pair open with exit 1 and keeps output in the body', async () => {
+    await act(async () => {
+      renderRoom({
+        showToolCalls: true,
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [
+            toolWire({
+              id: 'bash-call',
+              seq: 1,
+              name: 'Bash',
+              toolUseId: 'bash-1',
+              input: { cmd: 'bun test' },
+              metadata: { tool_phase: 'call' },
+            }),
+            toolWire({
+              id: 'bash-result',
+              seq: 2,
+              name: 'Bash',
+              toolUseId: 'bash-1',
+              output: 'bash-failed-output',
+              metadata: { tool_phase: 'result', exit_code: 1 },
+            }),
+          ],
+        }),
+      });
+    });
+    await flushUntil(
+      'bash row',
+      () => host.querySelector('details[data-tool-id="bash-1"]') !== null
+    );
+    const details = toolDetails(host, 'bash-1');
+    const summary = toolSummary(details);
+    const summaryText = summary.textContent ?? '';
+    expect(details.open).toBe(true);
+    expect(summaryText).toContain('✕');
+    expect(summaryText).toContain('Bash');
+    expect(summaryText).toContain('bun test');
+    expect(summaryText).toContain('exit 1');
+    expect(summaryText).not.toContain('bash-failed-output');
+    expect(details.textContent).toContain('bash-failed-output');
+  });
+
+  test('untouched running Console row auto-opens when the result is error', async () => {
+    const running = buildAgentHistory({
+      nodeId: 'review',
+      events: [],
+      rows: [
+        toolWire({
+          id: 'live-call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'live-1',
+          input: { cmd: 'bun test' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    const failed = buildAgentHistory({
+      nodeId: 'review',
+      events: [],
+      rows: [
+        toolWire({
+          id: 'live-call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'live-1',
+          input: { cmd: 'bun test' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolWire({
+          id: 'live-result',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'live-1',
+          output: 'boom',
+          metadata: { tool_phase: 'result', outcome: 'error', exit_code: 1 },
+        }),
+      ],
+    });
+
+    await act(async () => {
+      root.render(
+        createElement(consoleAgentHistoryList.ConsoleAgentHistoryList, {
+          items: running,
+          showToolCalls: true,
+          showSystem: true,
+          onLoadFullOutput: async (): Promise<unknown> => undefined,
+        })
+      );
+    });
+    expect(toolDetails(host, 'live-1').open).toBe(false);
+
+    await act(async () => {
+      root.render(
+        createElement(consoleAgentHistoryList.ConsoleAgentHistoryList, {
+          items: failed,
+          showToolCalls: true,
+          showSystem: true,
+          onLoadFullOutput: async (): Promise<unknown> => undefined,
+        })
+      );
+    });
+    expect(toolDetails(host, 'live-1').open).toBe(true);
+  });
+
+  test('manually toggled Console row stays closed when the result is error', async () => {
+    const running = buildAgentHistory({
+      nodeId: 'review',
+      events: [],
+      rows: [
+        toolWire({
+          id: 'live-call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'live-1',
+          input: { cmd: 'bun test' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    const failed = buildAgentHistory({
+      nodeId: 'review',
+      events: [],
+      rows: [
+        toolWire({
+          id: 'live-call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'live-1',
+          input: { cmd: 'bun test' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolWire({
+          id: 'live-result',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'live-1',
+          output: 'boom',
+          metadata: { tool_phase: 'result', outcome: 'error', exit_code: 1 },
+        }),
+      ],
+    });
+
+    await act(async () => {
+      root.render(
+        createElement(consoleAgentHistoryList.ConsoleAgentHistoryList, {
+          items: running,
+          showToolCalls: true,
+          showSystem: true,
+          onLoadFullOutput: async (): Promise<unknown> => undefined,
+        })
+      );
+    });
+    const details = toolDetails(host, 'live-1');
+    expect(details.open).toBe(false);
+
+    await act(async () => {
+      toolSummary(details).click();
+    });
+    expect(details.open).toBe(true);
+
+    await act(async () => {
+      toolSummary(details).click();
+    });
+    expect(details.open).toBe(false);
+
+    await act(async () => {
+      root.render(
+        createElement(consoleAgentHistoryList.ConsoleAgentHistoryList, {
+          items: failed,
+          showToolCalls: true,
+          showSystem: true,
+          onLoadFullOutput: async (): Promise<unknown> => undefined,
+        })
+      );
+    });
+    expect(toolDetails(host, 'live-1').open).toBe(false);
   });
 
   test('Tool toggle hides only tool cards and System toggle hides only lifecycle rows', async () => {
