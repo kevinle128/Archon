@@ -9,10 +9,10 @@ companions:
   - ux-mockup/app.js
   - ux-mockup/console-app.js
   - ux-mockup/styles.css
-  - ../../planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md
+  - ../../planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md
   - ../../project-context.md
 sources:
-  - ../../planning-artifacts/architecture/architecture-Archon-2026-09-05/.memlog.md
+  - ../../planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/.memlog.md
 ---
 
 > **Canonical contract.** This SPEC and the files in `companions:` are the complete, preservation-validated contract for what to build, test, and validate. UX design and the five `ux-mockup/` files are required companions for implementation and review. `ux-prototype/` is not the visual authority. Direct mockup-vs-product reference comparison is a story completion condition, not an optional walkthrough. Source documents listed in frontmatter are for traceability — consult them only if you need narrative rationale this contract intentionally omits. Implementation HOW is the architecture spine (AD-1–AD-9); this kernel is WHAT. Generated OpenAPI types (`packages/web/src/lib/api.generated.d.ts`) are the machine authority for wire fields — do not copy every field into this document.

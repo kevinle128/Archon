@@ -1,0 +1,210 @@
+{
+  "milestone": 3,
+  "stories": {
+    "1-1-scan-a-tool-call-as-one-readable-row": {
+      "blocked_by": [],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRiwzGw",
+      "number": 174,
+      "status": "backlog",
+      "title": "Scan a tool call as one readable row",
+      "url": "https://github.com/kevinle128/Archon/issues/174"
+    },
+    "1-2-inspect-the-raw-payload-of-a-tool-call": {
+      "blocked_by": ["1-1-scan-a-tool-call-as-one-readable-row"],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRiw4Fw",
+      "number": 175,
+      "status": "backlog",
+      "title": "Inspect the raw payload of a tool call",
+      "url": "https://github.com/kevinle128/Archon/issues/175"
+    },
+    "1-3-read-expanded-details-shaped-for-the-tool-family": {
+      "blocked_by": ["1-1-scan-a-tool-call-as-one-readable-row"],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRiw9YA",
+      "number": 176,
+      "status": "backlog",
+      "title": "Read expanded details shaped for the tool family",
+      "url": "https://github.com/kevinle128/Archon/issues/176"
+    },
+    "1-4-view-a-file-edit-as-an-inline-diff": {
+      "blocked_by": [
+        "1-1-scan-a-tool-call-as-one-readable-row",
+        "1-3-read-expanded-details-shaped-for-the-tool-family"
+      ],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRixDcQ",
+      "number": 177,
+      "status": "backlog",
+      "title": "View a file edit as an inline diff",
+      "url": "https://github.com/kevinle128/Archon/issues/177"
+    },
+    "1-5-track-the-agents-current-todo-state-in-a-pinned-strip": {
+      "blocked_by": ["1-1-scan-a-tool-call-as-one-readable-row"],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRixKKw",
+      "number": 178,
+      "status": "backlog",
+      "title": "Track the agent's current todo state in a pinned strip",
+      "url": "https://github.com/kevinle128/Archon/issues/178"
+    },
+    "1-6-inspect-a-subagent-dispatch-and-its-subtasks": {
+      "blocked_by": ["1-1-scan-a-tool-call-as-one-readable-row"],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRixRFg",
+      "number": 179,
+      "status": "backlog",
+      "title": "Inspect a subagent dispatch and its subtasks",
+      "url": "https://github.com/kevinle128/Archon/issues/179"
+    },
+    "1-7-navigate-transcript-occurrences-and-loop-iterations": {
+      "blocked_by": ["1-1-scan-a-tool-call-as-one-readable-row"],
+      "epic": 1,
+      "node_id": "I_kwDOS4WbPs8AAAABRixWpA",
+      "number": 180,
+      "status": "backlog",
+      "title": "Navigate transcript occurrences and loop iterations",
+      "url": "https://github.com/kevinle128/Archon/issues/180"
+    },
+    "2-1-queue-guidance-for-a-running-agent": {
+      "blocked_by": [],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRixbuA",
+      "number": 181,
+      "status": "backlog",
+      "title": "Queue guidance for a running agent",
+      "url": "https://github.com/kevinle128/Archon/issues/181"
+    },
+    "2-10-see-queued-guidance-while-viewing-a-finished-iteration": {
+      "blocked_by": [
+        "1-7-navigate-transcript-occurrences-and-loop-iterations",
+        "2-9-see-the-same-live-queue-across-tabs-and-operators"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRiy2KQ",
+      "number": 190,
+      "status": "backlog",
+      "title": "See queued guidance while viewing a finished iteration",
+      "url": "https://github.com/kevinle128/Archon/issues/190"
+    },
+    "2-11-recover-messages-that-were-never-sent-when-the-node-ends": {
+      "blocked_by": [
+        "2-8-see-operator-messages-in-the-transcript",
+        "2-9-see-the-same-live-queue-across-tabs-and-operators"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRiy_Lw",
+      "number": 191,
+      "status": "backlog",
+      "title": "Recover messages that were never sent when the node ends",
+      "url": "https://github.com/kevinle128/Archon/issues/191"
+    },
+    "2-12-fail-an-abandoned-redirect-safely-after-30-minutes": {
+      "blocked_by": [
+        "2-3-interrupt-and-redirect-a-running-claude-agent",
+        "2-11-recover-messages-that-were-never-sent-when-the-node-ends"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRizF3g",
+      "number": 192,
+      "status": "backlog",
+      "title": "Fail an abandoned redirect safely after 30 minutes",
+      "url": "https://github.com/kevinle128/Archon/issues/192"
+    },
+    "2-13-preserve-message-order-and-attribution-under-concurrent-operators": {
+      "blocked_by": [
+        "2-8-see-operator-messages-in-the-transcript",
+        "2-9-see-the-same-live-queue-across-tabs-and-operators"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRizNuw",
+      "number": 193,
+      "status": "backlog",
+      "title": "Preserve message order and attribution under concurrent operators",
+      "url": "https://github.com/kevinle128/Archon/issues/193"
+    },
+    "2-2-withdraw-a-queued-guidance-message": {
+      "blocked_by": ["2-1-queue-guidance-for-a-running-agent"],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRixgOQ",
+      "number": 182,
+      "status": "backlog",
+      "title": "Withdraw a queued guidance message",
+      "url": "https://github.com/kevinle128/Archon/issues/182"
+    },
+    "2-3-interrupt-and-redirect-a-running-claude-agent": {
+      "blocked_by": [
+        "1-1-scan-a-tool-call-as-one-readable-row",
+        "2-1-queue-guidance-for-a-running-agent"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRixlpg",
+      "number": 183,
+      "status": "backlog",
+      "title": "Interrupt and redirect a running Claude agent",
+      "url": "https://github.com/kevinle128/Archon/issues/183"
+    },
+    "2-4-interrupt-and-redirect-a-running-codex-agent": {
+      "blocked_by": ["2-3-interrupt-and-redirect-a-running-claude-agent"],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRixspQ",
+      "number": 184,
+      "status": "backlog",
+      "title": "Interrupt and redirect a running Codex agent",
+      "url": "https://github.com/kevinle128/Archon/issues/184"
+    },
+    "2-5-interrupt-and-redirect-a-running-omp-agent": {
+      "blocked_by": ["2-3-interrupt-and-redirect-a-running-claude-agent"],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRixx4w",
+      "number": 185,
+      "status": "backlog",
+      "title": "Interrupt and redirect a running OMP agent",
+      "url": "https://github.com/kevinle128/Archon/issues/185"
+    },
+    "2-6-interrupt-and-redirect-a-running-grok-agent": {
+      "blocked_by": ["2-3-interrupt-and-redirect-a-running-claude-agent"],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRiyTPA",
+      "number": 186,
+      "status": "backlog",
+      "title": "Interrupt and redirect a running Grok agent",
+      "url": "https://github.com/kevinle128/Archon/issues/186"
+    },
+    "2-7-interrupt-and-redirect-a-running-deepseek-agent": {
+      "blocked_by": ["2-3-interrupt-and-redirect-a-running-claude-agent"],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRiyZIQ",
+      "number": 187,
+      "status": "backlog",
+      "title": "Interrupt and redirect a running DeepSeek agent",
+      "url": "https://github.com/kevinle128/Archon/issues/187"
+    },
+    "2-8-see-operator-messages-in-the-transcript": {
+      "blocked_by": [
+        "1-1-scan-a-tool-call-as-one-readable-row",
+        "2-1-queue-guidance-for-a-running-agent",
+        "2-3-interrupt-and-redirect-a-running-claude-agent"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRiyfbQ",
+      "number": 188,
+      "status": "backlog",
+      "title": "See operator messages in the transcript",
+      "url": "https://github.com/kevinle128/Archon/issues/188"
+    },
+    "2-9-see-the-same-live-queue-across-tabs-and-operators": {
+      "blocked_by": [
+        "2-1-queue-guidance-for-a-running-agent",
+        "2-2-withdraw-a-queued-guidance-message"
+      ],
+      "epic": 2,
+      "node_id": "I_kwDOS4WbPs8AAAABRiyuBA",
+      "number": 189,
+      "status": "backlog",
+      "title": "See the same live queue across tabs and operators",
+      "url": "https://github.com/kevinle128/Archon/issues/189"
+    }
+  }
+}

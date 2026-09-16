@@ -66,7 +66,8 @@ nodes:
       $bmad-check-implementation-readiness.output
 
       If the output mentions a generated readiness report, inspect that report before deciding.
-      If no path is explicit, inspect the newest matching report under _bmad-output/planning-artifacts/implementation-readiness-report-*.md when available.
+      If no path is explicit, resolve the requested target's dedicated planning package and inspect its newest implementation-readiness-report-*.md file when available.
+      Do not inspect root-level reports or reports from another target package.
 
       Return positive only when readiness found no issues requiring correction.
       Return negative for NOT READY, NEEDS WORK, critical issues, major issues, minor concerns, warnings, gaps, missing artifacts, or any recommended corrective action.

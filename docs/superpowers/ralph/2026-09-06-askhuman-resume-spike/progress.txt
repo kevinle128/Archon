@@ -196,7 +196,7 @@
 **Status**: PASSED
 **Files changed**:
 - `_bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md` — Story 6.1 outcome with required section order; Claude CONFIRM host abort on 0.3.209; Pi CONFIRM durable order; 0.3.261 comparison; story gate INCONCLUSIVE until validate
-- `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md` — AD-6, Claude version rows, and deferred-spike rows reconciled to one host-abort protocol plus proved Pi order
+- `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md` — AD-6, Claude version rows, and deferred-spike rows reconciled to one host-abort protocol plus proved Pi order
 - `_bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md` — removed VERIFIED claims; named host abort 0.3.209 and Pi durable recipe
 - `_bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml` — epic-6 and 6-1 set in-progress, not done
 

@@ -15,7 +15,7 @@ The Pi half uses the real `SessionManager`, `AgentSession`, and `Agent.continue(
 
 ## Global Constraints
 
-- Read `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md`, and `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/reviews/review-version-reality.md` before changing files.
+- Read `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md`, and `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/reviews/review-version-reality.md` before changing files.
 - Preserve the AD-6 Archon boundary unless the evidence requires an amendment: the executor supplies ordered `resumeInteractions`, providers inject answers, and workflows do not encode answers in prompt prose.
 - Keep custom `AskHuman` as the only ask channel and do not wrap or expose Claude's built-in `AskUserQuestion`.
 - Do not infer an ask from assistant prose.
@@ -59,7 +59,7 @@ The Pi half uses the real `SessionManager`, `AgentSession`, and `Agent.continue(
 - `createAgentSession()` restores persisted messages into `session.agent.state.messages`, which makes the appended tool result the tail consumed by `session.agent.continue()`.
 - `packages/providers/tsconfig.json` excludes test files, so a type-only assignment inside a Bun test is not a TypeScript compile gate.
 - `_bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md` currently contains unsubstantiated `VERIFIED` claims and must be reconciled with the actual spike result.
-- `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/reviews/review-version-reality.md` is an input review and remains unchanged as a historical record.
+- `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/reviews/review-version-reality.md` is an input review and remains unchanged as a historical record.
 
 ## File Map
 
@@ -72,7 +72,7 @@ The Pi half uses the real `SessionManager`, `AgentSession`, and `Agent.continue(
 - Create `_bmad-output/implementation-artifacts/workflow-run-view-hitl/evidence/6-1-claude-0.3.209.json` from the pinned Claude run.
 - Create `_bmad-output/implementation-artifacts/workflow-run-view-hitl/evidence/6-1-claude-0.3.261.json` from the isolated comparison run.
 - Create `_bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md` as the written evidence and amend-or-confirm decision.
-- Modify `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md` only where AD-6, the Claude pin, or deferred-spike rows must reflect the result.
+- Modify `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md` only where AD-6, the Claude pin, or deferred-spike rows must reflect the result.
 - Modify `_bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md` to remove stale verification claims and show only the protocol actually proved.
 - Modify `_bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml` after applying the completion gate.
 
@@ -933,7 +933,7 @@ git commit -m "docs(hitl): record Claude AskHuman resume evidence"
 **Files:**
 
 - Create: `_bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md`.
-- Modify: `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md` at AD-6, the Claude convention row, the stack row, and the two deferred-spike rows.
+- Modify: `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md` at AD-6, the Claude convention row, the stack row, and the two deferred-spike rows.
 - Modify: `_bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md` in the HITL lifecycle and provider production-path diagrams.
 - Modify: `_bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml` at `last_updated`, `epic-6`, and the Story 6.1 key.
 
@@ -1039,8 +1039,8 @@ Run:
 
 ```bash
 git diff --check
-git diff -- _bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md _bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md _bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md _bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml
-git add _bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md _bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md _bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md _bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml
+git diff -- _bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md _bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md _bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md _bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml
+git add _bmad-output/implementation-artifacts/workflow-run-view-hitl/6-1-askhuman-resume-spike.md _bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md _bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md _bmad-output/implementation-artifacts/workflow-run-view-hitl/sprint-status.yaml
 git commit -m "docs(hitl): settle AskHuman resume protocol"
 ```
 
@@ -1127,7 +1127,7 @@ If validation required in-scope corrections, rerun every failed command and comm
 
 ```bash
 git add package.json packages/providers/package.json bun.lock packages/providers/src/claude/askhuman-resume-spike.ts packages/providers/src/claude/askhuman-resume-spike.test.ts packages/providers/src/community/pi/askhuman-resume.characterization.test.ts _bmad-output/implementation-artifacts/workflow-run-view-hitl
-git add _bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md _bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md
+git add _bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md _bmad-output/specs/spec-workflow-run-view-hitl/architecture-diagrams.md
 git commit -m "test(hitl): validate AskHuman resume spike"
 ```
 

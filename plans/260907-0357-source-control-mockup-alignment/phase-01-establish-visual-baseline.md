@@ -25,9 +25,9 @@ Build a visual traceability matrix before product code changes.
 
 ## Related Files
 
-- Read `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-05/DESIGN.md`.
-- Read `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-05/EXPERIENCE.md`.
-- Read `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-05/mockups/key-screen-source-control-2026-09-05.html`.
+- Read `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-09-05/DESIGN.md`.
+- Read `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-09-05/EXPERIENCE.md`.
+- Read `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-09-05/mockups/key-screen-source-control-2026-09-05.html`.
 - Read `_bmad-output/planning-artifacts/epics-source-control/epics.md`.
 - Read `docs/superpowers/ralph/2026-09-06-source-control-every-changed-file/prd.md`.
 - Read `docs/superpowers/ralph/2026-09-07-source-control-commit-viewer/prd.md`.

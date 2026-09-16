@@ -1,0 +1,2507 @@
+{
+  "backup": "/var/folders/84/5njq4pvs747b3zzntvtgtpl80000gn/T/bmad-feature-folders-3313qg3t",
+  "projects": [
+    {
+      "root": "/Users/dale/Desktop/workspace/OceanLabs/workflow-engine",
+      "files": [
+        {
+          "before": "scripts/handoffs/archon/source-control.manifest",
+          "after": "scripts/handoffs/archon/source-control.manifest",
+          "sha256_before": "88d743b2b602258c0258206106372ede562409dae562dd8bce440f69c0eef3aa",
+          "sha256_after": "0067de396f26d7289ec01f120f71648e554d1ec02c9a969795c008c727d76c90",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-16-hermes-profile-cwd-planning-source-correction.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-16-hermes-profile-cwd-planning-source-correction.md",
+          "sha256_before": "7a83a8633ebb8a25f977098defaaf7b437ac64f13f2739f287742eedee61a60a",
+          "sha256_after": "7a83a8633ebb8a25f977098defaaf7b437ac64f13f2739f287742eedee61a60a",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-10.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-10.md",
+          "sha256_before": "468f769852797d2eb8515c79bf30f3abe8ab70007d593db7b7df0620be96dbc9",
+          "sha256_after": "468f769852797d2eb8515c79bf30f3abe8ab70007d593db7b7df0620be96dbc9",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/bmad-tea-workflow-orchestration/sprint-change-proposal-2026-06-30.md",
+          "sha256_before": "2d6120b6f1332c5eab8aa4934a701462a05c00ceb22aa603f7057f7b59c75623",
+          "sha256_after": "97f9f6085c58bad9d6d1dfa39a67f134a9cd349ccacc76656d2fd07f1f682433",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-10-rerun-2.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-10-rerun-2.md",
+          "sha256_before": "73a3309d120beed5824d198dd5d9190f3360b0d36c24bdc819dc5bd993bd7eef",
+          "sha256_after": "73a3309d120beed5824d198dd5d9190f3360b0d36c24bdc819dc5bd993bd7eef",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-11.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-11.md",
+          "sha256_before": "bc602ce2e11fbdf050f2ee13cf7f83f1b00b791990ce8d58d9dea0f8c26c08f5",
+          "sha256_after": "bc602ce2e11fbdf050f2ee13cf7f83f1b00b791990ce8d58d9dea0f8c26c08f5",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-10-headless-workflow-commander.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-10-headless-workflow-commander.md",
+          "sha256_before": "46dc5064cb2c9b7fb37e38c7ec14097e17cf5797bdd181ca812a4ced70ac27f8",
+          "sha256_after": "46dc5064cb2c9b7fb37e38c7ec14097e17cf5797bdd181ca812a4ced70ac27f8",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/bmad-tea-workflow-orchestration/implementation-readiness-report-2026-06-30.md",
+          "sha256_before": "5ee72338ffbf2bffb155a05a758ccbe69ea7fb07f711099a1d4f13740d30787d",
+          "sha256_after": "c58206a44562c6f99f489d69f6bd1a8d22d1e4e35f0a46617e0111031112d2cb",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-08-hermes-provider-neutral-core.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-08-hermes-provider-neutral-core.md",
+          "sha256_before": "f9b0446aefb76f8616bc8256753c0c9a6962b1fd1f4b9f1f99c6ebafbbc3f506",
+          "sha256_after": "f9b0446aefb76f8616bc8256753c0c9a6962b1fd1f4b9f1f99c6ebafbbc3f506",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-29-general-workflow-event-ingress.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-06-29-general-workflow-event-ingress.md",
+          "sha256_before": "207ff553cb144d97c223bb7a6101dc826c4d55f3b0a8057b4b0c95a98ee37357",
+          "sha256_after": "4d03ed4b956c72e53401f230636f40388f307ec4f8c5f4ac57743c7d143979fa",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-10.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-10.md",
+          "sha256_before": "7787a16c91daf5ed435cac6c5d395f44638d356c20e34b9cc1d32c9539255952",
+          "sha256_after": "e80d47123d1c3ed1395fffd90fd6302146864548950f26914db6f8c5bfd58a9e",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-27-readiness-remediation.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-06-27-readiness-remediation.md",
+          "sha256_before": "941fba0d306f4db1991e010d5ddafc76d1bfc69eefaa141ea7c3e5584fc2c610",
+          "sha256_after": "a8c1efba9c7d398f88dc175688d616f37c08425750fd3a56e2e7666548b13e19",
+          "updated_links": 10
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-01-hermes-single-phase-task.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-01-hermes-single-phase-task.md",
+          "sha256_before": "76ed4b0b19d8bd63a1e37787dcb80e7f06a336c10bc00f486f36b1d1c67b3c1f",
+          "sha256_after": "bd993b91c93d0db09950c7c096f0c84d097447992c9f28326f01e54f0343389a",
+          "updated_links": 10
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/cross-project-isolated-handoff-contract.md",
+          "after": "_bmad/custom/cross-project-isolated-handoff-contract.md",
+          "sha256_before": "3e52fc7761d6f2fec56ee0fd9aab70a2c2266045008c6c9b00d3a2916e2ef225",
+          "sha256_after": "3e52fc7761d6f2fec56ee0fd9aab70a2c2266045008c6c9b00d3a2916e2ef225",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-02.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-02.md",
+          "sha256_before": "3d819934a504a373375f03de0796dfee67165868a6fae22971005c498f351d11",
+          "sha256_after": "a01ed827f79fd6016470937555f536dec71aed17e3ad1ba1691598eed7daec4e",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/validate_handoff_isolation.py",
+          "after": "_bmad-output/planning-artifacts/contracts/workflow-commander/validate_handoff_isolation.py",
+          "sha256_before": "15f79f240fcb28865d12422b859ffbf01f160786942c67f96eb5936970f5d4ba",
+          "sha256_after": "521ae560d9a17b263b3bb1a4dac7e1c8a652a8b25cd6f325858a4faff824c3e8",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-09.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-09.md",
+          "sha256_before": "dc5d8d8acd65a80e7ab6670fc549be83249181d9223859c86df10d9d1e47380d",
+          "sha256_after": "b99014c77be3705503216f7ff62e3f22381c4abbc98273a802c24ed8bfd48c8a",
+          "updated_links": 13
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-10-headless-rerun.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-10-headless-rerun.md",
+          "sha256_before": "2bef9918ad5fe9994611204816dbd1b0019ff17742b0973b3c4cb81437ac4737",
+          "sha256_after": "2bef9918ad5fe9994611204816dbd1b0019ff17742b0973b3c4cb81437ac4737",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-01-tea-scope-correction.md",
+          "after": "_bmad-output/planning-artifacts/bmad-tea-workflow-orchestration/sprint-change-proposal-2026-07-01-tea-scope-correction.md",
+          "sha256_before": "44dd867bd47a629cf2f9f0ee346ad436e46e74cd5b28c0ca66660f98efac10ec",
+          "sha256_after": "44dd867bd47a629cf2f9f0ee346ad436e46e74cd5b28c0ca66660f98efac10ec",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-10-readiness-story-slicing.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-10-readiness-story-slicing.md",
+          "sha256_before": "56b5a4e1d959d12f5b37e254e405c840c38f7178897909fb59ad12b44588c53e",
+          "sha256_after": "4bed81eca82c12dbb1c1ea1f9984ababb6f8367e791c8221c06e619bb571ccb0",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-06-27.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-06-27.md",
+          "sha256_before": "3b1d5548baaa1cdc0c2048c22570e87f9985642fe50136ba27587ead87514b69",
+          "sha256_after": "e02551b930956dcb00e62e879a2168b6a694741fb17a69963282ce3acf8c3e20",
+          "updated_links": 14
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-02.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-02.md",
+          "sha256_before": "2919b409c39f1c79b5e1c3e06751a089d202513cd630ca70aaefca6153d50664",
+          "sha256_after": "8e205a437d5c4437677d562c2eb2ccf9612acbb22eb934f5ec7c2a998c42dba8",
+          "updated_links": 14
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-27.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-06-27.md",
+          "sha256_before": "b5b4fee53a9cd6d5decdeb0f79b379b97a52f1369b801f42657e0b3ec92b2bd8",
+          "sha256_after": "d936a94718c77f7c65ec239c30bd9c3599355da783076dd00d3d53d8756e49c3",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-06-29.md",
+          "after": "_bmad-output/planning-artifacts/bmad-tea-workflow-orchestration/implementation-readiness-report-2026-06-29.md",
+          "sha256_before": "2d71c2c1e838d32e49f8a51417a3a3b2e0ab963cd6206a181c97a469d201b117",
+          "sha256_after": "c9bfa69828a4c4faec4a4031d6310d6b9fa3fa82b74613e7ae6aeacec524bb63",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-06-27-readiness-rerun.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-06-27-readiness-rerun.md",
+          "sha256_before": "ee9b096c9bdbff68bf480cacd496caa0af8d64b12fd20fe83c4d4ec08b6e4175",
+          "sha256_after": "a6c43c4b6357f874f918304e494333014d02dcbfb7ae66460d9d3bca839e1577",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-10-rerun.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/implementation-readiness-report-2026-07-10-rerun.md",
+          "sha256_before": "64c2228bd9a6411e54af2ea6eaee9563db83225b27576643bfacb91fc9c0ba22",
+          "sha256_after": "254872db9ffbdfc9a6fe4eaef0a569f8679714a4e658c3ecfebf826e56101c51",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-09.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/sprint-change-proposal-2026-07-09.md",
+          "sha256_before": "b06dcaa8f30db41999271cc5f0408b2eef95735959c8d5dc9ddc2bf2b9187ca4",
+          "sha256_after": "ec33fb5eff644c9b403fad9635cc27d672c2005cb3d0804da2e34ad4e432db8c",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/1-3a-define-workflow-command-and-provider-binding-contract-examples.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/1-3a-define-workflow-command-and-provider-binding-contract-examples.md",
+          "sha256_before": "cb730e2b1107f6a3a667739f5a9b49e50008559be169221ffc4979359c85113d",
+          "sha256_after": "c499b739151a6b390d2c69ccfcb7f974e653fe7e5104bff92ec327520123a211",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/1-3c-define-materialization-and-phase-identity-contract-examples.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/1-3c-define-materialization-and-phase-identity-contract-examples.md",
+          "sha256_before": "f35c62af3b0fd2f8fe4174d271262b1edf6f8a593210d3548c2d7ab1f5c8cdf7",
+          "sha256_after": "755db4bbb81588ad5b7bf69bf6fa3e636f37857ad56d44aa9255b353c763f018",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/1-2-generate-hermes-agent-isolated-planning-handoff.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/1-2-generate-hermes-agent-isolated-planning-handoff.md",
+          "sha256_before": "f91a59beb3084d8f1f8ba4a9ed76645256852ebf38f32910b6618afcb3680113",
+          "sha256_after": "fa4a70a0dfba90f214f5bc595e27e3cc3d0aca03819676368b3206ba8baccb74",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/1-3b-define-workflow-event-envelope-and-rejection-contract-examples.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/1-3b-define-workflow-event-envelope-and-rejection-contract-examples.md",
+          "sha256_before": "8311bdb4dedc72d3b5bccb6b3344e54270b028e2cf32ad6535106b858c633cbd",
+          "sha256_after": "887cc2ea1255e6c782503919f54d563968bd0285913da9ea3df2c64baf979f91",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/1-1-generate-archon-isolated-planning-handoff.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/1-1-generate-archon-isolated-planning-handoff.md",
+          "sha256_before": "83fb1cb26edec788eab183d8cbba25aebd58618ffc4a51efa459858aaa80804a",
+          "sha256_after": "87fb5ddceb82ee033a921f6806cdaced17e89ebbd374349dc866b3307e64256f",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/1-4-validate-cross-project-dependency-records-and-handoff-isolation.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/1-4-validate-cross-project-dependency-records-and-handoff-isolation.md",
+          "sha256_before": "8faadbe7db054e62b81e88c44455d4b7f0c523de400a7f203996a24051b2c038",
+          "sha256_after": "058692d8d6e3210721d746d414db8106ad154ae74d98341a61a6848954718eea",
+          "updated_links": 30
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/epic-1-retro-2026-07-12.md",
+          "after": "_bmad-output/implementation-artifacts/workflow-commander/epic-1-retro-2026-07-12.md",
+          "sha256_before": "cbde2e28939cb7a9a0965bc3bf7a7bf37df6677399c995fb64076c1c2a139623",
+          "sha256_after": "911a3555b577ec09a83cc3271bdb791544ea10ed463295e8f930b99668189336",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/brainstorming/brainstorming-session-2026-06-25-1624.md",
+          "after": "_bmad-output/brainstorming/brainstorm-bmad-tea-workflow-orchestration-2026-06-25/brainstorming-session-2026-06-25-1624.md",
+          "sha256_before": "7884aa9813d6f8eb71b5b29ad5f2d452dfdf90fa95e5d99879d555488cd07735",
+          "sha256_after": "7884aa9813d6f8eb71b5b29ad5f2d452dfdf90fa95e5d99879d555488cd07735",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/brainstorming/brainstorming-session-2026-07-01-2235.md",
+          "after": "_bmad-output/brainstorming/brainstorm-hermes-agent-workflow-commander-2026-06-26/brainstorming-session-2026-07-01-2235.md",
+          "sha256_before": "43e1464158b5d530b533a9a72783e120fde4bb85758c54f81a19aac334d07573",
+          "sha256_after": "8a973d87ab1aa409a01ee04fae4b7c406c8e13dfe4dbf99be1adf13a2103381d",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-hermes-agent-workflow-commander-integration-architecture-research-2026-06-26.md",
+          "after": "_bmad-output/planning-artifacts/research/workflow-commander/technical-hermes-agent-workflow-commander-integration-architecture-research-2026-06-26.md",
+          "sha256_before": "664eec6020256503ed9107ac5cdc74fa7ca99ab7ec464bf05dc085b01ff6be1d",
+          "sha256_after": "664eec6020256503ed9107ac5cdc74fa7ca99ab7ec464bf05dc085b01ff6be1d",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/tests/test_validate_handoff_isolation.py",
+          "after": "_bmad-output/planning-artifacts/tests/test_validate_handoff_isolation.py",
+          "sha256_before": "df8f83a583420c3d76fc4cbe29925988d5c166d6cc37617388c595661023404f",
+          "sha256_after": "dc7b115f29531daa2d7aac3dcd7c829fc83fd324b8152b7e9dd8e3df9301e6e7",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prd-hermes-workflow/prd.md",
+          "after": "_bmad-output/planning-artifacts/prd-hermes-workflow/prd.md",
+          "sha256_before": "70c5d62198ef5aad00cc63312158e7d9d0479207addb59b141ae40c199e8fd84",
+          "sha256_after": "477cc4188eff2065c8ea1148d9918ab7f2100334aaa1cbddfe88c1bfdd3ce234",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prd-hermes-workflow/index.md",
+          "after": "_bmad-output/planning-artifacts/prd-hermes-workflow/index.md",
+          "sha256_before": "0f1ae35e739530257dc2b45c81d9722f42c6e4e389865d9ab6d50f8f1a3c9287",
+          "sha256_after": "1db0eac355fdab93d317863b9629b387c6279e2b27c529bc12e3593760735b54",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture-hermes-workflow/architecture.md",
+          "after": "_bmad-output/planning-artifacts/architecture-hermes-workflow/architecture.md",
+          "sha256_before": "93b742ef8e5624ed6517e6979b81b8e1ed12a469ea40eff8cd42189a26c59ad5",
+          "sha256_after": "ba54e0fd428428dd0fdbae198191f8ad83dbb5c62d229b5c364e419961cbf31b",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture-hermes-workflow/index.md",
+          "after": "_bmad-output/planning-artifacts/architecture-hermes-workflow/index.md",
+          "sha256_before": "bebb16635b5acef089e9ee047fe4d069e26699fbeae5a9724c2d2aaa2c233f48",
+          "sha256_after": "70722765b5150e9a6e6255197e51ad4a0afa91020e4019129ae1261676935b51",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics-hermes-workflow/epics.md",
+          "after": "_bmad-output/planning-artifacts/epics-hermes-workflow/epics.md",
+          "sha256_before": "83b952262f09aa9b38bc22875b5753da520793cb9e40b3577b1c503de6b090e2",
+          "sha256_after": "4d6b1bb08545091b0f07800d710f1a51356a478540ced3f2937ab388f6ac5349",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics-source-control/epics.md",
+          "after": "_bmad-output/planning-artifacts/epics-source-control/epics.md",
+          "sha256_before": "1ae1e17e168a3dabd37f75488ddcc59e4e9bb9c6352ac6c0a7909e58eaa29fa3",
+          "sha256_after": "a430acef0b42eb231a98c8859ad84953b1d63a36d89271318bf8f84f5191e102",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/archon-source-control/README.md",
+          "after": "_bmad-output/planning-artifacts/archon-source-control/README.md",
+          "sha256_before": "898b6588992df6de676429ef0c53128fcdaeb0555143effaceae49bba6a1ddcb",
+          "sha256_after": "577579355eef2769ae9226bcf28f0c2e448a7f19544a6fcabc56fd9adba70c7f",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-workflow-engine-2026-06-29/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-bmad-tea-workflow-orchestration-2026-06-29/.memlog.md",
+          "sha256_before": "7b0c363d7e56d6308ff630cedb520216434e644e0c8d492e2c53ef49adee9202",
+          "sha256_after": "7b0c363d7e56d6308ff630cedb520216434e644e0c8d492e2c53ef49adee9202",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-workflow-engine-2026-06-29/brief.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-bmad-tea-workflow-orchestration-2026-06-29/brief.md",
+          "sha256_before": "4534485b379667d7af86b733542c1859ca415aa43cf200e6e2198a86612253c3",
+          "sha256_after": "4534485b379667d7af86b733542c1859ca415aa43cf200e6e2198a86612253c3",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-workflow-engine-2026-06-26/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-workflow-commander-2026-06-26/.memlog.md",
+          "sha256_before": "e231ea80cb6a2c6b2a2df601d1d75aa7d787eb831b639fd8a1eb63a8a6f63eb0",
+          "sha256_after": "e231ea80cb6a2c6b2a2df601d1d75aa7d787eb831b639fd8a1eb63a8a6f63eb0",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-workflow-engine-2026-06-26/addendum.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-workflow-commander-2026-06-26/addendum.md",
+          "sha256_before": "4567f5629a752ddef108051cb3650191eb74ed6b6742ebb853983ec0469d637a",
+          "sha256_after": "3313689f39c2ea71e1185b7a61a2caa303caa72b907c9b887fb6d8d8eb923792",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-workflow-engine-2026-06-26/brief.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-workflow-commander-2026-06-26/brief.md",
+          "sha256_before": "1fe9d47a9a27082b7baf68c9ade75a226bbae0b9350b66b2257e1967068b4ce2",
+          "sha256_after": "1fe9d47a9a27082b7baf68c9ade75a226bbae0b9350b66b2257e1967068b4ce2",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/reference/hermes-workflow-superseded-discovery-candidates/root-epics-2026-07-10.md",
+          "after": "_bmad-output/planning-artifacts/reference/hermes-workflow-superseded-discovery-candidates/root-epics-2026-07-10.md",
+          "sha256_before": "cdc602be013bd8f5b443250c253e2bbafec2a34a34b2f284579cf438f7e8109d",
+          "sha256_after": "7c53c27c0800f8fda1dcf3d3e003595b25ad92352a546f22e7acd1ae89bdc07d",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/ARCHITECTURE-SPINE.md",
+          "sha256_before": "b593d67c484d4c41f87b1bb524b4b6370dc7d54a241c809a42baaae14c4f2efa",
+          "sha256_after": "65eaf4d37733560d47b093aad485f0ec6622fa1d448cd9f6c22fe101e651fbde",
+          "updated_links": 11
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/.memlog.md",
+          "sha256_before": "da303a15d7a07b3b009fac271c0c5a48638af759511aa5bfba3fd4a65428159c",
+          "sha256_after": "da303a15d7a07b3b009fac271c0c5a48638af759511aa5bfba3fd4a65428159c",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/TEAM-IMPLEMENTATION-HANDOFF.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/TEAM-IMPLEMENTATION-HANDOFF.md",
+          "sha256_before": "bbd4ae9386c1b1e70db98d24b382a370e26a60dcaf33e221a13e9995eb9d281f",
+          "sha256_after": "bbd4ae9386c1b1e70db98d24b382a370e26a60dcaf33e221a13e9995eb9d281f",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/visual-walkthrough.html",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/visual-walkthrough.html",
+          "sha256_before": "56e483db99cfd3ce3bcdf8403984852358e82b128d3e6d2ee88ed41b3cafe910",
+          "sha256_after": "56e483db99cfd3ce3bcdf8403984852358e82b128d3e6d2ee88ed41b3cafe910",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/reviews/review-version-fit.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/reviews/review-version-fit.md",
+          "sha256_before": "f96b20373e8aeedf2f62675f910dbf3171bacbe588b4adb3aac110643a957caa",
+          "sha256_after": "f96b20373e8aeedf2f62675f910dbf3171bacbe588b4adb3aac110643a957caa",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/reviews/review-adversarial.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/reviews/review-adversarial.md",
+          "sha256_before": "37c8ee445cc5b48f9362050d9051d1c0513b22f715b53313f408d3297eb5733b",
+          "sha256_after": "37c8ee445cc5b48f9362050d9051d1c0513b22f715b53313f408d3297eb5733b",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-workflow-engine-2026-06-26/reviews/review-rubric-walker.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-workflow-commander-2026-06-26/reviews/review-rubric-walker.md",
+          "sha256_before": "de94356990abf69c6f5ef35e27398641a9f6a51f06136535de6a19eeee8936fd",
+          "sha256_after": "de94356990abf69c6f5ef35e27398641a9f6a51f06136535de6a19eeee8936fd",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-source-control/sprint-change-proposal-2026-09-01.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-source-control/sprint-change-proposal-2026-09-01.md",
+          "sha256_before": "c453a55beafd5639ff359872523415496b19b18c03cc72ee4dea2e43cf92e087",
+          "sha256_after": "d86148414bbc6a58669f31d204f7d5e615bb62e21215be9b9a4f2ba8ca2096ab",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-source-control/implementation-readiness-report-2026-09-01.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-source-control/implementation-readiness-report-2026-09-01.md",
+          "sha256_before": "0b45e9f8ba5e747cc972eb8898dc9b89592240dfe996210c5f020eb9c621036f",
+          "sha256_after": "1dd28dc3a3e9613d9d5a939caf05e4ae225139f24508ef6e8bc176117bb0c69b",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-workflow-engine-2026-06-26/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-workflow-commander-2026-06-26/.memlog.md",
+          "sha256_before": "0a82a491ddbacad4a9435a023d63a21dc207e2846c3e8ee9e7e454191659ae03",
+          "sha256_after": "0a82a491ddbacad4a9435a023d63a21dc207e2846c3e8ee9e7e454191659ae03",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-workflow-engine-2026-06-26/prd.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-workflow-commander-2026-06-26/prd.md",
+          "sha256_before": "131ff9f2243e7661ee9d648b9b0b96a69c8d59c107fc489750e212811eb60918",
+          "sha256_after": "6995b254be9549215b9b65b5f7c7623c4f24ca350df6e3e7919ffa4c15923ccf",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-workflow-engine-2026-06-26/addendum.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-workflow-commander-2026-06-26/addendum.md",
+          "sha256_before": "c0415de4946c93c1806fdff97501f96933f43fa84410d698bb5698af65e5e4fc",
+          "sha256_after": "2af619d0af07281f2cd6951c38124439bfd330e2fcf11ecccb87804555edfa76",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.memlog.md",
+          "sha256_before": "3479368efcec882a1b60e1836cc7c901c53b552df2f7bd9ccfd6945f7c8eead4",
+          "sha256_after": "3427c19c31db9f98f4266600b3c99eba826408173cb94c96e32351e07edfc0c8",
+          "updated_links": 21
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/review-accessibility.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/review-accessibility.md",
+          "sha256_before": "debad00b6a28b0a839d99615136491955ea936882564ab4b8c94fc90a0a46893",
+          "sha256_after": "debad00b6a28b0a839d99615136491955ea936882564ab4b8c94fc90a0a46893",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/validation-report.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/validation-report.html",
+          "sha256_before": "22c86f2c6e2390e716947bc13fd120512ef05271472e58041107beab6fa54efd",
+          "sha256_after": "22c86f2c6e2390e716947bc13fd120512ef05271472e58041107beab6fa54efd",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/validation-report.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/validation-report.md",
+          "sha256_before": "1d0a9a09d9ea5a6f9bdbce3b36fa405e89eb78a5277a7e1fdfc0f7214a1a5994",
+          "sha256_after": "555fc01d7f329693509eb553518db88d61964d14728423b1c46524ff46a79fb8",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/review-rubric.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/review-rubric.md",
+          "sha256_before": "4e31d3f43b33e896c20b6ffb6801fd6f007affdb268a159885976aad6b14b45a",
+          "sha256_after": "74468c752c4d5e72ddc8e0cde5671092db2746b06abe34b9b78a976cfab8f189",
+          "updated_links": 41
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/DESIGN.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/DESIGN.md",
+          "sha256_before": "19c03d3ae60787c276d6719da3f1e59de4c6efe90338c8c8ef597e55753adef1",
+          "sha256_after": "19c03d3ae60787c276d6719da3f1e59de4c6efe90338c8c8ef597e55753adef1",
+          "updated_links": 13
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/EXPERIENCE.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/EXPERIENCE.md",
+          "sha256_before": "eacd1ff934bbf1b17ea95376da74ea83830e183d22bbada7419d1c29c2210956",
+          "sha256_after": "800102ce2c73ae5ef367e8882bb73d1589013d2c3dd55ab05bbebf965a114767",
+          "updated_links": 22
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/wireframes/flow-source-control-v1-refined-2026-08-31.excalidraw",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/wireframes/flow-source-control-v1-refined-2026-08-31.excalidraw",
+          "sha256_before": "d62e6093266cd283fa3f3aa313fbacaf787ca27b9604171f53b1ab9f60eb3812",
+          "sha256_after": "d62e6093266cd283fa3f3aa313fbacaf787ca27b9604171f53b1ab9f60eb3812",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/wireframes/flow-source-control-v1-refined-2026-08-31.png",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/wireframes/flow-source-control-v1-refined-2026-08-31.png",
+          "sha256_before": "ffd2aa0d5caf5b0443af8804360993c03b5f4ed12874590bc62f70982b95aba7",
+          "sha256_after": "ffd2aa0d5caf5b0443af8804360993c03b5f4ed12874590bc62f70982b95aba7",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/flow-source-control-v1-refined-2026-08-31.excalidraw",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/flow-source-control-v1-refined-2026-08-31.excalidraw",
+          "sha256_before": "d62e6093266cd283fa3f3aa313fbacaf787ca27b9604171f53b1ab9f60eb3812",
+          "sha256_after": "d62e6093266cd283fa3f3aa313fbacaf787ca27b9604171f53b1ab9f60eb3812",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/flow-source-control-v1-refined-2026-08-31.png",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/flow-source-control-v1-refined-2026-08-31.png",
+          "sha256_before": "ffd2aa0d5caf5b0443af8804360993c03b5f4ed12874590bc62f70982b95aba7",
+          "sha256_after": "ffd2aa0d5caf5b0443af8804360993c03b5f4ed12874590bc62f70982b95aba7",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/graph-cost-scout.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/graph-cost-scout.md",
+          "sha256_before": "bd787a75650b5f11c8d48bb23c28fb09577544e640435805651862b15bd8678d",
+          "sha256_after": "bd787a75650b5f11c8d48bb23c28fb09577544e640435805651862b15bd8678d",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/source-extract.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/source-extract.md",
+          "sha256_before": "6845d4ef11fe00ec1b7899c24d5f6aad5560d2021f3644e5913597a7306fff65",
+          "sha256_after": "6845d4ef11fe00ec1b7899c24d5f6aad5560d2021f3644e5913597a7306fff65",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/render.svg",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/render.svg",
+          "sha256_before": "c0a95dfc7106f3523dfdeea59a56828d4e9b756036d9c89d37a056a8c89bead0",
+          "sha256_after": "c0a95dfc7106f3523dfdeea59a56828d4e9b756036d9c89d37a056a8c89bead0",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/render.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/render.html",
+          "sha256_before": "27101408e8b5bc84530af431c93ed99541339ead267b33ee7fe5ec0852737891",
+          "sha256_after": "27101408e8b5bc84530af431c93ed99541339ead267b33ee7fe5ec0852737891",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/export.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/export.html",
+          "sha256_before": "39d39f73dcbcdc4b109ef2599edd8ac917485d2f28ce7515055f41a80f8e3dcb",
+          "sha256_after": "39d39f73dcbcdc4b109ef2599edd8ac917485d2f28ce7515055f41a80f8e3dcb",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.working/flow-source-control-layout-2026-08-31.excalidraw",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.working/flow-source-control-layout-2026-08-31.excalidraw",
+          "sha256_before": "dd18db6f3090576121f46ece2cd52d2252ad5ec528849bd1ba5271db2a6ec9d9",
+          "sha256_after": "dd18db6f3090576121f46ece2cd52d2252ad5ec528849bd1ba5271db2a6ec9d9",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/imports/vscode-source-control-reference.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/imports/vscode-source-control-reference.md",
+          "sha256_before": "ef3ea323987678e6246fa805ed03371dbab28ca914bef171f1e2a5025da59748",
+          "sha256_after": "ef3ea323987678e6246fa805ed03371dbab28ca914bef171f1e2a5025da59748",
+          "updated_links": 0
+        }
+      ]
+    },
+    {
+      "root": "/Users/dale/Desktop/workspace/OceanLabs/agentic-os-plan",
+      "files": [
+        {
+          "before": "_bmad-output/brainstorming/brainstorm-rm-01-meta-harness-foundation-and-grok-adapter-2026-07-22/handoff-summary.md",
+          "after": "_bmad-output/brainstorming/brainstorm-rm-01-meta-harness-foundation-and-grok-adapter-2026-07-22/handoff-summary.md",
+          "sha256_before": "05d5d09ac25c463e0a3855dde064caa08ebb5e2b4179fe157b172c379182ad3f",
+          "sha256_after": "eb508df06edb3628a877d556424ea78090c6d789cfc5b420916e632640294ca2",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/investigations/epic-1-brownfield-conflict-audit-investigation.md",
+          "after": "_bmad-output/implementation-artifacts/gigo-agent-v1/investigations/epic-1-brownfield-conflict-audit-investigation.md",
+          "sha256_before": "d263fe33685635089fe665f4dbdb205cbb6687cd4e2f196d1cb2a7baec88928c",
+          "sha256_after": "d263fe33685635089fe665f4dbdb205cbb6687cd4e2f196d1cb2a7baec88928c",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/investigations/gigo-io-ports-adapters-investigation.md",
+          "after": "_bmad-output/implementation-artifacts/rm-01/investigations/gigo-io-ports-adapters-investigation.md",
+          "sha256_before": "fc94e7d8e457b31681b8fc1a6f44fad5efc4b3938c3efeec1344e3af84723499",
+          "sha256_after": "fc94e7d8e457b31681b8fc1a6f44fad5efc4b3938c3efeec1344e3af84723499",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/investigations/gigo-native-prompt-fifo-investigation.md",
+          "after": "_bmad-output/implementation-artifacts/rm-01/investigations/gigo-native-prompt-fifo-investigation.md",
+          "sha256_before": "e2339343a814e58a62057f3b671261cafebb2f1b6d76543ac5e4921f4fdfe752",
+          "sha256_after": "b6a7dc9c68bd0ea83fb6af6a062c48c61ac00554c282b71fd583f1b60ea47f64",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/investigations/omnigent-client-server-harness-service-investigation.md",
+          "after": "_bmad-output/implementation-artifacts/rm-01/investigations/omnigent-client-server-harness-service-investigation.md",
+          "sha256_before": "5c8d15499781c849146394b40ecb0108a70f756e94b511a4611b89e2786559d0",
+          "sha256_after": "83cc59155181646f19800c2fe0f7dc7ade7f98e30c23ef0a42ab5e1b924ce8ed",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/investigations/omnigent-conversation-store-persistence-investigation.md",
+          "after": "_bmad-output/implementation-artifacts/rm-01/investigations/omnigent-conversation-store-persistence-investigation.md",
+          "sha256_before": "25fa91eb15987e9218e4015519e00f7e2052527e35488a795267168c8251771f",
+          "sha256_after": "06d0856132cef94ad74560861b7c78a5d4ed334f39d5d6e313c7ed48fea8a4fd",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/investigations/omnigent-harness-adapter-investigation.md",
+          "after": "_bmad-output/implementation-artifacts/rm-01/investigations/omnigent-harness-adapter-investigation.md",
+          "sha256_before": "773da2b49f67258b4482fdbd7ad8043c00f51588f8b1149eefbb7f15b1cab4ef",
+          "sha256_after": "773da2b49f67258b4482fdbd7ad8043c00f51588f8b1149eefbb7f15b1cab4ef",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/implementation-artifacts/rm-04/sprint-status.yaml",
+          "after": "_bmad-output/implementation-artifacts/rm-04/sprint-status.yaml",
+          "sha256_before": "46d4c69dee70b5131acc9cd4ce10212a6ba45a37c1204a089ccf93fd8e164f6e",
+          "sha256_after": "044ba6d834eb3229a3bbc798303caaa0ac595c80f85bacc3306e8844085f47bf",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/.memlog.md",
+          "sha256_before": "413113002b316416944d0fb66ce2332651abaf15bedf1e2c52f22d0b5d4d978d",
+          "sha256_after": "586943236b8db6ce1a701319c8c7ef2432d53934ee7298da9d72d912cf5fe791",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/ARCHITECTURE-SPINE.md",
+          "sha256_before": "68e1d8eb56e8ccaab4ee036d46949cb5d687678e23ec9a32a617edfabac1085e",
+          "sha256_after": "68e1d8eb56e8ccaab4ee036d46949cb5d687678e23ec9a32a617edfabac1085e",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-01-event-spine-and-storage.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-01-event-spine-and-storage.md",
+          "sha256_before": "51fc9cea5d6cbc4147335adf14eb8c72647760323ab9c1493b0234fc2da0a726",
+          "sha256_after": "51fc9cea5d6cbc4147335adf14eb8c72647760323ab9c1493b0234fc2da0a726",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-02-session-kernel-and-subagents.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-02-session-kernel-and-subagents.md",
+          "sha256_before": "28801d4d072f2f173f94d379d7bcafdfcb9ac26d64deb81f7b69fabd333d89b8",
+          "sha256_after": "28801d4d072f2f173f94d379d7bcafdfcb9ac26d64deb81f7b69fabd333d89b8",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-03-tool-mcp-command-runtime.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-03-tool-mcp-command-runtime.md",
+          "sha256_before": "aa507aadd74696120b16cab38e04c70b83fab8d5b83910b5175d9a30199abde0",
+          "sha256_after": "aa507aadd74696120b16cab38e04c70b83fab8d5b83910b5175d9a30199abde0",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-04-permission-sandbox-credentials.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-04-permission-sandbox-credentials.md",
+          "sha256_before": "75bee8a47da62eaefdae3d8af422e7b64bfa10b83e8fd5355654d290ebedf598",
+          "sha256_after": "7af791f479c822533910e82cbc77d1c1a4d909230671ddd3d75bb9e653f02a34",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-05-context-memory-skills-learning.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-05-context-memory-skills-learning.md",
+          "sha256_before": "17ee0fbdc3899da79361881d6b69a45a73a8944b452fc0f9039542db3381e526",
+          "sha256_after": "17ee0fbdc3899da79361881d6b69a45a73a8944b452fc0f9039542db3381e526",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-06-model-runtime-and-routing.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-06-model-runtime-and-routing.md",
+          "sha256_before": "ff6ee7a60d01978c48d8a5013d124d74dafaa75b39861e990dd512249a3493bc",
+          "sha256_after": "ff6ee7a60d01978c48d8a5013d124d74dafaa75b39861e990dd512249a3493bc",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-07-observability-eval-replay-testkit.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-07-observability-eval-replay-testkit.md",
+          "sha256_before": "0355273e3c9ba5108568b07968ebdba9d360a0f53fc8189e7de145ae9a13926f",
+          "sha256_after": "0355273e3c9ba5108568b07968ebdba9d360a0f53fc8189e7de145ae9a13926f",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-08-transport-and-desktop-projection.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-08-transport-and-desktop-projection.md",
+          "sha256_before": "05a5430fcf3ff40acff13afd79b202aa910b6b4b4d347e4c3242af2e408cb254",
+          "sha256_after": "05a5430fcf3ff40acff13afd79b202aa910b6b4b4d347e4c3242af2e408cb254",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/drafts/area-09-operational-envelope.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/drafts/area-09-operational-envelope.md",
+          "sha256_before": "d52869bf86e17199c086892587a7fe3d906fc67cf60c2e41758351b3f927fcd1",
+          "sha256_after": "d52869bf86e17199c086892587a7fe3d906fc67cf60c2e41758351b3f927fcd1",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/reviews/review-adversarial-compat.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/reviews/review-adversarial-compat.md",
+          "sha256_before": "472e35bc30edc759233a864e6201763e0c3e58df066ea6d6036f24995b53b8b0",
+          "sha256_after": "472e35bc30edc759233a864e6201763e0c3e58df066ea6d6036f24995b53b8b0",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/reviews/review-reconcile-memlog.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/reviews/review-reconcile-memlog.md",
+          "sha256_before": "ffd6aaf98ae32461aa43a25adddcefe55a5eaeb3bb1ec53cf0c21052720d135b",
+          "sha256_after": "ffd6aaf98ae32461aa43a25adddcefe55a5eaeb3bb1ec53cf0c21052720d135b",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/reviews/review-reconcile-prd.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/reviews/review-reconcile-prd.md",
+          "sha256_before": "3d00086845ecc990e00948457b6a49adf36d012d5c1d4aefbf13b8549bf608a3",
+          "sha256_after": "472aee212db0413a5b165b4e4cb9826e22cdb3ab1573f150096e094e590af20b",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/reviews/review-rubric-walker.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/reviews/review-rubric-walker.md",
+          "sha256_before": "936644fd110edb551475272fb8a477758a20fc9670a9da8405987c09a485f8fa",
+          "sha256_after": "6006f52f2565d3404e8c17ebf3d70f37ae311636bc6d40777392961a18280368",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-03/reviews/review-tech-currency.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-os-2026-07-03/reviews/review-tech-currency.md",
+          "sha256_before": "d385de563e6de932b036e0b5d6b8974e8e49011b7ffafb8a12d339c9a300eac1",
+          "sha256_after": "d385de563e6de932b036e0b5d6b8974e8e49011b7ffafb8a12d339c9a300eac1",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-06/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-provider-2026-07-06/.memlog.md",
+          "sha256_before": "71b996ab25e656d35a2e5f4072dc90c35379906310a5dfe7de0407f3f8bd8a00",
+          "sha256_after": "71b996ab25e656d35a2e5f4072dc90c35379906310a5dfe7de0407f3f8bd8a00",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-06/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-provider-2026-07-06/ARCHITECTURE-SPINE.md",
+          "sha256_before": "876c4dc6f818726852dd0704fc437ee7387d34eca9ca49720f86eaf3dd05c4ab",
+          "sha256_after": "20dd62a9a0fc9fed76fa77323c7f057c3672db3ea6400b724a8fccd8f99564a9",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-06/SOLUTION-DESIGN.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-provider-2026-07-06/SOLUTION-DESIGN.md",
+          "sha256_before": "a6e130e1a83ab8fac9f4fdb1b0f2e5479921032af0f3fa0d9cef76187723e5cf",
+          "sha256_after": "a6e130e1a83ab8fac9f4fdb1b0f2e5479921032af0f3fa0d9cef76187723e5cf",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/.memlog.md",
+          "sha256_before": "9e0983613097c8559602e5f3e4134903ca1a1e49501ee7484212ee6f79bf87d0",
+          "sha256_after": "d127b0f5df81430def8547e85377ccd8a9250994e5bb22493de4eefb4b6ab720",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/ARCHITECTURE-SPINE.md",
+          "sha256_before": "2f333c61e8ea3729f2e16f5423cd748254b20cf26eb8d321be1b9e18c6924a19",
+          "sha256_after": "cc6bc806538dc9be3caba991f3809942925b6b2019ec920ad9d3a8c975994938",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/reconcile-brownfield.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/reconcile-brownfield.md",
+          "sha256_before": "dd584fbbf88b679912157199ecc3ed16e53cf1bcfeb585bfa37ff13ac7c7519a",
+          "sha256_after": "dd584fbbf88b679912157199ecc3ed16e53cf1bcfeb585bfa37ff13ac7c7519a",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/reconcile-prd.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/reconcile-prd.md",
+          "sha256_before": "aecaea4737794cd10560fbdc15cae343fec82f34c4163320990c417ba35d9319",
+          "sha256_after": "7b5bf1888182ea83cc355b28a361ccf75a8f11ccd16e0e9f11d50646d2171475",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/reviews/review-current-reality.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/reviews/review-current-reality.md",
+          "sha256_before": "46109213d546350c3253f2113a17ac1cdc406dc9d99c59b57379723aa6145855",
+          "sha256_after": "46109213d546350c3253f2113a17ac1cdc406dc9d99c59b57379723aa6145855",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/reviews/review-incompatible-units.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/reviews/review-incompatible-units.md",
+          "sha256_before": "7d2c62d2d361fe9e6cb789a9fb1d9de4875a35e7de41f5d70ef659e3df0ebaff",
+          "sha256_after": "7d2c62d2d361fe9e6cb789a9fb1d9de4875a35e7de41f5d70ef659e3df0ebaff",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-07-20/reviews/review-rubric.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-00-local-gigo-build-2026-07-20/reviews/review-rubric.md",
+          "sha256_before": "5f82925d6b59b6c4bc2a899a1b087fd2fabea772b98928b49fc699d6d3dde274",
+          "sha256_after": "5f82925d6b59b6c4bc2a899a1b087fd2fabea772b98928b49fc699d6d3dde274",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-08-24/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-02-plurality-headless-2026-08-24/.memlog.md",
+          "sha256_before": "44379cd05749222f839a8f403a9425cf525f51524446e2bb092da7a5a1e78ca6",
+          "sha256_after": "44379cd05749222f839a8f403a9425cf525f51524446e2bb092da7a5a1e78ca6",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-08-24/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-02-plurality-headless-2026-08-24/ARCHITECTURE-SPINE.md",
+          "sha256_before": "890bf28047e363c3dc3f699f2f0300054eb9a6b74afd4c48916f549a1ea5da36",
+          "sha256_after": "936f187de32c6bc8cbddf08128ba3d5a12550951a46555fb847ca1213bd4ff70",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-08-24/reviews/review-adversarial.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-02-plurality-headless-2026-08-24/reviews/review-adversarial.md",
+          "sha256_before": "cc830c2b6e737a26f64244ef4ba51ffe5bb99d73215be51449f04e821f505e1e",
+          "sha256_after": "bb901a71c5ca9cce5a1420c50016a44306566a768b5d62977c9498b397fa49e1",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-08-24/reviews/review-rubric.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-02-plurality-headless-2026-08-24/reviews/review-rubric.md",
+          "sha256_before": "d003d1231fd89a9d5bd1c83e4b25a0e48770daa7e5ebc8e821a730201054f212",
+          "sha256_after": "71eed556543baa76579158881c725643e90b5a946ecdf6c392ce2486d195721e",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-agentic-os-plan-2026-08-24/reviews/review-technology.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-02-plurality-headless-2026-08-24/reviews/review-technology.md",
+          "sha256_before": "4289c78336799fc2cd60cf254c58cb1d44130ec20e08d4b1ed806964a98a9fb7",
+          "sha256_after": "0f05dad3655c199cb798f5fa18f5b7a840cd01b8860c5a15d58b2cc8dcbdc923",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-v1-2026-07-06/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-v1-2026-07-06/ARCHITECTURE-SPINE.md",
+          "sha256_before": "49487d1622cee61621f85fcbb2685fdb6b66346210bd8b26d095c72a51846d98",
+          "sha256_after": "e162bb2f65cf5fab32c2dcf6d4de009035127fdbf131d181de4bbeec0a2cb4b5",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-v1-2026-07-06/SOLUTION-DESIGN.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-v1-2026-07-06/SOLUTION-DESIGN.md",
+          "sha256_before": "de63d9bad48f9c17917c9df7d3b93a3f979fb4765017352a262842dc610a0123",
+          "sha256_after": "7efb9bd7dd247dd6de1a56bad2176a90e7acd1540aa0a77922919b4a67762dc8",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-v1-2026-07-06/reviews/review-adversarial-divergence.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-agent-v1-2026-07-06/reviews/review-adversarial-divergence.md",
+          "sha256_before": "4d2efc94d982f7264cd581d6cf70ed79d3e177f835a5629999a732fc591fd6b3",
+          "sha256_after": "b9a693657ab211b21f10cfe1bfd5b76ba493820d729ca9b4a5fcf2497db8a33c",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-gigo-desktop-frontend-2026-07-07/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-gigo-desktop-frontend-2026-07-07/ARCHITECTURE-SPINE.md",
+          "sha256_before": "70a31ed3a00ba15c97aab6ee9f72d222761ab5bb5a0b33a719fd53bf5504103b",
+          "sha256_after": "397dd6975d99143e58242bed07c372bf84b389446926bd1ba414597073caf8fa",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-rm-01-meta-harness-foundation-and-gigo-harness-adapter-2026-07-22/ARCHITECTURE-SPINE.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-01-meta-harness-foundation-and-gigo-harness-adapter-2026-07-22/ARCHITECTURE-SPINE.md",
+          "sha256_before": "86772c3a638158bdeb641ccaee259f8380dd723c4aa68ff44fd7a04911a5e48b",
+          "sha256_after": "01b5a7bd37b45d8c05e409b414161301a2f0eeca1737cbe421ce56d8fa04ec2e",
+          "updated_links": 16
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/architecture/architecture-rm-01-meta-harness-foundation-and-gigo-harness-adapter-2026-07-22/reviews/review-source-reality-20260723-alignment.md",
+          "after": "_bmad-output/planning-artifacts/architecture/architecture-rm-01-meta-harness-foundation-and-gigo-harness-adapter-2026-07-22/reviews/review-source-reality-20260723-alignment.md",
+          "sha256_before": "3273be7a175c1178c1ba0bbe3cfb03d703ed340f02681f76216a791f26820b1f",
+          "sha256_after": "013232de9e7ddead7a4c90f052cdac57fcccb0153b7d2f4958dc0b8332b98355",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-agentic-os-plan-2026-07-02/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-gigo-agent-v1-2026-07-02/.memlog.md",
+          "sha256_before": "94bf5d673e27f898e7e4f5d56e855f0322bdb47909bbb447eba92859461b2bd4",
+          "sha256_after": "94bf5d673e27f898e7e4f5d56e855f0322bdb47909bbb447eba92859461b2bd4",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/briefs/brief-agentic-os-plan-2026-07-02/brief.md",
+          "after": "_bmad-output/planning-artifacts/briefs/brief-gigo-agent-v1-2026-07-02/brief.md",
+          "sha256_before": "a3496bc7e0d7cc758dc9f79c9bb79094860ce222b4c91b9182c14e3756bd2568",
+          "sha256_after": "a3496bc7e0d7cc758dc9f79c9bb79094860ce222b4c91b9182c14e3756bd2568",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/correct-course/gigo-m0-wedge-correction-claim-check-2026-07-03.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/gigo-m0-wedge-correction-claim-check-2026-07-03.md",
+          "sha256_before": "5da01053961b399d518884e97049df4b6bfc9d590fbc6bcbbe2365947767d6cb",
+          "sha256_after": "abc3bfa7c9a81bfe17f741e9b8ee7d4d9aabe40d5a8963d074fb9ed0f0947a1b",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/epics.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/epics.md",
+          "sha256_before": "da869b9b9ca12b4b37bc38cde617acdcd035856f2d7c28d8a1d28994deb6440b",
+          "sha256_after": "e115aeb944e0fabf976dd95afdb98dce866a21c0053986b5d251e1b9cbae239d",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics/epics-rm-04-desktop-foundation-2026-09-05/epics.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-04-desktop-foundation-2026-09-05/epics.md",
+          "sha256_before": "2a1da6252776647b15753c39d880bb1c87557fad58d397f3b538ff65286120e1",
+          "sha256_after": "e9920d3e46895a83d5c806818e3ccfa52a7f30eca87d9db8de19ad3dca6c3e32",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics-rm-00-local-gigo-build.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-00-local-gigo-build/epics.md",
+          "sha256_before": "2c12071fd56078c7e1a50d57d569f7f8ec2a198b5d7f083746681023cf1d91b7",
+          "sha256_after": "856930fbc882568fa7d7b391ecbd2cf2f9585d7d781da954fc388e81e3849949",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics-rm-01-meta-harness-foundation-and-grok-adapter.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/epics.md",
+          "sha256_before": "83e527319b5472accf62f7c06028c90d63767c8e6c9b0633ef4ff21a2ec7ae34",
+          "sha256_after": "920c56227a68ff972fcfb29d798f03ca762f5887b66e17255e826e412c611ca5",
+          "updated_links": 28
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/epics.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/epics.md",
+          "sha256_before": "4d6cc83863c36c1f773ce7b7f876ff703862ae97127f92a96b24ab22ea88c87f",
+          "sha256_after": "578afb721b11200aea081643926bb4a9f8ab424e7509a68eccaa2d8cfaccc264",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/gigo-agent-brownfield-roadmap-override-2026-07-19.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-meta-harness/gigo-agent-brownfield-roadmap-override-2026-07-19.md",
+          "sha256_before": "138c2e951d608d49b28e063fda24b861e5ac2690802b85056d549a2cd92f9ba8",
+          "sha256_after": "8fa302736adbf272fb4d8cf82300461809d4dcebdd1c4913e9c2b870a9ba2a4b",
+          "updated_links": 18
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/gigo-deep-dive-tracker-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/gigo-deep-dive-tracker-2026-06-30.md",
+          "sha256_before": "992db11978326d66605856cd2f41f7841743bc0f3086ad845caeceeb01a30e1c",
+          "sha256_after": "89a35d6423e53598d70d34b43d8c208d9e095c3fe460be07ea1c00d6b8e2a8c0",
+          "updated_links": 115
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/gigo-differentiators-roadmap-2026-08-25.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-differentiators/gigo-differentiators-roadmap-2026-08-25.md",
+          "sha256_before": "7d1af8d334ba6615f4ffb64399ea1ddd2b59197adc36a1e22991a1d8b5ea38a7",
+          "sha256_after": "b5912c249aa7f262e3d6fea3291cb7ed14a7aee66c760d1b596d0bbdc24e46c1",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/gigo-roadmap-status.yaml",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-meta-harness/gigo-roadmap-status.yaml",
+          "sha256_before": "7268d57ee1a58368ad88ede9699bd6d91205400178dc627cc63ade3d83179dc7",
+          "sha256_after": "8112f0d6e08d6c684f0ade724c5b472976c0e290ae3fb1b07510d905138006f0",
+          "updated_links": 334
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/handoffs/gigo-claim-check-evidence-advisor-handoff-2026-07-03/handoff.md",
+          "after": "_bmad-output/planning-artifacts/handoffs/gigo-claim-check-evidence-advisor-handoff-2026-07-03/handoff.md",
+          "sha256_before": "2c525b292b4bc17a0fc2b2242d33ea1c2e0287d6383f86ab287d946105a02c42",
+          "sha256_after": "4538d1847c486d0a8950e60737f3e61dde50bb12323f7ac0528ec0ff1aab2bd2",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-23-rm-01-recheck.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-23-rm-01-recheck.md",
+          "sha256_before": "475ca0d64003c2c904508aed81b6803ab088e0c44eef4d0990e97eaaf1913622",
+          "sha256_after": "be7d49b05670ef151045db63e3434f745423ff26e52c282b7f10c188989293f7",
+          "updated_links": 13
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-23.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-23.md",
+          "sha256_before": "0409300caa7b43a780c9d9e34d6c21eca373d9eee3da866cfea1273f324be041",
+          "sha256_after": "5f3b3e0c4e2b50e3f1af6dd9fbee9fc2f502ebacca75140c57bdeb1a81fe5aa4",
+          "updated_links": 13
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-24-rm-01-recheck-v2.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-24-rm-01-recheck-v2.md",
+          "sha256_before": "31b115577c16e4a44432a5ba752f9995beb6ba70fde9cd2b3b3ff621ca930ea1",
+          "sha256_after": "f0a1ea88fe8edadeec02b0654a9050d2456aacbd320afaea7eb771a50e699010",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-24-rm-01-recheck-v3.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-24-rm-01-recheck-v3.md",
+          "sha256_before": "a5e6d7781035e188bb38da95448a035aba828f724db5e18d1ecb94cd6ad37a93",
+          "sha256_after": "c1aee9fd340fd08487957c7f014f662b8fbedbd3d8e713d80e3a0dd62f48b591",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-24-rm-01-recheck-v4.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-24-rm-01-recheck-v4.md",
+          "sha256_before": "24ad47b2c71f0c004046857bb912de9bece2abef233a486fdb179b24a50e8306",
+          "sha256_after": "c484b50d60b4ac080f9d30ad53e181c0a29b48c9a193937edbd968bed480c901",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-24-rm-01-recheck-v5.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-24-rm-01-recheck-v5.md",
+          "sha256_before": "7a33e85cc7dc6bd0398b1eddb79ffeb2e2455a7eec9c2d3f77633a2ec5797219",
+          "sha256_after": "412a1557ea9d14f8b620c3e18e46db7ce09543d7e6ff003a3a244f936c1a40f0",
+          "updated_links": 10
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-24-rm-01-recheck-v6.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-24-rm-01-recheck-v6.md",
+          "sha256_before": "a846aa53e6f320fde08bb2bdd235742e39d19321e25b557c3f1274207d1d483c",
+          "sha256_after": "a76415b34ddd183717008e1f5502d6683072525ffc9e2286f2df9de458750f88",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-24.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-24.md",
+          "sha256_before": "2c88519ce32a5d095beeee99a3ddfc25343685bfced92e22ba4bd0c73336ed07",
+          "sha256_after": "6fc84289edbc9fdc23ffa9c833f45369e6b69593308b12fe6e086af9fb02f7c4",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-30-rm-01-recheck-v2.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-30-rm-01-recheck-v2.md",
+          "sha256_before": "6be2332a187851cfa56a9da2e73198d2fa0c925eb196dbad7b8d04192fe57de4",
+          "sha256_after": "29a5162b246be7a44937a0bab47bffa62ebe5a4c80733d5ff3c8f9ba30667746",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-30.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-30.md",
+          "sha256_before": "e6b267241e821b3f2189502c7f5a16aef96b5274a3bfed673c63171f41fdb3de",
+          "sha256_after": "ac630bd8fd4bfde3c9985077dbf8c4b5b4cbbc57eae51c84a588fcd3dd043e20",
+          "updated_links": 22
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-31-rm-01-post-ac-trace-application-recheck.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-31-rm-01-post-ac-trace-application-recheck.md",
+          "sha256_before": "d273feaf9ad0044ec24afc794b51d79d3a70173d316cffa48178c011a7c9794d",
+          "sha256_after": "a0fcbef825cf46a3b0a0f55a540f726bcdff24c176ead50915d71b3c1cc8eda2",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-31-rm-01-post-correction-recheck.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-31-rm-01-post-correction-recheck.md",
+          "sha256_before": "9499b2f8b84e0003a3491a4c72fcacce3a7ca4ca8bf328a80e3f04c1a77f94dd",
+          "sha256_after": "477a74e4438f946e62c41af31869226c1e2fb7cca8e280b10dec7b31db7d02d3",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-31-rm-01-pre-ac-trace-application-recheck.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-31-rm-01-pre-ac-trace-application-recheck.md",
+          "sha256_before": "3ceed13ce6865d38e613957e780600ceb3d0d7bda0d43347c4e8f4a6f578dc2b",
+          "sha256_after": "55d5f390ddcbb584816eacdf4e4d59471696fd8c14b2a2be9c6fb8536bbf5d14",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-31-rm-01-shared-native-acp-client-lifecycle-recheck.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-31-rm-01-shared-native-acp-client-lifecycle-recheck.md",
+          "sha256_before": "1d60de0b82b88733962a6516b63992ce04633f3cac88bf484d35a3c2b1a3a885",
+          "sha256_after": "44bb245b84799ad0ec68652c9e76100fee4d3483985ba8c50f0e907bf53af21f",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-31-story-2-1-origin-alignment.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-31-story-2-1-origin-alignment.md",
+          "sha256_before": "59c5fe7dbba3b9e8b1204a9d05e18b4a6afd82e70381e22f88e91454ec98b780",
+          "sha256_after": "df6c6cdc4c8c5ee77976ee105701b97f5f136dc0b24245fd91e031c94a090fce",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-07-31.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-07-31.md",
+          "sha256_before": "90e40673842f7bfc5c11eedc25b8d6c59a516251eef4e35c71e13c32826b14ce",
+          "sha256_after": "e1bcf898e129046230b8655714d1b833df8236d423c2c46d0cbee82eddf332eb",
+          "updated_links": 11
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-08.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-08-08.md",
+          "sha256_before": "65f7fd90b21d7c82f6160a9dcd8755e3e25215579958c699386bc1a7eb9a9618",
+          "sha256_after": "71d926cc23cc690657186944a357c945b11d963e40d76e31bf445b3663b87ae9",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-09.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-08-09.md",
+          "sha256_before": "5ba62d7397571efa8b2101736c855916958e182b4af9364cd5ded193747330ec",
+          "sha256_after": "240e7afded0b75758b48680902ec0705c7cbe7aab6a2af586b94d1ef0cb9e99f",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-10.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/implementation-readiness-report-2026-08-10.md",
+          "sha256_before": "bc287b116f6c1ac97aae1688a7f6758554d5f4dd6e1e2307d31f04b396598382",
+          "sha256_after": "7081aa70069c2a88bd8db7fa4263cfdcf30d23798df8d7873d8dc16b73d02fec",
+          "updated_links": 11
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-25-rm-02-reassessment.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/implementation-readiness-report-2026-08-25-rm-02-reassessment.md",
+          "sha256_before": "c54b5a37643cd1930c0a76e9d0bf66bf8d7d41796c5f8b43fd150c54750d3722",
+          "sha256_after": "9b0104f3ce0f6cd9749a6925f45000a780629d0b684b4d60bfc5853021e6b065",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-25.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/implementation-readiness-report-2026-08-25.md",
+          "sha256_before": "eecd8d7689da53fd99d30f022288af78f6bc4dc672f61025d33bb30b6cf9e62d",
+          "sha256_after": "0f0cba967fa4cfcf3dd25627987fed297737e475dae381ab1e1ad73266270730",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-08-26.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/implementation-readiness-report-2026-08-26.md",
+          "sha256_before": "9b7a9e74d67febe28b6339befe3c85060f7c990778b2222627af0fd9fc0474aa",
+          "sha256_after": "f7163914a63c3fcc2a19152b6e22dc55a5d5641575151478004e9654e3996020",
+          "updated_links": 25
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-09-05-rm-04-recheck.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-04-desktop-foundation-2026-09-05/implementation-readiness-report-2026-09-05-rm-04-recheck.md",
+          "sha256_before": "9615cadfb4fb5509f9902519345318f78f03fb686f617e0737eea796e9dc7a9d",
+          "sha256_after": "984ebda1edd46c9d40cd6ade1bb10c0e628ef015bdc08e9f8ca4ceadefdb3557",
+          "updated_links": 30
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-09-05-rm-04.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-04-desktop-foundation-2026-09-05/implementation-readiness-report-2026-09-05-rm-04.md",
+          "sha256_before": "040170a1cb149220bec26d780b362f5ee0f3b0621c868569bd3cfc992da16fba",
+          "sha256_after": "479ccb01522b5a825da457f30cdfed4fc2760c56e60523a4b7429d3fffa5d62c",
+          "updated_links": 49
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/implementation-readiness-report-2026-09-07-rm-02-fr16-canonical-redefine.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/implementation-readiness-report-2026-09-07-rm-02-fr16-canonical-redefine.md",
+          "sha256_before": "4c50c6624d552008e27b7d5117082ef99ace6983fdc3ea1cac858ec7d0425be7",
+          "sha256_after": "536af4d1d4acc21a960cebf511f3ed1dfec79194303584267a4bbdda137a9aa7",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/plans/reports/cc-ref-scout-260711-0128-subagent-delegation-evidence.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-v1/cc-ref-scout-260711-0128-subagent-delegation-evidence.md",
+          "sha256_before": "2f3b3feccda5bb305767b34c52bd89d560eb86e9e032e5f01d32806b065e5d46",
+          "sha256_after": "2f3b3feccda5bb305767b34c52bd89d560eb86e9e032e5f01d32806b065e5d46",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/.decision-log.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/.decision-log.md",
+          "sha256_before": "0471aed4661bf96067c449b4d659b7e22044000dc81e0a3664fe914e9630192f",
+          "sha256_after": "06748371e896616ff5d0ddc5bd4e2a431a7be3e203d4da8acef7ab4c92033a3d",
+          "updated_links": 25
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/.memlog.md",
+          "sha256_before": "168458dc02a7f1dc8da42443f4e0c71cbda9441e5360848dff56b1a1964a0fea",
+          "sha256_after": "168458dc02a7f1dc8da42443f4e0c71cbda9441e5360848dff56b1a1964a0fea",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/addendum.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/addendum.md",
+          "sha256_before": "9bdf8d389093d6e3bd73829b33542c65676b961a10066b4eb9c92687e135d61d",
+          "sha256_after": "86ab6ee2526fe2cc7e99c95fbf39a9c269276af9f5e38cae2e1f54d505055e24",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/lineage-reconciliation-2026-07-12.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/lineage-reconciliation-2026-07-12.md",
+          "sha256_before": "9840bf52c45facda390f756f431e476143e237408b00df38be02a9b07b8fcb22",
+          "sha256_after": "986094fa37fd7433297989f2b31ac7e092d944b8ed34ca945b59f7aa8a490662",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/prd.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/prd.md",
+          "sha256_before": "6817ec4a309c2e89297292f96731b7e1f07ea742df94eab57f650b1c6379d2c5",
+          "sha256_after": "39ea61a221f02c6f3dea0d63a12b1d331205494c7ecf387c53e8f1e1c865931f",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/reconcile-approved-auth-and-layout-change.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/reconcile-approved-auth-and-layout-change.md",
+          "sha256_before": "77e9aabe9c11702226ad3cb188df88e030223307262c312556fa9881ac35717c",
+          "sha256_after": "22dbc09a369f5803bfe2605c5648aa2e7717da6159bb2393749c0e28e28d4449",
+          "updated_links": 30
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/reconcile-deep-dive-tracker.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/reconcile-deep-dive-tracker.md",
+          "sha256_before": "5e49d69c6a5e73830e9bfff95dfc39714c03719f31aac9f2b54c92973663b0b3",
+          "sha256_after": "52b959182518cfead3119212fbfb6a149300bfb30b78de60f3212dbfb7473594",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/reconcile-spec-and-harness-docs.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/reconcile-spec-and-harness-docs.md",
+          "sha256_before": "7366df9c987895621c802923e0033c386cecdf9cde9dd091ffd08840d65028bb",
+          "sha256_after": "7366df9c987895621c802923e0033c386cecdf9cde9dd091ffd08840d65028bb",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-04/review-rubric.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-gigo-agent-v1-2026-07-04/review-rubric.md",
+          "sha256_before": "be6121a7981f7dda243e7e6ed2246ce892afcedac0025274cfadf1e9f86c4f1d",
+          "sha256_after": "be6121a7981f7dda243e7e6ed2246ce892afcedac0025274cfadf1e9f86c4f1d",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/.memlog.md",
+          "sha256_before": "e36bb8ebf457bf2772b0ac75cc50e95fcce7a320aa82fbd53f6e4b97f15d3068",
+          "sha256_after": "95c513ed6845e49631f2afcfbabfd821a2ec765b4999e92ae2acf240c76b1bfa",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/prd.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/prd.md",
+          "sha256_before": "778c6669e472f7b2447f64015b77addcac0036fc43e6093240bf1872a6424a23",
+          "sha256_after": "778c6669e472f7b2447f64015b77addcac0036fc43e6093240bf1872a6424a23",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/reconcile-memlog.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/reconcile-memlog.md",
+          "sha256_before": "3870dd80e19b9fb2ece2ff2ae30ce13a26ed63f3de7764f3016c6a79f8070d40",
+          "sha256_after": "3870dd80e19b9fb2ece2ff2ae30ce13a26ed63f3de7764f3016c6a79f8070d40",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/reconcile-roadmap-override.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/reconcile-roadmap-override.md",
+          "sha256_before": "5176a3182de0dd3b27ed69693b5d23533874e3784caab8d4d5e57572cd7406ba",
+          "sha256_after": "0036c107b7bc157a409d35005265f302d6f29f791a27d060ff167783b6974a0a",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/reconcile-roadmap-status.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/reconcile-roadmap-status.md",
+          "sha256_before": "368b3b35ec4244705f53f8f333e6801c82e18187c6292028dab47d5b5fd3c88f",
+          "sha256_after": "764fc3c355320df20f2de27482b029428f85e8ad64649ad1188f2a53937bf9e9",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/review-edge-cases.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/review-edge-cases.md",
+          "sha256_before": "f4d57eafceac39c1ee4043d6d6cf25df688cad510d47b195c7d73ac7a882dbab",
+          "sha256_after": "f4d57eafceac39c1ee4043d6d6cf25df688cad510d47b195c7d73ac7a882dbab",
+          "updated_links": 28
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/review-rubric.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/review-rubric.md",
+          "sha256_before": "2e68e015cf41a3b575f948d674ce0f10f288b62e9fd66a8a8a6b1f7432e3e5ad",
+          "sha256_after": "2e68e015cf41a3b575f948d674ce0f10f288b62e9fd66a8a8a6b1f7432e3e5ad",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/review-scope-creep.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/review-scope-creep.md",
+          "sha256_before": "307999b1bd5b4f99a0f99e152c072e4ffd1e6188afc596b3fa6d89d46f04fe64",
+          "sha256_after": "307999b1bd5b4f99a0f99e152c072e4ffd1e6188afc596b3fa6d89d46f04fe64",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/review-supply-chain.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/review-supply-chain.md",
+          "sha256_before": "bb23a2800caabeaca2c41538638c5b61e86767d6c899f66327430a4e0c12ddad",
+          "sha256_after": "bb23a2800caabeaca2c41538638c5b61e86767d6c899f66327430a4e0c12ddad",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-19/review-update-disablement.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-00-local-gigo-build-2026-07-19/review-update-disablement.md",
+          "sha256_before": "edac62bd8fe3cc89bb20156d8e9f40bae605987da0acf9a6f03ab1f188b95742",
+          "sha256_after": "edac62bd8fe3cc89bb20156d8e9f40bae605987da0acf9a6f03ab1f188b95742",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-02-harness-plurality-2026-07-22/.memlog.md",
+          "sha256_before": "8e876fa9cd735813d56761c7c5307cf30e23b73de0c7f4c8b62314d3abd45bc2",
+          "sha256_after": "8e876fa9cd735813d56761c7c5307cf30e23b73de0c7f4c8b62314d3abd45bc2",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22/addendum.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-02-harness-plurality-2026-07-22/addendum.md",
+          "sha256_before": "2e8e26e48ee9b9e14dc96c71a84ec5995790e89586305cd9ad6bcfa3794c8ff6",
+          "sha256_after": "f63d4b9a2e1ccc3086770d5624a3c2a717618fc9fc64d6dbbd6d470e4780a75a",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22/prd.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-rm-02-harness-plurality-2026-07-22/prd.md",
+          "sha256_before": "b555d0f163b88a4757872376e95f92e0fb12f6ae7583c61efd83ba3709f8293b",
+          "sha256_after": "9f922f6b63c798bd8acab591f297f19e99e5ef05139ebd75da3fd8db3c28658e",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/addendum.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/addendum.md",
+          "sha256_before": "08e475c4a5c8929bc8f3dc3050ee18136f2f21e33294bed3bc0a11f2a74da6aa",
+          "sha256_after": "1124c7b66bf3ac697c35cdba11ba3f0b84f7046e33587cc162bf2b0ddcc83c31",
+          "updated_links": 15
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/prd.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/prd.md",
+          "sha256_before": "9fb2f10ef98f17c6e4682f72d420268b11e96ebb5ee8201bed0ceea7e152cb1c",
+          "sha256_after": "b4bedf178622f85c43336d6a757b5513184c49ccecb30595ec0e7e149e9d24fb",
+          "updated_links": 17
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/reconcile-implementation-readiness-2026-08-08.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/reconcile-implementation-readiness-2026-08-08.md",
+          "sha256_before": "d621540737892ff7597c3f136c48714b1c8040bbac70baab428fd37061776825",
+          "sha256_after": "ca16f6c7fd1a788f57dc57fc9e68eb37b0fed04268f72d5ee70adeab050f00f1",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/reconcile-roadmap-override.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/reconcile-roadmap-override.md",
+          "sha256_before": "64bd9d5fd0499fa87db9886eeab2032c17ef870a3b02a90a6e544faaf80132d5",
+          "sha256_after": "2e92b6027d3482dc832a6f0ca6a9557b6742ba1ad03a63e105785a957cfd37af",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/reconcile-sprint-change-proposal-2026-08-08.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/reconcile-sprint-change-proposal-2026-08-08.md",
+          "sha256_before": "03f0598012cdaaa733d7cd835275e523adeaafa254bb3c333f54dc58364d52c4",
+          "sha256_after": "8464ec10f919d0995e8a28d7e6a8245150bdfc1499a1af7c9d7b29716aa72b18",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/review-scp-fidelity-focused-2026-08-08.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-07-22-rm-01/review-scp-fidelity-focused-2026-08-08.md",
+          "sha256_before": "787f3f4c11e7e848dcc558e3d204a6be19480f0360754301ebe52f2a39c6a576",
+          "sha256_after": "7bf16c8b9bfcb848eaeb39a3a5d30dacd4dea12db6626c78a6e3fe16c3220dcc",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/prd.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/prd.md",
+          "sha256_before": "666fe9fc18a3ac071e3126b7ee5d14a75f62dbab2647c4014fe2148470ece59c",
+          "sha256_after": "d5957f6d648c8f00b4fa6a53997d722a3c6d2838520ea71cd8c271326a6db005",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-prd-2026-07-04.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-prd-2026-07-04.md",
+          "sha256_before": "fa1aab8ef523865107deea96504edff43690ea83958caf527ece5fcf43a02092",
+          "sha256_after": "cb51f83fd535e0cd06fc2b229eee1d95907f63f578b0d9c21220443f86b504aa",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-prd-2026-07-22.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-prd-2026-07-22.md",
+          "sha256_before": "7f866ed1250150e7a0c238d189cb885599a875b82004f186ab3bbb5277b59751",
+          "sha256_after": "25688da91268233b9edb4c316b9f5df863cc6e33ccc4d32a3b3fee6d25dcdab0",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-roadmap.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-roadmap.md",
+          "sha256_before": "d0383a3f94b12dbe77d65fb92518036b32e12b5175e36307df39653dbdefa77d",
+          "sha256_after": "f29c24f0bbccd20acfbfce3711679d0010092030828550cc61b856adb955df2f",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-ux.md",
+          "after": "_bmad-output/planning-artifacts/prds/prd-agentic-os-plan-2026-08-24-rm-02/reconcile-ux.md",
+          "sha256_before": "4ac395932970018eac239ab058bf9e0d1a8b9e6d02c72dbf745a07b2dbe6893c",
+          "sha256_after": "3eca999e7c6ac092292ade635b0b5940353ab46e384045caca12e8953869480a",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/claude-code-advisor-source-scout-2026-07-03.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-v1/claude-code-advisor-source-scout-2026-07-03.md",
+          "sha256_before": "897b1583d2a26dbe9641753c64bfcf327b160c8109487f1fdfbce5f82ff275da",
+          "sha256_after": "897b1583d2a26dbe9641753c64bfcf327b160c8109487f1fdfbce5f82ff275da",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/day-1-vibe-coding-distillation-for-gigo-agent-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/day-1-vibe-coding-distillation-for-gigo-agent-2026-06-30.md",
+          "sha256_before": "229198a62c2143d4f50a02aad50cfaac64b5c25fa02913642bbfa62eb280b75f",
+          "sha256_after": "229198a62c2143d4f50a02aad50cfaac64b5c25fa02913642bbfa62eb280b75f",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-agent-loop-and-harness-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-agent-loop-and-harness-2026-06-30.md",
+          "sha256_before": "7206d1270b42a26beda6ad1f0242383082f9f2a7390a751fc85050b1d826bee4",
+          "sha256_after": "86a9b55ea296660c4739ad3c2ab91daa061930783326e30688ad6f9bc8547f5e",
+          "updated_links": 112
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-agent-team-orchestration-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-agent-team-orchestration-2026-06-30.md",
+          "sha256_before": "fb1ace973f79e507fdf3753edd95f063f41fdcbb510f1eea0a49d89b0f4851d9",
+          "sha256_after": "3ee7c90fe79882ef89af16c2f8fc2cf281daaac8126b77f14acfb06f5d777465",
+          "updated_links": 29
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-command-and-prompt-runtime-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-command-and-prompt-runtime-2026-06-30.md",
+          "sha256_before": "318c6fe72d9f33e0e43e7233da8db632a18afb3ef69689dffe3fd0b3c308f2ec",
+          "sha256_after": "256c7d09f6f49b06c5f007c50f4e7d36002a83cc82ab3db18326f3561dc1180f",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-context-and-memory-runtime-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-context-and-memory-runtime-2026-06-30.md",
+          "sha256_before": "b1ccd747d5ecca2393a8b015d031dd176fe046c6ed3f6256227b7159f8903210",
+          "sha256_after": "e50cbfa9f288a062aff291bed0445973150b89440ef1942b5b4e4ddac053bb8b",
+          "updated_links": 34
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-desktop-event-boundary-and-ux-runtime-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-desktop-event-boundary-and-ux-runtime-2026-06-30.md",
+          "sha256_before": "c771a2712e304939abaacfabb9a4d8d3d51dedbd3dc2d2e61514c095f1ad34b4",
+          "sha256_after": "205cd5d85dfd1edb31319234d688e51b4616ca57e7b7133e3f809ea22bf7c4e5",
+          "updated_links": 83
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-eval-and-observability-harness-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-eval-and-observability-harness-2026-06-30.md",
+          "sha256_before": "60a599456348c5ca8a1ba31bbbbc969250ab23a9520d3c0f4df2f9f622e47f37",
+          "sha256_after": "f2a42259fb1c13f2443541ac809afc5171bdf5fe7983435ad32c010a71f94217",
+          "updated_links": 54
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-model-runtime-and-routing-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-model-runtime-and-routing-2026-06-30.md",
+          "sha256_before": "38f652d5dee40192290acb035994373785fd560ec5f719828d952558964f31e6",
+          "sha256_after": "de426a4e05dfd863dc7307622acf94dc405df93af08ec6f316f3b8e3e0110045",
+          "updated_links": 46
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-permission-policy-and-sandbox-runtime-2026-07-01.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-permission-policy-and-sandbox-runtime-2026-07-01.md",
+          "sha256_before": "fbda39da1163ac892fa89c8d8bbaa10d6a6b133a7aa3f167fd3c0812147e360b",
+          "sha256_after": "12947d5812d661f82eb0760d2faec0b8b8d1159a20c4d1eef2baaf0d9718e862",
+          "updated_links": 96
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-skills-runtime-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-skills-runtime-2026-06-30.md",
+          "sha256_before": "684a2bfb5664ec70062a18bd7cb2ca8d378bce3b12bfee39eadbe99ce9839280",
+          "sha256_after": "48e3eaf1bf1dbccacd69f555c4967b281bbae32a205190ba7aca58d8b579ed1d",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-sub-agent-runtime-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-sub-agent-runtime-2026-06-30.md",
+          "sha256_before": "c9297f73c508c175d7173e68384921ef30869fb1f0883ea77634aac682b07397",
+          "sha256_after": "fbefe549a70561fba863ef922fa69b71bc083db71fcce2f4bec06091b008f80f",
+          "updated_links": 102
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/deep-dive-tool-runtime-and-mcp-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/deep-dive-tool-runtime-and-mcp-2026-06-30.md",
+          "sha256_before": "2a0614525b31377bfd4f64778cca3f04259c518db367d2050fa16ff31ba1afd0",
+          "sha256_after": "2385421f83ff92718b53e5e5e6e699b388bc62a2a665b17fcdf640eb4a7fced5",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/gigo-meta-harness-reference-distillation-2026-07-19.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-meta-harness/gigo-meta-harness-reference-distillation-2026-07-19.md",
+          "sha256_before": "e6a92949d937ed5515111416c7e45994cf7b0f9994060364e39416129b252749",
+          "sha256_after": "e6a92949d937ed5515111416c7e45994cf7b0f9994060364e39416129b252749",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/last30days-agentic-os-problems-2026-07-03.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-v1/last30days-agentic-os-problems-2026-07-03.md",
+          "sha256_before": "a8b90595c4fbf62adfe5d5a63862abed763ff987495ac917c9d265d963aa3db2",
+          "sha256_after": "a8b90595c4fbf62adfe5d5a63862abed763ff987495ac917c9d265d963aa3db2",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/source-grounded-claim-check-harness-best-practices-2026-07-03.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-v1/source-grounded-claim-check-harness-best-practices-2026-07-03.md",
+          "sha256_before": "14071eb947d886387fadefcc198012e4f5dce74bb48e1bd82725dbf123474c72",
+          "sha256_after": "14071eb947d886387fadefcc198012e4f5dce74bb48e1bd82725dbf123474c72",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-claude-code-handling-of-epic-3-safety-gaps-research-2026-07-11.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-v1/technical-claude-code-handling-of-epic-3-safety-gaps-research-2026-07-11.md",
+          "sha256_before": "02784ffc8ebe01f4925eb467f4f69f8eb378e17f13357d551d1a00b3e04c0fe3",
+          "sha256_after": "02784ffc8ebe01f4925eb467f4f69f8eb378e17f13357d551d1a00b3e04c0fe3",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-codex-relay-remote-architecture-research-2026-07-18.md",
+          "after": "_bmad-output/planning-artifacts/research/codex-relay-remote/technical-codex-relay-remote-architecture-research-2026-07-18.md",
+          "sha256_before": "4d0616ddb598fc3508796bf238e5bbfc6e320e8b7899b622406175385b5f640c",
+          "sha256_after": "4d0616ddb598fc3508796bf238e5bbfc6e320e8b7899b622406175385b5f640c",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-gigo-agent-core-runtime-research-2026-06-29.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/technical-gigo-agent-core-runtime-research-2026-06-29.md",
+          "sha256_before": "69c04d226a89c73925a073f0f6bc4848eff8bcea40cc72a93cfb3cb803f326f8",
+          "sha256_after": "69c04d226a89c73925a073f0f6bc4848eff8bcea40cc72a93cfb3cb803f326f8",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-gigo-agent-loop-and-harness-research-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/technical-gigo-agent-loop-and-harness-research-2026-06-30.md",
+          "sha256_before": "3ed21882522e1c1e7c7ad08038c10e62c80aeef7a5ba833cb65331f49ab8cb5b",
+          "sha256_after": "3ed21882522e1c1e7c7ad08038c10e62c80aeef7a5ba833cb65331f49ab8cb5b",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-hermes-agent-provider-auth-flows-research-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-provider-auth/technical-hermes-agent-provider-auth-flows-research-2026-07-06.md",
+          "sha256_before": "2bbfd846f012261a542a18a662d3f91876630ab782bba56bfdfaf46b62ce9b66",
+          "sha256_after": "2bbfd846f012261a542a18a662d3f91876630ab782bba56bfdfaf46b62ce9b66",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-openviking-distillation-for-gigo-agent-research-2026-06-30.md",
+          "after": "_bmad-output/planning-artifacts/research/gigo-agent-runtime-distillation/technical-openviking-distillation-for-gigo-agent-research-2026-06-30.md",
+          "sha256_before": "0eeefc5a1bbdd5b3f773f2586f32f7a471b1e48a7dd0ffa3b58d27a7e3d1b880",
+          "sha256_after": "0eeefc5a1bbdd5b3f773f2586f32f7a471b1e48a7dd0ffa3b58d27a7e3d1b880",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-rm-00-full-control-grok-build-research-2026-07-19.md",
+          "after": "_bmad-output/planning-artifacts/research/rm-00-local-gigo-build/technical-rm-00-full-control-grok-build-research-2026-07-19.md",
+          "sha256_before": "9831849d52e67efa15b73acf4601e12295d2cdee9f994d53fa47fb86057f2509",
+          "sha256_after": "9831849d52e67efa15b73acf4601e12295d2cdee9f994d53fa47fb86057f2509",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/research/technical-windows-test-environment-for-harness-service-on-macos-research-2026-08-16.md",
+          "after": "_bmad-output/planning-artifacts/research/harness-service-windows-testing/technical-windows-test-environment-for-harness-service-on-macos-research-2026-08-16.md",
+          "sha256_before": "97fe1b07dae571986284ba826b2548965955e777fc3a3922d8b10f1c1d37c15b",
+          "sha256_after": "65d180734941d553b86e1ccc3562b075434848bee9f927f9e53d8ce19c6c2079",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/slice-01-brownfield-baseline-plan.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-00-local-gigo-build/slice-01-brownfield-baseline-plan.md",
+          "sha256_before": "57dc256bd1c40ae37cdf19e82e2cf448066d4ae005978888e78dcb00c388603e",
+          "sha256_after": "249e10c6bf0ae5085c1837818f69f814cf0ff5b7ca5f94899cb8b1df55754987",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-08.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-08.md",
+          "sha256_before": "7bd53d4bb5fdea04e5f5847b2ed294f928b4066068878dfe8f47a1f7567efefa",
+          "sha256_after": "7bd53d4bb5fdea04e5f5847b2ed294f928b4066068878dfe8f47a1f7567efefa",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-11-epic-3.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-11-epic-3.md",
+          "sha256_before": "d137e002ee81fd2e5df59b915aeb6e8d17b4a141616d54b3f1009280250cb4dd",
+          "sha256_after": "d137e002ee81fd2e5df59b915aeb6e8d17b4a141616d54b3f1009280250cb4dd",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-11.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-11.md",
+          "sha256_before": "8bef34d117543a9d80356ec8fa274f7e5864a8be7bac9e6eacfe5bfddd47d398",
+          "sha256_after": "50b3fa890ba6ab03cb97d3232a575d2b2640ea64bbc605dd8b04481231a864de",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-12-auth-and-story-decomposition.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-12-auth-and-story-decomposition.md",
+          "sha256_before": "4af191a43a41ec35d97420248b7fa1c99eb888b62884c0dba562f98ace06572b",
+          "sha256_after": "4af191a43a41ec35d97420248b7fa1c99eb888b62884c0dba562f98ace06572b",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-12-epic-1-brownfield-correction.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-12-epic-1-brownfield-correction.md",
+          "sha256_before": "74ec6beec1256483b9367374807cb1f4ef81dbff36036a094d9dcac72d49d6d1",
+          "sha256_after": "fde96776eef58352cb394d1af0dc80a1513c935325c3ece47a145af238dce6ea",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-12-prd-lineage-reconciliation.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-12-prd-lineage-reconciliation.md",
+          "sha256_before": "dd9341c0e73286ca772ffb46434431e35615e2fd5a67138a821b7187d3c2aa1d",
+          "sha256_after": "dd9341c0e73286ca772ffb46434431e35615e2fd5a67138a821b7187d3c2aa1d",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-12-readiness-vertical-slice-correction.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-12-readiness-vertical-slice-correction.md",
+          "sha256_before": "1bd3afc2af72061abfe86ccb5f255d1c2b2dcfde1b3a808e57c531a5d4bb815e",
+          "sha256_after": "1bd3afc2af72061abfe86ccb5f255d1c2b2dcfde1b3a808e57c531a5d4bb815e",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-12.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-12.md",
+          "sha256_before": "a90a24bcce1f026c705e858de7476650ae19317bac23ef5073d49e60a8498ef0",
+          "sha256_after": "a90a24bcce1f026c705e858de7476650ae19317bac23ef5073d49e60a8498ef0",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-13-council-verified-mechanical-repairs.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/sprint-change-proposal-2026-07-13-council-verified-mechanical-repairs.md",
+          "sha256_before": "80c9a2cd66bcc8eeb3c17bbd5b0d97cf5e0805832b9cb587e282ffcb5b3c6fc0",
+          "sha256_after": "ce95addca0748a30aed2ed366831a8c81c62aa76c0857dbfaf949d268bd13e94",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-18-grok-build-brownfield-replan.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-meta-harness/sprint-change-proposal-2026-07-18-grok-build-brownfield-replan.md",
+          "sha256_before": "a2094ad8f4d87b8fee34208941c510c3d409f9b9f4f492e67c7f42acfd7d5542",
+          "sha256_after": "785137d0bc4f2485b94f40b109cea4443689b28bd0c7c174532a1ec379ccae1c",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-19-meta-harness-rebaseline.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-meta-harness/sprint-change-proposal-2026-07-19-meta-harness-rebaseline.md",
+          "sha256_before": "c5591e9a6b52b914c7c5d2b3d5aad2625447ba0d825fe7b4050c268e143d3ba6",
+          "sha256_after": "90616155bc19b94faa659fdf9e30cafa6416e9eabdfc1899c9f0ba8049eefb5a",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-20-mvp-local-build.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-00-local-gigo-build/sprint-change-proposal-2026-07-20-mvp-local-build.md",
+          "sha256_before": "1ece185e26741571ce935d7d23662dc8da00ebd52410292247ec8558c7982d8d",
+          "sha256_after": "8a9b626d6d26ab3d2ce92894bb87fd97e9731f5f18975acec4c7020849e8e06d",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-20.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-00-local-gigo-build/sprint-change-proposal-2026-07-20.md",
+          "sha256_before": "da75e1760863f398250a15af3e5a0539f91ed8541df2858f473f2e263187933d",
+          "sha256_after": "e8440bf9a24309c87b7c80f96c418f2c285b140259d15f8ab207e68ba33f3348",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-23-rm-01-conversation-sqlite-persistence.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-23-rm-01-conversation-sqlite-persistence.md",
+          "sha256_before": "493e3811758d387b5fb970d509ef5a4b929b702ad4398a3c70a1b5d57cb4e41b",
+          "sha256_after": "b5f9772d6f7309d50cf9c02d74ec07214e18350d259338e9cc91cd792991ee0b",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-23-rm-01-full-flow-visual-alignment.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-23-rm-01-full-flow-visual-alignment.md",
+          "sha256_before": "8b1a2ab6b8371608df964dd5f8642c4769fef31ba15a3a7089345866cd95cbbf",
+          "sha256_after": "33e15114c411bc107628193c04c6082b6a4e4e0d5ecddf2ac3196be1c6031b0b",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-23-rm-01-omnigent-executor-correction.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-23-rm-01-omnigent-executor-correction.md",
+          "sha256_before": "d4e2c7a6a49c6913c2c0b8779b0e4e7555b171193fc3e81bed2ea90439395cee",
+          "sha256_after": "43c284cf14593c71282decc838ec3f9cc8c51e4068652b148f55af77c11094b3",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-23.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-23.md",
+          "sha256_before": "775c27d54d6ecb9a688b245f640c57a18ecefe7985f9ce141519df16a4731a73",
+          "sha256_after": "d9c6e6e5d60950ea9b0ffffe0658d8fd690f81bd43d8d9eecf29db0ca18c944a",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-readiness-blockers.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-readiness-blockers.md",
+          "sha256_before": "527c0fa42d27de438cd2c125194c514cb3053f6469c807a7b2336a0955264a24",
+          "sha256_after": "3d00a7a486557ef39e6b26dc5c554765309b9f6f8c8a6c58d97a172ad2f43754",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-io-ports-adapters.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-io-ports-adapters.md",
+          "sha256_before": "7005aad80182d1e30de6c8ee9f5f7a3b8a170069e6c87fa0a8edc288aeb5a2c0",
+          "sha256_after": "14a02c74634874c71ebe4cccace433a4a4e900d06be580858662baf8067cc500",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-native-fifo-parity.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-native-fifo-parity.md",
+          "sha256_before": "9be794a10aa4ea0b65e5f85096ec23f1f6f4da6d42016396e59f1c7040a251a8",
+          "sha256_after": "9be794a10aa4ea0b65e5f85096ec23f1f6f4da6d42016396e59f1c7040a251a8",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-physical-package-and-source-ownership.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-physical-package-and-source-ownership.md",
+          "sha256_before": "32c326a6f7d3d68b6c4d5693b6f08d82d32e05b5b817026a4b42fee0daefbcdf",
+          "sha256_after": "32c326a6f7d3d68b6c4d5693b6f08d82d32e05b5b817026a4b42fee0daefbcdf",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-readiness-recheck-v2.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-readiness-recheck-v2.md",
+          "sha256_before": "b84868af2a8db97264c248eea2f984efe734ea44604fc4e3a42582a40f02c3af",
+          "sha256_after": "478543649cd2a67e93cb45df2e0c480a233bb98ab1263e7b5f98a084470eb48e",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-readiness-recheck-v4-corrections.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-readiness-recheck-v4-corrections.md",
+          "sha256_before": "2e0e0fa1d3af12c2568073d05f139ed896d817a1e5b770eac3a779a1509cac23",
+          "sha256_after": "2e0e0fa1d3af12c2568073d05f139ed896d817a1e5b770eac3a779a1509cac23",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-source-layout-and-file-ownership.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-source-layout-and-file-ownership.md",
+          "sha256_before": "671cf9411063b51b0e61cb02960f31f61bff3fae0f8d7cb8146388a93e5b8fe6",
+          "sha256_after": "1d2ad9486ba3f6e52b242a2157583b5926172e3e4d989a112920eb84aeae90dc",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24-rm-01-worker-process-lifecycle.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24-rm-01-worker-process-lifecycle.md",
+          "sha256_before": "133eb31b81c29cca88be2c8544e01bca6f89b4ce95baf1b1a151472760d9799c",
+          "sha256_after": "c659b401e23002d15716960bd67a760e3718e64851cbc1f897b91f0bbbe376a3",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-24.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-24.md",
+          "sha256_before": "ea537a5cc79e2ea4a8abb5a60a32c8063b5ac6a6089d3d75934489331cfb8d5a",
+          "sha256_after": "b2f46514c7bf349d9e471709fc5110d952bc1bacae8839eed9c7a63a28c0b5cf",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-27-rm-01-epic-2-7-vertical-reslice.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-27-rm-01-epic-2-7-vertical-reslice.md",
+          "sha256_before": "ac21b5eba4599a1be61dfc84d12c5aae86fe8076700bbd05c9f9eb73d7deae0b",
+          "sha256_after": "4974fac544daf30c25a1787d5d5a5ff57c139fb373762dff04bfb3d4b7500e66",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-28-rm-01-epic-2-omnigent-vetted-gaps.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-28-rm-01-epic-2-omnigent-vetted-gaps.md",
+          "sha256_before": "450cfe113dc9d5b550f9c43532737356c8ca8c2b5906231f06f9190478f37d20",
+          "sha256_after": "f3d99a6742d902b2df2dd33f1c822ed57779059e0f0791efaef1df000d0627ae",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-29-rm-01-epic-4-recovery-hardening.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-29-rm-01-epic-4-recovery-hardening.md",
+          "sha256_before": "c88147f56db29f82977faeeb457d4d53619352e2ea487807325fc0a7795019cf",
+          "sha256_after": "044b633810dcbdb91bd5d02947a3f5a46588309b8b37622530a1178a9243c738",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-29-rm-01-epic-5-distill-to-omnigent-state-stored.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-29-rm-01-epic-5-distill-to-omnigent-state-stored.md",
+          "sha256_before": "6c98bb63aa4a6db0e9c4923f98712dacaad0d2819ff5dd4d8a47aed6b1ce0a93",
+          "sha256_after": "c7f631274eedcc9d7287ae5d7a83d4e36122cd209945530232575ec682de330e",
+          "updated_links": 12
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-29-rm-01-internal-grpc-transport.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-29-rm-01-internal-grpc-transport.md",
+          "sha256_before": "43b027f411174f901edbd6120ef26be7950e2997e06529548df9978938e6e849",
+          "sha256_after": "fe061c1df1bb1424d80a721c461a37e4de5679ff6310b31594d318d7dba1bb37",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-30-rm-01-shared-native-acp-client-lifecycle.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-30-rm-01-shared-native-acp-client-lifecycle.md",
+          "sha256_before": "de5349b315cbc592c463208ecf2e7b7c8e281738856d69badd9467bdf6519ccb",
+          "sha256_after": "4b2fee1f88028f8673ad5c4efea6fa172e898c9e67b452d6e17d60a570aefe01",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-30.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-30.md",
+          "sha256_before": "9eac082c9751ff7a13dc1f565ba075c66b71c97405118368f3099ce9c7cff20c",
+          "sha256_after": "63eb3ab12601af8b3dcbfd9da760cc0966d07eac5df8335eafcc871570e595d8",
+          "updated_links": 11
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-31-rm-01-sequential-readiness-corrections.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-31-rm-01-sequential-readiness-corrections.md",
+          "sha256_before": "e4420a924fdb4941a6bce8d858a93abb51472d6f2c1821f2731f7d2c407650de",
+          "sha256_after": "f68e7209a272792caf4d3d0ee17732885d005615c17221b94c065d1d494ddb4a",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-07-31-rm-01-story-2-1-ac-trace-reconciliation.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-07-31-rm-01-story-2-1-ac-trace-reconciliation.md",
+          "sha256_before": "2d919b7cc1511d8ea132841b64792fede7b1b80f3a9929eae550c17176939d96",
+          "sha256_after": "5aa85d36dc467ebab1bb019fc816badf87b1c72f2dd4a26d3eb58fadc3cbcc98",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-08.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-08-08.md",
+          "sha256_before": "069b2901dfaeffb08ca5c0bef32276b8c98802a89ce3aaf861ed4ba4a94fec26",
+          "sha256_after": "bd96722a5e399e47e2a8e676256bc6695342c5f45997eb1842f0cca36bbea6e0",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-09.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/sprint-change-proposal-2026-08-09.md",
+          "sha256_before": "60170ff4c28012249f0c9186eef2e803f5ea75dc1274aff9e75bf8e2a8e268d4",
+          "sha256_after": "4335caa2f9700679bcc334d2a50898e82c36ac3c5051f7458b84abdce587e0af",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-24-rm-02-defer-recap.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/sprint-change-proposal-2026-08-24-rm-02-defer-recap.md",
+          "sha256_before": "218ad4d0453dc3696a58c25fb786c7365117f76dbba2af52aa181a7c22732f60",
+          "sha256_after": "5dd981ff903b72fc007676d9fc8b11f399b929b99ef58cd70682535feee56b1f",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-24.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/sprint-change-proposal-2026-08-24.md",
+          "sha256_before": "ef2f114fe7f66fae857b3d1e35d6d4a0df3d1bc4e8a84b4973cf251d855df0b4",
+          "sha256_after": "24aa000275d605dbe5d765ed49593f2204b91d8e02bcdf8982fda53e1ca5c4a5",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-25-desktop-granular-11-phase-restructure.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-desktop-parity/sprint-change-proposal-2026-08-25-desktop-granular-11-phase-restructure.md",
+          "sha256_before": "a591d20cba9094a1d1c0e3a6ce3eaf58867286c8e510d852a7d6dacaccb2af73",
+          "sha256_after": "3fdc7e4752974efd225424cf610991c64201da5b9496acfc40db47c8c2f6e43e",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-25-desktop-parity-parallel-track-restructure.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-desktop-parity/sprint-change-proposal-2026-08-25-desktop-parity-parallel-track-restructure.md",
+          "sha256_before": "3e7e6922e6a70e10e8c6776c6f1c9557db77f46dd159062feba8dcb6946206d9",
+          "sha256_after": "7c4dbd6cdfafcc00302738b9e8b91faf839db5199ee76ddc86b3710e2bfdf371",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-25-desktop-roadmap-pure-aionui-scope.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-desktop-parity/sprint-change-proposal-2026-08-25-desktop-roadmap-pure-aionui-scope.md",
+          "sha256_before": "4476dc766db263e9aed36e3dc33f7bde63f9ed81fcb839b25747f81f6a3d9b23",
+          "sha256_after": "28b86f84da4641cc3f4fa3f81295d86724e50d4dda690303053075c635d16071",
+          "updated_links": 7
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-25.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/sprint-change-proposal-2026-08-25.md",
+          "sha256_before": "6162a0df94a67e4153827414ce3f2e13b9b97b495b1621e2b67aed2f2608368c",
+          "sha256_after": "38f450c6c93e4e6035580dae3629ab80b8ae3b7586d8972e3494cfc4d3f0d9eb",
+          "updated_links": 10
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-26-desktop-astryx-design-system.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-desktop-parity/sprint-change-proposal-2026-08-26-desktop-astryx-design-system.md",
+          "sha256_before": "edf690e084be2342118c5da67391721530f8436e184325ecab63d111b0c368e9",
+          "sha256_after": "583e908955a23e32094e37f484da38553b56421cbdc50335b44f1f6ec9311873",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-26-rm-02-defer-gigo-credentials.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/sprint-change-proposal-2026-08-26-rm-02-defer-gigo-credentials.md",
+          "sha256_before": "f4bedd43f897ba5eb624ca267ad18d647a0dd292e45d37359dcd2d1604fad3d3",
+          "sha256_after": "7c5801ac5ac51a34a65a560ace859ecc1ab4862410197bef716e336558dbf4c5",
+          "updated_links": 8
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-08-27-rm-02-claude-live-model-catalog.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/sprint-change-proposal-2026-08-27-rm-02-claude-live-model-catalog.md",
+          "sha256_before": "e5854baa3f76266c3501ba19f08bcf601fdaee72a618535334dd34cd7966c3e6",
+          "sha256_after": "dfb9481c4444f49926225543af470a27c9bbeee8a59839c2a31af2cd5d35fea2",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-05-desktop-design-lock-through-rm-10.md",
+          "after": "_bmad-output/planning-artifacts/roadmaps/gigo-desktop-parity/sprint-change-proposal-2026-09-05-desktop-design-lock-through-rm-10.md",
+          "sha256_before": "8f3f5b62f4a1b192f1ee91a7680eb8297f3094d10e6c4b8336cf28f20c88c139",
+          "sha256_after": "65510cad2512a2c78a8f2bae4ab39f5008d7ae6880b12746c652346ccd7b45c6",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-05-rm-04-readiness-corrections.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-04-desktop-foundation-2026-09-05/sprint-change-proposal-2026-09-05-rm-04-readiness-corrections.md",
+          "sha256_before": "833df5a86a7c57f7493792d9bd6423116d0308cf1efdb1763a795115e44e9587",
+          "sha256_after": "bccec2affb3d8f2dded84a1e60e8c8c3da492c6217fe1626fe7035ed44f209e9",
+          "updated_links": 32
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-07-remove-optional-harness-capability.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-02-plurality-headless-2026-08-25/sprint-change-proposal-2026-09-07-remove-optional-harness-capability.md",
+          "sha256_before": "d9bfd407155959b8e3376488ebe8d0dd4c52db5ba578463aa2d3c032aff5550b",
+          "sha256_after": "874dae9c86b17ce76f8aa098fec3ac30133dbba04548ce6f9377d4f0d330717d",
+          "updated_links": 10
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/story-decisions/2-1-nativeacpconnection-reuse/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/story-decisions/2-1-nativeacpconnection-reuse/.memlog.md",
+          "sha256_before": "99e6fd7caec257d92a148dcefe3731328cb9b56fd258839329b3d6fb790cb65f",
+          "sha256_after": "0d4f2caa6f5915d427d960693f4f9e640bda236c5baacc8aa5a3d00f70cf272a",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/story-decisions/2-1-nativeacpconnection-reuse/technical-decisions.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-rm-01-meta-harness-foundation/story-decisions/2-1-nativeacpconnection-reuse/technical-decisions.md",
+          "sha256_before": "ca31388cc09d387417c0806456fd2f989c250c1db0d818da8bc97b55f9d34063",
+          "sha256_after": "43bc1d79ce8d06318c8ffcb21610fc42bb709a47ba88a876a6c6d391f6018063",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/story-id-mapping-2026-07-12-vertical-slice.md",
+          "after": "_bmad-output/planning-artifacts/epics/epics-gigo-agent-v1/story-id-mapping-2026-07-12-vertical-slice.md",
+          "sha256_before": "16e405ed0974a1b66e4e1f1361b1ce2ac884bec60ec039a5ceded84a040bd659",
+          "sha256_after": "16e405ed0974a1b66e4e1f1361b1ce2ac884bec60ec039a5ceded84a040bd659",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.decision-log.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.decision-log.md",
+          "sha256_before": "14647861159fd5d5d323e488a0601c28cda721eb7ebe218fc83f32a8853fb7b3",
+          "sha256_after": "8729802e0c8b54bf77240e39805b8d023dfa63cf6f82d8b48e6590830fbc7b11",
+          "updated_links": 40
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.memlog.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.memlog.md",
+          "sha256_before": "394416adafdb44099b8573f4affd8e27853a675e7bb33f92bece89b697fb5693",
+          "sha256_after": "394416adafdb44099b8573f4affd8e27853a675e7bb33f92bece89b697fb5693",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-code-agent-task-checklist-source-extract-2026-07-08.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-code-agent-task-checklist-source-extract-2026-07-08.md",
+          "sha256_before": "37471735795336eaf6cc9b0b7db933dce34487a2dc13322d64fcf898b7ed573f",
+          "sha256_after": "37471735795336eaf6cc9b0b7db933dce34487a2dc13322d64fcf898b7ed573f",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-design-handoff-2026-07-04.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-design-handoff-2026-07-04.md",
+          "sha256_before": "a10810cc8cab54173be676267916258a4156a1a948ec124f0d1d97e3d078a55d",
+          "sha256_after": "a10810cc8cab54173be676267916258a4156a1a948ec124f0d1d97e3d078a55d",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-design-handoff-b7-learning-inbox-expanded-2026-07-05.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-design-handoff-b7-learning-inbox-expanded-2026-07-05.md",
+          "sha256_before": "63246803a4b39a4b702a8faaeefd4c8c550161011581555484b462ec795fb9b5",
+          "sha256_after": "63246803a4b39a4b702a8faaeefd4c8c550161011581555484b462ec795fb9b5",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-design-handoff-gap-fill-prompts-2026-07-05.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-design-handoff-gap-fill-prompts-2026-07-05.md",
+          "sha256_before": "90016c4f9b61b8fcddbbf439ffc0261a7882bac85f334bfc11d102d8ce7e6446",
+          "sha256_after": "90016c4f9b61b8fcddbbf439ffc0261a7882bac85f334bfc11d102d8ce7e6446",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-design-handoff-provider-auth-flows-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-design-handoff-provider-auth-flows-2026-07-06.md",
+          "sha256_before": "678bafc55bc743ff04851260d77ec55654cf84fbe653bed962ec014bb7a9a48b",
+          "sha256_after": "678bafc55bc743ff04851260d77ec55654cf84fbe653bed962ec014bb7a9a48b",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-design-handoff-provider-profile-readiness-gate-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-design-handoff-provider-profile-readiness-gate-2026-07-06.md",
+          "sha256_before": "e6946ee965ccfbd2bf0c6995c10378bff1e13d35dfa64d93a6cf7ec574103eb1",
+          "sha256_after": "e6946ee965ccfbd2bf0c6995c10378bff1e13d35dfa64d93a6cf7ec574103eb1",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/claude-design-handoff-settings-restructure-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/claude-design-handoff-settings-restructure-2026-07-06.md",
+          "sha256_before": "dc24b3fae9962228d602485bdf2444e2a3caa112e612707544af9b342f81f710",
+          "sha256_after": "dc24b3fae9962228d602485bdf2444e2a3caa112e612707544af9b342f81f710",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/gigo-design-extraction-2026-07-05.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/gigo-design-extraction-2026-07-05.md",
+          "sha256_before": "4b5b65d5b865f1567c272017fe82b542b29659efb3a66762e82ef74144a4bf84",
+          "sha256_after": "4b5b65d5b865f1567c272017fe82b542b29659efb3a66762e82ef74144a4bf84",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/gigo-design-extraction-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/gigo-design-extraction-2026-07-06.md",
+          "sha256_before": "b0a58ffd75de2e11dbc78f09e17b3f9bad6d17062af1150a45cd67b38650925d",
+          "sha256_after": "b0a58ffd75de2e11dbc78f09e17b3f9bad6d17062af1150a45cd67b38650925d",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/gigo-template-decoded-2026-07-05.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/gigo-template-decoded-2026-07-05.html",
+          "sha256_before": "29c38dbac5f7b37e92b49ed9945c11a2e6341e794f889ba2c104ab8690c81416",
+          "sha256_after": "29c38dbac5f7b37e92b49ed9945c11a2e6341e794f889ba2c104ab8690c81416",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/gigo-template-decoded-2026-07-06.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/gigo-template-decoded-2026-07-06.html",
+          "sha256_before": "8f986609eab06bdc9d7647c9659a57ea4973a3f36e1b914f604df5a2e67648d0",
+          "sha256_after": "8f986609eab06bdc9d7647c9659a57ea4973a3f36e1b914f604df5a2e67648d0",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/reconcile-agent-home-user-terminal-open-in-2026-07-07.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/reconcile-agent-home-user-terminal-open-in-2026-07-07.md",
+          "sha256_before": "8a08f64d130a54fff3c88cbd12ce73d83c0d8013eb87bc104adcd7ce42b5c6ad",
+          "sha256_after": "9c280ab4968e233f94c404bdcc641ccf8e2f2aeca1c660bcecab11bc6eaf4cab",
+          "updated_links": 4
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/reconcile-gigo-html-2026-07-05.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/reconcile-gigo-html-2026-07-05.md",
+          "sha256_before": "174116d8783f9a2d2ca448329287a042ed8de596656da12141faee2000d899e9",
+          "sha256_after": "174116d8783f9a2d2ca448329287a042ed8de596656da12141faee2000d899e9",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/reconcile-gigo-html-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/reconcile-gigo-html-2026-07-06.md",
+          "sha256_before": "36a1a9e2aae894c6ad467d6bfa7d0fe93e2cba8df96b40baf49ba6cef937df96",
+          "sha256_after": "36a1a9e2aae894c6ad467d6bfa7d0fe93e2cba8df96b40baf49ba6cef937df96",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/reconcile-updated-claude-design-provider-home-2026-07-06.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/reconcile-updated-claude-design-provider-home-2026-07-06.md",
+          "sha256_before": "8d711958a69af611b49d68a9685aadd4068e5e5aa7f231ae528e1f4ee0071637",
+          "sha256_after": "8d711958a69af611b49d68a9685aadd4068e5e5aa7f231ae528e1f4ee0071637",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/research-manus-ux-2026-07-04.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/research-manus-ux-2026-07-04.md",
+          "sha256_before": "b4a2bae8cc658a8dc6864600ccb82bd8b59ad97add407bef4141bb5200f3cc24",
+          "sha256_after": "b4a2bae8cc658a8dc6864600ccb82bd8b59ad97add407bef4141bb5200f3cc24",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/.working/source-extract-2026-07-04.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/.working/source-extract-2026-07-04.md",
+          "sha256_before": "cc4e2b349c68e968b5366a13a81756dad89e89ac792927a42c412007fe74d0a2",
+          "sha256_after": "d342ea25dd817282f59913f5bcae47183dc2f900e9e1bb990cd83c13f2351a1e",
+          "updated_links": 3
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/DESIGN.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/DESIGN.md",
+          "sha256_before": "9ff2e4d0889fc7c4df50877a1817fcad1b65a538bde7f20121566205845df8c0",
+          "sha256_after": "6530d90fd2ebd9cfb7513b43081ceeb355a6fe785e0e22b896fee57fd422eed4",
+          "updated_links": 9
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/EXPERIENCE.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/EXPERIENCE.md",
+          "sha256_before": "207b53f74c6f22d689bc2da7c86008ab0bfe8468eba1f86e91e9f8770fe75960",
+          "sha256_after": "a0194c616dc336f89fdc6534e92756f12b5cc36b2ace2c045a87de9db273ced2",
+          "updated_links": 20
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/imports/claude-design/GIGO Agent Home.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/imports/claude-design/GIGO Agent Home.html",
+          "sha256_before": "0122835c4df5ff790e7b4cd3bfa6313dc879be0ad39d6b463736e2b870a4f020",
+          "sha256_after": "99e1afa432e0628c90b9fbb1160a3106685555f8b27512487df9f64cb4b4356f",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/imports/claude-design/GIGO Provider Setup.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/imports/claude-design/GIGO Provider Setup.html",
+          "sha256_before": "2f6718a8e14e04ae34dc362028d9e69844b2a43a59ec01326ec316e2a64792f0",
+          "sha256_after": "2f6718a8e14e04ae34dc362028d9e69844b2a43a59ec01326ec316e2a64792f0",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/imports/claude-design/GIGO State Sheet.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/imports/claude-design/GIGO State Sheet.html",
+          "sha256_before": "a370549fa4ab53eb16a79b6678a1a3ecd3dcaf95eee383f3d4914b4ae89395d3",
+          "sha256_after": "a370549fa4ab53eb16a79b6678a1a3ecd3dcaf95eee383f3d4914b4ae89395d3",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/mockups/provider-setup-modal.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/mockups/provider-setup-modal.html",
+          "sha256_before": "df0285784891f518ef6647ada69eeaeae23cf88b722d3be72ec7f21c9fd0b332",
+          "sha256_after": "df0285784891f518ef6647ada69eeaeae23cf88b722d3be72ec7f21c9fd0b332",
+          "updated_links": 0
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/review-rubric.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/review-rubric.md",
+          "sha256_before": "93f36e05eef539ae5e34a867b9f495830a6003ffb3e52e2710c3385fb25ddbf8",
+          "sha256_after": "93f36e05eef539ae5e34a867b9f495830a6003ffb3e52e2710c3385fb25ddbf8",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/validation-report.html",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/validation-report.html",
+          "sha256_before": "ce47b852445b6fda1ef9d9850de5d9427ce60fbeb2e938a0ec4048880eb97701",
+          "sha256_after": "ce47b852445b6fda1ef9d9850de5d9427ce60fbeb2e938a0ec4048880eb97701",
+          "updated_links": 5
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-agentic-os-plan-2026-07-04/validation-report.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-agent-v1-2026-07-04/validation-report.md",
+          "sha256_before": "03584290ae4fc1484364d035f3a0afbb483b8641ad8c4d8bfb307fe10996d4ef",
+          "sha256_after": "03584290ae4fc1484364d035f3a0afbb483b8641ad8c4d8bfb307fe10996d4ef",
+          "updated_links": 15
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/00-design-system.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/00-design-system.md",
+          "sha256_before": "a5d325c223f562ace2e2b38fcc7888ab3a4b7e48829f27bbb146083b24920a66",
+          "sha256_after": "571c2ad55b5674e24d08b0d771a850f67a550a405a0d224c9be171794c38aaed",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/README.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/README.md",
+          "sha256_before": "9bb17d66c967e856ae22c7a60a556d7861c4c6013e90b9e4db69807d3e9d9bcb",
+          "sha256_after": "9b25a622111c6d8f36ce0df34cd6dd7557655bae53d362079aa02a437f61c973",
+          "updated_links": 2
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm04-foundation-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm04-foundation-screens.md",
+          "sha256_before": "3dc7dde683d9f55d249492699cd0fada00b8aba5fb9853a0ca7d4e110d021100",
+          "sha256_after": "1508f13a0efca6baf76ac6b7a2f0462ba11760924c71c95be714a70c1c176a8d",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm05-providers-settings-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm05-providers-settings-screens.md",
+          "sha256_before": "781fa275003e3427fc95786f4963b50cc69a563fd3f4fe5ce8d873d301a972ad",
+          "sha256_after": "b549519502154b92e3dda72c89ca7854c068effeb6be3c252b97d9e5149b6d64",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm06-files-preview-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm06-files-preview-screens.md",
+          "sha256_before": "2944d8e832defe6363b812c39c5bdadad184c3f32a87a61361ea9df415817fd5",
+          "sha256_after": "77aff358f4ab859c8af8c46c0c33b90571cccc88182d8ac42d2af067442fc957",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm07-scm-browser-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm07-scm-browser-screens.md",
+          "sha256_before": "62b6b62890d5d77e99d9ba241d2ab25503fcd244a7b8c3c1b637625580fde116",
+          "sha256_after": "5ed52dbb561c72c1860db1ea51dbe1a3821a943ae9f021475904398dab81c255",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm08-history-search-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm08-history-search-screens.md",
+          "sha256_before": "734debfc8d69ac8e23d4d9eccb82846f26613568f5cd76d6f1f55da56d352c7e",
+          "sha256_after": "d2e08c60a13acc4ede775fdf634d1bb7fdec93273850f6ed77d17b5667813639",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm09-composer-queue-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm09-composer-queue-screens.md",
+          "sha256_before": "19b565e64d38457ae50ca95de91cfd0b79a26fca6a593d6f124ba021f3f81b83",
+          "sha256_after": "efff87dc70f47f642fccf0321fe977b3ad7c2f93010d8aff69b189e0a50e4efe",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm10-sessions-cron-mcp-screens.md",
+          "after": "_bmad-output/planning-artifacts/ux-designs/ux-gigo-desktop-2026-08-26/rm10-sessions-cron-mcp-screens.md",
+          "sha256_before": "e9a21905a9c0cd05d78ad06fe006995292eb8e95a020399e437875f91189fc12",
+          "sha256_after": "d4b0748c42b1c0fc7b725905156de116f923736b70d7e0643486d450720d7904",
+          "updated_links": 1
+        },
+        {
+          "before": "_bmad-output/project-context.md",
+          "after": "_bmad-output/project-context.md",
+          "sha256_before": "4822500d1d56896c83fcec21cf958123f29cb7b6d7f259be312e8848a4e80a44",
+          "sha256_after": "57940772354112ebd6165d9dfd7d8519a9d0884c441bb43bc2758bdf8c916036",
+          "updated_links": 54
+        },
+        {
+          "before": "_bmad-output/specs/spec-claude-code-harness-distillation/harness-modules.md",
+          "after": "_bmad-output/specs/spec-claude-code-harness-distillation/harness-modules.md",
+          "sha256_before": "f45bf612f7911adaf3af06dbbae5c56153ed92dc49d3077b86779927ef7462eb",
+          "sha256_after": "7863304bba5e550eb696e9b09d6fe11b79161fea2033828d54a2a30faa089b4e",
+          "updated_links": 6
+        },
+        {
+          "before": "_bmad-output/specs/spec-gigo-desktop-frontend/SPEC.md",
+          "after": "_bmad-output/specs/spec-gigo-desktop-frontend/SPEC.md",
+          "sha256_before": "d6badefb60f74c32ee93f2d74647d36107595450c33385efc1c2a6839ca4ef51",
+          "sha256_after": "1de7c63ad291c7dbebe44c7bb89e41626a21f687153985705decec867d12b685",
+          "updated_links": 3
+        },
+        {
+          "before": "brain/Gotchas.md",
+          "after": "brain/Gotchas.md",
+          "sha256_before": "a3ea355decbdfa064f2bc8b9c9fa7781a784b238bb8a6bb3f84fe0f6ee55d51b",
+          "sha256_after": "b0c2191ead85d87999187d3276c48c3dba6d06e9dfec7698e8c3e9de669ec215",
+          "updated_links": 4
+        },
+        {
+          "before": "brain/Vision.md",
+          "after": "brain/Vision.md",
+          "sha256_before": "5996d3d1f002fa3c66161dcb85bf5327b2a8ad1a5d53817424e2b821e4914960",
+          "sha256_after": "a7fab015132425e70da504f8dd3b82784890399d81d5ff3b4af7402ed22f7ece",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/260711-2315-epic-4-restructure/blueprint.md",
+          "after": "plans/260711-2315-epic-4-restructure/blueprint.md",
+          "sha256_before": "54c2b810a90993ab71945870030ac8ac105b22a52f1a27e41fe7d70b0fb47e92",
+          "sha256_after": "b16f221ce3b5422d2d40af0d45b62e6ff0bac2e9f4bac0d780dc261b9b6a62c9",
+          "updated_links": 4
+        },
+        {
+          "before": "plans/260711-2315-epic-4-restructure/drafts/train-4a-context-explainability.md",
+          "after": "plans/260711-2315-epic-4-restructure/drafts/train-4a-context-explainability.md",
+          "sha256_before": "690acd1eac19824c645faa35b5d8d8f64298922f3a5a97104c37e39c847ce6d1",
+          "sha256_after": "b078cadc8e50f526b8f9efeff136e41c635af25eb37f10bb1edd4c6d7bb9e215",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/260711-2315-epic-4-restructure/drafts/train-4b-learning-loop.md",
+          "after": "plans/260711-2315-epic-4-restructure/drafts/train-4b-learning-loop.md",
+          "sha256_before": "8fa1944950e83741830ddcf808a8d498d325e4f01d11d7783d20e7297482c4c9",
+          "sha256_after": "a8ab776c03aedbb8786a64c56908e3defcf3a931b8582682521dffb82c00d572",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/260711-2315-epic-4-restructure/drafts/train-4c-skills.md",
+          "after": "plans/260711-2315-epic-4-restructure/drafts/train-4c-skills.md",
+          "sha256_before": "6325a6298acb16d8c417601f1ee64a5f9a0bf5a6861c7b320a7a0b5b1bf1fe5c",
+          "sha256_after": "dbadf4ad9d24f64a0f6afb4f10da9eb14796959fe8d454a4b27cf70a4e0a6724",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/260711-2315-epic-4-restructure/plan.md",
+          "after": "plans/260711-2315-epic-4-restructure/plan.md",
+          "sha256_before": "ec91568ece8196876bd44c56fc8a93f5c28388c1a3e1ad16303b8a0857a695a5",
+          "sha256_after": "896facd11e9d8d87d703341508cb3408c6e70df4efa17087422a5b28338135f8",
+          "updated_links": 4
+        },
+        {
+          "before": "plans/260711-2315-epic-4-restructure/verification-epic4-train-drafts-report.md",
+          "after": "plans/260711-2315-epic-4-restructure/verification-epic4-train-drafts-report.md",
+          "sha256_before": "03fe1078ae8b90e3d5821613890f2f3cab20cc8dcb41177a02eb736398105e4d",
+          "sha256_after": "308335975c61e2fc731b8343fb15c65439fb24bc010c22e1fa1518d73a5fe779",
+          "updated_links": 3
+        },
+        {
+          "before": "plans/260712-0000-epic-5-council-fixes/plan.md",
+          "after": "plans/260712-0000-epic-5-council-fixes/plan.md",
+          "sha256_before": "332cbc34dc78ec357cf610e1c8e7607f9ff28425f6e9fc8b8d0ad14a1eb4afb5",
+          "sha256_after": "08dc85af0804ff2220fc58a08821eeab324d024158f295e3f7beac5d8f2951ce",
+          "updated_links": 4
+        },
+        {
+          "before": "plans/260712-0016-gigo-agent-plan-reconciliation/plan.md",
+          "after": "plans/260712-0016-gigo-agent-plan-reconciliation/plan.md",
+          "sha256_before": "db2f66bdf0df0efd97a2666758058682bd9c4c47380ce311724191fb17cab820",
+          "sha256_after": "9ab60bd5cfa68434acd19879506d5f16de99e4b095aab028203857c138b4af73",
+          "updated_links": 8
+        },
+        {
+          "before": "plans/260824-2306-desktop-aionui-parity-roadmap/roadmap-proposal.md",
+          "after": "plans/260824-2306-desktop-aionui-parity-roadmap/roadmap-proposal.md",
+          "sha256_before": "a91065b289b2c15b718aaf157bd1cde1efe5b7cd02249ab17c9d5bd3e6a60510",
+          "sha256_after": "d5d44f203993667edc26ca7b2a8d7e7e27e56a0f548a3d5a8d4f8712bca91aa5",
+          "updated_links": 6
+        },
+        {
+          "before": "plans/260824-2306-desktop-aionui-parity-roadmap/track-acceptance-and-independence.md",
+          "after": "plans/260824-2306-desktop-aionui-parity-roadmap/track-acceptance-and-independence.md",
+          "sha256_before": "c6f4930efca75a592a5090c237ae14eed20d3933893f6b58cc3f7353b2cf5ad6",
+          "sha256_after": "7e28f05bac8760ea8ba96c017e595f73242dbd0f25cb49cf13618c2223cc03f7",
+          "updated_links": 3
+        },
+        {
+          "before": "plans/260825-0149-desktop-aionui-parity-phase-breakdown/phase-breakdown-proposal.md",
+          "after": "plans/260825-0149-desktop-aionui-parity-phase-breakdown/phase-breakdown-proposal.md",
+          "sha256_before": "69312c0870f683494f7569fca8eb37bb472923531dd9c8f136a831c1a5778752",
+          "sha256_after": "a680f1cf9f0c622c91a989e7d960533c41a872a12966943935cf54e2a108bbeb",
+          "updated_links": 6
+        },
+        {
+          "before": "plans/architectures/rm-02-plurality-headless-decision.md",
+          "after": "plans/architectures/rm-02-plurality-headless-decision.md",
+          "sha256_before": "f60c6b6bd7da41ef2ceb6d5144bbd8cc4f4824a36160d63068d709c2bb86df1e",
+          "sha256_after": "a7356dba0fbc1e9275b3ae0ffdbbf7e0d14febbbd19c36c8e5ae35becbd1a114",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/architectures/rm-02-plurality-headless.md",
+          "after": "plans/architectures/rm-02-plurality-headless.md",
+          "sha256_before": "1d162d31a99bafd802978232d2aa67659190fd21dd82a89ed6acde56253a457f",
+          "sha256_after": "6fe77512a778b8fefdec84f2eeb1838b3cd1186572b510d9b3a02676a62c1714",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/grill-me/260807-buzz-derived-worker-journal-architecture.md",
+          "after": "plans/grill-me/260807-buzz-derived-worker-journal-architecture.md",
+          "sha256_before": "ffbfa667668313aefc232dc72087e0f9b6b82e79dcc4954b7ca448720a2a7ea8",
+          "sha256_after": "99e29041c9a68a80df766e2b4b9f016ace77e214c37f8c5a853c5c573dfe838a",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/reports/codex-adversarial-review-260825-0257-rm-02-epic-gaps-handoff-report.md",
+          "after": "plans/reports/codex-adversarial-review-260825-0257-rm-02-epic-gaps-handoff-report.md",
+          "sha256_before": "e6b98b6f32229e8fb7b91ea6a2fc3d434321929d8c314b1ba386a57a78af5ecb",
+          "sha256_after": "3fa81bdbbad4f0b67aed3061dc99a0375567dee720680338603986219e4b6727",
+          "updated_links": 5
+        },
+        {
+          "before": "plans/reports/council-260711-2339-epic-5-review-decisions.md",
+          "after": "plans/reports/council-260711-2339-epic-5-review-decisions.md",
+          "sha256_before": "2cca4b18d5af77259b82c1c1602efc6ab879f437f6df591f4b70682b570576e7",
+          "sha256_after": "a628fb3cbe0df47ec11310161971a4c5aa47ff8411b072c9d2ab77036330244e",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/reports/decision-260723-1339-rm-01-deferred-runtime-binding-report.md",
+          "after": "plans/reports/decision-260723-1339-rm-01-deferred-runtime-binding-report.md",
+          "sha256_before": "2e5a55a6e4f005df5af04c90ff82f7c0094b0ffdf58f8a6b5afc7f5d5e8414ba",
+          "sha256_after": "1d1a1b2570782a570e89cf69b88d0383bcccc8c776d3d05876064c6dd7f1af0f",
+          "updated_links": 3
+        },
+        {
+          "before": "plans/reports/expert-panel-260712-0521-gigo-agent-plan-deep-review-synthesis.md",
+          "after": "plans/reports/expert-panel-260712-0521-gigo-agent-plan-deep-review-synthesis.md",
+          "sha256_before": "06e81f8ac2ade9cef83fd9fd2be00171ba6b61d8d3c5e1e221e8d2a0dd0203fc",
+          "sha256_after": "95055953a40e4104db94d1f6d8a3cbbc38f2350a085bd7f0c96144c6f41ebbc0",
+          "updated_links": 7
+        },
+        {
+          "before": "plans/reports/from-epic4-revalidation-council-to-planner-260712-0001-verdicts-and-applied-fixes-report.md",
+          "after": "plans/reports/from-epic4-revalidation-council-to-planner-260712-0001-verdicts-and-applied-fixes-report.md",
+          "sha256_before": "377f845ae475a58efbd3cc8a5f1326b4ddf78af3a107b61b24d86e2d0762fea9",
+          "sha256_after": "3a2cca6b8ac635e13a68c3233d8311085f47723006d032d6cd196e259b5454b8",
+          "updated_links": 3
+        },
+        {
+          "before": "plans/reports/from-verify-council-260712-0508-merged-epics-verification-report.md",
+          "after": "plans/reports/from-verify-council-260712-0508-merged-epics-verification-report.md",
+          "sha256_before": "6ad5e2475a8952d28617ee87388a37e0e71099273290835bb19e8daab9675b8b",
+          "sha256_after": "89375813b81fea9e95cedd482f7e114160736195cb0fdbb06584b31b9f17f65d",
+          "updated_links": 5
+        },
+        {
+          "before": "plans/reports/proposal-260906-1656-harness-testing-solution.md",
+          "after": "plans/reports/proposal-260906-1656-harness-testing-solution.md",
+          "sha256_before": "e01284fdd0493a62bcd719dfd5dc5a08d07228839354d53de82f37e99b4bb834",
+          "sha256_after": "e08f2ed33b1c2c816d4f2f6cf40c9275416cfe1a1affdafed636a95d909dc42e",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/reports/research-260906-1656-aion-testing-and-ci-cd.md",
+          "after": "plans/reports/research-260906-1656-aion-testing-and-ci-cd.md",
+          "sha256_before": "faa9edbe68d91293ddc51cd9489c4822e744bee976a210dc02f3c3567f03c92b",
+          "sha256_after": "d757dfc21b61f6aad65f63c1bd1a95e31623072510dd88d1fce21149e18cbff7",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/reports/researcher-260712-0016-gigo-agent-divergence-inventory-report.md",
+          "after": "plans/reports/researcher-260712-0016-gigo-agent-divergence-inventory-report.md",
+          "sha256_before": "8d9b145c930ac6347296bbe399ac00645d17dad5e1c67ba1ea4ffe6ccb4d40d6",
+          "sha256_after": "39e9242e5021c428a26ea152c7711fe72d79ad787989a4c16ef90a9fd7fe4908",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/reports/retro-analysis-260824-1822-rm-01-planning-churn-and-action-item-followthrough.md",
+          "after": "plans/reports/retro-analysis-260824-1822-rm-01-planning-churn-and-action-item-followthrough.md",
+          "sha256_before": "4de16831ad2d3d947c3c8a8b7c56ec45f857827947aa9d1a9a305810be855b79",
+          "sha256_after": "c69abab7c06416e52713816a27a3931bffe9399c73ff9bf311cda87b70801f42",
+          "updated_links": 8
+        },
+        {
+          "before": "plans/reports/spike-260826-1409-astryx-desktop-design-system/spike-report.md",
+          "after": "plans/reports/spike-260826-1409-astryx-desktop-design-system/spike-report.md",
+          "sha256_before": "db7a7a6fd8be99b061a274072fa5dbe1b74a42d0ced291f8f08d838a572b1bde",
+          "sha256_after": "3cd4bbeb7f8a2c2fff689d933e219e8e18c4bda3b33ce3dab29ead68ff057d8a",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/reports/xia-260723-1019-omnigent-multi-harness-system-port-analysis.md",
+          "after": "plans/reports/xia-260723-1019-omnigent-multi-harness-system-port-analysis.md",
+          "sha256_before": "584566e4dbfe67c172ebbd06ca97472a18a017087ce063fed9df2abe260b47db",
+          "sha256_after": "2beb57665aec3de3c06e1333b879649ad5e845118cb5f91e89c7ab6dce35f315",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/visuals/gigo-harness-service.html",
+          "after": "plans/visuals/gigo-harness-service.html",
+          "sha256_before": "d727ed70fb9e56ab85ad8eee4ad3470304b8ca4209279b148cfa2c752f530469",
+          "sha256_after": "67fc1d926dd1e54cd7d3d8b2985dea67fbede9d38445210a83d52be2057e73ac",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/visuals/gigo-native-fifo-and-conversation-submit-gate.md",
+          "after": "plans/visuals/gigo-native-fifo-and-conversation-submit-gate.md",
+          "sha256_before": "9926e696686ae563c550c63f14347bc6bd5f0ba73de9c556ec351ea4a99f038d",
+          "sha256_after": "40063b8838e62d7216a05d195b563255bd0954f28a295e15013c9ea983127500",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/visuals/gigo-native-fifo-submit-gate-explained.html",
+          "after": "plans/visuals/gigo-native-fifo-submit-gate-explained.html",
+          "sha256_before": "7c032c68f74de2284224b2b4e5ba34197bb9c04a862c7bac16ef517d0640abcf",
+          "sha256_after": "3f8fa5d2a7abef45ab56c971fa23f7aeafeb2c7f918882bbd7616be99a090fc3",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/visuals/gigo-native-fifo-to-harness-submit-gate.html",
+          "after": "plans/visuals/gigo-native-fifo-to-harness-submit-gate.html",
+          "sha256_before": "d012fb2aaddaa6105f9279734c88e5345d70d8f9e8834685904572bfd1f1894d",
+          "sha256_after": "7d844b7877bf1038e9bb3237f0ff001a11fed594efec89cf88e7f70ffeba8dfb",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/visuals/hermes-provider-auth-architectural-patterns-analysis.html",
+          "after": "plans/visuals/hermes-provider-auth-architectural-patterns-analysis.html",
+          "sha256_before": "4456eccc8c0acfe4e2dddc4d5177d37aa8a6a6c95a9de406d17066a824d8d251",
+          "sha256_after": "bee6e5c2207f54d3db50a235dc506c2e84c164696f27525f528547114a379b3e",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/visuals/rm01-epic-4-junior-explain.html",
+          "after": "plans/visuals/rm01-epic-4-junior-explain.html",
+          "sha256_before": "d849894270961df5847b89969682596b7eaf4b6a64f4c800abc889c6f8eb8228",
+          "sha256_after": "c43086663a0bde2b9f23e304910c397deb89d2b5338387361c650500321baf5d",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/visuals/rm01-epic-5-junior-explain.html",
+          "after": "plans/visuals/rm01-epic-5-junior-explain.html",
+          "sha256_before": "c1c4e7791e975adf8caea0619c182f3deb7ea5ca8d03539fe239bcfd9c5048cb",
+          "sha256_after": "6d2c067af04ec42a562d2afe9a33c4755d09a3af3c377c2b7adb92050f51fb5a",
+          "updated_links": 2
+        },
+        {
+          "before": "plans/visuals/rm01-epics-2-7-junior-explain.html",
+          "after": "plans/visuals/rm01-epics-2-7-junior-explain.html",
+          "sha256_before": "08235bb50f7db93ddd147f2b4e2bb5ce4c3d9fd1542c4ad5964afb2afddf6ddf",
+          "sha256_after": "ab509357acbf658782d12e60c9b56aa9c380e29d7c08a8a3dedf48510a82649c",
+          "updated_links": 1
+        },
+        {
+          "before": "plans/visuals/sprint-change-proposal-rm-01-omnigent-executor-correction.html",
+          "after": "plans/visuals/sprint-change-proposal-rm-01-omnigent-executor-correction.html",
+          "sha256_before": "b15b551af3973e4d642bf5abe61b1a921113a68246da2c731f39bbe71c03e7ea",
+          "sha256_after": "d5fd76b3e33750e9b830a752157a402dd3436ab7eba60bd5ed984629a9b7290e",
+          "updated_links": 2
+        },
+        {
+          "before": "scripts/apply-story-id-mapping.mjs",
+          "after": "scripts/apply-story-id-mapping.mjs",
+          "sha256_before": "4a41ff49a50a6cd5cd5abcf239a62f4e01f685bee83d09d589499c8100edb678",
+          "sha256_after": "5519844c2e65cf06f3764c846edd9d45d1412dc23b3277487ecf728c5db4c68e",
+          "updated_links": 1
+        },
+        {
+          "before": "scripts/apply-vertical-slice-replan.mjs",
+          "after": "scripts/apply-vertical-slice-replan.mjs",
+          "sha256_before": "2455e41f56f28c2de2d8325ac296f0295d1e19dad678bef295c5b2e0aeb7bad3",
+          "sha256_after": "1eac79aae71330e832ceb6ce5e78571319be7fd5cb6655acda788f2eae02b1e6",
+          "updated_links": 3
+        },
+        {
+          "before": "scripts/generate-sprint-status.test.mjs",
+          "after": "scripts/generate-sprint-status.test.mjs",
+          "sha256_before": "d2d669ac4e721b42c4b9e3637deef315bb6498ee2387398f00b31beeaeabb17f",
+          "sha256_after": "2687e8fcf75f96ca8f0764765ee94dfc614ac2baac9ba6778ac20a2748e125f6",
+          "updated_links": 1
+        },
+        {
+          "before": "scripts/sync-plans-to-harnesses.sh",
+          "after": "scripts/sync-plans-to-harnesses.sh",
+          "sha256_before": "34aa5043d3c12f0df72c5b66517a7ac4dfe05d00e7899fefbad4de4d7051354d",
+          "sha256_after": "2228a2920156f1b49b573187ce783f937647410892f235f8b9a015f2a1ee410c",
+          "updated_links": 63
+        }
+      ]
+    }
+  ]
+}

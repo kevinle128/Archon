@@ -38,7 +38,8 @@ When both whole and sharded versions of an artifact exist, use the whole documen
 When a required artifact is missing or facts are insufficient, record the problem in the readiness report and return `NOT_READY` or `BLOCKED`.
 Do not ask the user a question and do not invent content.
 Initialize the report from the BMAD readiness report template.
-Write and finalize the implementation readiness report under the configured `planning_artifacts` directory.
+Write and finalize the implementation readiness report inside the same dedicated planning package as the selected target epics.
+Never write a target-owned readiness report directly under the configured `planning_artifacts` root.
 Stop after the readiness result.
 Do not invoke `bmad-help` or start another interactive workflow.
 
@@ -61,7 +62,7 @@ Final response must be exactly one JSON object with this shape:
 {
   "result": "positive",
   "readiness_status": "READY",
-  "report_file": "_bmad-output/planning-artifacts/implementation-readiness-report-YYYY-MM-DD.md",
+  "report_file": "_bmad-output/planning-artifacts/<target-package>/implementation-readiness-report-YYYY-MM-DD.md",
   "issues_count": 0,
   "critical_count": 0,
   "major_count": 0,

@@ -3,10 +3,10 @@ name: 'Live Agent Steering — Adversarial Spine Review'
 lens: adversarial
 target: ../ARCHITECTURE-SPINE.md
 companions:
-  - ../../../specs/spec-live-agent-steering/engine-integration.md
-  - ../../../specs/spec-live-agent-steering/provider-steering-matrix.md
-  - ../../../specs/spec-live-agent-steering/control-states.md
-  - ../../../specs/spec-live-agent-steering/SPEC.md
+  - ../../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/engine-integration.md
+  - ../../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/provider-steering-matrix.md
+  - ../../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/control-states.md
+  - ../../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/SPEC.md
 status: complete
 created: '2026-09-13'
 ---

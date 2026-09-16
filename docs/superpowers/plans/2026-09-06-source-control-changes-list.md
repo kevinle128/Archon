@@ -12,7 +12,7 @@ Focused web components own the tab, request lifecycle, frozen displayed snapshot
 **Tech Stack:** Bun, strict TypeScript, `child_process.execFile` through `@archon/git` `execFileAsync`, Hono OpenAPI, Zod from `@hono/zod-openapi`, React 19, TanStack Query 5, Radix Tabs, and Bun tests.
 
 **Spec:** `_bmad-output/planning-artifacts/epics-source-control/epics.md` Story 1.1.
-**Companion decisions:** `_bmad-output/specs/spec-archon-source-control/SPEC.md`, `_bmad-output/specs/spec-archon-source-control/brownfield.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md` AD-1, AD-2, AD-3, AD-6, AD-7, and AD-9, and `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/EXPERIENCE.md`.
+**Companion decisions:** `_bmad-output/specs/spec-archon-source-control/SPEC.md`, `_bmad-output/specs/spec-archon-source-control/brownfield.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md` AD-1, AD-2, AD-3, AD-6, AD-7, and AD-9, and `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/EXPERIENCE.md`.
 **Readiness:** `_bmad-output/planning-artifacts/epics-source-control/implementation-readiness-report-2026-09-06.md`.
 **Issue:** [#75](https://github.com/anhle128/Archon/issues/75), tracker key `1-1-see-this-runs-uncommitted-files`.
 

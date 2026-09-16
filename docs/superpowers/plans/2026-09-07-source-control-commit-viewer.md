@@ -14,9 +14,9 @@ Do not add a dependency.
 
 **Spec:** `_bmad-output/planning-artifacts/epics-source-control/epics.md`, Story 2.2.
 
-**Approved brainstorm record:** `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/.memlog.md`, especially the locked inline-expand, shared-viewer, Changes-pinned, and no-Back decisions.
+**Approved brainstorm record:** `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/.memlog.md`, especially the locked inline-expand, shared-viewer, Changes-pinned, and no-Back decisions.
 
-**Canonical design:** `_bmad-output/specs/spec-archon-source-control/SPEC.md` CAP-2, CAP-3, CAP-4, CAP-5, CAP-6; `_bmad-output/specs/spec-archon-source-control/viewer-rules.md`; `_bmad-output/planning-artifacts/architecture/architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md` AD-1 through AD-7 and AD-9; `_bmad-output/planning-artifacts/prds/prd-source-control/addendum.md`; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/DESIGN.md` `commit-graph-row.expand`; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/EXPERIENCE.md` Inspect a commit / Return to Now.
+**Canonical design:** `_bmad-output/specs/spec-archon-source-control/SPEC.md` CAP-2, CAP-3, CAP-4, CAP-5, CAP-6; `_bmad-output/specs/spec-archon-source-control/viewer-rules.md`; `_bmad-output/planning-artifacts/architecture/architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md` AD-1 through AD-7 and AD-9; `_bmad-output/planning-artifacts/prds/prd-source-control/addendum.md`; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/DESIGN.md` `commit-graph-row.expand`; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/EXPERIENCE.md` Inspect a commit / Return to Now.
 
 **Issue:** [#79](https://github.com/anhle128/Archon/issues/79), tracker key `2-2-open-a-commits-files-in-the-same-viewer`.
 

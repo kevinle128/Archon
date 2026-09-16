@@ -15,7 +15,7 @@ Do not add a dependency.
 Do not import `@xyflow/react` into the Source Control folder.
 
 **Spec:** `_bmad-output/planning-artifacts/epics-source-control/epics.md` Story 2.1.
-**Canonical design:** `_bmad-output/specs/spec-archon-source-control/SPEC.md` CAP-1, CAP-4, CAP-6; `_bmad-output/planning-artifacts/prds/prd-source-control/addendum.md` log row; `_bmad-output/planning-artifacts/architecture/architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md` AD-1, AD-2, AD-3, AD-6, AD-7, AD-9; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/DESIGN.md` `commit-graph-row`; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-08-31/EXPERIENCE.md` Commit Graph.
+**Canonical design:** `_bmad-output/specs/spec-archon-source-control/SPEC.md` CAP-1, CAP-4, CAP-6; `_bmad-output/planning-artifacts/prds/prd-source-control/addendum.md` log row; `_bmad-output/planning-artifacts/architecture/architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md` AD-1, AD-2, AD-3, AD-6, AD-7, AD-9; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/DESIGN.md` `commit-graph-row`; `_bmad-output/planning-artifacts/ux-designs/ux-Archon-source-control-2026-08-31/EXPERIENCE.md` Commit Graph.
 **Issue:** [#78](https://github.com/anhle128/Archon/issues/78), tracker key `2-1-walk-this-runs-commit-history-as-a-lane-graph`.
 **Depends on:** Stories 1.1–1.3 are `done` in `_bmad-output/implementation-artifacts/archon-source-control/sprint-status.yaml`.
 

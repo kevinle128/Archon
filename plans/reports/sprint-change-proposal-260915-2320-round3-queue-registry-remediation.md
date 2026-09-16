@@ -3,9 +3,9 @@ title: Sprint Change Proposal — Agent Node Room readiness remediation (round 3
 date: '2026-09-15'
 project: Archon
 scope: spec-agent-node-room
-trigger: _bmad-output/planning-artifacts/implementation-readiness-report-2026-09-15.md (21:35, assessor Codex, NOT READY)
+trigger: _bmad-output/planning-artifacts/epics-agent-node-room/implementation-readiness-report-2026-09-15.md (21:35, assessor Codex, NOT READY)
 predecessors:
-  - _bmad-output/planning-artifacts/sprint-change-proposal-2026-09-15.md (round 1, applied)
+  - _bmad-output/planning-artifacts/epics-agent-node-room/sprint-change-proposal-2026-09-15.md (round 1, applied)
   - plans/reports/sprint-change-proposal-260915-2054-steering-contract-remediation.md (round 2, applied)
 status: applied 2026-09-15 — all 9 artifacts edited + self-verified (broken F4 premises 0 hits; new rules present); advisor re-check per owner request
 path_forward: Direct Adjustment
@@ -26,9 +26,9 @@ artifacts_to_touch:
   - _bmad-output/specs/spec-agent-node-room/steering-test-plan.md
   - _bmad-output/planning-artifacts/epics-agent-node-room/epics.md
   - _bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md
-  - _bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-12/ARCHITECTURE-SPINE.md
-  - _bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md
-  - _bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md
+  - _bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md
+  - _bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md
+  - _bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md
 ---
 
 # Sprint Change Proposal — Agent Node Room readiness remediation (round 3)

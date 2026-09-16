@@ -1,0 +1,11 @@
+[workflow]
+
+activation_steps_prepend = [
+  "Require an explicit target spec slug before discovery. Resolve the canonical package at {output_folder}/specs/spec-{target_slug}/. If the target or SPEC.md does not exist, stop and ask for correction.",
+]
+
+persistent_facts = [
+  "The target spec package is the sole requirements lineage for this epics run. Use its SPEC.md, companion contracts, architecture, and UX documents.",
+  "Treat inputDocuments in the target artifacts as authoritative lineage. Do not substitute similarly named documents from another folder.",
+  "Never create or select a generic {planning_artifacts}/epics.md for a target-scoped initiative.",
+]

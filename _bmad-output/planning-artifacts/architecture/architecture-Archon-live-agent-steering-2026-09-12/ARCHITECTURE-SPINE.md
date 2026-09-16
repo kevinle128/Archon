@@ -11,16 +11,16 @@ updated: '2026-09-13'
 supersedes: "the prior durable stop-and-resume design in this run's memlog (the pause/marker/re-entry model conflated steering with Cancel); superseded 2026-09-13, owner-ratified, aion-verified."
 binds:
   - 'spec-agent-node-room CAP-8..CAP-13 (merged canonical; pre-merge steering CAP-1..CAP-6 provenance)'
-  - 'HITL spine (architecture-Archon-2026-09-05) — inherited subset, read-only'
-  - 'Track A spine (architecture-Archon-2026-09-12) — inherited subset, read-only'
+  - 'HITL spine (architecture-Archon-workflow-run-view-hitl-2026-09-05) — inherited subset, read-only'
+  - 'Track A spine (architecture-Archon-readable-agent-transcript-2026-09-12) — inherited subset, read-only'
 sources:
-  - '../../specs/spec-agent-node-room/SPEC.md'
+  - '../../../specs/spec-agent-node-room/SPEC.md'
 companions:
-  - '../../specs/spec-agent-node-room/provider-steering-matrix.md'
-  - '../../specs/spec-agent-node-room/engine-integration.md'
-  - '../../specs/spec-agent-node-room/control-states.md'
-  - '../../specs/spec-agent-node-room/steering-api-contract.md'
-  - '../../specs/spec-agent-node-room/steering-test-plan.md'
+  - '../../../specs/spec-agent-node-room/provider-steering-matrix.md'
+  - '../../../specs/spec-agent-node-room/engine-integration.md'
+  - '../../../specs/spec-agent-node-room/control-states.md'
+  - '../../../specs/spec-agent-node-room/steering-api-contract.md'
+  - '../../../specs/spec-agent-node-room/steering-test-plan.md'
 ---
 
 # Architecture Spine — Live Agent Steering
@@ -45,15 +45,15 @@ The provider already gives us the primitive. An interrupt ends the current _turn
 
 Read-only, original ids. **The pause/resume HITL invariants do NOT apply to steering** — they govern Cancel (the run-pause lifecycle), which this feature leaves untouched.
 
-| Inherited     | From parent                    | Binds here                                                                                                                                              |
-| ------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HITL/AD-3     | architecture-Archon-2026-09-05 | The executor is the **sole appender** to `remote_agent_workflow_node_messages`; store assigns `seq`. The operator row obeys this.                       |
-| HITL/AD-7     | architecture-Archon-2026-09-05 | Split typed POST routes; run-mutation authorized + validated server-side at the tool boundary.                                                          |
-| HITL/AD-8     | architecture-Archon-2026-09-05 | Additive schema only; both dialects.                                                                                                                    |
-| Track A/AD-1  | architecture-Archon-2026-09-12 | One core, two shells: what a row **means** is decided in `packages/web/src/lib`, reaching shells as data. The operator row's meaning is composed there. |
-| Track A/AD-3  | architecture-Archon-2026-09-12 | The core never throws, always terminates; logs `family` + `tool_use_id`, never payload or tool name.                                                    |
-| Track A/AD-10 | architecture-Archon-2026-09-12 | The core produces every string a row displays or announces. The operator row's glyph + accessible name are core output.                                 |
-| Track A/AD-2  | architecture-Archon-2026-09-12 | The Console boundary is the `no-restricted-imports` lint rule; `packages/web/src/lib` is shared ground.                                                 |
+| Inherited     | From parent                                              | Binds here                                                                                                                                              |
+| ------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HITL/AD-3     | architecture-Archon-workflow-run-view-hitl-2026-09-05    | The executor is the **sole appender** to `remote_agent_workflow_node_messages`; store assigns `seq`. The operator row obeys this.                       |
+| HITL/AD-7     | architecture-Archon-workflow-run-view-hitl-2026-09-05    | Split typed POST routes; run-mutation authorized + validated server-side at the tool boundary.                                                          |
+| HITL/AD-8     | architecture-Archon-workflow-run-view-hitl-2026-09-05    | Additive schema only; both dialects.                                                                                                                    |
+| Track A/AD-1  | architecture-Archon-readable-agent-transcript-2026-09-12 | One core, two shells: what a row **means** is decided in `packages/web/src/lib`, reaching shells as data. The operator row's meaning is composed there. |
+| Track A/AD-3  | architecture-Archon-readable-agent-transcript-2026-09-12 | The core never throws, always terminates; logs `family` + `tool_use_id`, never payload or tool name.                                                    |
+| Track A/AD-10 | architecture-Archon-readable-agent-transcript-2026-09-12 | The core produces every string a row displays or announces. The operator row's glyph + accessible name are core output.                                 |
+| Track A/AD-2  | architecture-Archon-readable-agent-transcript-2026-09-12 | The Console boundary is the `no-restricted-imports` lint rule; `packages/web/src/lib` is shared ground.                                                 |
 
 **Explicitly NOT inherited by steering:** HITL/AD-1 & AD-2 (pause-without-approval + resume CAS) and HITL/AD-6 (`resumeInteractions`) — those are the Cancel/Ask lifecycle. Steering does not pause, does not resume, and does not reuse `resumeInteractions`.
 

@@ -16,7 +16,7 @@ During the UX design run, Kevin chose (pointing at VS Code's Source Control view
 - **PRD** (`prd.md`): §4.1 → "commit-history graph"; §4.4 + FR-6 → topology graph (**lanes by topology, not one-per-branch**), needs `parents[]`; **new Cross-Cutting Accessibility NFR** (non-color `+`/`-` diff cue, letter badges, keyboard, AA contrast, reflow tested at 320px/400% with stack/unified `[ASSUMPTION]`).
 - **Architecture** (`architecture.md`): Stack (commit-graph renderer, spike-selected, no new dep); Missing pieces (`@archon/git.log` record adds `parents[]`; `@archon/web` graph); new **Spike 3** (graph-only outcome, no estimate).
 - **Epics** (`epics.md`): FR1 / Epic 2 / Story 2.1 "list" → "lane graph" + merge AC + do-first spike; **NFR7 (Accessibility)** mapping the PRD NFR; coverage map NFR1–NFR7; **testable a11y ACs** — Story 1.1 (Changes rows keyboard-operable), Story 1.2 (diff `+`/`-` markers ≥ 4.5:1), Story 2.1 (commit rows keyboard focus/expand + lane dots/lines ≥ 3:1); **Overview + UX Design Requirements updated** — standalone contract now exists (was "UX inline only").
-- **UX contract** (`../../ux-designs/ux-Archon-2026-08-31/`): synced to match — Commit Graph renderer is "reuse `@xyflow/react` or a bespoke SVG" (windowing spike-selected), and the `log` record "adds `parents[]` retaining message/author/time".
+- **UX contract** (`../../ux-designs/ux-Archon-source-control-2026-08-31/`): synced to match — Commit Graph renderer is "reuse `@xyflow/react` or a bespoke SVG" (windowing spike-selected), and the `log` record "adds `parents[]` retaining message/author/time".
 - **Addendum** (`addendum.md`): `log`/snapshot records add `parents[]` (with author/date/subject); history-graph note; **fixed a pre-existing contradiction** (L9 "no isolation-env gate" → D5 provider gate first, then non-container runs read uniformly by `working_path` at read time).
 - **Data delta:** the `log` record adds `parents[]`. **No DB change; no new dependency.**
 
@@ -48,4 +48,4 @@ During the UX design run, Kevin chose (pointing at VS Code's Source Control view
 
 - **Scope:** Moderate. Next: **rerun `bmad-check-implementation-readiness`** (immediately follows), then `bmad-sprint-planning` → stories.
 - **Sequencing:** run **Spike 3 (lane layout, medium-risk) before Epic 2 Story 2.1**.
-- **UX contract:** `../../ux-designs/ux-Archon-2026-08-31/DESIGN.md` + `EXPERIENCE.md` (status: final).
+- **UX contract:** `../../ux-designs/ux-Archon-source-control-2026-08-31/DESIGN.md` + `EXPERIENCE.md` (status: final).

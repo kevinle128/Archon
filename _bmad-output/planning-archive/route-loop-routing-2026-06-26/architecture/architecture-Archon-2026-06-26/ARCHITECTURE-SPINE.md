@@ -12,14 +12,14 @@ binds:
   - spec-route-loop-routing
   - prd-Archon-2026-06-26
 sources:
-  - ../../../prds/prd-Archon-2026-06-26/prd.md
-  - ../../../prds/prd-Archon-2026-06-26/addendum.md
-  - ../../../ux-designs/ux-Archon-2026-06-26/DESIGN.md
-  - ../../../ux-designs/ux-Archon-2026-06-26/EXPERIENCE.md
-  - ../../../specs/spec-route-loop-routing/SPEC.md
-  - ../../../specs/spec-route-loop-routing/decision-catalog.md
-  - ../../../specs/spec-route-loop-routing/runtime-contract.md
-  - ../../../../plans/grill-me/260625-2337-route-loop-decisions.md
+  - ../../prds/prd-Archon-2026-06-26/prd.md
+  - ../../prds/prd-Archon-2026-06-26/addendum.md
+  - ../../ux-designs/ux-Archon-2026-06-26/DESIGN.md
+  - ../../ux-designs/ux-Archon-2026-06-26/EXPERIENCE.md
+  - ../../../../specs/spec-route-loop-routing/SPEC.md
+  - ../../../../specs/spec-route-loop-routing/decision-catalog.md
+  - ../../../../specs/spec-route-loop-routing/runtime-contract.md
+  - ../../../../../plans/grill-me/260625-2337-route-loop-decisions.md
 companions:
   - IMPLEMENTATION-PLAN.md
 ---

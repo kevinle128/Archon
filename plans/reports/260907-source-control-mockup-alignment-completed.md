@@ -8,7 +8,7 @@ date: 2026-09-07
 
 ## Outcome
 
-All three phases delivered. Source Control tab aligned to the restored `ux-Archon-2026-09-05` mockup. No API, server, database, or workflow-engine contract changed.
+All three phases delivered. Source Control tab aligned to the restored `ux-Archon-source-control-2026-09-05` mockup. No API, server, database, or workflow-engine contract changed.
 
 ## Phase Summary
 

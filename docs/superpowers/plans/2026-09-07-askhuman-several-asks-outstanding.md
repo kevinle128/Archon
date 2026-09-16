@@ -16,7 +16,7 @@ The implementation is predominantly characterization coverage because the accept
 
 **Canonical Specification:** `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md`, especially CAP-5, together with `_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md`, especially Story 6.4.
 
-**Approved Design Inputs:** `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md`, and `_bmad-output/project-context.md`.
+**Approved Design Inputs:** `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md`, and `_bmad-output/project-context.md`.
 
 ---
 

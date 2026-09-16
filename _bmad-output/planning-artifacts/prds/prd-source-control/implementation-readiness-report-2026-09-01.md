@@ -14,8 +14,8 @@ inputDocuments:
   - addendum.md
   - ../../epics-source-control/epics.md
   - sprint-change-proposal-2026-09-01.md
-  - ../../ux-designs/ux-Archon-2026-08-31/DESIGN.md
-  - ../../ux-designs/ux-Archon-2026-08-31/EXPERIENCE.md
+  - ../../ux-designs/ux-Archon-source-control-2026-08-31/DESIGN.md
+  - ../../ux-designs/ux-Archon-source-control-2026-08-31/EXPERIENCE.md
 supersedes: implementation-readiness-report-2026-08-31.md
 ---
 
@@ -34,7 +34,7 @@ supersedes: implementation-readiness-report-2026-08-31.md
 - **PRD** — `prd.md` (whole, `status: final`; `updated: 2026-09-01`).
 - **Architecture** — `architecture.md` (whole, `status: decided`; `updated: 2026-09-01`) + `addendum.md` (technical depth).
 - **Epics & Stories** — `epics.md` (whole; 3 epics, 8 stories; `stepsCompleted` through step-04).
-- **UX** — standalone contract at `../../ux-designs/ux-Archon-2026-08-31/` (`DESIGN.md` + `EXPERIENCE.md`, both `status: final`, `created/updated: 2026-09-01`). The folder slug `ux-Archon-2026-08-31` is a **legacy name**; authoritative dates are the frontmatter fields.
+- **UX** — standalone contract at `../../ux-designs/ux-Archon-source-control-2026-08-31/` (`DESIGN.md` + `EXPERIENCE.md`, both `status: final`, `created/updated: 2026-09-01`). The folder slug `ux-Archon-source-control-2026-08-31` is a **legacy name**; authoritative dates are the frontmatter fields.
 - **Change record** — `sprint-change-proposal-2026-09-01.md` (Correct Course applied).
 
 **Supporting (not assessed as specs):** `reconcile-source-control.md`, `review-source-control.md`, `.memlog.md`, `implementation-readiness-report-2026-08-31.md` (prior baseline).
@@ -124,7 +124,7 @@ None. No PRD FR is uncovered; no epic story references an FR absent from the PRD
 
 ### UX Document Status
 
-**Found.** Standalone contract: `ux-designs/ux-Archon-2026-08-31/DESIGN.md` (visual identity) + `EXPERIENCE.md` (IA, states, Accessibility Floor, key flow). Status `final`. This **clears** the 2026-08-31 warning.
+**Found.** Standalone contract: `ux-designs/ux-Archon-source-control-2026-08-31/DESIGN.md` (visual identity) + `EXPERIENCE.md` (IA, states, Accessibility Floor, key flow). Status `final`. This **clears** the 2026-08-31 warning.
 
 ### Alignment (load-bearing)
 
@@ -155,7 +155,7 @@ Soft wording patched in this rerun (non-blocking before; now aligned): UJ-1 + gl
 ### Warnings
 
 - Deferred UX `[ASSUMPTION]`/`[OPEN]` items (split ratio, row height, independent scroll, key bindings, empty-Changes copy, error/refusal copy, diff green token, "markers + tint" vs "markers only") remain build-time decisions. **Not blockers.**
-- UX workspace folder slug is `ux-Archon-2026-08-31` while the run date is 2026-09-01. Documented as a legacy slug; do not rename (cross-references). **Not a blocker.**
+- UX workspace folder slug is `ux-Archon-source-control-2026-08-31` while the run date is 2026-09-01. Documented as a legacy slug; do not rename (cross-references). **Not a blocker.**
 
 ## Step 5 — Epic Quality Review
 

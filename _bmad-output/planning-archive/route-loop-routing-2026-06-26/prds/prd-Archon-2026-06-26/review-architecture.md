@@ -182,18 +182,18 @@ Evidence: `packages/workflows/src/dag-executor.ts:744` through `packages/workflo
 
 ## References
 
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:14` - The PRD declares the spec bundle as canonical.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:100` - Route-loop YAML contract starts with standalone node requirements.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:143` - `max_iterations` budget semantics are specified.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:162` - Conditions reuse the existing `when` grammar.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:229` - Activation-before-readiness requirement.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:306` - Route counters and attempt counters must persist in run metadata.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:365` - `node_routed` event requirement.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:382` - `route_loop.output` metadata requirement.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/prd.md:615` - Open questions include output IDs, builder surface, route event durability, and UI state naming.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/addendum.md:67` - Addendum notes retry/resume projection needs selected-path invalidation and reconstructable route state.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/addendum.md:74` - Addendum notes event/SSE surfaces and durability uncertainty.
-- `_bmad-output/planning-artifacts/prds/prd-Archon-2026-06-26/addendum.md:88` - Addendum notes multiple web builder surfaces.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:14` - The PRD declares the spec bundle as canonical.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:100` - Route-loop YAML contract starts with standalone node requirements.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:143` - `max_iterations` budget semantics are specified.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:162` - Conditions reuse the existing `when` grammar.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:229` - Activation-before-readiness requirement.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:306` - Route counters and attempt counters must persist in run metadata.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:365` - `node_routed` event requirement.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:382` - `route_loop.output` metadata requirement.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/prd.md:615` - Open questions include output IDs, builder surface, route event durability, and UI state naming.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/addendum.md:67` - Addendum notes retry/resume projection needs selected-path invalidation and reconstructable route state.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/addendum.md:74` - Addendum notes event/SSE surfaces and durability uncertainty.
+- `_bmad-output/planning-archive/route-loop-routing-2026-06-26/prds/prd-Archon-2026-06-26/addendum.md:88` - Addendum notes multiple web builder surfaces.
 - `_bmad-output/specs/spec-route-loop-routing/SPEC.md:16` - The spec and companions are the complete canonical contract.
 - `_bmad-output/specs/spec-route-loop-routing/SPEC.md:42` - Canonical route-state coherence across resume and retry.
 - `_bmad-output/specs/spec-route-loop-routing/route-loop-contract.md:21` - Single-source `from` and `depends_on` rule.

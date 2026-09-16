@@ -16,7 +16,7 @@ created: 2026-09-07
 
 ## Overview
 
-Align the legacy Source Control tab with the restored `ux-Archon-2026-09-05` mockup and design documents.
+Align the legacy Source Control tab with the restored `ux-Archon-source-control-2026-09-05` mockup and design documents.
 Keep all later accepted Source Control capabilities that are not present in the older mockup.
 
 ## Outcome

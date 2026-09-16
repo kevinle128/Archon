@@ -9,9 +9,9 @@ companions:
   - control-states.md
   - steering-api-contract.md
   - steering-test-plan.md
-  - ../../planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md
-  - ../../planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md
-  - ../../planning-artifacts/architecture/architecture-Archon-2026-09-12/ARCHITECTURE-SPINE.md
+  - ../../planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md
+  - ../../planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md
+  - ../../planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md
   - ../../planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md
   - ../../../claude-design/design_handoff_node_room_transcript_steering/README.md
   - ../../../plans/260909-2130-live-interactive-agent-view/findings.md
@@ -20,8 +20,8 @@ companions:
   - ../../../plans/reports/scoutsdk-260912-midturn-sdk-providers.md
   - ../../project-context.md
 sources:
-  - ../spec-readable-agent-transcript/SPEC.md
-  - ../spec-live-agent-steering/SPEC.md
+  - sources/spec-readable-agent-transcript/SPEC.md
+  - sources/spec-live-agent-steering/SPEC.md
 ---
 
 > **Canonical contract.** This SPEC and the files in `companions:` are the complete contract for what to build, test, and validate. It unifies two previously separate specs — `spec-readable-agent-transcript` (the **read** half) and `spec-live-agent-steering` (the **write** half), both now `sources:` and fully absorbed here — into one contract for the agent node view. The two halves share one surface and two UX spines. Spec-authored companions carried in verbatim: `tool-presentation-contract.md`, `todo-fold-contract.md`, `test-plan.md` (read); `engine-integration.md`, `provider-steering-matrix.md`, `control-states.md` (write). Adopted companions own their content: `DESIGN.md` (how the node room looks) and `EXPERIENCE.md` (how it behaves), both `status: final`; the two `ARCHITECTURE-SPINE.md` files (the read Track-A spine and the steering spine, AD contracts this SPEC is built against); the `claude-design/design_handoff_node_room_transcript_steering/` mockup handoff; and the `plans/` evidence files that carry the `file:line` citations and measured numbers behind every constraint.

@@ -17,8 +17,8 @@ excludedDocuments:
   - ../prd.md
   - ../architecture.md
   - ../epics.md
-  - ../architecture/architecture-Archon-2026-09-05/
-  - ../ux-designs/ux-Archon-2026-08-31/
+  - ../architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/
+  - ../ux-designs/ux-Archon-source-control-2026-08-31/
   - ../prds/prd-source-control/architecture.md
 notes: UX 2026-09-05 DESIGN/EXPERIENCE missing; UX-DRs taken from architecture AD-5/AD-6/AD-9 and viewer-rules.md. Output is this feature folder only — do not overwrite planning-artifacts/epics.md (Workflow Commander). Party 2026-09-05: Epic 1 Changes-only (no dead History pane); Epic 2 inserts History + lane graph; Epic 3 is the CAP-8 seam. Numbering is this file's; implementation story keys should be prefixed source-control- so they do not collide with Commander 3.x in a shared sprint-status.yaml. Hunk JSON in Epic 1 already carries scope now|commit and ref. Step 4 validation passed (see Validation section).
 ---

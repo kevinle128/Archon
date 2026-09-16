@@ -10,7 +10,7 @@ Keep mutation in a small per-request controller owned by `WorkflowExecution`, an
 
 **Tech Stack:** Bun, strict TypeScript, React 19, TanStack Query, happy-dom, `bun:test`, existing shadcn `Button`, `Card`, `Textarea`, and `AlertDialog`, native radio and checkbox inputs, Hono OpenAPI, and generated OpenAPI TypeScript types.
 
-**Spec:** `_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md` Story 6.5, `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md` CAP-3, CAP-4, CAP-6, and CAP-7, `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md` `PendingInteractionCard`, and `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md` AD-3, AD-7, AD-8, and AD-9.
+**Spec:** `_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md` Story 6.5, `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md` CAP-3, CAP-4, CAP-6, and CAP-7, `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md` `PendingInteractionCard`, and `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md` AD-3, AD-7, AD-8, and AD-9.
 
 **Issue:** `https://github.com/anhle128/Archon/issues/90`.
 

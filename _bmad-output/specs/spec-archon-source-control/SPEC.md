@@ -77,4 +77,4 @@ Opening the Source Control tab on a real remote run (e.g. the `speckit-no-hitl-f
 ## Assumptions
 
 - SPEC.md and companions are authored in English per config `document_output_language`, although the originating brainstorm ran in Vietnamese.
-- UX spines `ux-Archon-2026-09-05/DESIGN.md` and `EXPERIENCE.md` were missing from disk at this update; operator-facing layout and quiet-copy rules that they locked are carried by the adopted architecture spine (AD-5, AD-6, AD-9) plus `viewer-rules.md`.
+- UX spines `ux-Archon-source-control-2026-09-05/DESIGN.md` and `EXPERIENCE.md` were missing from disk at this update; operator-facing layout and quiet-copy rules that they locked are carried by the adopted architecture spine (AD-5, AD-6, AD-9) plus `viewer-rules.md`.

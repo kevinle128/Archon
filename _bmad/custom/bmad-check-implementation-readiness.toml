@@ -1,9 +1,18 @@
 [workflow]
 
+activation_steps_prepend = [
+  "Require an explicit target spec slug before document discovery. Resolve {output_folder}/specs/spec-{target_slug}/ and its canonical SPEC.md or PRD.md. If resolution fails, stop with INVALID_ASSESSMENT_INPUT.",
+]
+
 persistent_facts = [
   "Before reporting a cross-document conflict, quote both claims with section references and classify each as a normative constraint, maximum or minimum, first runnable target, default or example, runtime capability, or projection/view mode.",
   "A cross-document conflict is a defect only when the claims are normative and mutually exclusive; first attempt to describe one implementation that satisfies both.",
   "Differences across runtime structure, projection/view state, implementation milestones, defaults, and examples are not conflicts unless the documents explicitly bind them to incompatible outcomes.",
   "If wording is ambiguous but mutual exclusion is not proven, record a warning or clarification request without incrementing issue counts or downgrading readiness.",
   "Before downgrading readiness, document the reconciliation attempt and the evidence that disproves it.",
+  "The requested target spec folder is the authoritative assessment boundary.",
+  "Read the target epics frontmatter inputDocuments before recommending an assessment document set.",
+  "Never select a generic root-level PRD, architecture, UX, or epics file unless its frontmatter explicitly belongs to the requested target.",
+  "All selected source documents must share the same target lineage.",
+  "If requirements and epics describe different product scopes, classify the run as INVALID_ASSESSMENT_INPUT, return to document discovery, and do not calculate coverage, issue counts, or readiness status.",
 ]

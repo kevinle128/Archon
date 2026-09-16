@@ -10,7 +10,7 @@ inputDocuments:
   - ../../specs/spec-workflow-run-view-hitl/SPEC.md
   - ../../specs/spec-workflow-run-view-hitl/hitl-contract.md
   - ../../specs/spec-workflow-run-view-hitl/brownfield.md
-  - ../architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md
+  - ../architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md
 ---
 
 # Archon Workflow Run View HITL - Epic Breakdown

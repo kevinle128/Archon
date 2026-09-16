@@ -13,7 +13,7 @@ The server-projected nodeStates remain the sole lifecycle source; existing workf
 
 **Spec:** _bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md, Story 5.1.
 
-**Approved design inputs:** _bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md, _bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md, _bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md, _bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md, _bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md, and _bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md.
+**Approved design inputs:** _bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md, _bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md, _bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md, _bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md, _bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md, and _bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md.
 
 **Issue:** https://github.com/anhle128/Archon/issues/81
 

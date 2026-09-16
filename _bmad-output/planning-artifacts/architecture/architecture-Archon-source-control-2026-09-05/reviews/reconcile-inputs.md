@@ -3,19 +3,19 @@
 **Spine:** `architecture-Archon-source-control-2026-09-05/ARCHITECTURE-SPINE.md`  
 **Reviewed:** 2026-09-05  
 **Method:** Diff every load-bearing constraint / tone / state / mechanism from the inputs against AD-1–AD-9, Consistency Conventions, Deferred, and the Capability map. Spine was **not** edited.  
-**Note on UX input:** `ux-Archon-2026-09-05/EXPERIENCE.md` (and companions) were missing from disk at reconcile time (folder reduced to `imports/`). Content was recovered from the Finalize session transcript (`a83d6a8c…`, status: final) and cross-checked against the architecture memlog line “INHERITED UX final 2026-09-05: 30/70…”. SPEC/brownfield/viewer-rules and `plans/architectures/archon-source-control.md` were read from the parent workspace copies under `workflow-engine/`.
+**Note on UX input:** `ux-Archon-source-control-2026-09-05/EXPERIENCE.md` (and companions) were missing from disk at reconcile time (folder reduced to `imports/`). Content was recovered from the Finalize session transcript (`a83d6a8c…`, status: final) and cross-checked against the architecture memlog line “INHERITED UX final 2026-09-05: 30/70…”. SPEC/brownfield/viewer-rules and `plans/architectures/archon-source-control.md` were read from the parent workspace copies under `workflow-engine/`.
 
 ---
 
 ## Inputs checked
 
-| Input                                          | Role                                                      |
-| ---------------------------------------------- | --------------------------------------------------------- |
-| `spec-archon-source-control/SPEC.md`           | CAP-1–8, Constraints, Non-goals                           |
-| `…/brownfield.md`                              | Path pin, lifecycle, security, events≠SoT, CAP-8 mechanic |
-| `…/viewer-rules.md`                            | Viewer modes, refresh, large/binary open strategy         |
-| `ux-Archon-2026-09-05/EXPERIENCE.md`           | States, Reload, 30/70, Voice & Tone, flows                |
-| `plans/architectures/archon-source-control.md` | D1–D6 (+ spikes, post-decision D6 corrections)            |
+| Input                                               | Role                                                      |
+| --------------------------------------------------- | --------------------------------------------------------- |
+| `spec-archon-source-control/SPEC.md`                | CAP-1–8, Constraints, Non-goals                           |
+| `…/brownfield.md`                                   | Path pin, lifecycle, security, events≠SoT, CAP-8 mechanic |
+| `…/viewer-rules.md`                                 | Viewer modes, refresh, large/binary open strategy         |
+| `ux-Archon-source-control-2026-09-05/EXPERIENCE.md` | States, Reload, 30/70, Voice & Tone, flows                |
+| `plans/architectures/archon-source-control.md`      | D1–D6 (+ spikes, post-decision D6 corrections)            |
 
 ---
 

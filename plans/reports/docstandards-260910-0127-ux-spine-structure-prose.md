@@ -1,7 +1,7 @@
 # Doc standards — UX spine: structure + prose
 
 Applied late, after Finalize. `bmad-review` lenses `structure` then `prose` only, over
-`_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md` (5,000 words) and
+`_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md` (5,000 words) and
 `EXPERIENCE.md` (6,208 words). Advisory only — no file was changed.
 
 **Purpose read.** These two documents exist to let a web developer build one transcript on two

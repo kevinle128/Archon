@@ -4,7 +4,7 @@ date: '2026-09-15'
 project: Archon
 scope: spec-agent-node-room
 trigger: plans/reports/implementation-readiness-260915-1930-spec-agent-node-room.md (NOT READY, assessor Codex)
-predecessor: _bmad-output/planning-artifacts/sprint-change-proposal-2026-09-15.md (status: applied — round 1)
+predecessor: _bmad-output/planning-artifacts/epics-agent-node-room/sprint-change-proposal-2026-09-15.md (status: applied — round 1)
 status: applied (2026-09-15) — F5 = hybrid ratified; F1–F8 written to the artifacts below in this session
 path_forward: Direct Adjustment
 mode: incremental

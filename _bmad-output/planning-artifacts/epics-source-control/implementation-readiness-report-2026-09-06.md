@@ -25,9 +25,9 @@ excludedDocuments:
   - ../prd.md
   - ../architecture.md
   - ../epics.md
-  - ../architecture/architecture-Archon-2026-09-05/
+  - ../architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/
   - ../epics-workflow-run-view-hitl/
-  - ../ux-designs/ux-Archon-2026-08-31/
+  - ../ux-designs/ux-Archon-source-control-2026-08-31/
   - ../prds/prd-source-control/architecture.md
   - ../ux.md
 notes: Default planning_artifacts/implementation-readiness-report-2026-09-06.md was already a HITL inventory; this Source Control report is feature-scoped so it does not overwrite that file.
@@ -53,15 +53,15 @@ Confirmed assessment set (user 2026-09-06). Other tracks exist under `{planning_
 ### Excluded
 
 - Workflow Commander: `prd.md`, `architecture.md`, `epics.md`
-- HITL: `architecture/architecture-Archon-2026-09-05/`, `epics-workflow-run-view-hitl/`
+- HITL: `architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/`, `epics-workflow-run-view-hitl/`
 - Older PRD-folder architecture: `prds/prd-source-control/architecture.md`
 - UX 2026-08-31 (full DESIGN/EXPERIENCE pair) and root `ux.md`
 - Remainder of `prds/prd-source-control/` (reviews, prior IR reports)
 
 ### UX inventory
 
-- `ux-designs/ux-Archon-2026-09-05/` — mockup HTML only; **no DESIGN.md / EXPERIENCE.md**
-- `ux-designs/ux-Archon-2026-08-31/` — DESIGN + EXPERIENCE exist; **excluded** by CE/IR lock
+- `ux-designs/ux-Archon-source-control-2026-09-05/` — mockup HTML only; **no DESIGN.md / EXPERIENCE.md**
+- `ux-designs/ux-Archon-source-control-2026-08-31/` — DESIGN + EXPERIENCE exist; **excluded** by CE/IR lock
 
 ## PRD Analysis
 
@@ -105,7 +105,7 @@ NFR5 (Observability): `[ASSUMPTION]` Server-side reads emit named structured log
 
 NFR6 (Privacy / secrets): The Viewer reads arbitrary files from the Run checkout, which can contain `.env`, keys, or tokens; v1 ships **without** redaction or a denylist. Accepted for trusted internal users; recorded; revisit per PRD §8.4.
 
-NFR7 (Accessibility): The diff must not rely on color alone — each changed line carries a `+`/`-` gutter marker (WCAG 1.4.1); `M`/`A`/`D` badges are letter-carried; Changes list, commit-history graph, and viewer are keyboard-operable; diff markers ≥ 4.5:1; commit-graph lanes ≥ 3:1 non-text. Layout must reflow/zoom without loss (tested at 320px / 400%); specific stack/unified behavior is a build `[ASSUMPTION]`. PRD cites `../ux-designs/ux-Archon-2026-08-31/EXPERIENCE.md` (Accessibility Floor).
+NFR7 (Accessibility): The diff must not rely on color alone — each changed line carries a `+`/`-` gutter marker (WCAG 1.4.1); `M`/`A`/`D` badges are letter-carried; Changes list, commit-history graph, and viewer are keyboard-operable; diff markers ≥ 4.5:1; commit-graph lanes ≥ 3:1 non-text. Layout must reflow/zoom without loss (tested at 320px / 400%); specific stack/unified behavior is a build `[ASSUMPTION]`. PRD cites `../ux-designs/ux-Archon-source-control-2026-08-31/EXPERIENCE.md` (Accessibility Floor).
 
 NFR8 (Auth, from PRD assumptions §9): Access is any user who can view the run (open admin/member, single-tenant multi-user); no new per-tab restriction. Architecture later pins this to the artifacts / run-detail gate (no `requireWebUser`, no per-run owner ACL).
 
@@ -174,13 +174,13 @@ Epics add architecture-sourced constraints not numbered in the PRD (NULL `isolat
 
 ### UX Document Status
 
-**Not found** for the locked 2026-09-05 UX workspace (no DESIGN.md / EXPERIENCE.md). A mockup HTML exists at `ux-designs/ux-Archon-2026-09-05/mockups/key-screen-source-control-2026-09-05.html`. The 2026-08-31 DESIGN/EXPERIENCE pair exists but was **excluded**.
+**Not found** for the locked 2026-09-05 UX workspace (no DESIGN.md / EXPERIENCE.md). A mockup HTML exists at `ux-designs/ux-Archon-source-control-2026-09-05/mockups/key-screen-source-control-2026-09-05.html`. The 2026-08-31 DESIGN/EXPERIENCE pair exists but was **excluded**.
 
 UI is implied (fourth tab on the legacy run screen). UX-DRs in epics were taken from architecture AD-5 / AD-6 / AD-9 and `viewer-rules.md`.
 
 ### Alignment Issues
 
-- PRD Accessibility NFR and architecture AD-9 cite `ux-Archon-2026-08-31/EXPERIENCE.md` (Accessibility Floor / Voice and Tone). That file is outside this assessment set. **Copy and a11y floors that shipped into epics** (quiet CAP-6 sentence, “Changed on disk — Reload”, `+`/`-`, 30/70, 900px stack) are restated in AD-5/AD-6/AD-9 and stories — one implementation can satisfy PRD + architecture without opening the excluded UX folder.
+- PRD Accessibility NFR and architecture AD-9 cite `ux-Archon-source-control-2026-08-31/EXPERIENCE.md` (Accessibility Floor / Voice and Tone). That file is outside this assessment set. **Copy and a11y floors that shipped into epics** (quiet CAP-6 sentence, “Changed on disk — Reload”, `+`/`-`, 30/70, 900px stack) are restated in AD-5/AD-6/AD-9 and stories — one implementation can satisfy PRD + architecture without opening the excluded UX folder.
 - PRD UJ-1 shows Changes **and** the commit-history graph on first open. Architecture AD-9 + epics party lock: Epic 1 is Changes-only. Same sequential-delivery reconciliation as FR-1; not a normative conflict.
 - Architecture Stack pins `react-diff-view@3.3.3`; PRD/addendum do not name the library. Compatible (architecture may specify).
 
@@ -241,7 +241,7 @@ None. Do not block Phase 4 on the missing 2026-09-05 UX spines or on Epic 3 bein
 ### Recommended Next Steps
 
 1. Run **Sprint Planning** (`bmad-sprint-planning`) in a **fresh context window**, using `epics-source-control/epics.md`. Prefix story keys `source-control-` so they do not collide with Commander `3.x` in a shared sprint-status file.
-2. Implementers: treat **AD-9 copy floor + story ACs + `viewer-rules.md`** as the UX contract; do not reopen excluded `ux-Archon-2026-08-31` unless product asks.
+2. Implementers: treat **AD-9 copy floor + story ACs + `viewer-rules.md`** as the UX contract; do not reopen excluded `ux-Archon-source-control-2026-08-31` unless product asks.
 3. At build: confirm host existence check (PRD §8.1); tune large-file/hex defaults; leave FR-9 wire format undecided until a writer story exists.
 
 ### Final Note

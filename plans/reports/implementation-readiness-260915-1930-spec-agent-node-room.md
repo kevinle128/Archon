@@ -24,15 +24,15 @@ inputDocuments:
   - '_bmad-output/specs/spec-agent-node-room/test-plan.md'
   - '_bmad-output/specs/spec-agent-node-room/todo-fold-contract.md'
   - '_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md'
-  - '_bmad-output/planning-artifacts/prd.md'
-  - '_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-12/ARCHITECTURE-SPINE.md'
+  - '_bmad-output/planning-artifacts/prds/prd-workflow-commander/prd.md'
+  - '_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md'
   - '_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md'
   - '_bmad-output/planning-artifacts/epics-agent-node-room/epics.md'
-  - '_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md'
-  - '_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md'
+  - '_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md'
+  - '_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md'
   - 'claude-design/design_handoff_node_room_transcript_steering/README.md'
-  - '_bmad-output/planning-artifacts/implementation-readiness-report-2026-09-15.md'
-  - '_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-15.md'
+  - '_bmad-output/planning-artifacts/epics-agent-node-room/implementation-readiness-report-2026-09-15.md'
+  - '_bmad-output/planning-artifacts/epics-agent-node-room/sprint-change-proposal-2026-09-15.md'
 ---
 
 # Implementation Readiness Assessment Report
@@ -72,16 +72,16 @@ Keep broader and earlier document sets as context unless the user selects them a
 
 ### Project PRD context
 
-| File                                                                                                                                             | Bytes | Modified                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----: | ------------------------- |
-| [\_bmad-output/planning-artifacts/prd.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/prd.md) |  9502 | 2026-07-30T14:29:20+07:00 |
+| File                                                                                                                                                                                                     | Bytes | Modified                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ------------------------- |
+| [\_bmad-output/planning-artifacts/prds/prd-workflow-commander/prd.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/prds/prd-workflow-commander/prd.md) |  9502 | 2026-07-30T14:29:20+07:00 |
 
 ### Architecture
 
-| File                                                                                                                                                                                                                                                                                                           | Bytes | Modified                  |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ------------------------- |
-| [\_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-12/ARCHITECTURE-SPINE.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-12/ARCHITECTURE-SPINE.md)                                         | 32700 | 2026-09-15T19:15:02+07:00 |
-| [\_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md) | 40681 | 2026-09-15T19:15:11+07:00 |
+| File                                                                                                                                                                                                                                                                                                                       | Bytes | Modified                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ------------------------- |
+| [\_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md) | 32700 | 2026-09-15T19:15:02+07:00 |
+| [\_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md)             | 40681 | 2026-09-15T19:15:11+07:00 |
 
 ### Epics and stories
 
@@ -91,10 +91,10 @@ Keep broader and earlier document sets as context unless the user selects them a
 
 ### UX
 
-| File                                                                                                                                                                                                                           |  Bytes | Modified                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -----: | ------------------------- |
-| [\_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md)         |  59925 | 2026-09-15T19:24:09+07:00 |
-| [\_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md) | 169433 | 2026-09-15T19:24:12+07:00 |
+| File                                                                                                                                                                                                                                                           |  Bytes | Modified                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -----: | ------------------------- |
+| [\_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md)         |  59925 | 2026-09-15T19:24:09+07:00 |
+| [\_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md) | 169433 | 2026-09-15T19:24:12+07:00 |
 
 ### Design handoff
 
@@ -104,10 +104,10 @@ Keep broader and earlier document sets as context unless the user selects them a
 
 ### Prior assessment and change proposal
 
-| File                                                                                                                                                                                                                           | Bytes | Modified                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----: | ------------------------- |
-| [\_bmad-output/planning-artifacts/implementation-readiness-report-2026-09-15.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/implementation-readiness-report-2026-09-15.md) | 43943 | 2026-09-15T17:37:00+07:00 |
-| [\_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-15.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-15.md)                   | 24066 | 2026-09-15T19:29:57+07:00 |
+| File                                                                                                                                                                                                                                                                       | Bytes | Modified                  |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----: | ------------------------- |
+| [\_bmad-output/planning-artifacts/epics-agent-node-room/implementation-readiness-report-2026-09-15.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/implementation-readiness-report-2026-09-15.md) | 43943 | 2026-09-15T17:37:00+07:00 |
+| [\_bmad-output/planning-artifacts/epics-agent-node-room/sprint-change-proposal-2026-09-15.md](/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/sprint-change-proposal-2026-09-15.md)                   | 24066 | 2026-09-15T19:29:57+07:00 |
 
 ## Other document sets found
 
@@ -588,7 +588,7 @@ The historical readiness report was read as context, not accepted as current evi
 
 **Claim A — normative authorization constraint:** HITL AD-7 says “Only `workflow_runs.user_id` may mutate”.
 Steering AD-11 explicitly adopts that rule and says “not a new grant”.
-Sources: [HITL AD-7](../../_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md:105), [steering AD-11](../../_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md:171), and [API identity rule](../../_bmad-output/specs/spec-agent-node-room/steering-api-contract.md:7).
+Sources: [HITL AD-7](../../_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md:105), [steering AD-11](../../_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md:171), and [API identity rule](../../_bmad-output/specs/spec-agent-node-room/steering-api-contract.md:7).
 
 **Claim B — normative multi-user capability:** Story 1.12c requires “two docks steering one node on a multi-user install”, with each row attributed to its sender and per-operator order.
 Steering AD-11 explicitly says “concurrent operators interleave in receipt order”.
@@ -617,7 +617,7 @@ Source: [API response schema](../../_bmad-output/specs/spec-agent-node-room/stee
 
 **Claim B — normative state transition:** if the turn ends naturally before Stop lands and messages are queued, the queue auto-drains and the agent is generating again.
 It does not enter idle-await.
-Sources: [UX natural-end race](../../_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md:176) and [steering AD-2 discriminator](../../_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md:106).
+Sources: [UX natural-end race](../../_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:176) and [steering AD-2 discriminator](../../_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md:106).
 
 **Reconciliation attempt:** return 409 when the node finishes.
 That covers the empty-queue branch only.
@@ -634,7 +634,7 @@ This requires an explicit response-contract correction, not a change to the owne
 
 **Claim A — normative UI action:** a waiting draft item has “keep and delete”.
 Flow 4 places items in the visible queue after the operator presses Queue.
-Sources: [Draft item](../../_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md:134) and [Flow 4](../../_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/EXPERIENCE.md:368).
+Sources: [Draft item](../../_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:134) and [Flow 4](../../_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:368).
 
 **Claim B — normative delivery mechanism:** pressing Queue sends the message to the send route; the registry later drains it at the natural boundary.
 Source: [Story 1.9](../../_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:367).

@@ -52,7 +52,8 @@ Summarize every artifact changed and why it was changed.
 ## Sprint Change Proposal
 
 Write a Sprint Change Proposal when changes are applied or when escalation is needed.
-Use the BMAD default output path pattern from the correct-course workflow.
+Write the proposal inside the selected target's dedicated planning package.
+Never write a target-owned proposal directly under the configured `planning_artifacts` root.
 The proposal must include issue summary, impact analysis, recommended approach, detailed change proposals, implementation handoff, and final status.
 When changes are applied directly, the proposal records what was changed and why rather than asking for approval.
 
@@ -63,8 +64,8 @@ Final response must be exactly one JSON object with this shape:
 ```json
 {
   "status": "APPLIED",
-  "proposal_file": "_bmad-output/planning-artifacts/sprint-change-proposal-YYYY-MM-DD.md",
-  "changed_artifacts": ["_bmad-output/planning-artifacts/epics.md"],
+  "proposal_file": "_bmad-output/planning-artifacts/<target-package>/sprint-change-proposal-YYYY-MM-DD.md",
+  "changed_artifacts": ["_bmad-output/planning-artifacts/<target-package>/epics.md"],
   "blocked_reasons": [],
   "summary": "Updated epic coverage for missing readiness findings.",
   "validation": "Re-run bmad-check-implementation-readiness."

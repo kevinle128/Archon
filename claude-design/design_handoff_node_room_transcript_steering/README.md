@@ -44,7 +44,7 @@ This feature was specified before it was designed. The contracts win over anythi
 | `…/control-states.md` | the control state machine and what each control reads |
 | `…/engine-integration.md` | everything between the browser and the provider seam |
 | `…/provider-steering-matrix.md` | how each provider takes a message and can be interrupted |
-| `_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/DESIGN.md` | every colour, size, spacing, radius — `status: final` |
+| `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md` | every colour, size, spacing, radius — `status: final` |
 | `…/EXPERIENCE.md` | component patterns, state patterns, keyboard, accessibility floor |
 
 > The earlier `spec-readable-agent-transcript` and `spec-live-agent-steering` are **superseded** — merged into `spec-agent-node-room`. Their `SPEC.md` carries a banner pointing here; do not build from them. All six companions above now live under `spec-agent-node-room/`.
@@ -496,5 +496,5 @@ Hard constraints from the specs:
 | `support.js` | runtime the four files need; must sit beside them |
 
 The originals these were ported from are still in the repo at
-`_bmad-output/planning-artifacts/ux-designs/ux-Archon-2026-09-09/mockups/` — five static HTML files,
+`_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/` — five static HTML files,
 superseded by this bundle except where noted in delta 5.

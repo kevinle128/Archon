@@ -15,9 +15,8 @@ sources:
   - ../../../specs/spec-archon-source-control/viewer-rules.md
   - ../../../specs/spec-archon-source-control/architecture-diagrams.md
   - ../../../specs/spec-archon-source-control/roadmap.md
-  - ../../ux-designs/ux-Archon-2026-09-05/DESIGN.md
-  - ../../ux-designs/ux-Archon-2026-09-05/EXPERIENCE.md
-  - ../../../../plans/architectures/archon-source-control.md
+  - ../../ux-designs/ux-Archon-source-control-2026-09-05/DESIGN.md
+  - ../../ux-designs/ux-Archon-source-control-2026-09-05/EXPERIENCE.md
 companions: []
 ---
 

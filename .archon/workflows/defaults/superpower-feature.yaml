@@ -27,9 +27,9 @@ nodes:
       } > "$ARTIFACTS_DIR/superpowers/setup.md"
 
   - id: write-plan
-    description: Write the Superpowers implementation plan with Grok 4.6.
+    description: Write the Superpowers implementation plan.
     provider: claude
-    model: "opus"
+    model: "claude-opus-4-8[1M]"
     effort: xhigh
     context: fresh
     depends_on:
@@ -55,6 +55,7 @@ nodes:
       Do not leave placeholders.
       If a product decision is missing, add an Open Questions section and choose a safe provisional default.
       Keep each full Markdown sentence on its own physical line.
+      After finish, ask advisor for review
 
       Return only JSON.
     output_format:
@@ -245,9 +246,9 @@ nodes:
     depends_on:
       - validate-prd
     idle_timeout: 3600000
-    provider: omp
+    provider: grok
     effort: high
-    model: cursor/cursor-grok-4.6
+    model: grok-4.6
     output_format:
       type: object
       properties:
@@ -276,8 +277,8 @@ nodes:
 
   - id: codex-final-fix
     description: Review the final code and fix defects directly with Codex.
-    provider: omp
-    model: cursor/gpt-5.6-sol
+    provider: codex
+    model: gpt-5.6-sol
     effort: xhigh
     context: fresh
     idle_timeout: 3600000

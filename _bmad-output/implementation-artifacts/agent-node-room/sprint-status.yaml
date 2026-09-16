@@ -1,0 +1,81 @@
+# generated: 2026-09-16 15:38:51 +0700
+# last_updated: 2026-09-16 15:38:51 +0700
+# project: Archon
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/implementation-artifacts/agent-node-room
+# epics: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
+#
+# Feature-scoped sprint plan for Agent Node Room.
+# Post-v1 gates G1-G4 are outside both epics' completion gates and are not tracked as stories here.
+#
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# Action Item Status:
+#   - open: Committed during a retrospective, not yet addressed
+#   - in-progress: Actively being worked on
+#   - done: Completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - Developer typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+# - Retrospective appends its action items to action_items; sprint-status surfaces open ones
+
+generated: "2026-09-16 15:38:51 +0700"
+last_updated: "2026-09-16 15:38:51 +0700"
+project: Archon
+feature: agent-node-room
+project_key: NOKEY
+tracking_system: file-system
+story_location: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/implementation-artifacts/agent-node-room
+epics_file: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
+
+development_status:
+  epic-1: backlog
+  1-1-scan-a-tool-call-as-one-readable-row: backlog
+  1-2-inspect-the-raw-payload-of-a-tool-call: backlog
+  1-3-read-expanded-details-shaped-for-the-tool-family: backlog
+  1-4-view-a-file-edit-as-an-inline-diff: backlog
+  1-5-track-the-agents-current-todo-state-in-a-pinned-strip: backlog
+  1-6-inspect-a-subagent-dispatch-and-its-subtasks: backlog
+  1-7-navigate-transcript-occurrences-and-loop-iterations: backlog
+  epic-1-retrospective: optional
+
+  epic-2: backlog
+  2-1-queue-guidance-for-a-running-agent: backlog
+  2-2-withdraw-a-queued-guidance-message: backlog
+  2-3-interrupt-and-redirect-a-running-claude-agent: backlog
+  2-4-interrupt-and-redirect-a-running-codex-agent: backlog
+  2-5-interrupt-and-redirect-a-running-omp-agent: backlog
+  2-6-interrupt-and-redirect-a-running-grok-agent: backlog
+  2-7-interrupt-and-redirect-a-running-deepseek-agent: backlog
+  2-8-see-operator-messages-in-the-transcript: backlog
+  2-9-see-the-same-live-queue-across-tabs-and-operators: backlog
+  2-10-see-queued-guidance-while-viewing-a-finished-iteration: backlog
+  2-11-recover-messages-that-were-never-sent-when-the-node-ends: backlog
+  2-12-fail-an-abandoned-redirect-safely-after-30-minutes: backlog
+  2-13-preserve-message-order-and-attribution-under-concurrent-operators: backlog
+  epic-2-retrospective: optional

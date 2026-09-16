@@ -30,7 +30,7 @@ A node-status click resolves to a `LogRow` through the existing Graph/Logs selec
 
 **Story authority:** `_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md`, Story 5.4, FR3 (timeline + status click, not Ask card), UX-DR7.
 
-**Approved design authority:** `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md` CAP-3, `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md` Direction A and `ChatTimeline`, `_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/app.js` `addChat`/`openPanel`, and `_bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md` AD-3 and AD-4 isolation.
+**Approved design authority:** `_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md` CAP-3, `_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/brownfield.md`, `_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md` Direction A and `ChatTimeline`, `_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/app.js` `addChat`/`openPanel`, and `_bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md` AD-3 and AD-4 isolation.
 
 **Issue:** https://github.com/anhle128/Archon/issues/84
 

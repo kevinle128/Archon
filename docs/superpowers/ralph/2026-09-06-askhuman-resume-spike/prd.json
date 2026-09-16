@@ -134,7 +134,7 @@
         "architecture-diagrams.md removes unsupported VERIFIED claims and names only the selected protocol and Pi durable order, or INCONCLUSIVE \u2014 Story 6.3 blocked for a failed provider gate.",
         "sprint-status.yaml is updated in its existing timestamp format but remains in-progress until final validation proves every completion-gate condition; it is never marked done merely because files or type checks exist."
       ],
-      "technicalNotes": "Follow Task 5 at docs/superpowers/plans/2026-09-06-askhuman-resume-spike.md:931-1045. AD-6 provider ownership is at _bmad-output/planning-artifacts/architecture/architecture-Archon-2026-09-05/ARCHITECTURE-SPINE.md:95-100 and the custom-only channel rule is at the same file:113-117. The comparison review is historical input and must remain unchanged.",
+      "technicalNotes": "Follow Task 5 at docs/superpowers/plans/2026-09-06-askhuman-resume-spike.md:931-1045. AD-6 provider ownership is at _bmad-output/planning-artifacts/architecture/architecture-Archon-workflow-run-view-hitl-2026-09-05/ARCHITECTURE-SPINE.md:95-100 and the custom-only channel rule is at the same file:113-117. The comparison review is historical input and must remain unchanged.",
       "dependsOn": [
         "US-004",
         "US-005",
