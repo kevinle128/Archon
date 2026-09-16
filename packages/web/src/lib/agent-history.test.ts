@@ -4,9 +4,12 @@ import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
 import {
   buildAgentHistory,
+  initialToolExpanded,
   toolContext,
+  toolRowView,
   toolRuntime,
   type AgentHistoryItem,
+  type ToolOutcome,
 } from './agent-history';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
@@ -418,5 +421,207 @@ describe('buildAgentHistory', () => {
       outcome: 'interrupted',
       outputState: 'full',
     });
+  });
+
+  test('projects a failed Bash pair with exitCode, shell presentation, and exit badge', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'bash-call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'bash-fail',
+          input: { cmd: 'bun test' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'bash-result',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'bash-fail',
+          output: { stdout: 'fail' },
+          metadata: { tool_phase: 'result', exit_code: 1 },
+        }),
+      ],
+    });
+    const tool = items[0];
+    expect(tool).toMatchObject({
+      kind: 'tool',
+      outcome: 'failed',
+      exitCode: 1,
+      presentation: {
+        family: 'shell',
+        label: 'Bash',
+        headline: 'bun test',
+        headlineKind: 'text',
+      },
+    });
+    if (tool === undefined || tool.kind !== 'tool') {
+      throw new Error('expected a tool item');
+    }
+    expect(toolRowView(tool).badges).toContainEqual({
+      text: 'exit 1',
+      tone: 'error',
+      priority: 'sticky',
+    });
+  });
+
+  test('folds an interrupted lifecycle into the immediately preceding tool', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'bash-1',
+          input: { cmd: 'sleep 1' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'result',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'bash-1',
+          output: 'partial',
+          metadata: { tool_phase: 'result' },
+        }),
+        statusRow('int', 3, 'interrupted'),
+      ],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'tool', outcome: 'interrupted' });
+  });
+
+  test('keeps a non-interrupted lifecycle row after a tool', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call',
+          seq: 1,
+          name: 'Read',
+          toolUseId: 'read-1',
+          input: { path: 'a.ts' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'result',
+          seq: 2,
+          name: 'Read',
+          toolUseId: 'read-1',
+          output: 'ok',
+          metadata: { tool_phase: 'result' },
+        }),
+        statusRow('life', 3, 'iteration_started', '1'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+    expect(items[1]).toMatchObject({ kind: 'lifecycle', state: 'iteration_started' });
+  });
+
+  test('keeps an orphan interrupted lifecycle when no tool immediately precedes it', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      events: [],
+      rows: [statusRow('int', 1, 'interrupted')],
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+  });
+});
+
+const EXPANSION_CASES: readonly [ToolOutcome, boolean][] = [
+  ['succeeded', false],
+  ['failed', true],
+  ['running', false],
+  ['interrupted', false],
+  ['unknown', false],
+];
+
+const STATUS_GLYPH_CASES: readonly [ToolOutcome, string][] = [
+  ['succeeded', '✓'],
+  ['failed', '✕'],
+  ['running', '◐'],
+  ['interrupted', '⚠'],
+  ['unknown', '–'],
+];
+
+function rowViewItem(
+  overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>>
+): Extract<AgentHistoryItem, { kind: 'tool' }> {
+  return {
+    kind: 'tool',
+    id: 'tool-1',
+    seq: 1,
+    role: 'tool',
+    name: 'Read',
+    toolUseId: 'tool-use-1',
+    context: [],
+    input: {},
+    output: {},
+    outcome: 'succeeded',
+    exitCode: null,
+    presentation: {
+      family: 'file',
+      label: 'Read',
+      chipAriaLabel: 'Read, file tool',
+      headline: 'a.ts',
+      headlineKind: 'path',
+      badges: [],
+    },
+    durationMs: null,
+    canLoadFullOutput: false,
+    outputState: 'full',
+    messageId: 'msg-1',
+    ...overrides,
+  };
+}
+
+describe('initialToolExpanded', () => {
+  test('initial expansion is table-driven for all five outcomes', () => {
+    for (const [outcome, expanded] of EXPANSION_CASES) {
+      expect(initialToolExpanded(outcome)).toBe(expanded);
+    }
+  });
+});
+
+describe('toolRowView', () => {
+  test('orders payload, non-zero exit, output-state, then droppable duration', () => {
+    const view = toolRowView(
+      rowViewItem({
+        presentation: {
+          family: 'code',
+          label: 'Eval',
+          chipAriaLabel: 'Eval, code tool',
+          headline: 'source',
+          headlineKind: 'text',
+          badges: ['javascript'],
+        },
+        exitCode: 1,
+        outputState: 'truncated',
+        durationMs: 1500,
+        outcome: 'failed',
+      })
+    );
+    expect(view.badges.map(badge => badge.text)).toEqual([
+      'javascript',
+      'exit 1',
+      'truncated',
+      '1.5s',
+    ]);
+    expect(
+      view.badges.filter(badge => badge.priority === 'droppable').map(badge => badge.text)
+    ).toEqual(['1.5s']);
+  });
+
+  test('projects status glyphs through the shared row view', () => {
+    for (const [outcome, glyph] of STATUS_GLYPH_CASES) {
+      expect(toolRowView(rowViewItem({ outcome })).glyph).toBe(glyph);
+    }
   });
 });

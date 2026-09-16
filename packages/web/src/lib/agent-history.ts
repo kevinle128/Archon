@@ -4,10 +4,27 @@
  * this module only maps those results onto assistant, tool, and lifecycle items.
  */
 import type { components } from './api.generated';
+import { formatDurationMs } from './format';
 import type { NodeMessageRow } from './node-message-pages';
 import type { ToolTranscriptCard } from './pair-tool-transcript';
 import { projectToolTranscript } from './pair-tool-transcript';
 import { projectTextTranscript } from './project-text-transcript';
+import { toolPresentation, type ToolPresentation } from './tool-presentation';
+
+export type ToolOutcome = 'running' | 'succeeded' | 'failed' | 'interrupted' | 'unknown';
+export type BadgeTone = 'default' | 'error' | 'warning' | 'muted';
+
+export interface ToolBadge {
+  text: string;
+  tone: BadgeTone;
+  priority: 'sticky' | 'droppable';
+}
+
+export interface ToolRowView {
+  glyph: string;
+  outcomeLabel: string;
+  badges: ToolBadge[];
+}
 
 export interface AgentHistoryInput {
   rows: readonly NodeMessageRow[];
@@ -33,7 +50,9 @@ export type AgentHistoryItem =
       context: { label: string; value: string }[];
       input: unknown;
       output: unknown;
-      outcome: 'running' | 'succeeded' | 'failed' | 'interrupted' | 'unknown';
+      outcome: ToolOutcome;
+      exitCode: number | null;
+      presentation: ToolPresentation;
       durationMs: number | null;
       canLoadFullOutput: boolean;
       outputState: 'full' | 'truncated' | 'missing' | 'unknown';
@@ -49,9 +68,34 @@ export type AgentHistoryItem =
 
 const TOOL_CONTEXT_KEYS = ['cmd', 'path', 'file_path', 'query', 'url'] as const;
 
-type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
+const STATUS_GLYPH: Record<ToolOutcome, string> = {
+  succeeded: '✓',
+  failed: '✕',
+  running: '◐',
+  interrupted: '⚠',
+  unknown: '–',
+};
+
+const OUTCOME_LABEL: Record<ToolOutcome, string> = {
+  succeeded: 'succeeded',
+  failed: 'failed',
+  running: 'running',
+  interrupted: 'interrupted',
+  unknown: 'unknown outcome',
+};
+
+const INITIAL_EXPANDED: Record<ToolOutcome, boolean> = {
+  succeeded: false,
+  failed: true,
+  running: false,
+  interrupted: false,
+  unknown: false,
+};
+
 type ToolCard = ToolTranscriptCard<NodeMessageRow>;
 type ToolRow = Extract<NodeMessageRow, { kind: 'tool' }>;
+type ToolHistoryItem = Extract<AgentHistoryItem, { kind: 'tool' }>;
+type ToolOutputState = ToolHistoryItem['outputState'];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -117,13 +161,22 @@ function extraToolFields(row: ToolRow | null): {
   };
 }
 
+function resolveExitCode(card: ToolCard): number | null {
+  return (
+    extraToolFields(card.result).exitCode ??
+    extraToolFields(card.call).exitCode ??
+    card.exitCode ??
+    null
+  );
+}
+
 function deriveOutcome(card: ToolCard): ToolOutcome {
   if (card.pending) return 'running';
 
   const resultFields = extraToolFields(card.result);
   const callFields = extraToolFields(card.call);
   const recordedOutcome = resultFields.outcome ?? callFields.outcome ?? card.outcome ?? null;
-  const exitCode = resultFields.exitCode ?? callFields.exitCode ?? card.exitCode ?? null;
+  const exitCode = resolveExitCode(card);
   const error = resultFields.error ?? callFields.error;
 
   if (exitCode !== null && exitCode !== 0) return 'failed';
@@ -147,7 +200,7 @@ function toToolItem(
   card: ToolCard,
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string
-): Extract<AgentHistoryItem, { kind: 'tool' }> {
+): ToolHistoryItem {
   const toolUseId = toolUseIdFrom(card);
   return {
     kind: 'tool',
@@ -160,12 +213,73 @@ function toToolItem(
     input: card.input,
     output: card.output,
     outcome: deriveOutcome(card),
+    exitCode: resolveExitCode(card),
+    presentation: toolPresentation({ name: card.name, input: card.input, output: card.output }),
     durationMs: toolRuntime(events, nodeId, toolUseId).durationMs,
     canLoadFullOutput:
       fullOutputAvailable(card.call?.metadata) || fullOutputAvailable(card.result?.metadata),
     outputState: deriveOutputState(card),
     messageId: card.result?.id ?? card.call?.id ?? card.id,
   };
+}
+
+export function initialToolExpanded(outcome: ToolOutcome): boolean {
+  return INITIAL_EXPANDED[outcome];
+}
+
+function outputStateBadge(state: ToolOutputState): ToolBadge | null {
+  if (state === 'full') {
+    return null;
+  }
+  if (state === 'truncated') {
+    return { text: 'truncated', tone: 'warning', priority: 'sticky' };
+  }
+  if (state === 'missing') {
+    return { text: 'output missing', tone: 'muted', priority: 'sticky' };
+  }
+  return { text: 'output unknown', tone: 'muted', priority: 'sticky' };
+}
+
+export function toolRowView(item: ToolHistoryItem, outputState?: ToolOutputState): ToolRowView {
+  const badges: ToolBadge[] = [];
+  for (const text of item.presentation.badges) {
+    badges.push({ text, tone: 'default', priority: 'sticky' });
+  }
+  const exitCode = item.exitCode;
+  if (exitCode !== null && Number.isFinite(exitCode) && exitCode !== 0) {
+    badges.push({ text: `exit ${String(exitCode)}`, tone: 'error', priority: 'sticky' });
+  }
+  const marker = outputStateBadge(outputState ?? item.outputState);
+  if (marker !== null) {
+    badges.push(marker);
+  }
+  if (item.durationMs !== null) {
+    badges.push({
+      text: formatDurationMs(item.durationMs),
+      tone: 'default',
+      priority: 'droppable',
+    });
+  }
+  return {
+    glyph: STATUS_GLYPH[item.outcome],
+    outcomeLabel: OUTCOME_LABEL[item.outcome],
+    badges,
+  };
+}
+
+function foldInterruptedLifecycle(items: readonly AgentHistoryItem[]): AgentHistoryItem[] {
+  const folded: AgentHistoryItem[] = [];
+  for (const item of items) {
+    if (item.kind === 'lifecycle' && item.state === 'interrupted') {
+      const previous = folded[folded.length - 1];
+      if (previous?.kind === 'tool') {
+        folded[folded.length - 1] = { ...previous, outcome: 'interrupted' };
+        continue;
+      }
+    }
+    folded.push(item);
+  }
+  return folded;
 }
 
 export function toolContext(input: unknown): { label: string; value: string }[] {
@@ -233,5 +347,5 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistoryItem[] 
       });
     }
   }
-  return items;
+  return foldInterruptedLifecycle(items);
 }
