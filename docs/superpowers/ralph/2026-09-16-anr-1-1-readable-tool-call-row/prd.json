@@ -16,8 +16,8 @@
       "technicalNotes": "Create packages/web/src/lib/tool-presentation.ts and tool-presentation.test.ts per docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 1 (lines 102-297). Use the FAMILY_CASES table and resolver skeleton from the plan. headlineKind is path only for file and glob, text otherwise.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: packages/web/src/lib/tool-presentation.ts, packages/web/src/lib/tool-presentation.test.ts. bun test --cwd packages/web src/lib/tool-presentation.test.ts: 5 pass / 54 expect."
     },
     {
       "id": "US-002",
@@ -37,8 +37,8 @@
         "US-001"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: packages/web/src/lib/tool-presentation.ts, packages/web/src/lib/tool-presentation.test.ts. bun test --cwd packages/web src/lib/tool-presentation.test.ts: 15 pass / 120 expect. bun --filter @archon/web type-check and eslint --max-warnings 0 on tool-presentation.ts exit 0."
     },
     {
       "id": "US-003",
@@ -57,8 +57,8 @@
         "US-002"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/web/src/lib/agent-history.ts, packages/web/src/lib/agent-history.test.ts, packages/web/src/components/workflows/NodeRoom.test.tsx. bun test --cwd packages/web src/lib/agent-history.test.ts: 14 pass / 43 expect. bun --filter @archon/web type-check and eslint --max-warnings 0 on agent-history.ts exit 0."
     },
     {
       "id": "US-004",
@@ -77,8 +77,8 @@
         "US-003"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: packages/web/src/components/workflows/NodeRoom.tsx, packages/web/src/components/workflows/NodeRoom.test.tsx. NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx: 12 pass / 68 expect. bun --filter @archon/web type-check and eslint on NodeRoom files exit 0."
     },
     {
       "id": "US-005",
@@ -96,8 +96,8 @@
         "US-004"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: ConsoleAgentHistoryList.tsx, ConsoleNodeRoom.test.tsx, console-isolation.test.ts. NODE_ENV=development bun test ConsoleNodeRoom.test.tsx: 20 pass / 113 expect. isolation 4 pass. type-check and eslint exit 0."
     },
     {
       "id": "US-006",
@@ -118,8 +118,8 @@
         "US-005"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 6. Files: agent-history.ts, agent-history.test.ts, NodeRoom.test.tsx, sprint-status.yaml, 1-1-evidence.md. bun run validate exit 0. rg toolContext/TOOL_CONTEXT_KEYS clean; remaining .context hits are DAG-node context:fresh, not the removed tool-item field."
     }
   ]
 }

@@ -1,0 +1,235 @@
+## Codebase Patterns
+
+### Tool-item context vs DAG-node context
+- **Where**: `packages/web/src/lib/agent-history.ts` vs `NodeInspector.tsx` / `WorkflowCanvas.tsx`
+- **Pattern**: After removing tool-item `context` / `toolContext` / `TOOL_CONTEXT_KEYS`, `rg '\.context\b'` still matches workflow YAML `context: 'fresh'` on DAG nodes. Those are not production readers of `AgentHistoryItem.context`.
+- **Example**: `value={node.context ?? ''}` is session inheritance, not a tool row.
+
+### Console isolation allowlist must include new @/lib imports
+- **Where**: `packages/web/src/experiments/console/console-isolation.test.ts` approved set
+- **Pattern**: Console run-room files may import `@/lib/agent-history` and `@/lib/tool-presentation`. Adding a new `@/lib/` import in ConsoleAgentHistoryList requires adding that spec to the approved set or isolation fails.
+- **Example**: `'@/lib/tool-presentation'`
+
+### Console live-transition tests render the list, not the room
+- **Where**: `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
+- **Pattern**: Build running/failed items with `buildAgentHistory()` wire rows (`tool_phase` call/result). Render `ConsoleAgentHistoryList` directly so hook refs survive the same `toolUseId`.
+- **Example**: `createElement(consoleAgentHistoryList.ConsoleAgentHistoryList, { items, ... })`
+
+### Console running glyph uses --running
+- **Where**: `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` `glyphColor()`
+- **Pattern**: Same disclosure markup as Legacy except `running` → `var(--running)` and keep `var(--rv-tool-card-border, 1px solid var(--border))`. Duplicate `useToolDisclosure` locally (AD-12).
+- **Example**: `case 'running': return 'var(--running)';`
+
+### Legacy tool disclosure is native details, not controlled open state
+- **Where**: `packages/web/src/components/workflows/NodeRoom.tsx` `useToolDisclosure()` / `ToolHistory()`
+- **Pattern**: `initialOpenRef` captures `initialToolExpanded(outcome)` once. `open={initialOpen || undefined}` is only the initial attribute. `markTouched` on summary click lets reader choice outrank the failed auto-open effect. Duplicate this hook locally in Console (AD-12); do not import it from Legacy.
+- **Example**: running → failed with untouchedRef false sets `details.open = true`; two summary clicks then failed keeps it closed
+
+### Inspect summary text, not whole-card markup
+- **Where**: `packages/web/src/components/workflows/NodeRoom.test.tsx` `firstToolSummaryMarkup()`
+- **Pattern**: Closed native `<details>` still contains Input/Output JSON in the DOM. Extract the first `<summary data-testid="tool-summary">` fragment, then `visibleText()`, before asserting no `{` / `[` / `"`.
+- **Example**: `visibleText(firstToolSummaryMarkup(markup))`
+
+### Happy-dom live transitions follow NodeRoomHeader
+- **Where**: `packages/web/src/components/workflows/NodeRoom.test.tsx` live-transition describe
+- **Pattern**: `process.env.NODE_ENV = 'development'` plus `installHappyDom` / `createRoot` / `act`. Re-render the same `item.id` so hook refs survive. Query `details[data-tool-id]` `.open`.
+- **Example**: `NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx`
+
+
+
+### Interrupted fold is a final pass
+- **Where**: `packages/web/src/lib/agent-history.ts` `foldInterruptedLifecycle()`
+- **Pattern**: After projecting items, walk once. A lifecycle with `state === 'interrupted'` whose previous emitted item is a tool is omitted and that tool's `outcome` becomes `'interrupted'`. Non-interrupted and orphan interrupted rows stay.
+- **Example**: `call + result + statusRow('interrupted')` → one tool with `outcome: 'interrupted'`
+
+### Shared exit code drives outcome and badge
+- **Where**: `packages/web/src/lib/agent-history.ts` `resolveExitCode()`
+- **Pattern**: Result metadata, then call metadata, then `card.exitCode`. `deriveOutcome()` and `toToolItem()` both call this helper so a non-zero exit cannot succeed while the badge disagrees.
+- **Example**: `{ tool_phase: 'result', exit_code: 1 }` → `outcome: 'failed'`, `exitCode: 1`, sticky `exit 1`
+
+### Badge order is payload, exit, output-state, duration
+- **Where**: `packages/web/src/lib/agent-history.ts` `toolRowView()`
+- **Pattern**: Payload facts first, then non-zero finite `exit N`, then truncated/missing/unknown marker, then duration. Only duration is `droppable`.
+- **Example**: `['javascript', 'exit 1', 'truncated', '1.5s']`
+
+### MCP names resolve before alias/duck-type
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `mcpPresentation()`
+- **Pattern**: Match `/^mcp__(.+?)__(.+)$/` first. Chip label is `server · tool` when ≤ 24 chars, otherwise the family name `generic`. Headline keeps the formatted pair even when the chip falls back.
+- **Example**: `mcp__server__tool` → `{ family: 'generic', label: 'server · tool' }`
+
+### Generic scalars via own data descriptors
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `genericHeadline()`
+- **Pattern**: Walk `Object.keys` and read `Object.getOwnPropertyDescriptor(record, key).value`. Skip nested objects/arrays, non-finite numbers, and accessors. Never `JSON.stringify` or `for…in`. Cap at 3 pairs; truncate values at 80 + `…`.
+- **Example**: `{ a: 1, nested: { x: 1 }, b: 'two', list: [1, 2], c: true, d: 'ignored' }` → `a: 1 · b: two · c: true`
+
+### Chip sent-name rule is all-or-nothing
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `chipLabelFor()`
+- **Pattern**: Keep the sent name only when `/^\S+$/` and `length <= 24`. Never truncate a chip; fall back to the family id. `chipAriaLabel` is `${label}, ${family} tool` when they differ, else `${family} tool`.
+- **Example**: `'npm test'` → label `shell`, aria `shell tool`
+
+### React-free web lib resolver
+- **Where**: `packages/web/src/lib/tool-presentation.ts`
+- **Pattern**: Shared presentation lives in `packages/web/src/lib/` with no React and no `@archon/*` imports. Tests sit beside the module as `*.test.ts` and run via `bun test --cwd packages/web src/lib/<file>.test.ts`. ESLint ignores `**/*.test.ts`; lint the production file only.
+- **Example**: `export function toolPresentation(input: ToolPresentationInput): ToolPresentation`
+
+### Exact normalized alias match, never substring
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `normalizeToolName` / `FAMILY_ALIASES`
+- **Pattern**: Case-fold and strip `_`/`-` only (spaces stay). Match the full normalized token against the alias list. `search_replace` → `searchreplace` hits file, not search.
+- **Example**: `name.toLowerCase().replaceAll(/[_-]/g, '')`
+
+### Malformed input is generic before alias resolution
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `toolPresentation()`
+- **Pattern**: Invalid name or non-`undefined` non-plain-object input (null, array, primitive) returns generic without throwing. Missing input and `{}` are the Codex name-only shell path, after alias/key resolution.
+
+---
+
+## 2026-09-16 — US-001: Classify tool calls to families
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/tool-presentation.ts` — React-free resolver with FAMILY_ALIASES, ordered input-key duck-typing, Codex name-only shell, glob pattern-before-path headlines
+- `packages/web/src/lib/tool-presentation.test.ts` — Tier 1 alias table, input-key fallbacks, search_replace trap, glob headlines, malformed input
+
+**Acceptance criteria verified**:
+- [x] Exports ToolFamily, ToolPresentationInput, ToolPresentation, and toolPresentation() with no React or @archon/* imports
+- [x] FAMILY_ALIASES and input-key resolution follow the plan order: alias, code pair, command, path, pattern, URL, before/after, Codex name-only, generic
+- [x] Normalized names match exactly after case-folding and removing `_`/`-`; search_replace resolves to file
+- [x] Glob headlines prefer pattern before path; file/search/web/code select the first matching string key
+- [x] Null, arrays, primitives, invalid names, and non-plain-object inputs resolve to generic without throwing
+- [x] `bun test --cwd packages/web src/lib/tool-presentation.test.ts` passes (5 pass, 54 expect)
+
+**Learnings**:
+- Worktree had no `node_modules`; `bun install` from the lockfile is required before `type-check` / eslint
+- ESLint globally ignores `**/*.test.ts`; lint `tool-presentation.ts` only, with `--max-warnings 0`
+- Chip/MCP/wrapper/generic-scalar display is US-002; Task 1 only needs family, headline, headlineKind, and code language badges
+
+---
+
+## 2026-09-16 — US-002: Complete chip, headline, and safe-degradation display
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/tool-presentation.ts` — FAMILY_CHIP_TOKEN, chip cap, MCP parse, Codex wrapper strip, first-line ellipsis, elideHeadline(), generic scalar headline
+- `packages/web/src/lib/tool-presentation.test.ts` — chip, MCP, wrapper, code length, elision, generic scalar, __proto__ tests
+
+**Acceptance criteria verified**:
+- [x] Exports FAMILY_CHIP_TOKEN and elideHeadline() with path head/tail split and unchanged text arm
+- [x] Chip uses sent name only when /^\S+$/ and length <= 24; otherwise family fallback; chipAriaLabel is family-aware
+- [x] MCP /^mcp__(.+?)__(.+)$/; long server · tool labels fall back to generic when over 24 characters
+- [x] /bin/zsh -lc and /bin/bash -lc wrappers strip from first-line headline; multiline names collapse to first line plus …
+- [x] Code family keeps full source headline (not 80-char generic limit) and emits language as first payload badge
+- [x] Generic uses at most three scalar pairs, truncates values at 80, ignores nested objects/arrays, no JSON.stringify or __proto__ walk
+- [x] bun test --cwd packages/web src/lib/tool-presentation.test.ts: 15 pass / 120 expect
+- [x] bun --filter @archon/web type-check and eslint packages/web/src/lib/tool-presentation.ts --max-warnings 0 exit 0
+
+**Learnings**:
+- ESLint ignores `**/*.test.ts`; linting the test path without `--no-warn-ignored` fails `--max-warnings 0`. lint-staged already passes `--no-warn-ignored`
+- Empty `{}` and missing input remain Codex name-only shell; generic scalar headlines only run when duck-typing misses and the record is non-empty
+- Code headlines skip the generic 80-char cap even at 100k characters; do not share the scalar formatter with the code arm
+
+---
+
+## 2026-09-16 — US-003: Project shared tool row data and fold interrupted lifecycle
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/agent-history.ts` — exitCode, presentation, resolveExitCode, toolRowView, initialToolExpanded, interrupted lifecycle fold
+- `packages/web/src/lib/agent-history.test.ts` — Bash exit projection, expansion table, badge order, glyph table, fold/orphan tests
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — toolItem() fixture exitCode + complete presentation
+
+**Acceptance criteria verified**:
+- [x] Tool arm carries exitCode and presentation; toToolItem() uses toolPresentation() and resolveExitCode()
+- [x] Exports ToolOutcome, BadgeTone, ToolBadge, ToolRowView, initialToolExpanded(), toolRowView(); STATUS_GLYPH/OUTCOME_LABEL/INITIAL_EXPANDED match the five-outcome table
+- [x] Badge order is payload facts, non-zero exit, output-state marker, duration; only duration is droppable
+- [x] Bash call/result with exit_code: 1 projects failed, exitCode 1, shell presentation, sticky exit 1 badge
+- [x] Interrupted lifecycle folds into the preceding tool; non-interrupted and orphan interrupted rows remain
+- [x] NodeRoom.test.tsx toolItem() has exitCode: null and complete presentation
+- [x] bun test --cwd packages/web src/lib/agent-history.test.ts: 14 pass / 43 expect
+- [x] bun --filter @archon/web type-check and eslint packages/web/src/lib/agent-history.ts --max-warnings 0 exit 0
+
+**Learnings**:
+- `prefer-optional-chain` wants `previous?.kind === 'tool'` rather than an explicit undefined check
+- `context` stays on the tool arm until US-006; keep the field even though shells will stop reading it in later stories
+- The only hand-authored AgentHistoryItem tool literal is NodeRoom.test.tsx `toolItem()`; other `kind: 'tool'` fixtures are wire rows
+
+---
+
+## 2026-09-16 — US-004: Render Legacy native disclosure row
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — native details/summary tool row, useToolDisclosure, glyph/chip/headline/badges, labelled Input/Output sections
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — summary contract, a11y, two happy-dom live-transition tests
+
+**Acceptance criteria verified**:
+- [x] ToolHistory renders `<details data-tool-id>` with `<summary data-testid="tool-summary">`; collapsed summary has no `{` / `[` / `"` from Input/Output payloads
+- [x] useToolDisclosure() matches plan: stable initialOpen from initialToolExpanded(), markTouched on summary click, auto-open on failed only when untouched
+- [x] Succeeded tools render details without open; failed tools render details open initially; summary shows glyph role=img, chip FAMILY_CHIP_TOKEN colours, elided path, ordered badges
+- [x] Legacy glyphColor uses --accent-bright for running; expanded body keeps Input/Output and View full output; nested details converted to labelled divs
+- [x] NodeRoom.test.tsx covers summary content, chip aria-label + title=family, untouched running→failed opens, manually toggled row stays closed
+- [x] NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx: 12 pass / 68 expect
+- [x] bun --filter @archon/web type-check and eslint on NodeRoom files exit 0
+
+**Learnings**:
+- Closed native details still contain body JSON in SSR markup; assert punctuation only on the summary fragment
+- Duplicate useToolDisclosure in Console (US-005); do not import the Legacy hook
+- ESLint on `.test.tsx` is live (ignore is `**/*.test.ts` only); use `RegExp#exec()` and optional chaining
+
+---
+
+## 2026-09-16 — US-005: Render Console native disclosure row
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — native details/summary row, local useToolDisclosure, --running glyph, labelled Input/Output
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — succeeded Read, failed Bash, updated disclosure contract, two live-transition tests via buildAgentHistory
+- `packages/web/src/experiments/console/console-isolation.test.ts` — approve `@/lib/tool-presentation`
+
+**Acceptance criteria verified**:
+- [x] ConsoleAgentHistoryList mirrors Legacy disclosure markup with --running and duplicated useToolDisclosure
+- [x] Succeeded Read pair: closed details, summary has ✓ / Read / a.ts, no raw output
+- [x] Failed Bash pair: open details, summary has ✕ / Bash / bun test / exit 1, body keeps output
+- [x] Existing history test asserts closed disclosure + summary instead of open nested details
+- [x] Live-transition tests use buildAgentHistory(); untouched running→error opens; manual toggle stays closed
+- [x] Shared imports only from @/lib/agent-history and @/lib/tool-presentation; no Legacy component imports
+- [x] NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx: 20 pass / 113 expect
+- [x] bun test --cwd packages/web src/experiments/console/console-isolation.test.ts: 4 pass
+- [x] bun --filter @archon/web type-check and eslint --max-warnings 0 exit 0
+
+**Learnings**:
+- Combined call+result messages without tool_phase project as unknown (call is null); the disclosure is closed
+- Isolation approved set is a closed list; a new @/lib import must be added there
+- Console tests already run under happy-dom, so query details.open on the live element rather than SSR markup
+
+---
+
+## 2026-09-16 — US-006: Remove superseded context and close Story 1.1
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/agent-history.ts` — removed tool-item `context`, `TOOL_CONTEXT_KEYS`, `toolContext()`, and `toToolItem()` assignment
+- `packages/web/src/lib/agent-history.test.ts` — deleted `toolContext` tests and fixture `context`
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — deleted `context` from `toolItem()`
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — `1-1-scan-a-tool-call-as-one-readable-row: done`
+- `_bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md` — date, commits, pass counts, AC map
+
+**Acceptance criteria verified**:
+- [x] Removed tool-item context field, TOOL_CONTEXT_KEYS, toolContext(), and toToolItem() assignment; deleted characterization tests and Legacy toolItem() context
+- [x] `rg -n "toolContext|TOOL_CONTEXT_KEYS" packages/web/src` has no matches. Broad `\.context\b` still hits DAG-node `context: 'fresh'` in NodeInspector.tsx and WorkflowCanvas.tsx (not the removed tool-item field)
+- [x] Focused Story 1.1 tests: tool-presentation 15/120, agent-history 12/39, NodeRoom 12/68, ConsoleNodeRoom 20/113, isolation 4/17
+- [x] `bun --filter @archon/web test` all legs 0 fail
+- [x] sprint-status.yaml marked done after tests passed
+- [x] 1-1-evidence.md records 2026-09-16, commit hashes, pass counts, and AC-to-test map
+- [x] `bun run validate` exited 0 with zero warnings
+
+**Learnings**:
+- Production readers of tool-item context were already gone after US-004/US-005; cleanup is type + test only
+- `bun run validate` also type-checks `scripts/` which imports `@hono/zod-openapi`; that package must be a root dep
+- BMAD create-story default YAML was deleted on this branch; leftover bundled-defaults tests fail until removed
+- `FORCE_COLOR` + `NO_COLOR` together make bun print a warning on stderr; spawn tests that assert empty stderr must drop `NO_COLOR`
+
+BLOCKER US-006 | gate=`bun x tsc --noEmit -p scripts/tsconfig.json` | cause=TS2307 Cannot find module '@hono/zod-openapi' in scripts/feature-verify-workflow.test.ts and imported verify-archon files; same fingerprints on clean HEAD | action=chore(unblock) add @hono/zod-openapi to root package.json | 2026-09-16
+BLOCKER US-006 | gate=`bun test --cwd packages/workflows src/defaults/bundled-defaults.test.ts` | cause=BUNDLED_WORKFLOWS['bmad-create-story-with-tea'] undefined after 28bbf66a deleted those YAML files; generate-bundled-defaults.test.ts:148 stderr NO_COLOR warning | action=chore(unblock) drop deleted-workflow tests; delete NO_COLOR from runScript env | 2026-09-16
+
+---
+
