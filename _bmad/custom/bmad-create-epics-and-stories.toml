@@ -8,4 +8,11 @@ persistent_facts = [
   "The target spec package is the sole requirements lineage for this epics run. Use its SPEC.md, companion contracts, architecture, and UX documents.",
   "Treat inputDocuments in the target artifacts as authoritative lineage. Do not substitute similarly named documents from another folder.",
   "Never create or select a generic {planning_artifacts}/epics.md for a target-scoped initiative.",
+  "Every story must deliver exactly one standalone feature with one observable user or operator outcome.",
+  "A story is standalone only when it can be implemented, demonstrated, accepted, and released without any future story.",
+  "Include the complete vertical slice required by the feature in the story. Supporting schema, registry, backend, API, UI, tests, accessibility, and documentation are tasks or acceptance criteria, not separate stories.",
+  "Do not combine independently usable capabilities or lifecycle actions in one story.",
+  "Split work at every independent acceptance boundary. If one part can be implemented, demonstrated, accepted, released, or rolled back without another part, they must be separate stories.",
+  "Reject stories that only deliver a technical layer unless that layer is itself a complete user-visible feature.",
+  "During final validation, fail any story with multiple independently demonstrable outcomes and return it for further splitting.",
 ]

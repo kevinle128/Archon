@@ -15,15 +15,16 @@ a duplicate.
 Prereq: run build_issue_map.py first so the story has {epic, title, blocked_by}.
 
 Usage:
-  python .../create_issue.py --story 3-5-characterize-the-oh-my-pi-executor-and-lifecycle
-  python .../create_issue.py --story <id> --body-file plans/.../rich-body.md
-  python .../create_issue.py --story <id> --dry-run
+  python .../create_issue.py --story 3-5-characterize-the-oh-my-pi-executor-and-lifecycle --workflow superpower-feature
+  python .../create_issue.py --story <id> --workflow <name> --body-file plans/.../rich-body.md
+  python .../create_issue.py --story <id> --workflow <name> --dry-run
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -64,15 +65,20 @@ def canonical_title(story_id: str, epic: int, title: str) -> str:
     return f"[{MILESTONE_TAG}][Epic {epic}] {story_id}: {title}"
 
 
+def with_implementation_workflow(body: str, workflow: str) -> str:
+    pattern = re.compile(r"\n*## Implementation workflow\n\n.*?(?=\n## |\Z)", re.DOTALL)
+    body_without_workflow = pattern.sub("", body).rstrip()
+    if not workflow:
+        return f"{body_without_workflow}\n"
+    return (
+        f"{body_without_workflow}\n\n## Implementation workflow\n\n"
+        f"Build this story with the Archon `{workflow}` workflow after the issue is ready to pick.\n"
+    )
+
+
 def default_body(story_id: str, epic: int, title: str, blocked_by: list[str]) -> str:
     deps = "\n".join(f"- `{d}`" for d in blocked_by) if blocked_by else "- _(none — ready when open)_"
-    workflow = ""
-    if WORKFLOW:
-        workflow = (
-            "\n## Implementation workflow\n\n"
-            f"Build this story with the Archon `{WORKFLOW}` workflow after the issue is ready to pick.\n"
-        )
-    return f"""## Outcome
+    body = f"""## Outcome
 
 Ship {MILESTONE_TAG} story **{display_num(story_id)}**: {title}.
 
@@ -101,7 +107,8 @@ Native GitHub **blocked by** edges are wired on this issue from the issue-map. P
 ## Handoff Log
 
 - issue created/adopted via github-issue-tracker skill; relationships wired from the issue-map.
-{workflow}"""
+"""
+    return with_implementation_workflow(body, WORKFLOW)
 
 
 def issue_matches_story(issue: dict, story_id: str) -> bool:
@@ -226,6 +233,19 @@ def reconcile_labels(number: int, labels: list[str]) -> None:
             f"reconcile_labels invariant failed on #{number}: want={sorted(want)} have={sorted(have)}")
 
 
+def reconcile_workflow(number: int, workflow: str) -> None:
+    view = json.loads(run([
+        "gh", "issue", "view", str(number), "--repo", f"{OWNER}/{REPO}", "--json", "body",
+    ]))
+    current = view.get("body") or ""
+    desired = with_implementation_workflow(current, workflow)
+    if desired == current:
+        return
+    run([
+        "gh", "issue", "edit", str(number), "--repo", f"{OWNER}/{REPO}", "--body-file", "-",
+    ], input_text=desired)
+
+
 def create_issue(story_id: str, epic: int, title: str, body: str, labels: list[str]) -> dict:
     payload = {
         "title": canonical_title(story_id, epic, title),
@@ -255,11 +275,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sprint-status", default=SPRINT_STATUS)
     parser.add_argument("--target-name", default=TARGET_REPO)
     parser.add_argument("--feature-type-id", default=FEATURE_TYPE_ID, help="GitHub issue type node id; empty skips")
-    parser.add_argument("--workflow", default="", help="optional Archon workflow name recorded in the body")
+    parser.add_argument(
+        "--workflow",
+        default=None,
+        help="required Archon workflow selection recorded in the body; pass an explicit empty value for none",
+    )
     parser.add_argument("--milestone", type=int, default=MILESTONE)
     parser.add_argument("--body-file", type=Path, help="use this file as the issue body instead of the canonical template")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if args.workflow is None:
+        print(
+            "error: --workflow is required; ask the user which Archon workflow to use "
+            "or pass an explicit empty value for none",
+            file=sys.stderr,
+        )
+        return 2
     owner, repo = args.repo.split("/", 1)
     OWNER, REPO = owner, repo
     MILESTONE = args.milestone
@@ -287,12 +318,17 @@ def main(argv: list[str] | None = None) -> int:
     epic = entry["epic"]
     title = entry["title"]
     blocked_by = entry.get("blocked_by", [])
-    body = args.body_file.read_text() if args.body_file else default_body(args.story, epic, title, blocked_by)
+    body = (
+        with_implementation_workflow(args.body_file.read_text(), WORKFLOW)
+        if args.body_file
+        else default_body(args.story, epic, title, blocked_by)
+    )
     labels = desired_labels(epic, entry, stories)
 
     if args.dry_run:
         print(f"[dry-run] title: {canonical_title(args.story, epic, title)}")
         print(f"[dry-run] labels: {', '.join(labels)} ; milestone {MILESTONE}")
+        print(f"[dry-run] workflow: {WORKFLOW or '(none)'}")
         print(f"[dry-run] blocked_by: {blocked_by or '(none)'}")
         rev = [s for s, m in stories.items() if args.story in m.get('blocked_by', []) and m.get('node_id')]
         print(f"[dry-run] reverse edges to wire (created stories that depend on this): {rev or '(none)'}")
@@ -306,6 +342,7 @@ def main(argv: list[str] | None = None) -> int:
         set_milestone(entry["number"])
         set_feature_type(entry["node_id"])
         reconcile_labels(entry["number"], labels)
+        reconcile_workflow(entry["number"], WORKFLOW)
     else:
         existing = find_existing(args.story)
         if existing:
@@ -316,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
                 set_milestone(existing["number"])
             set_feature_type(existing["node_id"])
             reconcile_labels(existing["number"], labels)
+            reconcile_workflow(existing["number"], WORKFLOW)
         else:
             created = create_issue(args.story, epic, title, body, labels)
             entry.update(number=created["number"], node_id=created["node_id"], url=created["html_url"])

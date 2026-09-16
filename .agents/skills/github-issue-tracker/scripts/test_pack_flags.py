@@ -82,6 +82,17 @@ def test_default_body_pack_and_workflow() -> None:
     assert "No secrets in events" not in body
 
 
+def test_custom_body_reconciles_workflow() -> None:
+    original = "# Rich context\n\n## Implementation workflow\n\nUse `old-workflow`.\n"
+    updated = ci.with_implementation_workflow(original, "superpower-feature")
+    assert updated.count("## Implementation workflow") == 1
+    assert "Archon `superpower-feature` workflow" in updated
+    assert "old-workflow" not in updated
+    removed = ci.with_implementation_workflow(updated, "")
+    assert "## Implementation workflow" not in removed
+    assert "# Rich context" in removed
+
+
 def test_set_feature_type_skips_empty_id() -> None:
     previous = ci.FEATURE_TYPE_ID
     ci.FEATURE_TYPE_ID = ""
@@ -96,6 +107,27 @@ def test_set_feature_type_skips_empty_id() -> None:
     finally:
         ci.run = old_run  # type: ignore[method-assign]
         ci.FEATURE_TYPE_ID = previous
+
+
+def test_reconcile_workflow_preserves_existing_body() -> None:
+    calls: list[tuple[list[str], str | None]] = []
+
+    def fake_run(cmd: list[str], *, input_text: str | None = None) -> str:
+        calls.append((cmd, input_text))
+        if "view" in cmd:
+            return json.dumps({"body": "# Existing context\n"})
+        return ""
+
+    old_run = ci.run
+    ci.run = fake_run  # type: ignore[method-assign]
+    try:
+        ci.reconcile_workflow(42, "superpower-feature")
+    finally:
+        ci.run = old_run  # type: ignore[method-assign]
+    assert len(calls) == 2
+    assert calls[1][0][-2:] == ["--body-file", "-"]
+    assert "# Existing context" in (calls[1][1] or "")
+    assert "Archon `superpower-feature` workflow" in (calls[1][1] or "")
 
 
 def test_main_dry_run_pack_flags() -> None:
@@ -148,8 +180,21 @@ def test_main_dry_run_pack_flags() -> None:
     assert "labels: New Feature, archon-source-control, epic-1" in out
     assert "status:ready" not in out
     assert "milestone 1" in out
+    assert "workflow: superpower-feature" in out
     assert ci.OWNER == snap["OWNER"]
     assert ci.FEATURE_TYPE_ID == snap["FEATURE_TYPE_ID"]
+
+
+def test_main_requires_workflow_selection() -> None:
+    err = io.StringIO()
+    old_err = sys.stderr
+    try:
+        sys.stderr = err
+        rc = ci.main(["--story", "1-1-example", "--dry-run"])
+    finally:
+        sys.stderr = old_err
+    assert rc == 2
+    assert "--workflow is required" in err.getvalue()
 
 
 def main() -> int:
@@ -159,10 +204,16 @@ def main() -> int:
     print("  ok: desired_labels pack")
     test_default_body_pack_and_workflow()
     print("  ok: default_body pack/workflow")
+    test_custom_body_reconciles_workflow()
+    print("  ok: custom body workflow reconciliation")
     test_set_feature_type_skips_empty_id()
     print("  ok: set_feature_type skip")
+    test_reconcile_workflow_preserves_existing_body()
+    print("  ok: existing issue workflow reconciliation")
     test_main_dry_run_pack_flags()
     print("  ok: main dry-run pack flags")
+    test_main_requires_workflow_selection()
+    print("  ok: workflow selection required")
     print("all pack-flag unit cases passed")
     return 0
 

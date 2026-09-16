@@ -1,6 +1,6 @@
 ---
 name: github-issue-tracker
-description: Create GitHub issues for RM-02 stories ONE BY ONE with correct, consistent relationships. Use whenever you need to open a GitHub issue for a tracked story (e.g. "create issue", "open an issue for story X", "file the ticket"). Relationships (blocked-by) are read from the issue-map, NOT re-read from the epic each time. Always produces the same canonical shape (title, labels, milestone, Feature type, native blocked-by edges) and records the issue back into the map. Do NOT hand-roll `gh issue create`; do NOT use the retired batch script sync-github-issues.py.
+description: Create GitHub issues for tracked stories ONE BY ONE with a user-selected Archon workflow and consistent relationships. Use whenever you need to open a GitHub issue for a tracked story (e.g. "create issue", "open an issue for story X", "file the ticket"). Relationships (blocked-by) are read from the issue-map, NOT re-read from the epic each time. Always produces the same canonical shape (title, labels, milestone, Feature type, implementation workflow, native blocked-by edges) and records the issue back into the map. Do NOT hand-roll `gh issue create`; do NOT use the retired batch script sync-github-issues.py.
 ---
 
 # GitHub Issue Tracker — one-by-one, relationship-aware
@@ -59,10 +59,20 @@ python .agents/skills/github-issue-tracker/scripts/build_issue_map.py \
   --milestone 1
 ```
 
-### Step 2 — Create the issue for one story
+### Step 2 — Select the Archon implementation workflow
+
+Before creating or adopting an issue, ask the user which Archon workflow should implement it.
+Do not infer the workflow from the repository, epic, or a previous issue.
+Pass the selected name with `--workflow <name>`.
+If the user explicitly wants no Archon workflow, pass `--workflow ""`.
+The CLI rejects an omitted `--workflow` so this decision cannot be skipped accidentally.
+
+### Step 3 — Create the issue for one story
 
 ```
-python .agents/skills/github-issue-tracker/scripts/create_issue.py --story <story-id>
+python .agents/skills/github-issue-tracker/scripts/create_issue.py \
+  --story <story-id> \
+  --workflow <selected-workflow>
 ```
 
 It will:
@@ -70,7 +80,7 @@ It will:
 1. Read `{epic, title, blocked_by}` for the story from the map (errors if missing —
    run Step 1 first).
 2. Create the issue in the canonical shape, or **adopt** an existing issue with the
-   same tracker key (idempotent; reconciles milestone + Feature type on an ad-hoc issue).
+   same tracker key (idempotent; reconciles milestone, Feature type, labels, and the selected workflow).
 3. Wire native GitHub **blocked by** edges in both directions, resolving blockers
    through the map (`addBlockedBy`). Blockers not created yet are reported as `pending`
    and get wired automatically when they are later created (reverse-edge pass).
@@ -82,7 +92,9 @@ Options:
   canonical template. Attach long context as a follow-up comment with `gh issue comment`.
 - `--dry-run`: show the title/labels/blocked_by and the reverse edges that would be wired.
 - `--map`, `--repo`, `--tag`, `--pack-label`, `--extra-label`, `--epics`, `--sprint-status`,
-  `--target-name`, `--milestone`, `--workflow`, `--feature-type-id`: pack overrides.
+  `--target-name`, `--milestone`, `--feature-type-id`: pack overrides.
+- `--workflow` is mandatory and records the user-selected Archon workflow in the issue body.
+  Pass an explicit empty value only after the user selects no workflow.
   Empty `--feature-type-id` skips `updateIssueIssueType` (use when the repo has no issue types).
 
 Archon Source Control example:
@@ -108,6 +120,7 @@ python .agents/skills/github-issue-tracker/scripts/create_issue.py \
 - Labels: `New Feature`, `<pack-label>` (default `rm-02`), `epic-<N>`, plus `status:ready` **only when the story's map status is `ready-for-dev` and every blocker is `done`** (derived; see status-label rule) — backlog/in-progress/review/done or a blocked story carry no `status:ready`
 - Milestone: pack `--milestone` (default `1`)
 - Issue type: Feature (`updateIssueIssueType`) on repos that have issue types. Pass `--feature-type-id ""` when GraphQL `issueTypes` is null / the org has no Feature type — do not reuse another org's type id.
+- Implementation workflow: the Archon workflow selected by the user before creation
 - Relationships: native `blocked by` edges (`addBlockedBy`), never just prose
 - Recorded in the issue-map
 
@@ -137,6 +150,10 @@ filled by create_issue; `status` mirrors sprint-status.
 
 - NEVER hand-roll `gh issue create` for a tracked story — use `create_issue.py` so shape
   and relationships stay consistent.
+- ALWAYS ask which Archon workflow to use before issue creation or adoption.
+  Never reuse a prior answer without asking.
+- NEVER omit `--workflow`.
+  Use `--workflow ""` only when the user explicitly selects no workflow.
 - NEVER re-read the epic to decide relationships — the map is the source. If a
   dependency is wrong, fix it in the map (or the builder seed for a first build).
 - NEVER recreate a batch issue creator (the old `sync-github-issues.py` was removed); create one-by-one with these scripts.
