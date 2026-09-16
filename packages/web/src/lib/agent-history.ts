@@ -47,7 +47,6 @@ export type AgentHistoryItem =
       role: 'tool';
       name: string;
       toolUseId: string;
-      context: { label: string; value: string }[];
       input: unknown;
       output: unknown;
       outcome: ToolOutcome;
@@ -65,8 +64,6 @@ export type AgentHistoryItem =
       state: string;
       detail: string | null;
     };
-
-const TOOL_CONTEXT_KEYS = ['cmd', 'path', 'file_path', 'query', 'url'] as const;
 
 const STATUS_GLYPH: Record<ToolOutcome, string> = {
   succeeded: '✓',
@@ -209,7 +206,6 @@ function toToolItem(
     role: 'tool',
     name: card.name,
     toolUseId,
-    context: toolContext(card.input),
     input: card.input,
     output: card.output,
     outcome: deriveOutcome(card),
@@ -280,20 +276,6 @@ function foldInterruptedLifecycle(items: readonly AgentHistoryItem[]): AgentHist
     folded.push(item);
   }
   return folded;
-}
-
-export function toolContext(input: unknown): { label: string; value: string }[] {
-  const record = asRecord(input);
-  if (record === null) return [];
-  const context: { label: string; value: string }[] = [];
-  for (const key of TOOL_CONTEXT_KEYS) {
-    const raw = record[key];
-    if (typeof raw !== 'string') continue;
-    const value = raw.trim();
-    if (value.length === 0) continue;
-    context.push({ label: key, value });
-  }
-  return context;
 }
 
 export function toolRuntime(

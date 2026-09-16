@@ -123,7 +123,6 @@ function toolItem(
     role: 'tool',
     name: 'Read',
     toolUseId: 'tool-use-1',
-    context: [{ label: 'path', value: 'a.ts' }],
     input: { path: 'a.ts' },
     output: 'truncated-output',
     outcome: 'succeeded',
