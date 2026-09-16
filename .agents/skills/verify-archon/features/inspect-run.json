@@ -2,7 +2,7 @@
   "version": 1,
   "id": "inspect-run",
   "description": "Inspect a real paused run with CLI get/status and HTTP read-back.",
-  "impact_paths": ["packages/cli/src/commands/workflow*", "packages/core/src/db/workflow-runs*"],
+  "impact_paths": ["packages/cli/src/commands/workflow*", "packages/core/src/db/workflows*"],
   "behaviors": [
     {
       "id": "runs.inspection",

@@ -4,7 +4,7 @@
   "description": "List and validate workflows through CLI and the project HTTP catalog.",
   "impact_paths": [
     "packages/workflows/src/loader*",
-    "packages/workflows/src/discovery*",
+    "packages/workflows/src/workflow-discovery*",
     "packages/cli/src/commands/validate*"
   ],
   "behaviors": [

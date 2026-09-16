@@ -12,7 +12,7 @@
     "bun.lock",
     "docs/superpowers/plans/2026-09-10-reusable-verification-generators.md",
     "docs/superpowers/specs/2026-09-10-reusable-verification-generators-design.md",
-    "e2e/bun.lock",
+    "e2e/package-lock.json",
     "e2e/package.json",
     "e2e/playwright.config.ts",
     "e2e/README.md",

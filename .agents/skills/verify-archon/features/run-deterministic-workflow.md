@@ -31,7 +31,7 @@ Preconditions:
 - `verify-archon doctor` passed.
 - `e2e-deterministic` appears in `verify-archon cli -- workflow list --json`.
 - Isolated `ARCHON_HOME` is set so run rows do not land in the operator's `~/.archon`.
-- `uv` is optional. Without it, the `script-python` node fails a real run and `--exec-code`. Stubbed dry-run still proves completed routing; a bare `--dry-run` (no stubs, no `--exec-code`) emits a routing trace with `missingStubs` and exits `78`.
+- `uv` is optional. Without it, the `script-python` node fails a real run and `--exec-code`. Stubbed dry-run still proves completed routing; a bare `--dry-run --json` (no stubs, no `--exec-code`) emits a routing trace with `missingStubs` and exits `78`. Without `--json`, the same routing failure prints the trace and exits `1`.
 
 - **Dry-run routing.** Run `verify-archon prove --scenario workflows.dry-run`. It supplies stubs, asserts `outcome: completed`, and compares the complete before/after run listings. A missing stub or changed listing fails.
 - **Confirm dry-run isolation.** Observe that no provider was contacted and no new run id appeared. Run `verify-archon cli -- workflow runs --json` again. The run count matches the pre-dry-run count.
@@ -41,7 +41,7 @@ Preconditions:
 
 ## Gotchas
 
-- `--dry-run` does not execute bash/script nodes unless `--exec-code` is set. A green stubbed dry-run proves routing, not node bodies. A bare dry-run that emits a trace (exit `78` / `missingStubs` on this workflow) is also routing proof — do not treat that exit as instance death.
+- `--dry-run` does not execute bash/script nodes unless `--exec-code` is set. A green stubbed dry-run proves routing, not node bodies. A bare `--dry-run --json` that emits a trace (exit `78` / `missingStubs` on this workflow) is also routing proof — do not treat that exit as instance death. Without `--json`, expect exit `1` for the same missing-stub failure.
 - `--exec-code` can write files. Only use it on this repo's `e2e-deterministic` nodes, never on an untrusted workflow.
 - A real run can emit progress before its JSON envelope. Read its structured final envelope, not a detached acknowledgement or prose status.
 - Detached ack has `conversationId` and `logPath`, not the run id. Wait for `workflow runs --json` and match `worker_platform_id`.
