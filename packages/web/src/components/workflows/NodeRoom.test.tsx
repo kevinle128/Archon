@@ -334,13 +334,22 @@ describe('NodeRoom tool disclosure', () => {
   });
 
   test('renders a failed tool open with glyph, chip, filename tail, and exit badge', () => {
+    const path = 'packages/web/src/lib/tool-presentation.ts';
     const markup = renderRoom({
       items: [
         toolItem({
           outcome: 'failed',
           exitCode: 1,
-          input: { path: 'a.ts', extra: { nested: true } },
+          input: { path, extra: { nested: true } },
           output: { stdout: '["fail"]', code: 1 },
+          presentation: {
+            family: 'file',
+            label: 'Read',
+            chipAriaLabel: 'Read, file tool',
+            headline: path,
+            headlineKind: 'path',
+            badges: [],
+          },
         }),
       ],
     });
@@ -354,7 +363,8 @@ describe('NodeRoom tool disclosure', () => {
     expect(summaryMarkup).toContain('title="file"');
     expect(summaryText).toContain('✕');
     expect(summaryText).toContain('Read');
-    expect(summaryText).toContain('a.ts');
+    expect(summaryMarkup).toContain('packages/web/src/lib/');
+    expect(summaryText).toContain('tool-presentation.ts');
     expect(summaryText).toContain('exit 1');
     expect(summaryText).not.toMatch(/[{["]/);
   });

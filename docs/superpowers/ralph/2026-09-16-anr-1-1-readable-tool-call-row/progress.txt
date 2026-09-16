@@ -232,4 +232,3 @@ BLOCKER US-006 | gate=`bun x tsc --noEmit -p scripts/tsconfig.json` | cause=TS23
 BLOCKER US-006 | gate=`bun test --cwd packages/workflows src/defaults/bundled-defaults.test.ts` | cause=BUNDLED_WORKFLOWS['bmad-create-story-with-tea'] undefined after 28bbf66a deleted those YAML files; generate-bundled-defaults.test.ts:148 stderr NO_COLOR warning | action=chore(unblock) drop deleted-workflow tests; delete NO_COLOR from runScript env | 2026-09-16
 
 ---
-

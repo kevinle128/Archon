@@ -184,10 +184,17 @@ describe('toolPresentation chip, headline, and safe degradation', () => {
       input: undefined,
       output: undefined,
     });
+    const wrappedMultiline = toolPresentation({
+      name: '/bin/zsh -lc \'\nfor f in *.ts; do\n  echo "$f"\ndone\n\'',
+      input: undefined,
+      output: undefined,
+    });
     expect(zsh.headline).toBe('bun test');
     expect(bash.headline).toBe('ls -la');
     expect(multiline.headline).toBe('for f in *.ts; do…');
     expect(multiline.headline).not.toContain('\n');
+    expect(wrappedMultiline.headline).toBe('for f in *.ts; do…');
+    expect(wrappedMultiline.headline).not.toContain('/bin/zsh');
   });
 
   test('does not truncate a code headline to the generic scalar limit', () => {
@@ -266,5 +273,30 @@ describe('toolPresentation chip, headline, and safe degradation', () => {
     const value = toolPresentation({ name: 'mystery', input: hostile, output: undefined });
     expect(value.headline).toBe('safe: ok');
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  test('degrades non-record and throwing payload objects without throwing', () => {
+    const accessor = Object.defineProperty({}, 'command', {
+      enumerable: true,
+      get: (): never => {
+        throw new Error('hostile getter');
+      },
+    });
+    const proxy = new Proxy(
+      {},
+      {
+        get: (): never => {
+          throw new Error('hostile proxy');
+        },
+      }
+    );
+
+    for (const input of [new Date(0), accessor, proxy]) {
+      expect(() => toolPresentation({ name: 'mystery', input, output: undefined })).not.toThrow();
+      expect(toolPresentation({ name: 'mystery', input, output: undefined })).toMatchObject({
+        family: 'generic',
+        headline: 'mystery',
+      });
+    }
   });
 });

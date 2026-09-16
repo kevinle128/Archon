@@ -99,7 +99,11 @@ const BEFORE_AFTER_KEYS = [
 ] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function normalizeToolName(name: string): string {
@@ -214,23 +218,22 @@ function present(
   };
 }
 
-function stripCodexShellWrapper(line: string): string {
-  const match = CODEX_SHELL_WRAPPER.exec(line);
-  return match?.[1] ?? line;
+function stripCodexShellWrapper(source: string): string {
+  const match = CODEX_SHELL_WRAPPER.exec(source);
+  return match?.[1] ?? source;
 }
 
 function firstLineHeadline(source: string): string {
-  const nonEmpty: string[] = [];
-  for (const line of source.split(/\r?\n/)) {
+  let first: string | null = null;
+  for (const line of stripCodexShellWrapper(source).split(/\r?\n/)) {
     if (line.trim() !== '') {
-      nonEmpty.push(line);
+      if (first !== null) {
+        return `${first}…`;
+      }
+      first = line;
     }
   }
-  if (nonEmpty.length === 0) {
-    return '';
-  }
-  const first = stripCodexShellWrapper(nonEmpty[0] ?? '');
-  return nonEmpty.length > 1 ? `${first}…` : first;
+  return first ?? '';
 }
 
 function isGenericScalar(value: unknown): value is string | number | boolean | null {
@@ -358,35 +361,42 @@ export function elideHeadline(headline: string, headlineKind: 'path' | 'text'): 
 }
 
 export function toolPresentation(input: ToolPresentationInput): ToolPresentation {
-  const rawName = input.name;
-  const validName = typeof rawName === 'string';
-  const name = validName ? rawName : '';
+  let name = 'generic';
+  try {
+    const rawName = input.name;
+    if (typeof rawName !== 'string') {
+      return genericPresentation(name);
+    }
+    name = rawName;
 
-  if (!validName || (input.input !== undefined && !isPlainObject(input.input))) {
+    if (input.input !== undefined && !isPlainObject(input.input)) {
+      return genericPresentation(name);
+    }
+
+    const mcp = mcpPresentation(name);
+    if (mcp !== null) {
+      return mcp;
+    }
+
+    const record = isPlainObject(input.input) ? input.input : null;
+    const aliasFamily = matchAlias(name);
+    if (aliasFamily !== null) {
+      return present(aliasFamily, name, record);
+    }
+
+    if (record !== null) {
+      const ducked = duckTypeFamily(record);
+      if (ducked !== null) {
+        return present(ducked, name, record);
+      }
+      if (isEmptyRecord(record)) {
+        return present('shell', name, record);
+      }
+      return genericPresentation(name, record);
+    }
+
+    return present('shell', name, null);
+  } catch {
     return genericPresentation(name);
   }
-
-  const mcp = mcpPresentation(name);
-  if (mcp !== null) {
-    return mcp;
-  }
-
-  const record = isPlainObject(input.input) ? input.input : null;
-  const aliasFamily = matchAlias(name);
-  if (aliasFamily !== null) {
-    return present(aliasFamily, name, record);
-  }
-
-  if (record !== null) {
-    const ducked = duckTypeFamily(record);
-    if (ducked !== null) {
-      return present(ducked, name, record);
-    }
-    if (isEmptyRecord(record)) {
-      return present('shell', name, record);
-    }
-    return genericPresentation(name, record);
-  }
-
-  return present('shell', name, null);
 }

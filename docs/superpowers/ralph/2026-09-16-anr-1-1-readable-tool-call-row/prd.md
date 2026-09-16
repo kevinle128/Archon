@@ -1,7 +1,7 @@
 # ANR Story 1.1 — Readable Tool Call Row Ralph PRD
 
-Source plan: `docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md`  
-Derived slug: `2026-09-16-anr-1-1-readable-tool-call-row`  
+Source plan: `docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md`
+Derived slug: `2026-09-16-anr-1-1-readable-tool-call-row`
 Issue: https://github.com/anhle128/Archon/issues/174
 
 ## Overview

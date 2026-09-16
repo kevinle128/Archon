@@ -162,7 +162,7 @@ function resolveExitCode(card: ToolCard): number | null {
   return (
     extraToolFields(card.result).exitCode ??
     extraToolFields(card.call).exitCode ??
-    card.exitCode ??
+    recordedExitCode(card.exitCode) ??
     null
   );
 }

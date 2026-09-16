@@ -325,9 +325,9 @@ function ToolHistory({
           <span className="min-w-0 truncate">{elided.text}</span>
         )}
         <span className="ml-auto flex flex-nowrap items-center gap-1.5">
-          {row.badges.map(badge => (
+          {row.badges.map((badge, index) => (
             <span
-              key={badge.text}
+              key={`${String(index)}:${badge.text}`}
               className={
                 badge.priority === 'sticky'
                   ? 'shrink-0 text-[11px]'

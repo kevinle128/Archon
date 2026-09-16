@@ -27,10 +27,10 @@ Commands run on 2026-09-16 after removing `toolContext` / `TOOL_CONTEXT_KEYS` / 
 
 | Command                                                                                                        | Result                              |
 | -------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| `bun test --cwd packages/web src/lib/tool-presentation.test.ts`                                                | 15 pass, 0 fail, 120 expect() calls |
-| `bun test --cwd packages/web src/lib/agent-history.test.ts`                                                    | 12 pass, 0 fail, 39 expect() calls  |
-| `NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx`                  | 12 pass, 0 fail, 68 expect() calls  |
-| `NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx` | 20 pass, 0 fail, 113 expect() calls |
+| `bun test --cwd packages/web src/lib/tool-presentation.test.ts`                                                | 16 pass, 0 fail, 128 expect() calls |
+| `bun test --cwd packages/web src/lib/agent-history.test.ts`                                                    | 13 pass, 0 fail, 41 expect() calls  |
+| `NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx`                  | 12 pass, 0 fail, 69 expect() calls  |
+| `NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx` | 20 pass, 0 fail, 114 expect() calls |
 | `bun test --cwd packages/web src/experiments/console/console-isolation.test.ts`                                | 4 pass, 0 fail, 17 expect() calls   |
 
 ## Package tests
@@ -39,12 +39,12 @@ Commands run on 2026-09-16 after removing `toolContext` / `TOOL_CONTEXT_KEYS` / 
 
 | Leg                                                                                   | Result                                          |
 | ------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `bun test src/lib/`                                                                   | 348 pass, 0 fail, 874 expect() calls, 33 files  |
+| `bun test src/lib/`                                                                   | 350 pass, 0 fail, 884 expect() calls, 33 files  |
 | `bun test src/stores/`                                                                | 51 pass, 0 fail, 91 expect() calls, 1 file      |
 | `bun test src/hooks/`                                                                 | 18 pass, 0 fail, 26 expect() calls, 2 files     |
-| `NODE_ENV=development bun test src/components/`                                       | 416 pass, 0 fail, 1835 expect() calls, 58 files |
+| `NODE_ENV=development bun test src/components/`                                       | 416 pass, 0 fail, 1836 expect() calls, 58 files |
 | `NODE_ENV=development bun test src/component-integration/source-control-tab.test.tsx` | 53 pass, 0 fail, 188 expect() calls, 1 file     |
-| `NODE_ENV=development bun test src/experiments/console/`                              | 885 pass, 0 fail, 2736 expect() calls, 83 files |
+| `NODE_ENV=development bun test src/experiments/console/`                              | 885 pass, 0 fail, 2737 expect() calls, 83 files |
 
 ## Context-path cleanup
 
@@ -74,7 +74,7 @@ Those lines are the workflow YAML `context:` field. They are outside Story 1.1 a
 
 ## Repository gate
 
-`bun run validate` exited 0 on 2026-09-16 (135.34s). Generated-file checks, type-check, lint `--max-warnings 0`, format check, `test:install`, and isolated package test legs all passed.
+`bun run validate` exited 0 on 2026-09-16 after the final review repairs. Generated-file checks, type-check, lint `--max-warnings 0`, format check, `test:install`, and isolated package test legs all passed.
 
 Pre-existing gates unblocked in this iteration (zero story files in those commits):
 

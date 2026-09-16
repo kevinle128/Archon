@@ -1096,6 +1096,7 @@ describe('ConsoleNodeRoom', () => {
   });
 
   test('renders a succeeded Read pair as a closed disclosure without raw output in the summary', async () => {
+    const path = 'packages/web/src/lib/tool-presentation.ts';
     await act(async () => {
       renderRoom({
         showToolCalls: true,
@@ -1106,7 +1107,7 @@ describe('ConsoleNodeRoom', () => {
               seq: 1,
               name: 'Read',
               toolUseId: 'read-1',
-              input: { path: 'a.ts' },
+              input: { path },
               metadata: { tool_phase: 'call' },
             }),
             toolWire({
@@ -1131,7 +1132,8 @@ describe('ConsoleNodeRoom', () => {
     expect(details.open).toBe(false);
     expect(summaryText).toContain('✓');
     expect(summaryText).toContain('Read');
-    expect(summaryText).toContain('a.ts');
+    expect(summaryText).toContain('packages/web/src/lib/');
+    expect(summaryText).toContain('tool-presentation.ts');
     expect(summaryText).not.toContain('raw-output-secret');
     expect(summaryText).not.toMatch(/[{["]/);
   });

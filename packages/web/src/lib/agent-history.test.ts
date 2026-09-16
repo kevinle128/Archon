@@ -436,6 +436,41 @@ describe('buildAgentHistory', () => {
     });
   });
 
+  test('ignores a non-finite exit code consistently in the outcome and badges', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'bash-call',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'bash-invalid-exit',
+          input: { cmd: 'bun test' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'bash-result',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'bash-invalid-exit',
+          output: 'done',
+          metadata: {
+            tool_phase: 'result',
+            outcome: 'success',
+            exit_code: Number.POSITIVE_INFINITY,
+          },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool === undefined || tool.kind !== 'tool') {
+      throw new Error('expected a tool item');
+    }
+    expect(tool).toMatchObject({ outcome: 'succeeded', exitCode: null });
+    expect(toolRowView(tool).badges.some(badge => badge.text.startsWith('exit '))).toBe(false);
+  });
+
   test('folds an interrupted lifecycle into the immediately preceding tool', () => {
     const items = buildAgentHistory({
       nodeId: NODE_ID,
