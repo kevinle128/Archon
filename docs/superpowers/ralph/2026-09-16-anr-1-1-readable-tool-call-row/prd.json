@@ -1,0 +1,125 @@
+{
+  "feature": "ANR Story 1.1 \u2014 Readable Tool Call Row",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Classify tool calls to families",
+      "description": "As a transcript reader, I want every tool call resolved to a stable family, label, headline, and headline kind, so that downstream shells can render one scannable row from provider payloads.",
+      "acceptanceCriteria": [
+        "packages/web/src/lib/tool-presentation.ts exports ToolFamily, ToolPresentationInput, ToolPresentation, and toolPresentation() with no React or @archon/* imports.",
+        "FAMILY_ALIASES and input-key resolution follow the exact ordered priorities in the plan: Tier 1 alias, code pair, command key, path key, pattern key, URL key, before/after pair, name-only Codex, then generic.",
+        "Normalized tool names match exactly after case-folding and removing underscore and hyphen; search_replace resolves to file, never search.",
+        "Glob headlines prefer pattern before path; file/search/web/code families select the first matching string key per plan rules.",
+        "Null, arrays, primitives, invalid names, and non-plain-object inputs resolve to generic without throwing.",
+        "packages/web/src/lib/tool-presentation.test.ts covers every Tier 1 alias, input-key fallbacks, glob pattern-vs-path headlines, and malformed-input cases; bun test --cwd packages/web src/lib/tool-presentation.test.ts passes."
+      ],
+      "technicalNotes": "Create packages/web/src/lib/tool-presentation.ts and tool-presentation.test.ts per docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 1 (lines 102-297). Use the FAMILY_CASES table and resolver skeleton from the plan. headlineKind is path only for file and glob, text otherwise.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Complete chip, headline, and safe-degradation display",
+      "description": "As a transcript reader, I want bounded chips, MCP formatting, shell wrapper stripping, path elision, and safe generic headlines, so that collapsed rows stay readable without raw JSON or unbounded strings.",
+      "acceptanceCriteria": [
+        "tool-presentation.ts exports FAMILY_CHIP_TOKEN mapping families to CSS custom properties per plan and elideHeadline() with path head/tail split and unchanged text arm.",
+        "Chip label uses sent name only when it matches /^\\S+$/ and length <= 24; otherwise family fallback; chipAriaLabel follows the plan's family-aware pattern.",
+        "MCP names parse with /^mcp__(.+?)__(.+)$/; long server \u00b7 tool labels fall back to generic when over 24 characters.",
+        "Codex /bin/zsh -lc and /bin/bash -lc wrappers strip only from first-line headline; multiline names collapse to first line plus ellipsis when more lines follow.",
+        "Code family keeps full source headline (not generic scalar limit) and emits language as first payload badge.",
+        "Generic family uses at most three scalar key:value pairs (string, finite number, boolean, null only), truncates scalar values at 80 characters, ignores nested objects/arrays, and does not call JSON.stringify or traverse __proto__.",
+        "tool-presentation.test.ts passes; bun --filter @archon/web type-check and eslint on tool-presentation files exit zero with no warnings."
+      ],
+      "technicalNotes": "Extend packages/web/src/lib/tool-presentation.ts per docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 2 (lines 300-477). MAX_LABEL_LENGTH=24, MAX_GENERIC_SCALARS=3, MAX_GENERIC_VALUE_LENGTH=80. Depends on US-001 resolver skeleton.",
+      "dependsOn": [
+        "US-001"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Project shared tool row data and fold interrupted lifecycle",
+      "description": "As both Legacy and Console renderers, I want tool history items to carry presentation, exitCode, shared status glyphs, ordered badges, initial expansion, and interrupted folding, so that shells only map render-neutral data to JSX.",
+      "acceptanceCriteria": [
+        "AgentHistoryItem tool arm gains exitCode: number | null and presentation: ToolPresentation; toToolItem() attaches toolPresentation() and resolveExitCode() keeps deriveOutcome() and exit badge consistent.",
+        "agent-history.ts exports ToolOutcome, BadgeTone, ToolBadge, ToolRowView, initialToolExpanded(), and toolRowView(); STATUS_GLYPH, OUTCOME_LABEL, and INITIAL_EXPANDED match the plan's five-outcome table (succeeded/failed/running/interrupted/unknown \u2192 false/true/false/false/false).",
+        "toolRowView() orders badges: payload facts, non-zero exit code, output-state marker (truncated/missing/unknown), then duration; only duration has priority droppable.",
+        "A Bash call/result pair with exit_code: 1 projects outcome failed, exitCode 1, shell presentation, and exit 1 sticky error badge in agent-history.test.ts.",
+        "Final pass folds a lifecycle item with state === interrupted into the immediately preceding tool item (outcome interrupted, lifecycle row omitted); non-interrupted and orphan interrupted lifecycle rows remain.",
+        "NodeRoom.test.tsx toolItem() fixture updated with exitCode: null and structurally complete presentation; bun test --cwd packages/web src/lib/agent-history.test.ts and bun --filter @archon/web type-check pass."
+      ],
+      "technicalNotes": "Modify packages/web/src/lib/agent-history.ts and agent-history.test.ts per docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 3 (lines 481-675). Keep context field until US-006. Import toolPresentation and formatDurationMs. deriveOutcome() at agent-history.ts:120-136 today resolves exitCode internally \u2014 surface it via resolveExitCode().",
+      "dependsOn": [
+        "US-002"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Render Legacy native disclosure row",
+      "description": "As a Legacy run-room operator, I want each tool call as one native details/summary row with glyph, chip, headline, and badges, so that I can scan tools without always-open JSON cards.",
+      "acceptanceCriteria": [
+        "NodeRoom.tsx ToolHistory renders each tool as <details data-tool-id> with <summary data-testid=\"tool-summary\">; collapsed summary has no raw JSON punctuation from Input/Output payloads.",
+        "useToolDisclosure() hook matches plan: stable initialOpen from initialToolExpanded(), markTouched on summary click, auto-open on failed only when untouched.",
+        "Succeeded tools render details without open; failed tools render details open initially; summary shows glyph with role=img and outcome aria-label, chip with FAMILY_CHIP_TOKEN colours, elided path or truncated text headline, and ordered badges.",
+        "Legacy glyphColor uses --accent-bright for running; expanded body keeps Input/Output sections and View full output loader (nested details converted to labelled divs).",
+        "NodeRoom.test.tsx covers summary content, accessibility (chip aria-label, title=family), and two happy-dom live-transition cases: untouched running\u2192failed opens; manually toggled row stays closed on failure.",
+        "NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx passes; type-check and eslint on NodeRoom files exit zero."
+      ],
+      "technicalNotes": "Modify packages/web/src/components/workflows/NodeRoom.tsx and NodeRoom.test.tsx per docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 4 (lines 679-816). Consume initialToolExpanded, toolRowView, FAMILY_CHIP_TOKEN, elideHeadline from shared lib. Use visibleText() on summary fragment only, not whole static markup. Happy-dom pattern from NodeRoomHeader.test.tsx.",
+      "dependsOn": [
+        "US-003"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Render Console native disclosure row",
+      "description": "As a Console inspect-room operator, I want the same one-line tool disclosure anatomy as Legacy, so that both shells present tool calls consistently without cross-importing JSX.",
+      "acceptanceCriteria": [
+        "ConsoleAgentHistoryList.tsx mirrors Legacy disclosure markup with Console-specific running token (--running instead of --accent-bright) and duplicates useToolDisclosure locally per AD-12.",
+        "Console tests through buildAgentHistory() wire fixtures: succeeded Read pair renders closed details with summary containing checkmark, Read, and a.ts without raw output; failed Bash pair renders open details with cross mark, Bash, bun test, and exit 1.",
+        "ConsoleNodeRoom.test.tsx:1002 updated from open nested card expectation to disclosure contract; two live-transition tests use buildAgentHistory() inputs.",
+        "Console imports shared code only from @/lib/agent-history and @/lib/tool-presentation; no Legacy component imports.",
+        "NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx passes; bun test --cwd packages/web src/experiments/console/console-isolation.test.ts passes; type-check and eslint on Console files exit zero."
+      ],
+      "technicalNotes": "Modify packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx and ConsoleNodeRoom.test.tsx per docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 5 (lines 820-928). Keep var(--rv-tool-card-border) fallback. Wire rows use top-level metadata with tool_phase call/result.",
+      "dependsOn": [
+        "US-004"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-006",
+      "title": "Remove superseded context and close Story 1.1",
+      "description": "As the ANR maintainers, I want the obsolete tool context path removed, sprint status marked done, and evidence recorded, so that Story 1.1 ships with a clean contract and verified acceptance map.",
+      "acceptanceCriteria": [
+        "Remove tool-item context field, TOOL_CONTEXT_KEYS, toolContext(), and toToolItem() context assignment from agent-history.ts; delete toolContext characterization tests and context from Legacy toolItem() fixture.",
+        "rg -n \"\\.context\\b|toolContext|TOOL_CONTEXT_KEYS\" packages/web/src returns no matches after cleanup.",
+        "All focused Story 1.1 tests pass: tool-presentation.test.ts, agent-history.test.ts, NodeRoom.test.tsx, ConsoleNodeRoom.test.tsx, console-isolation.test.ts.",
+        "bun --filter @archon/web test passes the full web package test script.",
+        "_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml sets 1-1-scan-a-tool-call-as-one-readable-row: done only after tests pass.",
+        "_bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md records date 2026-09-16, commit hashes, pass counts, and acceptance-criterion to test-group map from the plan.",
+        "bun run validate passes with zero warnings."
+      ],
+      "technicalNotes": "Follow docs/superpowers/plans/2026-09-16-anr-1-1-readable-tool-call-row.md Task 6 (lines 932-1028). Verify no production reader before deleting context (rg gate). Evidence maps criteria to test groups listed at plan lines 999-1007. Final commit message: refactor(web): remove superseded tool context and close ANR 1.1.",
+      "dependsOn": [
+        "US-004",
+        "US-005"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
