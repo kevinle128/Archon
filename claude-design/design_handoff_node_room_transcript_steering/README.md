@@ -151,8 +151,9 @@ contracts never state is **what the dock does when the operator reads a finished
   iteration N` — plus a `Go to iteration N` control
 - the queue band **stays rendered but read-only**: no `Send now`, no delete, no next-out mark
 
-**Why:** a steer carries the node id and retry epoch it was written against, so a message composed
-against a finished iteration would be rejected on arrival. The band stays because the operator's own
+**Why:** steering targets only the live iteration, so on a finished one the composer is absent and
+**no steering request is issued** — there is nothing to reject on arrival, and the node-scoped Send
+route carries no iteration identity to reject on. The band stays because the operator's own queued
 words are never discarded silently — they still deliver once the operator is back on the live
 iteration; only the controls would be lying.
 
@@ -280,7 +281,7 @@ to ~300px and stacks with the draft box's own cap.
 Same container, header idiom, body padding, item geometry and caret as the todo strip.
 
 ```
-QUEUED · 2                          this tab only   ▾
+QUEUED · 2                                          ▾
  1  wrong suite — use -p archon-workflows   [Send now]  ✕
  2  and skip the doctests                   [Send now]  ✕
 ```
@@ -288,7 +289,7 @@ QUEUED · 2                          this tab only   ▾
 - header word is the whole signal of what the control below means: `Queued` while generating,
   `Will send` while idle-after-interrupt, `Never sent` once the node has finished and the box is
   read-only
-- `this tab only` sits on the header line, right-aligned — the draft queue is per-tab browser state
+- `this tab only` labels the **unsent draft** only; the `QUEUED` band header is just `QUEUED · N` (no scope label — per `DESIGN.md` queue-band spec) — a queued message is server-side (node-scoped registry queue), not per-tab browser state
 - ordinal in the 12px lead column, mono 10px — the queue delivers in **written order**, and this
   makes that visible
 - item text in **sans** 11.5px, not mono: it is what a human wrote. Mono is the machine's voice
@@ -381,7 +382,7 @@ provider echoes, so `delivered` is unreachable today — do not render it.
 Agent sub-state inside `node = running` — the core projects **exactly two** typed values,
 `generating` | `idle-after-interrupt` (AD-9); `interrupting` is a **UI-local optimistic transient**,
 not a projected value. Plus node lifecycle (`running` | `completed` | `failed`),
-the per-tab draft queue, the selected execution, and two local disclosure booleans for the strips.
+the per-tab **unsent draft** (queued messages are server-side, not client state), the selected execution, and two local disclosure booleans for the strips.
 
 The eight states the mockups render: `generating`, `interrupting`, `idle-after-interrupt`,
 `generating again`, `finished · undelivered`, `finished · clean`, `failed · 30-min`, `detached run`.

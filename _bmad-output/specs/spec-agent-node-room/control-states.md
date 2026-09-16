@@ -47,6 +47,17 @@ stateDiagram-v2
     end note
 ```
 
+## Viewing a finished iteration of a live loop node
+
+The loop-iteration selector (CAP-6) defaults to the running iteration. When the operator selects a **finished** iteration while the node is still `running`, the dock does **not** steer that iteration — steering only ever acts on the live one.
+
+- The dock collapses to one line — `reading a finished iteration · the agent is working in iteration N` — plus a `Go to iteration N` control that returns to the live dock.
+- Below it, a **read-only** band mirrors the **node's** registry queue — the operator's still-pending messages — inert here (no `Send now`, no delete, no next-out mark). They are not lost: they deliver when the operator returns to the live iteration.
+- The composer is absent and the client makes **no** steering route call for a finished iteration. There is nothing for the server to refuse: the Send route is keyed `(runId, nodeId)` and is not iteration-aware, and the only server refusals are node-finished (409) and detached ("not steerable here").
+- That finished iteration's **already-delivered** operator messages are read back from the transcript itself (its occurrence group, FR6/FR11), not from this band.
+
+This is distinct from viewing a non-live **execution** (a different run), where the dock is fully absent.
+
 ## The run keeps going — `Stop` interrupts the agent, not the run `[reframe consequence — confirm against EXPERIENCE.md]`
 
 This inverts the guidance the UX run wrote under the old durable model. Back then `Stop` paused the **whole run**: sibling nodes froze, no later layer started, and the interface was told _not_ to imply the rest of the run was still progressing. Under the reframe, `Stop` interrupts only **this agent's current generation**; the node stays `running` and **the rest of the run is unaffected** — independent siblings and later layers keep going. So the interface must now do the opposite: it must **not** imply the run stopped. Only the agent's current thought was interrupted, and this one node is waiting for the operator. `EXPERIENCE.md` copy built on "the run is paused" needs this correction — that spine is owned by the UX run, flagged here as a dependency.

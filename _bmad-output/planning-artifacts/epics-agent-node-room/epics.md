@@ -31,7 +31,7 @@ mockup: ../../../claude-design/design_handoff_node_room_transcript_steering/
 Decomposes `spec-agent-node-room` (13 capabilities) into implementable stories for the agent node view on both web surfaces. The spec has two halves with different risk and release cadence; they are **one epic** ("Agent Node Room", **owner decision 2026-09-13** — one epic, not two) with the halves sequenced inside it — read first, steering after:
 
 - **Read half — Readable Agent Transcript** (CAP-1…7, Stories 1.1–1.6): replace the raw-JSON tool rows with a scannable transcript. **Retroactive** — a pure function of data already in the database, no schema/migration/backend change, so it improves every historical run the moment it ships. **Ships first.**
-- **Steering half — Live Agent Steering** (CAP-8…13, Stories 1.7a–1.12c): send + interrupt a live agent without stopping the node. In-process, no durable state, but reaches only a node whose executor is in this process. **v1 ships at the interrupt + `Queue` + `sent` floor** (owner-ratified 2026-09-15); `delivered` (G1), claude soft-inject (G2) and grok hooks (G3) are post-v1 gated backlog, outside Epic 1's completion gate.
+- **Steering half — Live Agent Steering** (CAP-8…13, Stories 1.7a–1.12c): send + interrupt a live agent without stopping the node. In-process, no durable state, but reaches only a node whose executor is in this process. **v1 ships at the interrupt + `Queue` + `sent` floor** (owner-ratified 2026-09-15); `delivered` (G1), claude soft-inject (G2), omp soft-inject (G4) and grok hooks (G3) are post-v1 gated backlog, outside Epic 1's completion gate.
 
 **Two internal ordering dependencies between the halves**, both requiring a read-half reader change to land first: (1) the operator row (CAP-11, Story 1.11) writes a new item kind, so the renderer must recognize `origin='operator'` **before** CAP-11 ships (Story 1.1 carries that reader hook); (2) the universal `interrupted` status row (CAP-9) must fold into the preceding tool card's outcome so `⚠` renders on every provider (reader fold on Story 1.1, write on Story 1.7b).
 
@@ -56,7 +56,7 @@ FR4 (CAP-4): Render a subagent dispatch as batch context (markdown) + one collap
 FR5 (CAP-5): Render an inline line diff for a file edit when the payload carries before+after; else path + preview; never fabricate a diff from one side.
 FR6 (CAP-6): Group rows by `occurrence_id` with a per-group header when a node spans >1; render none when a single occurrence; group on `occurrence_id`, never `attempt_id`; plus a **loop-iteration selector** to navigate between groups (headers stay the anchors), absent on single-occurrence (UX-DR10).
 FR7 (CAP-7): Every card exposes a Raw toggle revealing the original JSON, closed by default — the only place serialized JSON appears; preserve today's `canLoadFullOutput` flow.
-FR8 (CAP-8): Composer mounted + enabled while the node runs; send reads `Queue`; sending holds the message (node untouched, nothing interrupted/lost), delivered as the next turn at the natural boundary; the queue is stated per-tab.
+FR8 (CAP-8): Composer mounted + enabled while the node runs; send reads `Queue`; sending holds the message (node untouched, nothing interrupted/lost), delivered as the next turn at the natural boundary; the unsent draft is stated this-tab-only and the queue is stated node-scoped (server-process-local).
 FR9 (CAP-9): An interrupt control ends the agent's current turn (claude `interrupt()` or stream-abort); the provider session stays alive; the node stays `running` (agent → `idle-after-interrupt`), never paused/pending/`node_failed`; the in-flight tool call shows `interrupted`, not `failed`; distinct from Cancel; nothing implies the interrupt undid written work.
 FR10 (CAP-10): When `idle-after-interrupt`, send reads `Send now`; flushes the registry (already-queued messages then the just-typed one) in written order as the next turn on the same session; the node continues (never "resumes"). Controls follow the projected sub-state.
 FR11 (CAP-11): Operator messages + the interrupted tool call appear as ordinary transcript rows in happened-order (between the call interrupted and the one caused); an operator row is visibly the operator's, never mistakable for agent text.
@@ -81,7 +81,7 @@ NFR8: Accessibility floor WCAG 2.2 AA per `EXPERIENCE.md` — SC 1.4.1 (colour-f
 - CAP-5 needs a new `packages/web/src/lib/diff-hunks.ts` (jsdiff `structuredPatch`, bounded `maxEditLength`, memoized) → `GitDiffHunk` → `react-diff-view` via the existing `git-hunk-adapter.ts`.
 - Interrupt uses a **fresh per-turn** `AbortSignal.any([nodeAbortController.signal, perTurnSignal])`, never the one-shot `nodeAbortController` (`:2209`/`:2223`); `operatorInterrupt` is a per-turn flag resolved by **placement** (`canReask :3032` also stops on it; branch after the `:3124` Cancel check; reset at turn N+1; `result` at `:2533` is the natural-end discriminator).
 - Multi-turn on one session reuses the `attemptResumeId` re-ask seam (`:2290`); codex re-runs the resumed thread (`resumeThread`, `providers/src/codex/provider.ts:1006`).
-- In-process registry keyed `(runId, nodeId)`; `POST /api/workflows/runs/:runId/nodes/:nodeId/send` and `…/interrupt` under `resolveAuthContext` (HITL/AD-7). Operator row = ordinary `text` row + three additive `.strict()` metadata fields (`origin`, `operator_user_id`, `message_id`) + regenerated `api.generated` — **no migration**; executor is the sole writer; reconcile `sent` ids on the node's terminal event only.
+- In-process registry keyed `(runId, nodeId)`; `POST …/send`, `…/interrupt`, `…/keepalive`, and `DELETE …/queue/:messageId` (withdraw) under `resolveAuthContext` — the steering actor grant (AD-11) broadens HITL/AD-7 for these routes. Operator row = ordinary `text` row + three additive `.strict()` metadata fields (`origin`, `operator_user_id`, `message_id`) + regenerated `api.generated` — **no migration**; executor is the sole writer; reconcile `sent` ids on the node's terminal event only.
 
 ### UX Design Requirements
 
@@ -98,40 +98,40 @@ UX-DR10 (CAP-6, **in scope** — owner-confirmed 2026-09-13): a **loop iteration
 
 ### FR Coverage Map
 
-| FR / CAP                          | Story                                         |
-| --------------------------------- | --------------------------------------------- |
-| FR1 (CAP-1)                       | 1.1                                           |
-| FR7 (CAP-7)                       | 1.1                                           |
-| FR2 (CAP-2)                       | 1.2                                           |
-| FR5 (CAP-5)                       | 1.3                                           |
-| FR3 (CAP-3)                       | 1.4 (+ UX-DR9)                                |
-| FR4 (CAP-4)                       | 1.5                                           |
-| FR6 (CAP-6)                       | 1.6 (+ UX-DR10)                               |
-| FR9 (CAP-9) engine                | 1.7a (interrupt+registry) + 1.7b (multi-turn) |
-| FR10 (CAP-10) engine              | 1.7b (multi-turn+idle-await)                  |
-| routes/registry/race handling     | 1.8 (+ full failure criteria)                 |
-| FR8 (CAP-8) dock                  | 1.9                                           |
-| FR9/FR10 dock                     | 1.10                                          |
-| FR11 (CAP-11) operator row        | 1.11 (dep: 1.1 reader hook)                   |
-| interrupted status row (CAP-9)    | write → 1.7b; reader fold → 1.1               |
-| `sent` floor                      | 1.11                                          |
-| operator display-name (AD-12)     | 1.11                                          |
-| agent sub-state projection (AD-9) | 1.7b                                          |
-| terminal reconcile                | 1.12a                                         |
-| 30-min idle-await fail            | 1.12b                                         |
-| multi-user ordering               | 1.12c                                         |
-| FR12 (CAP-12) soft-inject         | G2 (post-v1, outside Epic 1 gate)             |
-| FR13 (CAP-13) delivered           | G1 (post-v1, outside Epic 1 gate)             |
+| FR / CAP                          | Story                                           |
+| --------------------------------- | ----------------------------------------------- |
+| FR1 (CAP-1)                       | 1.1                                             |
+| FR7 (CAP-7)                       | 1.1                                             |
+| FR2 (CAP-2)                       | 1.2                                             |
+| FR5 (CAP-5)                       | 1.3                                             |
+| FR3 (CAP-3)                       | 1.4 (+ UX-DR9)                                  |
+| FR4 (CAP-4)                       | 1.5                                             |
+| FR6 (CAP-6)                       | 1.6 (+ UX-DR10)                                 |
+| FR9 (CAP-9) engine                | 1.7a (interrupt+registry) + 1.7b (multi-turn)   |
+| FR10 (CAP-10) engine              | 1.7b (multi-turn+idle-await)                    |
+| routes/registry/race handling     | 1.8 (+ full failure criteria)                   |
+| FR8 (CAP-8) dock                  | 1.9                                             |
+| FR9/FR10 dock                     | 1.10                                            |
+| FR11 (CAP-11) operator row        | 1.11 (dep: 1.1 reader hook)                     |
+| interrupted status row (CAP-9)    | write → 1.7b; reader fold → 1.1                 |
+| `sent` floor                      | 1.11                                            |
+| operator display-name (AD-12)     | 1.11                                            |
+| agent sub-state projection (AD-9) | 1.7b                                            |
+| terminal reconcile                | 1.12a                                           |
+| 30-min idle-await fail            | 1.12b                                           |
+| multi-user ordering               | 1.12c                                           |
+| FR12 (CAP-12) soft-inject         | G2 claude + G4 omp (post-v1, independent gates) |
+| FR13 (CAP-13) delivered           | G1 (post-v1, outside Epic 1 gate)               |
 
 ## Epic List
 
-1. **Epic 1 — Agent Node Room** (CAP-1…13) — the readable transcript (retroactive, ships first, Stories 1.1–1.6) and live steering (node keeps running, Stories 1.7a–1.12c; v1 floor = interrupt + `Queue` + `sent`, with G1–G3 as post-v1 gated backlog), in one epic.
+1. **Epic 1 — Agent Node Room** (CAP-1…13) — the readable transcript (retroactive, ships first, Stories 1.1–1.6) and live steering (node keeps running, Stories 1.7a–1.12c; v1 floor = interrupt + `Queue` + `sent`, with G1–G4 as post-v1 gated backlog), in one epic.
 
 ---
 
 ## Epic 1: Agent Node Room
 
-The agent node view on both node rooms (Legacy + Console), made **readable** and **steerable** — the whole of `spec-agent-node-room` (CAP-1…13) as one epic. Two halves sequenced by risk and release cadence: the **read half** (Stories 1.1–1.6) ships first, retroactively; the **steering half** (Stories 1.7a–1.12c) follows, ending at the interrupt + `Queue` + `sent` v1 floor (G1–G3 post-v1). Both node rooms ship together; shared render-neutral logic in `packages/web/src/lib/`, JSX written twice.
+The agent node view on both node rooms (Legacy + Console), made **readable** and **steerable** — the whole of `spec-agent-node-room` (CAP-1…13) as one epic. Two halves sequenced by risk and release cadence: the **read half** (Stories 1.1–1.6) ships first, retroactively; the **steering half** (Stories 1.7a–1.12c) follows, ending at the interrupt + `Queue` + `sent` v1 floor (G1–G4 post-v1). Both node rooms ship together; shared render-neutral logic in `packages/web/src/lib/`, JSX written twice.
 
 **Read half (CAP-1…7) — scannable transcript; retroactive, ships first.**
 
@@ -149,6 +149,10 @@ So that I can follow what the agent did without reading serialized JSON.
 **When** I open it in either node room (Legacy or Console)
 **Then** it renders forty single-line rows, each with a family chip, a status glyph (`✓ ✕ ◐ ⚠ –`), a headline naming the salient argument, and right-aligned badges
 **And** successful calls are collapsed on first render, failed calls expanded, and no collapsed row contains serialized-data punctuation.
+
+**Given** rows of every outcome
+**When** the transcript first renders
+**Then** initial expansion is table-driven: `success` collapsed, `failed` expanded, `running` collapsed, `interrupted` collapsed, `unknown` collapsed — one focused test drives all five.
 
 **Given** any tool call
 **When** the row renders
@@ -210,6 +214,10 @@ So that I see what changed inline without leaving the transcript.
 **When** the diff is computed
 **Then** `diff-hunks.ts` bounds it with an explicit `maxEditLength` (never a wall-clock timeout) and degrades to path + preview rather than hanging the thread.
 
+**Given** the `diff-hunks` failure-oracle cases
+**When** Story 1.3 is closed
+**Then** the read-half diff test contract is part of completion — the byte ceiling (not only `maxEditLength`), repeated and mid-array no-newline markers, repeat determinism, memoization, and adapter line-number validity — not deferred to references (`test-plan.md` → diff-hunks contract).
+
 _Refs:_ CAP-5; Additional Requirements (`diff-hunks.ts` + `git-hunk-adapter.ts`); mockup **Transcript States**. Depends on Story 1.1 (shared presenter + shell).
 
 ### Story 1.4: Todo list folded as state (+ pinned strip)
@@ -270,9 +278,9 @@ So that a re-run or loop node is not one undifferentiated list.
 
 **Given** I navigate to a **finished** iteration of a live loop node via the selector
 **When** the dock renders for that iteration
-**Then** it shows a collapsed disclosure with a `Go to iteration N` control and a **read-only** queue band mirroring that iteration's queued messages; the composer is not offered, and a message composed against a finished iteration is refused as `not_steerable_here` (steering acts only on the live iteration). The dock is still fully absent when the operator views a non-live **execution** (a different run) — the two cases are distinct.
+**Then** it shows a collapsed disclosure with a `Go to iteration N` control and a **read-only** band mirroring the **node's** registry queue (the operator's still-pending messages), inert here — no `Send now`, no delete — and delivering when the operator returns to the live iteration. The composer is not offered and the client makes **no** steering route call for a finished iteration; steering targets only the live iteration, and the node-scoped Send route is not iteration-aware, so there is no server refusal to return. That finished iteration's already-delivered operator messages read back inline in its occurrence group in the transcript, not in this band. The dock is still fully absent when the operator views a non-live **execution** (a different run) — the two cases are distinct.
 
-_Refs:_ CAP-6 (incl. UX-DR10, folded into CAP-6 success); finished-iteration dock per the design handoff (Delta 6); mockup **Console/Legacy Node Room**. Depends on Story 1.1 (shared history + both renderers).
+_Refs:_ CAP-6 (incl. UX-DR10, folded into CAP-6 success); finished-iteration dock — `control-states.md` "Viewing a finished iteration" (first-class) + design handoff Delta 6; mockup **Console/Legacy Node Room**. Depends on Story 1.1 (shared history + both renderers).
 
 ---
 
@@ -306,7 +314,7 @@ So that later stories have a handle to steer and every provider ends a turn whil
 **When** it runs in-process
 **Then** it registers the same `(runId, nodeId) → handle + queue` and gets the same fresh-per-turn interrupt seam, so the loop path is steerable in v1 (owner-ratified 2026-09-15).
 
-_Refs:_ CAP-9, NFR4–5; `engine-integration.md` §1–§3 (the abort seam, the registry); `provider-steering-matrix.md` (per-provider interrupt + fixtures); `steering-test-plan.md` (provider conformance).
+_Refs:_ CAP-9, NFR4–5; `engine-integration.md` §1–§3 (the abort seam, the registry); `provider-steering-matrix.md` (per-provider interrupt + fixtures); `steering-test-plan.md` (provider conformance). _Packages:_ `@archon/workflows` (executor abort seam + in-process registry), `@archon/providers` (per-provider interrupt). _Integration gate:_ the five-provider interrupt-conformance fixtures are green.
 
 ### Story 1.7b: Multi-turn session loop + idle-await entry + agent sub-state projection (engine)
 
@@ -336,9 +344,9 @@ So that the agent continues from where the operator redirected it and both docks
 **When** an operator interrupts and `Send now`s
 **Then** the end-cause rule, idle-await, and the two-value sub-state projection apply on the `executeLoopNode` path too, and `Send now` **continues the interrupted iteration** on the same session **before** the normal loop-completion check; focused tests cover both execution paths.
 
-_Refs:_ CAP-9, CAP-10, NFR4–5; `engine-integration.md` §2 (multi-turn, placement clauses, discriminator, idle-await entry); steering AD-9 (sub-state projection), AD-4 (drain rules). The 30-minute idle-await **safety** is Story 1.12b. Depends on Story 1.7a (registry + interrupt).
+_Refs:_ CAP-9, CAP-10, NFR4–5; `engine-integration.md` §2 (multi-turn, placement clauses, discriminator, idle-await entry); steering AD-9 (sub-state projection), AD-4 (drain rules). The 30-minute idle-await **safety** is Story 1.12b. Depends on Story 1.7a (registry + interrupt). _Packages:_ `@archon/workflows` (multi-turn loop, idle-await entry, end-cause classifier), `@archon/server` (two-value sub-state on the node-state response + `api.generated` regen). _Integration gate:_ end-cause + idle-await green on **both** `executeNodeInternal` and `executeLoopNode`.
 
-### Story 1.8: Send/Interrupt routes + registry resolution + race handling
+### Story 1.8: Send / Interrupt / Keepalive / Withdraw routes + registry resolution + race handling
 
 As the system,
 I want authorized steering routes that resolve the live node and never lose a message to a race,
@@ -346,7 +354,7 @@ So that the dock has a transport to call before it is built, and nothing is sile
 
 **Acceptance Criteria:**
 
-**Given** `POST …/nodes/:nodeId/send`, `…/interrupt`, and `…/keepalive`
+**Given** `POST …/nodes/:nodeId/send`, `…/interrupt`, `…/keepalive`, and `DELETE …/nodes/:nodeId/queue/:messageId` (withdraw)
 **When** called
 **Then** they match the typed request/response/error schemas in `steering-api-contract.md`, identity resolves via `resolveAuthContext` under the **steering actor grant** (AD-11), and each route resolves the live handle from the Story 1.7a registry keyed `(runId, nodeId)`.
 
@@ -386,6 +394,10 @@ So that the dock has a transport to call before it is built, and nothing is sile
 **When** the route handles it
 **Then** it returns 409 `node_finished`; every rejected request leaves the node, queue, and transcript unchanged.
 
+**Given** an authenticated withdraw for a queued message (steering actor grant, AD-11)
+**When** the route handles it
+**Then** a message still in the queue is removed and returns `{ success: true, message_id }`; a message that had already drained (or an unknown `message_id`) returns the **same idempotent success no-op** — there is **no** message-level 404 (404 is only an unknown `runId`/`nodeId`); an unauthenticated caller → 401; and every rejected request leaves the node, registry queue, and transcript unchanged.
+
 _Refs:_ CAP-8/9 infra, NFR4; `steering-api-contract.md` (schemas, status codes, idempotency); `engine-integration.md` (routes, registry, refusals); `control-states.md` (Send-now-no-server-gate, the 409). Depends on Story 1.7a's registry, Story 1.7b's multi-turn loop + agent sub-state projection (the interrupt-race criteria need its `generating`/`idle-after-interrupt` projection and natural-end auto-drain), and the api-contract.
 
 ### Story 1.9: Composer dock — compose and Queue while generating
@@ -407,6 +419,14 @@ So that my correction is ready to deliver at the next turn.
 **Given** the projected agent sub-state
 **When** the dock reads it
 **Then** controls follow the sub-state (`generating` | `idle-after-interrupt`), never a remembered mode; `Enter` inserts a newline and never sends.
+
+**Given** the same running node is open in a second tab, or steered by a second operator
+**When** either dock renders
+**Then** both show the same `QUEUED · n` from the node's registry queue, and either may withdraw any queued item via the idempotent withdraw route (keyed by `message_id`); only the unsent composer text differs per tab (`this tab only`). E2E covers two tabs on one running node.
+
+**Given** the composer with a queueable message
+**When** the operator presses `Cmd`/`Ctrl`+Enter
+**Then** it triggers the **same action and the same blocked-state guard** as the send control (a no-op while `Stopping…` and while blocked by a pending ask); the shortcut is discoverable — a composer hint and an appended note on the send control's accessible name, with the visible word (`Queue` / `Send now`) kept at the **start** of that name (SC 2.5.3). Plain `Enter` still inserts a newline. E2E covers discoverability and blocked-state parity.
 
 **Given** a node parked at an unanswered ask, or a reduced-motion preference
 **When** the dock renders
@@ -476,7 +496,7 @@ So that the operator sees exactly which of their sends became transcript rows.
 
 **Given** any terminal (finish, Cancel, or the 30-minute fail)
 **When** the client reconciles **on the node's terminal event only**
-**Then** each `sent` id is matched against the `message_id` on written operator rows; any unmatched id returns to the draft box as `NEVER SENT`; the reconciliation never runs on a live refetch (it would mis-mark a delivered message before the final insert commits). A delivery failure surfaces on an assertive `role="alert"`.
+**Then** each `sent` id — every queued `message_id` the dock displayed from the node's registry queue, not only this tab's own sends — is matched against the `message_id` on written operator rows; any unmatched id returns to the draft box as `NEVER SENT`; the reconciliation never runs on a live refetch (it would mis-mark a delivered message before the final insert commits). A delivery failure surfaces on an assertive `role="alert"`.
 
 _Refs:_ CAP-11 record + NFR4/NFR8; `engine-integration.md` (reconciliation on terminal only), `control-states.md` (`NEVER SENT`); mockup **Steering Dock States** (state 5). Depends on Stories 1.8 (routes) and 1.11 (operator row).
 
@@ -504,6 +524,10 @@ So that steering fails safe when the operator walks away.
 **When** it is resumed
 **Then** it re-runs with a fresh session (the interrupted context is gone).
 
+**Given** an `idle-after-interrupt` node with **queued** messages present (not an empty queue)
+**When** 30 minutes of composer inactivity pass
+**Then** the node fails **once** on the explicit fail branch, the registry (with its queued messages) is torn down, and Story 1.12a's terminal reconciliation restores the unmatched queued messages to the draft box as `NEVER SENT`.
+
 _Refs:_ NFR6; `engine-integration.md` (idle-await fail branch, cancel-poll), steering AD-4; `control-states.md`. Depends on Stories 1.7b (idle-await entry), 1.8 (keepalive route), and 1.9–1.10 (dock + composer activity).
 
 ### Story 1.12c: Concurrent-operator ordering
@@ -525,7 +549,7 @@ _Refs:_ CAP-11 record + NFR4/NFR8; steering AD-11 (receipt order). Depends on St
 ## Post-v1 gated backlog (outside Epic 1's completion gate)
 
 Epic 1 **completes at the interrupt + `Queue` + `sent` floor** (owner-ratified 2026-09-15).
-These three items each ride a separate external gate and do **not** block the v1 release.
+These four items each ride a separate external gate and do **not** block the v1 release.
 They are not a new epic — they honor the one-epic decision (2026-09-13) as deferred work under Epic 1.
 
 ### G1 — `delivered` chip (gated on the claude SDK bump)
@@ -538,9 +562,9 @@ _Gate: SDK pin moves from 0.3.209 to ≥ 0.3.246. Refs: CAP-13, steering AD-8, `
 ### G2 — Claude soft-inject / mid-turn delivery (spike-gated)
 
 **Given** the claude `AsyncIterable`-input-plus-resume spike clears
-**When** a message is soft-injected
-**Then** it arrives mid-turn with no interrupt, no interrupted tool call, and no turn-start event. Carries the omp RPC / protocol-version-2 / `set_steering_mode:'all'` soft-inject path (AR-18) and the delta-2 per-item `Send now` (rendered only where soft-inject exists).
-_Gate: the `AsyncIterable` + resume-protocol spike. Refs: CAP-12, steering AD-3/AD-7, `provider-steering-matrix.md`._
+**When** a message is soft-injected on Claude
+**Then** it arrives mid-turn with no interrupt, no interrupted tool call, and no turn-start event. The delta-2 per-item `Send now` renders wherever soft-inject exists (Claude here; OMP via G4).
+_Gate: the claude `AsyncIterable` + resume-protocol spike. Refs: CAP-12, steering AD-3/AD-7, `provider-steering-matrix.md`._
 
 ### G3 — Grok hooks soft-inject (spike-gated)
 
@@ -548,3 +572,10 @@ _Gate: the `AsyncIterable` + resume-protocol spike. Refs: CAP-12, steering AD-3/
 **When** a message is delivered through the hook
 **Then** grok gains mid-turn soft-inject; until then grok is interrupt-then-continue only (v1 floor).
 _Gate: the grok hook payload-shape spike. Refs: CAP-12, `provider-steering-matrix.md`._
+
+### G4 — OMP soft-inject / mid-turn delivery (conformance-gated, independent of G2)
+
+**Given** the OMP RPC / protocol-version-2 / `set_steering_mode:'all'` soft-inject path (AR-18) is conformance-verified (source-verified in `provider-steering-matrix.md`, on its own gate — it does **not** wait on Claude's `AsyncIterable` spike)
+**When** a message is soft-injected on OMP
+**Then** it arrives mid-turn with no interrupt, no interrupted tool call, and no turn-start event. Per-item `Send now` renders here too (the shared soft-inject affordance stated in G2).
+_Gate: OMP soft-inject conformance (independent of G2). Refs: CAP-12, steering AD-3/AD-7, `provider-steering-matrix.md`._
