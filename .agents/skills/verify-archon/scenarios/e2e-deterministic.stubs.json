@@ -1,9 +1,0 @@
-{
-  "bash-echo": { "status": "ok", "value": 42 },
-  "script-bun": "simulated Bun output",
-  "script-python": "simulated Python output",
-  "bash-read-output": "upstream output",
-  "branch-true": "branch-true-ran",
-  "merge-node": "merge completed",
-  "verify-all": "simulation complete"
-}
