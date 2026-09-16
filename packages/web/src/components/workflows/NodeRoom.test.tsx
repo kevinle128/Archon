@@ -1,10 +1,20 @@
-import { describe, expect, test } from 'bun:test';
-import { renderToStaticMarkup } from 'react-dom/server';
+process.env.NODE_ENV = 'development';
 
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { renderToStaticMarkup } from 'react-dom/server';
+import type { Root } from 'react-dom/client';
+
+import { installHappyDom, restoreHappyDom } from '@/experiments/console/test/install-happy-dom';
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import type { WorkflowNodeMessageResponse } from '@/lib/api';
 
 import { NodeRoom, selectNodeRoomMessages } from './NodeRoom';
+
+const react = await import('react');
+const reactDomClient = await import('react-dom/client');
+
+const act = react.act;
+const createRoot = reactDomClient.createRoot;
 
 const CREATED_AT = '2026-09-06T00:00:00.000Z';
 
@@ -66,6 +76,28 @@ function visibleText(markup: string): string {
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function firstToolSummaryMarkup(markup: string): string {
+  const marker = 'data-testid="tool-summary"';
+  const markerAt = markup.indexOf(marker);
+  if (markerAt < 0) {
+    throw new Error('missing tool-summary');
+  }
+  const start = markup.lastIndexOf('<summary', markerAt);
+  const end = markup.indexOf('</summary>', markerAt);
+  if (start < 0 || end < 0) {
+    throw new Error('malformed tool-summary');
+  }
+  return markup.slice(start, end + '</summary>'.length);
+}
+
+function firstToolDetailsStartTag(markup: string): string {
+  const tag = /<details\b[^>]*data-tool-id="[^"]*"[^>]*>/.exec(markup)?.[0];
+  if (tag === undefined) {
+    throw new Error('missing tool details');
+  }
+  return tag;
 }
 
 function assistantItem(id: string, seq: number, text: string): AgentHistoryItem {
@@ -226,7 +258,8 @@ describe('NodeRoom', () => {
     expect(loaded).toContain('first');
     expect(loaded).toContain('Read');
     expect(loaded).toContain('data-tool-id="tool-use-1"');
-    expect(loaded).toContain('path: a.ts');
+    expect(loaded).toContain('data-testid="tool-summary"');
+    expect(loaded).toContain('a.ts');
     expect(loaded).toContain('succeeded');
     expect(loaded).toContain('1.5s');
     expect(loaded).toContain('<details');
@@ -276,5 +309,157 @@ describe('NodeRoom', () => {
       renderAtEnd: 'end-extension',
     });
     expect(errorMarkup.indexOf('end-extension')).toBeGreaterThan(errorMarkup.indexOf('Retry'));
+  });
+});
+
+describe('NodeRoom tool disclosure', () => {
+  test('renders a succeeded tool as a closed native row with a scannable summary', () => {
+    const markup = renderRoom({ items: [toolItem()] });
+    const detailsStart = firstToolDetailsStartTag(markup);
+    const summaryMarkup = firstToolSummaryMarkup(markup);
+    const summaryText = visibleText(summaryMarkup);
+
+    expect(detailsStart).not.toContain('open=""');
+    expect(summaryMarkup).toContain('data-testid="tool-summary"');
+    expect(summaryMarkup).toContain('role="img"');
+    expect(summaryMarkup).toContain('aria-label="succeeded"');
+    expect(summaryMarkup).toContain('aria-label="Read, file tool"');
+    expect(summaryMarkup).toContain('title="file"');
+    expect(summaryText).toContain('✓');
+    expect(summaryText).toContain('Read');
+    expect(summaryText).toContain('a.ts');
+    expect(summaryText).not.toMatch(/[{["]/);
+    expect(markup).toContain('Input');
+    expect(markup).toContain('Output');
+    expect(markup).toContain('View full output');
+  });
+
+  test('renders a failed tool open with glyph, chip, filename tail, and exit badge', () => {
+    const markup = renderRoom({
+      items: [
+        toolItem({
+          outcome: 'failed',
+          exitCode: 1,
+          input: { path: 'a.ts', extra: { nested: true } },
+          output: { stdout: '["fail"]', code: 1 },
+        }),
+      ],
+    });
+    const detailsStart = firstToolDetailsStartTag(markup);
+    const summaryMarkup = firstToolSummaryMarkup(markup);
+    const summaryText = visibleText(summaryMarkup);
+
+    expect(detailsStart).toContain('open=""');
+    expect(summaryMarkup).toContain('aria-label="failed"');
+    expect(summaryMarkup).toContain('aria-label="Read, file tool"');
+    expect(summaryMarkup).toContain('title="file"');
+    expect(summaryText).toContain('✕');
+    expect(summaryText).toContain('Read');
+    expect(summaryText).toContain('a.ts');
+    expect(summaryText).toContain('exit 1');
+    expect(summaryText).not.toMatch(/[{["]/);
+  });
+});
+
+describe('NodeRoom tool disclosure live transitions', () => {
+  let win: ReturnType<typeof installHappyDom>;
+  let host: Element;
+  let root: Root;
+
+  beforeEach(() => {
+    win = installHappyDom();
+    const el = win.document.createElement('div');
+    win.document.body.appendChild(el);
+    host = el as unknown as Element;
+    root = createRoot(host);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    win.close();
+    restoreHappyDom();
+  });
+
+  function liveTool(
+    overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
+  ): Extract<AgentHistoryItem, { kind: 'tool' }> {
+    return toolItem({
+      outcome: 'running',
+      exitCode: null,
+      outputState: 'missing',
+      canLoadFullOutput: false,
+      durationMs: null,
+      ...overrides,
+    });
+  }
+
+  function renderLive(items: readonly AgentHistoryItem[]): void {
+    root.render(
+      <NodeRoom
+        nodeId="review"
+        items={items}
+        unknownScope={false}
+        runId="run-1"
+        isPending={false}
+        error={null}
+        onRetry={(): void => {
+          return;
+        }}
+      />
+    );
+  }
+
+  function detailsEl(): HTMLDetailsElement {
+    const el = host.querySelector('details[data-tool-id="tool-use-1"]');
+    if (el === null) {
+      throw new Error('missing tool details');
+    }
+    return el as unknown as HTMLDetailsElement;
+  }
+
+  function summaryEl(): HTMLElement {
+    const el = host.querySelector('[data-testid="tool-summary"]');
+    if (el === null) {
+      throw new Error('missing tool-summary');
+    }
+    return el as unknown as HTMLElement;
+  }
+
+  test('untouched running row auto-opens when it fails', async () => {
+    const running = liveTool();
+    await act(async () => {
+      renderLive([running]);
+    });
+    expect(detailsEl().open).toBe(false);
+
+    await act(async () => {
+      renderLive([{ ...running, outcome: 'failed', exitCode: 1 }]);
+    });
+    expect(detailsEl().open).toBe(true);
+  });
+
+  test('manually toggled row stays closed when it later fails', async () => {
+    const running = liveTool();
+    await act(async () => {
+      renderLive([running]);
+    });
+    expect(detailsEl().open).toBe(false);
+
+    await act(async () => {
+      summaryEl().click();
+    });
+    expect(detailsEl().open).toBe(true);
+
+    await act(async () => {
+      summaryEl().click();
+    });
+    expect(detailsEl().open).toBe(false);
+
+    await act(async () => {
+      renderLive([{ ...running, outcome: 'failed', exitCode: 1 }]);
+    });
+    expect(detailsEl().open).toBe(false);
   });
 });
