@@ -1,347 +1,117 @@
 # ANR Story 1.1 — Scan a Tool Call as One Readable Row — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the always-open Input/Output JSON block for each agent tool call with one scannable collapsed row — chevron, colour-independent status glyph, family chip, elided headline, and right-aligned badges — on both the Legacy and Console node rooms, driven by a shared pure resolver.
+**Goal:** Replace each always-open tool-call JSON card with one scannable disclosure row on both the Legacy and Console node rooms.
 
-**Architecture:** A new React-free module `packages/web/src/lib/tool-presentation.ts` turns a call's `{name, input, output}` into a `ToolPresentation` (family, chip label, headline, badges, and a `terminal`/`generic` body arm). The shared projector `packages/web/src/lib/agent-history.ts` attaches that presentation plus the carried-through `exitCode` to every tool item, folds a following `interrupted` status row into the preceding call, and exposes render-neutral helpers (`STATUS_GLYPH`, `initialToolExpanded`, `toolBadges`). Each surface's renderer (`NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`) consumes that data and adds only markup, so the two shells stay independent while sharing all logic.
+**Architecture:** A new React-free resolver in `packages/web/src/lib/tool-presentation.ts` classifies provider payloads and produces all payload-derived collapsed-row facts.
+`packages/web/src/lib/agent-history.ts` attaches that presentation, carries the exit code, owns the complete ordered badge and status text projection, and folds an immediately following `interrupted` lifecycle row into the preceding tool item.
+The two shells retain separate JSX but consume the same render-neutral data and use native `<details>/<summary>` disclosure semantics.
 
-**Tech Stack:** TypeScript (strict), React 19, Tailwind v4 with the existing `--node-*` / status CSS tokens, Bun test (`renderToStaticMarkup` on Legacy, happy-dom + `createRoot` on Console).
+**Tech Stack:** Strict TypeScript, React 19, Tailwind v4, existing CSS custom properties, Bun test, `renderToStaticMarkup`, and happy-dom.
+
+**Issue:** `https://github.com/anhle128/Archon/issues/174`.
+
+**Spec:** `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` Story 1.1, `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md`, `_bmad-output/specs/spec-agent-node-room/test-plan.md`, `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md`, `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md`, and `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md`.
 
 ## Global Constraints
 
-- Strict TypeScript, complete type annotations, no unjustified `any`, zero ESLint warnings (`--max-warnings 0`); the change must pass `bun run validate`. (NFR7)
-- `@archon/web` must never import from `@archon/workflows`; wire types come from `api.generated.d.ts` via `@/lib/api`. (Additional Requirements)
-- Console (`packages/web/src/experiments/console/`) must not import from `@/components/`, `@/stores`, `@/contexts`, `@/routes`, `@/hooks`, or `@tanstack/react-query` (enforced by `console-isolation.test.ts`).
-- Status meaning must be decodable without colour: the glyph carries the meaning and colour is applied in addition, never instead. (NFR2)
-- Raw `JSON.stringify` output must never be the default transcript presentation; the collapsed row must contain no serialized-data punctuation. (NFR3)
-- Epic 1 has no schema, migration, or backend change; this is pure presentation of already-stored data and improves historical runs immediately. (NFR1)
-- Use only existing design tokens — never hard-code hex values. Family chip hues are `--node-bash` / `--node-command` / `--node-prompt` / `--node-approval`; status colours are `--success` / `--error` / `--warning` / `--text-secondary`, with the running glyph using `--accent-bright` on Legacy and `--running` on Console. (DESIGN.md, brand rule)
-- Do not run bare `bun test` from the repo root; run path-scoped test files during TDD and `bun run validate` as the pre-PR gate. (AGENTS.md, test-plan.md)
-- Spec authorities, in precedence order when a mockup conflicts: `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md`, `_bmad-output/specs/spec-agent-node-room/test-plan.md`, then `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/{DESIGN,EXPERIENCE}.md`.
+- Keep this change inside `@archon/web`; do not add a schema, migration, server route, backend formatter change, dependency, feature flag, environment variable, or deployment step.
+- Do not import `@archon/workflows` from `@archon/web`; web wire types continue to come through `packages/web/src/lib/api.generated.d.ts` and `packages/web/src/lib/api.ts`.
+- Keep Console imports within the boundary enforced by `packages/web/src/experiments/console/console-isolation.test.ts`; Console must not import Legacy components, stores, contexts, routes, hooks, or `@tanstack/react-query`.
+- Use strict TypeScript with complete annotations, no unjustified `any`, and zero ESLint warnings.
+- Use the sent tool name for a chip only when it is one whitespace-free token of at most 24 characters; otherwise use the resolved family name.
+- Match normalized tool names exactly after case-folding and removing `_` and `-`; never match aliases by substring.
+- Keep the collapsed summary free of raw serialized JSON; the existing Input and Output blocks remain only inside the disclosure body until Stories 1.2 and 1.3 replace them with the Raw toggle and family-shaped bodies.
+- Make status understandable without colour through the literal glyphs `✓`, `✕`, `◐`, `⚠`, and `–`; colour only reinforces the glyph.
+- Use `--node-bash` for shell and code, `--node-command` for file and web, `--node-prompt` for search and glob, `--node-approval` for todo and task, and `--text-secondary` for generic.
+- Use `--success`, `--error`, `--warning`, and `--text-secondary` for status, with `--accent-bright` for Legacy running and `--running` for Console running.
+- Preserve the full headline text in the DOM and accessible name; path elision is a visual two-span middle elision and text elision is visual end truncation.
+- Use native `<details>/<summary>`; the whole summary is the toggle, and a manual reader choice must survive live re-renders.
+- Run focused tests with `bun test --cwd packages/web src/lib/...`, `src/components/...`, or `src/experiments/console/...`; never run `bun test` from the repository root.
+- Run `bun run validate` before the final commit.
+- Resolve conflicts in this order: Story 1.1 acceptance criteria, the tool-presentation contract plus adopted architecture decisions, the test plan, then finalized DESIGN and EXPERIENCE; brainstorm HTML imports and mockups do not override finalized artifacts.
 
 ---
 
 ## Scope and Non-Goals
 
-This plan implements **only** Story 1.1 (CAP-1): the collapsed one-row rendering, the resolver's classification of every family, the colour-independent glyph, the chip rule, safe degradation of adversarial payloads, and the read-half interrupted fold.
+This plan implements only Story 1.1 and the Story 1.1 read-side seam needed by the future interrupt story.
 
-**In scope (Story 1.1):**
+In scope:
 
-- The pure resolver producing collapsed-row fields for all four tiers: `family`, `label`, `headline`, `headlineKind`, `badges`, and the `terminal` / `generic` body arms.
-- Both renderers rewritten to the collapsed row with initial expansion table-driven by outcome.
-- `agent-history.ts` carrying `exitCode` and the attached `presentation` onto each tool item, plus the interrupted-status fold.
+- Resolve every tool call to `family`, `label`, `chipAriaLabel`, `headline`, `headlineKind`, and payload-derived badges.
+- Produce the complete status and ordered badge view in the shared core.
+- Carry `exitCode` on tool history items.
+- Fold a lifecycle item whose exact state is `interrupted` into an immediately preceding tool item.
+- Render the same one-line disclosure anatomy on Legacy and Console.
+- Seed the five initial disclosure states from a table and auto-open an untouched row that changes to `failed` during polling.
+- Preserve the current full-output loader inside the expanded disclosure.
 
-**Deferred to later stories — do not build here:**
+Deferred:
 
-- Story 1.2 (CAP-7): the per-card **Raw toggle**. Story 1.1 keeps the existing Input/Output `<pre>` blocks inside the expanded region so operators retain full payload access until the Raw toggle lands.
-- Story 1.3 (CAP-2): the family-shaped expanded bodies (`matches` / `paths` / `code` / rich `file` view) and the `output_mode`-driven arm selection. Story 1.1's `body` union is only `terminal | generic`; Stories 1.3/1.4/1.6 widen it.
-- Story 1.4 (CAP-5): inline diffs, `diff-hunks.ts`, and the `git-hunk-adapter.ts` move.
-- Story 1.5 (CAP-3): the pinned todo strip and `TodoPhase[]` fold. `buildAgentHistory` keeps its `AgentHistoryItem[]` return type; its three call sites (`ConsoleNodeRoom.tsx:607`, `NodeTranscriptPane.tsx:236`, `ConsoleExecutionHistory.tsx:204`) need **no** edit.
-- Story 1.6 (CAP-4): the `task` → `TaskSubtask[]` normalizer and subtask cards. Do **not** export `TaskSubtask` yet.
-- Story 1.7 (CAP-6): occurrence grouping and the loop-iteration selector.
+- Story 1.2 owns the per-card Raw toggle and the rule that Raw is the only final JSON surface.
+- Story 1.3 owns terminal, diff, matches, paths, code, file-preview, web, and generic expanded body arms.
+- Story 1.4 owns inline diffs and the `git-hunk-adapter.ts` move.
+- Story 1.5 owns `TodoPhase[]`, the pinned todo strip, and the widened `buildAgentHistory()` return type.
+- Story 1.6 owns `TaskSubtask[]` and subtask cards.
+- Story 1.7 owns occurrence grouping and the loop-iteration selector.
+- The polite live region, transcript stick-to-bottom behavior, todo rendering, and loop navigation remain with their assigned later stories.
 
----
+Do not add a partial `body` union or render a second generic or terminal body in this story.
+The expanded region temporarily retains the existing Input and Output presentation so Story 1.1 remains independently inspectable without implementing later capabilities early.
 
 ## File Structure
 
-- **Create** `packages/web/src/lib/tool-presentation.ts` — the pure, React-free resolver. One responsibility: `{name, input, output}` → `ToolPresentation`. Also exports `FAMILY_CHIP_TOKEN` and `elideHeadline`.
-- **Create** `packages/web/src/lib/tool-presentation.test.ts` — table-driven resolver tests (CAP-1 slice).
-- **Modify** `packages/web/src/lib/agent-history.ts` — add `presentation` + `exitCode` to the tool item; add `resolveExitCode`, `STATUS_GLYPH`, `OUTCOME_ARIA`, `initialToolExpanded`, `toolBadges`, `foldInterruptedStatus`, and the exported `ToolOutcome` type; remove `context` / `toolContext` / `TOOL_CONTEXT_KEYS` (in the final task, once no renderer reads them).
-- **Modify** `packages/web/src/lib/agent-history.test.ts` — assert the new fields and helpers; add the interrupted-fold test; drop the `toolContext` describe block in the final task.
-- **Modify** `packages/web/src/components/workflows/NodeRoom.tsx` — rewrite `ToolHistory` to the collapsed row (Legacy tokens).
-- **Modify** `packages/web/src/components/workflows/NodeRoom.test.tsx` — update the `toolItem` fixture and add collapsed-row / glyph / exit-badge / headline-elision assertions.
-- **Modify** `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — rewrite `ToolHistory` to the collapsed row (Console tokens).
-- **Modify** `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — add the same collapsed-row assertions on the Console surface (its fixtures feed rows, not item literals).
-- **Modify** `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — flip `1-1-scan-a-tool-call-as-one-readable-row` to `done` (final task).
+- Create `packages/web/src/lib/tool-presentation.ts` for the pure resolver, chip-token mapping, and headline split helper.
+- Create `packages/web/src/lib/tool-presentation.test.ts` for resolver classification, display, and safe-degradation tests.
+- Modify `packages/web/src/lib/agent-history.ts` to attach `ToolPresentation`, carry `exitCode`, project status and badges, and fold interrupted lifecycle rows.
+- Modify `packages/web/src/lib/agent-history.test.ts` for the projection, expansion table, badge order, and interrupted fold.
+- Modify `packages/web/src/components/workflows/NodeRoom.tsx` for the Legacy native disclosure row.
+- Modify `packages/web/src/components/workflows/NodeRoom.test.tsx` for Legacy initial-state, summary-content, accessibility, and live-transition coverage.
+- Modify `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` for the Console native disclosure row.
+- Modify `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` for the equivalent Console coverage.
+- Modify `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` before the final gate and commit its `done` value only after all Story 1.1 checks pass.
+- Create `_bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md` with the exact test results and acceptance-criterion map gathered during Task 6.
+
+## Settled Decisions
+
+- Treat `state === 'interrupted'` as the exact lifecycle marker; the Story 1.1 acceptance criterion and the merged ANR contract use that literal.
+- Fall back to the `generic` family label when `server · tool` for an MCP name exceeds 24 characters.
+- Show `exit N` only for a non-zero finite exit code.
+- Order badges as payload facts, non-zero exit code, output-state marker, then duration.
+- Mark duration as the only droppable badge; semantic facts stay fixed while duration may shrink out under pressure.
+- Treat missing input (`undefined`) and an empty plain object as the Codex name-only shell path.
+- Treat null, arrays, primitives, invalid names, and invalid records as malformed input and resolve them to a safe generic row.
+- Build the generic collapsed headline from at most three scalar top-level `key: value` pairs; ignore nested objects and arrays in the summary so `{…}` and `[n]` never enter the collapsed row.
+- Keep nested placeholders out of Story 1.1 entirely because the generic expanded body belongs to Story 1.3.
+- Keep `code` on `--node-bash`; `DESIGN.md:423-425` records the owner decision after discovering that `--node-script` is Console-only.
+
+## Current Repository Facts
+
+- `AgentHistoryItem` currently exposes `context` and discards the exit code after outcome derivation in `packages/web/src/lib/agent-history.ts`.
+- The only production readers of `item.context` are `packages/web/src/components/workflows/NodeRoom.tsx` and `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`.
+- The Legacy test constructs a tool `AgentHistoryItem` literal in `packages/web/src/components/workflows/NodeRoom.test.tsx`.
+- Console tests feed wire rows through `buildAgentHistory()` and use top-level `metadata`, matching `components['schemas']['WorkflowNodeMessage']`.
+- The current Console test at `ConsoleNodeRoom.test.tsx:1002` expects an open successful or unknown tool card and must be updated to the new disclosure contract.
+- Closed native `<details>` content remains in the DOM and in `textContent`; tests must inspect `details.open` and the `<summary>` text rather than assert that body text is absent from the DOM.
 
 ---
 
-## Open Questions
-
-Each has a chosen provisional default so the plan is executable without blocking.
-
-1. **Interrupted status-row state string.** Story 1.1's read-half fold must recognise a `status` row emitted by Epic 2's write half. The write half does not exist yet, and no current status state is literally `interrupted` (verified against `packages/workflows/src` and `packages/core/src`). **Provisional default:** fold when the lifecycle item's `state === 'interrupted'`. Epic 2 (Story 2.3) must emit exactly that state; leave a code comment saying so.
-2. **Long MCP labels vs the `label.length <= 24` invariant.** The contract maps `mcp__server__tool` → label `server · tool`, but a long server/tool pair would exceed 24. **Provisional default:** build `server · tool`, and if it exceeds 24 characters fall back to the family name `generic`.
-3. **Generic body "no JSON dump" test wording.** `tool-presentation-contract.md` mandates the `{…}` / `[n]` placeholders for nested objects/arrays, while `test-plan.md` says assert the generic output contains "no `{`". A literal `{…}` contains `{`, so the two conflict. **Provisional default:** keep the contract's `{…}` / `[n]` placeholders (behavioural authority, FR2) and assert the no-dump *intent* — the output contains no JSON-object signature (`/\{\s*"/` and no `\n  "` indented quoted key). One-line change to `…` if a reviewer insists on the literal.
-4. **`body` arms in this story.** Story 1.1 produces only `terminal` and `generic`. **Provisional default:** declare `body` as `{kind:'terminal'} | {kind:'generic'}` now; Stories 1.3/1.4/1.6 widen the union — do not add unused arms here (YAGNI).
-
-### Decisions (settled, not open)
-
-- **Exit-code badge policy.** Render `exit N` only when `exitCode !== null && exitCode !== 0`, coloured with `--error`. This matches the contract's examples (the `[read]` success row carries no exit badge; the failed `[bash]` row shows `exit 1`) and the test-plan's single assertion. A successful call's `✓` glyph already signals success.
-
----
-
-## Reference — the current tool item and renderers
-
-`AgentHistoryItem` (tool arm) today (`agent-history.ts:26-41`) carries `outcome: 'running' | 'succeeded' | 'failed' | 'interrupted' | 'unknown'`, `context`, `input`, `output`, `durationMs`, `canLoadFullOutput`, `outputState`, `messageId`, and `toolUseId`.
-`deriveOutcome` (`:120`) already parses the exit code but discards it after deciding `failed`; `resolveExitCode` will surface it.
-`buildAgentHistory` (`:207`) projects rows into items and returns `AgentHistoryItem[]`.
-The two renderers' `ToolHistory` components (`NodeRoom.tsx:192-291`, `ConsoleAgentHistoryList.tsx:126-223`) are near-identical: a header line (`item.name`, an outcome word, output-state markers, duration), then `item.context.map(...)`, then two `<details open>` Input/Output panes, then the `canLoadFullOutput` "View full output" button.
-Only two production sites read `item.context`: `NodeRoom.tsx:246` and `ConsoleAgentHistoryList.tsx:178`.
-Console renderer tests feed **rows** through `buildAgentHistory` (via `loadMessages`), so they are unaffected by the item-shape change; only the Legacy `toolItem` fixture (`NodeRoom.test.tsx:82-101`) constructs a full `AgentHistoryItem` literal.
-
----
-
-## Task 1: Pure resolver `tool-presentation.ts`
+## Task 1: Add the resolver classification tracer bullet
 
 **Files:**
+
 - Create: `packages/web/src/lib/tool-presentation.ts`
-- Test: `packages/web/src/lib/tool-presentation.test.ts`
+- Create: `packages/web/src/lib/tool-presentation.test.ts`
 
 **Interfaces:**
-- Consumes: nothing (leaf module; no `@archon/*` or React imports).
+
+- Consumes: no React or `@archon/*` imports.
 - Produces:
-  ```ts
-  export interface ToolPresentationInput { name: string; input: unknown; output: unknown; }
-  export type ToolFamily =
-    | 'shell' | 'file' | 'search' | 'glob' | 'code' | 'todo' | 'task' | 'web' | 'generic';
-  export interface ToolPresentation {
-    family: ToolFamily;
-    label: string;
-    headline: string;
-    headlineKind: 'path' | 'text';
-    badges: string[];
-    body:
-      | { kind: 'terminal'; command: string }
-      | { kind: 'generic'; fields: { key: string; value: string }[] };
-  }
-  export function toolPresentation(input: ToolPresentationInput): ToolPresentation;
-  export const FAMILY_CHIP_TOKEN: Record<ToolFamily, string>;
-  export type ElidedHeadline = { kind: 'path'; head: string; tail: string } | { kind: 'text'; text: string };
-  export function elideHeadline(headline: string, headlineKind: 'path' | 'text'): ElidedHeadline;
-  ```
-
-- [ ] **Step 1: Write the failing test**
-
-Create `packages/web/src/lib/tool-presentation.test.ts`:
 
 ```ts
-import { describe, expect, test } from 'bun:test';
-
-import { elideHeadline, toolPresentation, type ToolFamily } from './tool-presentation';
-
-interface Case {
-  title: string;
-  name: string;
-  input: unknown;
-  family: ToolFamily;
-  label: string;
-  headline?: string;
-  headlineKind?: 'path' | 'text';
-  badges?: string[];
-}
-
-const CASES: Case[] = [
-  // Tier 1 — measured aliases resolve to the right family.
-  { title: 'read_file → file', name: 'read_file', input: { path: 'a.ts' }, family: 'file', label: 'read_file' },
-  { title: 'run_terminal_command → shell', name: 'run_terminal_command', input: { command: 'ls' }, family: 'shell', label: 'run_terminal_command' },
-  { title: 'search_tool → search', name: 'search_tool', input: { pattern: 'x' }, family: 'search', label: 'search_tool' },
-  { title: 'list_dir → glob', name: 'list_dir', input: { path: 'src' }, family: 'glob', label: 'list_dir' },
-  // search_replace contains "search" but is an EDIT tool — substring-matching regression guard.
-  { title: 'search_replace → file (not search)', name: 'search_replace', input: { old_string: 'a', new_string: 'b' }, family: 'file', label: 'search_replace' },
-  { title: 'Edit → file, chip as sent', name: 'Edit', input: { file_path: 'a.ts' }, family: 'file', label: 'Edit' },
-  // Tier 2 — duck-type key alternates resolve.
-  { title: 'target_file resolves as path', name: 'mystery', input: { target_file: 'x.ts' }, family: 'file', label: 'file', headline: 'x.ts', headlineKind: 'path' },
-  { title: 'old_str/new_str resolves as edit', name: 'mystery', input: { old_str: 'a', new_str: 'b', file_path: 'z.ts' }, family: 'file', label: 'file' },
-];
-
-describe('toolPresentation resolver tiers', () => {
-  for (const c of CASES) {
-    test(c.title, () => {
-      const p = toolPresentation({ name: c.name, input: c.input, output: undefined });
-      expect(p.family).toBe(c.family);
-      expect(p.label).toBe(c.label);
-      if (c.headline !== undefined) expect(p.headline).toBe(c.headline);
-      if (c.headlineKind !== undefined) expect(p.headlineKind).toBe(c.headlineKind);
-      if (c.badges !== undefined) expect(p.badges).toEqual(c.badges);
-    });
-  }
-
-  test('every row keeps label.length <= 24', () => {
-    for (const c of CASES) {
-      const p = toolPresentation({ name: c.name, input: c.input, output: undefined });
-      expect(p.label.length).toBeLessThanOrEqual(24);
-    }
-  });
-});
-
-describe('glob key trap', () => {
-  test('Claude glob headlines the pattern, not the search directory', () => {
-    const p = toolPresentation({ name: 'Glob', input: { pattern: '**/*.tsx', path: 'packages/web' }, output: undefined });
-    expect(p.family).toBe('glob');
-    expect(p.headline).toBe('**/*.tsx');
-    expect(p.headline).not.toBe('packages/web');
-    expect(p.headlineKind).toBe('path');
-  });
-
-  test('OMP glob headlines the path when there is no pattern', () => {
-    const p = toolPresentation({ name: 'glob', input: { path: 'packages/web/src' }, output: undefined });
-    expect(p.family).toBe('glob');
-    expect(p.headline).toBe('packages/web/src');
-  });
-});
-
-describe('shell name handling', () => {
-  test('Codex shape with no input resolves to shell with the name as headline', () => {
-    const p = toolPresentation({ name: 'npm test', input: undefined, output: undefined });
-    expect(p.family).toBe('shell');
-    expect(p.headline).toBe('npm test');
-    expect(p.label).toBe('shell'); // multi-token name falls back to the family
-  });
-
-  test('a multi-line Codex name headlines only its first non-empty line', () => {
-    const p = toolPresentation({ name: '\nfor f in *.ts; do\n  echo "$f"\ndone', input: undefined, output: undefined });
-    expect(p.headline).not.toContain('\n');
-    expect(p.headline).toBe('for f in *.ts; do…');
-  });
-
-  test('a /bin/zsh -lc wrapper is stripped from the headline but kept for the body', () => {
-    const p = toolPresentation({ name: "/bin/zsh -lc 'bun test node-room'", input: undefined, output: undefined });
-    expect(p.headline.startsWith('/bin/')).toBe(false);
-    expect(p.headline).toBe('bun test node-room');
-    // the untouched name is preserved for the terminal body
-    expect(p.body).toEqual({ kind: 'terminal', command: "/bin/zsh -lc 'bun test node-room'" });
-  });
-
-  test('a /bin/bash -lc wrapper is stripped too', () => {
-    const p = toolPresentation({ name: "/bin/bash -lc 'ls -la'", input: undefined, output: undefined });
-    expect(p.headline).toBe('ls -la');
-  });
-});
-
-describe('code family', () => {
-  test('eval with {code, language} → family code, first-line headline, language badge, untruncated source', () => {
-    const longFirstLine = `const x = ${'y'.repeat(120)};`;
-    const p = toolPresentation({ name: 'eval', input: { code: `${longFirstLine}\nconsole.log(x)`, language: 'javascript' }, output: undefined });
-    expect(p.family).toBe('code');
-    expect(p.headline.startsWith('const x =')).toBe(true);
-    expect(p.badges).toEqual(['javascript']);
-    expect(p.headline.length).toBeGreaterThan(80); // NOT truncated to the generic 80-char cut
-  });
-});
-
-describe('chip rule', () => {
-  test('a short single-token name is kept verbatim; a long one falls back to the family', () => {
-    expect(toolPresentation({ name: 'Grep', input: { pattern: 'x' }, output: undefined }).label).toBe('Grep');
-    const longName = 'x'.repeat(40);
-    expect(toolPresentation({ name: longName, input: {}, output: undefined }).label.length).toBeLessThanOrEqual(24);
-  });
-
-  test('the chip is never the case-folded separator-stripped form', () => {
-    expect(toolPresentation({ name: 'read_file', input: { path: 'a.ts' }, output: undefined }).label).toBe('read_file');
-    expect(toolPresentation({ name: 'read_file', input: { path: 'a.ts' }, output: undefined }).label).not.toBe('readfile');
-  });
-
-  test('an emoji-bearing name passes through unchanged when it is a single short token', () => {
-    expect(toolPresentation({ name: '🚀run', input: {}, output: undefined }).label).toBe('🚀run');
-  });
-});
-
-describe('mcp names', () => {
-  test('mcp__server__tool → generic with label "server · tool"', () => {
-    const p = toolPresentation({ name: 'mcp__server__tool', input: {}, output: undefined });
-    expect(p.family).toBe('generic');
-    expect(p.label).toBe('server · tool');
-  });
-
-  test('a long mcp label falls back to the family name', () => {
-    const p = toolPresentation({ name: `mcp__${'s'.repeat(20)}__${'t'.repeat(20)}`, input: {}, output: undefined });
-    expect(p.label).toBe('generic');
-    expect(p.label.length).toBeLessThanOrEqual(24);
-  });
-});
-
-describe('generic fallback and safe degradation', () => {
-  test('an unknown tool with object input renders at most three key: value pairs and no JSON dump', () => {
-    const p = toolPresentation({
-      name: 'mystery',
-      input: { a: 1, b: 'two', c: true, d: 'four', nested: { deep: 1 }, list: [1, 2, 3] },
-      output: undefined,
-    });
-    expect(p.family).toBe('generic');
-    if (p.body.kind !== 'generic') throw new Error('expected generic body');
-    expect(p.body.fields.length).toBeLessThanOrEqual(3);
-    const dump = p.body.fields.map(f => `${f.key}: ${f.value}`).join('\n');
-    expect(dump).not.toMatch(/\{\s*"/); // no JSON-object signature (see Open Question 3)
-    expect(dump).not.toContain('\n  "');
-  });
-
-  test('long scalar values are cut to 80 characters', () => {
-    const p = toolPresentation({ name: 'mystery', input: { big: 'z'.repeat(200) }, output: undefined });
-    if (p.body.kind !== 'generic') throw new Error('expected generic body');
-    expect(p.body.fields[0]?.value).toBe(`${'z'.repeat(80)}…`);
-  });
-
-  test('nested objects and arrays collapse to placeholders', () => {
-    const p = toolPresentation({ name: 'mystery', input: { obj: { x: 1 }, arr: [1, 2] }, output: undefined });
-    if (p.body.kind !== 'generic') throw new Error('expected generic body');
-    expect(p.body.fields).toEqual([{ key: 'obj', value: '{…}' }, { key: 'arr', value: '[2]' }]);
-  });
-
-  test('empty, null, array, and non-string names never throw', () => {
-    expect(() => toolPresentation({ name: '', input: null, output: null })).not.toThrow();
-    expect(() => toolPresentation({ name: 'x', input: [], output: undefined })).not.toThrow();
-    expect(() => toolPresentation({ name: 'x', input: '', output: undefined })).not.toThrow();
-    // a hostile key must not poison the object walk
-    expect(() => toolPresentation({ name: 'x', input: { ['__proto__']: 1, a: 2 }, output: undefined })).not.toThrow();
-    // a non-string name (guarded) degrades to generic
-    expect(() => toolPresentation({ name: 123 as unknown as string, input: {}, output: undefined })).not.toThrow();
-  });
-
-  test('a 100k-character source line stays bounded and returns quickly', () => {
-    const p = toolPresentation({ name: 'eval', input: { code: 'a'.repeat(100_000), language: 'txt' }, output: undefined });
-    expect(p.family).toBe('code');
-    expect(typeof p.headline).toBe('string');
-  });
-});
-
-describe('elideHeadline', () => {
-  test('a path splits at the last slash so the filename tail survives', () => {
-    expect(elideHeadline('packages/web/src/lib/tool-presentation.ts', 'path')).toEqual({
-      kind: 'path',
-      head: 'packages/web/src/lib/',
-      tail: 'tool-presentation.ts',
-    });
-  });
-
-  test('a slashless path yields an empty head', () => {
-    expect(elideHeadline('README', 'path')).toEqual({ kind: 'path', head: '', tail: 'README' });
-  });
-
-  test('text elision returns a single span', () => {
-    expect(elideHeadline('bun test', 'text')).toEqual({ kind: 'text', text: 'bun test' });
-  });
-});
-```
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-Run: `bun test packages/web/src/lib/tool-presentation.test.ts`
-Expected: FAIL with a module-resolution error (`Cannot find module './tool-presentation'`).
-
-- [ ] **Step 3: Write the implementation**
-
-Create `packages/web/src/lib/tool-presentation.ts`:
-
-```ts
-/**
- * Pure, React-free, provider-agnostic resolver that turns a tool call's
- * {name, input, output} into a scannable ToolPresentation. Both node-room
- * renderers consume it and add only markup. See
- * _bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md.
- *
- * Story 1.1 (CAP-1) produces the collapsed-row fields plus the `terminal` and
- * `generic` body arms. Stories 1.3/1.4/1.6 widen `body` with the family-shaped
- * arms (matches/paths/code/diff/task) and add their rendering.
- */
-
-export interface ToolPresentationInput {
-  name: string;
-  input: unknown;
-  output: unknown;
-}
-
 export type ToolFamily =
   | 'shell'
   | 'file'
@@ -353,496 +123,476 @@ export type ToolFamily =
   | 'web'
   | 'generic';
 
+export interface ToolPresentationInput {
+  name: string;
+  input: unknown;
+  output: unknown;
+}
+
 export interface ToolPresentation {
   family: ToolFamily;
-  /** Chip text: the tool name AS SENT when it is one token of <=24 chars, else the family name. */
   label: string;
-  /** The single salient argument — command, path, pattern. Never JSON. */
+  chipAriaLabel: string;
   headline: string;
-  /** 'path' elides in the MIDDLE so the filename survives; 'text' elides at the end. */
   headlineKind: 'path' | 'text';
-  /** Collapsed-row semantic facts derived from the payload (e.g. code language). */
   badges: string[];
-  body:
-    | { kind: 'terminal'; command: string }
-    | { kind: 'generic'; fields: { key: string; value: string }[] };
 }
 
-/** family → CSS custom property carrying its chip hue (declared in index.css / theme.css). */
-export const FAMILY_CHIP_TOKEN: Record<ToolFamily, string> = {
-  shell: '--node-bash',
-  file: '--node-command',
-  web: '--node-command',
-  search: '--node-prompt',
-  glob: '--node-prompt',
-  code: '--node-bash',
-  todo: '--node-approval',
-  task: '--node-approval',
-  generic: '--text-secondary',
-};
+export function toolPresentation(input: ToolPresentationInput): ToolPresentation;
+```
 
-export type ElidedHeadline =
-  | { kind: 'path'; head: string; tail: string }
-  | { kind: 'text'; text: string };
+- [ ] **Step 1: Write the failing family-resolution table**
 
-export function elideHeadline(headline: string, headlineKind: 'path' | 'text'): ElidedHeadline {
-  if (headlineKind === 'path') {
-    const idx = headline.lastIndexOf('/');
-    if (idx >= 0) {
-      return { kind: 'path', head: headline.slice(0, idx + 1), tail: headline.slice(idx + 1) };
-    }
-    return { kind: 'path', head: '', tail: headline };
-  }
-  return { kind: 'text', text: headline };
+Create `packages/web/src/lib/tool-presentation.test.ts` with a table that covers every Tier 1 alias plus the provider-specific traps.
+
+```ts
+import { describe, expect, test } from 'bun:test';
+
+import { toolPresentation, type ToolFamily } from './tool-presentation';
+
+interface FamilyCase {
+  name: string;
+  input: unknown;
+  family: ToolFamily;
 }
 
-const MAX_LABEL = 24;
-const MAX_VALUE = 80;
-const MAX_GENERIC_FIELDS = 3;
-
-// Tier 1 alias sets, keyed on the NORMALIZED name (lower-cased, `_`/`-` stripped).
-// Bolded aliases in the contract were measured against the real corpus, not guessed.
-const FAMILY_ALIASES: { family: ToolFamily; aliases: string[] }[] = [
-  { family: 'shell', aliases: ['bash', 'shell', 'run', 'command', 'execute', 'runterminalcommand'] },
-  {
-    family: 'file',
-    aliases: [
-      'edit', 'write', 'create', 'strreplace', 'applypatch', 'notebookedit', 'searchreplace',
-      'delete', 'read', 'view', 'cat', 'open', 'readfile',
-    ],
-  },
-  { family: 'search', aliases: ['grep', 'search', 'rg', 'searchtool'] },
-  { family: 'glob', aliases: ['glob', 'find', 'ls', 'list', 'listdir'] },
-  { family: 'code', aliases: ['eval', 'runcode', 'executecode'] },
-  { family: 'todo', aliases: ['todo', 'todowrite', 'plan'] },
-  { family: 'task', aliases: ['task', 'agent', 'subagent', 'dispatch'] },
-  { family: 'web', aliases: ['webfetch', 'websearch', 'fetch', 'browse'] },
+const FAMILY_CASES: readonly FamilyCase[] = [
+  ...['Bash', 'shell', 'run', 'command', 'execute', 'run_terminal_command'].map(name => ({
+    name,
+    input: { command: 'bun test' },
+    family: 'shell' as const,
+  })),
+  ...[
+    'edit',
+    'write',
+    'create',
+    'str_replace',
+    'apply_patch',
+    'notebook_edit',
+    'search_replace',
+    'delete',
+    'read',
+    'view',
+    'cat',
+    'open',
+    'read_file',
+  ].map(name => ({ name, input: { file_path: 'a.ts' }, family: 'file' as const })),
+  ...['grep', 'search', 'rg', 'search_tool'].map(name => ({
+    name,
+    input: { pattern: 'needle' },
+    family: 'search' as const,
+  })),
+  ...['glob', 'find', 'ls', 'list', 'list_dir'].map(name => ({
+    name,
+    input: { path: 'packages/web/src' },
+    family: 'glob' as const,
+  })),
+  ...['eval', 'run_code', 'execute code'].map(name => ({
+    name,
+    input: { code: '1 + 1', language: 'javascript' },
+    family: 'code' as const,
+  })),
+  ...['todo', 'todo_write', 'plan'].map(name => ({ name, input: {}, family: 'todo' as const })),
+  ...['task', 'agent', 'subagent', 'dispatch'].map(name => ({
+    name,
+    input: {},
+    family: 'task' as const,
+  })),
+  ...['web_fetch', 'web_search', 'fetch', 'browse'].map(name => ({
+    name,
+    input: { url: 'https://archon.diy' },
+    family: 'web' as const,
+  })),
 ];
 
-const NORMALIZED_ALIAS: Map<string, ToolFamily> = (() => {
-  const map = new Map<string, ToolFamily>();
-  for (const { family, aliases } of FAMILY_ALIASES) {
-    for (const alias of aliases) {
-      if (!map.has(alias)) map.set(alias, family);
+describe('toolPresentation family resolution', () => {
+  test('matches every declared Tier 1 alias exactly', () => {
+    for (const fixture of FAMILY_CASES) {
+      expect(toolPresentation({ ...fixture, output: undefined }).family).toBe(fixture.family);
     }
-  }
-  return map;
-})();
+  });
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
-}
+  test('uses input keys when the name is unknown', () => {
+    expect(toolPresentation({ name: 'mystery', input: { target_file: 'x.ts' }, output: undefined }).family).toBe('file');
+    expect(toolPresentation({ name: 'mystery', input: { old_str: 'a', new_str: 'b' }, output: undefined }).family).toBe('file');
+    expect(toolPresentation({ name: 'mystery', input: { old_string: 'a', new_string: 'b' }, output: undefined }).family).toBe('file');
+  });
 
-function normalizeName(name: string): string {
-  return name.toLowerCase().replace(/[_-]/g, '');
-}
+  test('never mistakes search_replace for a search tool', () => {
+    expect(toolPresentation({ name: 'search_replace', input: { old_string: 'a', new_string: 'b' }, output: undefined }).family).toBe('file');
+  });
 
-function hasKey(record: Record<string, unknown>, keys: readonly string[]): boolean {
-  return keys.some(key => record[key] !== undefined);
-}
+  test('headlines Claude glob with pattern and OMP glob with path', () => {
+    const claude = toolPresentation({ name: 'Glob', input: { pattern: '**/*.tsx', path: 'packages/web' }, output: undefined });
+    const omp = toolPresentation({ name: 'glob', input: { path: 'packages/web/src' }, output: undefined });
+    expect(claude).toMatchObject({ family: 'glob', headline: '**/*.tsx', headlineKind: 'path' });
+    expect(claude.headline).not.toBe('packages/web');
+    expect(omp).toMatchObject({ family: 'glob', headline: 'packages/web/src', headlineKind: 'path' });
+  });
 
-function firstString(record: Record<string, unknown> | null, keys: readonly string[]): string | null {
-  if (record === null) return null;
-  for (const key of keys) {
-    const value = record[key];
-    if (typeof value === 'string' && value.length > 0) return value;
-  }
-  return null;
-}
-
-function stripShellWrapper(source: string): string {
-  const match = /^\/bin\/(?:ba|z)sh -lc '([\s\S]*)'$/.exec(source);
-  return match ? (match[1] ?? source) : source;
-}
-
-function firstNonEmptyLine(source: string): string {
-  const lines = source.split('\n');
-  let idx = -1;
-  for (let i = 0; i < lines.length; i += 1) {
-    if ((lines[i] ?? '').trim().length > 0) {
-      idx = i;
-      break;
+  test('routes malformed inputs and invalid names to generic without throwing', () => {
+    for (const input of [null, [], 'bad', 3]) {
+      expect(toolPresentation({ name: 'mystery', input, output: undefined }).family).toBe('generic');
     }
-  }
-  if (idx < 0) return '';
-  const head = (lines[idx] ?? '').trim();
-  const more = lines.slice(idx + 1).some(line => line.trim().length > 0);
-  return more ? `${head}…` : head;
-}
+    expect(() => toolPresentation({ name: 123 as unknown as string, input: {}, output: undefined })).not.toThrow();
+  });
+});
+```
 
-function scalarText(value: unknown): string {
-  if (value === null) return 'null';
-  if (Array.isArray(value)) return `[${value.length}]`;
-  if (typeof value === 'object') return '{…}';
-  const text = typeof value === 'string' ? value : String(value);
-  return text.length > MAX_VALUE ? `${text.slice(0, MAX_VALUE)}…` : text;
-}
+- [ ] **Step 2: Run the resolver test and verify RED**
 
-function genericFields(record: Record<string, unknown> | null): { key: string; value: string }[] {
-  if (record === null) return [];
-  const fields: { key: string; value: string }[] = [];
-  for (const [key, value] of Object.entries(record)) {
-    if (fields.length >= MAX_GENERIC_FIELDS) break;
-    fields.push({ key, value: scalarText(value) });
-  }
-  return fields;
-}
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
+
+Expected: FAIL because `./tool-presentation` does not exist.
+
+- [ ] **Step 3: Implement the exact ordered resolver skeleton**
+
+Create `packages/web/src/lib/tool-presentation.ts` with the interfaces above and these exact alias and key priorities.
+
+```ts
+const FAMILY_ALIASES: readonly (readonly [ToolFamily, readonly string[]])[] = [
+  ['shell', ['bash', 'shell', 'run', 'command', 'execute', 'runterminalcommand']],
+  ['file', ['edit', 'write', 'create', 'strreplace', 'applypatch', 'notebookedit', 'searchreplace', 'delete', 'read', 'view', 'cat', 'open', 'readfile']],
+  ['search', ['grep', 'search', 'rg', 'searchtool']],
+  ['glob', ['glob', 'find', 'ls', 'list', 'listdir']],
+  ['code', ['eval', 'runcode', 'execute code', 'executecode']],
+  ['todo', ['todo', 'todowrite', 'plan']],
+  ['task', ['task', 'agent', 'subagent', 'dispatch']],
+  ['web', ['webfetch', 'websearch', 'fetch', 'browse']],
+];
 
 const COMMAND_KEYS = ['command', 'cmd', 'script'] as const;
 const PATH_KEYS = ['file_path', 'path', 'target_file', 'file', 'filename', 'notebook_path'] as const;
 const PATTERN_KEYS = ['pattern', 'query', 'regex', 'search'] as const;
 const URL_KEYS = ['url', 'uri'] as const;
-
-function resolveFamily(
-  tier1: ToolFamily | null,
-  record: Record<string, unknown> | null,
-  name: string
-): ToolFamily {
-  if (tier1 !== null) return tier1;
-  // Tier 2 — duck-type on input keys; first hit wins.
-  if (record !== null) {
-    if (hasKey(record, ['code']) && hasKey(record, ['language'])) return 'code';
-    if (hasKey(record, COMMAND_KEYS)) return 'shell';
-    if (hasKey(record, PATH_KEYS)) return 'file';
-    if (hasKey(record, PATTERN_KEYS)) return 'search';
-    if (hasKey(record, URL_KEYS)) return 'web';
-  }
-  // Tier 3 — name-only (empty input): every Codex call.
-  if ((record === null || Object.keys(record).length === 0) && name.length > 0) return 'shell';
-  // Tier 4 — generic.
-  return 'generic';
-}
-
-function chipLabel(name: string, family: ToolFamily): string {
-  if (/^\S+$/.test(name) && name.length <= MAX_LABEL) return name;
-  return family;
-}
-
-function headlineFor(
-  family: ToolFamily,
-  record: Record<string, unknown> | null,
-  name: string
-): string {
-  switch (family) {
-    case 'shell':
-      return firstNonEmptyLine(stripShellWrapper(firstString(record, COMMAND_KEYS) ?? name));
-    case 'file':
-      return firstString(record, PATH_KEYS) ?? name;
-    case 'glob':
-      // `path` means opposite things in the two glob tools: headline the pattern when present,
-      // otherwise the path (OMP's `path` IS the pattern; Claude's `path` is the search directory).
-      return firstString(record, ['pattern']) ?? firstString(record, ['path']) ?? name;
-    case 'search':
-      return firstString(record, PATTERN_KEYS) ?? name;
-    case 'code':
-      return firstNonEmptyLine(firstString(record, ['code']) ?? name);
-    case 'web':
-      return firstString(record, URL_KEYS) ?? name;
-    case 'todo':
-    case 'task':
-    case 'generic':
-    default:
-      return name;
-  }
-}
-
-function headlineKindFor(family: ToolFamily): 'path' | 'text' {
-  return family === 'file' || family === 'glob' ? 'path' : 'text';
-}
-
-function badgesFor(family: ToolFamily, record: Record<string, unknown> | null): string[] {
-  if (family === 'code') {
-    const language = firstString(record, ['language']);
-    if (language !== null) return [language];
-  }
-  return [];
-}
-
-function bodyFor(
-  family: ToolFamily,
-  record: Record<string, unknown> | null,
-  name: string
-): ToolPresentation['body'] {
-  if (family === 'shell') {
-    return { kind: 'terminal', command: firstString(record, COMMAND_KEYS) ?? name };
-  }
-  return { kind: 'generic', fields: genericFields(record) };
-}
-
-export function toolPresentation(input: ToolPresentationInput): ToolPresentation {
-  const name = typeof input.name === 'string' ? input.name : '';
-  const record = asRecord(input.input);
-
-  // MCP names bypass family resolution (matches the backend formatter convention).
-  const mcp = /^mcp__(.+?)__(.+)$/.exec(name);
-  if (mcp) {
-    const combined = `${mcp[1]} · ${mcp[2]}`;
-    return {
-      family: 'generic',
-      label: combined.length <= MAX_LABEL ? combined : 'generic',
-      headline: combined,
-      headlineKind: 'text',
-      badges: [],
-      body: { kind: 'generic', fields: genericFields(record) },
-    };
-  }
-
-  const family = resolveFamily(NORMALIZED_ALIAS.get(normalizeName(name)) ?? null, record, name);
-  return {
-    family,
-    label: chipLabel(name, family),
-    headline: headlineFor(family, record, name),
-    headlineKind: headlineKindFor(family),
-    badges: badgesFor(family, record),
-    body: bodyFor(family, record, name),
-  };
-}
+const BEFORE_AFTER_KEYS = [
+  ['old_string', 'new_string'],
+  ['old_str', 'new_str'],
+  ['content', 'new_content'],
+] as const;
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+Reject an invalid name or a non-`undefined` input that is not a plain object to the generic path before alias resolution.
+Implement valid resolution in this order: Tier 1 alias, code pair, command key, path key, pattern key, URL key, before/after pair, name-only Codex, then generic.
+For a Tier 1 `glob`, choose `pattern` before `path` for the headline.
+For `file`, choose the first string path key and fall back to the sent name.
+For `search`, choose the first string pattern key.
+For `web`, choose the first string URL key.
+For `code`, choose the first non-empty source line and emit the string `language` as the first payload badge.
+For `todo`, `task`, and unresolved generic rows, initially use the sent name as the headline.
+Set `headlineKind` to `path` only for file and glob and to `text` for every other family.
 
-Run: `bun test packages/web/src/lib/tool-presentation.test.ts`
-Expected: PASS (all cases).
+- [ ] **Step 4: Run the resolver test and verify GREEN**
 
-- [ ] **Step 5: Type-check and lint the new module**
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
 
-Run: `bun --filter @archon/web type-check`
-Expected: no errors.
-Run: `bun x eslint packages/web/src/lib/tool-presentation.ts packages/web/src/lib/tool-presentation.test.ts`
-Expected: no warnings.
+Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit the classification tracer bullet**
 
 ```bash
 git add packages/web/src/lib/tool-presentation.ts packages/web/src/lib/tool-presentation.test.ts
-git commit -m "feat(web): add pure tool-presentation resolver for readable transcript rows"
+git commit -m "feat(web): classify tool calls for readable rows"
 ```
 
 ---
 
-## Task 2: Attach presentation, carry exitCode, fold interrupted status in `agent-history.ts`
+## Task 2: Complete chip, headline, and safe-degradation behavior
 
 **Files:**
-- Modify: `packages/web/src/lib/agent-history.ts`
-- Test: `packages/web/src/lib/agent-history.test.ts`
-- Test fixtures that construct tool `AgentHistoryItem` literals: `packages/web/src/components/workflows/NodeRoom.test.tsx` (the `toolItem` helper). Use `bun --filter @archon/web type-check` after the type change to enumerate any others.
+
+- Modify: `packages/web/src/lib/tool-presentation.ts`
+- Modify: `packages/web/src/lib/tool-presentation.test.ts`
 
 **Interfaces:**
-- Consumes: `toolPresentation`, `ToolPresentation` from `./tool-presentation` (Task 1); `formatDurationMs(ms: number): string` from `./format`.
-- Produces (added to the tool arm of `AgentHistoryItem` and as module exports):
-  ```ts
-  export type ToolOutcome = 'running' | 'succeeded' | 'failed' | 'interrupted' | 'unknown';
-  // tool AgentHistoryItem gains:  presentation: ToolPresentation;  exitCode: number | null;
-  export function resolveExitCode(card: ToolCard): number | null;
-  export const STATUS_GLYPH: Record<ToolOutcome, string>;         // ✓ ✕ ◐ ⚠ –
-  export const OUTCOME_ARIA: Record<ToolOutcome, string>;         // accessible names
-  export function initialToolExpanded(outcome: ToolOutcome): boolean;
-  export type BadgeTone = 'default' | 'error' | 'warning' | 'muted';
-  export interface ToolBadge { text: string; tone: BadgeTone; }
-  export function toolBadges(
-    item: Extract<AgentHistoryItem, { kind: 'tool' }>,
-    outputState?: 'full' | 'truncated' | 'missing' | 'unknown'
-  ): ToolBadge[];
-  ```
-  `context` / `toolContext` / `TOOL_CONTEXT_KEYS` remain until Task 5.
 
-- [ ] **Step 1: Write the failing tests**
-
-Add to `packages/web/src/lib/agent-history.test.ts` (import the new exports at the top):
+- Consumes: the Task 1 resolver.
+- Produces:
 
 ```ts
-import {
-  buildAgentHistory,
-  initialToolExpanded,
-  STATUS_GLYPH,
-  toolBadges,
-  toolContext,
-  toolRuntime,
-  type AgentHistoryItem,
-} from './agent-history';
+export const FAMILY_CHIP_TOKEN: Record<ToolFamily, string>;
+export type ElidedHeadline =
+  | { kind: 'path'; head: string; tail: string }
+  | { kind: 'text'; text: string };
+export function elideHeadline(headline: string, headlineKind: 'path' | 'text'): ElidedHeadline;
 ```
 
-`resolveExitCode` stays an internal/exported helper of `agent-history.ts` (used by `deriveOutcome` and `toToolItem`); it is exercised through `buildAgentHistory` above rather than imported directly.
+- [ ] **Step 1: Add failing chip, MCP, shell-headline, code, and elision tests**
+
+Add focused tests for these exact results.
 
 ```ts
-describe('initialToolExpanded', () => {
-  test('is table-driven: only failed calls start expanded', () => {
-    expect(initialToolExpanded('succeeded')).toBe(false);
-    expect(initialToolExpanded('failed')).toBe(true);
-    expect(initialToolExpanded('running')).toBe(false);
-    expect(initialToolExpanded('interrupted')).toBe(false);
-    expect(initialToolExpanded('unknown')).toBe(false);
-  });
+test('keeps a short sent name and falls back for whitespace or over 24 characters', () => {
+  expect(toolPresentation({ name: 'read_file', input: { path: 'a.ts' }, output: undefined }).label).toBe('read_file');
+  expect(toolPresentation({ name: '🚀run', input: {}, output: undefined }).label).toBe('🚀run');
+  expect(toolPresentation({ name: 'npm test', input: undefined, output: undefined }).label).toBe('shell');
+  expect(toolPresentation({ name: 'x'.repeat(25), input: {}, output: undefined }).label).toBe('shell');
+  for (const fixture of FAMILY_CASES) {
+    expect(toolPresentation({ ...fixture, output: undefined }).label.length).toBeLessThanOrEqual(24);
+  }
 });
 
-describe('STATUS_GLYPH', () => {
-  test('maps the five outcomes to distinct colour-independent glyphs', () => {
-    expect(STATUS_GLYPH).toEqual({
-      succeeded: '✓',
-      failed: '✕',
-      running: '◐',
-      interrupted: '⚠',
-      unknown: '–',
-    });
+test('formats MCP names without violating the chip cap', () => {
+  expect(toolPresentation({ name: 'mcp__server__tool', input: {}, output: undefined })).toMatchObject({
+    family: 'generic',
+    label: 'server · tool',
+    headline: 'server · tool',
   });
+  expect(toolPresentation({ name: `mcp__${'s'.repeat(20)}__${'t'.repeat(20)}`, input: {}, output: undefined }).label).toBe('generic');
 });
 
-describe('tool item presentation and exit code', () => {
-  test('a bash call carries a resolver presentation and its non-zero exit code', () => {
-    const items = buildAgentHistory({
-      nodeId: NODE_ID,
-      events: [],
-      rows: [
-        toolRow({ id: 'c', seq: 1, name: 'Bash', toolUseId: 'b', input: { command: 'bun test' }, metadata: { tool_phase: 'call' } }),
-        toolRow({ id: 'r', seq: 2, name: 'Bash', toolUseId: 'b', output: 'boom', metadata: { tool_phase: 'result', exit_code: 1 } }),
-      ],
-    });
-    const tool = items[0];
-    if (tool?.kind !== 'tool') throw new Error('expected tool item');
-    expect(tool.outcome).toBe('failed');
-    expect(tool.exitCode).toBe(1);
-    expect(tool.presentation.family).toBe('shell');
-    expect(tool.presentation.label).toBe('Bash');
-    expect(tool.presentation.headline).toBe('bun test');
-    const badges = toolBadges(tool);
-    expect(badges).toContainEqual({ text: 'exit 1', tone: 'error' });
-  });
-
-  test('a successful read carries a null exit code and no exit badge', () => {
-    const items = buildAgentHistory({
-      nodeId: NODE_ID,
-      events: [],
-      rows: [
-        toolRow({ id: 'c', seq: 1, name: 'Read', toolUseId: 'r', input: { path: 'a.ts' }, metadata: { tool_phase: 'call' } }),
-        toolRow({ id: 'r', seq: 2, name: 'Read', toolUseId: 'r', output: 'body', metadata: { tool_phase: 'result' } }),
-      ],
-    });
-    const tool = items[0];
-    if (tool?.kind !== 'tool') throw new Error('expected tool item');
-    expect(tool.exitCode).toBeNull();
-    expect(toolBadges(tool).some(b => b.text.startsWith('exit'))).toBe(false);
-  });
+test('strips a Codex shell wrapper only from the first-line headline', () => {
+  const zsh = toolPresentation({ name: "/bin/zsh -lc 'bun test'", input: undefined, output: undefined });
+  const bash = toolPresentation({ name: "/bin/bash -lc 'ls -la'", input: undefined, output: undefined });
+  const multiline = toolPresentation({ name: '\nfor f in *.ts; do\n  echo "$f"\ndone', input: undefined, output: undefined });
+  expect(zsh.headline).toBe('bun test');
+  expect(bash.headline).toBe('ls -la');
+  expect(multiline.headline).toBe('for f in *.ts; do…');
+  expect(multiline.headline).not.toContain('\n');
 });
 
-describe('exit code call-side fallback', () => {
-  test('an exit code recorded on the call row (no result yet) still reaches the item', () => {
-    const items = buildAgentHistory({
-      nodeId: NODE_ID,
-      events: [],
-      rows: [
-        toolRow({ id: 'c', seq: 1, name: 'Bash', toolUseId: 'b', input: { command: 'x' }, metadata: { tool_phase: 'call', exit_code: 2 } }),
-      ],
-    });
-    const tool = items[0];
-    if (tool?.kind !== 'tool') throw new Error('expected tool item');
-    expect(tool.exitCode).toBe(2);
-  });
-});
-
-describe('interrupted status fold', () => {
-  test('folds a following interrupted status row into the preceding tool call (non-Claude)', () => {
-    const items = buildAgentHistory({
-      nodeId: NODE_ID,
-      events: [],
-      rows: [
-        toolRow({ id: 'c', seq: 1, name: 'grep', toolUseId: 'g', input: { pattern: 'x' }, metadata: { tool_phase: 'call' } }),
-        toolRow({ id: 'r', seq: 2, name: 'grep', toolUseId: 'g', output: 'partial', metadata: { tool_phase: 'result' } }),
-        statusRow('s', 3, 'interrupted'),
-      ],
-    });
-    expect(items).toHaveLength(1);
-    const tool = items[0];
-    if (tool?.kind !== 'tool') throw new Error('expected tool item');
-    expect(tool.outcome).toBe('interrupted');
-    expect(STATUS_GLYPH[tool.outcome]).toBe('⚠');
-  });
-
-  test('folds interrupted over a would-be failed outcome even with a result between call and status', () => {
-    const items = buildAgentHistory({
-      nodeId: NODE_ID,
-      events: [],
-      rows: [
-        toolRow({ id: 'c', seq: 1, name: 'Bash', toolUseId: 'b', input: { command: 'sleep 99' }, metadata: { tool_phase: 'call' } }),
-        toolRow({ id: 'r', seq: 2, name: 'Bash', toolUseId: 'b', output: 'x', metadata: { tool_phase: 'result', exit_code: 130 } }),
-        statusRow('s', 3, 'interrupted'),
-      ],
-    });
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ kind: 'tool', outcome: 'interrupted' });
-  });
-
-  test('a non-interrupted status row is preserved as a lifecycle item', () => {
-    const items = buildAgentHistory({
-      nodeId: NODE_ID,
-      events: [],
-      rows: [
-        toolRow({ id: 'c', seq: 1, name: 'Read', toolUseId: 'r', input: { path: 'a.ts' }, metadata: { tool_phase: 'call' } }),
-        toolRow({ id: 'r', seq: 2, name: 'Read', toolUseId: 'r', output: 'b', metadata: { tool_phase: 'result' } }),
-        statusRow('s', 3, 'iteration_completed', '1'),
-      ],
-    });
-    expect(items.map(i => i.kind)).toEqual(['tool', 'lifecycle']);
-  });
+test('does not truncate a code headline to the generic scalar limit', () => {
+  const source = `const value = ${'x'.repeat(120)};`;
+  const value = toolPresentation({ name: 'eval', input: { code: source, language: 'javascript' }, output: undefined });
+  expect(value).toMatchObject({ family: 'code', headline: source, badges: ['javascript'] });
+  expect(value.headline.length).toBeGreaterThan(80);
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
-
-Run: `bun test packages/web/src/lib/agent-history.test.ts`
-Expected: FAIL — `initialToolExpanded`, `STATUS_GLYPH`, `resolveExitCode`, `toolBadges` are not exported, and the fold tests see a lifecycle item where they expect a folded tool.
-
-- [ ] **Step 3: Write the implementation**
-
-In `packages/web/src/lib/agent-history.ts`:
-
-Add imports at the top:
+Add these exact `elideHeadline()` assertions.
 
 ```ts
-import { formatDurationMs } from './format';
-import { toolPresentation, type ToolPresentation } from './tool-presentation';
+expect(elideHeadline('packages/web/src/lib/tool-presentation.ts', 'path')).toEqual({
+  kind: 'path',
+  head: 'packages/web/src/lib/',
+  tail: 'tool-presentation.ts',
+});
+expect(elideHeadline('README', 'path')).toEqual({ kind: 'path', head: '', tail: 'README' });
+expect(elideHeadline('bun test', 'text')).toEqual({ kind: 'text', text: 'bun test' });
 ```
 
-Export the outcome type (replace the local alias at `:52`):
+- [ ] **Step 2: Run the display-contract tests and verify RED**
+
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
+
+Expected: FAIL on chip fallback, MCP formatting, wrapper stripping, code display, or the missing elision exports.
+
+- [ ] **Step 3: Implement the bounded display helpers**
+
+Use these exact constants and mappings.
+
+```ts
+const MAX_LABEL_LENGTH = 24;
+
+export const FAMILY_CHIP_TOKEN: Record<ToolFamily, string> = {
+  shell: '--node-bash',
+  code: '--node-bash',
+  file: '--node-command',
+  web: '--node-command',
+  search: '--node-prompt',
+  glob: '--node-prompt',
+  todo: '--node-approval',
+  task: '--node-approval',
+  generic: '--text-secondary',
+};
+```
+
+Implement the chip rule as `/^\S+$/` plus `name.length <= 24`; never truncate a chip.
+Implement `chipAriaLabel` as `${label}, ${family} tool` when `label !== family`, otherwise `${family} tool`, so the family is available without chip colour and the same family word is not spoken twice.
+Implement MCP parsing before normal resolution with `/^mcp__(.+?)__(.+)$/` and the settled long-label fallback.
+Strip only a matching `/bin/zsh -lc '…'` or `/bin/bash -lc '…'` wrapper for headline selection.
+Select the first non-empty line and add `…` only when another non-empty line follows.
+Implement `elideHeadline()` as a last-slash split for paths and an unchanged text arm for other headlines.
+
+- [ ] **Step 4: Run the resolver suite and verify GREEN**
+
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
+
+Expected: PASS.
+
+- [ ] **Step 5: Add a failing generic-headline test**
+
+```ts
+test('uses at most three scalar pairs for a generic collapsed headline', () => {
+  const value = toolPresentation({
+    name: 'mystery',
+    input: { a: 1, nested: { x: 1 }, b: 'two', list: [1, 2], c: true, d: 'ignored' },
+    output: undefined,
+  });
+  expect(value).toMatchObject({ family: 'generic', headline: 'a: 1 · b: two · c: true' });
+  expect(value.headline).not.toMatch(/[{}[\]"]/);
+});
+
+test('bounds generic scalar display and terminates on a large source line', () => {
+  const scalar = toolPresentation({ name: 'mystery', input: { value: 'z'.repeat(200) }, output: undefined });
+  const source = 'a'.repeat(100_000);
+  const code = toolPresentation({ name: 'eval', input: { code: source, language: 'txt' }, output: undefined });
+  expect(scalar.headline).toBe(`value: ${'z'.repeat(80)}…`);
+  expect(code.headline).toBe(source);
+});
+
+test('does not traverse a hostile __proto__ value', () => {
+  const hostile: unknown = JSON.parse('{"__proto__":{"polluted":true},"safe":"ok"}');
+  const value = toolPresentation({ name: 'mystery', input: hostile, output: undefined });
+  expect(value.headline).toBe('safe: ok');
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+});
+
+```
+
+- [ ] **Step 6: Run the generic tests and verify RED**
+
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
+
+Expected: FAIL because generic scalar selection is not implemented.
+
+- [ ] **Step 7: Implement bounded generic display**
+
+Add `MAX_GENERIC_SCALARS = 3` and `MAX_GENERIC_VALUE_LENGTH = 80` only after the failing tests in Step 6 establish their behavior.
+Treat only string, finite number, boolean, and null as generic scalar values.
+Truncate a generic scalar's string form after 80 characters by keeping the first 80 characters and adding `…`.
+Ignore arrays and objects when composing the generic collapsed headline.
+Use the sent name when no scalar pair exists.
+Do not enumerate nested values and do not call `JSON.stringify()`.
+
+- [ ] **Step 8: Run the resolver suite and verify GREEN**
+
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
+
+Expected: PASS.
+
+- [ ] **Step 9: Type-check and lint the resolver**
+
+Run: `bun --filter @archon/web type-check`
+
+Run: `bun x eslint packages/web/src/lib/tool-presentation.ts packages/web/src/lib/tool-presentation.test.ts`
+
+Expected: both commands exit zero with no warnings.
+
+- [ ] **Step 10: Commit the completed resolver**
+
+```bash
+git add packages/web/src/lib/tool-presentation.ts packages/web/src/lib/tool-presentation.test.ts
+git commit -m "feat(web): complete readable tool row presentation"
+```
+
+---
+
+## Task 3: Attach shared row data and fold interrupted lifecycle rows
+
+**Files:**
+
+- Modify: `packages/web/src/lib/agent-history.ts`
+- Modify: `packages/web/src/lib/agent-history.test.ts`
+- Modify: `packages/web/src/components/workflows/NodeRoom.test.tsx`
+
+**Interfaces:**
+
+- Consumes: `toolPresentation`, `ToolPresentation`, and `formatDurationMs`.
+- Produces:
 
 ```ts
 export type ToolOutcome = 'running' | 'succeeded' | 'failed' | 'interrupted' | 'unknown';
-```
-
-Add `presentation` and `exitCode` to the tool arm of `AgentHistoryItem` (after `outputState` / `messageId`):
-
-```ts
-      messageId: string;
-      exitCode: number | null;
-      presentation: ToolPresentation;
-    };
-```
-
-Add `resolveExitCode` next to `deriveOutcome`, and use it inside `deriveOutcome`:
-
-```ts
-export function resolveExitCode(card: ToolCard): number | null {
-  const resultFields = extraToolFields(card.result);
-  const callFields = extraToolFields(card.call);
-  return resultFields.exitCode ?? callFields.exitCode ?? card.exitCode ?? null;
+export type BadgeTone = 'default' | 'error' | 'warning' | 'muted';
+export interface ToolBadge {
+  text: string;
+  tone: BadgeTone;
+  priority: 'sticky' | 'droppable';
 }
+export interface ToolRowView {
+  glyph: string;
+  outcomeLabel: string;
+  badges: ToolBadge[];
+}
+export function initialToolExpanded(outcome: ToolOutcome): boolean;
+export function toolRowView(
+  item: Extract<AgentHistoryItem, { kind: 'tool' }>,
+  outputState?: 'full' | 'truncated' | 'missing' | 'unknown'
+): ToolRowView;
 ```
 
-Inside `deriveOutcome`, replace the local `const exitCode = resultFields.exitCode ?? callFields.exitCode ?? card.exitCode ?? null;` with `const exitCode = resolveExitCode(card);` (keep the rest of `deriveOutcome` unchanged).
+The tool arm of `AgentHistoryItem` gains `exitCode: number | null` and `presentation: ToolPresentation`.
+Keep `context` until Task 6 so Tasks 4 and 5 can remove both renderer readers before the field disappears.
 
-Populate the two new fields in `toToolItem` (keep the existing `context: toolContext(card.input)` line for now):
+- [ ] **Step 1: Add a failing exit-code and presentation projection test**
+
+Add a `Bash` call/result pair whose result metadata contains `exit_code: 1` and assert this exact projection.
 
 ```ts
-    messageId: card.result?.id ?? card.call?.id ?? card.id,
-    exitCode: resolveExitCode(card),
-    presentation: toolPresentation({ name: card.name, input: card.input, output: card.output }),
-  };
+expect(tool).toMatchObject({
+  kind: 'tool',
+  outcome: 'failed',
+  exitCode: 1,
+  presentation: {
+    family: 'shell',
+    label: 'Bash',
+    headline: 'bun test',
+    headlineKind: 'text',
+  },
+});
+expect(toolRowView(tool).badges).toContainEqual({
+  text: 'exit 1',
+  tone: 'error',
+  priority: 'sticky',
+});
 ```
 
-Add the render-neutral helpers (place them after `toolRuntime`):
+- [ ] **Step 2: Run the history test and verify RED**
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
+
+Expected: FAIL because the tool item lacks `exitCode` and `presentation`, and `toolRowView` is not exported.
+
+- [ ] **Step 3: Carry the exit code and presentation through `toToolItem()`**
+
+Add a private `resolveExitCode(card: ToolCard): number | null` next to `deriveOutcome()`.
+Resolve result metadata before call metadata before `card.exitCode`.
+Use the helper inside `deriveOutcome()` and `toToolItem()` so the failure decision and visible badge cannot disagree.
+Attach `toolPresentation({ name: card.name, input: card.input, output: card.output })` in `toToolItem()`.
+Add the smallest `toolRowView()` that emits the outcome glyph and label plus payload and non-zero-exit badges needed by the tracer test.
+
+- [ ] **Step 4: Run the history test and verify GREEN for the tracer bullet**
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
+
+Expected: the new projection test passes, with any fixture type errors left for Step 8.
+
+- [ ] **Step 5: Add failing expansion-table and complete-row-view tests**
+
+Add one table-driven expansion test with these exact entries.
 
 ```ts
-export const STATUS_GLYPH: Record<ToolOutcome, string> = {
+const EXPANSION_CASES: readonly [ToolOutcome, boolean][] = [
+  ['succeeded', false],
+  ['failed', true],
+  ['running', false],
+  ['interrupted', false],
+  ['unknown', false],
+];
+
+test('initial expansion is table-driven for all five outcomes', () => {
+  for (const [outcome, expanded] of EXPANSION_CASES) {
+    expect(initialToolExpanded(outcome)).toBe(expanded);
+  }
+});
+```
+
+Add one badge-order test using a tool item with `presentation.badges: ['javascript']`, `exitCode: 1`, `outputState: 'truncated'`, and `durationMs: 1500`.
+Assert the exact text order `['javascript', 'exit 1', 'truncated', '1.5s']` and assert that only the duration badge has `priority: 'droppable'`.
+Add one glyph table assertion for `✓`, `✕`, `◐`, `⚠`, and `–` through `toolRowView()` rather than through renderer-owned maps.
+
+- [ ] **Step 6: Run the history test and verify RED**
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
+
+Expected: FAIL because the expansion table and complete row view are not implemented.
+
+- [ ] **Step 7: Complete the shared row view**
+
+Use total records for glyphs, labels, and initial state.
+
+```ts
+const STATUS_GLYPH: Record<ToolOutcome, string> = {
   succeeded: '✓',
   failed: '✕',
   running: '◐',
@@ -850,7 +600,7 @@ export const STATUS_GLYPH: Record<ToolOutcome, string> = {
   unknown: '–',
 };
 
-export const OUTCOME_ARIA: Record<ToolOutcome, string> = {
+const OUTCOME_LABEL: Record<ToolOutcome, string> = {
   succeeded: 'succeeded',
   failed: 'failed',
   running: 'running',
@@ -865,779 +615,446 @@ const INITIAL_EXPANDED: Record<ToolOutcome, boolean> = {
   interrupted: false,
   unknown: false,
 };
-
-export function initialToolExpanded(outcome: ToolOutcome): boolean {
-  return INITIAL_EXPANDED[outcome];
-}
-
-export type BadgeTone = 'default' | 'error' | 'warning' | 'muted';
-
-export interface ToolBadge {
-  text: string;
-  tone: BadgeTone;
-}
-
-export function toolBadges(
-  item: Extract<AgentHistoryItem, { kind: 'tool' }>,
-  outputState: 'full' | 'truncated' | 'missing' | 'unknown' = item.outputState
-): ToolBadge[] {
-  const badges: ToolBadge[] = [];
-  for (const text of item.presentation.badges) badges.push({ text, tone: 'default' });
-  if (item.exitCode !== null && item.exitCode !== 0) {
-    badges.push({ text: `exit ${item.exitCode}`, tone: 'error' });
-  }
-  if (item.durationMs !== null) {
-    badges.push({ text: formatDurationMs(item.durationMs), tone: 'default' });
-  }
-  if (outputState === 'truncated') badges.push({ text: 'truncated', tone: 'warning' });
-  else if (outputState === 'missing') badges.push({ text: 'output missing', tone: 'muted' });
-  else if (outputState === 'unknown') badges.push({ text: 'output unknown', tone: 'muted' });
-  return badges;
-}
 ```
 
-Add the fold and apply it in `buildAgentHistory`:
+`toolRowView()` must append payload badges first, a non-zero exit badge second, an output marker third, and duration last.
+Use `warning` for `truncated`, `muted` for `output missing` and `output unknown`, and `default` for duration and payload facts.
+Set only duration to `droppable`.
 
-```ts
-// A following `interrupted` status row belongs to the tool call it stopped, not the timeline.
-// Fold it into the preceding tool item and drop the row so the reader sees `⚠ interrupted`.
-// Epic 2 (Story 2.3) writes that status row with `state === 'interrupted'` (see Open Question 1).
-function foldInterruptedStatus(items: AgentHistoryItem[]): AgentHistoryItem[] {
-  const result: AgentHistoryItem[] = [];
-  for (const item of items) {
-    if (item.kind === 'lifecycle' && item.state === 'interrupted') {
-      const prev = result[result.length - 1];
-      if (prev !== undefined && prev.kind === 'tool') {
-        result[result.length - 1] = { ...prev, outcome: 'interrupted' };
-        continue;
-      }
-    }
-    result.push(item);
-  }
-  return result;
-}
-```
+- [ ] **Step 8: Run the row-view tests and verify GREEN**
 
-Change the final line of `buildAgentHistory` from `return items;` to:
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
 
-```ts
-  return foldInterruptedStatus(items);
-```
+Expected: PASS.
 
-- [ ] **Step 4: Fix broken tool-item fixtures surfaced by the type-checker**
+- [ ] **Step 9: Add failing interrupted-fold tests**
+
+Add a call/result/`statusRow('interrupted')` fixture and assert the final item list contains one tool with `outcome: 'interrupted'` and no lifecycle item.
+Add a non-interrupted lifecycle fixture and assert it remains present.
+Add an orphan interrupted lifecycle fixture and assert it remains present because no tool immediately precedes it.
+
+- [ ] **Step 10: Run the fold tests and verify RED**
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
+
+Expected: FAIL because the interrupted lifecycle item is still emitted.
+
+- [ ] **Step 11: Implement the interrupted fold**
+
+Implement the fold as a final pass over the projected `AgentHistoryItem[]`.
+When the current item is a lifecycle item with `state === 'interrupted'` and the already-emitted previous item is a tool, replace that previous item with a copy whose outcome is `interrupted` and omit the lifecycle item.
+Preserve every other lifecycle item.
+
+- [ ] **Step 12: Run the fold tests and verify GREEN**
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
+
+Expected: PASS.
+
+- [ ] **Step 13: Update typed tool fixtures**
+
+Run: `bun --filter @archon/web type-check`.
+
+Add `exitCode: null` and a structurally complete `presentation` to the `toolItem()` default in `packages/web/src/components/workflows/NodeRoom.test.tsx`.
+Use `{ family: 'file', label: 'Read', chipAriaLabel: 'Read, file tool', headline: 'a.ts', headlineKind: 'path', badges: [] }`.
+The current repository has no other hand-authored production or test tool item literal; treat any additional type-check failure as repository drift and update only the literal named by that diagnostic.
+
+- [ ] **Step 14: Run the history suite and type-check**
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
 
 Run: `bun --filter @archon/web type-check`
-Expected initially: errors on every `AgentHistoryItem` tool literal missing `presentation` / `exitCode` (known: the `toolItem` helper in `NodeRoom.test.tsx:82-101`).
 
-For `NodeRoom.test.tsx`, add the two fields to the `toolItem` helper defaults (keep `context` for now):
+Expected: both commands pass.
 
-```ts
-    outputState: 'truncated',
-    messageId: 'msg-tool-1',
-    exitCode: null,
-    presentation: {
-      family: 'file',
-      label: 'Read',
-      headline: 'a.ts',
-      headlineKind: 'path',
-      badges: [],
-      body: { kind: 'generic', fields: [{ key: 'path', value: 'a.ts' }] },
-    },
-    ...overrides,
-```
-
-Import `ToolPresentation` if the literal needs a cast; the object above is structurally complete, so no cast is required.
-For any other file the type-checker flags, add `exitCode: null` and a matching minimal `presentation` object the same way.
-Re-run `bun --filter @archon/web type-check` until clean.
-
-- [ ] **Step 5: Run the tests to verify they pass**
-
-Run: `bun test packages/web/src/lib/agent-history.test.ts`
-Expected: PASS, including the existing `distinguishes retrievable response truncation and preserves interrupted outcomes` test (unchanged — the metadata-outcome path still works) and the new fold tests.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 15: Commit the shared projection**
 
 ```bash
 git add packages/web/src/lib/agent-history.ts packages/web/src/lib/agent-history.test.ts packages/web/src/components/workflows/NodeRoom.test.tsx
-git commit -m "feat(web): carry exitCode + tool presentation and fold interrupted status rows"
+git commit -m "feat(web): project readable tool row status and badges"
 ```
 
 ---
 
-## Task 3: Collapsed tool row on the Legacy surface (`NodeRoom.tsx`)
+## Task 4: Render the native disclosure row on Legacy
 
 **Files:**
+
 - Modify: `packages/web/src/components/workflows/NodeRoom.tsx`
-- Test: `packages/web/src/components/workflows/NodeRoom.test.tsx`
+- Modify: `packages/web/src/components/workflows/NodeRoom.test.tsx`
 
 **Interfaces:**
-- Consumes: `initialToolExpanded`, `STATUS_GLYPH`, `OUTCOME_ARIA`, `toolBadges`, `type ToolOutcome`, `type BadgeTone` from `@/lib/agent-history`; `FAMILY_CHIP_TOKEN`, `elideHeadline` from `@/lib/tool-presentation`.
-- Produces: no new module exports; the tool row now renders a collapse toggle, glyph, chip, elided headline, and badge strip.
 
-- [ ] **Step 1: Write the failing tests**
+- Consumes: `initialToolExpanded`, `toolRowView`, `ToolOutcome`, `BadgeTone`, `FAMILY_CHIP_TOKEN`, and `elideHeadline`.
+- Produces: no new module export.
 
-The Legacy test harness renders to a static string with `renderToStaticMarkup` and strips tags via `visibleText`.
-Add to `packages/web/src/components/workflows/NodeRoom.test.tsx` (using the existing `renderRoom` / `visibleText` helpers; construct items with the `toolItem` helper):
+- [ ] **Step 1: Add failing Legacy summary tests**
 
-```ts
-describe('collapsed tool row', () => {
-  test('a successful call is collapsed: its Input/Output body is not in the initial markup', () => {
-    const markup = renderRoom({
-      items: [toolItem({ outcome: 'succeeded', input: { path: 'a.ts' }, output: 'file body here', outputState: 'full', canLoadFullOutput: false })],
-    });
-    expect(visibleText(markup)).not.toContain('file body here');
-  });
+Add a helper that extracts only the first `<summary data-testid="tool-summary">…</summary>` fragment before applying `visibleText()`.
+Do not use the whole static markup to decide whether a closed native disclosure is visually collapsed.
 
-  test('a failed call is expanded: its body is in the initial markup', () => {
-    const markup = renderRoom({
-      items: [toolItem({ outcome: 'failed', name: 'Bash', input: { command: 'bun test' }, output: 'stack trace here', outputState: 'full', canLoadFullOutput: false, exitCode: 1,
-        presentation: { family: 'shell', label: 'Bash', headline: 'bun test', headlineKind: 'text', badges: [], body: { kind: 'terminal', command: 'bun test' } } })],
-    });
-    expect(visibleText(markup)).toContain('stack trace here');
-  });
+Cover these exact observations:
 
-  test('status is a glyph character, not colour alone', () => {
-    const markup = renderRoom({ items: [toolItem({ outcome: 'succeeded' })] });
-    expect(markup).toContain('✓');
-  });
+- A succeeded item renders `<details>` without `open=""`.
+- A failed item renders `<details open="">`.
+- The summary contains the correct glyph, chip label, full filename tail, and non-zero exit badge.
+- The summary has no `{`, `[`, or `"` from the raw Input/Output payload.
+- The glyph has an accessible outcome label.
+- The chip has the resolver-provided family-aware accessible label and `title="file"` for a file fixture.
 
-  test('a non-zero exit code shows an exit badge on the collapsed row', () => {
-    const markup = renderRoom({
-      items: [toolItem({ outcome: 'failed', name: 'Bash', exitCode: 1,
-        presentation: { family: 'shell', label: 'Bash', headline: 'bun test', headlineKind: 'text', badges: [], body: { kind: 'terminal', command: 'bun test' } } })],
-    });
-    expect(visibleText(markup)).toContain('exit 1');
-  });
+Use the happy-dom pattern already present in `packages/web/src/components/workflows/NodeRoomHeader.test.tsx` for two live-transition tests.
+Render a running tool item through `createRoot()`, re-render the same item id as failed, and assert the untouched `<details>` opens.
+Render a second running item, click its summary twice so the reader opens and closes it, re-render it as failed, and assert it stays closed.
 
-  test('a long path headline elides in the middle and keeps the filename tail', () => {
-    const markup = renderRoom({
-      items: [toolItem({ outcome: 'succeeded',
-        presentation: { family: 'file', label: 'Read', headline: 'packages/web/src/lib/tool-presentation.ts', headlineKind: 'path', badges: [], body: { kind: 'generic', fields: [] } } })],
-    });
-    expect(visibleText(markup)).toContain('tool-presentation.ts');
-  });
+- [ ] **Step 2: Run the Legacy test and verify RED**
 
-  test('the chip renders the resolver label', () => {
-    const markup = renderRoom({
-      items: [toolItem({ presentation: { family: 'file', label: 'read_file', headline: 'a.ts', headlineKind: 'path', badges: [], body: { kind: 'generic', fields: [] } } })],
-    });
-    expect(visibleText(markup)).toContain('read_file');
-  });
-});
-```
+Run: `NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx`
 
-- [ ] **Step 2: Run the tests to verify they fail**
+Expected: FAIL because the current renderer has no native tool disclosure summary, glyph, family chip, exit badge, or untouched-row transition.
 
-Run: `NODE_ENV=development bun test packages/web/src/components/workflows/NodeRoom.test.tsx`
-Expected: FAIL — the successful call's body is still in the markup (rows render fully today) and no `✓` / `exit 1` appears.
+- [ ] **Step 3: Add the Legacy disclosure-state helper**
 
-- [ ] **Step 3: Write the implementation**
-
-In `packages/web/src/components/workflows/NodeRoom.tsx`, merge these names into the existing `@/lib/agent-history` import (the file already imports `buildAgentHistory` and `AgentHistoryItem` — add the new names, do not add a second import statement) and add a new `@/lib/tool-presentation` import:
+Add this renderer-local hook above `ToolHistory()`.
+The stable initial ref prevents polling from reasserting the initial `open` value, and the click marker lets manual reader choice outrank later failure transitions.
 
 ```ts
-import {
-  buildAgentHistory,
-  initialToolExpanded,
-  OUTCOME_ARIA,
-  STATUS_GLYPH,
-  toolBadges,
-  type AgentHistoryItem,
-  type BadgeTone,
-  type ToolOutcome,
-} from '@/lib/agent-history';
-import { elideHeadline, FAMILY_CHIP_TOKEN } from '@/lib/tool-presentation';
+function useToolDisclosure(outcome: ToolOutcome): {
+  detailsRef: React.RefObject<HTMLDetailsElement | null>;
+  initialOpen: boolean;
+  markTouched: () => void;
+} {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const touchedRef = useRef(false);
+  const initialOpenRef = useRef(initialToolExpanded(outcome));
+
+  useEffect(() => {
+    if (!touchedRef.current && outcome === 'failed' && detailsRef.current !== null) {
+      detailsRef.current.open = true;
+    }
+  }, [outcome]);
+
+  return {
+    detailsRef,
+    initialOpen: initialOpenRef.current,
+    markTouched: (): void => {
+      touchedRef.current = true;
+    },
+  };
+}
 ```
 
-Add Legacy colour helpers above `ToolHistory` (replace the `toolOutcomeLabel` helper at `:186`):
+Merge `useEffect` and `useRef` into the existing React import.
+Do not use controlled React state for `open`.
+
+- [ ] **Step 4: Replace the Legacy tool header with `<details>/<summary>`**
+
+Keep the existing full-output loading state and `loadFull()` function.
+Compute `const row = toolRowView(item, displayedOutputState)`.
+Use `open={disclosure.initialOpen || undefined}` only as the stable initial attribute.
+Set `data-tool-id={item.toolUseId}` on `<details>` and `data-testid="tool-summary"` on `<summary>`.
+Put `onClick={disclosure.markTouched}` on `<summary>` so mouse and keyboard activation mark the row as reader-controlled.
+Use a `group` class on `<details>` and two `aria-hidden` chevron spans so CSS switches `▸` and `▾` from native open state.
+Hide the browser's default marker with `list-none` and `[&::-webkit-details-marker]:hidden`.
+Give the summary `min-h-6`, one flex line, `min-w-0`, and no wrapping.
+Render the glyph with `role="img"`, `aria-label={row.outcomeLabel}`, and the Legacy token returned by this exhaustive helper.
 
 ```ts
 function glyphColor(outcome: ToolOutcome): string {
   switch (outcome) {
-    case 'succeeded':
-      return 'var(--success)';
-    case 'failed':
-      return 'var(--error)';
-    case 'running':
-      return 'var(--accent-bright)'; // Legacy declares no --running
-    case 'interrupted':
-      return 'var(--warning)';
-    case 'unknown':
-    default:
-      return 'var(--text-secondary)';
+    case 'succeeded': return 'var(--success)';
+    case 'failed': return 'var(--error)';
+    case 'running': return 'var(--accent-bright)';
+    case 'interrupted': return 'var(--warning)';
+    case 'unknown': return 'var(--text-secondary)';
   }
-}
-
-function badgeClass(tone: BadgeTone): string {
-  switch (tone) {
-    case 'error':
-      return 'text-error';
-    case 'warning':
-      return 'text-status-warning';
-    case 'muted':
-      return 'text-text-muted';
-    case 'default':
-    default:
-      return 'text-text-secondary';
-  }
-}
-
-function Headline({ headline, headlineKind }: { headline: string; headlineKind: 'path' | 'text' }): React.ReactElement {
-  const elided = elideHeadline(headline, headlineKind);
-  if (elided.kind === 'path') {
-    return (
-      <span className="flex min-w-0 flex-1 items-baseline text-[12px]">
-        <span className="min-w-0 shrink truncate text-text-secondary">{elided.head}</span>
-        <span className="shrink-0 text-text-primary">{elided.tail}</span>
-      </span>
-    );
-  }
-  return <span className="min-w-0 flex-1 truncate text-[12px] text-text-primary">{elided.text}</span>;
 }
 ```
 
-Replace the `ToolHistory` component body (`:192-291`) with:
+Render the chip text exactly as `item.presentation.label`.
+Set the chip `aria-label` to `item.presentation.chipAriaLabel`, `title` to `item.presentation.family`, and its foreground and border from `FAMILY_CHIP_TOKEN`.
+Use this exact chip style.
 
 ```ts
-function ToolHistory({
-  item,
-  runId,
-  nodeId,
-  loadMessage,
-}: {
-  item: Extract<AgentHistoryItem, { kind: 'tool' }>;
-  runId: string;
-  nodeId: string;
-  loadMessage: typeof getWorkflowNodeMessage;
-}): React.ReactElement {
-  const [expanded, setExpanded] = useState(initialToolExpanded(item.outcome));
-  const [fullOutput, setFullOutput] = useState<unknown>(undefined);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const displayedOutput = fullOutput === undefined ? item.output : fullOutput;
-  const displayedOutputState = fullOutput === undefined ? item.outputState : 'full';
-  const badges = toolBadges(item, displayedOutputState);
-
-  const loadFull = (): void => {
-    setLoading(true);
-    setLoadError(null);
-    void loadMessage(runId, nodeId, item.messageId)
-      .then((message): void => {
-        setFullOutput(message.kind === 'tool' ? message.payload.output : undefined);
-        setLoading(false);
-      })
-      .catch((error: unknown): void => {
-        setLoadError(error instanceof Error ? error.message : 'Failed to load full output');
-        setLoading(false);
-      });
-  };
-
-  return (
-    <div
-      data-tool-id={item.toolUseId}
-      className="ptool rounded-[var(--radius)] bg-surface-inset px-2.5 py-2"
-      style={{ border: 'var(--rv-tool-card-border)', overflowWrap: 'anywhere' }}
-    >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={(): void => setExpanded(value => !value)}
-        className="flex w-full items-baseline gap-2 text-left font-mono"
-      >
-        <span aria-hidden="true" className="w-[9px] shrink-0 text-text-tertiary">
-          {expanded ? '▾' : '▸'}
-        </span>
-        <span
-          role="img"
-          aria-label={OUTCOME_ARIA[item.outcome]}
-          className="shrink-0 font-bold"
-          style={{ color: glyphColor(item.outcome) }}
-        >
-          {STATUS_GLYPH[item.outcome]}
-        </span>
-        <span
-          className="shrink-0 truncate rounded-[4px] border px-[7px] py-px text-[11px]"
-          style={{
-            maxWidth: '24ch',
-            color: `var(${FAMILY_CHIP_TOKEN[item.presentation.family]})`,
-            borderColor: `color-mix(in oklch, var(${FAMILY_CHIP_TOKEN[item.presentation.family]}) 40%, transparent)`,
-            backgroundColor: 'var(--surface-elevated)',
-          }}
-        >
-          {item.presentation.label}
-        </span>
-        <Headline headline={item.presentation.headline} headlineKind={item.presentation.headlineKind} />
-        {badges.length > 0 ? (
-          <span className="ml-auto flex shrink-0 items-baseline gap-2 whitespace-nowrap text-[11px]">
-            {badges.map((badge, index) => (
-              <span key={`${badge.text}-${index}`} className={badgeClass(badge.tone)}>
-                {badge.text}
-              </span>
-            ))}
-          </span>
-        ) : null}
-      </button>
-      {expanded ? (
-        <div className="mt-1.5 ml-[29px]">
-          {item.presentation.body.kind === 'terminal' ? (
-            <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-              {`$ ${item.presentation.body.command}`}
-            </pre>
-          ) : item.presentation.body.fields.length > 0 ? (
-            <div className="text-[11px] text-text-secondary">
-              {item.presentation.body.fields.map(field => (
-                <div key={field.key}>
-                  {field.key}: {field.value}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="mt-1.5">
-            <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">Input</div>
-            <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-              {formatToolIo(item.input)}
-            </pre>
-          </div>
-          <div className="mt-1.5">
-            <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">Output</div>
-            <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-              {formatToolIo(displayedOutput)}
-            </pre>
-          </div>
-          {item.canLoadFullOutput ? (
-            <button
-              type="button"
-              className="mt-1.5 text-xs text-primary hover:text-accent-bright"
-              disabled={loading}
-              onClick={loadFull}
-            >
-              View full output
-            </button>
-          ) : null}
-          {loadError !== null ? (
-            <div className="mt-1.5 text-[11px] text-error">
-              <span>{loadError}</span>
-              <button type="button" className="ml-2 text-xs text-primary hover:text-accent-bright" onClick={loadFull}>
-                Retry
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
+const chipToken = FAMILY_CHIP_TOKEN[item.presentation.family];
+const chipStyle: React.CSSProperties = {
+  color: `var(${chipToken})`,
+  borderColor: `color-mix(in oklch, var(${chipToken}) 40%, transparent)`,
+  backgroundColor: 'var(--surface-elevated)',
+};
 ```
+Render a path headline as a shrinkable head span plus a fixed tail span from `elideHeadline()`.
+Render a text headline as one `truncate` span.
+Keep the full strings as span text; do not slice them in JSX.
+Render `row.badges` in array order.
+Push the badge group to the right with `margin-left: auto` and keep it on one line.
+Map `default` and `muted` to `--text-secondary`, `error` to `--error`, and `warning` to `--warning`.
+Give sticky badges `shrink-0` and droppable duration `min-w-0 shrink overflow-hidden` so semantic badges remain while duration can disappear under pressure.
 
-Delete the now-unused `toolOutcomeLabel` function and the `item.context.map(...)` block (it no longer exists in this component).
+Inside the disclosure body, keep only the current Input block, Output block, `View full output` control, and retry error treatment.
+Convert the two nested always-open `<details>` blocks to non-interactive labelled `<div>` sections because a tool card now has one disclosure owner.
+Do not render `item.presentation.body`; Story 1.1 defines no such field.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 5: Run all Legacy row tests and verify GREEN**
 
-Run: `NODE_ENV=development bun test packages/web/src/components/workflows/NodeRoom.test.tsx`
-Expected: PASS. If a pre-existing test asserted the old always-open Input/Output layout, update its expectation to the collapsed/expanded behavior (a `succeeded` fixture is now collapsed).
+Run: `NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx`
 
-- [ ] **Step 5: Type-check and lint**
+Expected: PASS for the initial summary contract and both live-transition cases.
+
+- [ ] **Step 6: Type-check and lint Legacy**
 
 Run: `bun --filter @archon/web type-check`
-Expected: no errors.
-Run: `bun x eslint packages/web/src/components/workflows/NodeRoom.tsx`
-Expected: no warnings.
 
-- [ ] **Step 6: Commit**
+Run: `bun x eslint packages/web/src/components/workflows/NodeRoom.tsx packages/web/src/components/workflows/NodeRoom.test.tsx`
+
+Expected: both commands exit zero with no warnings.
+
+- [ ] **Step 7: Commit Legacy**
 
 ```bash
 git add packages/web/src/components/workflows/NodeRoom.tsx packages/web/src/components/workflows/NodeRoom.test.tsx
-git commit -m "feat(web): render Legacy tool calls as collapsed scannable rows"
+git commit -m "feat(web): render Legacy tool calls as readable rows"
 ```
 
 ---
 
-## Task 4: Collapsed tool row on the Console surface (`ConsoleAgentHistoryList.tsx`)
+## Task 5: Render the same native disclosure row on Console
 
 **Files:**
+
 - Modify: `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`
-- Test: `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
+- Modify: `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
 
 **Interfaces:**
-- Consumes: the same `@/lib/agent-history` and `@/lib/tool-presentation` exports as Task 3. Import `formatDurationMs` stays via the existing `../../lib/format` path.
-- Produces: no new module exports; identical anatomy to Legacy, Console tokens.
 
-- [ ] **Step 1: Write the failing tests**
+- Consumes: `initialToolExpanded`, `toolRowView`, `ToolOutcome`, `BadgeTone`, `FAMILY_CHIP_TOKEN`, and `elideHeadline`.
+- Produces: no new module export.
 
-The Console harness uses happy-dom with `createRoot` and queries the live DOM (`host.textContent`, `host.querySelector`).
-Add a describe block to `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` following the existing `renderRoom` + `flushUntil` pattern; feed rows through `loadMessages`:
+- [ ] **Step 1: Add failing Console row tests through wire fixtures**
 
-```ts
-describe('console collapsed tool row', () => {
-  test('a successful tool call is collapsed and shows the family chip and glyph', async () => {
-    const messages: WorkflowNodeMessage[] = [
-      { id: 'c', seq: 1, kind: 'tool', payload: { name: 'Read', id: 't', input: { path: 'a.ts' } }, created_at: CREATED_AT },
-      { id: 'r', seq: 2, kind: 'tool', payload: { name: 'Read', id: 't', output: 'secret-body-text' }, created_at: CREATED_AT },
-    ];
-    await act(async () => {
-      renderRoom({ loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages }) });
-    });
-    await flushUntil('read row', () => (host.textContent ?? '').includes('Read'));
-    expect(host.textContent ?? '').toContain('✓');
-    expect(host.textContent ?? '').not.toContain('secret-body-text'); // collapsed
-  });
+Add a succeeded `Read` call/result pair with `tool_phase: 'call'` and `tool_phase: 'result'` in top-level metadata.
+After rendering, query `details[data-tool-id="read-1"]` and its summary.
+Assert `details.open === false`, the summary includes `✓`, `Read`, and `a.ts`, and the summary excludes the raw output string and JSON punctuation.
 
-  test('a failed bash call is expanded and shows an exit badge', async () => {
-    const messages: WorkflowNodeMessage[] = [
-      { id: 'c', seq: 1, kind: 'tool', payload: { name: 'Bash', id: 'b', input: { command: 'bun test' } }, created_at: CREATED_AT },
-      { id: 'r', seq: 2, kind: 'tool', payload: { name: 'Bash', id: 'b', output: 'stack-trace-text' }, metadata: { exit_code: 1 }, created_at: CREATED_AT },
-    ];
-    await act(async () => {
-      renderRoom({ loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages }) });
-    });
-    await flushUntil('bash row', () => (host.textContent ?? '').includes('exit 1'));
-    expect(host.textContent ?? '').toContain('✕');
-    expect(host.textContent ?? '').toContain('stack-trace-text'); // failed → expanded
-  });
-});
-```
+Add a failed `Bash` call/result pair whose call metadata contains `tool_phase: 'call'` and whose result metadata contains `tool_phase: 'result'` plus `exit_code: 1`.
+Assert `details.open === true`, the summary includes `✕`, `Bash`, `bun test`, and `exit 1`, and the body still contains the output string.
 
-Confirm the metadata shape for a Console row: check an existing fixture in this file that sets `metadata` on a `WorkflowNodeMessage`; if the type requires `metadata` under `payload` or a different key, mirror that shape exactly.
+Update the existing test at `ConsoleNodeRoom.test.tsx:1002` so it asserts the tool disclosure and summary contract instead of asserting that a successful or unknown card has an open nested details block.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+Import `ConsoleAgentHistoryList` in the existing dynamic-import setup and render it directly for two live-transition tests.
+Build the running and failed `AgentHistoryItem[]` inputs with `buildAgentHistory()` so the test does not hand-author the shared item shape.
+First render a running call without a result, re-render the same tool id with a result carrying `outcome: 'error'`, and assert the untouched details opens.
+Repeat with a summary that is manually opened and closed before the failed item is rendered, and assert it remains closed.
 
-Run: `NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
-Expected: FAIL — no `✓` glyph and the collapsed body text is still present.
+- [ ] **Step 2: Run the Console test and verify RED**
 
-- [ ] **Step 3: Write the implementation**
+Run: `NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx`
 
-Apply the same rewrite as Task 3 to `ConsoleAgentHistoryList.tsx`, with Console token differences.
-Add imports (merge into the existing `@/lib/agent-history` import; add the `@/lib/tool-presentation` import — it satisfies the Console isolation rule because `@/lib` is not on the forbidden list):
+Expected: FAIL because Console still renders the old open JSON card and has no untouched-row transition.
+
+- [ ] **Step 3: Mirror the Legacy markup with Console's running token**
+
+Merge `useEffect` and `useRef` into the React import.
+Add this complete renderer-local helper; the deliberate two-shell duplication is required by architecture AD-12.
 
 ```ts
-import {
-  initialToolExpanded,
-  OUTCOME_ARIA,
-  STATUS_GLYPH,
-  toolBadges,
-  type AgentHistoryItem,
-  type BadgeTone,
-  type ToolOutcome,
-} from '@/lib/agent-history';
-import { elideHeadline, FAMILY_CHIP_TOKEN } from '@/lib/tool-presentation';
+function useToolDisclosure(outcome: ToolOutcome): {
+  detailsRef: React.RefObject<HTMLDetailsElement | null>;
+  initialOpen: boolean;
+  markTouched: () => void;
+} {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const touchedRef = useRef(false);
+  const initialOpenRef = useRef(initialToolExpanded(outcome));
+
+  useEffect(() => {
+    if (!touchedRef.current && outcome === 'failed' && detailsRef.current !== null) {
+      detailsRef.current.open = true;
+    }
+  }, [outcome]);
+
+  return {
+    detailsRef,
+    initialOpen: initialOpenRef.current,
+    markTouched: (): void => {
+      touchedRef.current = true;
+    },
+  };
+}
 ```
 
-Add the Console `glyphColor`, `badgeClass`, and `Headline` helpers above `ToolHistory` (replace the Console `toolOutcomeLabel` at `:120`). `badgeClass` reuses the exact classes the current Console file already applies to the truncation markers (`text-status-warning`, `text-text-muted`), so the badges look identical to today:
+Render `<details data-tool-id={item.toolUseId}>` with the stable initial `open` attribute and a `<summary data-testid="tool-summary">` carrying `onClick={disclosure.markTouched}`.
+Render the two CSS-switched chevrons, the status glyph with `role="img"` and its shared outcome label, the family-labelled chip, the split path or truncated text headline, and the shared ordered badges.
+Keep sticky badges fixed and give only droppable duration `min-w-0 shrink overflow-hidden`.
+Replace the nested Input and Output disclosures with labelled body sections under the one tool disclosure.
+Keep `View full output`, loading, error, and retry behavior unchanged.
+Use this exhaustive Console colour helper.
 
 ```ts
 function glyphColor(outcome: ToolOutcome): string {
   switch (outcome) {
-    case 'succeeded':
-      return 'var(--success)';
-    case 'failed':
-      return 'var(--error)';
-    case 'running':
-      return 'var(--running)'; // Console declares --running (Legacy uses --accent-bright)
-    case 'interrupted':
-      return 'var(--warning)';
-    case 'unknown':
-    default:
-      return 'var(--text-secondary)';
+    case 'succeeded': return 'var(--success)';
+    case 'failed': return 'var(--error)';
+    case 'running': return 'var(--running)';
+    case 'interrupted': return 'var(--warning)';
+    case 'unknown': return 'var(--text-secondary)';
   }
-}
-
-function badgeClass(tone: BadgeTone): string {
-  switch (tone) {
-    case 'error':
-      return 'text-error';
-    case 'warning':
-      return 'text-status-warning';
-    case 'muted':
-      return 'text-text-muted';
-    case 'default':
-    default:
-      return 'text-text-secondary';
-  }
-}
-
-function Headline({ headline, headlineKind }: { headline: string; headlineKind: 'path' | 'text' }): ReactElement {
-  const elided = elideHeadline(headline, headlineKind);
-  if (elided.kind === 'path') {
-    return (
-      <span className="flex min-w-0 flex-1 items-baseline text-[12px]">
-        <span className="min-w-0 shrink truncate text-text-secondary">{elided.head}</span>
-        <span className="shrink-0 text-text-primary">{elided.tail}</span>
-      </span>
-    );
-  }
-  return <span className="min-w-0 flex-1 truncate text-[12px] text-text-primary">{elided.text}</span>;
 }
 ```
 
-Replace the Console `ToolHistory` (`:126-223`) in full with:
+Keep the existing `var(--rv-tool-card-border, 1px solid var(--border))` fallback.
+Import shared code only from `@/lib/agent-history` and `@/lib/tool-presentation`; do not import Legacy JSX.
 
-```ts
-function ToolHistory({
-  item,
-  onLoadFullOutput,
-}: {
-  item: Extract<AgentHistoryItem, { kind: 'tool' }>;
-  onLoadFullOutput: ConsoleAgentHistoryListProps['onLoadFullOutput'];
-}): ReactElement {
-  const [expanded, setExpanded] = useState(initialToolExpanded(item.outcome));
-  const [fullOutput, setFullOutput] = useState<unknown>(undefined);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const displayedOutput = fullOutput === undefined ? item.output : fullOutput;
-  const displayedOutputState = fullOutput === undefined ? item.outputState : 'full';
-  const badges = toolBadges(item, displayedOutputState);
+- [ ] **Step 4: Run all Console row tests and verify GREEN**
 
-  const loadFull = (): void => {
-    setLoading(true);
-    setLoadError(null);
-    void onLoadFullOutput(item)
-      .then((output): void => {
-        setFullOutput(output);
-        setLoading(false);
-      })
-      .catch((error: unknown): void => {
-        setLoadError(error instanceof Error ? error.message : 'Failed to load full output');
-        setLoading(false);
-      });
-  };
+Run: `NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx`
 
-  return (
-    <div
-      data-tool-id={item.toolUseId}
-      className="ptool rounded-[var(--radius)] bg-surface-inset px-2.5 py-2"
-      style={{
-        border: 'var(--rv-tool-card-border, 1px solid var(--border))',
-        overflowWrap: 'anywhere',
-      }}
-    >
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={(): void => setExpanded(value => !value)}
-        className="flex w-full items-baseline gap-2 text-left font-mono"
-      >
-        <span aria-hidden="true" className="w-[9px] shrink-0 text-text-tertiary">
-          {expanded ? '▾' : '▸'}
-        </span>
-        <span
-          role="img"
-          aria-label={OUTCOME_ARIA[item.outcome]}
-          className="shrink-0 font-bold"
-          style={{ color: glyphColor(item.outcome) }}
-        >
-          {STATUS_GLYPH[item.outcome]}
-        </span>
-        <span
-          className="shrink-0 truncate rounded-[4px] border px-[7px] py-px text-[11px]"
-          style={{
-            maxWidth: '24ch',
-            color: `var(${FAMILY_CHIP_TOKEN[item.presentation.family]})`,
-            borderColor: `color-mix(in oklch, var(${FAMILY_CHIP_TOKEN[item.presentation.family]}) 40%, transparent)`,
-            backgroundColor: 'var(--surface-elevated)',
-          }}
-        >
-          {item.presentation.label}
-        </span>
-        <Headline headline={item.presentation.headline} headlineKind={item.presentation.headlineKind} />
-        {badges.length > 0 ? (
-          <span className="ml-auto flex shrink-0 items-baseline gap-2 whitespace-nowrap text-[11px]">
-            {badges.map((badge, index) => (
-              <span key={`${badge.text}-${index}`} className={badgeClass(badge.tone)}>
-                {badge.text}
-              </span>
-            ))}
-          </span>
-        ) : null}
-      </button>
-      {expanded ? (
-        <div className="mt-1.5 ml-[29px]">
-          {item.presentation.body.kind === 'terminal' ? (
-            <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-              {`$ ${item.presentation.body.command}`}
-            </pre>
-          ) : item.presentation.body.fields.length > 0 ? (
-            <div className="text-[11px] text-text-secondary">
-              {item.presentation.body.fields.map(field => (
-                <div key={field.key}>
-                  {field.key}: {field.value}
-                </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="mt-1.5">
-            <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">Input</div>
-            <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-              {formatToolIo(item.input)}
-            </pre>
-          </div>
-          <div className="mt-1.5">
-            <div className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">Output</div>
-            <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-              {formatToolIo(displayedOutput)}
-            </pre>
-          </div>
-          {item.canLoadFullOutput ? (
-            <button
-              type="button"
-              className="mt-1.5 text-xs text-primary hover:text-accent-bright"
-              disabled={loading}
-              onClick={loadFull}
-            >
-              View full output
-            </button>
-          ) : null}
-          {loadError !== null ? (
-            <div className="mt-1.5 text-[11px] text-error">
-              <span>{loadError}</span>
-              <button type="button" className="ml-2 text-xs text-primary hover:text-accent-bright" onClick={loadFull}>
-                Retry
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-```
+Expected: PASS for the initial row contract and both live-transition cases.
 
-Delete the Console `toolOutcomeLabel` function and the `item.context.map(...)` block (no longer present in this component).
+- [ ] **Step 5: Run the Console boundary and static checks**
 
-- [ ] **Step 4: Run the tests to verify they pass**
+Run: `bun test --cwd packages/web src/experiments/console/console-isolation.test.ts`
 
-Run: `NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
-Expected: PASS. Update any pre-existing assertion that relied on the old always-open layout (e.g. a test asserting a successful call's output text is visible must now select or expand the row, since success is collapsed).
-
-- [ ] **Step 5: Run the Console isolation and full web lib/component suites**
-
-Run: `bun test packages/web/src/experiments/console/console-isolation.test.ts`
-Expected: PASS (the new `@/lib/tool-presentation` import is allowed; nothing from `@/components/` was added).
 Run: `bun --filter @archon/web type-check`
-Expected: no errors.
-Run: `bun x eslint packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`
-Expected: no warnings.
 
-- [ ] **Step 6: Commit**
+Run: `bun x eslint packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
+
+Expected: every command passes with no warnings.
+
+- [ ] **Step 6: Commit Console**
 
 ```bash
 git add packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx
-git commit -m "feat(web): render Console tool calls as collapsed scannable rows"
+git commit -m "feat(web): render Console tool calls as readable rows"
 ```
 
 ---
 
-## Task 5: Remove the superseded context path, validate, and close the story
+## Task 6: Remove superseded context, record evidence, and close Story 1.1
 
 **Files:**
-- Modify: `packages/web/src/lib/agent-history.ts` (remove `context` field, `toolContext`, `TOOL_CONTEXT_KEYS`)
-- Modify: `packages/web/src/lib/agent-history.test.ts` (remove the `toolContext` describe block and the `context:` assertion)
-- Modify: `packages/web/src/components/workflows/NodeRoom.test.tsx` and any other test whose tool literal still sets `context`
-- Modify: `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`
 
-- [ ] **Step 1: Confirm no production code still reads `context`**
+- Modify: `packages/web/src/lib/agent-history.ts`
+- Modify: `packages/web/src/lib/agent-history.test.ts`
+- Modify: `packages/web/src/components/workflows/NodeRoom.test.tsx`
+- Modify: `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`
+- Create: `_bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md`
+
+**Interfaces:**
+
+- Removes: tool-item `context`, `TOOL_CONTEXT_KEYS`, and `toolContext()`.
+- Keeps: `input`, `output`, and current full-output loading for Stories 1.2 and 1.3.
+
+- [ ] **Step 1: Prove the old context path has no production reader**
 
 Run: `rg -n "\.context\b|toolContext|TOOL_CONTEXT_KEYS" packages/web/src -g '!*.test.*'`
-Expected: no matches (Tasks 3 and 4 removed both readers).
 
-- [ ] **Step 2: Remove the dead code**
+Expected before cleanup: matches only inside `packages/web/src/lib/agent-history.ts`.
 
-In `packages/web/src/lib/agent-history.ts`:
-Remove the `context: { label: string; value: string }[];` field from the tool arm of `AgentHistoryItem`.
-Remove the `TOOL_CONTEXT_KEYS` constant (`:50`) and the exported `toolContext` function (`:171-183`).
-Remove the `context: toolContext(card.input),` line from `toToolItem`.
+- [ ] **Step 2: Remove the old context path and its characterization tests**
 
-- [ ] **Step 3: Update the tests that reference `context`**
+Delete the `context` field from the tool arm, the constant, the function, and the `toToolItem()` assignment.
+Delete the `toolContext` import and describe block from `agent-history.test.ts`.
+Delete `context` from the Legacy `toolItem()` fixture.
 
-In `agent-history.test.ts`: remove the `toolContext` import, the entire `describe('toolContext', ...)` block, and the `context: [{ label: 'cmd', value: 'ls' }],` line inside the `buildAgentHistory` `toMatchObject` at `:286`.
-In `NodeRoom.test.tsx` (and any file the type-checker flags): remove the `context: [...]` line from the tool fixture.
+- [ ] **Step 3: Verify no context reference remains**
 
-- [ ] **Step 4: Run the full web test suite and type-check**
+Run: `rg -n "\.context\b|toolContext|TOOL_CONTEXT_KEYS" packages/web/src`
 
-Run: `bun --filter @archon/web type-check`
-Expected: no errors.
+Expected: no matches.
+
+- [ ] **Step 4: Run every focused Story 1.1 test**
+
+Run: `bun test --cwd packages/web src/lib/tool-presentation.test.ts`
+
+Run: `bun test --cwd packages/web src/lib/agent-history.test.ts`
+
+Run: `NODE_ENV=development bun test --cwd packages/web src/components/workflows/NodeRoom.test.tsx`
+
+Run: `NODE_ENV=development bun test --cwd packages/web src/experiments/console/components/ConsoleNodeRoom.test.tsx`
+
+Run: `bun test --cwd packages/web src/experiments/console/console-isolation.test.ts`
+
+Expected: all focused tests pass.
+
+- [ ] **Step 5: Run the complete web package test script**
+
 Run: `bun --filter @archon/web test`
-Expected: PASS across `src/lib`, `src/components`, and `src/experiments/console`.
 
-- [ ] **Step 5: Flip the sprint status to done**
+Expected: all `src/lib`, `src/stores`, `src/hooks`, `src/components`, component-integration, and Console legs pass.
 
-In `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`, change:
+- [ ] **Step 6: Mark the sprint item done**
 
-```yaml
-  1-1-scan-a-tool-call-as-one-readable-row: backlog
-```
-
-to:
+Change only this line in `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`.
 
 ```yaml
   1-1-scan-a-tool-call-as-one-readable-row: done
 ```
 
-- [ ] **Step 6: Run the full pre-PR gate**
+- [ ] **Step 7: Create durable characterization evidence**
+
+Create `_bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md` after the focused and package tests pass.
+Record the fixed date `2026-09-16`.
+Copy the exact commit hash and subject lines returned by `git log --reverse --format='%H %s' --grep='readable rows' --grep='readable tool row'` into the evidence file.
+Copy the exact pass counts printed by the four focused test files and the Console isolation test into the evidence file.
+Map the acceptance criteria to these exact test groups:
+
+- One-line anatomy and initial disclosure state map to `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx` readable-row tests.
+- The five-outcome table maps to `agent-history.test.ts` `initial expansion is table-driven for all five outcomes`.
+- Glyphs and chip rules map to the `toolRowView` glyph table and `tool-presentation.test.ts` display-contract tests.
+- Safe degradation and bounded scalar formatting map to `tool-presentation.test.ts` malformed and generic headline tests.
+- Exit-code visibility maps to the shared badge-order test and both renderer tests.
+- Interrupted folding maps to `agent-history.test.ts` interrupted lifecycle fold tests.
+- Console isolation maps to `console-isolation.test.ts`.
+
+Do not claim a command passed unless its output in this run shows zero failures.
+
+- [ ] **Step 8: Run the required repository gate**
 
 Run: `bun run validate`
-Expected: every step passes (`type-check`, `lint --max-warnings 0`, `format:check`, and the full `test` leg).
 
-- [ ] **Step 7: Record the characterization evidence (issue #174 closing AC)**
+Expected: type-check, lint with zero warnings, format check, generated-file checks, and the isolated package test legs all pass.
 
-`bun run validate` output prints to the terminal and is not durable, so write a summary the reviewer can read after the fact.
-Create `_bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md` with: the date, the commit range for this story, the per-leg passing test counts from the `bun --filter @archon/web test` run (`src/lib`, `src/components`, `src/experiments/console`), and a one-line map from each Story 1.1 acceptance criterion to the test(s) that cover it. For example:
+- [ ] **Step 9: Check the final diff and commit**
 
-```markdown
-# ANR 1.1 — Scan a tool call as one readable row — evidence
+Run: `git diff --check`
 
-Date: <local date>
-Commits: <first sha>..<last sha>
+Run: `git status --short`
 
-## Test runs (bun --filter @archon/web test)
-- src/lib/tool-presentation.test.ts — <N> pass
-- src/lib/agent-history.test.ts — <N> pass
-- src/components/workflows/NodeRoom.test.tsx — <N> pass
-- src/experiments/console/components/ConsoleNodeRoom.test.tsx — <N> pass
-- bun run validate — all steps pass
-
-## AC → coverage
-- one-row render / collapsed-success / expanded-failed → NodeRoom + ConsoleNodeRoom "collapsed tool row"
-- five-outcome expansion table → agent-history "initialToolExpanded"
-- colour-independent glyphs / chip rule → agent-history "STATUS_GLYPH" + tool-presentation "chip rule"
-- safe degradation / bounded algorithms → tool-presentation "generic fallback and safe degradation"
-- interrupted status fold → agent-history "interrupted status fold"
-```
-
-- [ ] **Step 8: Commit**
+Expected: no whitespace errors and only the files listed by this plan are changed.
 
 ```bash
 git add packages/web/src/lib/agent-history.ts packages/web/src/lib/agent-history.test.ts packages/web/src/components/workflows/NodeRoom.test.tsx _bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml _bmad-output/implementation-artifacts/agent-node-room/1-1-evidence.md
-git commit -m "refactor(web): drop superseded toolContext, record ANR 1.1 evidence, mark done"
+git commit -m "refactor(web): remove superseded tool context and close ANR 1.1"
 ```
 
 ---
 
-## Acceptance Criteria → Task Map
+## Acceptance Criteria and Verification Map
 
-Story 1.1's acceptance criteria (`epics.md:208-234`) and their coverage:
+- Each Legacy and Console tool call has one native summary row containing chevron, glyph, family chip, headline, and right-aligned badges.
+- Succeeded, failed, running, interrupted, and unknown initial states are covered by one shared table with values `false`, `true`, `false`, `false`, and `false`.
+- An untouched running row opens when it becomes failed, while a reader-opened or reader-closed row keeps the reader's choice.
+- The exact glyphs are visible characters and carry accessible outcome names.
+- The family chip uses the sent short token or family fallback and exposes the resolved family without relying on colour.
+- The summary never contains raw serialized input or output.
+- Unknown structured input uses at most three scalar pairs, while malformed input resolves to a safe generic row without throwing.
+- The non-zero exit code, output-state marker, payload facts, and duration are composed once in shared code and rendered in the same order on both shells.
+- An immediately following `interrupted` lifecycle row disappears into the preceding tool outcome; other lifecycle rows remain.
+- Existing full-output loading remains reachable after opening the tool disclosure.
+- `sprint-status.yaml` is committed as `done` only after focused tests, package tests, and `bun run validate` pass.
 
-- Each call renders as one row with chevron, family chip, status glyph, salient headline, right-aligned badges; success collapsed, failed expanded, no serialized punctuation collapsed. → Tasks 3, 4 (renderer tests) on `initialToolExpanded` (Task 2) + resolver (Task 1).
-- Five outcomes drive initial expansion `collapsed, expanded, collapsed, collapsed, collapsed`, covered by one focused test table. → Task 2 `initialToolExpanded` test.
-- Status meaning available without colour via `✓ ✕ ◐ ⚠ –`; chip is the sent tool name only when one token of ≤24 chars, else the family name. → Task 2 `STATUS_GLYPH` test + Task 1 chip-rule tests + Tasks 3/4 glyph-character assertions.
-- Malformed/adversarial payloads degrade to a safe generic row without throwing; every bounded algorithm terminates. → Task 1 safe-degradation tests (null/array/empty/`__proto__`/100k source; bounded routines: 80-char cut, first-non-empty-line, wrapper strip, ≤3 fields).
-- An interrupted status row immediately after a tool call folds into the preceding call and renders `⚠ interrupted`. → Task 2 `foldInterruptedStatus` tests (non-Claude fixture) + `STATUS_GLYPH['interrupted'] === '⚠'`.
+## Open Questions
 
-Issue #174 closing criteria:
-- Story 1.1 acceptance criteria satisfied → all tasks.
-- Focused tests / characterization evidence recorded before close → Task 5 Step 6 (`bun run validate` output).
-- `sprint-status.yaml` entry moved to `done` → Task 5 Step 5.
+None.
 
-## Validation Commands
+## Implementation Order
 
-- Per-module during TDD: `bun test packages/web/src/lib/tool-presentation.test.ts`; `bun test packages/web/src/lib/agent-history.test.ts`.
-- Per-renderer during TDD: `NODE_ENV=development bun test packages/web/src/components/workflows/NodeRoom.test.tsx`; `NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`.
-- Boundary: `bun test packages/web/src/experiments/console/console-isolation.test.ts`.
-- Package gate: `bun --filter @archon/web type-check` and `bun --filter @archon/web test`.
-- Pre-PR gate (required): `bun run validate`.
+1. Build and commit exact family classification.
+2. Add and commit the chip, headline, safe-degradation, and elision behavior.
+3. Attach the presentation and shared row view, then fold interrupted lifecycle rows.
+4. Implement and verify Legacy native disclosure behavior.
+5. Implement and verify the matching Console behavior and isolation boundary.
+6. Remove the obsolete context path, record evidence, run the full gate, mark the story done, and commit the closeout.
 
-## Self-Review Notes
-
-Spec coverage: every Story 1.1 AC maps to a task above; CAP-2/3/4/5/6/7 requirements in `tool-presentation-contract.md` are explicitly deferred to Stories 1.2–1.7 and listed under Non-Goals.
-Type consistency: `ToolFamily`, `ToolPresentation`, and the `body` union are defined once in `tool-presentation.ts` and imported everywhere; `ToolOutcome`, `STATUS_GLYPH`, `initialToolExpanded`, `toolBadges`, and `ToolBadge` are defined once in `agent-history.ts`; both renderers use the same helper names (`glyphColor`, `badgeClass`, `Headline`) with only the `running` token differing per surface.
-Live re-render semantics: `useState(initialToolExpanded(item.outcome))` sets expansion at mount only, per the AC's "when the transcript first renders"; a row that flips `running → failed` after mount stays collapsed by design, not a bug.
-No placeholders: every code and test step carries the actual content; the one deliberately-awkward Step 1 assertion in Task 1 is replaced with its exact form in Step 4 of the same task.
+Do not reorder the shell tasks ahead of the shared projection because both renderers depend on the new typed fields.
+Do not mark the sprint item done or write passing evidence before the corresponding commands actually pass.
