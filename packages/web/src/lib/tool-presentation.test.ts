@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { toolPresentation, type ToolFamily } from './tool-presentation';
+import {
+  elideHeadline,
+  FAMILY_CHIP_TOKEN,
+  toolPresentation,
+  type ToolFamily,
+} from './tool-presentation';
 
 interface FamilyCase {
   name: string;
@@ -124,5 +129,142 @@ describe('toolPresentation family resolution', () => {
     expect(() =>
       toolPresentation({ name: 123 as unknown as string, input: {}, output: undefined })
     ).not.toThrow();
+  });
+});
+
+describe('toolPresentation chip, headline, and safe degradation', () => {
+  test('keeps a short sent name and falls back for whitespace or over 24 characters', () => {
+    expect(
+      toolPresentation({ name: 'read_file', input: { path: 'a.ts' }, output: undefined }).label
+    ).toBe('read_file');
+    expect(toolPresentation({ name: '🚀run', input: {}, output: undefined }).label).toBe('🚀run');
+    expect(toolPresentation({ name: 'npm test', input: undefined, output: undefined }).label).toBe(
+      'shell'
+    );
+    expect(toolPresentation({ name: 'x'.repeat(25), input: {}, output: undefined }).label).toBe(
+      'shell'
+    );
+    for (const fixture of FAMILY_CASES) {
+      expect(toolPresentation({ ...fixture, output: undefined }).label.length).toBeLessThanOrEqual(
+        24
+      );
+    }
+  });
+
+  test('formats MCP names without violating the chip cap', () => {
+    expect(
+      toolPresentation({ name: 'mcp__server__tool', input: {}, output: undefined })
+    ).toMatchObject({
+      family: 'generic',
+      label: 'server · tool',
+      headline: 'server · tool',
+    });
+    expect(
+      toolPresentation({
+        name: `mcp__${'s'.repeat(20)}__${'t'.repeat(20)}`,
+        input: {},
+        output: undefined,
+      }).label
+    ).toBe('generic');
+  });
+
+  test('strips a Codex shell wrapper only from the first-line headline', () => {
+    const zsh = toolPresentation({
+      name: "/bin/zsh -lc 'bun test'",
+      input: undefined,
+      output: undefined,
+    });
+    const bash = toolPresentation({
+      name: "/bin/bash -lc 'ls -la'",
+      input: undefined,
+      output: undefined,
+    });
+    const multiline = toolPresentation({
+      name: '\nfor f in *.ts; do\n  echo "$f"\ndone',
+      input: undefined,
+      output: undefined,
+    });
+    expect(zsh.headline).toBe('bun test');
+    expect(bash.headline).toBe('ls -la');
+    expect(multiline.headline).toBe('for f in *.ts; do…');
+    expect(multiline.headline).not.toContain('\n');
+  });
+
+  test('does not truncate a code headline to the generic scalar limit', () => {
+    const source = `const value = ${'x'.repeat(120)};`;
+    const value = toolPresentation({
+      name: 'eval',
+      input: { code: source, language: 'javascript' },
+      output: undefined,
+    });
+    expect(value).toMatchObject({ family: 'code', headline: source, badges: ['javascript'] });
+    expect(value.headline.length).toBeGreaterThan(80);
+  });
+
+  test('elides path headlines at the last slash and leaves text unchanged', () => {
+    expect(elideHeadline('packages/web/src/lib/tool-presentation.ts', 'path')).toEqual({
+      kind: 'path',
+      head: 'packages/web/src/lib/',
+      tail: 'tool-presentation.ts',
+    });
+    expect(elideHeadline('README', 'path')).toEqual({ kind: 'path', head: '', tail: 'README' });
+    expect(elideHeadline('bun test', 'text')).toEqual({ kind: 'text', text: 'bun test' });
+  });
+
+  test('maps each family to the chip token from the plan', () => {
+    expect(FAMILY_CHIP_TOKEN).toEqual({
+      shell: '--node-bash',
+      code: '--node-bash',
+      file: '--node-command',
+      web: '--node-command',
+      search: '--node-prompt',
+      glob: '--node-prompt',
+      todo: '--node-approval',
+      task: '--node-approval',
+      generic: '--text-secondary',
+    });
+  });
+
+  test('uses family-aware chip aria labels', () => {
+    expect(
+      toolPresentation({ name: 'read_file', input: { path: 'a.ts' }, output: undefined })
+        .chipAriaLabel
+    ).toBe('read_file, file tool');
+    expect(
+      toolPresentation({ name: 'npm test', input: undefined, output: undefined }).chipAriaLabel
+    ).toBe('shell tool');
+  });
+
+  test('uses at most three scalar pairs for a generic collapsed headline', () => {
+    const value = toolPresentation({
+      name: 'mystery',
+      input: { a: 1, nested: { x: 1 }, b: 'two', list: [1, 2], c: true, d: 'ignored' },
+      output: undefined,
+    });
+    expect(value).toMatchObject({ family: 'generic', headline: 'a: 1 · b: two · c: true' });
+    expect(value.headline).not.toMatch(/[{}[\]"]/);
+  });
+
+  test('bounds generic scalar display and terminates on a large source line', () => {
+    const scalar = toolPresentation({
+      name: 'mystery',
+      input: { value: 'z'.repeat(200) },
+      output: undefined,
+    });
+    const source = 'a'.repeat(100_000);
+    const code = toolPresentation({
+      name: 'eval',
+      input: { code: source, language: 'txt' },
+      output: undefined,
+    });
+    expect(scalar.headline).toBe(`value: ${'z'.repeat(80)}…`);
+    expect(code.headline).toBe(source);
+  });
+
+  test('does not traverse a hostile __proto__ value', () => {
+    const hostile: unknown = JSON.parse('{"__proto__":{"polluted":true},"safe":"ok"}');
+    const value = toolPresentation({ name: 'mystery', input: hostile, output: undefined });
+    expect(value.headline).toBe('safe: ok');
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 });

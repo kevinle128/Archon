@@ -29,6 +29,30 @@ export interface ToolPresentation {
   badges: string[];
 }
 
+export type ElidedHeadline =
+  | { kind: 'path'; head: string; tail: string }
+  | { kind: 'text'; text: string };
+
+const MAX_LABEL_LENGTH = 24;
+const MAX_GENERIC_SCALARS = 3;
+const MAX_GENERIC_VALUE_LENGTH = 80;
+
+export const FAMILY_CHIP_TOKEN: Record<ToolFamily, string> = {
+  shell: '--node-bash',
+  code: '--node-bash',
+  file: '--node-command',
+  web: '--node-command',
+  search: '--node-prompt',
+  glob: '--node-prompt',
+  todo: '--node-approval',
+  task: '--node-approval',
+  generic: '--text-secondary',
+};
+
+const MCP_NAME = /^mcp__(.+?)__(.+)$/;
+const CODEX_SHELL_WRAPPER = /^\/bin\/(?:zsh|bash) -lc '([\s\S]*)'$/;
+const CHIP_SENT_NAME = /^\S+$/;
+
 const FAMILY_ALIASES: readonly (readonly [ToolFamily, readonly string[]])[] = [
   ['shell', ['bash', 'shell', 'run', 'command', 'execute', 'runterminalcommand']],
   [
@@ -170,12 +194,16 @@ function chipAriaLabelFor(label: string, family: ToolFamily): string {
   return label !== family ? `${label}, ${family} tool` : `${family} tool`;
 }
 
+function chipLabelFor(name: string, family: ToolFamily): string {
+  return CHIP_SENT_NAME.test(name) && name.length <= MAX_LABEL_LENGTH ? name : family;
+}
+
 function present(
   family: ToolFamily,
   name: string,
   record: Record<string, unknown> | null
 ): ToolPresentation {
-  const label = name;
+  const label = chipLabelFor(name, family);
   return {
     family,
     label,
@@ -186,17 +214,77 @@ function present(
   };
 }
 
+function stripCodexShellWrapper(line: string): string {
+  const match = CODEX_SHELL_WRAPPER.exec(line);
+  return match?.[1] ?? line;
+}
+
+function firstLineHeadline(source: string): string {
+  const nonEmpty: string[] = [];
+  for (const line of source.split(/\r?\n/)) {
+    if (line.trim() !== '') {
+      nonEmpty.push(line);
+    }
+  }
+  if (nonEmpty.length === 0) {
+    return '';
+  }
+  const first = stripCodexShellWrapper(nonEmpty[0] ?? '');
+  return nonEmpty.length > 1 ? `${first}…` : first;
+}
+
+function isGenericScalar(value: unknown): value is string | number | boolean | null {
+  if (value === null) {
+    return true;
+  }
+  if (typeof value === 'string' || typeof value === 'boolean') {
+    return true;
+  }
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatGenericScalar(value: string | number | boolean | null): string {
+  const raw = value === null ? 'null' : String(value);
+  if (raw.length > MAX_GENERIC_VALUE_LENGTH) {
+    return `${raw.slice(0, MAX_GENERIC_VALUE_LENGTH)}…`;
+  }
+  return raw;
+}
+
+function genericHeadline(name: string, record: Record<string, unknown> | null): string {
+  if (record === null) {
+    return name;
+  }
+  const pairs: string[] = [];
+  for (const key of Object.keys(record)) {
+    if (pairs.length >= MAX_GENERIC_SCALARS) {
+      break;
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (descriptor === undefined || !('value' in descriptor)) {
+      continue;
+    }
+    const value = descriptor.value as unknown;
+    if (!isGenericScalar(value)) {
+      continue;
+    }
+    pairs.push(`${key}: ${formatGenericScalar(value)}`);
+  }
+  return pairs.length === 0 ? name : pairs.join(' · ');
+}
+
 function headlineFor(
   family: ToolFamily,
   name: string,
   record: Record<string, unknown> | null
 ): string {
+  if (family === 'shell') {
+    return firstLineHeadline(firstString(record ?? {}, COMMAND_KEYS) ?? name);
+  }
   if (record === null) {
     return name;
   }
   switch (family) {
-    case 'shell':
-      return firstString(record, COMMAND_KEYS) ?? name;
     case 'file':
       return firstString(record, PATH_KEYS) ?? name;
     case 'search':
@@ -212,8 +300,9 @@ function headlineFor(
     }
     case 'todo':
     case 'task':
-    case 'generic':
       return name;
+    case 'generic':
+      return genericHeadline(name, record);
   }
 }
 
@@ -225,12 +314,47 @@ function badgesFor(family: ToolFamily, record: Record<string, unknown> | null): 
   return typeof language === 'string' && language !== '' ? [language] : [];
 }
 
-function genericPresentation(name: string): ToolPresentation {
-  return present('generic', name, null);
+function genericPresentation(
+  name: string,
+  record: Record<string, unknown> | null = null
+): ToolPresentation {
+  return present('generic', name, record);
 }
 
 function isEmptyRecord(record: Record<string, unknown>): boolean {
   return Object.keys(record).length === 0;
+}
+
+function mcpPresentation(name: string): ToolPresentation | null {
+  const match = MCP_NAME.exec(name);
+  if (match === null) {
+    return null;
+  }
+  const formatted = `${match[1]} · ${match[2]}`;
+  const label = formatted.length <= MAX_LABEL_LENGTH ? formatted : 'generic';
+  return {
+    family: 'generic',
+    label,
+    chipAriaLabel: chipAriaLabelFor(label, 'generic'),
+    headline: formatted,
+    headlineKind: 'text',
+    badges: [],
+  };
+}
+
+export function elideHeadline(headline: string, headlineKind: 'path' | 'text'): ElidedHeadline {
+  if (headlineKind === 'text') {
+    return { kind: 'text', text: headline };
+  }
+  const lastSlash = headline.lastIndexOf('/');
+  if (lastSlash === -1) {
+    return { kind: 'path', head: '', tail: headline };
+  }
+  return {
+    kind: 'path',
+    head: headline.slice(0, lastSlash + 1),
+    tail: headline.slice(lastSlash + 1),
+  };
 }
 
 export function toolPresentation(input: ToolPresentationInput): ToolPresentation {
@@ -240,6 +364,11 @@ export function toolPresentation(input: ToolPresentationInput): ToolPresentation
 
   if (!validName || (input.input !== undefined && !isPlainObject(input.input))) {
     return genericPresentation(name);
+  }
+
+  const mcp = mcpPresentation(name);
+  if (mcp !== null) {
+    return mcp;
   }
 
   const record = isPlainObject(input.input) ? input.input : null;
@@ -256,7 +385,7 @@ export function toolPresentation(input: ToolPresentationInput): ToolPresentation
     if (isEmptyRecord(record)) {
       return present('shell', name, record);
     }
-    return genericPresentation(name);
+    return genericPresentation(name, record);
   }
 
   return present('shell', name, null);
