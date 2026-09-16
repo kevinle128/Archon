@@ -7,6 +7,7 @@ import {
   digestToolingEntries,
   git,
   loadCatalog,
+  repoRoot,
   runCommand,
   skillRoot,
   snapshot,
@@ -207,6 +208,30 @@ test('tooling digest changes when an executable dependency changes', async (): P
   const before = await digestToolingEntries(entries);
   await writeFile(dependency, 'export const version = 2;\n');
   expect(await digestToolingEntries(entries)).not.toBe(before);
+});
+
+test('catalog impact paths match at least one checkout file', async (): Promise<void> => {
+  const catalog = await loadCatalog();
+  const dead: string[] = [];
+  for (const feature of catalog.features) {
+    const patterns = [
+      ...feature.impact_paths,
+      ...feature.behaviors.flatMap(behavior => behavior.impact_paths ?? []),
+    ];
+    for (const pattern of patterns) {
+      let matched = false;
+      for await (const _path of new Bun.Glob(pattern).scan({
+        cwd: repoRoot,
+        onlyFiles: true,
+        dot: true,
+      })) {
+        matched = true;
+        break;
+      }
+      if (!matched) dead.push(`${feature.id}: ${pattern}`);
+    }
+  }
+  expect(dead).toEqual([]);
 });
 
 test('known room ownership consumers require Ask lifecycle proof even with high-confidence history impact', async (): Promise<void> => {
