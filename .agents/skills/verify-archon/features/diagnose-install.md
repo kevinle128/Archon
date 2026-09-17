@@ -12,7 +12,7 @@ Diagnose the install lets a user confirm Archon can see a database, a writable h
 ## How to get to it (user POV)
 
 - Run `archon doctor` or `archon doctor --full` in a terminal (from source: `bun run cli doctor`).
-- Open the web console; the UI fetches `GET /api/health` on load.
+- Open the web console; Settings and run-card IDE affordances fetch `GET /api/health`. Session boot uses `GET /api/auth/status`, not health.
 - `curl` `http://127.0.0.1:<port>/api/health` (default product port 3090; verification default 13090).
 
 ## Driving it with verify-archon
@@ -22,7 +22,7 @@ Preconditions:
 - Local target: `verify-archon launch` has reached ready, or Mini remote URL is reachable.
 - `verify-archon doctor` has not yet been treated as green for this session.
 
-- **Instance doctor.** Ask whether this process is worth driving. Run `verify-archon doctor --json`. Exit code `0`, `ok` is true, `health.status` is `"ok"`, and `baseUrl` matches the launched port (or the Mini URL).
+- **Instance doctor.** Ask whether this process is worth driving. Run `verify-archon doctor --json`. Exit code `0`, `ok` is true, some `checks[]` entry has `name` `"health"` and `status` `"pass"`, and `baseUrl` matches the launched port (or the Mini URL). The helper does not emit a top-level `health` object.
 - **CLI checklist.** Run the user command. Run `verify-archon cli -- doctor`. Transcript records each `✓` / `○` / `✗` line. Database, workspace writable, and bundled defaults must pass. Claude/Codex/Grok/gh may fail or skip on a cloud VM.
 - **HTTP health.** Fetch the public health route. Run `verify-archon http /api/health`. Status `200`, body `status` is `"ok"`, `adapter` is `"web"`, `is_docker` is `false` on this host-native bun server.
 - **Proof.** Keep both payloads. The evidence dir contains `doctor.cli.txt` and `health.http.json`. A second `verify-archon http /api/health` still returns `"ok"` after the CLI doctor.
