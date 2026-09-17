@@ -306,7 +306,7 @@ function ToolHistory({
 
   return (
     <details data-tool-id={item.toolUseId} open={open} onToggle={onToggle}>
-      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden rounded-[6px] px-1.5 py-1 font-mono text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:outline-offset-2 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden rounded-[6px] px-1.5 py-1 font-mono text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2 [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className={chevronClass}>
           ▶
         </span>{' '}
@@ -403,11 +403,11 @@ export function ConsoleAgentHistoryList({
       renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? (
         <RoomPlaceholder>Node hasn't produced output</RoomPlaceholder>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">{renderAtEnd}</div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-2.5">{renderAtEnd}</div>
       );
     if (!unknownScope) return emptyHistory;
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 py-2.5">
         <p className="text-xs text-warning">{UNKNOWN_SCOPE_NOTICE}</p>
         {emptyHistory}
       </div>
@@ -415,7 +415,7 @@ export function ConsoleAgentHistoryList({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col p-3" style={{ overflowWrap: 'anywhere' }}>
+    <div className="flex min-h-0 flex-1 flex-col px-3 py-2.5" style={{ overflowWrap: 'anywhere' }}>
       {unknownScope ? <p className="mb-1.5 text-xs text-warning">{UNKNOWN_SCOPE_NOTICE}</p> : null}
       {items.map(item => {
         const after = renderAfterItem?.(item);

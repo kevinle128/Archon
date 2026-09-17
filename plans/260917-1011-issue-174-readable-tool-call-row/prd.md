@@ -48,19 +48,19 @@ schema-parsed node messages + workflow events
 
 ### Key files and seams (verified)
 
-| File | Relevant lines |
-| --- | --- |
-| `packages/web/src/lib/agent-history.ts` | `AgentHistoryInput` :12, `AgentHistoryItem` tool arm :26–41 (`context` :33), `TOOL_CONTEXT_KEYS` :50, `deriveOutcome` :120, `toToolItem` :146, `toolContext` :171, `toolRuntime` :185, `buildAgentHistory` :207 |
-| `packages/web/src/lib/format.ts` | `ensureUtc` :2, `formatDurationMs` :28 — reuse for duration badge |
-| `packages/web/src/lib/pair-tool-transcript.ts` | `projectToolTranscript`, `ToolTranscriptCard` — read-only; already preserves input/output/exit/identity/occurrence |
-| `packages/web/src/components/workflows/NodeTranscriptPane.tsx` | `buildAgentHistory` call :236; existing `const nowMs = Date.now()` :284 must hoist above it |
-| `packages/web/src/components/workflows/NodeRoom.tsx` | `.ptool` card :227, `item.context` render :246 — Legacy tool markup owner |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` | call :607, `nowMs` :652 |
-| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` | call :204, `nowMs` :217 — indirect Console mount, regression gate |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` | `.ptool` :156, `item.context` :178, tool render :263/:277 — shared by both Console mounts |
-| `e2e/ui/workflow-run-hitl.spec.ts` | stale cases `[V:hitl.console-tool-output]` :79 and `[V:hitl.legacy-tool-output]` :94 |
-| `e2e/ui/workflow-run-hitl-room.spec.ts` | stale case `[V:hitl.agent-history]` :208 (assertions :219–223) |
-| `e2e/ui/workflow-run-hitl-visual.spec.ts` | `.ptool` readiness locator :117 can match hidden descendant text — false positive |
+| File                                                                                  | Relevant lines                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/web/src/lib/agent-history.ts`                                               | `AgentHistoryInput` :12, `AgentHistoryItem` tool arm :26–41 (`context` :33), `TOOL_CONTEXT_KEYS` :50, `deriveOutcome` :120, `toToolItem` :146, `toolContext` :171, `toolRuntime` :185, `buildAgentHistory` :207 |
+| `packages/web/src/lib/format.ts`                                                      | `ensureUtc` :2, `formatDurationMs` :28 — reuse for duration badge                                                                                                                                               |
+| `packages/web/src/lib/pair-tool-transcript.ts`                                        | `projectToolTranscript`, `ToolTranscriptCard` — read-only; already preserves input/output/exit/identity/occurrence                                                                                              |
+| `packages/web/src/components/workflows/NodeTranscriptPane.tsx`                        | `buildAgentHistory` call :236; existing `const nowMs = Date.now()` :284 must hoist above it                                                                                                                     |
+| `packages/web/src/components/workflows/NodeRoom.tsx`                                  | `.ptool` card :227, `item.context` render :246 — Legacy tool markup owner                                                                                                                                       |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`                 | call :607, `nowMs` :652                                                                                                                                                                                         |
+| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` | call :204, `nowMs` :217 — indirect Console mount, regression gate                                                                                                                                               |
+| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` | `.ptool` :156, `item.context` :178, tool render :263/:277 — shared by both Console mounts                                                                                                                       |
+| `e2e/ui/workflow-run-hitl.spec.ts`                                                    | stale cases `[V:hitl.console-tool-output]` :79 and `[V:hitl.legacy-tool-output]` :94                                                                                                                            |
+| `e2e/ui/workflow-run-hitl-room.spec.ts`                                               | stale case `[V:hitl.agent-history]` :208 (assertions :219–223)                                                                                                                                                  |
+| `e2e/ui/workflow-run-hitl-visual.spec.ts`                                             | `.ptool` readiness locator :117 can match hidden descendant text — false positive                                                                                                                               |
 
 New files: `packages/web/src/lib/tool-presentation.ts` + `.test.ts`, `e2e/ui/agent-tool-row-visual.spec.ts`, `plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md`.
 
@@ -90,13 +90,13 @@ New files: `packages/web/src/lib/tool-presentation.ts` + `.test.ts`, `e2e/ui/age
 
 ## Story overview
 
-| ID | Story | Depends on | Output |
-| --- | --- | --- | --- |
-| US-001 | E2E contract rewrite + pure `tool-presentation` policy | — | 3 red HITL cases vs old UI; green bounded resolver/headline/badge unit tests |
-| US-002 | History projection: exit code, presentation, interruption fold, `nowMs` | US-001 | `buildAgentHistory` emits renderer-ready items; 3 callers pass clock; E2E still red |
-| US-003 | Legacy `NodeRoom` native disclosure row | US-002 | Legacy row + diagnostics + state algorithm; component matrix green |
-| US-004 | Console `ConsoleAgentHistoryList` row + `context` cleanup | US-003 | Both Console mounts equivalent; superseded context removed; 3 HITL E2E green |
-| US-005 | E2E visual verification + acceptance report + full gates | US-004 | 460 px geometry/focus/motion evidence, `visual-acceptance.md`, all repo gates |
+| ID     | Story                                                                   | Depends on | Output                                                                              |
+| ------ | ----------------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
+| US-001 | E2E contract rewrite + pure `tool-presentation` policy                  | —          | 3 red HITL cases vs old UI; green bounded resolver/headline/badge unit tests        |
+| US-002 | History projection: exit code, presentation, interruption fold, `nowMs` | US-001     | `buildAgentHistory` emits renderer-ready items; 3 callers pass clock; E2E still red |
+| US-003 | Legacy `NodeRoom` native disclosure row                                 | US-002     | Legacy row + diagnostics + state algorithm; component matrix green                  |
+| US-004 | Console `ConsoleAgentHistoryList` row + `context` cleanup               | US-003     | Both Console mounts equivalent; superseded context removed; 3 HITL E2E green        |
+| US-005 | E2E visual verification + acceptance report + full gates                | US-004     | 460 px geometry/focus/motion evidence, `visual-acceptance.md`, all repo gates       |
 
 ## Validation commands
 

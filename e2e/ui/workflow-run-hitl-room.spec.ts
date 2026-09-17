@@ -177,6 +177,9 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage si
   const ratio = await roomRatio(page, 'legacy');
   expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
   expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
+  // Output sits behind the row's own closed disclosures — open them first.
+  await room.locator('details[data-tool-id] > summary').first().click();
+  await room.getByText('Output', { exact: true }).first().click();
   await expect(room.getByText(HITL_TOOL_OUTPUT)).toBeVisible({ timeout: T.medium });
 });
 
@@ -636,6 +639,11 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
       )
   ).sort();
   expect(visibleIds).toEqual(storedIds);
+  // The loadable row's button lives inside its closed disclosure — the AX tree
+  // only exposes it once the row and its Output diagnostic are open.
+  const lastRow = room.locator('details[data-tool-id]').last();
+  await lastRow.locator('summary').first().click();
+  await lastRow.getByText('Output', { exact: true }).click();
   const viewFullOutput = room.getByRole('button', { name: 'View full output' });
   await expect(viewFullOutput).toHaveCount(1);
   await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);

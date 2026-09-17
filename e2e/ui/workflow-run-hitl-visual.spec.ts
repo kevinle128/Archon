@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { type Locator, type Page } from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
-import { HITL_INSPECT_NODE, HITL_TOOL_OUTPUT } from '../lib/playwright/archon-runtime';
+import { HITL_INSPECT_NODE } from '../lib/playwright/archon-runtime';
 import { openLegacyRunDetail, openRunDetail } from '../lib/playwright/run-detail';
 import { T } from '../lib/playwright/timeouts';
 
@@ -114,7 +114,9 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Console and Legacy vs canonical
   await openRunDetail(page, started.runId, HITL_INSPECT_NODE);
   await expect(page.getByText(/Awaiting input/i).first()).toBeVisible({ timeout: T.medium });
   const room = page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` });
-  await expect(room.locator('.ptool', { hasText: HITL_TOOL_OUTPUT }).first()).toBeVisible({
+  // Readiness must see the collapsed row's own summary — never descendant text
+  // that could satisfy the locator while still hidden inside a closed row.
+  await expect(room.locator('details[data-tool-id] > summary').first()).toBeVisible({
     timeout: T.medium,
   });
   await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
