@@ -42,8 +42,8 @@
       "technicalNotes": "Follow phase-01-start.md sections 'Outcome, exit code, and interruption' and 'Row model' (nowMs contract). toToolItem (:146) is where presentation attaches. Do not remove `context`/`toolContext`/`TOOL_CONTEXT_KEYS` yet — renderers still read them until US-004.",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: packages/web/src/lib/agent-history.ts (nowMs input, exitCode + presentation on tool arm, toolExitCode/toolStartedAtMs/runningElapsed helpers, adjacent interrupted fold), agent-history.test.ts (19 tests), NodeTranscriptPane/ConsoleNodeRoom/ConsoleExecutionHistory (hoisted per-render nowMs), NodeRoom.test.tsx fixture."
     },
     {
       "id": "US-003",

@@ -46,3 +46,32 @@
 - Deferred to US-002+: `buildAgentHistory()` exit-code propagation, `presentation` attach, `nowMs`, interruption fold; renderers (US-003/004); visual spec locator fix (US-005).
 
 ---
+
+## 2026-09-17 — US-002: History projection: exit code, presentation, interruption fold, render clock
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/agent-history.ts` — `AgentHistoryInput.nowMs` (required); tool arm gains `exitCode` + `presentation: ToolRowPresentation`; `toolExitCode()` extracts once (result → call → card, `Number.isFinite` guard); `deriveOutcome(card, exitCode)`; `toolStartedAtMs()` requires exactly one matching `tool_called` (created_at via `ensureUtc`); `runningElapsed()` = `max(0, nowMs - start)`; `toToolItem(card, events, nodeId, nowMs, outcomeOverride?)` attaches `toolRowPresentation`; `buildAgentHistory` indexed loop folds an immediately-following `state === 'interrupted'` status into the tool and consumes it
+- `packages/web/src/lib/agent-history.test.ts` — `nowMs` on all calls, `NOW_MS = CREATED_AT + 30s`, `event()` gains `createdAt`; new tests: presentation attach + duration/exit badge order, result-over-call exit precedence, deterministic elapsed (`running · 30.0s`), missing/ambiguous/invalid/wrong-node starts → bare `running`, future start → `running · 0ms`, direct + adjacent interruption incl. failed-plus-interrupted keeps `exit 2` badge, pending-card fold, non-fold across intervening items/detail text/non-exact states
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — `nowMs` hoisted above `buildAgentHistory` (was :284); shared with Ask cards
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — same hoist (was :652)
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` — same hoist (was :217)
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — `toolItem` fixture gains `exitCode`/`presentation` (computed via real `toolRowPresentation` over merged overrides)
+
+**Acceptance criteria verified**:
+- [x] `nowMs` required on input; tool arm has `exitCode`/`presentation`; `context` retained (NodeRoom.tsx:246 still reads it)
+- [x] Exit code extracted once with result → call → card precedence, shared by outcome + presenter (tested: result 2 beats call 9; call 4 used when result silent; both drive `failed` + `exit N` badge)
+- [x] `toolRuntime` untouched (single exact `tool_completed`); elapsed only from exactly-one `tool_called` for this node+toolUseId; missing/ambiguous/invalid → no elapsed; `max(0,…)` clamps future starts
+- [x] Single ordered look-ahead fold: exact `interrupted` only, consumes the status row (no lifecycle emitted), recomputes presentation, beats failed/exit for display while `exit 2` stays a fact; direct-result `interrupted` unaffected; no fold on detail text, `interrupted_by_user`, or intervening items
+- [x] Three callers hoist existing `Date.now()` above the call — no new timer/lifecycle
+- [x] Return type unchanged; `bun run type-check` clean (fixture updated to keep it so)
+- [x] `bun test src/lib/agent-history.test.ts src/lib/pair-tool-transcript.test.ts` → 19 pass; plus tool-presentation 141 + affected component suites 60 all green; eslint/prettier clean
+- [x] `--grep "HITL.*readable tool row"` → all 3 still red on `details[data-tool-id]` resolving to 0 elements (renderers untouched)
+
+**Learnings**:
+- `AgentHistoryItem` literals live in `NodeRoom.test.tsx`'s `toolItem()` helper — building `presentation` via real `toolRowPresentation` over merged overrides keeps it truthful when tests override outcome.
+- ESLint `prefer-optional-chain` fires on `x !== undefined && x.kind === …` — write `x?.kind === '…'`.
+- Fold runs on the PROJECTED stream (post-pairing): a result row sitting after the interrupted status in raw rows is already folded into the card, so `call, status, result` still folds correctly.
+- `git commit` runs lint-staged (eslint --fix + prettier --write) — keep staged files clean before committing or the hook rewrites them mid-commit.
+
+---
