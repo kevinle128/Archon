@@ -1,0 +1,48 @@
+## Codebase Patterns
+
+### e2e deps + Playwright in this worktree
+- **Where**: `e2e/`
+- **Pattern**: The dev shell inherits poisoned `npm_config_local_prefix` / `npm_package_json` env vars from a parent npm lifecycle pointing at a DIFFERENT checkout (`/Volumes/WD_BLACK/workspace/opensource/Archon`). Plain `npm ci` in `e2e/` then reports "up to date" and installs nothing. Run npm/npx under a clean env: `env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/agent/.bun/bin" <cmd>`.
+- **Pattern**: Playwright browser build is pinned by `e2e/package-lock.json` (`@playwright/test@1.60.0` → `chromium_headless_shell-1223`). A browser installed for another checkout's version will NOT be found — run `npx playwright install chromium` inside this worktree's `e2e/` once.
+- **Example**: `cd e2e && env -i HOME="$HOME" PATH="..." npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts --grep "HITL.*readable tool row"`
+
+### Tool row presentation contract
+- **Where**: `packages/web/src/lib/tool-presentation.ts`
+- **Pattern**: All provider-name/policy decisions live in the pure module; renderers must stay markup-only. Family resolution order is fixed: bounded `mcp__server__tool` → exact normalized alias (case-fold + strip `_`/`-`, name ≤128 code units) → known input-key inference → Codex name-only shell (absent/empty input + command-like/overlong name) → generic.
+- **Pattern**: "Command-like" was pinned to: whitespace within the first `MAX_HEADLINE_SOURCE_CODE_UNITS` code units, or name longer than that cap entirely.
+- **Example**: `search_replace` → `file` (exact match beats substring); `mcp__github__create_issue` → `generic` with label `github · create_issue` regardless of input keys.
+
+---
+
+## 2026-09-17 — US-001: E2E contract rewrite + pure tool-presentation policy
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/workflow-run-hitl.spec.ts` — rewrote `[V:hitl.console-tool-output]` and `[V:hitl.legacy-tool-output]` to the `details[data-tool-id] > summary` collapsed-row contract; titles keep `HITL` and add `readable tool row`
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — rewrote `[V:hitl.agent-history]` the same way; still asserts recorded `duration_ms` appears as the duration badge
+- `packages/web/src/lib/tool-presentation.ts` — new React-free module: nine-family alias table, bounded MCP/alias/key-inference/name-only resolution, family headlines, chip rule, content badges (language/count/operation), `toolRowPresentation` composing outcome glyph + `initialOpen` + ordered typed badges
+- `packages/web/src/lib/tool-presentation.test.ts` — new, 141 tests covering aliases, normalization, MCP, inference priority, Codex wrappers/multiline, all bounds at limit and limit+1, generic safety, outcome table, badge ordering, failure containment
+- `plans/260917-1011-issue-174-readable-tool-call-row/prd.json` — US-001 `passes: true` + notes
+- `plans/260917-1011-issue-174-readable-tool-call-row/progress.txt` — this file
+
+**Acceptance criteria verified**:
+- [x] E2E cases rewritten FIRST and confirmed failing on old `.ptool` UI for the intended reason — all 3 fail on `details[data-tool-id]` resolving to 0 elements / summary not found (run output recorded this iteration)
+- [x] Cases target `details[data-tool-id] > summary`, assert success row closed (`open === false`), verify chip/headline (`Read`, `HITL_TOOL_INPUT.txt`, `succeeded`), assert `Input`/`Output`/`HITL_TOOL_OUTPUT_VISIBLE` not visible; `--grep "HITL.*readable tool row"` selects exactly the 3
+- [x] `tool-presentation.ts` is React-free, no `any`, exports `toolPresentation` + `toolRowPresentation`; `ToolPresentationInput` is exactly `{name, input, output}` and has no `AgentHistoryItem` dependency
+- [x] Nine families via exact normalized aliases; `search_replace` → `file`; substring matching absent (`searchers`, `mygrep`, `editorial` → `generic`)
+- [x] Precedence: bounded MCP → alias → key inference (code+language > command/cmd/script > path keys > pattern keys > url keys > before/after pairs) → Codex name-only shell → generic
+- [x] Headlines per family incl. complete `/bin/zsh -lc`/`/bin/bash -lc` wrapper strip, `…` for later lines, glob pattern/path inversion, `todo updated` + bounded `op:` badge, task description/name/context order, generic ≤3 scalar facts with no `{…}`/`[n]` markers
+- [x] Chip = sent name only for one whitespace-free token ≤24 code points (tested at 24/25 incl. Unicode); rejected names never appear in label/headline
+- [x] All eight named bounds tested at limit and limit+1; over-cap headline sources produce the label fallback, never a partial path
+- [x] Badge order state → content → exit → output-state → duration; `running · <elapsed>` suppresses premature `missing`; `interrupted`; `output unknown`; settled rows keep recorded markers; `—` placeholder; count only from bounded scalar/`count` field, omitted otherwise
+- [x] `toolPresentation` catch boundary → safe generic row; `toolRowPresentation` preserves outcome glyph/label/initialOpen and runtime badges on failure
+- [x] Adversarial: null/array/primitive/nested-100-deep inputs, 100k–200k strings, 33+ keys, non-string name — none throw, all bounded
+- [x] `bun test src/lib/tool-presentation.test.ts` → 141 pass; `bun test src/lib/` → 469 pass; `bun run type-check` clean; eslint/prettier clean; 3 E2E cases remain red (renderers untouched)
+
+**Learnings**:
+- `bun test` accepts the test file path directly from `packages/web`; `bun run type-check` is `tsc --noEmit` and DOES cover `*.test.ts` files (badge union types in test tables need the literal types, e.g. `ReturnType<typeof fn>['glyph']`).
+- ESLint ignores `*.test.ts` in this config (warning shown), so test files are covered by tsc + prettier only.
+- The e2e fixture resolves a real `toolUseId` (`e2e-fake-tool-…`) — the room spec can assert the row by exact `data-tool-id`.
+- Deferred to US-002+: `buildAgentHistory()` exit-code propagation, `presentation` attach, `nowMs`, interruption fold; renderers (US-003/004); visual spec locator fix (US-005).
+
+---

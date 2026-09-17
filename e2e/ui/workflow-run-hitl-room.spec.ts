@@ -205,7 +205,7 @@ test('[P1] [V:hitl.graph-selection] Graph selection restores the last explicit e
   await expect(page.getByText('Iteration 1').first()).toBeVisible();
 });
 
-test('[P1] [V:hitl.agent-history] Agent history shows role, tool context, and outcome', async ({
+test('[P1] [V:hitl.agent-history] HITL agent history shows a readable tool row with outcome', async ({
   page,
   archon,
 }) => {
@@ -216,11 +216,6 @@ test('[P1] [V:hitl.agent-history] Agent history shows role, tool context, and ou
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
   const room = await waitForRoom(page, HITL_INSPECT_NODE);
   await expect(room.getByText('ASSISTANT')).toBeVisible({ timeout: T.medium });
-  await expect(room.locator('.ptool').getByText('Read').first()).toBeVisible();
-  await expect(room.getByText('path: HITL_TOOL_INPUT.txt')).toBeVisible();
-  await expect(room.getByText('Input', { exact: true }).first()).toBeVisible();
-  await expect(room.getByText('Output', { exact: true }).first()).toBeVisible();
-  await expect(room.getByText(HITL_TOOL_OUTPUT)).toBeVisible();
   const messages = await listNodeMessages(page, started.runId, HITL_INSPECT_NODE);
   const recordedTool = messages.find(
     message => message.kind === 'tool' && message.payload.output === HITL_TOOL_OUTPUT
@@ -240,11 +235,17 @@ test('[P1] [V:hitl.agent-history] Agent history shows role, tool context, and ou
   expect(completions).toHaveLength(1);
   const recordedDuration = completions[0]?.data.duration_ms;
   expect(typeof recordedDuration).toBe('number');
-  const toolCard = room.locator(`[data-tool-id="${toolUseId ?? ''}"]`);
-  await expect(toolCard.getByText('succeeded', { exact: true })).toBeVisible();
-  await expect(
-    toolCard.getByText(formatRecordedDuration(Number(recordedDuration)), { exact: true })
-  ).toBeVisible();
+  const toolRow = room.locator(`details[data-tool-id="${toolUseId ?? ''}"]`);
+  const summary = room.locator(`details[data-tool-id="${toolUseId ?? ''}"] > summary`);
+  await expect(summary).toBeVisible({ timeout: T.medium });
+  await expect(toolRow).toHaveJSProperty('open', false);
+  await expect(summary).toContainText('Read');
+  await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
+  await expect(summary).toContainText('succeeded');
+  await expect(summary).toContainText(formatRecordedDuration(Number(recordedDuration)));
+  await expect(toolRow.getByText('Input', { exact: true })).toBeHidden();
+  await expect(toolRow.getByText('Output', { exact: true })).toBeHidden();
+  await expect(toolRow.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
 });
 
 test('[P1] [V:hitl.execution-scope] Execution selector requests the selected scope', async ({

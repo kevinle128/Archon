@@ -22,8 +22,8 @@
       "technicalNotes": "Follow plans/260917-1011-issue-174-readable-tool-call-row/phase-01-start.md (Row model, Resolver and headline rules, Explicit bounds, Tests before production code). Reuse formatDurationMs/ensureUtc from packages/web/src/lib/format.ts:28,:2. pair-tool-transcript.ts is read-only. Duration badge formatting must come from lib/format.ts, not a new helper.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: e2e/ui/workflow-run-hitl.spec.ts, e2e/ui/workflow-run-hitl-room.spec.ts (3 HITL cases rewritten to details[data-tool-id] > summary, confirmed red on old .ptool UI), packages/web/src/lib/tool-presentation.ts, packages/web/src/lib/tool-presentation.test.ts (141 tests)."
     },
     {
       "id": "US-002",
