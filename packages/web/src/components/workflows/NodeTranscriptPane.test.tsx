@@ -720,7 +720,7 @@ describe('NodeTranscriptPane', () => {
     expect(host.textContent).not.toContain('Decline');
   });
 
-  test('names Avery and disables choices for a non-starter card', async () => {
+  test('shows Submit on a pending Ask when the viewer is not the starter', async () => {
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -732,13 +732,11 @@ describe('NodeTranscriptPane', () => {
         pendingInteractions: [pendingAsk()],
       });
     });
-    await flushUntil(host, 'named readonly', () =>
-      (host.textContent ?? '').includes('Waiting for Avery to answer')
-    );
-    expect(host.querySelector('fieldset[disabled]')).not.toBeNull();
-    expect(host.textContent).toContain('Waiting for Avery to answer');
-    expect(host.textContent).not.toContain('Submit');
-    expect(host.textContent).not.toContain('Decline');
+    await flushUntil(host, 'answerable Ask', () => (host.textContent ?? '').includes('Submit'));
+    expect(host.querySelector('fieldset[disabled]')).toBeNull();
+    expect(host.textContent).toContain('Submit');
+    expect(host.textContent).toContain('Decline');
+    expect(host.textContent).not.toContain('Waiting for Avery to answer');
   });
 
   const SCOPE_B_ROW: LogRow = {

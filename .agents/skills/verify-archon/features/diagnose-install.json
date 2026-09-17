@@ -5,6 +5,7 @@
   "impact_paths": [
     "packages/cli/src/commands/doctor*",
     "packages/server/src/index.ts",
+    "packages/server/src/routes/api.ts",
     "packages/core/src/db/adapters/**"
   ],
   "behaviors": [

@@ -305,14 +305,14 @@ describe('AskCard static markup', () => {
     expect(text).toContain('Submit');
   });
 
-  test('renders named read-only state', async () => {
+  test('keeps Submit and Decline when the viewer is not the starter', async () => {
     const markup = await renderStatic({ viewerIsStarter: false, starterDisplayName: 'Avery' });
     const text = visibleText(markup);
 
-    expect(markup).toContain('disabled');
-    expect(text).toContain('Waiting for Avery to answer');
-    expect(text).not.toContain('Submit');
-    expect(text).not.toContain('Decline');
+    expect(text).toContain('Submit');
+    expect(text).toContain('Decline');
+    expect(text).not.toContain('Waiting for Avery to answer');
+    expect(markup).not.toMatch(/<fieldset[^>]*disabled/);
   });
 
   test('renders Ask lifecycle states', async () => {
@@ -334,8 +334,8 @@ describe('AskCard static markup', () => {
             resolvedAt: RESOLVED_AT,
           },
         },
-        expectText: ['Answered · by you', 'Ship it?: Ship', 'Who should review?: Alice, Carol'],
-        forbid: ['Submit'],
+        expectText: ['Answered', 'Ship it?: Ship', 'Who should review?: Alice, Carol'],
+        forbid: ['Answered · by you', 'Submit'],
       },
       {
         name: 'teammate answered',
@@ -349,7 +349,7 @@ describe('AskCard static markup', () => {
           },
         },
         expectText: ['Answered', 'Ship it?: Ship'],
-        forbid: ['by you', 'Submit', 'Decline'],
+        forbid: ['Answered · by you', 'Submit', 'Decline'],
       },
       {
         name: 'declined',
@@ -411,8 +411,8 @@ describe('AskCard static markup', () => {
             resolvedAt: RESOLVED_AT,
           },
         },
-        expectText: ['Answered · by you', 'Malformed canonical answer'],
-        forbid: ['Submit'],
+        expectText: ['Answered', 'Malformed canonical answer'],
+        forbid: ['Answered · by you', 'Submit'],
       },
     ];
 
@@ -574,6 +574,26 @@ describe('AskCard actions', () => {
         ],
       },
     ]);
+  });
+
+  test('unowned-run viewer can click pending Ask choices', async () => {
+    // Mini: GET run.viewer_is_starter is false when workflow_runs.user_id is null.
+    await renderCard({
+      viewerIsStarter: false,
+      starterDisplayName: null,
+    });
+
+    const ship = control('input[type="radio"][value="Ship"]');
+    expect(ship.disabled).toBe(false);
+
+    await act(async () => {
+      setControlValue(ship, 'Ship', true);
+    });
+    await flush();
+
+    expect(ship.checked).toBe(true);
+    expect(findButton('Submit')).toBeInstanceOf(HTMLButtonElement);
+    expect(findButton('Decline')).toBeInstanceOf(HTMLButtonElement);
   });
 
   test('selecting Other then typing a listed option selects that listed option', async () => {

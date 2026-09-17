@@ -29,7 +29,7 @@ Preconditions:
 
 ## Gotchas
 
-- `archon serve` from source exits with "compiled binaries only". Launch with `bun run dev:server`, not `archon serve`.
+- `archon serve` from source exits with "compiled binaries only" and tells the user to run `bun run dev`. API-only verification still launches `bun run dev:server` (or `bun packages/server/src/index.ts`).
 - `/api/health` stays reachable even when the optional Better Auth API gate is on. A 401 on `/api/workflows` is not a failed health check.
 - Empty `DATABASE_URL` selects SQLite at `$ARCHON_HOME/archon.db`. A leftover Mini `DATABASE_URL` in the process environment would aim the local server at Postgres — the helper forces an empty `DATABASE_URL` for the local target.
 - Do not treat a missing Claude binary as proof the server is down. Re-run instance doctor after any failed drive.

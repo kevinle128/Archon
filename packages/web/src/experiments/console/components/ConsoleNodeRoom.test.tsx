@@ -979,11 +979,10 @@ describe('ConsoleNodeRoom', () => {
         }),
       });
     });
-    await flushUntil('teammate Ask', () =>
-      (host.textContent ?? '').includes('Waiting for Avery to answer')
-    );
-    expect(host.textContent).not.toContain('Submit');
-    expect(host.textContent).not.toContain('Decline');
+    await flushUntil('answerable Ask', () => (host.textContent ?? '').includes('Submit'));
+    expect(host.textContent).toContain('Submit');
+    expect(host.textContent).toContain('Decline');
+    expect(host.textContent).not.toContain('Waiting for Avery to answer');
 
     await act(async () => {
       renderRoom({

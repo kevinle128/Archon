@@ -265,7 +265,7 @@ export function NodeTranscriptPane({
     ...unanchoredAsks,
   ];
   const firstActionableId = orderedAsks.find(interaction => {
-    if (!viewerIsStarter || interaction.status !== 'pending') {
+    if (interaction.status !== 'pending') {
       return false;
     }
     if (parseAskEnvelope(interaction.envelope) === null) {

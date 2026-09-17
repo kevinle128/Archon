@@ -409,10 +409,120 @@ describe('bundled-defaults', () => {
       expect(content).not.toContain('sed -i "s/SPRINT_COUNT_PLACEHOLDER/$SPRINT_COUNT/"');
     });
 
-    it('bmad-create-story-with-tea should create PR through archon-create-pr', () => {
-      const content = BUNDLED_WORKFLOWS['bmad-create-story-with-tea'];
-      expect(content).toContain('id: create-pull-request');
-      expect(content).toContain('command: archon-create-pr');
+    it('ak-implement verifies UI plans against their design artifacts', () => {
+      const workflow = Bun.YAML.parse(BUNDLED_WORKFLOWS['ak-implement']) as {
+        nodes: Array<{
+          id: string;
+          prompt?: string;
+          depends_on?: string[];
+          when?: string;
+          bash?: string;
+          output_format?: { properties?: { ready?: { type?: string } } };
+        }>;
+      };
+      const review = workflow.nodes.find(node => node.id === 'verify-and-fix-plan');
+      const prompt = review?.prompt;
+      expect(prompt).toContain('mockups, wireframes, prototypes, or other design artifacts');
+      expect(prompt).toContain('whether it matches every applicable design artifact');
+      expect(prompt).toContain(
+        "resolve conflicts according to the repository's documented design authority"
+      );
+      expect(prompt).toContain(
+        'do not guess; record the conflict in the plan and list it as a blocker'
+      );
+      expect(prompt).toContain(
+        'add visual acceptance criteria for the required states and viewports'
+      );
+      expect(review?.output_format?.properties?.ready?.type).toBe('boolean');
+
+      const ready = workflow.nodes.find(node => node.id === 'verified-plan-ready');
+      expect(ready?.when).toBe('$verify-and-fix-plan.output.ready == true');
+
+      const blocked = workflow.nodes.find(node => node.id === 'verified-plan-blocked');
+      expect(blocked?.when).toBe('$verify-and-fix-plan.output.ready == false');
+      expect(blocked?.bash).toContain('exit 1');
+
+      const build = workflow.nodes.find(node => node.id === 'build-ralph-prd');
+      expect(build?.depends_on).toEqual(['verified-plan-ready']);
+    });
+
+    it('ak-implement runs Ralph as a native in-parent loop', () => {
+      const workflow = Bun.YAML.parse(BUNDLED_WORKFLOWS['ak-implement']) as {
+        nodes: Array<{
+          id: string;
+          bash?: string;
+          cancel?: string;
+          depends_on?: string[];
+          effort?: string;
+          model?: string;
+          prompt?: string;
+          provider?: string;
+          trigger_rule?: string;
+          when?: string;
+          workflow?: string;
+          output_format?: {
+            required?: string[];
+            properties?: { terminal?: { type?: string } };
+          };
+          loop?: {
+            command?: string;
+            fresh_context?: boolean;
+            max_iterations?: number;
+            until_bash?: string;
+            until_field?: string;
+          };
+        }>;
+      };
+
+      expect(workflow.nodes.some(node => node.workflow === 'archon-ralph-dag-project-aware')).toBe(
+        false
+      );
+
+      const setup = workflow.nodes.find(node => node.id === 'setup');
+      expect(setup?.bash).toContain('$ARTIFACTS_DIR/ak-implement/base-sha.txt');
+
+      const preflight = workflow.nodes.find(node => node.id === 'ralph-native-preflight');
+      expect(preflight?.depends_on).toEqual(['build-ralph-prd']);
+      expect(preflight?.bash).toContain('$build-ralph-prd.output.prd_dir');
+      expect(preflight?.bash).toContain('$ARTIFACTS_DIR/superpowers/prd-dir.txt');
+      expect(preflight?.bash).toContain('Invalid Ralph PRD');
+      expect(preflight?.bash).toContain('bun install --frozen-lockfile');
+      expect(preflight?.bash).toContain('npm ci');
+      expect(preflight?.bash).toContain('yarn install --frozen-lockfile');
+      expect(preflight?.bash).toContain('pnpm install --frozen-lockfile');
+
+      const loop = workflow.nodes.find(node => node.id === 'ralph-loop-run');
+      expect(loop?.depends_on).toEqual(['ralph-native-preflight']);
+      expect(loop?.provider).toBe('devin');
+      expect(loop?.model).toBe('swe-2');
+      expect(loop?.effort).toBe('max');
+      expect(loop?.output_format?.properties?.terminal?.type).toBe('boolean');
+      expect(loop?.output_format?.required).toContain('terminal');
+      expect(loop?.loop?.command).toBe('archon-ralph-project-aware-iteration');
+      expect(loop?.loop?.fresh_context).toBe(true);
+      expect(loop?.loop?.max_iterations).toBe(100);
+      expect(loop?.loop?.until_field).toBe('terminal');
+      expect(loop?.loop?.until_bash).toContain('all(.[]; .passes == true)');
+
+      const finalFix = workflow.nodes.find(node => node.id === 'codex-final-fix');
+      expect(finalFix?.depends_on).toEqual(['ralph-loop-run']);
+      expect(finalFix?.trigger_rule).toBe('all_done');
+      expect(finalFix?.prompt).toContain('$ralph-loop-run.output');
+      expect(finalFix?.prompt).toContain('$build-ralph-prd.output.prd_dir');
+      expect(finalFix?.prompt).toContain('$ARTIFACTS_DIR/ak-implement/base-sha.txt');
+      expect(finalFix?.prompt).toContain('resolve every repository-local blocker');
+      expect(finalFix?.prompt).not.toContain('Superpowers');
+      expect(finalFix?.prompt).not.toContain('hand fixes back to Grok');
+      expect(finalFix?.prompt).not.toContain('implementation-report.md');
+
+      const failed = workflow.nodes.find(node => node.id === 'stop-on-final-fix-failure');
+      expect(failed?.depends_on).toEqual(['codex-final-fix']);
+      expect(failed?.when).toBe("$codex-final-fix.output.gate == 'FAIL'");
+      expect(failed?.cancel).toContain('$codex-final-fix.output.summary');
+
+      const createPr = workflow.nodes.find(node => node.id === 'create-pull-request');
+      expect(createPr?.depends_on).toEqual(['codex-final-fix']);
+      expect(createPr?.when).toBe("$codex-final-fix.output.gate == 'PASS'");
     });
 
     it('archon-superpower-feature-verify-loop proves before PR and blocks on exhaustion', () => {
@@ -457,41 +567,6 @@ describe('bundled-defaults', () => {
       expect(content).not.toContain('$ARTIFACTS_DIR/verify/result.txt');
       expect(content).not.toContain('$ARTIFACTS_DIR/verify/feature-ids.txt');
       expect(content).not.toContain('TODO');
-    });
-
-    it('BMAD create-story workflows should gate downstream work on independent readiness validation', () => {
-      const workflowNames = [
-        'bmad-create-story-with-tea',
-        'bmad-create-and-dev-story',
-        'bmad-create-and-dev-story-with-tea',
-      ] as const;
-
-      for (const workflowName of workflowNames) {
-        const content = BUNDLED_WORKFLOWS[workflowName];
-        expect(content).toContain('validate_story_readiness.py');
-        expect(content).toContain('$bmad-create-story repair');
-        expect(content).toContain('enum: [draft, repaired, blocked]');
-        expect(content).toContain('interactive: true');
-        expect(content).toContain('loop_group:');
-        expect(content).toContain('signal_completes: true');
-        expect(content).toContain(
-          'If it exists with `gate: BLOCKED` and `$LOOP_USER_INPUT` is non-empty'
-        );
-        expect(content).toContain(
-          'Do not return `draft` or `repaired` until the story is contract-ready'
-        );
-        expect(content).toContain(
-          'normalize the story into the required BMAD Story Contract shape'
-        );
-        expect(content).toContain('id: persist-story-readiness-report');
-        expect(content).toContain('id: story-readiness-gate');
-        expect(content).toContain(
-          'condition: "$persist-story-readiness-report.output == \'PASS\'"'
-        );
-        expect(content).toContain('negative: create-story');
-        expect(content).toContain('id: story-readiness-error');
-        expect(content).toContain('Story readiness findings repeated after repair');
-      }
     });
 
     it('bmad readiness correction commands should not wait for interactive BMAD gates', () => {

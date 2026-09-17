@@ -638,7 +638,7 @@ export function ConsoleNodeRoom({
   const selectedNodeState =
     row === null ? undefined : nodeStates.find(state => state.nodeId === row.nodeId);
   const firstActionableId = orderedAsks.find(interaction => {
-    if (!viewerIsStarter || interaction.status !== 'pending') return false;
+    if (interaction.status !== 'pending') return false;
     if (parseAskEnvelope(interaction.envelope) === null) return false;
     return (
       resolveAskCardPresentation({
