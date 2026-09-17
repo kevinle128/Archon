@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### E2E serves prebuilt web dist — rebuild after renderer changes
+- **Where**: `e2e/lib/playwright/archon-runtime.ts` (`WEB_DIST_INDEX` = `packages/web/dist/index.html`)
+- **Pattern**: Each worker's isolated Archon server serves the built SPA bundle, not a dev server. UI source changes are invisible to Playwright until `bun run build:web` regenerates `packages/web/dist` (gitignored — never commit). Symptom of a stale bundle: E2E page snapshot shows the OLD UI on every surface.
+- **Example**: `bun run build:web && cd e2e && env -i HOME="$HOME" PATH="..." npx playwright test -c playwright.config.ts …`
+
 ### e2e deps + Playwright in this worktree
 - **Where**: `e2e/`
 - **Pattern**: The dev shell inherits poisoned `npm_config_local_prefix` / `npm_package_json` env vars from a parent npm lifecycle pointing at a DIFFERENT checkout (`/Volumes/WD_BLACK/workspace/opensource/Archon`). Plain `npm ci` in `e2e/` then reports "up to date" and installs nothing. Run npm/npx under a clean env: `env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/agent/.bun/bin" <cmd>`.
@@ -106,5 +111,34 @@
 - eslint `non-nullable-type-assertion-style` auto-fix inserts `!` which `no-non-null-assertion` then rejects — resolve with a `requiredX()` query helper that throws on null instead of letting --fix churn.
 - `rowMarkup`/`summaryMarkup` regex helpers on `renderToStaticMarkup` output work well for DOM-anatomy assertions; scope all queries to the direct `> summary` so closed-diagnostic text can't masquerade as visible.
 - `key={item.id}` remount gives the identity-reset behavior for free — no manual state reset needed; the "poll flips outcome" case works because `drainNodeMessages` merges by seq into the same card id.
+
+---
+## 2026-09-17 — US-004: Console history row + context cleanup + HITL E2E green
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — `.ptool` card replaced by one `<details data-tool-id>` disclosure row per tool consuming `item.presentation`: identical anatomy + disclosure matrix to Legacy (aria-hidden ▶ chevron, `sr-only` status word, aria-hidden glyph, family-toned chip with `title`/`aria-label` = `family · label`, `ToolHeadline` path split, ordered `ToolBadge` group, family+facts body bar, closed Input/Output diagnostics, full-output load/error/Retry re-presenting via `toolRowPresentation` with `outputState:'full'`). Console deltas: running glyph/badge = `text-[color:var(--running)]`, summary `focus-visible:outline-offset-2` (+2 px), plain string composition (no `cn`). Transcript container `gap-3 p-3` → `p-3`; collapsed tool rows flush, assistant/lifecycle wrappers `my-1.5`, unknownScope notice `mb-1.5`.
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — existing tool assertions rewritten to the collapsed-row contract; new `describe('Console tool disclosure rows')` mirroring the Legacy matrix (12 tests: mount anatomy + accessible name, toggle persistence across re-projection, native summary semantics + focus retention, untouched→failed opens once then no auto-close, touched override, identity reset via `key=item.id`, nested-toggle isolation, focus on append, `--running` token on glyph + badge, flush spacing, full-output lifecycle + Retry) plus two through-ConsoleNodeRoom tests (drain → collapsed row; loader re-drain flips running→failed open).
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — inline-history contract test: same collapsed row, direct summary, closed diagnostics, +2 px offset, pointer toggle.
+- `packages/web/src/experiments/console/console-isolation.test.ts` — added `'@/lib/tool-presentation'` to the approved shared-lib set (required for the post-load `toolRowPresentation` re-presentation).
+- `packages/web/src/lib/agent-history.ts` — removed `context` from the tool arm, `TOOL_CONTEXT_KEYS`, and `toolContext()`.
+- `packages/web/src/lib/agent-history.test.ts` — removed the `describe('toolContext')` block and the `context` expectation.
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — dropped `context` from the `toolItem()` fixture.
+
+**Acceptance criteria verified**:
+- [x] Component tests updated FIRST and confirmed red: 17 failures against the old `.ptool` UI (no `details[data-tool-id]`), then green — 39 pass across the two files
+- [x] Identical semantic anatomy + disclosure matrix without importing any Legacy component (isolation test enforces; maps/JSX intentionally duplicated)
+- [x] Console deltas applied: `focus-visible:outline-offset-2` (+2 px, asserted vs `-outline-offset-2`), running glyph/badge `text-[color:var(--running)]`; all other rules identical to US-003
+- [x] Both mounts verified — `ConsoleNodeRoom` selected-room (mount + drain + poll-flip tests) and `ConsoleExecutionHistory` inline (contract test) share `ConsoleAgentHistoryList`
+- [x] Full-output load/error/Retry identical: button disables while loading, output swaps, `toolRowPresentation` re-present drops the stale `truncated` badge, disclosure state preserved; error + Retry reloads
+- [x] `console-isolation.test.ts` passes; modified only to allowlist `@/lib/tool-presentation`
+- [x] `context`/`TOOL_CONTEXT_KEYS`/`toolContext()` removed after both renderers consume `presentation`; only their tests removed
+- [x] All three HITL cases pass end to end: `npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts ui/workflow-run-hitl-room.spec.ts --grep "HITL.*readable tool row"` → 3 passed (after `bun run build:web`)
+- [x] Verification: focused bun tests green, `bun run type-check` clean, eslint 0 errors/warnings on changed files, prettier clean; regression sweep 436 components + 896 console + 474 lib all green; no renderer contains resolver/headline/outcome/badge-ordering policy
+
+**Learnings**:
+- E2E serves `packages/web/dist` — renderer changes are invisible to Playwright until `bun run build:web`; the first red run showed the pre-US-003 card on BOTH surfaces for exactly this reason.
+- `find(span => span.textContent === badge)` also matches the badge-GROUP wrapper (its textContent equals a single badge's) — filter on `aria-hidden` or another structural trait to hit the badge itself.
+- The happy-dom disclosure-test pattern transferred 1:1; only the tone maps and the offset class differ between surfaces.
 
 ---
