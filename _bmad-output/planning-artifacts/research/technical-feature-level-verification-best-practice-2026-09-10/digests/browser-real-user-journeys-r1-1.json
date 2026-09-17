@@ -1,0 +1,95 @@
+{
+  "answer": "## Relevance-filtered digest\n\n**Scope and version.** Playwright **v1.63.0** is the current stable release investigated (published 2026-09-04). The Playwright pages below do not expose page-level publication dates, so each such date is reported as **“page undated; checked against the v1.63.0 tag published 2026-09-04.”** All sources were accessed **2026-09-10**.\n\n### Correctness requirements\n\n1. **Drive the journey through what a user can perceive and operate.** Use semantic/user-visible locators such as `getByRole`, `getByLabel`, and visible text, then real locator actions such as `fill()` and `click()`. Do not make CSS structure, internal functions, or direct DOM manipulation the primary interaction surface. Playwright locators re-resolve elements, perform actionability checks, and web-first assertions retry until their observable condition is met. This reduces races without weakening the tested behavior.\n   - **Direct sources:** [Microsoft Learn — Introduction to Playwright E2E](https://learn.microsoft.com/en-us/shows/getting-started-with-end-to-end-testing-with-playwright/introduction-to-playwright-for-end-to-end-testing), [Playwright — test user-visible behavior](https://playwright.dev/docs/best-practices#test-user-visible-behavior), [use locators](https://playwright.dev/docs/best-practices#use-locators), and [web-first assertions](https://playwright.dev/docs/best-practices#use-web-first-assertions).\n   - **Publisher:** Microsoft Learn; Microsoft Playwright project.\n   - **Publication/update date:** Microsoft Learn updated 2023-12-12; Playwright page undated, v1.63.0 snapshot published 2026-09-04.\n   - **Confidence:** High.\n   - **Claim class:** Official correctness/reliability practice.\n\n2. **A rendered control, successful click, or transient success message does not by itself prove a durable mutation.** The strongest feature-level proof is a chain: perform the mutation through the browser; assert the committed user-visible result with a web-first assertion; then verify authoritative final state either by revisiting/reloading the user surface or by reading the application’s real API after the UI action. Playwright’s official example creates an issue through the UI and then checks through the API that it exists on the server. A response status alone proves neither the final UI nor durable storage; a toast alone can be optimistic. Use both UI and persistence oracles when persistence is part of the feature contract.\n   - **Direct source:** [Playwright — API testing: validating postconditions](https://playwright.dev/docs/api-testing#validating-postconditions).\n   - **Publisher:** Microsoft Playwright project.\n   - **Publication/update date:** Page undated; checked against v1.63.0, published 2026-09-04.\n   - **Confidence:** High for the UI-action-plus-server-postcondition pattern; Medium-High for the generalized reload/read-back rule, which is a direct proof-boundary synthesis.\n   - **Claim class:** Official mechanism plus derived correctness requirement.\n\n3. **Keep every first-party layer needed by the claimed behavior real.** For a browser E2E that claims a mutation works end to end, the real browser, shipped frontend code, first-party mutation request, application backend, and persistence path must execute. Mock uncontrolled third-party dependencies at the network boundary. Playwright explicitly recommends avoiding third-party testing, while its mock guide states that a fulfilled route causes **no request to the API**. Therefore, mocking the first-party write endpoint turns the test into a browser/client contract test; it cannot prove backend integration or persistence. Such narrower tests are still useful for deterministic error/edge variants, but they must not satisfy the fail-closed feature E2E gate.\n   - **Direct sources:** [Playwright — avoid testing third-party dependencies](https://playwright.dev/docs/best-practices#avoid-testing-third-party-dependencies), [Playwright — Mock API requests](https://playwright.dev/docs/mock#mock-api-requests).\n   - **Publisher:** Microsoft Playwright project.\n   - **Publication/update date:** Pages undated; checked against v1.63.0, published 2026-09-04.\n   - **Confidence:** High.\n   - **Claim class:** Official mock behavior plus derived correctness boundary.\n\n4. **Isolate browser state per test, and separately control application data.** Playwright creates a fresh `BrowserContext` per test, isolating local storage, session storage, and cookies; it recommends a clean start rather than fallible cleanup. That does **not** establish that server/database rows are isolated. Use unique per-test identities/data, deterministic cleanup, or an isolated environment for backend state. API seeding is explicitly acceptable for establishing server-side preconditions before opening the UI, provided the setup is not the behavior being tested. Direct DB seeding is not explicitly prescribed by Playwright; it is acceptable only as fixture setup for unrelated preconditions, with controlled data, and must not replace the browser mutation under test.\n   - **Direct sources:** [Playwright — Test Isolation](https://playwright.dev/docs/browser-contexts), [Playwright — API testing: establishing preconditions](https://playwright.dev/docs/api-testing#establishing-preconditions), [Playwright — testing with a database](https://playwright.dev/docs/best-practices#testing-with-a-database).\n   - **Publisher:** Microsoft Playwright project.\n   - **Publication/update date:** Pages undated; checked against v1.63.0, published 2026-09-04.\n   - **Confidence:** High for BrowserContext isolation and API setup; Medium for direct-DB setup because the official material only says to control DB data, not how to seed it.\n   - **Claim class:** Official isolation/setup practice plus explicitly marked boundary inference.\n\n5. **Synchronize on observable events or final conditions, not timing guesses.** Locator actions already wait for actionability, and web-first assertions wait for the expected UI state. When a specific network response is materially part of the mutation proof, register `page.waitForResponse(...)` **before** clicking, then await the click and the already-armed response promise; predicate on the relevant URL/method/status where necessary. Treat the response wait as synchronization/evidence for that boundary, then still assert the final user-visible and persistence state. This ordering closes the race in which the response happens before a listener is attached.\n   - **Direct sources:** [Playwright — Network events / waitForResponse](https://playwright.dev/docs/network#network-events), [Playwright — locators and web-first assertions](https://playwright.dev/docs/best-practices#use-web-first-assertions).\n   - **Publisher:** Microsoft Playwright project.\n   - **Publication/update date:** Pages undated; checked against v1.63.0, published 2026-09-04.\n   - **Confidence:** High.\n   - **Claim class:** Official synchronization pattern.\n\n### Diagnostics—not correctness\n\n6. **Traces, screenshots, and videos explain failures; they do not replace assertions.** Playwright recommends Trace Viewer rather than standalone videos/screenshots for CI failures because a trace includes the action timeline, DOM snapshots, and network requests. It recommends recording on the first retry instead of on every test because always-on tracing is performance-heavy. A screenshot is useful point-in-time evidence, while a trace gives richer diagnosis; neither makes an unasserted mutation correct.\n   - **Direct source:** [Playwright — Debugging on CI](https://playwright.dev/docs/best-practices#debugging-on-ci).\n   - **Publisher:** Microsoft Playwright project.\n   - **Publication/update date:** Page undated; checked against v1.63.0, published 2026-09-04.\n   - **Confidence:** High for artifact guidance; High for the correctness/diagnostic separation because the cited section describes these tools specifically for debugging failures.\n   - **Claim class:** Diagnostic practice.\n\n7. **Retries must reveal flakiness, not greenwash it.** If CI enables retries to capture a trace or reproduce an intermittent failure, configure `failOnFlakyTests: true` (or `--fail-on-flaky-tests`) so a test Playwright marks flaky still produces an error exit. Keep the same substantive assertions on retries. In a fail-closed pre-merge gate, only a first-run pass should be merge-eligible; a retry-only pass is diagnostic evidence requiring repair, not acceptance.\n   - **Direct sources:** [Playwright — `testConfig.failOnFlakyTests`](https://playwright.dev/docs/api/class-testconfig#test-config-fail-on-flaky-tests), [Playwright — trace on first retry](https://playwright.dev/docs/best-practices#debugging-on-ci).\n   - **Publisher:** Microsoft Playwright project.\n   - **Publication/update date:** Pages undated; checked against v1.63.0, published 2026-09-04.\n   - **Confidence:** High for fail-on-flaky behavior; High for the fail-closed gate conclusion.\n   - **Claim class:** Official CI control plus derived gate policy.\n\n## Recommended fail-closed feature gate\n\nA feature qualifies only when one test demonstrates all applicable items:\n\n1. real browser navigation and semantic locator actions;\n2. a web-first assertion of the user-visible postcondition;\n3. the first-party request/backend/persistence path left real;\n4. an authoritative durability check after the browser mutation (fresh UI read/reload and/or real application API read);\n5. per-test browser and server-data isolation;\n6. deterministic action/response/final-state synchronization;\n7. no unresolved flaky result (`failOnFlakyTests` on CI).\n\nTraces/screenshots/videos are retained alongside failures for diagnosis, but are not gate-satisfying evidence by themselves.\n\n## Leads, contradictions, and gaps\n\n- **Leads:** For each future feature, identify its authoritative postcondition before authoring the browser test: visible UI state, persisted record, durable configuration, emitted job, or another externally observable result. Maintain an explicit allowlist of mockable third parties so first-party mocks cannot silently enter the E2E gate.\n- **Apparent contradiction:** Playwright documents how to mock any API, yet best practices specifically recommend mocking uncontrolled third parties. These are different scopes, not a true conflict: broad mocking capability is useful for narrower client tests, while an E2E claim is only as broad as its remaining real boundary.\n- **Wording tension:** The isolation page calls browser contexts “completely isolated,” but the concrete state it lists is browser-local state. It does not say that application databases or shared accounts are reset; server-data isolation remains the test harness’s responsibility.\n- **Gap:** Official Playwright/Microsoft guidance does not define a universal minimum feature-gate policy. The seven-item gate above is a sourced synthesis of the documented mechanisms and proof boundaries.\n- **Gap:** Direct database seeding is not specifically endorsed or prohibited. API preparation is explicitly documented; direct DB setup should therefore be treated as a controlled fixture optimization only, never as a substitute for the mutation under test.\n- **Gap:** No single locator assertion universally proves persistence. The correct oracle depends on the feature’s durable contract, which is why the official API-postcondition pattern is important.",
+  "sources": [
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://api.github.com/repos/microsoft/playwright/releases/latest",
+      "line_start": 29,
+      "line_end": 37,
+      "excerpt": "\"tag_name\": \"v1.63.0\",\n\"name\": \"v1.63.0\",\n\"published_at\": \"2026-09-04T22:40:31Z\""
+    },
+    {
+      "repo": "MicrosoftDocs/show-pr",
+      "path": "https://learn.microsoft.com/en-us/shows/getting-started-with-end-to-end-testing-with-playwright/introduction-to-playwright-for-end-to-end-testing",
+      "line_start": 48,
+      "line_end": 48,
+      "excerpt": "Playwright can automate what a user does, such as clicking on elements and filling out forms. As Playwright is like a really fast user, it waits for elements to be actionable before it clicks on them and retries when making assertions to ensure your tests are not flaky."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md",
+      "line_start": 163,
+      "line_end": 163,
+      "excerpt": "Assertions are a way to verify that the expected result and the actual result matched or not. By using [web first assertions](./test-assertions.md) Playwright will wait until the expected condition is met. For example, when testing an alert message, a test would click a button that makes a message appear and check that the alert message is there. If the alert message takes half a second to appear, assertions such as `toBeVisible()` will wait and retry if needed."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/browser-contexts.md",
+      "line_start": 8,
+      "line_end": 26,
+      "excerpt": "Tests written with Playwright execute in isolated clean-slate environments called browser contexts. This isolation model improves reproducibility and prevents cascading test failures.\n\nTest Isolation is when each test is completely isolated from another test. Every test runs independently from any other test. This means that each test has its own local storage, session storage, cookies etc.\n\nPlaywright uses browser contexts to achieve Test Isolation. Each test has its own Browser Context."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/api-testing-js.md",
+      "line_start": 13,
+      "line_end": 15,
+      "excerpt": "- Test your server API.\n- Prepare server side state before visiting the web application in a test.\n- Validate server side post-conditions after running some actions in the browser."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/network.md",
+      "line_start": 306,
+      "line_end": 312,
+      "excerpt": "Or wait for a network response after the button click with [`method: Page.waitForResponse`]:\n\n```js\n// Use a glob URL pattern. Note no await.\nconst responsePromise = page.waitForResponse('**/api/fetch_data');\nawait page.getByText('Update').click();\nconst response = await responsePromise;"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/mock.md",
+      "line_start": 11,
+      "line_end": 22,
+      "excerpt": "## Mock API requests\n\nThe following code will intercept all the calls to `*/**/api/v1/fruits` and will return a custom response instead. No requests to the API will be made. The test goes to the URL that uses the mocked route and asserts that mock data is present on the page."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/types/test.d.ts",
+      "line_start": 1262,
+      "line_end": 1274,
+      "excerpt": "Whether to exit with an error if any tests are marked as flaky. Useful on CI.\n\nAlso available in the command line with the `--fail-on-flaky-tests` option.\n\nexport default defineConfig({\n  failOnFlakyTests: !!process.env.CI,\n});"
+    }
+  ],
+  "api": [
+    {
+      "signature": "waitForResponse(urlOrPredicate: string|RegExp|((response: Response) => boolean|Promise<boolean>), options?: {\n  signal?: AbortSignal;\n  timeout?: number;\n}): Promise<Response>;",
+      "description": "Exact v1.63.0 `Page.waitForResponse` declaration. Arm it before the user action to avoid missing the response; it resolves with the matching real browser response."
+    },
+    {
+      "signature": "route(url: string|RegExp|URLPattern|((url: URL) => boolean), handler: ((route: Route, request: Request) => Promise<any>|any), options?: {\n  times?: number;\n}): Promise<Disposable>;",
+      "description": "Exact v1.63.0 `Page.route` declaration. Use it at a deliberately chosen mock boundary; fulfilling a route can prevent the real API request."
+    },
+    {
+      "signature": "toBeVisible(options?: {\n  signal?: AbortSignal;\n  timeout?: number;\n  visible?: boolean;\n}): Promise<void>;",
+      "description": "Exact v1.63.0 locator assertion declaration. It retries the visibility condition until success or timeout/abort; visibility alone is not a persistence oracle."
+    },
+    {
+      "signature": "toHaveText(expected: string|RegExp|ReadonlyArray<string|RegExp>, options?: {\n  ignoreCase?: boolean;\n  signal?: AbortSignal;\n  timeout?: number;\n  useInnerText?: boolean;\n}): Promise<void>;",
+      "description": "Exact v1.63.0 locator assertion declaration. Suitable for a user-visible postcondition when the changed text is part of the feature contract."
+    },
+    {
+      "signature": "failOnFlakyTests?: boolean;",
+      "description": "Exact v1.63.0 `TestConfig` property. Causes an error exit when any test is marked flaky, enabling a fail-closed CI gate even when diagnostic retries are enabled."
+    }
+  ],
+  "version": "Playwright 1.63.0. The official latest-release endpoint reports v1.63.0 published 2026-09-04T22:40:31Z; guidance was checked against the v1.63.0 tagged documentation and TypeScript declarations. Microsoft Learn episode updated 2023-12-12. Accessed 2026-09-10.",
+  "breaking_changes": [
+    "Playwright v1.63.0's official release announcement states that Ubuntu 20.04 is no longer supported. This is an execution-environment break, not a change to the browser-E2E practices summarized here."
+  ],
+  "caveats": [
+    "The rendered Playwright documentation pages do not state per-page publication or update dates; the report therefore pins claims to the v1.63.0 source tag and reports that release's publication date.",
+    "BrowserContext isolation covers browser-local state; it does not itself reset a first-party database, queue, shared account, or other server-side resource.",
+    "A user-visible assertion can prove a UI transition but may not prove durable persistence when the application uses optimistic rendering. Add an authoritative read-back when persistence is part of the contract.",
+    "A mocked first-party API browser test can be valuable, but it must be labeled according to its narrower proof boundary and must not satisfy an end-to-end mutation gate.",
+    "A response wait is deterministic synchronization, not a substitute for asserting response success, user-visible outcome, and durable final state where each is contractually relevant.",
+    "Retries and trace/screenshot artifacts are diagnostic controls. Configure the CI result to fail on flaky tests so these controls do not mask defects."
+  ]
+}

@@ -231,14 +231,14 @@ describe('AskCard static markup', () => {
     expect(text).toContain('Submit');
   });
 
-  test('renders named read-only state', async () => {
+  test('keeps Submit and Decline when the viewer is not the starter', async () => {
     const markup = await renderStatic({ viewerIsStarter: false, starterDisplayName: 'Avery' });
     const text = visibleText(markup);
 
-    expect(markup).toContain('disabled');
-    expect(text).toContain('Waiting for Avery to answer');
-    expect(text).not.toContain('Submit');
-    expect(text).not.toContain('Decline');
+    expect(text).toContain('Submit');
+    expect(text).toContain('Decline');
+    expect(text).not.toContain('Waiting for Avery to answer');
+    expect(markup).not.toMatch(/<fieldset[^>]*disabled/);
   });
 
   test('renders Ask lifecycle states', async () => {
@@ -260,8 +260,8 @@ describe('AskCard static markup', () => {
             resolvedAt: RESOLVED_AT,
           },
         },
-        expectText: ['Answered · by you', 'Ship it?: Ship', 'Who should review?: Alice, Carol'],
-        forbid: ['Submit'],
+        expectText: ['Answered', 'Ship it?: Ship', 'Who should review?: Alice, Carol'],
+        forbid: ['Answered · by you', 'Submit'],
       },
       {
         name: 'teammate answered',
@@ -275,7 +275,7 @@ describe('AskCard static markup', () => {
           },
         },
         expectText: ['Answered', 'Ship it?: Ship'],
-        forbid: ['by you', 'Submit', 'Decline'],
+        forbid: ['Answered · by you', 'Submit', 'Decline'],
       },
       {
         name: 'declined',
@@ -337,8 +337,8 @@ describe('AskCard static markup', () => {
             resolvedAt: RESOLVED_AT,
           },
         },
-        expectText: ['Answered · by you', 'Malformed canonical answer'],
-        forbid: ['Submit'],
+        expectText: ['Answered', 'Malformed canonical answer'],
+        forbid: ['Answered · by you', 'Submit'],
       },
     ];
 

@@ -1,0 +1,62 @@
+[
+  {
+    "claim": "Testing sufficiency is risk- and context-driven rather than established by a universal count or blanket percentage.",
+    "class": "patterns",
+    "pub_date": "2026-08"
+  },
+  {
+    "claim": "A small set of complete critical-user journeys complements unit and integration tests.",
+    "class": "patterns",
+    "pub_date": "2026-08"
+  },
+  {
+    "claim": "Equivalence partitions and transition coverage reduce cases while preserving distinct behavior classes.",
+    "class": "patterns",
+    "pub_date": "2024-09"
+  },
+  {
+    "claim": "Pairwise coverage reduces combinations but is not universal assurance.",
+    "class": "patterns",
+    "pub_date": "2010-10"
+  },
+  {
+    "claim": "Bidirectional requirement-to-verification traceability exposes missing evidence.",
+    "class": "patterns",
+    "pub_date": "2026-05"
+  },
+  {
+    "claim": "Structural code coverage does not prove behavioral correctness.",
+    "class": "patterns",
+    "pub_date": "2026-04"
+  },
+  {
+    "claim": "GitHub required checks accept success, skipped, and neutral conclusions.",
+    "class": "versions",
+    "pub_date": "2026-09"
+  },
+  {
+    "claim": "Playwright recommends user-visible locators and web-first assertions.",
+    "class": "versions",
+    "pub_date": "2026-09"
+  },
+  {
+    "claim": "Playwright documents UI mutation followed by API postcondition validation.",
+    "class": "versions",
+    "pub_date": "2026-09"
+  },
+  {
+    "claim": "A fulfilled Playwright route prevents the real API request.",
+    "class": "versions",
+    "pub_date": "2026-09"
+  },
+  {
+    "claim": "Playwright BrowserContext isolation is browser-profile scoped.",
+    "class": "versions",
+    "pub_date": "2026-09"
+  },
+  {
+    "claim": "Playwright failOnFlakyTests fails retry-only flaky results.",
+    "class": "versions",
+    "pub_date": "2026-09"
+  }
+]

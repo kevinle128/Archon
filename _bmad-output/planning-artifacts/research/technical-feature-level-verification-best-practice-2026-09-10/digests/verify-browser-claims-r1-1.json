@@ -1,0 +1,165 @@
+{
+  "answer": "## Version pin\n\nInvestigated **Playwright 1.63.0**, official tag [`v1.63.0`](https://github.com/microsoft/playwright/releases/tag/v1.63.0), published **2026-09-04T22:40:31Z**. The tag resolves to commit [`1b025d7e20a026371cd5f98ba0cdce48892737c8`](https://github.com/microsoft/playwright/tree/1b025d7e20a026371cd5f98ba0cdce48892737c8), and the tagged [`packages/playwright/package.json`](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/package.json#L1-L8) declares version `1.63.0`. Accessed 2026-09-10.\n\n## Claim verdicts\n\n1. **VERIFIED — direct Playwright guidance:** browser tests should use user-visible locators/actions and web-first assertions.\n   - [`best-practices-js.md` L12-L14](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L12-L14) says tests should verify behavior for end users, avoid implementation details, and typically interact with the same rendered output users see.\n   - [`L64-L72`](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L64-L72) says locators auto-wait, perform actionability checks, and should prioritize “user-facing attributes and explicit contracts”; the example uses `getByRole`.\n   - [`L162-L168`](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L162-L168) explicitly recommends web-first assertions and says `toBeVisible()` waits and retries.\n   - The cited [Microsoft Learn episode](https://learn.microsoft.com/en-us/shows/getting-started-with-end-to-end-testing-with-playwright/introduction-to-playwright-for-end-to-end-testing) independently repeats the click/fill, actionability-wait, and retrying-assertion description, but it is another Microsoft publication, not an independent publisher.\n   - **Direct vs inference:** the recommendation is direct. Saying this “reduces races without weakening behavior” is a reasonable explanation, not quoted Playwright policy.\n\n2. **VERIFIED — direct official pattern; broader durability rule is inference:** real UI mutation followed by a server-side API postcondition check.\n   - [`api-testing-js.md` L222-L225](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/api-testing-js.md#L222-L225) expressly introduces a test that “creates a new issue via user interface in the browser” and checks via API whether it was created.\n   - [`L255-L270`](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/api-testing-js.md#L255-L270) performs real locator clicks/fills, submits the issue, GETs the server resource, asserts `ok()`, and checks the title.\n   - **Direct vs inference:** UI action + server postcondition is unquestionably an official Playwright pattern. “Authoritative,” “durable persistence oracle,” and the stronger requirement to combine a post-submit web-first UI assertion with API/reload verification are architectural interpretations. The official example does **not** itself make a post-submit web-first UI assertion; it checks the server via API.\n\n3. **VERIFIED as an architectural inference from direct official mechanics:** mocking a first-party API narrows the proof boundary.\n   - [`best-practices-js.md` L44-L52](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L44-L52) tells users not to test uncontrolled third parties and demonstrates fulfilling that third-party route.\n   - [`mock.md` L11-L24](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/mock.md#L11-L24) says the fulfilled route returns a custom response and, verbatim, “No requests to the API will be made.”\n   - The implementation confirms the interception semantics: [`server/network.ts` L390-L409](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/src/server/network.ts#L390-L409) constructs and delegates the fulfilled response rather than continuing the intercepted request.\n   - **Direct vs inference:** Playwright directly documents that fulfillment bypasses the API request and recommends mocking uncontrolled third parties. Therefore, if the bypassed endpoint is first-party, that test cannot exercise that backend/persistence path. “Narrower proof boundary,” “client contract test,” and “must not satisfy an E2E gate” are sound architectural conclusions, but Playwright does not state those gate labels or prohibit first-party mocks.\n\n4. **VERIFIED as an officially supported scope inference, not a verbatim Playwright sentence:** browser contexts do not reset application server state.\n   - [`browser-contexts.md` L8-L13](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/browser-contexts.md#L8-L13) defines the context’s clean-slate isolation concretely as local storage, session storage, cookies, etc., and compares contexts to incognito profiles.\n   - Playwright separately warns that tests modifying server-side state must use different accounts: [`auth.md` L40-L47](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/auth.md#L40-L47), and calls one account per worker the recommended approach for tests modifying server-side state at [`L135-L145`](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/auth.md#L135-L145).\n   - The runner fixture creates and later closes a browser context only ([`packages/playwright/src/index.ts` L396-L428](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/src/index.ts#L396-L428)); no generic application-database reset could be performed by that operation.\n   - **Direct vs inference:** Playwright does not contain the exact sentence “BrowserContext does not reset server state.” It directly limits the described mechanism to browser-profile state and separately prescribes server-state controls, making the negative conclusion necessary and well supported. “Completely isolated” must not be expanded beyond the concrete browser scope Playwright defines.\n\n5. **VERIFIED — direct documented, implemented, and tested behavior:** `failOnFlakyTests` can make retry-only passes fail CI.\n   - [`test-retries-js.md` L82-L84](https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/test-retries-js.md#L82-L84) defines a flaky test as one that fails initially but passes on retry.\n   - [`test.d.ts` L1256-L1274](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/types/test.d.ts#L1256-L1274) says `failOnFlakyTests` exits with an error when any test is marked flaky and calls it useful on CI.\n   - The runner returns `failed` when the option is enabled and any outcome is flaky ([`tasks.ts` L113-L116](https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/src/runner/tasks.ts#L113-L116)). The focused upstream test creates a first-run failure/retry pass and asserts a nonzero exit code ([`exit-code.spec.ts` L131-L141](https://github.com/microsoft/playwright/blob/v1.63.0/tests/playwright-test/exit-code.spec.ts#L131-L141)).\n   - **Direct vs inference:** nonzero exit for retry-only passes is direct behavior. Treating that nonzero result as merge-ineligible is CI policy outside Playwright, although it is the evident purpose of the option.\n\n## Citation audit\n\n- **No claim is disputed, unverified, or overturned**, provided claims 3 and 4, and the stronger language around claim 2, are retained as architectural inference rather than attributed verbatim to Playwright.\n- The digest’s `releases/latest` citation is correct as accessed, but it is a moving URL. The exact tag release and tag-ref/commit links above are the durable version evidence.\n- Claim 1’s structured `sources` array omits the tagged user-visible-behavior and locator passages cited in its narrative. Its web-first excerpt is recorded at line 163, but the quoted sentence is at line 164 in tag `v1.63.0`.\n- Claim 2’s structured source excerpt (intro lines 13–15) states the capability but does not show the claimed UI-to-API example; the decisive example is at lines 222–270. Also, that example does not support attributing the digest’s additional post-submit UI-assertion requirement directly to Playwright.\n- Claim 3’s citations support bypass mechanics, not Playwright-authored terminology about a “proof boundary” or fail-closed gate.\n- Claim 4’s cited BrowserContext page does not itself state the negative server-reset claim. The tagged authentication guidance supplies the decisive official corroboration and shows server state needs separate control.\n- The digest assigns the `failOnFlakyTests` prose to lines 1262–1274; in tag `v1.63.0`, “Whether to exit with an error…” begins at line 1256, while the property is at line 1274.\n- No genuinely independent publisher appears in the permitted cited source set: Playwright and Microsoft Learn are both Microsoft publications. The verdicts therefore rely on direct tagged source, implementation, and upstream tests rather than third-party commentary.",
+  "sources": [
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/package.json#L1-L8",
+      "line_start": 1,
+      "line_end": 8,
+      "excerpt": "{\n  \"name\": \"playwright\",\n  \"version\": \"1.63.0\",\n  \"description\": \"A high-level API to automate web browsers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"git+https://github.com/microsoft/playwright.git\"\n  }"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L12-L14",
+      "line_start": 12,
+      "line_end": 14,
+      "excerpt": "### Test user-visible behavior\n\nAutomated tests should verify that the application code works for the end users, and avoid relying on implementation details such as things which users will not typically use, see, or even know about such as the name of a function, whether something is an array, or the CSS class of some element. The end user will see or interact with what is rendered on the page, so your test should typically only see/interact with the same rendered output."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L64-L72",
+      "line_start": 64,
+      "line_end": 72,
+      "excerpt": "### Use locators\n\nIn order to write end to end tests we need to first find elements on the webpage. We can do this by using Playwright's built in [locators](./locators.md). Locators come with auto waiting and retry-ability. Auto waiting means that Playwright performs a range of actionability checks on the elements, such as ensuring the element is visible and enabled before it performs the click. To make tests resilient, we recommend prioritizing user-facing attributes and explicit contracts.\n\n```js\n// 👍\npage.getByRole('button', { name: 'submit' });"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L162-L168",
+      "line_start": 162,
+      "line_end": 168,
+      "excerpt": "### Use web first assertions\n\nAssertions are a way to verify that the expected result and the actual result matched or not. By using [web first assertions](./test-assertions.md) Playwright will wait until the expected condition is met. For example, when testing an alert message, a test would click a button that makes a message appear and check that the alert message is there. If the alert message takes half a second to appear, assertions such as `toBeVisible()` will wait and retry if needed.\n\n```js\n// 👍\nawait expect(page.getByText('welcome')).toBeVisible();"
+    },
+    {
+      "repo": "MicrosoftDocs/show-pr",
+      "path": "https://learn.microsoft.com/en-us/shows/getting-started-with-end-to-end-testing-with-playwright/introduction-to-playwright-for-end-to-end-testing",
+      "line_start": 48,
+      "line_end": 48,
+      "excerpt": "Playwright can automate what a user does, such as clicking on elements and filling out forms. As Playwright is like a really fast user, it waits for elements to be actionable before it clicks on them and retries when making assertions to ensure your tests are not flaky."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/api-testing-js.md#L222-L225",
+      "line_start": 222,
+      "line_end": 225,
+      "excerpt": "### Validating postconditions\n\nThe following test creates a new issue via user interface in the browser and then uses checks if\nit was created via API:"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/api-testing-js.md#L255-L270",
+      "line_start": 255,
+      "line_end": 270,
+      "excerpt": "test('last created issue should be on the server', async ({ page }) => {\n  await page.goto(`https://github.com/${USER}/${REPO}/issues`);\n  await page.getByText('New Issue').click();\n  await page.getByRole('textbox', { name: 'Title' }).fill('Bug report 1');\n  await page.getByRole('textbox', { name: 'Comment body' }).fill('Bug description');\n  await page.getByText('Submit new issue').click();\n  const issueId = new URL(page.url()).pathname.split('/').pop();\n\n  const newIssue = await apiContext.get(\n      `https://api.github.com/repos/${USER}/${REPO}/issues/${issueId}`\n  );\n  expect(newIssue.ok()).toBeTruthy();\n  expect(newIssue.json()).toEqual(expect.objectContaining({\n    title: 'Bug report 1'\n  }));"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/best-practices-js.md#L44-L52",
+      "line_start": 44,
+      "line_end": 52,
+      "excerpt": "### Avoid testing third-party dependencies\n\nOnly test what you control. Don't try to test links to external sites or third party servers that you do not control. Not only is it time consuming and can slow down your tests but also you cannot control the content of the page you are linking to, or if there are cookie banners or overlay pages or anything else that might cause your test to fail.\n\nInstead, use the [Playwright Network API](/network.md#handle-requests) and guarantee the response needed.\n\n```js\nawait page.route('**/api/fetch_data_third_party_dependency', route => route.fulfill({"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/mock.md#L11-L24",
+      "line_start": 11,
+      "line_end": 24,
+      "excerpt": "## Mock API requests\n\nThe following code will intercept all the calls to `*/**/api/v1/fruits` and will return a custom response instead. No requests to the API will be made. The test goes to the URL that uses the mocked route and asserts that mock data is present on the page.\n\n```js\ntest(\"mocks a fruit and doesn't call api\", async ({ page }) => {\n  // Mock the api call before navigating\n  await page.route('*/**/api/v1/fruits', async route => {\n    const json = [{ name: 'Strawberry', id: 21 }];\n    await route.fulfill({ json });\n  });\n  // Go to the page"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright-core/src/server/network.ts#L390-L409",
+      "line_start": 390,
+      "line_end": 409,
+      "excerpt": "  async fulfill(overrides: channels.RouteFulfillParams) {\n    this._startHandling();\n    let body = overrides.body;\n    let isBase64 = overrides.isBase64 || false;\n    if (body === undefined) {\n      if (overrides.fetchResponseUid) {\n        const buffer = this._request._context.fetchRequest.fetchResponses.get(overrides.fetchResponseUid) || APIRequestContext.findResponseBody(overrides.fetchResponseUid);\n        assert(buffer, 'Fetch response has been disposed');\n        body = buffer.toString('base64');\n        isBase64 = true;\n      } else {\n        body = '';\n        isBase64 = false;\n      }\n    } else if (!overrides.status || overrides.status < 200 || overrides.status >= 400) {\n      this._request._responseBodyOverride = { body, isBase64 };\n    }\n    const headers = [...(overrides.headers || [])];\n    this._maybeAddCorsHeaders(headers);\n    this._request._context.emit(BrowserContext.Events.RequestFulfilled, this._request);"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/browser-contexts.md#L8-L13",
+      "line_start": 8,
+      "line_end": 13,
+      "excerpt": "Tests written with Playwright execute in isolated clean-slate environments called browser contexts. This isolation model improves reproducibility and prevents cascading test failures. \n\n## What is Test Isolation? \n\nTest Isolation is when each test is completely isolated from another test. Every test runs independently from any other test. This means that each test has its own local storage, session storage, cookies etc. Playwright achieves this using [BrowserContext]s which are equivalent to incognito-like profiles."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/auth.md#L40-L47",
+      "line_start": 40,
+      "line_end": 47,
+      "excerpt": "This is the **recommended** approach for tests **without server-side state**. Authenticate once in the **setup project**, save the authentication state, and then reuse it to bootstrap each test already authenticated.\n\n**When to use**\n- When you can imagine all your tests running at the same time with the same account, without affecting each other.\n\n**When not to use**\n- Your tests modify server-side state. For example, one test checks the rendering of the settings page, while the other test is changing the setting, and you run tests in parallel. In this case, tests must use different accounts."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/auth.md#L135-L145",
+      "line_start": 135,
+      "line_end": 145,
+      "excerpt": "This is the **recommended** approach for tests that **modify server-side state**. In Playwright, worker processes run in parallel. In this approach, each parallel worker is authenticated once. All tests ran by worker are reusing the same authentication state. We will need multiple testing accounts, one per each parallel worker.\n\n**When to use**\n- Your tests modify shared server-side state. For example, one test checks the rendering of the settings page, while the other test is changing the setting.\n\n**When not to use**\n- Your tests do not modify any shared server-side state. In this case, all tests can use a single shared account.\n\n**Details**\n\nWe will authenticate once per [worker process](./test-parallel.md#worker-processes), each with a unique account."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/src/index.ts#L407-L428",
+      "line_start": 407,
+      "line_end": 428,
+      "excerpt": "          `\"context\" and \"page\" fixtures are not supported in \"${hook}\" since they are created on a per-test basis.`,\n          `If you would like to reuse a single page between tests, create context manually with browser.newContext(). See https://aka.ms/playwright/reuse-page for details.`,\n          `If you would like to configure your page before each test, do that in beforeEach hook instead.`,\n        ].join('\\n'));\n      }\n      const show = typeof video === 'string' ? undefined : video.show;\n      const videoOptions: BrowserContextOptions = captureVideo ? {\n        recordVideo: {\n          dir: tracing().artifactsDir(),\n          size: typeof video === 'string' ? undefined : video.size,\n          showActions: show?.actions,\n        }\n      } : {};\n      const context = await browser.newContext({ ...videoOptions, ...options }) as BrowserContextImpl;\n\n      let closed = false;\n      const close = async () => {\n        if (closed)\n          return;\n        closed = true;\n        const closeReason = testInfo.status === 'timedOut' ? 'Test timeout of ' + testInfo.timeout + 'ms exceeded.' : 'Test ended.';\n        await context.close({ reason: closeReason });"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/docs/src/test-retries-js.md#L82-L84",
+      "line_start": 82,
+      "line_end": 84,
+      "excerpt": "- \"passed\" - tests that passed on the first run;\n- \"flaky\" - tests that failed on the first run, but passed when retried;\n- \"failed\" - tests that failed on the first run and failed all retries."
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/types/test.d.ts#L1256-L1274",
+      "line_start": 1256,
+      "line_end": 1274,
+      "excerpt": "   * Whether to exit with an error if any tests are marked as flaky. Useful on CI.\n   *\n   * Also available in the [command line](https://playwright.dev/docs/test-cli) with the `--fail-on-flaky-tests` option.\n   *\n   * **Usage**\n   *\n   * ```js\n   * // playwright.config.ts\n   * import { defineConfig } from '@playwright/test';\n   *\n   * export default defineConfig({\n   *   failOnFlakyTests: !!process.env.CI,\n   * });\n   * ```\n   *\n   */\n  failOnFlakyTests?: boolean;"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/packages/playwright/src/runner/tasks.ts#L113-L116",
+      "line_start": 113,
+      "line_end": 116,
+      "excerpt": "  result(): 'failed' | 'passed' {\n    const hasFailedTests = this.rootSuite?.allTests().some(test => !test.ok());\n    const hasFlakyTests = this.rootSuite?.allTests().some(test => test.outcome() === 'flaky');\n    return this.hasWorkerErrors || this.reporter.hasReporterErrors() || this.hasReachedMaxFailures() || hasFailedTests || (this.config.config.failOnFlakyTests && hasFlakyTests) ? 'failed' : 'passed';"
+    },
+    {
+      "repo": "microsoft/playwright",
+      "path": "https://github.com/microsoft/playwright/blob/v1.63.0/tests/playwright-test/exit-code.spec.ts#L131-L141",
+      "line_start": 131,
+      "line_end": 141,
+      "excerpt": "test('failOnFlakyTests flag disallows flaky', async ({ runInlineTest }) => {\n  const result = await runInlineTest({\n    'a.test.js': `\n      import { test, expect } from '@playwright/test';\n      test('flake', async ({}, testInfo) => {\n        expect(testInfo.retry).toBe(1);\n      });\n    `,\n  }, { 'retries': 1, 'fail-on-flaky-tests': true });\n  expect(result.exitCode).not.toBe(0);\n  expect(result.flaky).toBe(1);"
+    }
+  ],
+  "api": [
+    {
+      "signature": "getByLabel(text: string|RegExp, options?: {\n  exact?: boolean;\n}): Locator;",
+      "description": "Exact v1.63.0 semantic locator declaration; returns a Locator that can perform user-facing actions such as fill."
+    },
+    {
+      "signature": "toBeVisible(options?: {\n  signal?: AbortSignal;\n  timeout?: number;\n  visible?: boolean;\n}): Promise<void>;",
+      "description": "Exact v1.63.0 locator-assertion declaration. Official docs state that this web-first assertion retries until the condition is met or it times out/aborts."
+    },
+    {
+      "signature": "newContext(options?: BrowserContextOptions): Promise<BrowserContext>;",
+      "description": "Exact v1.63.0 Browser API declaration. The official isolation documentation scopes the resulting context to an incognito-like browser profile."
+    },
+    {
+      "signature": "fulfill(options?: {\n  body?: string|Buffer;\n  contentType?: string;\n  headers?: { [key: string]: string; };\n  json?: Serializable;\n  path?: string;\n  response?: APIResponse;\n  status?: number;\n}): Promise<void>;",
+      "description": "Exact v1.63.0 Route declaration. It fulfills an intercepted request with a supplied response; the mock guide explicitly says this can result in no request reaching the API."
+    },
+    {
+      "signature": "failOnFlakyTests?: boolean;",
+      "description": "Exact v1.63.0 TestConfig property. When true, the runner converts the presence of any flaky outcome (initial failure, retry pass) into a failed run/nonzero exit."
+    }
+  ],
+  "version": "Playwright 1.63.0; tag v1.63.0; commit 1b025d7e20a026371cd5f98ba0cdce48892737c8; released 2026-09-04T22:40:31Z; accessed 2026-09-10.",
+  "breaking_changes": [
+    "The v1.63.0 release announcement states that Ubuntu 20.04 is no longer supported. This is unrelated to the five verified browser-testing claims."
+  ],
+  "caveats": [
+    "Claims 2 (beyond the UI-to-API example), 3, and 4 contain architectural inference and should not be presented as verbatim Playwright mandates.",
+    "The official UI-to-API postcondition example does not also assert a post-submit user-visible state; requiring both UI and server oracles is a defensible synthesis, not directly demonstrated by that example.",
+    "Playwright documents fulfilled-route bypass behavior but does not define the digest's “proof boundary,” “client contract test,” or fail-closed E2E-gate terminology.",
+    "BrowserContext documentation describes browser-profile isolation. The conclusion that it cannot reset arbitrary application server/database state is strongly supported by the authentication guidance and implementation but is not stated in one exact negative sentence.",
+    "The digest contains several source-range/coverage mismatches detailed in the answer, and its `releases/latest` link should be replaced or supplemented with the immutable v1.63.0 tag/commit evidence.",
+    "No independent non-Microsoft publisher was available within the assignment's permitted cited-source set."
+  ]
+}

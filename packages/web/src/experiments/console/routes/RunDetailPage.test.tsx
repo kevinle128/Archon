@@ -962,9 +962,13 @@ describe('RunDetailPage inspect selection', () => {
     await act(async () => {
       submit.click();
     });
-    await flushUntil('accepted answer', () =>
-      (host.textContent ?? '').includes('Answered · by you')
+    await flushUntil(
+      'accepted answer',
+      () =>
+        (host.textContent ?? '').includes('Answered') &&
+        !(host.textContent ?? '').includes('Answered · by you')
     );
+    expect(host.textContent).not.toContain('Answered · by you');
     expect(answerPosts).toEqual([
       {
         path: `/api/workflows/runs/${encodeURIComponent(runId)}/ask/tool-1/answer`,

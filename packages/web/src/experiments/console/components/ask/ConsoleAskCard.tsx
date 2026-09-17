@@ -104,14 +104,11 @@ function PayloadDisclosure(props: {
   );
 }
 
-function ResolvedStamp(props: {
-  presentation: AskCardPresentation;
-  viewerIsStarter: boolean;
-}): React.ReactElement | null {
-  const { presentation, viewerIsStarter } = props;
+function ResolvedStamp(props: { presentation: AskCardPresentation }): React.ReactElement | null {
+  const { presentation } = props;
   let text: string | null = null;
   if (presentation.viewState === 'answered') {
-    text = viewerIsStarter ? 'Answered · by you' : 'Answered';
+    text = 'Answered';
   } else if (presentation.viewState === 'declined') {
     text = 'Declined';
   } else if (presentation.viewState === 'rejected-late') {
@@ -142,8 +139,6 @@ export function ConsoleAskCard(props: ConsoleAskCardProps): React.ReactElement {
     interaction,
     questions,
     presentation,
-    viewerIsStarter,
-    starterDisplayName,
     agentDisplayName,
     nodeId,
     autoFocus,
@@ -173,9 +168,8 @@ export function ConsoleAskCard(props: ConsoleAskCardProps): React.ReactElement {
 
   const draftValid = isAskDraftValid(questions, draft);
   const isPending = presentation.viewState === 'pending';
-  const lockAnswers = !isPending || !viewerIsStarter;
-  const showActions = isPending && viewerIsStarter;
-  const waitingLabel = `Waiting for ${starterDisplayName ?? 'the run starter'} to answer`;
+  const lockAnswers = !isPending;
+  const showActions = isPending;
 
   function selectSingle(question: AskQuestion, option: string): void {
     onDraftChange(replaceDraftValue(draft, question.id, option));
@@ -251,7 +245,7 @@ export function ConsoleAskCard(props: ConsoleAskCardProps): React.ReactElement {
           {presentation.viewState === 'sending' ? (
             <p className="text-sm text-text-secondary">Sending…</p>
           ) : null}
-          <ResolvedStamp presentation={presentation} viewerIsStarter={viewerIsStarter} />
+          <ResolvedStamp presentation={presentation} />
           {presentation.error !== null && presentation.viewState !== 'failed-resume' ? (
             <p role="alert" className="text-sm text-error">
               {presentation.error}
@@ -347,9 +341,6 @@ export function ConsoleAskCard(props: ConsoleAskCardProps): React.ReactElement {
               );
             })}
           </fieldset>
-          {!viewerIsStarter && isPending ? (
-            <p className="text-sm text-text-secondary">{waitingLabel}</p>
-          ) : null}
         </div>
         <div className="flex flex-col items-stretch gap-3 px-4 pb-4">
           {showActions ? (
