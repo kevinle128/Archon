@@ -2,17 +2,11 @@ import { describe, expect, test } from 'bun:test';
 
 import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
-import {
-  buildAgentHistory,
-  toolContext,
-  toolRuntime,
-  type AgentHistoryItem,
-} from './agent-history';
+import { buildAgentHistory, toolRuntime, type AgentHistoryItem } from './agent-history';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
 const NOW_MS = Date.parse(CREATED_AT) + 30_000;
 const NODE_ID = 'review';
-const LONG_CMD = `bun test ${'x'.repeat(120)} src/lib/agent-history.test.ts`;
 
 type WorkflowEvent = components['schemas']['WorkflowEvent'];
 type ToolMetadata = NonNullable<Extract<NodeMessageRow, { kind: 'tool' }>['metadata']> & {
@@ -93,35 +87,6 @@ function event(args: {
 function kinds(items: readonly AgentHistoryItem[]): Array<AgentHistoryItem['kind']> {
   return items.map(item => item.kind);
 }
-
-describe('toolContext', () => {
-  test('returns full trimmed allowlisted values and ignores every other field', () => {
-    expect(
-      toolContext({
-        cmd: `  ${LONG_CMD}  `,
-        path: '  src/lib/agent-history.ts  ',
-        file_path: '  packages/web/src/lib/api.ts  ',
-        query: '  node messages  ',
-        url: '  https://archon.diy/docs  ',
-        timeout: 30,
-        command: 'ignored-alias',
-        nested: { path: 'nope' },
-      })
-    ).toEqual([
-      { label: 'cmd', value: LONG_CMD },
-      { label: 'path', value: 'src/lib/agent-history.ts' },
-      { label: 'file_path', value: 'packages/web/src/lib/api.ts' },
-      { label: 'query', value: 'node messages' },
-      { label: 'url', value: 'https://archon.diy/docs' },
-    ]);
-    expect(LONG_CMD.length).toBeGreaterThan(120);
-  });
-
-  test('returns an empty list for non-objects', () => {
-    expect(toolContext(null)).toEqual([]);
-    expect(toolContext('cmd')).toEqual([]);
-  });
-});
 
 describe('toolRuntime', () => {
   test('joins duration only when exactly one matching completion event has a finite nonnegative duration', () => {
@@ -286,7 +251,6 @@ describe('buildAgentHistory', () => {
       canLoadFullOutput: false,
       outputState: 'full',
       messageId: 'tool-result-bash',
-      context: [{ label: 'cmd', value: 'ls' }],
     });
 
     expect(lifecycle).toEqual({
