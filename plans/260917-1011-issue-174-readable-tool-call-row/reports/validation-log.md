@@ -1,36 +1,32 @@
 # Validation log
 
-## Prompt result
+## Evidence checked
 
-The validation opt-in prompt returned no selection.
-The workflow therefore continued with the recommended documented defaults instead of blocking or asking again.
+- Read the root `AGENTS.md`, canonical `SPEC.md`, Epic 1/Story 1.1, tool-presentation contract, test plan, final `DESIGN.md`, final `EXPERIENCE.md`, handoff README, relevant final HTML mockups, and the prior architecture/design record.
+- Traced `pair-tool-transcript.ts` → `agent-history.ts` → Legacy `NodeRoom.tsx` and Console `ConsoleAgentHistoryList.tsx`, including `NodeTranscriptPane`, `ConsoleNodeRoom`, and `ConsoleExecutionHistory` mounts.
+- Read the shared, Legacy, Console, inline-history, isolation, HITL behavior, and HITL visual tests plus E2E package scripts and CI's HITL selector.
+- Verified all planned Modify paths exist and all planned Create paths are absent.
+- Queried issue #174 and PRs: the issue is open and still labeled processing; PR #194 is closed/unmerged; no matching open PR exists.
+- Queried the local Archon database read-only: the run named in the issue comment is `completed` (`completed_at` 2026-09-16 11:32:29). The alternate plan path claimed by the draft does not exist.
 
-## Defaulted decisions
+## Plan consistency checks
 
-| Decision                    | Selected default                                                                                                                                                          | Reason                                                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Temporary diagnostic access | Keep the existing Input and Output disclosures closed under the new outer row.                                                                                            | This preserves current diagnostics without showing serialized data by default and leaves the Story 1.2 Raw redesign out of scope. |
-| Active issue ownership      | Recheck the issue, pull requests, reported Archon Loop run, and matching plan `Archon/260917-0323` before implementation and stop if another owner still holds the files. | The current `status:processing` and alternate-worktree plan evidence show a concrete duplicate-work risk.                         |
-| Visual evidence             | Use deterministic geometry and computed-style checks plus human-reviewed screenshots in Playwright output.                                                                | This avoids platform-sensitive self-approving snapshots and plan IDs in stable test code.                                         |
+- `git diff --check`: pass.
+- Prettier check for the complete plan directory: pass after formatting.
+- Phase links and file inventory: pass.
+- Commands exist in the relevant package scripts: pass.
+- Uppercase `HITL` requirement matches `.github/workflows/test.yml`: pass.
+- Stale-claim search: no remaining active alternate-plan, no-PR, two-E2E, or restore-obsolete-expectation claim.
 
-## Fact validation
-
-The repository fact checker found no error that must change before implementation.
-All Modify files exist, all Create files are absent, all phase links resolve, and the stated Web and E2E commands exist.
-The planned uppercase `HITL` visual test title matches the current CI grep.
-The Console boundary, package boundaries, and generated-file restrictions are preserved.
+No production test suite was run because this task changed planning Markdown only. The revised phases identify the exact focused, package, E2E, and repository commands required during implementation.
 
 ## Contract validation
 
-The contract verifier found no blocker, major issue, or minor issue.
-Every Story 1.1 acceptance criterion maps to a red test and a green gate.
-The closed diagnostic bridge, minimal facts line, TDD order, later-story exclusions, rollback units, and final validation gates are implementation-ready.
-
-## Runtime task hydration
-
-This plan has three phases, but this runtime exposes no dedicated task-list tool.
-The phase files and their checklists remain the source of truth for execution progress.
+- Every Story 1.1 criterion maps to a pure/projection/component/E2E/manual proof.
+- Collapsed generic punctuation, interruption precedence, disclosure state, visual scope, and accessibility conflicts are explicitly resolved.
+- Pairing, stored data, API failure behavior, full-output access, IDs, paging, ordering, extension slots, Console isolation, and all three production mounts have preservation gates.
+- Compatibility is presentation-only: no migration, schema, generated type, provider, backend, dependency, or rollout-order work remains.
 
 ## Final status
 
-The plan is valid and ready for implementation after the ownership preflight.
+The plan is ready for implementation. There is no current ownership blocker, but the issue label/comment is stale enough that implementation must repeat the preflight before editing. Manual visual and Windows/macOS screen-reader results are required completion evidence; they are not presumed to have passed during planning.

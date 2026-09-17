@@ -1,37 +1,50 @@
 # Red-team review
 
-## Review setup
+## Material draft problems and corrections
 
-Three independent read-only reviews covered security and trust boundaries, assumptions and contracts, and failure modes and test adequacy.
-The user-review prompt returned no selection, so the recommended evidence-backed changes were applied with the default workflow judgment.
+| Severity | Draft problem                                                                                                                       | Correction                                                                                                                              |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Blocker  | Claimed no matching PR and an active alternate plan/run without current evidence                                                    | Recorded closed/unmerged PR #194, completed reported run, absent claimed path, and a fresh mutable-state preflight                      |
+| Blocker  | Allowed `{…}` / `[n]` in the collapsed generic row despite the Story 1.1 no-serialized-punctuation criterion                        | Deferred object/array markers to Story 1.3's expanded generic body; collapsed generic uses scalar facts or safe label                   |
+| Major    | Outcome precedence said direct result metadata beat the required adjacent interruption fold                                         | Made exact adjacent `interrupted` the final display override and added failed-plus-interrupted coverage                                 |
+| Major    | Counted only two obsolete E2E cases                                                                                                 | Identified and planned all three across two specs                                                                                       |
+| Major    | Required an unexplained-difference-free comparison with final mockups that contain later stories                                    | Limited comparison to Story 1.1-owned anatomy/states and named expected Raw/body/diff/todo/task/occurrence differences                  |
+| Major    | Omitted Console inline history from regression coverage                                                                             | Added `ConsoleExecutionHistory.test.tsx` to inventory and gates                                                                         |
+| Major    | Accessible-name requirements were incomplete                                                                                        | Specified state → tool/family → target → facts, hidden decoration, family channels, native key behavior, and two-OS announcement checks |
+| Major    | Visual criteria retained old card depth and lacked exact focus/body geometry                                                        | Required transparent rest state, hover-only fill, body rail/indent/padding, and surface-specific focus offsets                          |
+| Major    | Disclosure state did not fully cover keyboard toggles, programmatic toggle events, identity changes, or never-auto-close behavior   | Added a concrete touched-state transition contract and equivalent tests in both shells                                                  |
+| Major    | Bounds were stated but not implementable                                                                                            | Added named numerical caps, bounded name/key/source/count operations, and limit/limit+1 tests                                           |
+| Major    | A presenter-side headline cut would violate the design's full-DOM/CSS-elision rule                                                  | Ordinary accepted headlines stay complete; over-cap adversarial values fall back safely instead of fabricating a partial path           |
+| Major    | Count extraction could scan or guess arbitrary output prose                                                                         | Limited it to capped scalar/shallow structured forms and omission on unsupported shapes; never load full output for a badge             |
+| Major    | Precomputed presentation could leave a stale `truncated` badge after local full-output loading                                      | Both shells rerun the same pure row composer with loaded output and `outputState: full` while preserving disclosure state               |
+| Major    | The draft did not preserve the canonical three-field `ToolPresentationInput` contract                                               | Kept canonical content input and added a separate typed row-facts composition function for current runtime facts                        |
+| Major    | Existing transcript `gap-3`/`p-3` would keep card spacing even after the card markup changed                                        | Added 10 px/12 px transcript padding, compact adjacent tool rhythm, and explicit mixed-content spacing tests                            |
+| Major    | Todo headline behavior was guessed from one complete-state mock                                                                     | Used the final design's folded-call `todo updated` plus bounded `op` badge; todo state/progress remains Story 1.5                       |
+| Major    | The initial row model missed final state badges, the no-fact `—`, and running elapsed while current `outputState` would say missing | Added canonical per-state badge overrides and deterministic elapsed from existing `tool_called.created_at` plus caller clock; no timer  |
+| Major    | Rollback proposed restoring obsolete desired E2E behavior                                                                           | Defined whole-feature code/test rollback without treating visible JSON as the forward contract                                          |
+| Minor    | The draft treated the Console mock's width and complete body as direct Story 1.1 acceptance                                         | Used canonical 460 px and isolated later-story body differences                                                                         |
 
-## Accepted findings
+## Deliberate exclusions
 
-| #   | Severity | Finding                                                                                              | Disposition                                                                                                          |
-| --- | -------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| 1   | Major    | The no-JSON wording incorrectly banned the contract's bounded `{…}` and `[n]` generic markers.       | The plan now bans raw serialized dumps and explicitly allows only the bounded markers.                               |
-| 2   | Major    | Proxy and throwing-getter tests did not match the real schema-parsed JSON boundary.                  | The plan now tests unusual valid JSON values and leaves corrupt-row handling in the existing API path.               |
-| 3   | Major    | Count-badge extraction had no explicit output bound or huge-output test.                             | Phase 1 now names a separate extraction cap and tests small, huge, and unloaded outputs.                             |
-| 4   | Major    | The provider-specific glob path rule was not explicit.                                               | Phase 1 now tests Claude `{ pattern, path }` and OMP `{ path }` shapes and states the exact headline and scope rule. |
-| 5   | Major    | A duration hidden under width pressure could become unreachable without a body bar.                  | Phase 2 now adds only a minimal open-row facts line and still defers family-specific bodies and Raw.                 |
-| 6   | Blocker  | Existing HITL E2E specs required output to be visible before disclosure.                             | Both stale behavior specs become the outside-in red tests in Phase 1 and must turn green in Phase 2.                 |
-| 7   | Major    | The static Legacy renderer test cannot prove rerender, toggle, or keyboard behavior.                 | Interactive cases move through the existing `LegacyNodeRoom.test.tsx` happy-dom harness.                             |
-| 8   | Major    | Broad DOM text helpers could treat hidden diagnostic text as visible.                                | The plan requires summary-scoped assertions and separately checks that nested diagnostics are closed.                |
-| 9   | Major    | Removing the shared context field made the Phase 2 rollback incomplete.                              | Phase 2 now owns the shared-history cleanup and defines one safe rollback unit across shared and renderer files.     |
-| 10  | Minor    | Ratio and drag checks did not prove the required 460 px width.                                       | Phase 3 now requires a measured `460 ± 2` px helper before each narrow-layout assertion.                             |
-| 11  | Major    | The old visual readiness locator could pass because a visible ancestor contained hidden output text. | Phase 3 updates that locator and keeps new issue captures in Playwright output instead of the old plan directory.    |
+- No new sanitizer: stored strings render only as React text nodes.
+- No production-corpus release gate: Story 1.3 owns it.
+- No family bodies, final Raw control, diff, todo state, task normalization, or occurrence grouping.
+- No partial transcript/steering live-region mechanism: the serialized NFR8 channel is broader than Story 1.1 and is allocated to later steering stories. Static accessibility semantics remain mandatory here.
+- No fake-provider expansion solely for visual states; deterministic production-markup component tests cover states absent from the real fixture.
+- No shared React component or speculative provider-normalizer layer.
 
-## Rejected findings
+## Nine-perspective final audit
 
-| Finding                                                                                | Reason for rejection                                                                                                                                    |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Add a new serialized live-region announcement system to Story 1.1.                     | Story 1.1 cites CAP-1, NFR1–3, and UX-DR1–2; the proposed shared steering announcement mechanism belongs to broader NFR8 and later delivery work.       |
-| Implement grep body-arm selection for all output modes now.                            | Family-specific expanded bodies belong to Story 1.3; Story 1.1 needs only the bounded count badge case.                                                 |
-| Add an HTML sanitizer for headline and chip content.                                   | Both target renderers use React text nodes and do not introduce HTML injection APIs.                                                                    |
-| Treat the row-only presenter as invalid because the full contract also defines bodies. | The epic explicitly splits the row, Raw, and family-body work across Stories 1.1, 1.2, and 1.3.                                                         |
-| Remove the temporary closed diagnostic disclosures.                                    | Keeping them closed preserves current diagnostic and full-output behavior without showing serialized data by default; Story 1.2 owns their replacement. |
+1. **Product:** The scope now maps exactly to scanning a tool call without JSON.
+2. **Architecture:** One pure policy and two boundary-safe shells use the existing shared projection seam.
+3. **Contracts:** Pairing, IDs, paging, full-output behavior, array return type, and non-tool ordering are preserved.
+4. **Security/reliability/data:** Bounded JSON handling, text-node rendering, fail-safe generic fallback, and unchanged corrupt-row/API behavior are explicit.
+5. **Performance:** All potentially wide/long presenter operations have named deterministic caps; no full-output fetch occurs for a summary.
+6. **Completeness:** All direct consumers, the Console indirect mount, three stale behavior cases, and old visual false positive are covered.
+7. **Testing:** Evidence is layered correctly across pure, projection, interactive component, real E2E, computed geometry, human visual, and AT checks.
+8. **Operations:** No migration, feature flag, rollout order, or backend compatibility step is needed; rollback is Web-only and reversible.
+9. **Maintainability:** Later stories remain deferred; no new dependency, token, component abstraction, or return-type widening is introduced.
 
 ## Result
 
-No blocker remains after the accepted changes.
-The implementation scope remains Story 1.1 only.
+No unresolved design or implementation blocker remains in the revised plan. Manual screen-reader and visual checks are completion gates for implementation, not assumptions that they already passed.
