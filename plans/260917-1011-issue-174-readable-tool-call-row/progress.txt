@@ -12,6 +12,12 @@
 - **Pattern**: "Command-like" was pinned to: whitespace within the first `MAX_HEADLINE_SOURCE_CODE_UNITS` code units, or name longer than that cap entirely.
 - **Example**: `search_replace` → `file` (exact match beats substring); `mcp__github__create_issue` → `generic` with label `github · create_issue` regardless of input keys.
 
+### Controlled `<details>` + React + happy-dom contract (reuse for US-004 console row)
+- **Where**: `packages/web/src/components/workflows/NodeRoom.tsx` `ToolHistory`
+- **Pattern**: Control `<details open={open}>` via state; in `onToggle`, ignore bubbled nested toggles with `event.target !== event.currentTarget`, and treat `event.currentTarget.open === open` (state) as a programmatic echo — real user activation flips DOM `open` away from rendered state before the event reaches React. Auto-open = `useEffect(() => { if (!open && !touched && initialOpen) setOpen(true) })` — no path ever calls `setOpen(false)` itself.
+- **Pattern**: happy-dom fires React `onToggle` on summary `click` (MouseEvent, bubbles) but does NOT implement summary's keydown→activation default — tests dispatch keydown + the synthesized `click` a real browser emits. `summary.focus()` sets `document.activeElement`. Programmatic `open` writes do NOT produce a React-visible toggle echo in happy-dom (real browsers DO — hence the guard).
+- **Pattern**: happy-dom types don't overlap lib.dom (`activeElement: HTMLElement|SVGElement` is their own type) — cast `as unknown as Event` for `win.MouseEvent`/`win.KeyboardEvent` in `dispatchEvent`, and `as unknown as Element`/`HTMLElement` for queried nodes.
+
 ---
 
 ## 2026-09-17 — US-001: E2E contract rewrite + pure tool-presentation policy
@@ -73,5 +79,32 @@
 - ESLint `prefer-optional-chain` fires on `x !== undefined && x.kind === …` — write `x?.kind === '…'`.
 - Fold runs on the PROJECTED stream (post-pairing): a result row sitting after the interrupted status in raw rows is already folded into the card, so `call, status, result` still folds correctly.
 - `git commit` runs lint-staged (eslint --fix + prettier --write) — keep staged files clean before committing or the hook rewrites them mid-commit.
+
+---
+
+## 2026-09-17 — US-003: Legacy NodeRoom native disclosure row
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `.ptool` card replaced by one `<details data-tool-id>` row per tool item: summary = aria-hidden ▶ chevron (9px, rotate-90/120ms, motion-reduce), `sr-only` status word, aria-hidden glyph (12px bold), family-toned chip (`title`/`aria-label` = `family · label`), `ToolHeadline` (path split `/`+`\`-only with trailing sep kept on tail; text = one end-ellipsis span), ordered `ToolBadge` group (state/placeholder badges aria-hidden; duration `flex-[0_1_auto]` drop-first). Disclosure state: `useState(initialOpen)` + `touched`; effect auto-opens untouched rows that turn failed; nothing auto-closes; `onToggle` filters nested toggles (`target !== currentTarget`) and programmatic echoes (`el.open === open`). Body = family+facts bar (10.5px secondary), closed Input/Output diagnostic details, preserved full-output load/error/Retry that re-runs `toolRowPresentation` with `outputState:'full'` into `loadedPresentation`. Transcript container `gap-3 p-3` → `px-3 py-2.5`; tools flush, assistant/lifecycle `my-1.5`, extension slot wrapped `mt-1.5`; `item.context`/`formatDurationMs`/`toolOutcomeLabel` removed from render.
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — static anatomy rewritten + new `describe('NodeRoom tool rows')`: five-outcome open/glyph/word matrix, accessible-name order helper, chip title/fallback, path/URL/text split anatomy, badge width-priority + aria-hidden, family chip tones + row geometry/rest-transparency, body bar facts + closed diagnostics, adjacent-row rhythm, extension anchoring.
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — new `describe('LegacyNodeRoom tool disclosure rows')` mounting NodeRoom over real `buildAgentHistory` projections: pointer toggle survives polling, native-summary/keyboard/focus, untouched→failed opens once then never auto-closes, touched never overridden, identity reset via `key=item.id`, nested-toggle isolation, focus stability on append, full-output load/disable/retry + badge refresh; plus two through-LegacyNodeRoom tests (drain → collapsed row; loader-identity re-drain flips running→failed open).
+- `plans/…/prd.json` — US-003 `passes: true` + notes. `plans/…/progress.txt` — this file.
+
+**Acceptance criteria verified**:
+- [x] Tests updated FIRST and confirmed red (12 fail each on `details[data-tool-id]` absent / old `.ptool` card), then implemented; matrix green: 44 pass across both files
+- [x] One `<details data-tool-id>` per tool keyed by stable item id; summary accessible-name order = hidden word → `family · label` chip → headline → ordered facts (verified: `succeeded file · Read a.ts truncated 1.5s`); state badges + `—` placeholder aria-hidden; chevron/glyph decorative
+- [x] Disclosure algorithm: mount/identity `initialOpen`; pointer + synthesized-Enter/Space mark touched; untouched→failed opens once; no auto-close anywhere; programmatic `open` writes not mistaken for user action; nested toggles ignored; new identity resets
+- [x] Body bar = family + every non-placeholder fact incl. duration (`file · exit 2 · truncated · 1.5s`); Input/Output closed real controls (24px target, text-secondary, accent focus-visible); failed auto-opened row exposes no payload
+- [x] Full-output button stays below diagnostics; successful load re-presents with `outputState:'full'` (truncated badge removed) without resetting disclosure or item key; error + Retry preserved
+- [x] Visual contract: details transparent at rest (no ptool/inset/border/shadow), `hover:bg-surface-hover`, `focus-visible:outline-2 outline-accent-bright -outline-offset-2`, transcript `px-3 py-2.5`, no inherited gap between collapsed rows
+- [x] Geometry: 12px mono 400 summary, 4/6 padding, 8 gap, 6 radius, ≥24px, single-line; chevron 10px in 9px col, 90°/120ms + motion-reduce; glyph 12px bold in 12px col, sole bold element; chip 11px/1·7 padding/4 radius/≤24ch surface-elevated with family mixes; badges 11px nowrap
+- [x] Path split `/`,`\` only + URLs; trailing sep kept with tail (`crates/`+`tests/`); no-separator → one tail; tail `max-w-full` ellipsis; text end-ellipsis; full string in DOM
+- [x] `NODE_ENV=development bun test` NodeRoom+LegacyNodeRoom → 44 pass; `bun test src/lib/agent-history.test.ts` → 19 pass; `bun run type-check` clean; eslint 0 errors; prettier clean; full package suite 436 components + 881 console + lib/stores/hooks all green; 3 HITL E2E intentionally still red (console renderer is US-004)
+
+**Learnings**:
+- eslint `non-nullable-type-assertion-style` auto-fix inserts `!` which `no-non-null-assertion` then rejects — resolve with a `requiredX()` query helper that throws on null instead of letting --fix churn.
+- `rowMarkup`/`summaryMarkup` regex helpers on `renderToStaticMarkup` output work well for DOM-anatomy assertions; scope all queries to the direct `> summary` so closed-diagnostic text can't masquerade as visible.
+- `key={item.id}` remount gives the identity-reset behavior for free — no manual state reset needed; the "poll flips outcome" case works because `drainNodeMessages` merges by seq into the same card id.
 
 ---

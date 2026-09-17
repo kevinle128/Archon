@@ -66,8 +66,8 @@
       "technicalNotes": "Follow phase-02-two-surface-renderers.md sections 'Required DOM and interaction contract', 'Disclosure state algorithm', 'Visual implementation contract'. Legacy owns tool markup in NodeRoom.tsx:227/.ptool card and :246 item.context — replace with item.presentation. Use existing token-backed utilities plus small typed local class/style maps; no new tokens, stylesheet, shared component, or shared hook.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/web/src/components/workflows/NodeRoom.tsx (details[data-tool-id] row: chevron/sr-only word/glyph/chip/headline/badges summary, touched+auto-open disclosure algorithm, family bar + closed Input/Output diagnostics, full-output re-presentation), NodeRoom.test.tsx + LegacyNodeRoom.test.tsx (static anatomy + happy-dom interactive matrix incl. through-Legacy drain/poll-flip)."
     },
     {
       "id": "US-004",
