@@ -230,6 +230,7 @@ export function NodeTranscriptPane({
 
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
+  const nowMs = Date.now();
   const items: AgentHistoryItem[] =
     row === null
       ? []
@@ -237,6 +238,7 @@ export function NodeTranscriptPane({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
+          nowMs,
         });
   const visibleAsks =
     row === null
@@ -281,7 +283,6 @@ export function NodeTranscriptPane({
     );
   })?.id;
 
-  const nowMs = Date.now();
   const agentDisplayName = row?.label ?? '';
   const displayNodeId = row?.nodeId ?? '';
 

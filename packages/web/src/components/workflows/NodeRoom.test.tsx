@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import type { WorkflowNodeMessageResponse } from '@/lib/api';
+import { toolRowPresentation } from '@/lib/tool-presentation';
 
 import { NodeRoom, selectNodeRoomMessages } from './NodeRoom';
 
@@ -84,22 +85,37 @@ function lifecycleItem(
 function toolItem(
   overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
 ): Extract<AgentHistoryItem, { kind: 'tool' }> {
-  return {
-    kind: 'tool',
+  const base = {
+    kind: 'tool' as const,
     id: 'tool-1',
     seq: 2,
-    role: 'tool',
+    role: 'tool' as const,
     name: 'Read',
     toolUseId: 'tool-use-1',
     context: [{ label: 'path', value: 'a.ts' }],
     input: { path: 'a.ts' },
     output: 'truncated-output',
-    outcome: 'succeeded',
+    outcome: 'succeeded' as const,
+    exitCode: null,
     durationMs: 1500,
     canLoadFullOutput: true,
-    outputState: 'truncated',
+    outputState: 'truncated' as const,
     messageId: 'msg-tool-1',
     ...overrides,
+  };
+  return {
+    ...base,
+    presentation:
+      overrides.presentation ??
+      toolRowPresentation(
+        { name: base.name, input: base.input, output: base.output },
+        {
+          outcome: base.outcome,
+          exitCode: base.exitCode,
+          durationMs: base.durationMs,
+          outputState: base.outputState,
+        }
+      ),
   };
 }
 
