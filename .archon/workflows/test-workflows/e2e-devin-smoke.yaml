@@ -1,7 +1,7 @@
 name: e2e-devin-smoke
 description: 'Smoke test for the Devin CLI community provider. Verifies plain and structured responses.'
 provider: devin
-model: gpt-5-6-sol-low
+model: swe-2-max
 mutates_checkout: false
 
 nodes:

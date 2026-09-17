@@ -7,18 +7,17 @@ description: |
   Does: resolve the plan source from $ARGUMENTS — a GitHub issue (URL or #N) whose
         body links the plan, or a local plan dir / .md file ->
         convert plan into a Ralph PRD (prd.md + prd.json) CO-LOCATED with it ->
-        autonomous story-by-story implementation via archon-ralph-dag-project-aware ->
-        audit-only plan-coverage gate (verify-audit); on FAIL a fix-gaps pass
-        loops back to the gate (max 3); on exhaustion one final fix pass -> create PR.
-        Never trusts ralph-implement.
+        autonomous story-by-story implementation via a native in-parent Ralph loop ->
+        Codex repairs any remaining Ralph blockers, plan gaps, or defects ->
+        create a PR only after the Codex repair gate passes.
+        Never trusts ralph-loop-run.
   Input: REQUIRED. A GitHub issue URL / #N whose body links a plan path, OR a plan
         directory (plans/<slug>/, specs/<slug>/) or a .md plan file
         (e.g. docs/superpowers/plans/<name>.md).
   NOT for: creating a plan from scratch (use ck-feature), quick one-file fixes,
         bug fixes, or PR reviews.
 
-# Default provider. build-ralph-prd / verify-audit / fix-gaps / fix-gaps-final override to codex.
-# ralph-implement runs archon-ralph-dag-project-aware as authored (its own per-node providers).
+# Default provider. The plan, Ralph, audit, and fix nodes declare their own providers.
 provider: omp
 
 nodes:
@@ -34,9 +33,10 @@ nodes:
       echo "HEAD=$(git rev-parse --short HEAD 2>/dev/null || echo 'no-git')"
       echo "ARTIFACTS_DIR=$ARTIFACTS_DIR"
       git fetch --all --prune 2>/dev/null || true
-      mkdir -p plans
+      mkdir -p plans "$ARTIFACTS_DIR/ak-implement"
+      git rev-parse HEAD > "$ARTIFACTS_DIR/ak-implement/base-sha.txt"
       echo ""
-      echo "Pipeline: resolve plan  ->  plan->Ralph PRD (co-located)  ->  archon-ralph-dag-project-aware  ->  verify-audit gate <-> fix-gaps loop  ->  PR"
+      echo "Pipeline: resolve plan  ->  plan->Ralph PRD (co-located)  ->  native Ralph loop  ->  Codex final repair gate  ->  PR"
       echo "Starting Step 1 of 5: resolve plan..."
 
   # ───────────────────────────────────────────────────────────────────
@@ -150,7 +150,7 @@ nodes:
       Treat the current plan as an unverified draft.
       Do not trust its claims, assumptions, scope, file references, technical decisions, or conclusions.
 
-      Independently inspect the repository, documentation, code, tests, configuration, and existing behavior.
+      Independently inspect the repository, documentation, code, tests, configuration, existing behavior, and any mockups, wireframes, prototypes, or other design artifacts referenced by or co-located with the plan.
       Use repository evidence to verify every material part of the plan.
 
       Determine:
@@ -161,6 +161,7 @@ nodes:
       - Whether the scope is correct and complete.
       - Whether any requirements, decisions, or steps conflict.
       - Whether the plan conflicts with existing behavior, contracts, architecture, conventions, or repository rules.
+      - When the plan includes UI work, whether it matches every applicable design artifact for layout, content, states, interactions, and responsive behavior; resolve conflicts according to the repository's documented design authority and add visual acceptance criteria for the required states and viewports. If repository evidence does not resolve a design conflict, do not guess; record the conflict in the plan and list it as a blocker.
       - Whether the design is correct, simple, maintainable, secure, scalable, and reliable.
       - Whether the named files, components, dependencies, and code paths are accurate.
       - Whether the implementation order is practical and complete.
@@ -201,11 +202,40 @@ nodes:
       - The changes you made.
       - Any remaining risks, assumptions, or unresolved questions.
       - Whether the plan is ready to implement.
+
+      Return the report in `report`.
+      Set `ready` to `true` only when the revised plan is ready to implement and `blockers` is empty.
+      Otherwise, set `ready` to `false` and list every unresolved blocker.
     depends_on: [resolve-plan]
     provider: codex
     effort: xhigh
     model: gpt-5.6-sol
     context: fresh
+    output_format:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        report:
+          type: string
+        blockers:
+          type: array
+          items:
+            type: string
+      required: [ready, report, blockers]
+
+  - id: verified-plan-ready
+    depends_on: [verify-and-fix-plan]
+    when: "$verify-and-fix-plan.output.ready == true"
+    bash: |
+      echo "Plan verification passed; proceeding to PRD generation."
+
+  - id: verified-plan-blocked
+    depends_on: [verify-and-fix-plan]
+    when: "$verify-and-fix-plan.output.ready == false"
+    bash: |
+      echo "Plan verification found unresolved blockers; implementation will not start." >&2
+      exit 1
 
   # ───────────────────────────────────────────────────────────────────
   # STEP 3 / 5 — Convert the plan into a Ralph PRD, CO-LOCATED with the plan
@@ -236,7 +266,7 @@ nodes:
 
         $resolve-plan.output.prd_dir
 
-      Convert that ENTIRE plan into a Ralph PRD so the archon-ralph-dag-project-aware
+      Convert that ENTIRE plan into a Ralph PRD so the native project-aware Ralph
       loop can implement it one story per iteration. Do NOT implement the feature
       itself — only produce the PRD files. Write ONLY inside
       `$resolve-plan.output.prd_dir` (never `.archon/ralph/`).
@@ -282,10 +312,9 @@ nodes:
          non-empty array with every story `passes: false`.
 
       Report `$resolve-plan.output.prd_dir` as `prd_dir`.
-    depends_on: [verify-and-fix-plan]
-    provider: omp
-    effort: xhigh
-    model: openai-codex/gpt-5.5
+    depends_on: [verified-plan-ready]
+    provider: devin
+    model: swe-2-max
     context: fresh
     output_format:
       type: object
@@ -301,227 +330,206 @@ nodes:
       required: [prd_dir, slug, story_count]
 
   # ───────────────────────────────────────────────────────────────────
-  # STEP 4 / 5 — Implement via archon-ralph-dag-project-aware (sub-run)
-  # Governed child run in this SAME worktree (isolation: inherit).
-  # Receives the ready Ralph PRD directory produced by build-ralph-prd.
-  # Loops one story per iteration (fresh context), validates, and returns
-  # uncommitted changes. This parent audits, commits, pushes, and creates the PR.
+  # STEP 4 / 5 — Implement through a native in-parent Ralph loop
+  # The deterministic preflight records the PRD directory for the iteration command.
+  # Each fresh-context iteration implements, validates, and commits one story.
+  # The workflow engine checks prd.json and owns loop completion.
   # ───────────────────────────────────────────────────────────────────
-  - id: ralph-implement
-    workflow: archon-ralph-dag-project-aware
-    input: '$build-ralph-prd.output.prd_dir'
-    isolation: inherit
+  - id: ralph-native-preflight
+    description: Validate the generated PRD before the native Ralph loop starts.
     depends_on: [build-ralph-prd]
-
-  - id: ralph-implementation-complete
-    depends_on: [ralph-implement]
-    when: "$ralph-implement.output.done == true"
     bash: |
-      echo "Ralph implementation complete; parent workflow owns finalization."
+      set -euo pipefail
+      PRD_DIR=$build-ralph-prd.output.prd_dir
+      if [ -z "$PRD_DIR" ] || [ ! -f "$PRD_DIR/prd.json" ]; then
+        echo "Missing Ralph PRD: $PRD_DIR/prd.json" >&2
+        exit 1
+      fi
+      if [ ! -f "$PRD_DIR/prd.md" ]; then
+        echo "Missing Ralph context: $PRD_DIR/prd.md" >&2
+        exit 1
+      fi
+      jq -e '
+        type == "object" and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+          (.id | type == "string" and length > 0) and
+          (.passes | type == "boolean") and
+          (.dependsOn | type == "array") and
+          all(.dependsOn[]; type == "string")
+        )
+      ' "$PRD_DIR/prd.json" >/dev/null || {
+        echo "Invalid Ralph PRD: $PRD_DIR/prd.json" >&2
+        exit 1
+      }
+      if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
+        bun install --frozen-lockfile 2>&1 | tail -3
+      elif [ -f "package-lock.json" ]; then
+        npm ci 2>&1 | tail -3
+      elif [ -f "yarn.lock" ]; then
+        yarn install --frozen-lockfile 2>&1 | tail -3
+      elif [ -f "pnpm-lock.yaml" ]; then
+        pnpm install --frozen-lockfile 2>&1 | tail -3
+      fi
+      mkdir -p "$ARTIFACTS_DIR/superpowers"
+      printf '%s\n' "$PRD_DIR" > "$ARTIFACTS_DIR/superpowers/prd-dir.txt"
+      echo "PRD_DIR=$PRD_DIR"
 
-  - id: ralph-implementation-blocked
-    depends_on: [ralph-implement]
-    when: "$ralph-implement.output.done == false"
-    bash: |
-      echo "Ralph implementation returned a blocker for parent resolution." >&2
-      exit 1
-
-  # ───────────────────────────────────────────────────────────────────
-  # STEP 5a / 5 — Verify/fix loop: audit-only gate + route_loop
-  # verify-audit AUDITS ONLY -> PASS/FAIL. verify-gate (route_loop): FAIL -> fix-gaps
-  # (loops back to the gate, max 3); PASS -> plan-verified; exhausted -> fix-gaps-final.
-  # Never trust ralph-implement or prd.json passes flags; audit the plan vs the codebase.
-  # ───────────────────────────────────────────────────────────────────
-  - id: verify-audit
-    prompt: |
-      ## Persona
-
-      You are a skeptical staff engineer doing a delivery audit. Ralph claimed the
-      work is done. You do NOT trust that claim. Prove, with evidence, whether every
-      task in the ORIGINAL plan is actually implemented in the codebase. You AUDIT
-      ONLY — you do NOT implement, fix, or commit anything in this node.
-
-      ## Headless mode — NO human is available
-
-      Resolve every decision yourself. Do not stop to ask.
-
-      ## Inputs
-
-      - Original plan (directory or .md file): `$resolve-plan.output.plan_path`
-      - Ralph PRD directory: `$build-ralph-prd.output.prd_dir`
-      - Ralph sub-run output (untrusted): `$ralph-implement.output`
-
-      ## Mandatory procedure
-
-      1. Read the plan at `$resolve-plan.output.plan_path` (if a directory: `plan.md`
-         and EVERY `phase-*.md`; if a single `.md` file: that file). Build a complete
-         checklist of concrete deliverables / acceptance criteria / tasks from the
-         plan (not from prd.json).
-      2. Optionally read `$build-ralph-prd.output.prd_dir/prd.json` and `progress.txt`
-         as hints only. Treat every `passes: true` as a claim to verify, never proof.
-      3. For EACH plan checklist item, inspect the real codebase and tests. Mark it
-         `done`, `partial`, or `missing` with file:line evidence.
-      4. Do NOT implement anything. This node only judges.
-      5. Write `$build-ralph-prd.output.prd_dir/implementation-audit.md` with:
-
-         ```markdown
-         # Implementation Audit
-         - Plan: <relative plan dir>
-         - Auditor: codex gpt-5.5
-         - Verdict: <complete | gaps-remain>
-         - Summary: <2-4 sentences>
-
-         ## Checklist
-         | ID | Plan item | Status | Evidence |
-         |----|-----------|--------|----------|
-         | P-001 | ... | done/partial/missing | file:line |
-
-         ## Remaining Gaps
-         (partial/missing items; or "None")
-         ```
-
-      6. Decide the gate: `PASS` when every checklist item is `done`; `FAIL` when any
-         item is `partial` or `missing`. Set `gaps_count` = count of partial+missing.
-         Set `audit_path` = absolute path of the implementation-audit.md you wrote.
-      7. End with `AUDIT_DONE` and a one-line verdict.
-
-      ## Hard rules
-
-      - Source of truth = the ORIGINAL plan files, not Ralph story status.
-      - Do NOT implement, fix, or commit in this node — a separate fix node does that.
-      - Do not rewrite the plan or expand scope.
-      - If a gap cannot be decided from evidence, prefer `FAIL` (a fix pass is cheaper
-        than shipping an unverified gap).
-    depends_on: [ralph-implementation-complete, fix-gaps]
-    trigger_rule: one_success
-    provider: omp
-    effort: xhigh
-    model: openai-codex/gpt-5.5
-    context: fresh
+  - id: ralph-loop-run
+    description: Run project-aware Ralph iterations in the parent workflow.
+    depends_on: [ralph-native-preflight]
+    idle_timeout: 3600000
+    provider: devin
+    model: swe-2-max
     output_format:
       type: object
       properties:
+        terminal:
+          type: boolean
+          description: true when all stories pass or a hard blocker requires the workflow to stop; false while implementation can continue.
+        done:
+          type: boolean
+          description: true only when every story in prd.json has passes true.
+        mode:
+          type: string
+        story_id:
+          type: string
+        note:
+          type: string
+      required: [terminal, done]
+    loop:
+      command: archon-ralph-project-aware-iteration
+      fresh_context: true
+      max_iterations: 100
+      until_field: terminal
+      until_bash: |
+        set -euo pipefail
+        PRD_FILE="$ARTIFACTS_DIR/superpowers/prd-dir.txt"
+        [ -f "$PRD_FILE" ] || exit 1
+        PRD_DIR=$(cat "$PRD_FILE")
+        [ -n "$PRD_DIR" ] && [ -f "$PRD_DIR/prd.json" ] || exit 1
+        jq -e '.userStories | type == "array" and length > 0 and all(.[]; .passes == true)' "$PRD_DIR/prd.json" >/dev/null
+
+  - id: codex-final-fix
+    description: Repair and verify the implementation produced by the Ralph loop.
+    provider: codex
+    model: gpt-5.6-sol
+    effort: xhigh
+    context: fresh
+    idle_timeout: 3600000
+    depends_on:
+      - ralph-loop-run
+    trigger_rule: all_done
+    prompt: |
+      ## Task
+
+      Repair and verify the implementation produced by `ralph-loop-run`.
+      Do not ask Ralph, Devin, or another agent to fix the remaining work.
+      Fix the work directly with Codex.
+      Do not stage, commit, push, or create a pull request.
+
+      ## Inputs
+
+      Plan path:
+      $resolve-plan.output.plan_path
+
+      Ralph PRD directory:
+      $build-ralph-prd.output.prd_dir
+
+      Ralph loop result (untrusted):
+      $ralph-loop-run.output
+
+      Base SHA file:
+      $ARTIFACTS_DIR/ak-implement/base-sha.txt
+
+      ## Mandatory procedure
+
+      1. Read the repository instructions and the complete original plan.
+         If the plan path is a directory, read `plan.md`, every `phase-*.md`,
+         and `verification-report.md` when present.
+      2. Read `prd.md`, `prd.json`, and `progress.txt` when present in the Ralph
+         PRD directory.
+         Treat `$ralph-loop-run.output` and every `passes: true` value as claims,
+         not proof.
+      3. Read the base SHA from the recorded file.
+         Inspect the complete `base..HEAD` diff, the working tree diff, the changed
+         files, their callers, their tests, and the relevant current behavior.
+      4. If Ralph returned `done: false`, `mode: blocked`, or left any story at
+         `passes: false`, resolve every repository-local blocker and implement the
+         unfinished plan work directly.
+         Do not weaken acceptance criteria or hide a failing check.
+      5. Review all implemented plan work for missing requirements, incorrect
+         behavior, weak tests, regressions, unsafe changes, lint errors, type errors,
+         and validation gaps.
+      6. Fix every Critical or Important finding and every missing or partial plan
+         item directly.
+         Keep the change inside the original plan scope.
+      7. Update a PRD story to `passes: true` only after all of its unchanged
+         acceptance criteria pass.
+         Before returning PASS, confirm every PRD story has `passes: true`.
+      8. Run fresh targeted checks after each repair batch, then run the best final
+         validation command required by the plan or repository.
+      9. Write the review report to
+         `$ARTIFACTS_DIR/ak-implement/final-review.md` and the repair report to
+         `$ARTIFACTS_DIR/ak-implement/final-fixes.md`.
+
+      ## Gate
+
+      Return PASS only when the complete original plan is implemented, every PRD
+      story passes, no Critical or Important finding remains, and fresh validation
+      evidence is green.
+      Return FAIL when an external dependency, missing credential, or unresolved
+      product decision prevents a safe repair.
+      Return only JSON.
+    output_format:
+      type: object
+      required:
+        - gate
+        - fixes_count
+        - remaining_findings_count
+        - review_report
+        - fix_report
+        - validation_summary
+        - summary
+      properties:
         gate:
           type: string
-          enum: [PASS, FAIL]
-        gaps_count:
+          enum:
+            - PASS
+            - FAIL
+        fixes_count:
           type: number
-        audit_path:
+        remaining_findings_count:
+          type: number
+        review_report:
           type: string
-      required: [gate, audit_path]
+        fix_report:
+          type: string
+        validation_summary:
+          type: string
+        summary:
+          type: string
 
-  - id: verify-gate
-    depends_on: [verify-audit]
-    route_loop:
-      condition: "$verify-audit.output.gate == 'PASS'"
-      max_iterations: 3
-      routes:
-        positive: plan-verified
-        negative: fix-gaps
-        exhausted: fix-gaps-final
-
-  - id: fix-gaps
-    prompt: |
-      ## Persona
-
-      You are a senior engineer closing delivery gaps. A skeptical audit just found the
-      implementation does NOT yet satisfy the ORIGINAL plan. Implement the smallest
-      durable changes that make every flagged gap `done`.
-
-      ## Headless mode — NO human is available
-
-      Resolve every decision yourself. Do not stop to ask.
-
-      ## Inputs
-
-      - Latest audit report (authoritative gap list):
-        `$build-ralph-prd.output.prd_dir/implementation-audit.md`
-      - Original plan (directory or .md file): `$resolve-plan.output.plan_path`
-      - Ralph PRD directory: `$build-ralph-prd.output.prd_dir`
-
-      ## Mandatory procedure
-
-      1. Read the audit at `$build-ralph-prd.output.prd_dir/implementation-audit.md`.
-         Take every item marked `partial` or `missing` as the work to do.
-      2. Re-read the relevant plan parts at `$resolve-plan.output.plan_path` (directory:
-         `plan.md` + every `phase-*.md`; single file: that file) so each fix matches the
-         plan's intent.
-      3. For EACH `partial`/`missing` item, IMPLEMENT the remaining work now:
-         - Prefer the smallest durable change that fully satisfies the plan item.
-         - Follow repo patterns; keep KISS / YAGNI; do not expand scope beyond the plan.
-         - Add/update tests when the plan requires them.
-         - Run the project's relevant typecheck / lint / tests for the touched area.
-         - Commit only the files you changed (never `git add -A` / `git add .`) with a
-           clear message like `fix: complete plan gaps — <short summary>`.
-         - Never commit scratch/review/PR-body artifacts or anything under
-           `$ARTIFACTS_DIR` / `.archon/artifacts` / `.archon/logs` / `.archon/state`.
-      4. Do NOT re-audit or write the audit report — the verify-audit node re-runs after
-         you and re-checks the plan.
-      5. End with `FIX_DONE` and a one-line summary of what you implemented.
-    provider: omp
-    effort: xhigh
-    model: openai-codex/gpt-5.5
-    context: fresh
-
-  - id: plan-verified
-    depends_on: [verify-gate]
-    bash: |
-      echo "Plan fully implemented — audit clean; proceeding to PR."
-
-  - id: fix-gaps-final
-    prompt: |
-      ## Persona
-
-      You are a senior engineer on the FINAL fix pass. The verify/fix loop exhausted its
-      retry budget with gaps still open. Implement every remaining gap now. NO further
-      audit or fix pass runs after you — the PR is created immediately after this node.
-
-      ## Headless mode — NO human is available
-
-      Resolve every decision yourself. Do not stop to ask.
-
-      ## Inputs
-
-      - Latest audit report (authoritative gap list):
-        `$build-ralph-prd.output.prd_dir/implementation-audit.md`
-      - Original plan (directory or .md file): `$resolve-plan.output.plan_path`
-      - Ralph PRD directory: `$build-ralph-prd.output.prd_dir`
-
-      ## Mandatory procedure
-
-      1. Read the audit at `$build-ralph-prd.output.prd_dir/implementation-audit.md` and
-         take every `partial`/`missing` item as the work to do.
-      2. Re-read the relevant plan parts at `$resolve-plan.output.plan_path` (directory:
-         `plan.md` + every `phase-*.md`; single file: that file).
-      3. For EACH `partial`/`missing` item, IMPLEMENT the remaining work now:
-         - Smallest durable change that fully satisfies the plan item; repo patterns;
-           KISS / YAGNI; no scope expansion.
-         - Add/update tests when the plan requires them.
-         - Run the project's relevant typecheck / lint / tests for the touched area.
-         - Commit only the files you changed (never `git add -A` / `git add .`) with a
-           message like `fix: complete plan gaps (final pass) — <short summary>`.
-         - Never commit scratch/review/PR-body artifacts or anything under
-           `$ARTIFACTS_DIR` / `.archon/artifacts` / `.archon/logs` / `.archon/state`.
-      4. Do NOT write the audit report. After this node the PR is created directly.
-      5. If any gap is a genuine hard blocker outside the repo (missing secret, external
-         service, product decision), document it in one line so the PR body surfaces it.
-      6. End with `FINAL_FIX_DONE` and a one-line summary.
-    depends_on: [verify-gate]
-    provider: omp
-    effort: xhigh
-    model: openai-codex/gpt-5.5
-    context: fresh
+  - id: stop-on-final-fix-failure
+    description: Stop when Codex cannot safely repair all remaining Ralph work.
+    depends_on:
+      - codex-final-fix
+    when: "$codex-final-fix.output.gate == 'FAIL'"
+    cancel: |
+      Codex could not repair all remaining Ralph work.
+      Review: $codex-final-fix.output.review_report
+      Fixes: $codex-final-fix.output.fix_report
+      Summary: $codex-final-fix.output.summary
 
   # ───────────────────────────────────────────────────────────────────
-  # STEP 5b / 5 — Create PR (after either exit path: plan-verified or fix-gaps-final)
+  # STEP 5 / 5 — Create PR only after the Codex final repair gate passes
   # ───────────────────────────────────────────────────────────────────
   - id: create-pull-request
     command: archon-create-pr
-    provider: codex
-    effort: medium
-    depends_on: [plan-verified, fix-gaps-final]
-    trigger_rule: one_success
+    provider: devin
+    depends_on: [codex-final-fix]
+    when: "$codex-final-fix.output.gate == 'PASS'"
     context: fresh
-    model: gpt-5.5
+    model: swe-2-high
     idle_timeout: 900000
     output_type: pull-request
