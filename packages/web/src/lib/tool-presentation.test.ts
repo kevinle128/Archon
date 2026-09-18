@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   MAX_ALIAS_NAME_CODE_UNITS,
+  MAX_BODY_COMMAND_CODE_UNITS,
+  MAX_BODY_FIELDS,
   MAX_CHIP_CODE_POINTS,
   MAX_COUNT_KEYS_SCANNED,
   MAX_COUNT_OUTPUT_CODE_UNITS,
@@ -9,11 +11,13 @@ import {
   MAX_GENERIC_KEYS_SCANNED,
   MAX_GENERIC_SCALAR_CODE_POINTS,
   MAX_HEADLINE_SOURCE_CODE_UNITS,
+  toolBodyPresentation,
   toolPresentation,
   toolRowPresentation,
   type ToolFamily,
   type ToolRowFacts,
 } from './tool-presentation';
+import { MAX_LIST_ITEMS, MAX_OUTPUT_TEXT_CODE_UNITS } from './tool-output';
 
 function call(
   name: string,
@@ -817,5 +821,437 @@ describe('failure containment', () => {
       { kind: 'exit', text: 'exit 1', tone: 'danger' },
       { kind: 'duration', text: '10ms', tone: 'muted' },
     ]);
+  });
+});
+
+function body(
+  name: string,
+  input: unknown,
+  output: unknown,
+  family: ToolFamily
+): ReturnType<typeof toolBodyPresentation> {
+  return toolBodyPresentation({ name, input, output }, family);
+}
+
+describe('lazy family-body resolver', () => {
+  test('resolved family is authoritative — never re-resolved from input or output', () => {
+    const terminal = body('Read', { file_path: '/x.ts', command: 'cat /x.ts' }, 'out', 'shell');
+    expect(terminal?.kind).toBe('terminal');
+    const web = body('Bash', { command: 'ls', url: 'https://a.dev' }, 'text', 'web');
+    expect(web?.kind).toBe('web');
+    if (web?.kind === 'web') expect(web.url).toBe('https://a.dev');
+  });
+
+  test('todo and task return null — their bodies belong to their own stories', () => {
+    expect(toolBodyPresentation({ name: 'TodoWrite', input: {}, output: {} }, 'todo')).toBeNull();
+    expect(toolBodyPresentation({ name: 'Task', input: {}, output: {} }, 'task')).toBeNull();
+  });
+
+  test('summary paths never read deep output channels; the body does', () => {
+    let filenamesRead = 0;
+    const output = {
+      numMatches: 4,
+      get filenames(): string[] {
+        filenamesRead++;
+        return ['a.ts'];
+      },
+    };
+    const input = { name: 'Grep', input: { pattern: 'x' }, output };
+    toolPresentation(input);
+    toolRowPresentation(input, { outcome: 'succeeded', outputState: 'full' });
+    expect(filenamesRead).toBe(0);
+    toolBodyPresentation(input, 'search');
+    expect(filenamesRead).toBeGreaterThan(0);
+  });
+
+  test('malformed hostile output degrades to a bounded unreadable body', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys(): string[] {
+          throw new Error('nope');
+        },
+        get(): never {
+          throw new Error('nope');
+        },
+      }
+    );
+    const result = toolBodyPresentation({ name: 'x', input: {}, output: hostile }, 'generic');
+    expect(result).toEqual({ kind: 'generic', fields: [], markdown: null, unreadable: true });
+  });
+
+  test('output never reclassifies family — identical with output absent vs real output', () => {
+    const fixtures: [string, unknown, unknown, ToolFamily][] = [
+      ['Bash', { command: 'ls' }, { stdout: 'x' }, 'shell'],
+      ['Read', { file_path: '/a.ts' }, { file: { content: 'x' } }, 'file'],
+      ['Grep', { pattern: 'x' }, { mode: 'content', content: 'a:1:x' }, 'search'],
+      ['Glob', { pattern: '*' }, { filenames: ['a'] }, 'glob'],
+      ['eval', { code: 'x', language: 'py' }, '1', 'code'],
+      ['TodoWrite', { todos: [] }, null, 'todo'],
+      ['Task', { description: 'd' }, 'done', 'task'],
+      ['WebFetch', { url: 'https://a.dev' }, { result: 't' }, 'web'],
+      ['mystery', { a: 1 }, { b: 2 }, 'generic'],
+    ];
+    for (const [name, input, output, family] of fixtures) {
+      const bare = toolPresentation({ name, input, output: undefined });
+      const full = toolPresentation({ name, input, output });
+      expect(bare.family).toBe(family);
+      expect(full.family).toBe(family);
+      const row = toolRowPresentation(
+        { name, input, output },
+        { outcome: 'succeeded', outputState: 'full' }
+      );
+      expect(row.family).toBe(family);
+    }
+  });
+});
+
+describe('terminal body', () => {
+  test('carries the command and normalized output text', () => {
+    const b = body('Bash', { command: 'ls -la' }, { stdout: 'a\nb', stderr: '' }, 'shell');
+    expect(b).toEqual({
+      kind: 'terminal',
+      command: 'ls -la',
+      output: 'a\nb',
+      unreadable: false,
+    });
+  });
+
+  test('command falls back to the sent name and is bounded with an explicit ellipsis', () => {
+    const long = 'x'.repeat(MAX_BODY_COMMAND_CODE_UNITS + 10);
+    const b = body('Bash', { command: long }, 'done', 'shell');
+    if (b?.kind !== 'terminal') throw new Error('expected terminal');
+    expect(b.command.endsWith('…')).toBe(true);
+    expect([...b.command].length).toBe(MAX_BODY_COMMAND_CODE_UNITS + 1);
+  });
+
+  test('wrapper-preserving sent name supplies the command when input lacks one', () => {
+    const b = body("/bin/zsh -lc 'ls -la'", {}, 'out', 'shell');
+    if (b?.kind !== 'terminal') throw new Error('expected terminal');
+    expect(b.command).toBe("/bin/zsh -lc 'ls -la'");
+  });
+});
+
+describe('file body', () => {
+  test('shows the path and normalized preview text', () => {
+    const b = body('Read', { file_path: '/a.ts' }, { file: { content: 'line1\nline2' } }, 'file');
+    expect(b).toEqual({
+      kind: 'file',
+      path: '/a.ts',
+      preview: 'line1\nline2',
+      unreadable: false,
+    });
+  });
+
+  test('preview falls back to written input content when output has no text', () => {
+    const b = body('Write', { file_path: '/a.ts', content: 'body text' }, null, 'file');
+    if (b?.kind !== 'file') throw new Error('expected file');
+    expect(b.preview).toBe('body text');
+  });
+});
+
+describe('search body', () => {
+  test('content mode yields structured matches with path and line', () => {
+    const b = body(
+      'Grep',
+      { pattern: 'foo', output_mode: 'content' },
+      {
+        mode: 'content',
+        file_matches: [{ path: 'a.ts', matches: [{ content: 'hit', line_number: 3 }] }],
+      },
+      'search'
+    );
+    expect(b).toEqual({
+      kind: 'matches',
+      pattern: 'foo',
+      scope: null,
+      items: [{ path: 'a.ts', line: 3, text: 'hit' }],
+      omitted: 0,
+      truncated: false,
+    });
+  });
+
+  test('content lines parse anchored path:line:text; unmatched lines stay as text items', () => {
+    const b = body(
+      'grep',
+      { pattern: 'foo', output_mode: 'content' },
+      { mode: 'content', content: 'a.ts:2:hello\nplain line' },
+      'search'
+    );
+    if (b?.kind !== 'matches') throw new Error('expected matches');
+    expect(b.items).toEqual([
+      { path: 'a.ts', line: 2, text: 'hello' },
+      { path: null, line: null, text: 'plain line' },
+    ]);
+  });
+
+  test('files_with_matches yields bounded paths', () => {
+    const b = body(
+      'Grep',
+      { pattern: 'foo', output_mode: 'files_with_matches' },
+      { mode: 'files_with_matches', filenames: ['a.ts', 'b.ts'] },
+      'search'
+    );
+    expect(b).toEqual({
+      kind: 'paths',
+      pattern: 'foo',
+      scope: null,
+      items: ['a.ts', 'b.ts'],
+      omitted: 0,
+      truncated: false,
+    });
+  });
+
+  test('count mode keeps the search family but renders a generic count body', () => {
+    const b = body(
+      'Grep',
+      { pattern: 'foo', output_mode: 'count' },
+      { mode: 'count', numMatches: 7, numFiles: 2 },
+      'search'
+    );
+    expect(b).toEqual({
+      kind: 'generic',
+      fields: [
+        { key: 'matches', value: '7' },
+        { key: 'files', value: '2' },
+      ],
+      markdown: null,
+      unreadable: false,
+    });
+  });
+
+  test('input output_mode wins over the declared output mode', () => {
+    const b = body(
+      'Grep',
+      { pattern: 'x', output_mode: 'files_with_matches' },
+      { mode: 'content', content: 'a.ts:1:x' },
+      'search'
+    );
+    expect(b?.kind).toBe('paths');
+  });
+
+  test('declared output mode beats structural channels', () => {
+    const b = body(
+      'Grep',
+      { pattern: 'x' },
+      {
+        mode: 'files_with_matches',
+        file_matches: [{ path: 'a.ts', matches: [{ content: 'x', line_number: 1 }] }],
+      },
+      'search'
+    );
+    expect(b?.kind).toBe('paths');
+  });
+
+  test('structured matches imply content when no mode is declared', () => {
+    const b = body(
+      'grep',
+      { pattern: 'x' },
+      { file_matches: [{ path: 'a.ts', matches: [{ content: 'x', line_number: 1 }] }] },
+      'search'
+    );
+    expect(b?.kind).toBe('matches');
+  });
+
+  test('a filenames channel implies files_with_matches when no mode is declared', () => {
+    const b = body('grep', { pattern: 'x' }, { filenames: ['a.ts'] }, 'search');
+    expect(b?.kind).toBe('paths');
+  });
+
+  test('absent mode defaults by sent alias — Grep lists paths, grep parses content', () => {
+    const output = 'a.ts\nb.ts';
+    const claude = body('Grep', { pattern: 'x' }, output, 'search');
+    expect(claude?.kind).toBe('paths');
+    if (claude?.kind === 'paths') expect(claude.items).toEqual(['a.ts', 'b.ts']);
+    const omp = body('grep', { pattern: 'x' }, output, 'search');
+    expect(omp?.kind).toBe('matches');
+    if (omp?.kind === 'matches') {
+      expect(omp.items).toEqual([
+        { path: null, line: null, text: 'a.ts' },
+        { path: null, line: null, text: 'b.ts' },
+      ]);
+    }
+  });
+
+  test('a paths arm reports the exact omitted count when the source total is known', () => {
+    const filenames = Array.from({ length: MAX_LIST_ITEMS + 7 }, (_, i) => `f${String(i)}.ts`);
+    const b = body(
+      'Grep',
+      { pattern: 'x', output_mode: 'files_with_matches' },
+      { mode: 'files_with_matches', filenames },
+      'search'
+    );
+    if (b?.kind !== 'paths') throw new Error('expected paths');
+    expect(b.items).toHaveLength(MAX_LIST_ITEMS);
+    expect(b.omitted).toBe(7);
+    expect(b.truncated).toBe(true);
+  });
+});
+
+describe('glob body', () => {
+  test('lists bounded paths with pattern and scope', () => {
+    const b = body(
+      'Glob',
+      { pattern: '**/*.ts', path: 'src' },
+      { filenames: ['a.ts', 'b.ts'] },
+      'glob'
+    );
+    expect(b).toEqual({
+      kind: 'paths',
+      pattern: '**/*.ts',
+      scope: 'src',
+      items: ['a.ts', 'b.ts'],
+      omitted: 0,
+      truncated: false,
+    });
+  });
+
+  test('an OMP path-only input uses the path as pattern with no scope', () => {
+    const b = body('list_dir', { path: 'src' }, { filenames: ['a.ts'] }, 'glob');
+    expect(b).toEqual({
+      kind: 'paths',
+      pattern: 'src',
+      scope: null,
+      items: ['a.ts'],
+      omitted: 0,
+      truncated: false,
+    });
+  });
+
+  test('falls back to non-empty text lines when no filenames channel exists', () => {
+    const b = body('Glob', { pattern: 'x' }, 'a.ts\n\nb.ts', 'glob');
+    if (b?.kind !== 'paths') throw new Error('expected paths');
+    expect(b.items).toEqual(['a.ts', 'b.ts']);
+  });
+});
+
+describe('code body', () => {
+  test('keeps full source past the 80-char headline cap, with language and result', () => {
+    const source = `print(${'1'.repeat(200)})`;
+    const b = body('eval', { code: source, language: 'python' }, '1', 'code');
+    expect(b).toEqual({
+      kind: 'code',
+      language: 'python',
+      source,
+      result: '1',
+      truncated: false,
+    });
+  });
+
+  test('source over the display cap reports explicit truncation', () => {
+    const source = 'x'.repeat(MAX_OUTPUT_TEXT_CODE_UNITS + 1);
+    const b = body('eval', { code: source, language: 'python' }, 'ok', 'code');
+    if (b?.kind !== 'code') throw new Error('expected code');
+    expect(b.truncated).toBe(true);
+    expect(b.source.length).toBe(MAX_OUTPUT_TEXT_CODE_UNITS);
+  });
+});
+
+describe('web body', () => {
+  test('carries url, title, and safe markdown text', () => {
+    const b = body(
+      'WebFetch',
+      { url: 'https://x.dev' },
+      { result: '# Hi\nbody', title: 'X' },
+      'web'
+    );
+    expect(b).toEqual({
+      kind: 'web',
+      url: 'https://x.dev',
+      title: 'X',
+      markdown: '# Hi\nbody',
+      omitted: 0,
+      truncated: false,
+    });
+  });
+
+  test('search results become an inert markdown list', () => {
+    const b = body(
+      'WebSearch',
+      { url: 'query' },
+      { results: [{ url: 'https://a', title: 'A' }, { url: 'https://b' }] },
+      'web'
+    );
+    if (b?.kind !== 'web') throw new Error('expected web');
+    expect(b.markdown).toBe('- [A](https://a)\n- [https://b](https://b)');
+    expect(b.title).toBeNull();
+  });
+});
+
+describe('generic body', () => {
+  test('uses bounded key:value fields — objects {…}, arrays [n], no serialized syntax', () => {
+    const b = body('mystery', { obj: { a: 1 }, list: [1, 2], flag: true }, null, 'generic');
+    expect(b).toEqual({
+      kind: 'generic',
+      fields: [
+        { key: 'obj', value: '{…}' },
+        { key: 'list', value: '[2]' },
+        { key: 'flag', value: 'true' },
+      ],
+      markdown: null,
+      unreadable: false,
+    });
+  });
+
+  test('one shared cap of three fields across input then output fields', () => {
+    const b = body('mystery', { a: 1, b: 2 }, { c: 3, d: 4 }, 'generic');
+    if (b?.kind !== 'generic') throw new Error('expected generic');
+    expect(b.fields).toHaveLength(MAX_BODY_FIELDS);
+    expect(b.fields).toEqual([
+      { key: 'a', value: '1' },
+      { key: 'b', value: '2' },
+      { key: 'c', value: '3' },
+    ]);
+  });
+
+  test('serialized object syntax never leaks; {…} markers and prose braces survive', () => {
+    const b = body(
+      'mystery',
+      { cfg: { a: 1 }, items: [1] },
+      'prose with {braces} inline',
+      'generic'
+    );
+    if (b?.kind !== 'generic') throw new Error('expected generic');
+    expect(b.fields).toEqual([
+      { key: 'cfg', value: '{…}' },
+      { key: 'items', value: '[1]' },
+    ]);
+    for (const field of b.fields) {
+      expect(field.value).not.toContain('"');
+      expect(field.value).not.toContain(': {');
+    }
+    expect(b.markdown).toBe('prose with {braces} inline');
+  });
+
+  test('plain string output becomes markdown; a JSON fragment never does', () => {
+    const prose = body('mystery', {}, 'just prose', 'generic');
+    if (prose?.kind !== 'generic') throw new Error('expected generic');
+    expect(prose.markdown).toBe('just prose');
+    const json = body('mystery', {}, '{"a":1}', 'generic');
+    if (json?.kind !== 'generic') throw new Error('expected generic');
+    expect(json.markdown).toBeNull();
+    expect(json.fields).toEqual([{ key: 'a', value: '1' }]);
+  });
+});
+
+describe('collapsed count extraction', () => {
+  test('numMatches/numFiles record keys report their own units', () => {
+    expect(call('Grep', { pattern: 'x' }, { numMatches: 5, numFiles: 2 }).contentBadges).toEqual([
+      { kind: 'count', text: '5 matches', tone: 'neutral' },
+    ]);
+    expect(call('Grep', { pattern: 'x' }, { numFiles: 3 }).contentBadges).toEqual([
+      { kind: 'count', text: '3 files', tone: 'neutral' },
+    ]);
+  });
+
+  test('a small JSON record string yields a count without full normalization', () => {
+    expect(call('Grep', { pattern: 'x' }, '{"numMatches":9}').contentBadges).toEqual([
+      { kind: 'count', text: '9 matches', tone: 'neutral' },
+    ]);
+  });
+
+  test('an over-cap string still produces no badge', () => {
+    const output = `${' '.repeat(MAX_COUNT_OUTPUT_CODE_UNITS)}9`;
+    expect(call('Grep', { pattern: 'x' }, output).contentBadges).toEqual([]);
   });
 });

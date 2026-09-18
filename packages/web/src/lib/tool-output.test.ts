@@ -750,3 +750,22 @@ describe('mode channel discipline', () => {
     expect(normalized.mode).toBe('files_with_matches');
   });
 });
+
+describe('textTruncated flag', () => {
+  test('text at the exact display cap is not flagged', () => {
+    const normalized = normalize('x'.repeat(MAX_OUTPUT_TEXT_CODE_UNITS));
+    expect(normalized.text).toHaveLength(MAX_OUTPUT_TEXT_CODE_UNITS);
+    expect(normalized.textTruncated).toBe(false);
+  });
+
+  test('text one unit over the cap is flagged and bounded', () => {
+    const normalized = normalize('x'.repeat(MAX_OUTPUT_TEXT_CODE_UNITS + 1));
+    expect(normalized.text).toHaveLength(MAX_OUTPUT_TEXT_CODE_UNITS);
+    expect(normalized.textTruncated).toBe(true);
+  });
+
+  test('absent or short text is not flagged', () => {
+    expect(normalize(null).textTruncated).toBe(false);
+    expect(normalize('short').textTruncated).toBe(false);
+  });
+});

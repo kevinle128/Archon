@@ -4,10 +4,26 @@
  * label, headline, and content badge facts. `toolRowPresentation` composes
  * that content presentation with already-derived runtime facts (outcome,
  * exit code, duration, output state) into the collapsed-row model both
- * renderers consume. The input is structural so the chat card can adopt it
- * later without a rewrite.
+ * renderers consume. `toolBodyPresentation` resolves the expanded body lazily
+ * — only while a row is open and Raw is closed — against the already-resolved
+ * family, so polling never pays for output normalization. The input is
+ * structural so the chat card can adopt it later without a rewrite.
  */
 import { formatDurationMs } from './format';
+import {
+  MAX_LIST_ITEMS,
+  MAX_LIST_ITEM_TEXT_CODE_UNITS,
+  MAX_OUTPUT_TEXT_CODE_UNITS,
+  fieldValue,
+  looksLikeJson,
+  normalizeToolOutput,
+  parseMatchLine,
+  sanitizeBounded,
+  type BoundedList,
+  type NormalizedToolOutput,
+  type ToolOutputField,
+  type ToolOutputMatch,
+} from './tool-output';
 
 export const MAX_ALIAS_NAME_CODE_UNITS = 128;
 export const MAX_CHIP_CODE_POINTS = 24;
@@ -56,7 +72,6 @@ export interface ToolRowBadge {
   tone: ToolRowBadgeTone;
 }
 
-/** Story 1.1 row subset of the canonical ToolPresentation; bodies arrive in a later story. */
 export interface ToolPresentation {
   family: ToolFamily;
   /** Chip text: the tool name as sent when it is a single token of <=24 code points, else the family name. */
@@ -319,31 +334,50 @@ function isCountValue(value: unknown): value is number {
 
 /**
  * Bounded count extraction: a finite nonnegative integer scalar, a digit-only
- * string within the output cap, or a shallow `count` field found within
- * MAX_COUNT_KEYS_SCANNED own keys. No recursion and no prose regexing.
+ * or small JSON record string within the output cap, or a shallow recognized
+ * numeric key — `count`/`numMatches` report matches, `numFiles` reports files —
+ * found within MAX_COUNT_KEYS_SCANNED own keys. No recursion, no prose
+ * regexing, and never the full normalizer.
  */
-function extractCount(output: unknown): number | null {
-  if (isCountValue(output)) return output;
+function extractCount(output: unknown): { value: number; unit: 'matches' | 'files' } | null {
+  if (isCountValue(output)) return { value: output, unit: 'matches' };
   if (typeof output === 'string') {
     if (output.length > MAX_COUNT_OUTPUT_CODE_UNITS) return null;
     const trimmed = output.trim();
-    if (!/^\d+$/.test(trimmed)) return null;
-    const parsed = Number(trimmed);
-    return isCountValue(parsed) ? parsed : null;
+    if (/^\d+$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+      return isCountValue(parsed) ? { value: parsed, unit: 'matches' } : null;
+    }
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      return extractCountFromRecord(asRecord(JSON.parse(trimmed)));
+    } catch {
+      return null;
+    }
   }
-  const record = asRecord(output);
+  return extractCountFromRecord(asRecord(output));
+}
+
+function extractCountFromRecord(
+  record: Record<string, unknown> | null
+): { value: number; unit: 'matches' | 'files' } | null {
   if (record === null) return null;
   let scanned = 0;
+  let files: number | null = null;
   for (const key in record) {
     if (!hasOwn(record, key)) continue;
     if (scanned >= MAX_COUNT_KEYS_SCANNED) break;
     scanned++;
-    if (key === 'count') {
+    if (key === 'count' || key === 'numMatches') {
       const value = record[key];
-      return isCountValue(value) ? value : null;
+      return isCountValue(value) ? { value, unit: 'matches' } : null;
+    }
+    if (key === 'numFiles') {
+      const value = record[key];
+      if (isCountValue(value) && files === null) files = value;
     }
   }
-  return null;
+  return files === null ? null : { value: files, unit: 'files' };
 }
 
 /** Tier-2 duck-typing on known input keys, in contract priority order. */
@@ -413,7 +447,7 @@ function languageBadge(record: Record<string, unknown> | null): ToolRowBadge | n
 function countBadge(output: unknown): ToolRowBadge | null {
   const count = extractCount(output);
   if (count === null) return null;
-  return { kind: 'count', text: `${String(count)} matches`, tone: 'neutral' };
+  return { kind: 'count', text: `${String(count.value)} ${count.unit}`, tone: 'neutral' };
 }
 
 function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation {
@@ -592,4 +626,331 @@ export function toolRowPresentation(
     initialOpen: outcome === 'failed',
     badges,
   };
+}
+
+// --- Lazy expanded bodies ---
+// The body resolver runs on demand — a row open with Raw closed — and consumes
+// the already-resolved family plus bounded normalized output channels. Output
+// picks the arm within a family; it can never change the family itself.
+
+export const MAX_BODY_COMMAND_CODE_UNITS = 65_536;
+export const MAX_BODY_SOURCE_CODE_UNITS = 65_536;
+/** One shared cap over input fields then output fields on a generic body. */
+export const MAX_BODY_FIELDS = 3;
+
+export type MatchItem = ToolOutputMatch;
+export type ToolField = ToolOutputField;
+
+export type ToolBody =
+  | { kind: 'terminal'; command: string; output: string | null; unreadable: boolean }
+  | { kind: 'file'; path: string; preview: string | null; unreadable: boolean }
+  | {
+      kind: 'matches';
+      pattern: string;
+      scope: string | null;
+      items: MatchItem[];
+      omitted: number | null;
+      truncated: boolean;
+    }
+  | {
+      kind: 'paths';
+      pattern: string;
+      scope: string | null;
+      items: string[];
+      omitted: number | null;
+      truncated: boolean;
+    }
+  | {
+      kind: 'code';
+      language: string | null;
+      source: string;
+      result: string | null;
+      truncated: boolean;
+    }
+  | {
+      kind: 'web';
+      url: string;
+      title: string | null;
+      markdown: string | null;
+      omitted: number | null;
+      truncated: boolean;
+    }
+  | { kind: 'generic'; fields: ToolField[]; markdown: string | null; unreadable: boolean };
+
+/** Input keys carrying the content a file-writing tool produced, in contract order. */
+const FILE_PREVIEW_KEYS = ['content', 'new_content', 'new_string', 'new_str'] as const;
+const CODE_SOURCE_KEYS = ['code', 'source', 'script'] as const;
+
+type SearchMode = 'content' | 'files_with_matches' | 'count';
+
+function isSearchMode(value: unknown): value is SearchMode {
+  return value === 'content' || value === 'files_with_matches' || value === 'count';
+}
+
+/**
+ * Salient input argument for a body field; when absent, the chip-worthy name
+ * stands in — the same fallback the summary headline uses.
+ */
+function salientField(
+  record: Record<string, unknown> | null,
+  keys: readonly string[],
+  name: string,
+  family: ToolFamily
+): string {
+  return boundedString(firstStringField(record, keys)) ?? chipLabel(name, family);
+}
+
+/**
+ * Generic-body input fields in stable own-key order, using the normalized
+ * field convention — objects `{…}`, arrays `[n]`, scalars as bounded text.
+ * A throwing key is skipped; the body keeps what it honestly read.
+ */
+function inputFields(record: Record<string, unknown> | null): ToolField[] {
+  if (record === null) return [];
+  const fields: ToolField[] = [];
+  let scanned = 0;
+  for (const key in record) {
+    if (!hasOwn(record, key)) continue;
+    if (scanned >= MAX_GENERIC_KEYS_SCANNED) break;
+    scanned++;
+    let value: unknown;
+    try {
+      value = record[key];
+    } catch {
+      continue;
+    }
+    const text = fieldValue(value);
+    if (text === null) continue;
+    fields.push({ key, value: text });
+    if (fields.length >= MAX_BODY_FIELDS) break;
+  }
+  return fields;
+}
+
+/**
+ * Non-empty lines of normalized text as bounded list items. `textTruncated`
+ * means the source tail is unknowable, so a cut list reports `omitted: null`;
+ * otherwise the bounded tail is counted exactly for `+n more`.
+ */
+function boundedTextLines<T>(
+  text: string | null,
+  textTruncated: boolean,
+  map: (line: string) => T | null
+): BoundedList<T> {
+  const items: T[] = [];
+  if (text === null) return { items, omitted: 0, truncated: false };
+  const lines = text.split('\n');
+  let i = 0;
+  for (; i < lines.length && items.length < MAX_LIST_ITEMS; i++) {
+    const mapped = map(lines[i]);
+    if (mapped !== null) items.push(mapped);
+  }
+  const cut = i < lines.length;
+  if (!cut && !textTruncated) return { items, omitted: 0, truncated: false };
+  if (textTruncated) return { items, omitted: null, truncated: true };
+  let omitted = 0;
+  for (let j = i; j < lines.length; j++) {
+    if (map(lines[j]) !== null) omitted++;
+  }
+  return { items, omitted, truncated: true };
+}
+
+function pathLine(line: string): string | null {
+  if (line.trim().length === 0) return null;
+  return sanitizeBounded(line, MAX_LIST_ITEM_TEXT_CODE_UNITS).text;
+}
+
+function matchLine(line: string): MatchItem | null {
+  if (line.trim().length === 0) return null;
+  return parseMatchLine(line);
+}
+
+/**
+ * Search body arm precedence: a recognized `output_mode` input, then the
+ * output's own declared mode or an unmistakable structured channel (matches
+ * win over paths because content-mode output also lists matched filenames),
+ * then the sent-alias default — exact `Grep` is files_with_matches; `grep` and
+ * other search aliases are content.
+ */
+function searchBodyMode(
+  record: Record<string, unknown> | null,
+  name: string,
+  normalized: NormalizedToolOutput
+): SearchMode {
+  const requested = stringField(record, 'output_mode');
+  if (isSearchMode(requested)) return requested;
+  if (normalized.mode !== null) return normalized.mode;
+  if (normalized.matches.items.length > 0) return 'content';
+  if (normalized.paths.items.length > 0) return 'files_with_matches';
+  return name === 'Grep' ? 'files_with_matches' : 'content';
+}
+
+/** `count` mode keeps the search family but renders the generic body arm with just the count. */
+function countBody(normalized: NormalizedToolOutput): ToolBody {
+  const fields: ToolField[] = [];
+  if (normalized.counts.matches !== null) {
+    fields.push({ key: 'matches', value: String(normalized.counts.matches) });
+  }
+  if (normalized.counts.files !== null && fields.length < MAX_BODY_FIELDS) {
+    fields.push({ key: 'files', value: String(normalized.counts.files) });
+  }
+  return { kind: 'generic', fields, markdown: null, unreadable: normalized.unreadable };
+}
+
+function genericBody(
+  record: Record<string, unknown> | null,
+  output: unknown,
+  normalized: NormalizedToolOutput
+): ToolBody {
+  const fields = inputFields(record);
+  for (const field of normalized.fields) {
+    if (fields.length >= MAX_BODY_FIELDS) break;
+    fields.push(field);
+  }
+  // Only a plain non-JSON string is prose worth rendering; JSON fragments and
+  // structured records stay as fields, never markdown.
+  const markdown = typeof output === 'string' && !looksLikeJson(output) ? normalized.text : null;
+  return { kind: 'generic', fields, markdown, unreadable: normalized.unreadable };
+}
+
+function resolveToolBody(
+  input: ToolPresentationInput,
+  family: ToolFamily,
+  normalized: NormalizedToolOutput
+): ToolBody {
+  const name = typeof input.name === 'string' ? input.name : '';
+  const record = asRecord(input.input);
+
+  switch (family) {
+    case 'shell': {
+      const sent = firstStringField(record, COMMAND_KEYS) ?? name;
+      const command = sanitizeBounded(sent, MAX_BODY_COMMAND_CODE_UNITS);
+      return {
+        kind: 'terminal',
+        command: command.truncated ? `${command.text}…` : command.text,
+        output: normalized.text,
+        unreadable: normalized.unreadable,
+      };
+    }
+    case 'file': {
+      let preview = normalized.text;
+      if (preview === null) {
+        const written = firstStringField(record, FILE_PREVIEW_KEYS);
+        if (written !== null) {
+          const bounded = sanitizeBounded(written, MAX_OUTPUT_TEXT_CODE_UNITS);
+          preview = bounded.truncated ? `${bounded.text}…` : bounded.text;
+        }
+      }
+      return {
+        kind: 'file',
+        path: salientField(record, PATH_KEYS, name, 'file'),
+        preview,
+        unreadable: normalized.unreadable,
+      };
+    }
+    case 'search': {
+      const pattern = salientField(record, PATTERN_KEYS, name, 'search');
+      const scope = boundedString(stringField(record, 'path'));
+      const mode = searchBodyMode(record, name, normalized);
+      if (mode === 'count') return countBody(normalized);
+      if (mode === 'files_with_matches') {
+        const list =
+          normalized.paths.items.length > 0
+            ? normalized.paths
+            : boundedTextLines(normalized.text, normalized.textTruncated, pathLine);
+        return {
+          kind: 'paths',
+          pattern,
+          scope,
+          items: list.items,
+          omitted: list.omitted,
+          truncated: list.truncated,
+        };
+      }
+      const list =
+        normalized.matches.items.length > 0
+          ? normalized.matches
+          : boundedTextLines(normalized.text, normalized.textTruncated, matchLine);
+      return {
+        kind: 'matches',
+        pattern,
+        scope,
+        items: list.items,
+        omitted: list.omitted,
+        truncated: list.truncated,
+      };
+    }
+    case 'glob': {
+      const patternKey = boundedString(stringField(record, 'pattern'));
+      const pathKey = boundedString(stringField(record, 'path'));
+      const list =
+        normalized.paths.items.length > 0
+          ? normalized.paths
+          : boundedTextLines(normalized.text, normalized.textTruncated, pathLine);
+      return {
+        kind: 'paths',
+        pattern: patternKey ?? pathKey ?? chipLabel(name, 'glob'),
+        scope: patternKey === null ? null : pathKey,
+        items: list.items,
+        omitted: list.omitted,
+        truncated: list.truncated,
+      };
+    }
+    case 'code': {
+      const source = sanitizeBounded(
+        firstStringField(record, CODE_SOURCE_KEYS) ?? '',
+        MAX_BODY_SOURCE_CODE_UNITS
+      );
+      const language = stringField(record, 'language');
+      return {
+        kind: 'code',
+        language:
+          language === null ? null : truncateCodePoints(language, MAX_GENERIC_SCALAR_CODE_POINTS),
+        source: source.text,
+        result: normalized.text,
+        truncated: source.truncated,
+      };
+    }
+    case 'web': {
+      const parts: string[] = [];
+      if (normalized.text !== null) parts.push(normalized.text);
+      if (normalized.webResults.items.length > 0) {
+        parts.push(
+          normalized.webResults.items
+            .map(result => `- [${result.title ?? result.url}](${result.url})`)
+            .join('\n')
+        );
+      }
+      return {
+        kind: 'web',
+        url: salientField(record, URL_KEYS, name, 'web'),
+        title: normalized.fields.find(field => field.key === 'title')?.value ?? null,
+        markdown: parts.length === 0 ? null : parts.join('\n\n'),
+        omitted: normalized.webResults.omitted,
+        truncated: normalized.webResults.truncated,
+      };
+    }
+    default:
+      // 'generic', plus the todo/task families the caller already filtered.
+      return genericBody(record, input.output, normalized);
+  }
+}
+
+/**
+ * The expanded body for a row that is open with Raw closed. The supplied
+ * family is trusted — it is never re-resolved from input or output. `todo`
+ * and `task` return `null`: their bodies belong to their own stories.
+ * Malformed or adversarial values degrade to a bounded unreadable generic
+ * body rather than throwing.
+ */
+export function toolBodyPresentation(
+  input: ToolPresentationInput,
+  resolvedFamily: ToolFamily
+): ToolBody | null {
+  if (resolvedFamily === 'todo' || resolvedFamily === 'task') return null;
+  try {
+    return resolveToolBody(input, resolvedFamily, normalizeToolOutput(input.output));
+  } catch {
+    return { kind: 'generic', fields: [], markdown: null, unreadable: true };
+  }
 }

@@ -46,6 +46,8 @@ export interface BoundedList<T> {
 
 export interface NormalizedToolOutput {
   text: string | null;
+  /** True when `text` was cut at the display bound — the exact size of a cut tail is unknowable. */
+  textTruncated: boolean;
   paths: BoundedList<string>;
   matches: BoundedList<ToolOutputMatch>;
   webResults: BoundedList<{ title: string | null; url: string }>;
@@ -85,6 +87,7 @@ function emptyList<T>(): BoundedList<T> {
 function emptyNormalized(unreadable: boolean): NormalizedToolOutput {
   return {
     text: null,
+    textTruncated: false,
     paths: emptyList(),
     matches: emptyList(),
     webResults: emptyList(),
@@ -173,7 +176,10 @@ function skipEscapeSequence(raw: string, i: number): number {
  * control characters — no unbounded intermediate is ever created. Newline and
  * tab survive; surrogate pairs are never split at the boundary.
  */
-function sanitizeBounded(raw: string, maxUnits: number): { text: string; truncated: boolean } {
+export function sanitizeBounded(
+  raw: string,
+  maxUnits: number
+): { text: string; truncated: boolean } {
   const parts: string[] = [];
   let units = 0;
   let truncated = false;
@@ -317,7 +323,7 @@ function anchoredMatch(line: string, separator: ':' | '-'): ToolOutputMatch | nu
  * is retained as a text-only item rather than mis-split (Windows paths carry
  * their own colons).
  */
-function parseMatchLine(line: string): ToolOutputMatch | null {
+export function parseMatchLine(line: string): ToolOutputMatch | null {
   if (line.length === 0) return null;
   return (
     anchoredMatch(line, ':') ?? anchoredMatch(line, '-') ?? { path: null, line: null, text: line }
@@ -694,7 +700,7 @@ function webHit(
 }
 
 /** Scalar → field text; `{…}` for records, `[n]` for arrays, null for values that contribute nothing. */
-function fieldValue(value: unknown): string | null {
+export function fieldValue(value: unknown): string | null {
   if (typeof value === 'string') {
     return sanitizeBounded(value, MAX_FIELD_VALUE_CODE_UNITS).text;
   }
@@ -853,7 +859,7 @@ function applyDigitString(raw: string, state: NormState): void {
   if (isNonNegativeInteger(parsed)) state.counts.matches ??= parsed;
 }
 
-function looksLikeJson(raw: string): boolean {
+export function looksLikeJson(raw: string): boolean {
   const limit = Math.min(raw.length, 256);
   for (let i = 0; i < limit; i++) {
     const code = raw.charCodeAt(i);
@@ -943,6 +949,7 @@ export function normalizeToolOutput(output: unknown): NormalizedToolOutput {
   const unreadable = state.unreadable || (state.accessError && !producedAnyChannel(state));
   return {
     text,
+    textTruncated: state.acc.truncated,
     paths: state.paths,
     matches: state.matches,
     webResults: state.webResults,
