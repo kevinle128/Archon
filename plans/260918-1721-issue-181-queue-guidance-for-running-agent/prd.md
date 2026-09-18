@@ -64,6 +64,7 @@ A running agent node is a black box: the operator cannot steer it mid-turn witho
 ### Schemas (phase-02)
 
 In `packages/server/src/routes/schemas/workflow.schemas.ts`, `z` from `@hono/zod-openapi`, `z.infer` types:
+
 - `sendWorkflowNodeBodySchema`: strict `{ message: string (refined trim().length>0, NOT transformed), message_id: UUID, intent: enum('queue','send_now') }`.
 - `sendWorkflowNodeResponseSchema`: strict `{ success: literal(true), message_id: UUID, state: enum('queued','awaiting_send_now') }`.
 - `steeringErrorSchema`: strict `{ success: literal(false), error: { code: string, message: string } }`.
@@ -114,12 +115,12 @@ Per-package `type-check` and `eslint --max-warnings 0` on touched files (see pha
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-| --- | --- | --- | --- |
-| US-001 | Steering registry module in `@archon/workflows` | 1 (registry contract) | — |
-| US-002 | Executor natural-boundary drain + central cancel cleanup | 1 (executor + core) | US-001 |
-| US-003 | Canonical typed send route in the server | 2 | US-002 |
-| US-004 | Queue composer dock in Legacy + Console shells | 3 | US-003 |
-| US-005 | E2E evidence, acceptance report, closeout | 4 | US-004 |
+| ID     | Title                                                    | Phase                 | Depends on |
+| ------ | -------------------------------------------------------- | --------------------- | ---------- |
+| US-001 | Steering registry module in `@archon/workflows`          | 1 (registry contract) | —          |
+| US-002 | Executor natural-boundary drain + central cancel cleanup | 1 (executor + core)   | US-001     |
+| US-003 | Canonical typed send route in the server                 | 2                     | US-002     |
+| US-004 | Queue composer dock in Legacy + Console shells           | 3                     | US-003     |
+| US-005 | E2E evidence, acceptance report, closeout                | 4                     | US-004     |
 
 Each story is TDD per its phase file: write the focused tests first (or alongside per existing file conventions), implement, run the story's verification commands, then confirm no unrelated assertions were weakened.

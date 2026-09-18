@@ -1,0 +1,67 @@
+{
+  "blocked-console": {
+    "reasonText": "answer the agent's question first",
+    "reasonColor": "oklch(0.745 0.014 265)",
+    "background": "oklch(0.205 0.009 265)",
+    "contrastRatio": 7.9
+  },
+  "detached-console": {
+    "disclosure": "not steerable here · this run was started detached, so its live session is not in this process",
+    "textColor": "oklch(0.745 0.014 265)",
+    "background": "oklch(0.205 0.009 265)",
+    "contrastRatio": 7.9
+  },
+  "contrast-console": {
+    "receiptText": 7.9,
+    "sentBadge": 7.9,
+    "hint": 7.9,
+    "queueLabel": 18.79,
+    "focusRing": {
+      "color": "oklch(0.64 0.295 330)",
+      "ratio": 5.14
+    },
+    "band": {
+      "maxHeight": "237.6px",
+      "overflowY": "auto",
+      "clientHeight": 57,
+      "scrollHeight": 57,
+      "viewportHeight": 720
+    }
+  },
+  "console-viewports": {
+    "narrow460": 460,
+    "wide1440": 696
+  },
+  "blocked-legacy": {
+    "reasonText": "answer the agent's question first",
+    "reasonColor": "oklch(0.65 0.01 260)",
+    "background": "oklch(0.22 0.01 260)",
+    "contrastRatio": 5.33
+  },
+  "detached-legacy": {
+    "disclosure": "not steerable here · this run was started detached, so its live session is not in this process",
+    "textColor": "oklch(0.65 0.01 260)",
+    "background": "oklch(0.22 0.01 260)",
+    "contrastRatio": 5.33
+  },
+  "contrast-legacy": {
+    "receiptText": 5.33,
+    "sentBadge": 5.33,
+    "hint": 5.33,
+    "queueLabel": 16.45,
+    "focusRing": {
+      "color": "oklch(0.72 0.18 250)",
+      "ratio": 7.99
+    },
+    "band": {
+      "maxHeight": "237.6px",
+      "overflowY": "auto",
+      "clientHeight": 57,
+      "scrollHeight": 57,
+      "viewportHeight": 720
+    }
+  },
+  "legacy-viewports": {
+    "narrow460": 460
+  }
+}

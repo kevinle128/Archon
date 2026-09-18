@@ -188,7 +188,11 @@ down to "does this affect node X" client-side.
   ): Promise<WorkflowRunActionResponse> {
     return fetchJSON(
       `/api/workflows/runs/${encodeURIComponent(runId)}/ask/${encodeURIComponent(requestId)}/answer`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }
     );
   }
   ```
@@ -230,16 +234,16 @@ File: `packages/providers/src/e2e-fake/provider.ts` (511 lines), tests in
 `e2e/lib/playwright/archon-runtime.ts:486-536` for how tests degrade gracefully when a target's
 older provider build rejects a new key):
 
-| field | effect |
-|---|---|
-| `emitTool: boolean` | yields one assistant text + N tool/tool_result pairs (`E2E_FAKE_TOOL_NAME`/`_INPUT`/`_OUTPUT`) |
-| `emitTodo: boolean` | yields the 4-call deterministic todo sequence (`E2E_FAKE_TODO_INPUTS`) |
-| `askHuman: boolean` | calls the real `AskHuman` native tool handler, then throws (provider.ts:495-500) — this is what pauses the run |
-| `delayMs: number` | `await waitUnlessAborted(delayMs, abortSignal)` **before any yield** (provider.ts:396) |
+| field                            | effect                                                                                                           |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `emitTool: boolean`              | yields one assistant text + N tool/tool_result pairs (`E2E_FAKE_TOOL_NAME`/`_INPUT`/`_OUTPUT`)                   |
+| `emitTodo: boolean`              | yields the 4-call deterministic todo sequence (`E2E_FAKE_TODO_INPUTS`)                                           |
+| `askHuman: boolean`              | calls the real `AskHuman` native tool handler, then throws (provider.ts:495-500) — this is what pauses the run   |
+| `delayMs: number`                | `await waitUnlessAborted(delayMs, abortSignal)` **before any yield** (provider.ts:396)                           |
 | `doneWhenPromptIncludes: string` | if the (directive-stripped) prompt contains this string, yields `E2E_FAKE_LOOP_DONE` — used to end `loop:` nodes |
-| `repeatTool: number` | repeats the `emitTool` tool/tool_result pair N times, distinct `toolCallId`s |
-| `largeLastToolOutput: boolean` | pads the last tool's output to ~20KB |
-| `taskDispatch: 'omp'|'claude'` | emits a fixed Task/Agent tool pair instead of the generic tool |
+| `repeatTool: number`             | repeats the `emitTool` tool/tool_result pair N times, distinct `toolCallId`s                                     |
+| `largeLastToolOutput: boolean`   | pads the last tool's output to ~20KB                                                                             |
+| `taskDispatch: 'omp'             | 'claude'`                                                                                                        | emits a fixed Task/Agent tool pair instead of the generic tool |
 
 Directives are delimited blocks embedded directly in the node's `prompt:` YAML text
 (`<<E2E_SCENARIO>>{...}<</E2E_SCENARIO>>`, see `e2e/fixtures/workflows/e2e-todo-strip.yaml:9-10`), parsed
@@ -262,6 +266,7 @@ rode along.
 ### (b) Can it hold a turn "running" long enough to queue a message?
 
 Yes, via `delayMs`, but with two caveats:
+
 1. The delay happens **before the first yield** (provider.ts:396), so nothing streams to the transcript
    until it elapses — the node will show as started (workflow event `node_started` fires before the
    provider is even invoked, at the executor level, so "running" status is independent of any yields)
@@ -292,6 +297,7 @@ justified by the AskHuman-answer resume path, not by a generic "resume with new 
 ### What must be added for "hold turn open N seconds, then end; on resumed turn echo the prompt"
 
 Estimate (read-only scout — no code written):
+
 1. **New scenario field**, e.g. `echoPromptOnResume: boolean` (or reuse a delay + unconditional echo),
    added to `scenarioSchema` in `provider.ts:128-139` with a `.superRefine` compatibility check similar
    to the existing `taskDispatch` mutual-exclusion block (`provider.ts:140-153`) if it should be
@@ -366,7 +372,7 @@ the dock should sit beside/after:
 - `aria-disabled` precedent: **none found** in `packages/web/src` — every existing disable-on-condition
   case uses the native `disabled` attribute (e.g. `<Button disabled={!draftValid}>` `AskCard.tsx:368`,
   `<fieldset disabled={lockAnswers}>` `AskCard.tsx:273`). The dock's `aria-disabled` + focusable-with-reason
-  requirement (so a screen-reader user can discover *why* Queue is blocked via `aria-describedby`) is a
+  requirement (so a screen-reader user can discover _why_ Queue is blocked via `aria-describedby`) is a
   **new pattern for this codebase**, not a reuse of an existing one — implement it as `aria-disabled={true}`
   (NOT the native `disabled` prop, which would drop it from the tab order and make the reason
   undiscoverable) plus a manual `onClick`/`onKeyDown` no-op guard.
@@ -374,7 +380,7 @@ the dock should sit beside/after:
   `AskCard.tsx` decline-dialog equivalent — `aria-describedby={\`${interaction.id}:decline-description\`}`
   paired with a `<p id={...}>` — same colon-suffixed id-scoping convention should be reused for the
   block-reason text (e.g. `` `${nodeId}:send-blocked-reason` ``), generated via `useId()` per existing
-  convention (`TodoStrip.tsx:90`, `NodeRoom.tsx` `rawPanelId = useId()`).
+convention (`TodoStrip.tsx:90`, `NodeRoom.tsx` `rawPanelId = useId()`).
 - `prefers-reduced-motion`: **no global `@media (prefers-reduced-motion)` block exists** in
   `packages/web/src/index.css`. The established pattern is Tailwind's `motion-reduce:` variant applied
   per animated element: `motion-reduce:transition-none` on the todo-strip caret rotation

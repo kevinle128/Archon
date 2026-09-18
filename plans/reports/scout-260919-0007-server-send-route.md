@@ -108,12 +108,14 @@ function getValidatedBody<T>(c: Context, _schema: z.ZodType<T>): T {
   return (c.req as unknown as { valid(k: 'json'): T }).valid('json');
 }
 ```
+
 (`getOptionalValidatedBody` at `api.ts:4026-4029` is the same for an
 `required: false` body.)
 
 ## 2. `resolveAuthContext` / `requireWebUser` semantics; steering actor grant
 
 `resolveAuthContext` (`api.ts:2232-2272`) resolution order:
+
 1. Better Auth session (only when web auth is enabled) → canonical user row.
 2. Trusted reverse-proxy header (`ARCHON_WEB_AUTH_HEADER`, default
    `X-Archon-User`) → `findOrCreateUserByPlatformIdentity('web', headerVal, headerVal)`.
@@ -194,7 +196,7 @@ pattern to mirror or literally reuse.
 
 The **answerAskHuman** route (`api.ts:4990-5034`) shows a second common
 pattern — an explicit `app.use` middleware ahead of OpenAPI validation so the
-401 fires before body/param validation, *and* the same check repeated inside
+401 fires before body/param validation, _and_ the same check repeated inside
 the handler:
 
 ```ts
@@ -242,9 +244,9 @@ switches on a `.code` string instead of `instanceof`).
 
 Web-dispatched workflow execution runs **in-process, awaited synchronously**
 inside the request/lock-callback flow — there is no detach/fork. The call
-site for a *new* run is `runWorkflowRoute`'s handler
+site for a _new_ run is `runWorkflowRoute`'s handler
 (`api.ts:4121-4351`, dispatch happens via `dispatchToOrchestrator` →
-`orchestrator.ts:487` → `executeWorkflow`); the call site for a *retry* is
+`orchestrator.ts:487` → `executeWorkflow`); the call site for a _retry_ is
 `dispatchPreparedWebRetry` (`api.ts:3183-3230`):
 
 ```ts
@@ -276,7 +278,7 @@ executing in this process."** Grep for `runningRuns` / `activeRuns` /
 returned nothing matching that concept — the only comparable per-process
 singleton is `ConversationLockManager`
 (`packages/core/src/utils/conversation-lock.ts:34-49`), which tracks
-*conversation-id → in-flight Promise* for serializing chat turns, not
+_conversation-id → in-flight Promise_ for serializing chat turns, not
 run/node identity, and offers no drain/read API a node could poll.
 
 Likewise there is **no existing mid-run interrupt/steering mechanism**: grep
@@ -325,6 +327,7 @@ Two independent channels:
 
 **A. SSE streams** (`hono/streaming` `streamSSE`, `api.ts:7`), keyed by
 **conversation id**, not run/node id:
+
 - `GET /api/stream/__dashboard__` (`api.ts:3723-3757`) — multiplexed, all
   workflow events across every conversation; registers into
   `webAdapter`'s `SSETransport` under the fixed key `'__dashboard__'`.
@@ -335,7 +338,7 @@ Both just open a raw Hono SSE stream, `writeSSE({ data: JSON.stringify({type:'he
 every 30s, and register/deregister with `webAdapter.registerStream(id, stream)`
 / `removeStream`. The actual event payloads pushed onto these streams (e.g.
 node status changes) are produced elsewhere and delivered via
-`webAdapter.emitSSE(...)` — event *names*/payload shapes are not enumerated
+`webAdapter.emitSSE(...)` — event _names_/payload shapes are not enumerated
 in `api.ts` itself; they live in `packages/server/src/adapters/web/*` (e.g.
 `workflow-bridge.ts`, `transport.ts`). `SSETransport`
 (`packages/server/src/adapters/web/transport.ts:49-58`) buffers up to 500
@@ -343,6 +346,7 @@ events per conversation for 60s to survive reconnects, and only knows
 conversation id as its key.
 
 **B. Poll-style REST reads** (no push):
+
 - `GET /api/workflows/runs/{runId}/nodes/{nodeId}/messages` — the existing
   "does the web poll for node messages" endpoint. Params/query/response
   schemas (`packages/server/src/routes/schemas/workflow.schemas.ts:203-221`):
@@ -352,29 +356,34 @@ export const workflowNodeMessagesParamsSchema = z.object({
   runId: z.string().min(1),
   nodeId: z.string().min(1),
 });
-export const workflowNodeMessagesQuerySchema = z.object({
-  afterSeq: z.coerce.number().int().nonnegative().optional(),
-  limit: z.coerce.number().int().positive().max(500).optional(),
-  occurrenceId: z.string().uuid().optional(),
-  attemptId: z.string().uuid().optional(),
-}).strict();
-export const workflowNodeMessagesResponseSchema = z.object({
-  messages: z.array(workflowNodeMessageResponseSchema),
-  nextCursor: z.string().optional(),
-  hasMore: z.boolean().optional(),
-  highWatermark: z.number().int().nonnegative().optional(),
-}).strict();
+export const workflowNodeMessagesQuerySchema = z
+  .object({
+    afterSeq: z.coerce.number().int().nonnegative().optional(),
+    limit: z.coerce.number().int().positive().max(500).optional(),
+    occurrenceId: z.string().uuid().optional(),
+    attemptId: z.string().uuid().optional(),
+  })
+  .strict();
+export const workflowNodeMessagesResponseSchema = z
+  .object({
+    messages: z.array(workflowNodeMessageResponseSchema),
+    nextCursor: z.string().optional(),
+    hasMore: z.boolean().optional(),
+    highWatermark: z.number().int().nonnegative().optional(),
+  })
+  .strict();
 ```
 
-  Handler at `api.ts:5269-5317`: with no cursor params it returns the full
-  transcript from `workflowNodeMessageDb.listNodeMessages(runId, nodeId)`
-  (backed by table `remote_agent_workflow_node_messages`); with cursor params
-  it does `afterSeq`/`limit`-bounded paging against a `highWatermark`. It
-  reads persisted rows only — it does not report "is this node currently
-  running," only its recorded transcript. 404 only when the **run** doesn't
-  exist (`api.ts:5279`); an unknown `nodeId` for a real run simply returns an
-  empty `messages: []` (`listNodeMessages` on a non-existent node id, no
-  explicit node-existence check in this handler).
+Handler at `api.ts:5269-5317`: with no cursor params it returns the full
+transcript from `workflowNodeMessageDb.listNodeMessages(runId, nodeId)`
+(backed by table `remote_agent_workflow_node_messages`); with cursor params
+it does `afterSeq`/`limit`-bounded paging against a `highWatermark`. It
+reads persisted rows only — it does not report "is this node currently
+running," only its recorded transcript. 404 only when the **run** doesn't
+exist (`api.ts:5279`); an unknown `nodeId` for a real run simply returns an
+empty `messages: []` (`listNodeMessages` on a non-existent node id, no
+explicit node-existence check in this handler).
+
 - `GET /api/workflows/runs/{runId}` (`api.ts:5346-5432`) returns
   `nodeStates: ApiWorkflowNodeState[]`, each with a `status` of
   `'pending'|'running'|'completed'|'failed'|'skipped'|'awaiting'`
@@ -385,7 +394,7 @@ export const workflowNodeMessagesResponseSchema = z.object({
 ## 5. Determining node running vs. terminal for a `(runId, nodeId)`
 
 There is **no `dag_state` column and no `node_statuses` table.** Node status
-is *derived on read* from the append-only `workflow_events` table (event
+is _derived on read_ from the append-only `workflow_events` table (event
 types `node_started`/`node_completed`/`node_failed`/`node_skipped`/
 `node_skipped_prior_success`, plus `pending_interactions` rows for
 `awaiting`), via `projectLatestEffectiveNodeStates`
@@ -416,6 +425,7 @@ if (!targetNode) {
 ```
 
 `retryWorkflowNodeRoute`'s handler (`api.ts:4587-4685`) composes both checks:
+
 1. `workflowDb.getWorkflowRun(runId)` — 404 `'Workflow run not found'` if
    missing (`api.ts:4597-4599`).
 2. `RETRYABLE_WORKFLOW_STATUSES.includes(run.status)` — 400 if the **run**
@@ -424,12 +434,13 @@ if (!targetNode) {
    definition and does the `workflow.nodes.find` node-existence check above,
    surfaced back to the route via `getRetryErrorStatus(error)`
    (`api.ts:4577-4586`) mapping `'node_not_found' | 'node_not_retryable' |
-   'checkpoint_unavailable' | 'git_reset_failed'` → 400, everything else →
+'checkpoint_unavailable' | 'git_reset_failed'` → 400, everything else →
    500 (this route folds "not found" into 400, not 404 — a deviation the
    planner should decide whether to follow or diverge from, since the task
    spec wants unknown node → 404).
 
 For the new route's 404-vs-409 split, the natural composition is:
+
 - `getWorkflowRun(runId)` missing → 404 `not_found`.
 - `nodeId` not present in `run`'s loaded `WorkflowDefinition.nodes` → 404
   `not_found` (mirrors `workflow-retry.ts`'s node-existence check, but
@@ -453,7 +464,7 @@ For the new route's 404-vs-409 split, the natural composition is:
 existing home for every `/api/workflows/runs/...` route's tests, including
 `retry`, `resume`, `abandon`, `ask/.../answer`, and node `messages` — there
 is **no separate per-route test file** in this area; a new
-`api.workflow-steering.test.ts` would be a *new convention*, not following
+`api.workflow-steering.test.ts` would be a _new convention_, not following
 today's pattern (retry/resume/abandon/ask-answer/messages all share this one
 file). If the planner wants a dedicated file anyway (e.g. because the mocks
 needed for a steering registry conflict with something already mocked
@@ -463,9 +474,9 @@ of `bun test <file>` invocations, one per file/dir that needs isolation from
 `mock.module` pollution — `api.workflow-runs.test.ts` already gets its own
 entry (`... && bun test src/routes/api.workflow-runs.test.ts && ...`). A new
 file would need exactly one more `&& bun test src/routes/api.workflow-steering.test.ts`
-appended to that chain, per AGENTS.md's Testing section rule: *"When adding a
+appended to that chain, per AGENTS.md's Testing section rule: _"When adding a
 new test file with `mock.module()`, ensure its package.json test script runs
-it in a separate `bun test` invocation from any conflicting files."* If
+it in a separate `bun test` invocation from any conflicting files."_ If
 instead the new tests are added as new `describe()` blocks inside
 `api.workflow-runs.test.ts`, no package.json change is needed — this is
 lower-risk and matches the file's current scope.
@@ -489,22 +500,48 @@ const mockGetWorkflowRun = mock(async (_id: string) => null as null | MockWorkfl
 
 function makeApp(): { app: OpenAPIHono; mockWebAdapter: WebAdapter } {
   const app = new OpenAPIHono({ defaultHook: validationErrorHook });
-  const mockWebAdapter = { emitSSE: mock(async () => {}), emitLockEvent: mock(async () => {}) } as unknown as WebAdapter;
-  const mockLockManager = { acquireLock: mock(async (_id, fn) => { await fn(); return { status: 'started' }; }) } as unknown as ConversationLockManager;
+  const mockWebAdapter = {
+    emitSSE: mock(async () => {}),
+    emitLockEvent: mock(async () => {}),
+  } as unknown as WebAdapter;
+  const mockLockManager = {
+    acquireLock: mock(async (_id, fn) => {
+      await fn();
+      return { status: 'started' };
+    }),
+  } as unknown as ConversationLockManager;
   registerApiRoutes(app, mockWebAdapter, mockLockManager);
   return { app, mockWebAdapter };
 }
 
 describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send', () => {
-  beforeEach(() => { mockGetWorkflowRun.mockReset(); });
-  test('404 when run not found', async () => { /* ... */ });
-  test('404 when node not in workflow DAG', async () => { /* ... */ });
-  test('409 when node already terminal', async () => { /* ... */ });
-  test('422 when run executes in a different process', async () => { /* ... */ });
-  test('400 on invalid body (empty message / bad uuid / bad intent)', async () => { /* ... */ });
-  test('401 with no identity', async () => { /* ... */ });
-  test('200 queued', async () => { /* ... */ });
-  test('200 awaiting_send_now', async () => { /* ... */ });
+  beforeEach(() => {
+    mockGetWorkflowRun.mockReset();
+  });
+  test('404 when run not found', async () => {
+    /* ... */
+  });
+  test('404 when node not in workflow DAG', async () => {
+    /* ... */
+  });
+  test('409 when node already terminal', async () => {
+    /* ... */
+  });
+  test('422 when run executes in a different process', async () => {
+    /* ... */
+  });
+  test('400 on invalid body (empty message / bad uuid / bad intent)', async () => {
+    /* ... */
+  });
+  test('401 with no identity', async () => {
+    /* ... */
+  });
+  test('200 queued', async () => {
+    /* ... */
+  });
+  test('200 awaiting_send_now', async () => {
+    /* ... */
+  });
 });
 ```
 
@@ -528,27 +565,35 @@ Schemas (new, in `workflow.schemas.ts` alongside the other
 `/nodes/{nodeId}/...` schemas at lines ~203-337):
 
 ```ts
-export const sendWorkflowNodeParamsSchema = z.object({
-  runId: z.string().min(1),
-  nodeId: z.string().min(1),
-}).openapi('SendWorkflowNodeParams');
+export const sendWorkflowNodeParamsSchema = z
+  .object({
+    runId: z.string().min(1),
+    nodeId: z.string().min(1),
+  })
+  .openapi('SendWorkflowNodeParams');
 
-export const sendWorkflowNodeBodySchema = z.object({
-  message: z.string().min(1),
-  message_id: z.string().uuid(),
-  intent: z.enum(['queue', 'send_now']),
-}).openapi('SendWorkflowNodeBody');
+export const sendWorkflowNodeBodySchema = z
+  .object({
+    message: z.string().min(1),
+    message_id: z.string().uuid(),
+    intent: z.enum(['queue', 'send_now']),
+  })
+  .openapi('SendWorkflowNodeBody');
 
-export const sendWorkflowNodeResponseSchema = z.object({
-  success: z.literal(true),
-  message_id: z.string().uuid(),
-  state: z.enum(['queued', 'awaiting_send_now']),
-}).openapi('SendWorkflowNodeResponse');
+export const sendWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message_id: z.string().uuid(),
+    state: z.enum(['queued', 'awaiting_send_now']),
+  })
+  .openapi('SendWorkflowNodeResponse');
 
-export const sendWorkflowNodeErrorSchema = z.object({
-  success: z.literal(false),
-  error: z.object({ code: z.string(), message: z.string() }),
-}).openapi('SendWorkflowNodeError');
+export const sendWorkflowNodeErrorSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.object({ code: z.string(), message: z.string() }),
+  })
+  .openapi('SendWorkflowNodeError');
 ```
 
 This error shape does **not** match `errorSchema`/`jsonError`, so the route
@@ -563,24 +608,45 @@ instead of falling through to the app-wide `{ error: string }` shape.
 Route registration:
 
 ```ts
-const sendWorkflowNodeRoute = createRoute({
-  method: 'post',
-  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/send',
-  tags: ['Workflows'],
-  summary: 'Send a steering message to a running workflow node',
-  request: {
-    params: sendWorkflowNodeParamsSchema,
-    body: { content: { 'application/json': { schema: sendWorkflowNodeBodySchema } } },
+const sendWorkflowNodeRoute = createRoute(
+  {
+    method: 'post',
+    path: '/api/workflows/runs/{runId}/nodes/{nodeId}/send',
+    tags: ['Workflows'],
+    summary: 'Send a steering message to a running workflow node',
+    request: {
+      params: sendWorkflowNodeParamsSchema,
+      body: { content: { 'application/json': { schema: sendWorkflowNodeBodySchema } } },
+    },
+    responses: {
+      200: {
+        content: { 'application/json': { schema: sendWorkflowNodeResponseSchema } },
+        description: 'Accepted',
+      },
+      400: {
+        content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } },
+        description: 'Invalid request',
+      },
+      401: {
+        content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } },
+        description: 'Authentication required',
+      },
+      404: {
+        content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } },
+        description: 'Not found',
+      },
+      409: {
+        content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } },
+        description: 'Node finished',
+      },
+      422: {
+        content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } },
+        description: 'Not steerable in this process',
+      },
+    },
   },
-  responses: {
-    200: { content: { 'application/json': { schema: sendWorkflowNodeResponseSchema } }, description: 'Accepted' },
-    400: { content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } }, description: 'Invalid request' },
-    401: { content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } }, description: 'Authentication required' },
-    404: { content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } }, description: 'Not found' },
-    409: { content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } }, description: 'Node finished' },
-    422: { content: { 'application/json': { schema: sendWorkflowNodeErrorSchema } }, description: 'Not steerable in this process' },
-  },
-}, sendValidationErrorHook); // route-scoped hook, per registerOpenApiRoute's `hook` param
+  sendValidationErrorHook
+); // route-scoped hook, per registerOpenApiRoute's `hook` param
 ```
 
 Handler pseudocode:
@@ -644,7 +710,7 @@ registerOpenApiRoute(sendWorkflowNodeRoute, async c => {
    through `ExecuteWorkflowOptions.container`), not injected directly.
 4. **422 "not in this process" detection** implies the registry (or some
    run-ownership table) must be able to answer "is `runId`'s executor
-   running in *this* server process right now" — for a single-process
+   running in _this_ server process right now" — for a single-process
    deployment this is nearly always true when the run is non-terminal, but
    Archon's docs don't describe multi-process/horizontally-scaled execution
    anywhere reviewed; confirm with the planner whether 422 is meant for a

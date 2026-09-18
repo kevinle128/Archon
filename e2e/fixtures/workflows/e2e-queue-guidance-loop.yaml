@@ -1,0 +1,14 @@
+name: e2e-queue-guidance-loop
+description: "E2E — one delayed loop node on the fake provider for queued-guidance drain at the iteration boundary."
+mutates_checkout: false
+
+nodes:
+  - id: steer-loop
+    provider: e2e-fake
+    model: e2e-fake-model
+    loop:
+      prompt: |
+        <<E2E_SCENARIO>>{"delayMs":25000}<</E2E_SCENARIO>>
+        $LOOP_PREV_OUTPUT
+      until: E2E_LOOP_DONE
+      max_iterations: 3

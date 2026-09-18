@@ -43,7 +43,7 @@ chunks at the `MessageChunk` abstraction the executor sees). Captured unconditio
 if (msg.sessionId) newSessionId = msg.sessionId;
 ```
 
-**How the pass loop threads a resume id** — the *only* existing multi-pass-within-one-node
+**How the pass loop threads a resume id** — the _only_ existing multi-pass-within-one-node
 loop is the structured-output reask loop (`dag-executor.ts:2992-3095`):
 
 ```ts
@@ -62,8 +62,8 @@ pass `undefined` as `attemptResumeId` — a comment above (`dag-executor.ts:~300
 session per reask attempt … so a prior invalid turn isn't carried forward") states each
 reask starts a **fresh** session, not a continuation. Test evidence confirms two distinct
 `sessionId`s per reask (`packages/workflows/src/dag-executor.test.ts:13058-13067`, `s1`/`s2`).
-So the reask loop is a precedent for *how to run N sendQuery passes inside one node and
-merge/accumulate their side effects*, but **not** a precedent for session continuation. A
+So the reask loop is a precedent for _how to run N sendQuery passes inside one node and
+merge/accumulate their side effects_, but **not** a precedent for session continuation. A
 queue-drain "turn N+1 on the same session" implementation must explicitly pass
 `attemptResumeId = newSessionId` (the id captured from the prior pass's `result`), which the
 reask loop does not do.
@@ -82,11 +82,11 @@ Sequence inside `runStreamPass`'s stream loop and after it returns (`dag-executo
    this pass's `passUsageBreakdown`.
 3. Back in the reask `while (true)` (~3000-3121): if `output_format` set, validate
    `structuredOutput`; `canReask` gate (~3031: `reaskAttempt < maxReasks && !nodeIdleTimedOut &&
-   !nodeAbortController.signal.aborted`) decides `continue` (another `runStreamPass`, still no
+!nodeAbortController.signal.aborted`) decides `continue` (another `runStreamPass`, still no
    session resume) vs `break`/`throw`.
 4. Idle-timeout-with-output notice (~3110-3123).
 5. Cancel-during-streaming check (~3124-3163) → early `return { state: 'failed', error:
-   'Cancelled by user' }`.
+'Cancelled by user' }`.
 6. Batch-mode flush, credit-exhaustion check (~3172-3212), empty-output check (~3218-3255).
 7. `node_completed` event (DB write ~3259-3298 + `emitter.emit` ~3301-3308) + `recordNodeStatus('completed')` (~3311).
 8. Cleanup of the two throttle Maps (~3314-3316) and the final `return { state: 'completed', ... }` (~3322-3330).
@@ -117,12 +117,13 @@ becomes turn N+2, etc.) or, if a single injected turn should carry all queued it
 into one prompt per your task's exact semantics — either is a small variant of the same loop.
 
 **Per-turn reset vs. persisted state**:
+
 - Reset every turn (currently reset inside `runStreamPass`'s prologue, `dag-executor.ts:2271-2276`):
   `nodeOutputText`, `structuredOutput`, `batchMessages`, `nodeCostUsd` (per-pass; but note
   `accumulatedCostUsd` in the reask loop, ~3017-3022, folds pass cost across passes — a
   queue-drain turn should do the same so total node cost/tokens reflect every turn),
   `nodeIdleTimedOut`, `backgroundTasksIncomplete`, `reaskAttempt` (should reset to 0 for a new
-  queue-driven turn — it is a per-*validation-fix* counter, not a per-*turn* counter).
+  queue-driven turn — it is a per-_validation-fix_ counter, not a per-_turn_ counter).
 - Persist across turns: `nodeAbortController` (one controller for the whole node execution —
   see idle-timeout/abort caveat in §8), `newSessionId` (becomes the next turn's
   `attemptResumeId`), `executionScope.occurrence_id` (same node occurrence; only `attempt_id`
@@ -173,6 +174,7 @@ passed to `appendNodeTranscript`.
 ## 4. Event emission / live status channel
 
 Two parallel outputs on every lifecycle transition, both fire-and-forget:
+
 1. **DB-persisted `workflow_events` row** via `deps.store.createWorkflowEvent({...})`
    (e.g. `node_started` at `dag-executor.ts:2017-2040`, `node_completed` at `~3264-3298`,
    `node_failed` at multiple sites) — durable, queryable, used for resume/audit and REST
@@ -250,6 +252,7 @@ judgment call for the plan, not a documented pattern.
 `executeLoopNode` (`dag-executor.ts:5150` onward) is a **fully separate function** with its
 own duplicated turn/reask machinery — it does not call `executeNodeInternal` or a shared
 `runStreamPass`-equivalent. Evidence of duplication:
+
 - Its own outer per-iteration loop: `for (let i = startIteration; i <= loop.max_iterations; i++)` (`dag-executor.ts:5454`).
 - Its own inner reask loop per iteration: `attempts: while (true)` (`dag-executor.ts:5644`),
   with its own `passUsageBreakdown`/`passTerminalError`/`passErrorSubtype`/`reaskAttempt`
@@ -283,7 +286,7 @@ Treat loop-node support as a distinct follow-up story/phase.
 interface is defined **inside `@archon/workflows`** (no import from `@archon/isolation`, which
 owns the real container backend). `ExecuteWorkflowOptions.container?: ContainerRunContext`
 (`packages/workflows/src/executor.ts:557`) is the injection seam; the caller (CLI/orchestrator,
-which *does* depend on `@archon/isolation`) constructs the concrete backend object and passes
+which _does_ depend on `@archon/isolation`) constructs the concrete backend object and passes
 it in. `executor.ts` threads it verbatim into `executeDagWorkflow`, which threads it into
 `dag-executor.ts` functions as a plain parameter (`containerCtx: ContainerRunContext` appears
 as a function parameter at `dag-executor.ts:9917`, `10018`, `10192`, etc.) — a **structural**
@@ -397,11 +400,11 @@ change to the controller's lifecycle is needed to support queue-drain, only a re
 // inside executeNodeInternal, replacing the single reask-loop-then-terminal-checks
 // structure with an outer turn loop:
 
-let turnResumeId = resumeSessionId;   // seeds turn 1; updated to newSessionId after each turn
+let turnResumeId = resumeSessionId; // seeds turn 1; updated to newSessionId after each turn
 turnLoop: while (true) {
   // --- existing reask loop, using turnResumeId instead of resumeSessionId ---
   let reaskAttempt = 0;
-  let reaskPrompt = (turnResumeId === resumeSessionId) ? finalPrompt : queuedPromptText;
+  let reaskPrompt = turnResumeId === resumeSessionId ? finalPrompt : queuedPromptText;
   while (true) {
     await runStreamPass(reaskPrompt, reaskAttempt === 0 ? turnResumeId : undefined, reaskAttempt);
     // ... existing output_format validate/reask/canReask logic, unchanged ...
@@ -412,16 +415,23 @@ turnLoop: while (true) {
   if (!nodeIdleTimedOut && !nodeAbortController.signal.aborted) {
     const queued = await deps.store.drainQueuedGuidance(workflowRun.id, node.id);
     if (queued.length > 0) {
-      turnResumeId = newSessionId;               // continue same provider session
+      turnResumeId = newSessionId; // continue same provider session
       executionScope = newTranscriptAttempt(executionScope); // new attempt_id, same occurrence
-      await appendNodeTranscript(deps.store, {    // new 'operator' kind (schema addition)
-        workflow_run_id: workflowRun.id, node_id: stepName,
-        kind: 'operator', payload: { text: joinQueuedText(queued) },
+      await appendNodeTranscript(deps.store, {
+        // new 'operator' kind (schema addition)
+        workflow_run_id: workflowRun.id,
+        node_id: stepName,
+        kind: 'operator',
+        payload: { text: joinQueuedText(queued) },
         metadata: scopeMeta(),
       });
       queuedPromptText = joinQueuedText(queued);
-      getWorkflowEventEmitter().emit({ type: 'node_turn_queued_guidance_applied', runId: workflowRun.id, nodeId: node.id });
-      continue turnLoop;                          // turn N+1
+      getWorkflowEventEmitter().emit({
+        type: 'node_turn_queued_guidance_applied',
+        runId: workflowRun.id,
+        nodeId: node.id,
+      });
+      continue turnLoop; // turn N+1
     }
   }
   break turnLoop; // queue empty (or turn ended via idle-timeout/abort) — fall through as today
