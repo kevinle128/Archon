@@ -39,8 +39,8 @@
       "technicalNotes": "Phase 1 TDD portion of phase-01-start.md ('Tests first — text projection and history scope', 'Implement projection/history changes', 'Tests first — occurrence groups', 'Implement occurrence-groups.ts'). Files: packages/web/src/lib/{agent-history.ts, project-text-transcript.ts, occurrence-groups.ts} + their .test.ts twins. pair-tool-transcript.ts already correlates occurrence+attempt — reuse that keying. Shared grouping contract shape is in plan.md 'Shared grouping contract' (OccurrenceGroup/OccurrenceGrouping/TranscriptExecution).",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2 (commit fd197802). Files: packages/web/src/lib/agent-history.ts, project-text-transcript.ts, occurrence-groups.ts (new) + their .test.ts twins; NodeRoom.test.tsx helpers gained execution:null. TranscriptExecution derived from NodeMessageRow metadata; keyed stream identity extended with occurrence+attempt; anonymous accumulation resets on execution identity change; pure one-pass Map grouping with prefixItems/nearest-preceding/non-contiguous rejoin and Run N/Iteration N label composer with B4 qualifiers. Validation: 51 focused tests + 647 lib tests + 35 NodeRoom + 61 transcript-pane/legacy + 72 console tests green; type-check clean; eslint+prettier clean."
     },
     {
       "id": "US-003",

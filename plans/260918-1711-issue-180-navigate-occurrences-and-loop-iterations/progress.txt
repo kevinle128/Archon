@@ -26,6 +26,22 @@
 ### Branch reality: `develop`, not `dev`
 - **Pattern**: `origin/HEAD` = `develop`; `origin/dev` is deleted; local `dev` is stale (~68 behind). AGENTS.md, e2e-smoke.yml, release.yml were corrected 2026-09-19. `.claude/skills/release/SKILL.md` still encodes `dev`→`main` (residual debt, release-time fix — also touched by PR #202).
 
+### Derive wire types from api.generated.d.ts, never re-declare
+- **Where**: `packages/web/src/lib/agent-history.ts` (`TranscriptExecution`), `occurrence-groups.ts`.
+- **Pattern**: `type TranscriptExecution = NonNullable<NonNullable<NodeMessageRow['metadata']>['execution']>` — indexed access off the generated row type keeps the render-neutral contract in lockstep with the wire. Hand-copied interfaces drift; derived types make drift a compile error.
+
+### Occurrence grouping is render-neutral
+- **Where**: `packages/web/src/lib/occurrence-groups.ts`.
+- **Pattern**: `groupOccurrences(items)` returns `{prefixItems, groups, showHeaders}` — grouping is a pure lib function over `AgentHistoryItem[]` keyed by `execution.occurrence_id`. Unkeyed items before the first keyed row go to `prefixItems`; unkeyed items after join the nearest preceding group; a repeated non-contiguous key rejoins its original group. `showHeaders = groups.length >= 2`. Shells call this and render headings — they never derive labels themselves.
+
+### Stream correlation keys must carry execution identity
+- **Where**: `packages/web/src/lib/project-text-transcript.ts` (keyed `stream_id\0message_id\0block_id\0occurrence_id\0attempt_id`), mirrors `pair-tool-transcript.ts`.
+- **Pattern**: providers reuse stream/message/block ids across occurrences and attempts — identity keys without occurrence+attempt silently concatenate text across runs. Anonymous deltas track the same identity and reset the accumulator when it changes.
+
+### Adding a required field to AgentHistoryItem
+- **Where**: `packages/web/src/lib/agent-history.ts` + `NodeRoom.test.tsx` helpers.
+- **Pattern**: only `NodeRoom.test.tsx` constructs `AgentHistoryItem` literals directly — all other suites go through `buildAgentHistory()` and compile untouched. Update the three literal helpers (`execution: null`) and whole-item `toEqual` assertions; everything else follows the builder.
+
 ---
 
 ## 2026-09-19 — US-001: Close decision gates B1–B4, refresh plan, preflight
@@ -58,5 +74,39 @@
 - B2's real risk was conflating two select semantics (filter vs scroll). Writing "it is an action, not a position indicator" into the contract prevents a whole class of stale-value bugs.
 - B4 needed only typed fields (`route_activation_seq`, deeper `loop_ancestry`, differing `node_id`) plus one ordinal fallback — no new vocabulary was required once `#N` was recognized as the shipped route suffix.
 - B3 was broader than AGENTS.md: CI triggers and the release job also carried `dev`. The residual `.claude/skills/release/SKILL.md` was left deliberately — it overlaps open PR #202 and its own `origin/dev` ancestry check fails loudly rather than silently.
+
+---
+
+## 2026-09-19 — US-002: Occurrence-safe projection and pure grouping core
+
+**Status**: PASSED
+**Commit**: `fd197802` — `feat: Occurrence-safe projection and pure grouping core`
+**Files changed**:
+- `packages/web/src/lib/agent-history.ts` — added `TranscriptExecution` (derived via `NonNullable<NonNullable<NodeMessageRow['metadata']>['execution']>`) and a required `execution: TranscriptExecution | null` on all three `AgentHistoryItem` variants; assistant/lifecycle take it from `message.metadata?.execution ?? null`, tool items from `card.call?.metadata?.execution ?? card.result?.metadata?.execution ?? null`.
+- `packages/web/src/lib/project-text-transcript.ts` — `ProjectableTextMetadata` gained optional `execution {occurrence_id?, attempt_id?}`; keyed stream identity is now `stream\0message\0block\0occurrence\0attempt`; anonymous delta accumulation tracks execution identity and resets the accumulator when it changes.
+- `packages/web/src/lib/occurrence-groups.ts` (new) — pure `groupOccurrences(items)`: one pass, `Map<occurrence_id, draft>` + ordered drafts; `prefixItems` for leading unkeyed rows; unkeyed rows after a key join the nearest preceding group; repeated non-contiguous keys rejoin the original group; `showHeaders = groups.length >= 2`; label composer emits `Run N` / `Iteration N` with `· retry` / `· failed` suffixes and B4 qualifiers (`#N` route seq, `›` ancestry path, `· <node_id>`, `· occurrence K`) — typed fields only, never raw ids/provider/model text.
+- `packages/web/src/lib/agent-history.test.ts` — execution-carry coverage per variant (assistant, lifecycle, paired tool, standalone result, historical null) + `execution: null` added to two whole-item `toEqual`s.
+- `packages/web/src/lib/project-text-transcript.test.ts` — three new merge-isolation proofs (cross-occurrence, cross-attempt, anonymous-identity reset).
+- `packages/web/src/lib/occurrence-groups.test.ts` (new) — 16 tests covering all 13 planned cases incl. B4 collision examples and input immutability.
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — the only suite constructing `AgentHistoryItem` literals; helpers gained `execution: null`.
+
+**Acceptance criteria verified**:
+- [x] `TranscriptExecution` derived from `NodeMessageRow['metadata']['execution']`; required `execution` on every variant; historical rows → `null`.
+- [x] agent-history tests cover all variants + historical null; folding/todo/outcome/presentation assertions unchanged except the added field.
+- [x] Keyed correlation includes occurrence+attempt; anonymous accumulation resets on identity change; tests prove no cross-occurrence/attempt merge, same-identity merge preserved, metadata-less sequence unchanged, inputs unmutated, no UUID regexes.
+- [x] occurrence-groups.ts is new and pure — single pass, Map+ordered array, prefix/nearest-preceding/rejoin semantics, fresh arrays, `showHeaders = groups >= 2`; zero React/DOM/provider/network deps.
+- [x] Labels: final ancestry → `Iteration N` (no suffix); `retry_epoch+1` → `Run N`, `· retry` when >0, `· failed` only on failed lifecycle in that occurrence; B4 disambiguation implemented; no attempt_id/UUID/agent text/provider names.
+- [x] All 13 planned grouping cases covered (16 tests).
+- [x] `(cd packages/web && bun test src/lib/project-text-transcript.test.ts src/lib/agent-history.test.ts src/lib/occurrence-groups.test.ts)` → 51 pass.
+- [x] `(cd packages/web && bun run type-check)` → clean.
+- [x] No fetch/selection/renderer/scroll/product-copy change — lib + tests only; NodeRoom.test.tsx helper edit is the compile-forced field addition.
+- [x] Lint `--max-warnings 0` clean on touched files; prettier clean (lint-staged hooks ran on commit).
+
+**Learnings**:
+- TDD ordering worked cleanly: write the 16 grouping tests + 3 projection tests + execution-propagation tests first (red: 3+5 failures), then implement — green in one pass.
+- `bun run lint` flags `no-unnecessary-type-assertion` on indexed array access (`arr[i] as T`) — the index signature already yields `T`; drop the assertion.
+- Test files are ESLint-ignored in this repo (`--no-warn-ignored`); lint-staged ran eslint+prettier on commit — prettier reformatted `TranscriptExecution` to one line and cleaned test formatting.
+- Only `NodeRoom.test.tsx` builds `AgentHistoryItem` literals; every other suite (Legacy, Console, transcript panes) goes through `buildAgentHistory()` — one required field = one helper edit, not a sweep.
+- `git commit -m "$(cat <<'EOF' … EOF)"` broke on this shell (bad substitution) — `git commit -F -` with a plain heredoc works.
 
 ---
