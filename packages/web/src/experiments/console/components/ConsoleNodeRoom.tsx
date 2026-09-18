@@ -676,7 +676,7 @@ export function ConsoleNodeRoom({
   // A group stays in the display when a row is visible under the Console
   // filters OR a hidden tool row still carries an anchored Ask card.
   const anchoredAskToolIds = new Set(anchoredAsks.map(interaction => interaction.tool_use_id));
-  const occurrenceBase = groupByOccurrence(items);
+  const occurrenceBase = groupByOccurrence(agentActive ? items : []);
   const displayableGroups = occurrenceBase.groups.filter(group =>
     group.items.some(
       item =>
@@ -689,6 +689,13 @@ export function ConsoleNodeRoom({
     groups: displayableGroups,
     showHeaders: displayableGroups.length >= 2,
   };
+  const navTargetIsRendered =
+    occurrenceGrouping.showHeaders &&
+    navTarget !== null &&
+    displayableGroups.some(group => group.key === navTarget);
+  useEffect(() => {
+    if (navTarget !== null && !navTargetIsRendered) setNavTarget(null);
+  }, [navTarget, navTargetIsRendered]);
   const orderedAsks = [
     ...visibleMessages.flatMap(message =>
       message.kind === 'tool'
@@ -797,11 +804,16 @@ export function ConsoleNodeRoom({
     const headingRect = heading.getBoundingClientRect();
     const fullyVisible =
       headingRect.top >= scrollerRect.top && headingRect.bottom <= scrollerRect.bottom;
+    let target = el.scrollTop;
     if (!fullyVisible) {
-      const target = Math.max(0, el.scrollTop + headingRect.top - scrollerRect.top);
-      setFollow(jumpToOccurrence(follow, target));
-      onScrollTopChange?.(target);
+      const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+      target = Math.min(
+        maxScrollTop,
+        Math.max(0, el.scrollTop + headingRect.top - scrollerRect.top)
+      );
     }
+    setFollow(current => jumpToOccurrence(current, target));
+    onScrollTopChange?.(target);
     navigatedHeadingRef.current = heading;
     heading.focus({ preventScroll: true });
   };
@@ -944,8 +956,7 @@ export function ConsoleNodeRoom({
       />
     );
 
-  const navSelectValue =
-    navTarget !== null && displayableGroups.some(group => group.key === navTarget) ? navTarget : '';
+  const navSelectValue = navTargetIsRendered ? navTarget : '';
   const occurrenceNavigator = occurrenceGrouping.showHeaders ? (
     <div className="flex min-w-0 items-center gap-1 px-3 py-2">
       <label htmlFor={navigatorSelectId} className="shrink-0 text-xs text-text-secondary">
@@ -974,7 +985,7 @@ export function ConsoleNodeRoom({
   ) : null;
   const jumpButton =
     !follow.follow && (rowStatus === 'running' || rowStatus === 'awaiting') ? (
-      <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
+      <button type="button" className="ml-auto px-3 py-2 text-xs text-primary" onClick={handleJump}>
         Jump to latest
       </button>
     ) : null;

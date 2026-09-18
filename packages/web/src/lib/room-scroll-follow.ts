@@ -38,6 +38,11 @@ export function onRoomScroll(
   state: ScrollFollowState,
   metrics: ScrollFollowMetrics
 ): ScrollFollowState {
+  // Applying a recorded manual position can emit a scroll event. Keep that
+  // explicit hold intact even when the position is near the bottom; a later
+  // reader scroll or Jump to latest is what may re-enable follow.
+  if (!state.follow && state.scrollTop === metrics.scrollTop) return state;
+
   const distance = metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop;
   const follow = distance <= FOLLOW_THRESHOLD_PX;
   return {

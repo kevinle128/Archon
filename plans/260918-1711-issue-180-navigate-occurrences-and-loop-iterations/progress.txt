@@ -171,7 +171,7 @@
 - [x] Independent of `Execution`: header files unmodified; navigation issues no request (tests assert loader call count stays 1; options come from loaded items).
 - [x] Removed target: `navSelectValue` derives `''` (placeholder) when the target leaves displayed groups (scope change, Console filters); focused-heading unmount → focus to select if still rendered else scroller — never body (tested all three focus destinations).
 - [x] B2 input contract: real `<label>Jump to</label>` + native `<select>` in Tab order, disabled `{N} occurrences` placeholder, commit on `change` only, `aria-controls` → target heading after commit, no key handlers, no live-region announcement (heading focus is the announcement).
-- [x] Scroll/follow cases: live-pinned navigation → hold; row growth after navigation → parked; reader scroll after navigation → stays manual; `Jump to latest` → restores; saved scrollTop path unchanged; already-visible target → focus only, follow stays; target scroll position recorded + persisted via `onScrollTopChange`.
+- [x] Scroll/follow cases: live-pinned navigation → hold; row growth after navigation → parked; reader scroll after navigation → stays manual; `Jump to latest` → restores; saved scrollTop path unchanged; already-visible target → focus without scrolling and manual hold; target scroll position recorded + persisted via `onScrollTopChange`.
 - [x] Paired Legacy/Console tests, identical intent; navigator absent below two displayable groups on both.
 - [x] `NODE_ENV=development bun test` Legacy suite → 113 pass; Console suite + isolation + reducer → 105 pass (218 total, 1378 expect calls).
 - [x] `bun run type-check` clean; `bun run lint --max-warnings 0` clean; prettier clean.
@@ -209,7 +209,7 @@
 
 **Learnings**:
 - Console `System` toggle defaults OFF → status-only groups are hidden; a seeded status-only occurrence is invisible until System is enabled. Use this to exercise the displayable-groups filter contract rather than fighting it.
-- `jumpToOccurrence` only clears `follow` when the target isn't fully visible; to prove manual hold, leave enough content below the fold (> FOLLOW_THRESHOLD_PX=24) or the scroll handler re-pins.
+- `jumpToOccurrence` always clears `follow`, including for an already-visible target; applying the recorded target position preserves that explicit hold even near the 24px follow threshold.
 - Legacy `Close` lives in NodeRoomHeader outside the transcript region — same as Console; scope focus assertions to `page`, not the room region.
 - Room opener button ids embed the encoded rowId (`exec:occ-multi:unscoped:...`) — `button[id*="unscoped"]` can match OTHER nodes' rows; scope with the node id too.
 - Seeding order matters: latest execution row wins the default `?node=` selection — seed the unscoped execution LAST for a node-scoped multi-occurrence room.

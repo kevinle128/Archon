@@ -118,4 +118,9 @@ describe('jumpToOccurrence', () => {
     expect(grown.scrollTop).toBe(40);
     expect(jumpToLatest(grown).pinToBottom).toBe(true);
   });
+
+  test('does not re-enable follow when the recorded target is applied near the bottom', () => {
+    const navigated = jumpToOccurrence(createScrollFollow('running'), 176);
+    expect(onRoomScroll(navigated, AT_THRESHOLD)).toBe(navigated);
+  });
 });

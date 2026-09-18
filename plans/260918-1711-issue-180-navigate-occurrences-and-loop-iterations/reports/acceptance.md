@@ -92,9 +92,10 @@ Required layouts:
   0.84px (= 0.08em at 10.5px), `10px 0 5px` margins, 1px rule to the right
   edge; `expectNoHorizontalOverflow` asserts no scroller/page overflow.
 - **Host small-viewport breakpoint:** 390×844 (`[V:occurrence-nav.narrow]`) —
-  room measures 390px, navigator remains operable (option committed, heading
-  focused), no horizontal overflow:
-  `console-occurrence-room-narrow-390x844-390w.png`. The transcript declares no
+  both room navigators remain operable (option committed, heading focused)
+  with no horizontal overflow:
+  `console-occurrence-room-narrow-390x844-390w.png` and
+  `legacy-occurrence-room-narrow-390x844-390w.png`. The transcript declares no
   breakpoint; the select end-elides like the `Execution` select.
 - **Keyboard/focus state:** `console-focus-select.png` /
   `legacy-focus-select.png` (Tab-reached select carrying the shell focus

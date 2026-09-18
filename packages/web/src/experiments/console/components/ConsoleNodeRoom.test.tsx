@@ -4129,7 +4129,7 @@ describe('ConsoleNodeRoom', () => {
       expect(jumpToLatestButton()).not.toBeUndefined();
     });
 
-    test('an already-visible target moves focus only — no scroll, follow stays pinned', async () => {
+    test('an already-visible target moves focus without scrolling and enters manual hold', async () => {
       await mountTwoOccurrences();
       const scroller = scrollerEl();
       const headingB = occurrenceHeading(OCC_B);
@@ -4143,7 +4143,7 @@ describe('ConsoleNodeRoom', () => {
 
       expect(win.document.activeElement as unknown as Element | null).toBe(headingB);
       expect(scroller.scrollTop).toBe(0);
-      expect(jumpToLatestButton()).toBeUndefined();
+      expect(jumpToLatestButton()?.className).toContain('ml-auto');
     });
 
     test('reader scroll after navigation stays manual; Jump to latest restores follow', async () => {
@@ -4213,6 +4213,12 @@ describe('ConsoleNodeRoom', () => {
       expect(win.document.activeElement as unknown as Element | null).toBe(after);
       expect(host.querySelector(`h3[id$="occ-${OCC_B}"]`)).toBeNull();
       expect(occHeadings()).toHaveLength(2);
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: true });
+      });
+      await flushUntil('tool rows restored', () => occHeadings().length === 3);
+      expect(navigatorSelect()?.value).toBe('');
     });
 
     test('a filter removal down to one group drops the navigator and lands focus on the scroller', async () => {
@@ -4283,6 +4289,24 @@ describe('ConsoleNodeRoom', () => {
       expect(after.value).toBe('');
       const active: unknown = win.document.activeElement;
       expect(active === null || active === win.document.body).toBe(false);
+    });
+
+    test('removes occurrence navigation when switching to a non-agent room', async () => {
+      await mountTwoOccurrences();
+      expect(navigatorSelect()).not.toBeNull();
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'setup',
+          selectedRow: row({ nodeId: 'setup', label: 'Setup', status: 'completed' }),
+          definitionNodes: [{ id: 'setup', bash: 'echo hi' }],
+          nodeStates: [nodeState({ nodeId: 'setup', name: 'Setup', status: 'completed' })],
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+        });
+      });
+
+      expect(navigatorSelect()).toBeNull();
+      expect(occHeadings()).toHaveLength(0);
     });
   });
 });

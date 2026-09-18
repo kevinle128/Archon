@@ -794,7 +794,7 @@ test('[P1] [V:occurrence-nav.live] Live append holds position, partial failure k
   await page.unrouteAll();
 });
 
-test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps the navigator without overflow', async ({
+test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps both navigators without overflow', async ({
   page,
   archon,
 }) => {
@@ -823,5 +823,33 @@ test('[P1] [V:occurrence-nav.narrow] Narrow viewport keeps the navigator without
   test.info().annotations.push({
     type: 'evidence',
     description: `console room width ${String(Math.round(width))}px at ${String(NARROW_VIEWPORT.width)}x${String(NARROW_VIEWPORT.height)} viewport (host small-viewport mode)`,
+  });
+
+  await openLegacyRunDetail(page, runId);
+  await expect(page.getByText(/e2e-usage-record/i).first()).toBeVisible({ timeout: T.medium });
+  const logsTab = page.getByRole('tab', { name: 'Logs' });
+  if ((await logsTab.count()) > 0) await logsTab.click();
+  await page.locator('button[id*="occ-multi%3Aunscoped"]').click();
+  const legacyRoom = roomRegion(page);
+  await expect(legacyRoom).toBeVisible({ timeout: T.medium });
+  await expectGroupHeadings(legacyRoom, ALL_LABELS);
+  const legacyNavigator = navigatorSelect(page);
+  await expect(legacyNavigator).toBeVisible({ timeout: T.medium });
+  await legacyNavigator.selectOption(await navigatorOptionValue(page, LABEL_B));
+  await expect.poll(async () => activeElementId(page)).toMatch(new RegExp(`occ-${OCC_B}$`));
+  const legacyScroller = legacyRoom.locator('[data-testid="node-transcript-scroll"]');
+  await expectNoHorizontalOverflow(page, legacyScroller);
+  const legacyWidth = await page
+    .locator(`#${ROOM_PANEL_ID.legacy}`)
+    .boundingBox()
+    .then(box => box?.width ?? 0);
+  await shot(
+    page,
+    legacyRoom,
+    `legacy-occurrence-room-narrow-${String(NARROW_VIEWPORT.width)}x${String(NARROW_VIEWPORT.height)}-${String(Math.round(legacyWidth))}w.png`
+  );
+  test.info().annotations.push({
+    type: 'evidence',
+    description: `legacy room width ${String(Math.round(legacyWidth))}px at ${String(NARROW_VIEWPORT.width)}x${String(NARROW_VIEWPORT.height)} viewport (host small-viewport mode)`,
   });
 });

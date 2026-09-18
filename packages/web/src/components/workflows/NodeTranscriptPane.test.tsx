@@ -1763,7 +1763,7 @@ describe('NodeTranscriptPane', () => {
       expect(jumpToLatestButton()).not.toBeUndefined();
     });
 
-    test('an already-visible target moves focus only — no scroll, follow stays pinned', async () => {
+    test('an already-visible target moves focus without scrolling and enters manual hold', async () => {
       await mountTwoOccurrences();
       const scroller = scrollerEl();
       const headingB = occurrenceHeading(OCC_B);
@@ -1776,8 +1776,7 @@ describe('NodeTranscriptPane', () => {
 
       expect(win.document.activeElement as unknown as Element | null).toBe(headingB);
       expect(scroller.scrollTop).toBe(0);
-      // Follow was never disengaged — no Jump to latest.
-      expect(jumpToLatestButton()).toBeUndefined();
+      expect(jumpToLatestButton()?.className).toContain('ml-auto');
     });
 
     test('new rows arriving after navigation keep the held position', async () => {
