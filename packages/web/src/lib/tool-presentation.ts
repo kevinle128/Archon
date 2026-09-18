@@ -4,7 +4,8 @@
  * label, headline, and content badge facts. `toolRowPresentation` composes
  * that content presentation with already-derived runtime facts (outcome,
  * exit code, duration, output state) into the collapsed-row model both
- * renderers consume. The input is structural so the chat card can adopt it
+ * renderers consume, plus the untouched provider-facing `rawPayload` for
+ * the Raw view. The input is structural so the chat card can adopt it
  * later without a rewrite.
  */
 import { formatDurationMs } from './format';
@@ -50,6 +51,18 @@ export interface ToolPresentationInput {
   output: unknown;
 }
 
+/**
+ * Canonical Raw view of the paired call: exactly the provider-facing name,
+ * input, and output — no ids, labels, icons, facts, or other UI metadata.
+ * `name` is the sent name, never the normalized chip label; renderers treat
+ * the whole payload as opaque.
+ */
+export interface ToolRawPayload {
+  name: string;
+  input: unknown;
+  output: unknown;
+}
+
 export interface ToolRowBadge {
   kind: ToolRowBadgeKind;
   text: string;
@@ -81,6 +94,8 @@ export interface ToolRowPresentation extends ToolPresentation {
   statusLabel: ToolOutcome;
   initialOpen: boolean;
   badges: ToolRowBadge[];
+  /** Canonical provider-facing payload for the Raw disclosure; opaque to renderers. */
+  rawPayload: ToolRawPayload;
 }
 
 const MCP_PREFIX = 'mcp__';
@@ -535,11 +550,65 @@ function elapsedText(facts: ToolRowFacts): string {
   return `running · ${formatDurationMs(elapsed)}`;
 }
 
+/**
+ * Verbatim capture of the provider-facing trio for the Raw view — never
+ * rebuilt from the normalized label, headline, or fact text, which may
+ * differ from what was sent. Total: any throw while reading yields the
+ * deterministic generic fallback rather than leaking through the row.
+ */
+function captureRawPayload(input: ToolPresentationInput): ToolRawPayload {
+  try {
+    const name = input.name;
+    return {
+      name: typeof name === 'string' ? name : 'generic',
+      input: input.input,
+      output: input.output,
+    };
+  } catch {
+    return { name: 'generic', input: undefined, output: undefined };
+  }
+}
+
+/** The payload's name when it reads as a string without throwing, else 'generic'. */
+function safeRawName(payload: ToolRawPayload): string {
+  try {
+    const name = payload.name;
+    return typeof name === 'string' ? name : 'generic';
+  } catch {
+    return 'generic';
+  }
+}
+
+/**
+ * Pretty-prints the canonical Raw payload in a fixed name → input → output
+ * key order; absent `undefined` fields are omitted and `null` is kept.
+ * Total: cycles, bigint, or a hostile getter yield a valid
+ * `{ name, error }` document — never a throw, never exception text or
+ * inspection output, and no replacer that could silently alter values.
+ */
+export function toolRawPayloadJson(payload: ToolRawPayload): string {
+  try {
+    return JSON.stringify(
+      { name: payload.name, input: payload.input, output: payload.output },
+      null,
+      2
+    );
+  } catch {
+    // Both fields are plain strings, so this document cannot fail to serialize.
+    return JSON.stringify(
+      { name: safeRawName(payload), error: 'payload is not serializable' },
+      null,
+      2
+    );
+  }
+}
+
 export function toolRowPresentation(
   input: ToolPresentationInput,
   facts: ToolRowFacts
 ): ToolRowPresentation {
   const content = toolPresentation(input);
+  const rawPayload = captureRawPayload(input);
   const outcome = facts.outcome;
   const badges: ToolRowBadge[] = [];
 
@@ -591,5 +660,6 @@ export function toolRowPresentation(
     statusLabel: outcome,
     initialOpen: outcome === 'failed',
     badges,
+    rawPayload,
   };
 }

@@ -10,6 +10,7 @@ import {
   MAX_GENERIC_SCALAR_CODE_POINTS,
   MAX_HEADLINE_SOURCE_CODE_UNITS,
   toolPresentation,
+  toolRawPayloadJson,
   toolRowPresentation,
   type ToolFamily,
   type ToolRowFacts,
@@ -817,5 +818,163 @@ describe('failure containment', () => {
       { kind: 'exit', text: 'exit 1', tone: 'danger' },
       { kind: 'duration', text: '10ms', tone: 'muted' },
     ]);
+  });
+});
+
+describe('raw payload', () => {
+  test('generic name keeps the sent name verbatim when the label differs', () => {
+    const presentation = row(
+      'mcp__github__create_issue',
+      { title: 'bug' },
+      { issue: 42 },
+      SUCCEEDED
+    );
+    expect(presentation.label).toBe('github · create_issue');
+    expect(presentation.rawPayload).toEqual({
+      name: 'mcp__github__create_issue',
+      input: { title: 'bug' },
+      output: { issue: 42 },
+    });
+  });
+
+  test('known alias keeps the sent casing, not the normalized family', () => {
+    const presentation = row('TodoWrite', { op: 'add' }, null, SUCCEEDED);
+    expect(presentation.rawPayload.name).toBe('TodoWrite');
+  });
+
+  test('codex command-like name stays verbatim while the label is the family', () => {
+    const name = 'npm test -- --watch';
+    const presentation = row(name, undefined, 'ok', SUCCEEDED);
+    expect(presentation.label).toBe('shell');
+    expect(presentation.rawPayload).toEqual({ name, input: undefined, output: 'ok' });
+  });
+
+  test('over-chip-bound name stays verbatim in the payload', () => {
+    const name = 'x'.repeat(MAX_CHIP_CODE_POINTS + 1);
+    const presentation = row(name, undefined, undefined, SUCCEEDED);
+    expect(presentation.label).toBe('generic');
+    expect(presentation.rawPayload.name).toBe(name);
+  });
+
+  test('object, array, primitive, and null values are preserved structurally', () => {
+    const input = { nested: { list: [1, 2] }, flag: true };
+    const output = { lines: ['a', 'b'], count: 2, extra: null };
+    const presentation = row('custom_tool', input, output, SUCCEEDED);
+    expect(presentation.rawPayload.input).toEqual(input);
+    expect(presentation.rawPayload.output).toEqual(output);
+
+    expect(row('custom_tool', 'plain', 42, SUCCEEDED).rawPayload).toEqual({
+      name: 'custom_tool',
+      input: 'plain',
+      output: 42,
+    });
+    expect(row('custom_tool', null, null, SUCCEEDED).rawPayload).toEqual({
+      name: 'custom_tool',
+      input: null,
+      output: null,
+    });
+  });
+
+  test('a non-string name still captures the readable fields', () => {
+    const weird = { name: 42, input: { a: 1 }, output: null };
+    const presentation = toolRowPresentation(
+      weird as unknown as Parameters<typeof toolRowPresentation>[0],
+      SUCCEEDED
+    );
+    expect(presentation.rawPayload).toEqual({ name: 'generic', input: { a: 1 }, output: null });
+  });
+
+  test('capture failure yields the deterministic generic payload', () => {
+    const poisonedName = {
+      get name(): string {
+        throw new Error('boom');
+      },
+      input: { a: 1 },
+      output: 'x',
+    };
+    expect(toolRowPresentation(poisonedName, SUCCEEDED).rawPayload).toEqual({
+      name: 'generic',
+      input: undefined,
+      output: undefined,
+    });
+    const poisonedInput = {
+      name: 'Read',
+      get input(): unknown {
+        throw new Error('boom');
+      },
+      output: 'x',
+    };
+    expect(toolRowPresentation(poisonedInput, SUCCEEDED).rawPayload).toEqual({
+      name: 'generic',
+      input: undefined,
+      output: undefined,
+    });
+  });
+
+  test('toolRawPayloadJson emits fixed key order with two-space indentation', () => {
+    expect(toolRawPayloadJson({ name: 'Read', input: { path: 'a.ts' }, output: 'text' })).toBe(
+      '{\n  "name": "Read",\n  "input": {\n    "path": "a.ts"\n  },\n  "output": "text"\n}'
+    );
+  });
+
+  test('absent undefined fields are omitted while explicit null is kept', () => {
+    expect(toolRawPayloadJson({ name: 'Bash', input: undefined, output: undefined })).toBe(
+      '{\n  "name": "Bash"\n}'
+    );
+    expect(toolRawPayloadJson({ name: 'Bash', input: null, output: null })).toBe(
+      '{\n  "name": "Bash",\n  "input": null,\n  "output": null\n}'
+    );
+  });
+
+  test('special strings serialize as escaped JSON text, never markup', () => {
+    const json = toolRawPayloadJson({
+      name: 'Bash',
+      input: { cmd: 'echo "hi" \\ done\nnext' },
+      output: '<script>alert(1)</script>',
+    });
+    expect(JSON.parse(json)).toEqual({
+      name: 'Bash',
+      input: { cmd: 'echo "hi" \\ done\nnext' },
+      output: '<script>alert(1)</script>',
+    });
+    expect(json).toContain('\\"hi\\"');
+    expect(json).toContain('done\\nnext');
+    expect(json).not.toContain('\\\\x3c');
+  });
+
+  test('cyclic input yields the documented fallback and keeps a readable name', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const json = toolRawPayloadJson({ name: 'Bash', input: cyclic, output: 'x' });
+    expect(JSON.parse(json)).toEqual({ name: 'Bash', error: 'payload is not serializable' });
+    expect(json).toBe('{\n  "name": "Bash",\n  "error": "payload is not serializable"\n}');
+  });
+
+  test('bigint output yields the documented fallback', () => {
+    const json = toolRawPayloadJson({ name: 'Read', input: undefined, output: BigInt(1) });
+    expect(JSON.parse(json)).toEqual({ name: 'Read', error: 'payload is not serializable' });
+  });
+
+  test('a throwing name getter still returns valid fallback JSON', () => {
+    const hostile = {
+      get name(): string {
+        throw new Error('boom');
+      },
+      input: { a: 1 },
+      output: 'x',
+    };
+    const json = toolRawPayloadJson(hostile);
+    expect(JSON.parse(json)).toEqual({ name: 'generic', error: 'payload is not serializable' });
+  });
+
+  test('a non-string name in the failing document falls back to generic', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const json = toolRawPayloadJson({
+      name: 42 as unknown as string,
+      input: cyclic,
+      output: undefined,
+    });
+    expect(JSON.parse(json)).toEqual({ name: 'generic', error: 'payload is not serializable' });
   });
 });
