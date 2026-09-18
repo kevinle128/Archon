@@ -26438,6 +26438,29 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(data.cost_usd).toBeCloseTo(0.03, 5);
   });
 
+  it('preserves accumulated token usage when a later guidance turn omits usage', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'more work');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 's-1', tokens: { input: 10, output: 5 } };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 's-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    const completedCall = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+      call => (call[0] as { event_type: string }).event_type === 'node_completed'
+    );
+    const data = (completedCall![0] as { data: Record<string, unknown> }).data;
+    expect(data.tokens).toEqual({ input: 10, output: 5 });
+  });
+
   it('exposes no handle when the provider cannot resume sessions', async () => {
     mockGetAgentProviderDag.mockImplementation(() => ({
       sendQuery: mockSendQueryDag,
@@ -26671,6 +26694,42 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(sendQueryArg<SendQueryOptions>(1, 3).forkSession).toBe(false);
     expect(storedEventTypes(store)).toContain('node_completed');
     expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+  });
+
+  it('fails without draining when the latest loop guidance turn omits a session id', async () => {
+    let calls = 0;
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'my-loop', 'm-1', 'first follow-up');
+        yield { type: 'assistant', content: 'iteration work' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      if (calls === 2) {
+        handleRef = liveHandle(RUN_ID, 'my-loop');
+        enqueue(RUN_ID, 'my-loop', 'm-2', 'second follow-up');
+        yield { type: 'assistant', content: 'first follow-up result' };
+        yield { type: 'result' };
+        return;
+      }
+      yield { type: 'assistant', content: 'unexpected extra turn' };
+      yield { type: 'result', sessionId: 'loop-sess-extra' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 2 },
+      },
+    ]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(nodeFailedError(store, 'my-loop')).toContain('no session id');
+    expect(handleRef!.snapshot().queued.map(message => message.message)).toEqual([
+      'second follow-up',
+    ]);
   });
 
   it('lets pending guidance win a completion boundary in a loop', async () => {

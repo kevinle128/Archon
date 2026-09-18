@@ -365,6 +365,27 @@ describe('ConsoleComposerDock', () => {
     expect(host.textContent).toContain('queued · 1');
   });
 
+  test('a successful in-flight send preserves text typed for the next message', async () => {
+    const pending = deferred<SendWorkflowNodeResponse>();
+    nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
+      calls.push({ runId, nodeId, body });
+      return pending.promise;
+    };
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('next message');
+    await act(async () => {
+      pending.resolve(okReceipt(calls[0].body.message_id));
+    });
+    await flush();
+
+    expect(field().value).toBe('next message');
+    expect(host.querySelector('li')?.textContent).toContain('first');
+    const stored = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
+    expect(JSON.parse(stored ?? '{}')).toMatchObject({ draft: 'next message' });
+  });
+
   test('editing the draft after a failure mints a new id', async () => {
     nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
       calls.push({ runId, nodeId, body });

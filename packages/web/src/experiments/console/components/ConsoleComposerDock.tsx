@@ -116,6 +116,7 @@ export function ConsoleComposerDock({
 
   const submit = (): void => {
     if (!canSubmitGuidance({ mode, inFlight: dock.inFlight, draft })) return;
+    const submittedDraft = draft;
     const begun = beginGuidanceSubmission(dock, draft);
     setDock(begun.state);
     void send(runId, nodeId, {
@@ -125,7 +126,9 @@ export function ConsoleComposerDock({
     }).then(
       (receipt): void => {
         setDock(current => resolveGuidanceSuccess(current, receipt));
-        setDraft('');
+        // The field stays editable while the POST is in flight. Clear only the
+        // text that was accepted; preserve anything the operator typed next.
+        setDraft(current => (current === submittedDraft ? '' : current));
         fieldRef.current?.focus();
       },
       (error: unknown): void => {

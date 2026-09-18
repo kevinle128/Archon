@@ -3165,8 +3165,11 @@ async function executeNodeInternal(
             ? { cost: (priorTokens.cost ?? 0) + (nodeTokens.cost ?? 0) }
             : {}),
         };
-        nodeTokens = accumulatedTokens;
       }
+      // A provider may omit usage for a later guidance turn. Keep the usage
+      // already accumulated from earlier turns instead of making the final
+      // node result appear to have consumed no tokens.
+      nodeTokens = accumulatedTokens;
 
       // Only post "completed via idle timeout" when output exists — zero-output timeout falls through to the empty-output guard below.
       if (nodeIdleTimedOut && (nodeOutputText.trim() !== '' || structuredOutput !== undefined)) {
@@ -5852,6 +5855,10 @@ async function executeLoopNodeInner(
       }
       let fullOutput = ''; // raw, for signal detection
       let cleanOutput = ''; // stripped, for platform display
+      // A queued follow-up may resume only the session id positively returned
+      // by this turn. `currentSessionId` also threads ordinary loop iterations,
+      // so it cannot prove that the latest turn itself returned an id.
+      let settledTurnSessionId: string | undefined;
       let iterationIdleTimedOut = false;
       let iterationAbortController = new AbortController();
       // Mid-stream cancel-check throttle (see the check inside the stream loop).
@@ -6116,6 +6123,7 @@ async function executeLoopNodeInner(
               if (msg.sessionId) {
                 if (reaskAttempt === 0) {
                   currentSessionId = msg.sessionId;
+                  settledTurnSessionId = msg.sessionId;
                 } else if (currentSessionId !== msg.sessionId) {
                   getLog().debug(
                     {
@@ -6879,7 +6887,7 @@ async function executeLoopNodeInner(
           ? !steering.steeringHandle.closeIfEmpty()
           : steering.steeringHandle.pendingCount() > 0;
         if (hasQueuedGuidance) {
-          if (currentSessionId === undefined) {
+          if (settledTurnSessionId === undefined) {
             // Design decision 6: leave the queue intact and fail BEFORE drain —
             // matching the direct-node invariant; never fall back to a fresh
             // provider session.
@@ -6898,7 +6906,7 @@ async function executeLoopNodeInner(
           }
           const drained = steering.steeringHandle.drain();
           turnGuidancePrompt = drained.map(item => item.message).join('\n\n');
-          turnResumeId = currentSessionId;
+          turnResumeId = settledTurnSessionId;
           turnIsGuidance = true;
           continue turns;
         }
