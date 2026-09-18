@@ -2,8 +2,8 @@ name: ak-feature
 description: |
   Use when: User wants to build a feature end-to-end with the Claude Kit (ck)
   pipeline running fully unattended in a worktree.
-  Triggers: "ck feature", "claudekit feature", "ck plan and cook", "ck deep tdd",
-            "plan then cook", "ck pipeline", "claude kit feature".
+  Triggers: "ak feature", "ck feature", "claudekit feature", "ck plan and cook",
+            "ck deep tdd", "plan then cook", "ck pipeline", "claude kit feature".
   Does: deep TDD planning (/ak:plan --deep --tdd) -> independent Codex verify +
         fix of the plan -> conversion of the plan into a Ralph PRD (prd.md +
         prd.json) CO-LOCATED with it -> autonomous story-by-story implementation
