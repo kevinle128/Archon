@@ -96,8 +96,8 @@
       "technicalNotes": "Phase-03-web-composer-dock-both-shells.md is the contract; final EXPERIENCE.md/DESIGN.md prose overrides stale co-located mockups \u2014 if implementation evidence contradicts final design prose, stop and record the conflict rather than resolving from an older mockup. Uses the regenerated api.generated.d.ts types from US-003. POST response is the only queue evidence: no polling, no queue GET, no rehydration, no delivered inference, no cross-tab convergence (all Story 2.9+). Detached disclosure copy is exact.",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented this iteration (commit 2696bddc). Files: lib/steering-dock.ts(+test), lib/api.ts sendNodeGuidance, workflows/ComposerDock.tsx(+test), NodeTranscriptPane.tsx(+test), console skills/runs.ts sendNodeGuidance, console/components/ConsoleComposerDock.tsx(+test), ConsoleNodeRoom.tsx(+test), console-isolation.test.ts; visual evidence in reports/evidence/."
     },
     {
       "id": "US-005",

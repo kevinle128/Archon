@@ -116,3 +116,49 @@
 - Rejected-request no-mutation assertions: snapshot `handle.snapshot()` before + after and diff `phase`/`acceptedCount`/`queued` — cheaper than intercepting registry internals
 
 ---
+
+## 2026-09-20 — US-004: Queue composer dock in Legacy and Console shells
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — framework-free shared logic: `steeringDockMode` precedence (non-live/non-generating → hidden → blocked → detached → composer), `steeringBlockedReason` (awaiting row OR this-node pending ask), `canSubmitGuidance` single guard, `isQueueShortcut` (Cmd/Ctrl+Enter, isComposing, keyCode 229), `steeringDraftStorageKey` (run + namespaced node), wording helpers (`queued · n` / `Queued messages, n` / accessible name / count phrase), submission reducer (UUID once per submission, unchanged-draft retry reuses id, edit mints new id, 200 dedupes by message_id), sessionStorage draft+retry persistence (never receipts), `SteeringSendError`/`toSteeringSendError`/`toSteeringRefusal` normalizing both transport layers onto nested `{code,message}`
+- `packages/web/src/lib/steering-dock.test.ts` — 48 tests covering the full contract matrix
+- `packages/web/src/lib/api.ts` — `sendNodeGuidance` via `fetchJSON`, generated `SendWorkflowNodeBody`/`SendWorkflowNodeResponse` types, errors normalized via `toSteeringSendError`
+- `packages/web/src/components/workflows/ComposerDock.tsx` — Legacy dock: full-bleed `surface-elevated` band (1px top rule, lowercase `queued · n` header w/ CSS uppercase+tracking, labelled list, `sent` per row, `max-h-[33vh]` internal scroll, end elision, escaped text only), labelled textarea (`min-h-[56px]`, `surface-inset`, accent-bright focus ring), hint `Cmd/Ctrl+Enter to send · this tab only`, right-aligned bordered Queue (≥32×84, aria-keyshortcuts, focusable `aria-disabled` + `aria-describedby`→reason when blocked), verbatim detached disclosure replacing band+field+controls, `role=status`/`role=alert` live regions, `motion-reduce:transition-none`
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — 25 tests
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — dock mounted after scroller+jump control inside RoomRegion, `key={'steering:'+resolvedScopeKey}` (distinct from TodoStrip's scope key — duplicate-key collision), props: runId, `row.nodeId`, rowStatus, `isLiveRunStatus(runStatus)`, this-node pending asks via `selectVisibleNodeAskInteractions`
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — +5 mount tests
+- `packages/web/src/experiments/console/skills/runs.ts` — `sendNodeGuidance` via `requestJson`, same generated types + error normalization
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — identical semantics on console seams; explicit `focus-visible:outline-accent-bright!` on field+button because the console-wide `--accent-ring` (0.3 alpha) composites to ~2:1 < 3:1 floor on dock surfaces
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` — 23 tests
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — dock in analogous position gated on `agentActive && row !== null`
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — +6 tests
+- `packages/web/src/experiments/console/console-isolation.test.ts` — new file in positive list; `@/lib/steering-dock` approved seam
+- `plans/.../reports/evidence/` — 10 screenshots + measurements.txt (scratch Playwright spec, deleted after capture)
+
+**Acceptance criteria verified**:
+- [x] Shared helpers: visibility table, blocked reason, storage key, header/count/announcement wording, shortcut detection incl. isComposing + keyCode 229 — identical semantics both shells
+- [x] Submission rules: blank rejected locally (no request), verbatim non-blank send, one in-flight, shared guard, UUID once + ambiguous-retry reuse + new id on edit, 200 dedupe by message_id in order, clears draft+retry, keeps focus
+- [x] Receipts in-memory only (scope-change/unmount clears), never `delivered`, never persisted; draft+retry in sessionStorage by run+namespaced node; escaped React text + end elision only
+- [x] Pending ask / awaiting blocks pre-transport with exact reason; sibling asks don't block; focusable `aria-disabled` (no native disabled), text-secondary, describedby→reason; click+shortcut no-op
+- [x] 422 → exact disclosure `not steerable here · this run was started detached, so its live session is not in this process` (text-secondary, draft/retry preserved); 409/other → draft kept + role=alert; terminal/historical → no dock, no request
+- [x] API helpers only via `fetchJSON`/`requestJson`; generated types; typed nested error; no auto-retry, no logging; no server/workflows runtime imports in web
+- [x] Layout: RoomRegion flex column, scroller flexible, band above dock outside padded well, dock final fixed sibling reducing transcript viewport (never overlay)
+- [x] Composer contract: real label `message to <node>`, surface-inset/border/md radius/≥56px/high-contrast ring, exact hint text-secondary, bordered transparent right-aligned Queue ≥32×84 both shells, accessible name `Queue · Cmd/Ctrl+Enter to send · n messages queued`, aria-keyshortcuts, no Stop
+- [x] Keyboard/focus/live regions: shortcut gated on non-blank+not-blocked+not-in-flight+not-composing; Enter/Shift+Enter native newline; success keeps focus; rejection never drops focus to body; one role=status per room; role=alert failures; reduced-motion honored
+- [x] Mounting + console-isolation test updated
+- [x] Tests: steering-dock 48, ComposerDock 25 + pane 29 (+ NodeRoom/LegacyNodeRoom suite 124 total), ConsoleComposerDock 23 + ConsoleNodeRoom 62 + isolation — all pass; full `bun run test` in packages/web: 2243 pass / 0 fail
+- [x] Visual captured (real Chromium via e2e harness, fake provider `delayMs` node, web-dispatched steerable run + CLI detached run): Console room=464px @1440×900; 460px harness room=460px field=440×56 queue=84×32 no overflow; Legacy room=459.6px @1150vw field=439.6×56; blocked reason computed `--text-secondary`; detached verbatim both shells; reduced-motion transition-property=none; contrast computed oklch→WCAG (text-secondary 5.35–8.88:1, accent-bright ring 4.54–8.19:1)
+- [x] bun run type-check clean; eslint --max-warnings 0 clean (--no-warn-ignored for ignored .test.ts); prettier clean
+
+**Learnings**:
+- React key collision: sibling components keyed by the same `resolvedScopeKey` warn `two children with the same key` — prefix per component (`steering:${key}` vs TodoStrip's bare key)
+- happy-dom `activeElement` type ≠ lib.dom `HTMLElement` — existing test idiom: `(win.document.activeElement as unknown) === el`
+- Console-wide `--accent-ring` = `oklch(0.64 0.295 330 / 0.3)` composites to ~2:1 on `surface-elevated` — under the 3:1 non-text floor. Console idiom for high-contrast rings: `focus-visible:outline-accent-bright!` (ConsoleTodoStrip precedent); solid brand-magenta = 4.54:1 on elevated
+- `motion-reduce:transition-none` sets `transition-property:none`, not duration — assert the property list, not `transition-duration === '0s'`
+- Playwright evidence in this worktree: `e2e/` is standalone (stub package-lock → `bun install`, browsers already cached); runtime needs `bun run build:web` first; spec can `writeFileSync` a workflow yaml into `archon.home/workflows/` mid-test — no repo fixture needed for scratch scenarios; web-dispatched runs are steerable in-server (200), CLI runs are detached (422)
+- e2e strict-mode gotchas: room page has TWO textareas (dock + Reply composer) — locate by `getByRole('textbox', {name:/^message to /})`; blocked reason appears in both visible `<p>` and sr-only status — use `locator('p', {hasText})`
+- Console room ≈464px at 1440×900 with default rail 280 + 40% split — the 460px contract width is the natural default; Legacy room ≈460px at 1150px viewport
+
+---
+
