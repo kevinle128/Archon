@@ -1,4 +1,8 @@
-import { type Locator, type Page } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
@@ -33,6 +37,16 @@ const WIDTH_TOLERANCE_PX = 2;
 const RELOAD_RATIO_TOLERANCE = 0.02;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
+
+/** Story 1.2 evidence directory — the Console long-payload Raw capture lands here. */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const STORY_12_EVIDENCE_DIR = join(
+  REPO_ROOT,
+  'plans',
+  '260918-1038-issue-175-raw-payload-toggle',
+  'reports',
+  'evidence'
+);
 
 async function pageWaitStarter(
   browser: Parameters<typeof createIdentityContext>[0],
@@ -106,9 +120,9 @@ async function waitForRoom(page: Page, nodeId: string): Promise<Locator> {
 /**
  * Story 1.3 contract for the deterministic `inspect-file` Read row, identical
  * on both surfaces: collapsed rows mount no body; opening shows the file
- * family body (path header + preview, never serialized JSON); Raw swaps in
- * the exact stored payload and back out. Input/Output diagnostic disclosures
- * no longer exist.
+ * family body (path header + preview, never serialized JSON); Raw swaps the
+ * body for the exact stored payload and back. Input/Output diagnostic
+ * disclosures no longer exist.
  */
 async function expectFileFamilyBody(row: Locator): Promise<void> {
   const body = row.locator('.tool-family-body');
@@ -127,11 +141,14 @@ async function expectFileFamilyBody(row: Locator): Promise<void> {
   );
 
   const raw = row.getByRole('button', { name: 'Raw' });
+  const rawPanel = row.locator('pre');
   await expect(raw).toHaveAttribute('aria-expanded', 'false');
+  await expect(rawPanel).toHaveCount(0);
   await raw.click();
   await expect(raw).toHaveAttribute('aria-expanded', 'true');
-  await expect(body).toHaveCount(1);
-  expect(await body.textContent(), 'Raw shows the exact stored payload').toBe(
+  await expect(body).toHaveCount(0);
+  await expect(rawPanel).toHaveCount(1);
+  expect(await rawPanel.textContent(), 'Raw shows the exact stored payload').toBe(
     JSON.stringify(
       { name: 'Read', input: { path: 'HITL_TOOL_INPUT.txt' }, output: HITL_TOOL_OUTPUT },
       null,
@@ -141,6 +158,7 @@ async function expectFileFamilyBody(row: Locator): Promise<void> {
 
   await raw.click();
   await expect(raw).toHaveAttribute('aria-expanded', 'false');
+  await expect(rawPanel).toHaveCount(0);
   await expect(body.locator('.text-node-command').first()).toHaveText('HITL_TOOL_INPUT.txt');
   await expect(body).toContainText(HITL_TOOL_OUTPUT);
 }
@@ -651,7 +669,7 @@ test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundar
 test('[P1] [V:hitl.history-complete] Complete history renders every distinct tool call', async ({
   page,
   archon,
-}) => {
+}, testInfo: TestInfo) => {
   test.setTimeout(T.xlong);
   await page.setViewportSize(SPLIT_VIEWPORT);
   const started = await requireLongHistoryFixture(page, archon);
@@ -680,16 +698,42 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
       )
   ).sort();
   expect(visibleIds).toEqual(storedIds);
-  // The loadable row's button lives inside its closed disclosure — the AX tree
-  // only exposes it once the row is open.
+  // The full-output action is offered on the expanded row before Raw is ever
+  // opened; the fetched tail stays out of the DOM until Raw is opened, then
+  // renders inside the wrapping panel without sideways scroll.
   const lastRow = room.locator('details[data-tool-id]').last();
   await lastRow.locator('summary').first().click();
-  const viewFullOutput = room.getByRole('button', { name: 'View full output' });
+  const rawToggle = lastRow.getByRole('button', { name: 'Raw', exact: true });
+  await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(lastRow.locator('pre')).toHaveCount(0);
+  const viewFullOutput = lastRow.getByRole('button', { name: 'View full output' });
   await expect(viewFullOutput).toHaveCount(1);
-  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);
+  const detailPath =
+    `/api/workflows/runs/${encodeURIComponent(started.runId)}` +
+    `/nodes/${encodeURIComponent(HITL_LONG_NODE)}/messages/`;
+  const detailResponse = page.waitForResponse(
+    res => res.request().method() === 'GET' && new URL(res.url()).pathname.startsWith(detailPath),
+    { timeout: T.medium }
+  );
   await viewFullOutput.click();
-  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toBeVisible({
-    timeout: T.medium,
+  expect((await detailResponse).status()).toBe(200);
+  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);
+  await rawToggle.click();
+  const rawPanel = lastRow.locator('pre');
+  await expect(rawPanel).toContainText('[e2e-fake] full output tail', { timeout: T.medium });
+  const panelOverflow = await rawPanel.evaluate(el => el.scrollWidth - el.clientWidth);
+  expect(panelOverflow, 'open Raw panel keeps its 20k payload wrapped').toBeLessThanOrEqual(1);
+  const pageOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(pageOverflow, 'page has no horizontal scroll with long Raw open').toBeLessThanOrEqual(1);
+  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  const rawShot = await rawPanel.screenshot({
+    path: join(STORY_12_EVIDENCE_DIR, 'console-long-raw-open.png'),
+  });
+  await testInfo.attach('console-long-raw-open.png', {
+    body: rawShot,
+    contentType: 'image/png',
   });
 });
 

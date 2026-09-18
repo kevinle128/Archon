@@ -94,9 +94,17 @@ test('[P1] [V:hitl.console-tool-output] HITL Console room collapses the call to 
   await expect(summary).toContainText('Read');
   await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
   await expect(summary).toContainText('succeeded');
-  await expect(rows.getByText('Input', { exact: true })).toBeHidden();
-  await expect(rows.getByText('Output', { exact: true })).toBeHidden();
-  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
+  // Raw is the only disclosure: closed by default, hidden inside the collapsed
+  // row, and the serialized payload is not mounted until it is opened. The row
+  // is collapsed, so a DOM selector is needed — getByRole queries the
+  // accessibility tree, which excludes hidden details children.
+  const rawToggle = rows.locator('button[aria-expanded]');
+  await expect(rawToggle).toHaveCount(1);
+  await expect(rawToggle).toBeHidden();
+  await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rows.locator('details')).toHaveCount(0);
+  await expect(rows.locator('pre')).toHaveCount(0);
+  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
 });
 
 test('[P1] [V:hitl.legacy-tool-output] HITL Legacy room collapses the call to a readable tool row', async ({
@@ -120,9 +128,16 @@ test('[P1] [V:hitl.legacy-tool-output] HITL Legacy room collapses the call to a 
   await expect(summary).toContainText('Read');
   await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
   await expect(summary).toContainText('succeeded');
-  await expect(rows.getByText('Input', { exact: true })).toBeHidden();
-  await expect(rows.getByText('Output', { exact: true })).toBeHidden();
-  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
+  // Same collapsed default on Legacy: one hidden closed Raw control, no nested
+  // disclosures, and no serialized payload in the DOM. DOM selector — the
+  // hidden control is absent from the accessibility tree.
+  const rawToggle = rows.locator('button[aria-expanded]');
+  await expect(rawToggle).toHaveCount(1);
+  await expect(rawToggle).toBeHidden();
+  await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(rows.locator('details')).toHaveCount(0);
+  await expect(rows.locator('pre')).toHaveCount(0);
+  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
 });
 
 test('[P1] [V:hitl.ask-authorization] starter can answer Ask; teammate is forbidden; missing identity is 401', async ({

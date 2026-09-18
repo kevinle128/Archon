@@ -4,12 +4,14 @@
  * label, headline, and content badge facts. `toolRowPresentation` composes
  * that content presentation with already-derived runtime facts (outcome,
  * exit code, duration, output state) into the collapsed-row model both
- * renderers consume. `toolBodyPresentation` resolves the expanded body lazily
+ * renderers consume, plus the untouched provider-facing `rawPayload` for
+ * the Raw view. `toolBodyPresentation` resolves the expanded body lazily
  * — only while a row is open and Raw is closed — against the already-resolved
  * family, so polling never pays for output normalization. The input is
  * structural so the chat card can adopt it later without a rewrite.
  */
 import { formatDurationMs } from './format';
+import { normalizeTaskDispatch, taskPromptExcerpt, type TaskSubtask } from './task-normalize';
 import {
   MAX_LIST_ITEMS,
   MAX_LIST_ITEM_TEXT_CODE_UNITS,
@@ -67,10 +69,26 @@ export interface ToolPresentationInput {
   output: unknown;
 }
 
+/**
+ * Canonical Raw view of the paired call: exactly the provider-facing name,
+ * input, and output — no ids, labels, icons, facts, or other UI metadata.
+ * `name` is the sent name, never the normalized chip label; renderers treat
+ * the whole payload as opaque.
+ */
+export interface ToolRawPayload {
+  name: string;
+  input: unknown;
+  output: unknown;
+}
+
 export interface ToolRowBadge {
   kind: ToolRowBadgeKind;
   text: string;
   tone: ToolRowBadgeTone;
+}
+
+export interface TaskSubtaskCard extends TaskSubtask {
+  excerpt: string;
 }
 
 export interface ToolPresentation {
@@ -82,6 +100,10 @@ export interface ToolPresentation {
   headlineKind: ToolHeadlineKind;
   /** Content-derived facts only (language, count, operation); runtime facts join in toolRowPresentation. */
   contentBadges: ToolRowBadge[];
+  /** Expanded-body model; null for every family without a body arm. */
+  body: ToolBody | null;
+  /** Body-bar lead facts owned by the core ('batch', 'N subtasks', 'single dispatch'); empty for non-task rows. */
+  bodyFacts: string[];
 }
 
 export interface ToolRowFacts {
@@ -97,6 +119,10 @@ export interface ToolRowPresentation extends ToolPresentation {
   statusLabel: ToolOutcome;
   initialOpen: boolean;
   badges: ToolRowBadge[];
+  /** Canonical provider-facing payload for the Raw disclosure; opaque to renderers. */
+  rawPayload: ToolRawPayload;
+  /** Complete open-row body bar: family prefix plus fact text, composed once in the core. */
+  bodyBarText: string;
 }
 
 const MCP_PREFIX = 'mcp__';
@@ -334,6 +360,50 @@ function genericFacts(record: Record<string, unknown> | null): string[] {
   return facts;
 }
 
+/** Body-row value text: bounded scalar, `[n]` for arrays, `{…}` for objects, null for values that emit no row. */
+function genericBodyValue(value: unknown): string | null {
+  const scalar = scalarText(value);
+  if (scalar !== null) return scalar;
+  if (Array.isArray(value)) return `[${String(value.length)}]`;
+  if (value !== null && typeof value === 'object') return '{…}';
+  if (value === null) return 'null';
+  return null;
+}
+
+/**
+ * Bounded generic-body projection over at most MAX_GENERIC_KEYS_SCANNED own
+ * keys, emitting at most MAX_GENERIC_FACTS rows. Unlike the collapsed
+ * genericFacts(), non-scalar values stay visible as `[n]`/`{…}` markers and
+ * the key text is bounded as well. Nothing is ever stringified, and hostile
+ * enumeration reduces the whole projection to an empty field list.
+ */
+function genericBodyFields(record: Record<string, unknown> | null): ToolField[] {
+  try {
+    if (record === null) return [];
+    const fields: ToolField[] = [];
+    let scanned = 0;
+    for (const key in record) {
+      if (!hasOwn(record, key)) continue;
+      if (scanned >= MAX_GENERIC_KEYS_SCANNED) break;
+      scanned++;
+      const value = genericBodyValue(record[key]);
+      if (value === null) continue;
+      fields.push({
+        key: truncateCodePoints(key, MAX_GENERIC_SCALAR_CODE_POINTS),
+        value,
+      });
+      if (fields.length >= MAX_GENERIC_FACTS) break;
+    }
+    return fields;
+  } catch {
+    return [];
+  }
+}
+
+function singularOrPlural(count: number, noun: string): string {
+  return `${String(count)} ${noun}${count === 1 ? '' : 's'}`;
+}
+
 function isCountValue(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
 }
@@ -470,6 +540,8 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
       headline: facts.length > 0 ? facts.join(' · ') : mcp,
       headlineKind: 'text',
       contentBadges: [],
+      body: null,
+      bodyFacts: [],
     };
   }
 
@@ -486,6 +558,8 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
   let headline: string | null = null;
   let headlineKind: ToolHeadlineKind = 'text';
   const contentBadges: ToolRowBadge[] = [];
+  let body: ToolBody | null = null;
+  let bodyFacts: string[] = [];
 
   switch (family) {
     case 'shell':
@@ -518,9 +592,40 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
       if (operation !== null) contentBadges.push(operation);
       break;
     }
-    case 'task':
-      headline = taskHeadline(record);
+    case 'task': {
+      const dispatch = normalizeTaskDispatch(input.input);
+      if (dispatch !== null) {
+        const subtasks: TaskSubtaskCard[] = dispatch.subtasks.map(subtask => ({
+          ...subtask,
+          excerpt: taskPromptExcerpt(subtask.prompt),
+        }));
+        body = { kind: 'task', context: dispatch.context, subtasks };
+        bodyFacts =
+          dispatch.mode === 'batch'
+            ? ['batch', singularOrPlural(subtasks.length, 'subtask')]
+            : ['single dispatch'];
+        contentBadges.push({
+          kind: 'count',
+          text: singularOrPlural(subtasks.length, 'subagent'),
+          tone: 'neutral',
+        });
+      } else {
+        body = {
+          kind: 'generic',
+          fields: genericBodyFields(record),
+          markdown: null,
+          unreadable: false,
+        };
+      }
+      try {
+        // Field access stays inside the task branch: a malformed getter falls
+        // back to the label headline and keeps the body already resolved above.
+        headline = taskHeadline(record);
+      } catch {
+        headline = null;
+      }
       break;
+    }
     case 'web':
       headline = boundedString(firstStringField(record, URL_KEYS));
       headlineKind = 'path';
@@ -539,6 +644,8 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
     headline: headline ?? label,
     headlineKind,
     contentBadges,
+    body,
+    bodyFacts,
   };
 }
 
@@ -547,7 +654,15 @@ function safePresentation(input: ToolPresentationInput): ToolPresentation {
   try {
     const name = typeof input.name === 'string' ? input.name : '';
     const label = chipLabel(name, 'generic');
-    return { family: 'generic', label, headline: label, headlineKind: 'text', contentBadges: [] };
+    return {
+      family: 'generic',
+      label,
+      headline: label,
+      headlineKind: 'text',
+      contentBadges: [],
+      body: null,
+      bodyFacts: [],
+    };
   } catch {
     return {
       family: 'generic',
@@ -555,6 +670,8 @@ function safePresentation(input: ToolPresentationInput): ToolPresentation {
       headline: 'generic',
       headlineKind: 'text',
       contentBadges: [],
+      body: null,
+      bodyFacts: [],
     };
   }
 }
@@ -575,11 +692,65 @@ function elapsedText(facts: ToolRowFacts): string {
   return `running · ${formatDurationMs(elapsed)}`;
 }
 
+/**
+ * Verbatim capture of the provider-facing trio for the Raw view — never
+ * rebuilt from the normalized label, headline, or fact text, which may
+ * differ from what was sent. Total: any throw while reading yields the
+ * deterministic generic fallback rather than leaking through the row.
+ */
+function captureRawPayload(input: ToolPresentationInput): ToolRawPayload {
+  try {
+    const name = input.name;
+    return {
+      name: typeof name === 'string' ? name : 'generic',
+      input: input.input,
+      output: input.output,
+    };
+  } catch {
+    return { name: 'generic', input: undefined, output: undefined };
+  }
+}
+
+/** The payload's name when it reads as a string without throwing, else 'generic'. */
+function safeRawName(payload: ToolRawPayload): string {
+  try {
+    const name = payload.name;
+    return typeof name === 'string' ? name : 'generic';
+  } catch {
+    return 'generic';
+  }
+}
+
+/**
+ * Pretty-prints the canonical Raw payload in a fixed name → input → output
+ * key order; absent `undefined` fields are omitted and `null` is kept.
+ * Total: cycles, bigint, or a hostile getter yield a valid
+ * `{ name, error }` document — never a throw, never exception text or
+ * inspection output, and no replacer that could silently alter values.
+ */
+export function toolRawPayloadJson(payload: ToolRawPayload): string {
+  try {
+    return JSON.stringify(
+      { name: payload.name, input: payload.input, output: payload.output },
+      null,
+      2
+    );
+  } catch {
+    // Both fields are plain strings, so this document cannot fail to serialize.
+    return JSON.stringify(
+      { name: safeRawName(payload), error: 'payload is not serializable' },
+      null,
+      2
+    );
+  }
+}
+
 export function toolRowPresentation(
   input: ToolPresentationInput,
   facts: ToolRowFacts
 ): ToolRowPresentation {
   const content = toolPresentation(input);
+  const rawPayload = captureRawPayload(input);
   const outcome = facts.outcome;
   const badges: ToolRowBadge[] = [];
 
@@ -625,12 +796,35 @@ export function toolRowPresentation(
     badges.push({ kind: 'placeholder', text: '—', tone: 'muted' });
   }
 
+  // The core owns the complete body bar: a normalized task leads with its
+  // bodyFacts and drops the redundant subagent count badge; every other row
+  // maps non-placeholder badges exactly as the renderers used to compose them.
+  // The chip prints the sent name only when it is chip-worthy; when it fell
+  // back the body bar carries the full name instead (a Codex wrapped command,
+  // an over-long tool name), so it stays readable and selectable.
+  const isTaskBody = content.body?.kind === 'task';
+  const sentName = safeRawName(rawPayload);
+  const barName =
+    content.label !== sentName ? sanitizeBounded(sentName, MAX_ALIAS_NAME_CODE_UNITS).text : null;
+  const barBadges = badges
+    .filter(badge => badge.kind !== 'placeholder')
+    .filter(badge => !(isTaskBody && badge.kind === 'count'))
+    .map(badge => badge.text);
+  const bodyBarText = [
+    content.family,
+    ...(isTaskBody ? content.bodyFacts : []),
+    ...(barName !== null && barName.length > 0 ? [barName] : []),
+    ...barBadges,
+  ].join(' · ');
+
   return {
     ...content,
     glyph: OUTCOME_GLYPH[outcome],
     statusLabel: outcome,
     initialOpen: outcome === 'failed',
     badges,
+    rawPayload,
+    bodyBarText,
   };
 }
 
@@ -648,6 +842,7 @@ export type MatchItem = ToolOutputMatch;
 export type ToolField = ToolOutputField;
 
 export type ToolBody =
+  | { kind: 'task'; context: string; subtasks: TaskSubtaskCard[] }
   | { kind: 'terminal'; command: string; output: string | null; unreadable: boolean }
   | { kind: 'file'; path: string; preview: string | null; unreadable: boolean }
   | {

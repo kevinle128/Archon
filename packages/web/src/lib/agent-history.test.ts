@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
 import { buildAgentHistory, toolRuntime, type AgentHistoryItem } from './agent-history';
+import { toolRawPayloadJson } from './tool-presentation';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
 const NOW_MS = Date.parse(CREATED_AT) + 30_000;
@@ -153,7 +154,7 @@ describe('toolRuntime', () => {
 
 describe('buildAgentHistory', () => {
   test('projects assistant, tool, and lifecycle items in sequence without duplicating snapshot text', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [
@@ -274,7 +275,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('marks pending calls running and unmatched results unknown without parsing output prose', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [],
@@ -317,7 +318,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('distinguishes retrievable response truncation and preserves interrupted outcomes', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [],
@@ -390,7 +391,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('carries exit code and a ready row presentation on every tool item', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [
@@ -444,7 +445,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('extracts exit code once with result-over-call precedence and shares it with the presenter', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [],
@@ -500,7 +501,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('derives deterministic running elapsed from the one matching tool_called event', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [
@@ -550,7 +551,7 @@ describe('buildAgentHistory', () => {
         ...(createdAt === undefined ? {} : { createdAt }),
       });
     const stateTexts = (events: WorkflowEvent[], nowMs = NOW_MS): string[] => {
-      const tool = buildAgentHistory({ nodeId: NODE_ID, nowMs, events, rows })[0];
+      const tool = buildAgentHistory({ nodeId: NODE_ID, nowMs, events, rows }).items[0];
       if (tool?.kind !== 'tool') throw new Error('expected a tool item');
       return tool.presentation.badges.map(badge => badge.text);
     };
@@ -573,7 +574,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('keeps a direct-result interrupted outcome and presentation without a status row', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [],
@@ -611,7 +612,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('folds an immediately following interrupted status into the tool row', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [],
@@ -673,7 +674,7 @@ describe('buildAgentHistory', () => {
   });
 
   test('does not fold across intervening items, detail text, or non-exact states', () => {
-    const items = buildAgentHistory({
+    const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
       events: [],
@@ -751,5 +752,402 @@ describe('buildAgentHistory', () => {
     expect(items[3]).toMatchObject({ outcome: 'succeeded' });
     expect(items[5]).toMatchObject({ outcome: 'succeeded' });
     expect(items[2]).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+  });
+
+  test('a paired call/result carries the canonical raw payload', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-raw',
+          seq: 1,
+          name: 'mcp__github__create_issue',
+          toolUseId: 'raw-1',
+          input: { title: 'bug' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'result-raw',
+          seq: 2,
+          name: 'mcp__github__create_issue',
+          toolUseId: 'raw-1',
+          output: { issue: 42 },
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool?.kind !== 'tool') throw new Error('expected a tool item');
+    // The raw payload keeps the provider-facing name, not the mcp chip label.
+    expect(tool.presentation.label).toBe('github · create_issue');
+    expect(tool.presentation.rawPayload).toEqual({
+      name: 'mcp__github__create_issue',
+      input: { title: 'bug' },
+      output: { issue: 42 },
+    });
+  });
+
+  test('a pending call serializes its raw payload without an output key', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-pending',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'pend-1',
+          input: { cmd: 'sleep 1' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool?.kind !== 'tool') throw new Error('expected a tool item');
+    const parsed = JSON.parse(toolRawPayloadJson(tool.presentation.rawPayload)) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed).toEqual({ name: 'Bash', input: { cmd: 'sleep 1' } });
+    expect('output' in parsed).toBe(false);
+  });
+
+  test('pairing the result keeps the card id and updates the raw payload output', () => {
+    const callRow = toolRow({
+      id: 'call-evolve',
+      seq: 1,
+      name: 'Bash',
+      toolUseId: 'ev-1',
+      input: { cmd: 'make' },
+      metadata: { tool_phase: 'call' },
+    });
+    const pending = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [callRow],
+    }).items[0];
+    if (pending?.kind !== 'tool') throw new Error('expected a tool item');
+    const paired = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        callRow,
+        toolRow({
+          id: 'result-evolve',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'ev-1',
+          output: 'done',
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    }).items[0];
+    if (paired?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(paired.id).toBe(pending.id);
+    expect(toolRawPayloadJson(pending.presentation.rawPayload)).not.toContain('done');
+    const parsed = JSON.parse(toolRawPayloadJson(paired.presentation.rawPayload)) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed).toEqual({ name: 'Bash', input: { cmd: 'make' }, output: 'done' });
+  });
+
+  test('a paired task dispatch carries its body, facts, and body bar on the item presentation', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [
+        event({
+          id: 'e-task',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'task-1', duration_ms: 40 },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-task',
+          seq: 1,
+          name: 'Task',
+          toolUseId: 'task-1',
+          input: {
+            context: 'ctx',
+            tasks: [
+              { name: 'a', agent: 'x', task: 'prompt a' },
+              { name: 'b', agent: 'y', task: 'prompt b' },
+            ],
+          },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'result-task',
+          seq: 2,
+          name: 'Task',
+          toolUseId: 'task-1',
+          output: 'done',
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(tool.presentation.body).toMatchObject({
+      kind: 'task',
+      context: 'ctx',
+      subtasks: [
+        { name: 'a', agent: 'x', prompt: 'prompt a' },
+        { name: 'b', agent: 'y', prompt: 'prompt b' },
+      ],
+    });
+    expect(tool.presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
+    expect(tool.presentation.bodyBarText).toBe('task · batch · 2 subtasks · 40ms');
+    expect(tool.presentation.badges).toContainEqual({
+      kind: 'count',
+      text: '2 subagents',
+      tone: 'neutral',
+    });
+  });
+
+  test('returns empty todos when no tool resolves to the todo family', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        textRow('t-note', 1, 'note'),
+        toolRow({
+          id: 'call-bash',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'bash-1',
+          input: { cmd: 'ls' },
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-done', 3, 'completed'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['assistant', 'tool', 'lifecycle']);
+    expect(todos).toEqual([]);
+  });
+
+  test('folds todo-family tool inputs in projected seq order even when rows arrive unsorted', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-done',
+          seq: 3,
+          name: 'todo',
+          toolUseId: 'todo-done',
+          input: { op: 'done', task: 'Read the spec' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-init',
+          seq: 1,
+          name: 'todo',
+          toolUseId: 'todo-init',
+          input: {
+            op: 'init',
+            phase: 'Research',
+            items: ['Read the spec', 'Map the message path'],
+          },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    // The item projection keeps arrival order; only the fold re-orders by seq.
+    expect(items.map(item => item.seq)).toEqual([3, 1]);
+    expect(todos).toEqual([
+      {
+        phase: 'Research',
+        items: [
+          { content: 'Read the spec', status: 'completed' },
+          { content: 'Map the message path', status: 'in_progress' },
+        ],
+      },
+    ]);
+  });
+
+  test('a later Claude snapshot replaces folded OMP state', () => {
+    const { todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-init',
+          seq: 1,
+          name: 'todo',
+          toolUseId: 'todo-init',
+          input: { op: 'init', phase: 'Research', items: ['Read the spec'] },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-write',
+          seq: 2,
+          name: 'TodoWrite',
+          toolUseId: 'tw-1',
+          input: {
+            todos: [
+              { content: 'Ship the change', status: 'in_progress', activeForm: 'Shipping' },
+              { content: 'File the report', status: 'pending' },
+            ],
+          },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(todos).toEqual([
+      {
+        phase: 'Tasks',
+        items: [
+          { content: 'Ship the change', status: 'in_progress' },
+          { content: 'File the report', status: 'pending' },
+        ],
+      },
+    ]);
+  });
+
+  test('non-todo tools carrying op-shaped inputs and lifecycle rows do not fold', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-init',
+          seq: 1,
+          name: 'todo',
+          toolUseId: 'todo-init',
+          input: { op: 'init', phase: 'Research', items: ['Read the spec'] },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-bash',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'bash-1',
+          input: {
+            op: 'done',
+            task: 'Read the spec',
+            items: ['Decoy'],
+            list: [{ phase: 'X', items: ['Decoy'] }],
+          },
+          metadata: { tool_phase: 'call' },
+        }),
+        textRow('t-note', 3, 'progress note'),
+        statusRow('s-iter', 4, 'iteration_started', '2'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool', 'tool', 'assistant', 'lifecycle']);
+    expect(todos).toEqual([
+      { phase: 'Research', items: [{ content: 'Read the spec', status: 'in_progress' }] },
+    ]);
+  });
+
+  test('terminal and lifecycle rows do not rewrite folded todo statuses', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-init',
+          seq: 1,
+          name: 'todo',
+          toolUseId: 'todo-init',
+          input: {
+            op: 'init',
+            phase: 'Research',
+            items: ['Read the spec', 'Map the message path'],
+          },
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-completed', 2, 'completed'),
+        statusRow('s-finished', 3, 'node_completed'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool', 'lifecycle', 'lifecycle']);
+    expect(todos).toEqual([
+      {
+        phase: 'Research',
+        items: [
+          { content: 'Read the spec', status: 'in_progress' },
+          { content: 'Map the message path', status: 'pending' },
+        ],
+      },
+    ]);
+  });
+
+  test('a running todo call with no result still folds its recorded input', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-running',
+          seq: 1,
+          name: 'todo',
+          toolUseId: 'todo-running',
+          input: { op: 'init', items: ['Read the spec', 'Run the suite'] },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(items[0]).toMatchObject({ kind: 'tool', outcome: 'running' });
+    expect(todos).toEqual([
+      {
+        phase: 'Tasks',
+        items: [
+          { content: 'Read the spec', status: 'in_progress' },
+          { content: 'Run the suite', status: 'pending' },
+        ],
+      },
+    ]);
+  });
+
+  test('an interrupted todo tool keeps its input in the fold', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-init',
+          seq: 1,
+          name: 'todo',
+          toolUseId: 'todo-init',
+          input: { op: 'init', phase: 'Research', items: ['Read the spec'] },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-block',
+          seq: 2,
+          name: 'todo',
+          toolUseId: 'todo-block',
+          input: { op: 'block', task: 'Read the spec', reason: 'CI has one build job' },
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 3, 'interrupted'),
+      ],
+    });
+    // The interrupted status folds into the second tool row, leaving no lifecycle item.
+    expect(kinds(items)).toEqual(['tool', 'tool']);
+    expect(items[1]).toMatchObject({ outcome: 'interrupted' });
+    expect(todos).toEqual([
+      {
+        phase: 'Research',
+        items: [{ content: 'Read the spec', status: 'blocked', blocker: 'CI has one build job' }],
+      },
+    ]);
   });
 });

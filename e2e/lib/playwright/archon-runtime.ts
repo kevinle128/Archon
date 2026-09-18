@@ -32,12 +32,32 @@ const HITL_TWO_ASKS_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-hitl-two-asks.yaml'
 );
+const TASK_DISPATCH_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-task-dispatch.yaml'
+);
+
+const TODO_STRIP_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-todo-strip.yaml'
+);
 
 /** Name of the seeded workflow whose single AI node runs on the fake provider. */
 export const E2E_WORKFLOW_NAME = 'e2e-usage-record';
 export const E2E_HITL_WORKFLOW_NAME = 'e2e-hitl-run';
 export const E2E_HITL_LONG_WORKFLOW_NAME = 'e2e-hitl-long-history';
 export const E2E_HITL_TWO_ASKS_WORKFLOW_NAME = 'e2e-hitl-two-asks';
+export const E2E_TODO_STRIP_WORKFLOW_NAME = 'e2e-todo-strip';
+export const TODO_STRIP_TODO_NODE = 'todo-plan';
+export const TODO_STRIP_NO_TODO_NODE = 'no-todo';
 export const E2E_STARTER_WEB_USER = 'e2e-hitl-starter';
 export const E2E_TEAMMATE_WEB_USER = 'e2e-hitl-teammate';
 export const E2E_CLI_USER = 'e2e-hitl-cli';
@@ -48,6 +68,9 @@ export const HITL_ASK_NODE = 'ask-starter';
 export const HITL_LONG_NODE = 'long-history';
 export const HITL_ASK_ANSWER_NODE = 'ask-answer';
 export const HITL_ASK_DECLINE_NODE = 'ask-decline';
+export const E2E_TASK_DISPATCH_WORKFLOW_NAME = 'e2e-task-dispatch';
+export const TASK_DISPATCH_OMP_NODE = 'omp-dispatch';
+export const TASK_DISPATCH_CLAUDE_NODE = 'claude-dispatch';
 
 /**
  * The one model the seeded config prices. A usage entry for
@@ -118,6 +141,13 @@ export interface ArchonRuntime {
   runHitlLongHistoryWorkflow(): Promise<CliRunResult>;
   /** Run two parallel AskHuman nodes so answered and declined records coexist. */
   runHitlTwoAsksWorkflow(): Promise<CliRunResult>;
+  /** Run the two-node task-dispatch fixture (OMP batch + Claude single) to completion. */
+  runTaskDispatchWorkflow(): Promise<CliRunResult>;
+  /**
+   * Run the todo-strip fixture: `todo-plan` emits four folded todo calls plus a
+   * long Read transcript; `no-todo` emits ordinary tool calls only.
+   */
+  runTodoStripWorkflow(): Promise<CliRunResult>;
   /**
    * Start the HITL fixture without waiting for CLI exit. `runId` resolves as
    * soon as the run row exists. Use only while work is still running.
@@ -340,6 +370,15 @@ async function startArchonRuntime(
     join(home, 'workflows', `${E2E_HITL_TWO_ASKS_WORKFLOW_NAME}.yaml`),
     readFileSync(HITL_TWO_ASKS_WORKFLOW_FIXTURE)
   );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_TASK_DISPATCH_WORKFLOW_NAME}.yaml`),
+    readFileSync(TASK_DISPATCH_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_TODO_STRIP_WORKFLOW_NAME}.yaml`),
+    readFileSync(TODO_STRIP_WORKFLOW_FIXTURE)
+  );
 
   writeFileSync(
     join(home, 'config.yaml'),
@@ -479,6 +518,43 @@ async function startArchonRuntime(
       '--folder',
       '--json',
     ]);
+  };
+
+  const runTaskDispatchWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_TASK_DISPATCH_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+  };
+
+  const runTodoStripWorkflow = async (): Promise<CliRunResult> => {
+    try {
+      return await runCli([
+        CLI_ENTRY,
+        'workflow',
+        'run',
+        E2E_TODO_STRIP_WORKFLOW_NAME,
+        '--folder',
+        '--json',
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('e2e-fake: scenario directive failed validation') &&
+        error.message.includes('"unrecognized_keys"') &&
+        error.message.includes('"emitTodo"')
+      ) {
+        throw new UnsupportedSetupError(
+          'Target fake provider rejects the todo-strip emitTodo directive',
+          { cause: error }
+        );
+      }
+      throw error;
+    }
   };
 
   const listWorkflowRunIds = async (workflowName: string): Promise<string[]> => {
@@ -654,6 +730,8 @@ async function startArchonRuntime(
     runUnownedHitlWorkflow,
     runHitlLongHistoryWorkflow,
     runHitlTwoAsksWorkflow,
+    runTaskDispatchWorkflow,
+    runTodoStripWorkflow,
     startHitlWorkflow,
     resumeWorkflow,
     runHitlWorkflowViaWeb,

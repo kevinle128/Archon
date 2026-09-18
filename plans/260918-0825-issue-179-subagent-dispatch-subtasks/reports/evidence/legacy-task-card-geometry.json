@@ -1,0 +1,72 @@
+{
+  "surface": "legacy",
+  "omp": {
+    "toolUseId": "e2e-fake-tool-e2e-fake-55dbcb4d-39c9-458b-be67-95c96635ddb8",
+    "closedRow": {
+      "height": 28.5,
+      "width": 551.59375
+    },
+    "bar": "task · batch · 2 subtasks · 1ms",
+    "barFacts": ["1ms"],
+    "contextLinkHref": "",
+    "imageRequested": false,
+    "cards": [
+      {
+        "found": true,
+        "name": "reviewer · correctness-review — Review the staged diff for correctness. Check boundary conditions and error paths. Report each finding on its own line.",
+        "role": "DisclosureTriangle",
+        "expanded": null
+      },
+      {
+        "found": true,
+        "name": "auditor · security-review — Audit the staged diff for security issues. Focus on injection, secrets, and unsafe calls. Report each finding on its own line.",
+        "role": "DisclosureTriangle",
+        "expanded": null
+      }
+    ],
+    "focusableCount": 5,
+    "cardGeometry": {
+      "borderTopWidth": "1px",
+      "borderRadius": "6px",
+      "paddingTop": "6px",
+      "paddingRight": "9px",
+      "paddingBottom": "6px",
+      "paddingLeft": "9px",
+      "marginTop": "5px",
+      "summaryMinHeight": "24px",
+      "summaryFontSize": "11.5px",
+      "chevronWidth": 9,
+      "chevronFontSize": "10px",
+      "chevronTransitionDuration": "0.12s",
+      "chevronTransitionProperty": "transform, translate, scale, rotate",
+      "promptWhiteSpace": "pre-wrap"
+    },
+    "tokens": {
+      "elevated": "oklch(0.22 0.01 260)",
+      "approval": "oklch(0.72 0.17 40)",
+      "secondary": "oklch(0.65 0.01 260)",
+      "inset": "oklch(0.12 0.005 260)",
+      "accent": "oklch(0.72 0.18 250)"
+    },
+    "focus": {
+      "style": "solid",
+      "width": "2px",
+      "offset": "-2px",
+      "color": "oklch(0.72 0.18 250)",
+      "focusVisible": true
+    },
+    "reducedMotion": {
+      "duration": "0.12s",
+      "property": "none"
+    },
+    "promptComplete": true
+  },
+  "claude": {
+    "bar": "task · single dispatch · 0ms",
+    "barFacts": ["0ms"],
+    "cardCount": 1,
+    "contextBlocks": 0,
+    "cardSummaryText": "Summarize the staged diff— Summarize the staged diff. List each changed file and its purpose. Keep it under ten lines.",
+    "promptComplete": true
+  }
+}

@@ -2,8 +2,8 @@ name: ak-feature
 description: |
   Use when: User wants to build a feature end-to-end with the Claude Kit (ck)
   pipeline running fully unattended in a worktree.
-  Triggers: "ck feature", "claudekit feature", "ck plan and cook", "ck deep tdd",
-            "plan then cook", "ck pipeline", "claude kit feature".
+  Triggers: "ak feature", "ck feature", "claudekit feature", "ck plan and cook",
+            "ck deep tdd", "plan then cook", "ck pipeline", "claude kit feature".
   Does: deep TDD planning (/ak:plan --deep --tdd) -> independent Codex verify +
         fix of the plan -> conversion of the plan into a Ralph PRD (prd.md +
         prd.json) CO-LOCATED with it -> autonomous story-by-story implementation
@@ -42,41 +42,26 @@ nodes:
   - id: plan
     prompt: |
       /ak:plan --deep --tdd $ARGUMENTS
-      When finished, trigger advisor review, after that print `PLAN_DIR=<absolute path to the plan directory>`.
+      When finished, trigger advisor review. Then return structured output with
+      plan_path set to the absolute path of the plan directory (the directory
+      that contains plan.md — not the plan.md file, and not plans/journals or
+      plans/reports). The directory must already exist on disk.
     depends_on: [setup]
     provider: claude
     model: opus
     context: fresh
     denied_tools:
       - AskUserQuestion
-
-  # ───────────────────────────────────────────────────────────────────
-  # STEP 3 / 6 — Resolve the freshly created plan directory
-  # The active-plan pointer ck:plan writes is session-scoped and does not survive
-  # across workflow nodes, so locate the newest plan dir by mtime. Diagnostics go
-  # to stderr; stdout is ONLY JSON {"plan_path","prd_dir"}. A directory plan
-  # co-locates the Ralph PRD in that same directory (never .archon/ralph/).
-  # ───────────────────────────────────────────────────────────────────
-  - id: resolve-plan
-    bash: |
-      set -euo pipefail
-      PLAN_DIR="$(ls -dt plans/*/ 2>/dev/null | head -1 || true)"
-      if [ -z "$PLAN_DIR" ] || [ ! -f "${PLAN_DIR}plan.md" ]; then
-        echo "ERROR: no plan directory with plan.md found under ./plans/" >&2
-        exit 1
-      fi
-      PLAN_PATH="$(cd "$PLAN_DIR" && pwd)"
-      PRD_DIR="$PLAN_PATH"
-      echo "Resolved plan: $PLAN_PATH" >&2
-      echo "PRD dir (co-located): $PRD_DIR" >&2
-      ls -la "$PLAN_PATH" >&2
-      printf '{"plan_path":"%s","prd_dir":"%s"}' "$PLAN_PATH" "$PRD_DIR"
-    depends_on: [plan]
-    always_run: true
+    output_format:
+      type: object
+      properties:
+        plan_path:
+          type: string
+      required: [plan_path]
 
   - id: verify-and-fix-plan
     prompt: |
-      Review and revise the complete plan at `$resolve-plan.output.plan_path`.
+      Review and revise the complete plan at `$plan.output.plan_path`.
       Treat the current plan as an unverified draft.
       Do not trust its claims, assumptions, scope, file references, technical decisions, or conclusions.
 
@@ -133,7 +118,7 @@ nodes:
       - Any remaining risks, assumptions, or unresolved questions.
 
       Return the report in `report`.
-    depends_on: [resolve-plan]
+    depends_on: [plan]
     provider: codex
     effort: xhigh
     model: gpt-5.6-sol
@@ -165,20 +150,20 @@ nodes:
 
       The plan to implement is at:
 
-        $resolve-plan.output.plan_path
+        $plan.output.plan_path
 
       It is a directory (holds `plan.md` + optional `phase-*.md`). The Ralph PRD
       directory has ALREADY been chosen and created for you (co-located with the
       plan):
 
-        $resolve-plan.output.prd_dir
+        $plan.output.plan_path
 
       Convert that ENTIRE plan into a Ralph PRD so the native project-aware Ralph
       loop can implement it one story per iteration. Do NOT implement the feature
       itself — only produce the PRD files. Write ONLY inside
-      `$resolve-plan.output.prd_dir` (never `.archon/ralph/`).
+      `$plan.output.plan_path` (never `.archon/ralph/`).
 
-      1. Read the plan at `$resolve-plan.output.plan_path`:
+      1. Read the plan at `$plan.output.plan_path`:
          - Read `plan.md` and EVERY `phase-*.md` in it (the phase files carry the
            real detail — do not rely on plan.md alone). If
            `verification-report.md` exists, fold in its fixes too.
@@ -188,11 +173,11 @@ nodes:
          tests-after / regression gate) into concrete, pass/fail acceptance
          criteria. Order stories by dependency (lower priority runs first) and set
          `dependsOn` to only lower-priority story ids. No cycles, no forward refs.
-      3. Write `$resolve-plan.output.prd_dir/prd.md` — a self-contained context
+      3. Write `$plan.output.plan_path/prd.md` — a self-contained context
          document (overview / problem / solution, goals + success metrics, non-goals,
          technical context with real file:line references drawn from the plan, and a
          story-overview table). A fresh-context agent re-reads this each iteration.
-      4. Write `$resolve-plan.output.prd_dir/prd.json` using EXACTLY this schema
+      4. Write `$plan.output.plan_path/prd.json` using EXACTLY this schema
          (story-level `passes`, all `false` at start):
 
          ```json
@@ -217,7 +202,7 @@ nodes:
       5. Verify both files exist and prd.json is valid JSON whose `userStories` is a
          non-empty array with every story `passes: false`.
 
-      Report `$resolve-plan.output.prd_dir` as `prd_dir`.
+      Report `$plan.output.plan_path` as `prd_dir`.
     depends_on: [verify-and-fix-plan]
     provider: devin
     model: swe-2-max
@@ -337,7 +322,7 @@ nodes:
       ## Inputs
 
       Plan path:
-      $resolve-plan.output.plan_path
+      $plan.output.plan_path
 
       Ralph PRD directory:
       $build-ralph-prd.output.prd_dir

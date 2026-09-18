@@ -64,9 +64,9 @@ Each produces a checklist that lies about what the agent did.
 `{"op":"done"}` with neither `task` nor `phase` completes every task in every phase.
 Treating a missing `task` as a no-op under-reports wildly.
 
-**Auto-promotion runs after every op.**
+**Auto-promotion runs after every successful mutating op.**
 Multiple `in_progress` collapse to the first, and if none is in progress the earliest `pending` is promoted.
-A row therefore changes tasks it never named.
+A row therefore changes tasks it never named. `view` is read-only — it never mutates, normalizes, or writes — and a rejected call leaves the prior state untouched, promotion included.
 
 **`op` may be absent.**
 Infer it — `list` → `init`, `items` plus `phase` → `append` — rather than discarding the row, and accept the legacy batch shape `{ops:[…]}`.
@@ -75,9 +75,10 @@ Infer it — `list` → `init`, `items` plus `phase` → `append` — rather tha
 
 An unknown op leaves state unchanged.
 A `done` before any `init` produces no state: render nothing rather than a fabricated list.
+Malformed calls are atomic no-ops: a Claude snapshot is accepted whole or rejected whole, and a legacy `{ops:[…]}` batch commits only when every entry replays cleanly — a half-applied batch would show a state no provider committed.
 
 **A phase left with zero items by `rm` is dropped, not rendered as an empty header.**
 An empty heading reads as "this phase has no work", which is a different claim from "this phase is gone".
 `projectTodoState` returns only non-empty phases, and an all-empty fold returns `[]`, which renders nothing.
 
-The renderer shows the **latest** folded state once, anchored at the _last_ todo call, with earlier todo calls collapsed to a one-line "todo updated" row, so a near-identical checklist is not repeated down the transcript.
+The renderer pins the folded state once in a collapsible `Todo` strip at the **top** of the node room's transcript panel. **Every** todo call in the selected slice folds into that state — the strip is not anchored at the last call — while every todo row stays a one-line "todo updated" summary, so a near-identical checklist is never repeated down the transcript.

@@ -2,19 +2,18 @@
  * Console-owned agent history renderer. Uses AgentHistoryItem only as data and
  * never imports Legacy React components.
  */
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
-import { formatToolIo } from '@/lib/pair-tool-transcript';
-import { sanitizeBounded } from '@/lib/tool-output';
 import {
-  MAX_ALIAS_NAME_CODE_UNITS,
   toolBodyPresentation,
+  toolRawPayloadJson,
   toolRowPresentation,
+  type TaskSubtaskCard,
   type ToolBody,
   type ToolFamily,
   type ToolOutcome,
@@ -89,6 +88,67 @@ const MARKDOWN_COMPONENTS: Components = {
       {children}
     </a>
   ),
+};
+
+/**
+ * Task-dispatch context renders at 11.5px mono inside the tool body: block
+ * margins collapse, images never mount, and links keep the safe external
+ * target/rel treatment (react-markdown's defaultUrlTransform blanks unsafe
+ * schemes).
+ */
+const TASK_CONTEXT_COMPONENTS: Components = {
+  p: ({ children, ...props }: React.ComponentPropsWithoutRef<'p'>): ReactElement => (
+    <p className="m-0" {...props}>
+      {children}
+    </p>
+  ),
+  h1: ({ children, ...props }: React.ComponentPropsWithoutRef<'h1'>): ReactElement => (
+    <h1 className="m-0 text-[11.5px] font-semibold" {...props}>
+      {children}
+    </h1>
+  ),
+  h2: ({ children, ...props }: React.ComponentPropsWithoutRef<'h2'>): ReactElement => (
+    <h2 className="m-0 text-[11.5px] font-semibold" {...props}>
+      {children}
+    </h2>
+  ),
+  h3: ({ children, ...props }: React.ComponentPropsWithoutRef<'h3'>): ReactElement => (
+    <h3 className="m-0 text-[11.5px] font-semibold" {...props}>
+      {children}
+    </h3>
+  ),
+  h4: ({ children, ...props }: React.ComponentPropsWithoutRef<'h4'>): ReactElement => (
+    <h4 className="m-0 text-[11.5px] font-semibold" {...props}>
+      {children}
+    </h4>
+  ),
+  h5: ({ children, ...props }: React.ComponentPropsWithoutRef<'h5'>): ReactElement => (
+    <h5 className="m-0 text-[11.5px] font-semibold" {...props}>
+      {children}
+    </h5>
+  ),
+  h6: ({ children, ...props }: React.ComponentPropsWithoutRef<'h6'>): ReactElement => (
+    <h6 className="m-0 text-[11.5px] font-semibold" {...props}>
+      {children}
+    </h6>
+  ),
+  ul: ({ children, ...props }: React.ComponentPropsWithoutRef<'ul'>): ReactElement => (
+    <ul className="m-0 list-disc pl-5" {...props}>
+      {children}
+    </ul>
+  ),
+  ol: ({ children, ...props }: React.ComponentPropsWithoutRef<'ol'>): ReactElement => (
+    <ol className="m-0 list-decimal pl-5" {...props}>
+      {children}
+    </ol>
+  ),
+  li: ({ children, ...props }: React.ComponentPropsWithoutRef<'li'>): ReactElement => (
+    <li className="m-0" {...props}>
+      {children}
+    </li>
+  ),
+  img: (): ReactElement => <></>,
+  a: MARKDOWN_COMPONENTS.a,
 };
 
 function AssistantHistory({
@@ -462,7 +522,7 @@ function ToolBodySwitch({
           <OmittedTail omitted={body.omitted} truncated={body.truncated} />
         </div>
       );
-    default:
+    case 'generic':
       return (
         <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
           {body.unreadable ? (
@@ -486,7 +546,95 @@ function ToolBodySwitch({
           ) : null}
         </div>
       );
+    default:
+      return <TaskBody body={body} />;
   }
+}
+
+/**
+ * One normalized subtask as a native disclosure: agent · name — excerpt on a
+ * single line, full prompt inside. The chevron binds to the card's own `open`
+ * attribute via group/subtask — the outer row's state never rotates it.
+ */
+function SubtaskCard({
+  subtask,
+  index,
+}: {
+  subtask: TaskSubtaskCard;
+  index: number;
+}): ReactElement {
+  return (
+    <details
+      data-subtask-index={index}
+      className="group/subtask mt-[5px] rounded-[6px] border border-border bg-surface-elevated px-[9px] py-[6px]"
+    >
+      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden whitespace-nowrap rounded-[4px] font-mono text-[11.5px] leading-[1.5] focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2 [&::-webkit-details-marker]:hidden">
+        <span
+          aria-hidden="true"
+          className="w-[9px] flex-none text-center text-[10px] leading-none text-text-tertiary transition-transform duration-[120ms] motion-reduce:transition-none group-open/subtask:rotate-90"
+        >
+          ▶
+        </span>
+        {subtask.agent !== null ? (
+          <span className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap">
+            <span className="font-semibold text-node-approval">{subtask.agent}</span>
+            <span className="text-text-secondary"> · </span>
+          </span>
+        ) : null}
+        <span className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap font-bold text-text-primary">
+          {subtask.name}
+        </span>
+        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis text-text-secondary">
+          — {subtask.excerpt}
+        </span>
+      </summary>
+      <pre className="m-0 mt-1.5 overflow-x-auto whitespace-pre-wrap break-words rounded-[6px] border border-border bg-surface-inset px-[10px] py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary">
+        {subtask.prompt}
+      </pre>
+    </details>
+  );
+}
+
+/** Batch context markdown followed by one card per dispatched subtask. */
+function TaskBody({ body }: { body: Extract<ToolBody, { kind: 'task' }> }): ReactElement {
+  return (
+    <>
+      {body.context !== '' ? (
+        <div
+          data-task-context
+          className="mb-0.5 font-mono text-[11.5px] leading-[1.5] text-text-secondary"
+        >
+          <ReactMarkdown
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
+            components={TASK_CONTEXT_COMPONENTS}
+          >
+            {body.context}
+          </ReactMarkdown>
+        </div>
+      ) : null}
+      {body.subtasks.map((subtask, index) => (
+        <SubtaskCard key={index} subtask={subtask} index={index} />
+      ))}
+    </>
+  );
+}
+
+/** Bounded key/value rows for a malformed task payload — no cards, no dump. */
+function GenericBody({ body }: { body: Extract<ToolBody, { kind: 'generic' }> }): ReactElement {
+  if (body.fields.length === 0) return <></>;
+  return (
+    <div className="mb-1 font-mono text-[11.5px] leading-[1.7]">
+      {body.fields.map((field, index) => (
+        <div key={index} className="flex gap-2.5">
+          <span className="w-[11ch] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary">
+            {field.key}
+          </span>
+          <span className="min-w-0 break-words text-text-primary">{field.value}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function ToolHistory({
@@ -499,6 +647,7 @@ function ToolHistory({
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
   const [rawOpen, setRawOpen] = useState<boolean>(false);
+  const rawPanelId = useId();
   const [fullOutput, setFullOutput] = useState<unknown>(undefined);
   const [hasFullOutput, setHasFullOutput] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -528,6 +677,11 @@ function ToolHistory({
     setLoadError(null);
     void onLoadFullOutput(item)
       .then((output): void => {
+        if (output === undefined) {
+          setLoadError('Full output is not available for this call');
+          setLoading(false);
+          return;
+        }
         setFullOutput(output);
         setHasFullOutput(true);
         setLoading(false);
@@ -539,8 +693,9 @@ function ToolHistory({
   };
 
   const onToggle = (event: React.SyntheticEvent<HTMLDetailsElement>): void => {
-    // A nested disclosure would bubble its toggle events; only the outer
-    // row's own toggle counts.
+    // Toggle events dispatched by nested interactive body elements bubble up
+    // to this row; only the outer row's own toggle may mark it touched or
+    // rewrite `open`.
     if (event.target !== event.currentTarget) return;
     // React's controlled `open` write echoes back as a toggle event; a genuine
     // user activation flips the DOM state away from the rendered state first.
@@ -553,19 +708,6 @@ function ToolHistory({
     presentation.label === presentation.family
       ? presentation.family
       : `${presentation.family} · ${presentation.label}`;
-  const facts = presentation.badges.filter(badge => badge.kind !== 'placeholder');
-  // The chip prints the sent name only when it is chip-worthy; when it fell
-  // back the body bar carries the full name instead (a Codex wrapped command,
-  // an over-long tool name), so it stays readable and selectable.
-  const barName =
-    presentation.label !== item.name
-      ? sanitizeBounded(item.name, MAX_ALIAS_NAME_CODE_UNITS).text
-      : null;
-  const barText = [
-    presentation.family,
-    ...(barName !== null && barName.length > 0 ? [barName] : []),
-    ...facts.map(badge => badge.text),
-  ].join(' · ');
   const chevronClass = open
     ? 'w-[9px] flex-none text-center text-[10px] leading-none text-text-tertiary transition-transform duration-[120ms] motion-reduce:transition-none rotate-90'
     : 'w-[9px] flex-none text-center text-[10px] leading-none text-text-tertiary transition-transform duration-[120ms] motion-reduce:transition-none';
@@ -608,12 +750,13 @@ function ToolHistory({
         <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {barText}
+              {presentation.bodyBarText}
             </span>
             <button
               type="button"
               aria-expanded={rawOpen}
-              className={`flex min-h-[24px] flex-none items-center rounded-[4px] border px-[7px] font-mono text-[10.5px] focus-visible:outline-2 focus-visible:outline-accent-bright! ${
+              aria-controls={rawOpen ? rawPanelId : undefined}
+              className={`flex min-h-[24px] flex-none items-center rounded-[4px] border px-[7px] font-mono text-[10.5px] focus-visible:outline-2! focus-visible:outline-accent-bright! ${
                 rawOpen
                   ? 'border-border-bright text-text-primary'
                   : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary'
@@ -627,16 +770,16 @@ function ToolHistory({
             </button>
           </div>
           {rawOpen ? (
-            <div
-              className={TOOL_BODY_BOX}
-              style={{ overflowWrap: 'anywhere', color: 'var(--text-secondary)' }}
+            <pre
+              id={rawPanelId}
+              className="m-0 min-w-0 max-w-full whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary [overflow-wrap:anywhere]"
             >
-              {formatToolIo({
-                name: item.name,
-                input: item.input,
-                output: hasFullOutput ? fullOutput : item.output,
-              })}
-            </div>
+              {toolRawPayloadJson(presentation.rawPayload)}
+            </pre>
+          ) : presentation.body?.kind === 'task' ? (
+            <TaskBody body={presentation.body} />
+          ) : presentation.body?.kind === 'generic' ? (
+            <GenericBody body={presentation.body} />
           ) : (
             <ToolBodySwitch
               input={{
