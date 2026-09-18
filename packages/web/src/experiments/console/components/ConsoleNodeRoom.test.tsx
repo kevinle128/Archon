@@ -1167,6 +1167,145 @@ describe('ConsoleNodeRoom', () => {
     expect(closed).toBe(1);
   });
 
+  function dockField(): Element | null {
+    return host.querySelector('textarea');
+  }
+
+  function regionChildren(): Element[] {
+    const region = host.querySelector('[role="region"]');
+    return region === null ? [] : Array.from(region.children);
+  }
+
+  test('mounts the composer dock after the transcript scroller for a live running row', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('composer field', () => dockField() !== null);
+
+    const scroller = host.querySelector('[data-testid="console-node-room-scroll"]');
+    const field = dockField();
+    if (scroller === null || field === null) throw new Error('missing scroller or field');
+    const dockWell = field.parentElement;
+    const children = regionChildren();
+    expect(children.includes(scroller)).toBe(true);
+    expect(children.includes(dockWell ?? scroller)).toBe(true);
+    expect(children.indexOf(dockWell ?? scroller)).toBeGreaterThan(children.indexOf(scroller));
+    expect(scroller.contains(dockWell)).toBe(false);
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+    expect(host.textContent).not.toContain('queued ·');
+  });
+
+  test('renders no dock for a historical (non-live) run or a terminal row', async () => {
+    await act(async () => {
+      renderRoom({
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('transcript', () => (host.textContent ?? '').includes('first'));
+    expect(dockField()).toBeNull();
+
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        selectedRow: row({ nodeId: 'review', label: 'Review', status: 'completed' }),
+        nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'completed' })],
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flush();
+    expect(dockField()).toBeNull();
+  });
+
+  test('renders no dock for non-agent rooms', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        nodeId: 'setup',
+        selectedRow: row({ nodeId: 'setup', label: 'Setup', status: 'running' }),
+        definitionNodes: [{ id: 'setup', bash: 'echo hi' }],
+        nodeStates: [nodeState({ nodeId: 'setup', name: 'Setup', status: 'running' })],
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [],
+        }),
+      });
+    });
+    await flush();
+    expect(host.querySelector('[aria-label="setup room"]')).not.toBeNull();
+    expect(dockField()).toBeNull();
+  });
+
+  test('a pending ask on this node blocks Queue with the exact visible reason', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+        pendingInteractions: [ask()],
+      });
+    });
+    await flushUntil('blocked dock', () =>
+      (host.textContent ?? '').includes("answer the agent's question first")
+    );
+    const field = dockField();
+    if (field === null) throw new Error('dock field missing while blocked');
+    const button = Array.from(host.querySelectorAll('button')).find(
+      el => (el.textContent ?? '').trim() === 'Queue'
+    );
+    if (button === undefined) throw new Error('missing Queue button');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('disabled')).toBeNull();
+    const reasonId = button.getAttribute('aria-describedby');
+    expect(reasonId).not.toBeNull();
+    expect(host.querySelector(`#${reasonId ?? ''}`)?.textContent).toBe(
+      "answer the agent's question first"
+    );
+  });
+
+  test('a sibling node pending ask does not block this dock', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+        pendingInteractions: [ask({ id: 'ask-sibling', node_id: 'other-node' })],
+      });
+    });
+    await flushUntil('composer field', () => dockField() !== null);
+    expect(host.textContent).not.toContain("answer the agent's question first");
+    const button = Array.from(host.querySelectorAll('button')).find(
+      el => (el.textContent ?? '').trim() === 'Queue'
+    );
+    expect(button?.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  test('an awaiting row blocks the dock even without a visible ask card', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        selectedRow: row({ nodeId: 'review', label: 'Review', status: 'awaiting' }),
+        nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'awaiting' })],
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('awaiting block', () =>
+      (host.textContent ?? '').includes("answer the agent's question first")
+    );
+    expect(dockField()).not.toBeNull();
+  });
+
   describe('Console tool disclosure rows', () => {
     const NOW_MS = new Date(CREATED_AT).getTime() + 30_000;
 

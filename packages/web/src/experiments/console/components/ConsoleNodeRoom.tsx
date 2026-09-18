@@ -33,6 +33,7 @@ import type {
 import { getNodeMessage, submitRunReviewFeedback } from '../skills/runs';
 import type { DagNode } from '../skills/workflows';
 import { ApprovalPanel } from './ApprovalPanel';
+import { ConsoleComposerDock } from './ConsoleComposerDock';
 import { ConsoleTodoStrip } from './ConsoleTodoStrip';
 import { ConsoleAskCard, ConsoleInvalidAskCard } from './ask/ConsoleAskCard';
 import type { AskActionStateByRequest } from './ask/ask-answer-controller';
@@ -901,6 +902,17 @@ export function ConsoleNodeRoom({
             <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
               Jump to latest
             </button>
+          ) : null}
+          {agentActive && row !== null ? (
+            <ConsoleComposerDock
+              key={`steering:${resolvedScopeKey}`}
+              runId={run.id}
+              nodeId={row.nodeId}
+              nodeLabel={agentDisplayName || row.nodeId}
+              rowStatus={rowStatus}
+              live={isLive}
+              hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
+            />
           ) : null}
         </RoomRegion>
       )}

@@ -1421,4 +1421,131 @@ describe('NodeTranscriptPane', () => {
     expect(emptyClass).toContain('items-center');
     expect(emptyClass).toContain('justify-center');
   });
+
+  function dockField(): Element | null {
+    return host.querySelector('textarea');
+  }
+
+  function dockRegionChildren(): Element[] {
+    const region = host.querySelector('[role="region"]');
+    return region === null ? [] : Array.from(region.children);
+  }
+
+  test('mounts the composer dock after the transcript scroller for a live running row', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'composer field', () => dockField() !== null);
+
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    const field = dockField();
+    if (scroller === null || field === null) throw new Error('missing scroller or field');
+    const dockWell = field.parentElement;
+    const children = dockRegionChildren();
+    expect(children.includes(scroller)).toBe(true);
+    expect(children.includes(dockWell ?? scroller)).toBe(true);
+    expect(children.indexOf(dockWell ?? scroller)).toBeGreaterThan(children.indexOf(scroller));
+    expect(scroller.contains(dockWell)).toBe(false);
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+    expect(host.textContent).not.toContain('queued ·');
+  });
+
+  test('renders no dock for a terminal row or a non-live run', async () => {
+    await act(async () => {
+      renderPane({
+        row: { ...REVIEW_ROW, status: 'completed' },
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'completed transcript', () =>
+      (host.textContent ?? '').includes('first')
+    );
+    expect(dockField()).toBeNull();
+
+    // A stale running row on a finished (non-live) run must never steer.
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flush();
+    expect(dockField()).toBeNull();
+  });
+
+  test('a pending ask on this node blocks Queue with the exact visible reason', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE, ASK_TOOL],
+        }),
+        pendingInteractions: [pendingAsk()],
+      });
+    });
+    await flushUntil(host, 'blocked dock', () =>
+      (host.textContent ?? '').includes("answer the agent's question first")
+    );
+    const field = dockField();
+    if (field === null) throw new Error('dock field missing while blocked');
+    const button = Array.from(host.querySelectorAll('button')).find(
+      el => (el.textContent ?? '').trim() === 'Queue'
+    );
+    if (button === undefined) throw new Error('missing Queue button');
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('disabled')).toBeNull();
+    const reasonId = button.getAttribute('aria-describedby');
+    expect(reasonId).not.toBeNull();
+    expect(host.querySelector(`#${reasonId ?? ''}`)?.textContent).toBe(
+      "answer the agent's question first"
+    );
+  });
+
+  test('a sibling node pending ask does not block this dock', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+        pendingInteractions: [pendingAsk({ id: 'ask-sibling', node_id: 'other-node' })],
+      });
+    });
+    await flushUntil(host, 'composer field', () => dockField() !== null);
+    expect(host.textContent).not.toContain("answer the agent's question first");
+    const button = Array.from(host.querySelectorAll('button')).find(
+      el => (el.textContent ?? '').trim() === 'Queue'
+    );
+    expect(button?.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  test('an awaiting row blocks the dock even without a visible ask card', async () => {
+    await act(async () => {
+      renderPane({
+        row: { ...REVIEW_ROW, status: 'awaiting' },
+        runStatus: 'paused',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'awaiting block', () =>
+      (host.textContent ?? '').includes("answer the agent's question first")
+    );
+    expect(dockField()).not.toBeNull();
+  });
 });

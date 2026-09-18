@@ -1,0 +1,9 @@
+console@1440 generating room=464px field=444x56 queue=84x32 inside=true roomOverflow=false docOverflow=false
+console@1440 receipts room=464px overflow=false
+console queue transition-property under reduced-motion: none
+console@460harness room=460px field=440x56 queue=84x32 inside=true overflow=false
+console blocked reason color=oklch(0.745 0.014 265)
+console detached-422 disclosure rendered verbatim
+legacy room@1150vw =459.6px field=439.6x56 queue=84x32 inside=true roomOverflow=false docOverflow=false
+legacy room with band =459.6px overflow=false
+legacy detached-422 disclosure rendered verbatim
