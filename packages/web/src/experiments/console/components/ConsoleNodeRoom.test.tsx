@@ -2108,15 +2108,11 @@ describe('ConsoleNodeRoom', () => {
       });
       expect(firstCard.open).toBe(true);
       expect(firstCard.textContent).toContain('TAILMARKER');
-      // Cards precede the diagnostics.
-      const inputDiagnostic = Array.from(row.querySelectorAll('details')).find(
-        el => el.querySelector('summary')?.textContent === 'Input'
-      );
+      // Raw lives in the body bar and precedes the cards.
+      const raw = rawButton(row);
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
       for (const card of Array.from(cards)) {
-        expect(
-          (inputDiagnostic as Element).compareDocumentPosition(card) &
-            Node.DOCUMENT_POSITION_PRECEDING
-        ).not.toBe(0);
+        expect(raw.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
       }
     });
 
@@ -2201,10 +2197,10 @@ describe('ConsoleNodeRoom', () => {
       await act(async () => {
         click(rowSummary(row));
       });
-      // The raw payload dump stays verbatim behind the closed Input diagnostic;
-      // the readable body is what must stay sanitized.
-      const inputAt = row.innerHTML.indexOf('>Input<');
-      const body = inputAt < 0 ? row.innerHTML : row.innerHTML.slice(0, inputAt);
+      // Raw JSON is not in the DOM while closed; sanitize the readable body
+      // (through the first card, which holds the prompt).
+      const cardAt = row.innerHTML.indexOf('data-subtask-index');
+      const body = cardAt < 0 ? row.innerHTML : row.innerHTML.slice(0, cardAt);
       expect(body).toContain('<strong>bold</strong>');
       expect(body).toContain('>first</li>');
       expect(body).not.toContain('<img');
@@ -2297,7 +2293,7 @@ describe('ConsoleNodeRoom', () => {
       expect(subtaskCard(fresh, 0).open).toBe(false);
     });
 
-    test('card summaries precede the diagnostics and the full-output control in DOM order', async () => {
+    test('card summaries follow Raw and precede the full-output control in DOM order', async () => {
       await act(async () => {
         mountList(historyItems(OMP_TASK_MESSAGES));
       });
@@ -2309,10 +2305,20 @@ describe('ConsoleNodeRoom', () => {
       expect(summaries[0]).toBe(rowSummary(row));
       expect(summaries[1]).toBe(cardSummary(subtaskCard(row, 0)));
       expect(summaries[2]).toBe(cardSummary(subtaskCard(row, 1)));
-      expect(summaries[3]?.textContent).toBe('Input');
-      expect(summaries[4]?.textContent).toBe('Output');
+      expect(summaries).toHaveLength(3);
       const focusables = Array.from(row.querySelectorAll('summary, button'));
-      expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(5);
+      expect(focusables[0]).toBe(rowSummary(row));
+      expect(focusables[1]).toBe(rawButton(row));
+      expect(focusables[2]).toBe(cardSummary(subtaskCard(row, 0)));
+      expect(focusables[3]).toBe(cardSummary(subtaskCard(row, 1)));
+      expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(4);
+
+      await act(async () => {
+        click(rawButton(row));
+      });
+      expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+      expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+      expect(rawPanel(row).textContent).toContain('"name"');
     });
 
     test('Console card focus delta: +2 px outline offset with the accent token', async () => {

@@ -525,7 +525,7 @@ for (const surface of ['console', 'legacy'] as const) {
       }
     }
 
-    // DOM-order Tab: outer summary -> context link -> card summaries -> Input/Output.
+    // DOM-order Tab through the row body: Raw -> context link -> card summaries -> View full output.
     const focusableCount = await sizedRow.evaluate(el => {
       const body = el.querySelector(':scope > div');
       if (body === null) return -1;

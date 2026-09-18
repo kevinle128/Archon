@@ -715,22 +715,25 @@ describe('NodeRoom task dispatch bodies', () => {
     expect(row).toContain('>task · batch · 2 subtasks<');
   });
 
-  test('OMP batch body: markdown context precedes one card per subtask, before diagnostics', () => {
+  test('OMP batch body: markdown context precedes one card per subtask, after the Raw bar', () => {
     const markup = renderRoom({
       items: [taskToolItem(OMP_INPUT, 'task-omp', { outcome: 'failed' })],
     });
     const row = rowMarkup(markup, 'task-omp');
     expect(rowOpenTag(row)).toMatch(/\sopen(\s|=|>)/);
     const body = row.slice(row.indexOf('</summary>'));
+    const rawAt = body.indexOf('>Raw<');
     const contextAt = body.indexOf('Read-only review.');
     const firstCardAt = body.indexOf('data-subtask-index="0"');
     const secondCardAt = body.indexOf('data-subtask-index="1"');
-    const inputAt = body.indexOf('>Input<');
+    expect(rawAt).toBeGreaterThan(-1);
     expect(contextAt).toBeGreaterThan(-1);
+    expect(rawAt).toBeLessThan(contextAt);
     expect(contextAt).toBeLessThan(firstCardAt);
     expect(firstCardAt).toBeLessThan(secondCardAt);
-    expect(secondCardAt).toBeLessThan(inputAt);
     expect(body.match(/data-subtask-index="\d+"/g)).toHaveLength(2);
+    expect(body).not.toContain('>Input<');
+    expect(body).not.toContain('>Output<');
   });
 
   test('subtask card anatomy: approval agent, bold name, secondary excerpt, prompt only inside', () => {
@@ -808,8 +811,13 @@ describe('NodeRoom task dispatch bodies', () => {
     expect(row).toContain('>task · single dispatch<');
     expect(summaryMarkup(row)).toContain('1 subagent');
     expect(row.match(/data-subtask-index="\d+"/g)).toHaveLength(1);
-    // No context block: the card follows the bar immediately.
-    expect(row).toContain('task · single dispatch</div><details data-subtask-index="0"');
+    // No context block: Raw sits in the bar, then the single card.
+    const barAt = row.indexOf('>task · single dispatch<');
+    const rawAt = row.indexOf('>Raw<');
+    const cardAt = row.indexOf('data-subtask-index="0"');
+    expect(barAt).toBeGreaterThan(-1);
+    expect(rawAt).toBeGreaterThan(barAt);
+    expect(cardAt).toBeGreaterThan(rawAt);
     const card = cardMarkup(row, 0);
     const summary = summaryMarkup(card);
     expect(summary).toContain('>Explore<');
@@ -873,7 +881,7 @@ describe('NodeRoom task dispatch bodies', () => {
     expect(row.match(/data-subtask-index="\d+"/g)).toBeNull();
     expect(summaryMarkup(row)).not.toContain('subagent');
     expect(row).toContain('>task<');
-    const body = row.slice(row.indexOf('</summary>'), row.indexOf('>Input<'));
+    const body = row.slice(row.indexOf('</summary>'));
     expect(body).toContain('>tasks<');
     expect(body).toContain('>nope<');
     expect(body).toContain('>note<');
@@ -890,9 +898,9 @@ describe('NodeRoom task dispatch bodies', () => {
     };
     const markup = renderRoom({ items: [taskToolItem(input, 'task-md')] });
     const row = rowMarkup(markup, 'task-md');
-    // The raw payload dump stays verbatim behind the closed Input diagnostic;
-    // the readable body is what must stay sanitized.
-    const body = row.slice(row.indexOf('</summary>'), row.indexOf('>Input<'));
+    // Raw JSON is not in the DOM while closed; sanitize the readable body
+    // (bar through the first card, which holds the prompt).
+    const body = row.slice(row.indexOf('</summary>'), row.indexOf('data-subtask-index'));
     expect(body).toContain('<strong>bold</strong>');
     expect(body).toContain('>first</li>');
     expect(body).not.toContain('<img');

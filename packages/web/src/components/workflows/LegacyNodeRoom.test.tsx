@@ -1686,16 +1686,11 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     // Excerpt is a collapsed-whitespace prefix; the tail lives in the nested body.
     expect(firstSummary.textContent).toContain('Map every call site');
     expect(firstSummary.textContent).not.toContain('TAILMARKER');
-    // DOM order: context precedes the cards, diagnostics follow them.
-    const inputDiagnostic = Array.from(row.querySelectorAll('details')).find(
-      el => el.querySelector('summary')?.textContent === 'Input'
-    );
-    expect(inputDiagnostic).toBeDefined();
+    // DOM order: Raw lives in the body bar and precedes the cards.
+    const raw = rawButton(row);
+    expect(raw.getAttribute('aria-expanded')).toBe('false');
     for (const card of Array.from(cards)) {
-      expect(
-        (inputDiagnostic as Element).compareDocumentPosition(card) &
-          Node.DOCUMENT_POSITION_PRECEDING
-      ).not.toBe(0);
+      expect(raw.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
     }
   });
 
@@ -1805,7 +1800,7 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(subtaskCard(fresh, 0).open).toBe(false);
   });
 
-  test('card summaries precede the diagnostics and the full-output control in DOM order', async () => {
+  test('card summaries follow Raw and precede the full-output control in DOM order', async () => {
     await act(async () => {
       mountItems(historyItems(OMP_TASK_ROWS));
     });
@@ -1817,9 +1812,19 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(summaries[0]).toBe(rowSummary(row));
     expect(summaries[1]).toBe(cardSummary(subtaskCard(row, 0)));
     expect(summaries[2]).toBe(cardSummary(subtaskCard(row, 1)));
-    expect(summaries[3]?.textContent).toBe('Input');
-    expect(summaries[4]?.textContent).toBe('Output');
+    expect(summaries).toHaveLength(3);
     const focusables = Array.from(row.querySelectorAll('summary, button'));
-    expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(5);
+    expect(focusables[0]).toBe(rowSummary(row));
+    expect(focusables[1]).toBe(rawButton(row));
+    expect(focusables[2]).toBe(cardSummary(subtaskCard(row, 0)));
+    expect(focusables[3]).toBe(cardSummary(subtaskCard(row, 1)));
+    expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(4);
+
+    await act(async () => {
+      click(rawButton(row));
+    });
+    expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+    expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+    expect(rawPanel(row).textContent).toContain('"name"');
   });
 });
