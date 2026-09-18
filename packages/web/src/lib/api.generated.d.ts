@@ -2541,6 +2541,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Queue operator guidance for a running workflow node
+         * @description Accepts operator guidance for a live in-process agent node without interrupting the current provider turn. Queued messages drain at the next natural provider-turn boundary on the same provider session; `intent: "send_now"` queues identically until an idle-after-interrupt state exists. Idempotent on `message_id` — a duplicate replays the original receipt. Rejections leave the run, queue, and transcript unchanged.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SendWorkflowNodeBody"];
+                };
+            };
+            responses: {
+                /** @description Guidance accepted onto the steering queue */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SendWorkflowNodeResponse"];
+                    };
+                };
+                /** @description Malformed or schema-invalid payload */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run or node */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Node no longer running */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description No live steering session in this process */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/runs/{runId}": {
         parameters: {
             query?: never;
@@ -5166,6 +5266,29 @@ export interface components {
         };
         PermissionConfirmBody: {
             intent: string;
+        };
+        SendWorkflowNodeResponse: {
+            /** @enum {boolean} */
+            success: true;
+            /** Format: uuid */
+            message_id: string;
+            /** @enum {string} */
+            state: "queued" | "awaiting_send_now";
+        };
+        SteeringError: {
+            /** @enum {boolean} */
+            success: false;
+            error: {
+                code: string;
+                message: string;
+            };
+        };
+        SendWorkflowNodeBody: {
+            message: string;
+            /** Format: uuid */
+            message_id: string;
+            /** @enum {string} */
+            intent: "queue" | "send_now";
         };
         ResetWorkflowNodeSessionsResponse: {
             success: boolean;

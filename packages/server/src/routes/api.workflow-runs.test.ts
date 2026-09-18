@@ -747,6 +747,12 @@ mock.module('@archon/core/db/workflow-envs', () => ({
 }));
 
 import { registerApiRoutes } from './api';
+import { getSteeringRegistry } from '@archon/workflows/steering-registry';
+import type {
+  NodeSteeringHandle,
+  SteeringHandleSnapshot,
+} from '@archon/workflows/steering-registry';
+import { getAuth } from '../auth';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -6146,5 +6152,508 @@ describe('POST /api/workflows/runs/:runId/review-feedback', () => {
     });
     // resolveApprovalGate must NOT be called — HTTP 200 means accepted/pending, not approved.
     expect(mockResolveApprovalGate).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
+// ---------------------------------------------------------------------------
+
+const STEER_RUN_ID = 'run-steer-1';
+const STEER_NODE_ID = 'plan';
+const STEER_STARTER_ID = 'user-steer-starter';
+const STEER_MESSAGE_ID = '11111111-2222-4333-8444-555555555555';
+const STEER_MESSAGE_ID_2 = '22222222-3333-4444-8555-666666666666';
+const STEER_MESSAGE_ID_3 = '33333333-4444-4555-8666-777777777777';
+
+function mockSteerableRun(overrides: Partial<MockWorkflowRun> = {}): MockWorkflowRun {
+  return {
+    ...MOCK_RUNNING_RUN,
+    id: STEER_RUN_ID,
+    user_id: STEER_STARTER_ID,
+    ...overrides,
+  };
+}
+
+function steerEvent(eventType: string, nodeId: string = STEER_NODE_ID): MockWorkflowEvent {
+  return {
+    id: `evt-steer-${eventType}`,
+    workflow_run_id: STEER_RUN_ID,
+    event_type: eventType,
+    step_index: 0,
+    step_name: nodeId,
+    data: {},
+    created_at: NOW,
+  };
+}
+
+function sendPayload(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    message: 'steer the node',
+    message_id: STEER_MESSAGE_ID,
+    intent: 'queue',
+    ...overrides,
+  };
+}
+
+function postNodeSend(
+  app: OpenAPIHono,
+  body: unknown,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance', () => {
+  beforeEach(() => {
+    getSteeringRegistry().clearForTests();
+    mockGetWorkflowRun.mockReset();
+    mockListWorkflowEvents.mockReset();
+    mockListPendingInteractions.mockReset();
+    mockFindOrCreateUserByPlatformIdentity.mockClear();
+    mockCreateWorkflowEvent.mockClear();
+    mockAddMessage.mockClear();
+    mockUpdateWorkflowRun.mockClear();
+  });
+
+  /** Running run + node_started projection + live registry handle. */
+  function liveSetup(nodeId: string = STEER_NODE_ID): NodeSteeringHandle {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', nodeId)]);
+    return getSteeringRegistry().register(STEER_RUN_ID, nodeId);
+  }
+
+  /** Rejections must leave the queue, transcript, and run state untouched. */
+  function expectNoSteeringMutation(
+    handle: NodeSteeringHandle,
+    before: SteeringHandleSnapshot
+  ): void {
+    const after = handle.snapshot();
+    expect(after.phase).toBe(before.phase);
+    expect(after.acceptedCount).toBe(before.acceptedCount);
+    expect(after.queued).toEqual(before.queued);
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    expect(mockAddMessage).not.toHaveBeenCalled();
+    expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
+  }
+
+  async function expectSteeringError(res: Response, status: number, code: string): Promise<void> {
+    expect(res.status).toBe(status);
+    const body = (await res.json()) as {
+      success: boolean;
+      error: { code: string; message: string };
+    };
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe(code);
+    expect(typeof body.error.message).toBe('string');
+    expect(body.error.message.length).toBeGreaterThan(0);
+  }
+
+  // -- Actor matrix ---------------------------------------------------------
+
+  test('returns 200 and queues one item for the run starter', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload(), { 'X-Archon-User': STEER_STARTER_ID });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID,
+      state: 'queued',
+    });
+    const queued = handle.snapshot().queued;
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.operatorUserId).toBe(STEER_STARTER_ID);
+    expect(queued[0]?.message).toBe('steer the node');
+    expect(queued[0]?.messageId).toBe(STEER_MESSAGE_ID);
+  });
+
+  test('returns 200 for another authenticated member identity', async () => {
+    const handle = liveSetup();
+    mockFindOrCreateUserByPlatformIdentity.mockImplementationOnce(
+      async (_platform: string, platformUserId: string) => ({
+        id: platformUserId,
+        display_name: platformUserId,
+        email: null,
+        role: 'member' as const,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+    );
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload(), { 'X-Archon-User': 'member-other' });
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued[0]?.operatorUserId).toBe('member-other');
+  });
+
+  test('returns 200 for an admin identity that does not own the run', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload(), { 'X-Archon-User': 'user-admin-9' });
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued[0]?.operatorUserId).toBe('user-admin-9');
+  });
+
+  test('returns 200 with a null operator id on an identity-less install', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued[0]?.operatorUserId).toBeNull();
+  });
+
+  test('returns nested 401 before body validation for a gated unauthenticated caller', async () => {
+    // Resolve the auth singleton as "disabled" BEFORE flipping the env gate on —
+    // getAuth() caches the resolution so no pg.Pool is constructed. The API gate
+    // is kept off so the route middleware (not the global /api/* gate) decides.
+    getAuth();
+    const savedDb = process.env.DATABASE_URL;
+    const savedSecret = process.env.BETTER_AUTH_SECRET;
+    const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
+    process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
+    process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
+    process.env.ARCHON_WEB_AUTH_REQUIRED = 'false';
+    try {
+      const { app } = makeApp();
+      // Malformed JSON — 401 must still win over 400.
+      const res = await postNodeSend(app, '{not valid json');
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: { code: 'unauthenticated', message: 'Authentication required' },
+      });
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    } finally {
+      if (savedDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedDb;
+      if (savedSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = savedSecret;
+      if (savedRequired === undefined) delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+      else process.env.ARCHON_WEB_AUTH_REQUIRED = savedRequired;
+    }
+  });
+
+  // -- Validation matrix ------------------------------------------------------
+
+  test('returns nested 400 for a blank-only message', async () => {
+    const handle = liveSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ message: '   \n\t  ' }));
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns nested 400 for a missing field', async () => {
+    const handle = liveSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, { message_id: STEER_MESSAGE_ID, intent: 'queue' });
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns nested 400 for unknown strict keys', async () => {
+    const handle = liveSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ extra: 'nope' }));
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns nested 400 for malformed JSON', async () => {
+    const handle = liveSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, '{malformed json body');
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns nested 400 for an invalid message_id', async () => {
+    const handle = liveSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ message_id: 'not-a-uuid' }));
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns nested 400 for an invalid intent', async () => {
+    const handle = liveSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ intent: 'later' }));
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('preserves original whitespace in the queued message verbatim', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    const padded = '  keep my  spacing\n\nand trailing  ';
+    const res = await postNodeSend(app, sendPayload({ message: padded }));
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued[0]?.message).toBe(padded);
+  });
+
+  // -- Target/status matrix ---------------------------------------------------
+
+  test('returns 404 for an unknown run', async () => {
+    mockGetWorkflowRun.mockResolvedValue(null);
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID)).toBeUndefined();
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 404 for an unknown node (no projection, no handle)', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'other-node')]);
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID)).toBeUndefined();
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 for a terminal run even with a stale live handle', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 409 for each terminal node state even with a stale live handle', async () => {
+    const { app } = makeApp();
+    for (const eventType of ['node_completed', 'node_failed', 'node_skipped']) {
+      const nodeId = `node-${eventType}`;
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+      mockListWorkflowEvents.mockResolvedValue([steerEvent(eventType, nodeId)]);
+      const handle = getSteeringRegistry().register(STEER_RUN_ID, nodeId);
+      const before = handle.snapshot();
+
+      const res = await postNodeSend(app, sendPayload(), {}, STEER_RUN_ID, nodeId);
+
+      await expectSteeringError(res, 409, 'node_finished');
+      expectNoSteeringMutation(handle, before);
+    }
+  });
+
+  test('returns 409 for a closed handle', async () => {
+    const handle = liveSetup();
+    handle.close();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 422 for a running node with no handle (detached)', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 422 for a parked AskHuman handle with a new message id', async () => {
+    const handle = liveSetup();
+    handle.park();
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'paused' }));
+    mockListPendingInteractions.mockResolvedValue([
+      {
+        id: 'pi-steer-ask',
+        workflow_run_id: STEER_RUN_ID,
+        node_id: STEER_NODE_ID,
+        tool_use_id: 'toolu_steer_ask',
+        kind: 'ask',
+        status: 'pending',
+        envelope: {},
+        answer: null,
+        provider_session_id: 'sess-steer',
+        created_at: NOW,
+        resolved_at: null,
+        resolved_by: null,
+      },
+    ]);
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 200 for a live handle with no projected node yet', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([]);
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued).toHaveLength(1);
+  });
+
+  test("returns 200 state 'queued' for intent send_now on a live generating handle", async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ intent: 'send_now' }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID,
+      state: 'queued',
+    });
+    expect(handle.snapshot().queued).toHaveLength(1);
+  });
+
+  // -- Idempotency and races --------------------------------------------------
+
+  test('queues three distinct messages in receipt order', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    for (const [id, text] of [
+      [STEER_MESSAGE_ID, 'first'],
+      [STEER_MESSAGE_ID_2, 'second'],
+      [STEER_MESSAGE_ID_3, 'third'],
+    ] as const) {
+      const res = await postNodeSend(app, sendPayload({ message_id: id, message: text }));
+      expect(res.status).toBe(200);
+    }
+    const queued = handle.snapshot().queued;
+    expect(queued.map(m => m.messageId)).toEqual([
+      STEER_MESSAGE_ID,
+      STEER_MESSAGE_ID_2,
+      STEER_MESSAGE_ID_3,
+    ]);
+    expect(queued.map(m => m.message)).toEqual(['first', 'second', 'third']);
+  });
+
+  test('replays the original receipt for a duplicate id before and after drain', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+
+    const res1 = await postNodeSend(app, sendPayload());
+    expect(res1.status).toBe(200);
+    const firstBody = await res1.json();
+
+    const res2 = await postNodeSend(app, sendPayload());
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toEqual(firstBody);
+    expect(handle.snapshot().queued).toHaveLength(1);
+
+    handle.drain();
+    expect(handle.snapshot().queued).toHaveLength(0);
+
+    const res3 = await postNodeSend(app, sendPayload());
+    expect(res3.status).toBe(200);
+    expect(await res3.json()).toEqual(firstBody);
+    expect(handle.snapshot().queued).toHaveLength(0);
+  });
+
+  test('does not overwrite the original text for a changed-prose duplicate', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    await postNodeSend(app, sendPayload({ message: 'first text' }));
+
+    const res = await postNodeSend(app, sendPayload({ message: 'CHANGED text' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID,
+      state: 'queued',
+    });
+    const queued = handle.snapshot().queued;
+    expect(queued).toHaveLength(1);
+    expect(queued[0]?.message).toBe('first text');
+  });
+
+  test('replays a duplicate accepted id while the handle is parked', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+    const res1 = await postNodeSend(app, sendPayload());
+    const firstBody = await res1.json();
+
+    handle.park();
+    const res2 = await postNodeSend(app, sendPayload());
+    expect(res2.status).toBe(200);
+    expect(await res2.json()).toEqual(firstBody);
+    expect(handle.snapshot().queued).toHaveLength(1);
+  });
+
+  test('returns 409 when the run turns terminal between lookup and final re-read', async () => {
+    liveSetup();
+    const handle = getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID);
+    const before = handle?.snapshot();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      .mockResolvedValueOnce(mockSteerableRun({ status: 'cancelled' }));
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expect(handle?.snapshot().queued).toHaveLength(0);
+    expect(before && handle ? handle.snapshot().acceptedCount : 0).toBe(
+      before?.acceptedCount ?? -1
+    );
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 when the handle closes between inspection and enqueue', async () => {
+    const handle = liveSetup();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      // The final status re-read still reports running, but the executor's
+      // teardown gate closed the handle during the await.
+      .mockImplementationOnce(async () => {
+        handle.close();
+        return mockSteerableRun();
+      });
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload());
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   });
 });
