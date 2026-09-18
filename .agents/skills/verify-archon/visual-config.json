@@ -51,7 +51,7 @@
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md",
-      "sha256": "8593595633fd800993165bf1b08372042652013a385f428d2cdc4b52cb04cf15"
+      "sha256": "807cf6174527b843eff59b9eacf236c1e655ae1e5ff5a612bcad611baa008247"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
@@ -67,7 +67,7 @@
     },
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/README.md",
-      "sha256": "6587540f5df6c369fcc761621f030876ddf93b5faca376dd67f83cc350250715"
+      "sha256": "8d80940c3a90daa2ff060f1a8e186385d20d04b7a6d7ffa804e56f120dfa44c3"
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
