@@ -3,18 +3,24 @@
   "id": "hitl-run-room",
   "description": "Inspect executions and answer workflow Asks on Console and Legacy.",
   "impact_paths": [
+    "packages/web/src/components/layout/TopNav.tsx",
     "packages/web/src/components/workflows/**",
     "packages/web/src/experiments/console/**",
+    "packages/web/src/lib/agent-history*",
     "packages/web/src/lib/*ask*",
     "packages/web/src/lib/*room*",
     "packages/web/src/lib/*transcript*",
+    "packages/web/src/lib/tool-presentation*",
     "packages/server/src/routes/api.ts",
     "packages/server/src/routes/schemas/workflow*",
     "packages/core/src/db/workflow-pending-interactions*",
     "packages/workflows/src/*ask*",
+    "e2e/ui/agent-tool-row*",
     "e2e/ui/workflow-run-hitl*",
     "e2e/lib/playwright/**",
-    "e2e/fixtures/workflows/e2e-hitl*"
+    "e2e/fixtures/workflows/e2e-hitl*",
+    "plans/260907-1454-workflow-run-hitl-mockup-alignment/**",
+    "plans/260917-1011-issue-174-readable-tool-call-row/**"
   ],
   "behaviors": [
     {

@@ -255,7 +255,7 @@ describe('selectNodeRoomMessages', () => {
 });
 
 describe('NodeRoom', () => {
-  test('renders assistant, tool, and lifecycle history with expanded I/O', () => {
+  test('renders assistant, tool, and lifecycle history', () => {
     const unselected = renderRoom({ nodeId: null, items: [] });
     expect(visibleText(unselected)).toBe('Select a node');
     expect(unselected).not.toContain('role="region"');
@@ -280,8 +280,7 @@ describe('NodeRoom', () => {
     expect(loaded).toContain('succeeded');
     expect(loaded).toContain('1.5s');
     expect(loaded).toContain('<details');
-    expect(loaded).toContain('Input');
-    expect(loaded).toContain('Output');
+    expect(loaded).toContain('>Raw');
     expect(loaded).toContain('View full output');
     expect(loaded).toContain('truncated');
     expect(loaded).toContain('started');
@@ -295,8 +294,11 @@ describe('NodeRoom', () => {
     const summary = summaryMarkup(row);
     expect(summary).toContain('>Read<');
     expect(summary).toContain('a.ts');
-    // Serialized payload stays behind the closed diagnostic disclosures.
-    expect(row.match(/<details[^>]*\sopen(\s|=|>)/g)).toBeNull();
+    // Serialized payload stays out of the DOM while Raw is closed.
+    expect(row).not.toContain('<pre');
+    expect(row).not.toContain('truncated-output');
+    expect(row).not.toContain('>Input<');
+    expect(row).not.toContain('>Output<');
   });
 
   test('shows unknown-scope notice and keeps truncated output when detail load is offered', () => {
@@ -579,7 +581,7 @@ describe('NodeRoom tool rows', () => {
     expect(openTag).not.toContain('shadow');
   });
 
-  test('opened body starts with the family then every summary fact, diagnostics stay closed controls', () => {
+  test('opened body starts with the family then every summary fact and one closed Raw control', () => {
     const items: AgentHistoryItem[] = [
       toolItem({ outcome: 'failed', exitCode: 2, toolUseId: 't-fail' }),
     ];
@@ -589,30 +591,39 @@ describe('NodeRoom tool rows', () => {
 
     const bodyStart = row.indexOf('</summary>') + '</summary>'.length;
     const body = row.slice(bodyStart);
-    const bar = /<div class="([^"]*)"[^>]*>([^<]*)<\/div>/.exec(body);
-    expect(bar?.[2]).toBe('file · exit 2 · truncated · 1.5s');
-    expect(bar?.[1]).toContain('text-[10.5px]');
-    expect(bar?.[1]).toContain('font-mono');
-    expect(bar?.[1]).toContain('text-text-secondary');
     expect(body).toContain('ml-[29px]');
     expect(body).toContain('border-l-2');
     expect(body).toContain('pl-2.5');
+    const bar = /<div class="([^"]*)"[^>]*><span class="([^"]*)">([^<]*)<\/span>/.exec(body);
+    expect(bar?.[3]).toBe('file · exit 2 · truncated · 1.5s');
+    expect(bar?.[1]).toContain('text-[10.5px]');
+    expect(bar?.[1]).toContain('font-mono');
+    expect(bar?.[1]).toContain('text-text-secondary');
+    expect(bar?.[2]).toContain('min-w-0');
 
-    // A failed auto-opened row still exposes no serialized payload: both diagnostics closed.
-    const diagnostics = [
-      ...body.matchAll(/<details([^>]*)>\s*<summary([^>]*)>(Input|Output)<\/summary>/g),
-    ];
-    expect(diagnostics).toHaveLength(2);
-    for (const match of diagnostics) {
-      expect(match[1]).not.toMatch(/\sopen(\s|=|>)/);
-      expect(match[2]).toContain('text-text-secondary');
-      expect(match[2]).toContain('min-h-[24px]');
-      expect(match[2]).toContain('focus-visible:outline-accent-bright');
-      expect(match[2]).not.toContain('aria-hidden');
-    }
-    // Input precedes Output and the full-output control stays below both.
-    expect(body.indexOf('>Input<')).toBeLessThan(body.indexOf('>Output<'));
-    expect(body.indexOf('>Output<')).toBeLessThan(body.indexOf('View full output'));
+    // Exactly one Raw control: native button, closed by default, 24px target.
+    const raw = /<button([^>]*)>Raw[\s\S]*?<\/button>/.exec(body);
+    expect(raw).not.toBeNull();
+    expect(raw?.[1]).toContain('type="button"');
+    expect(raw?.[1]).toContain('aria-expanded="false"');
+    expect(raw?.[1]).not.toContain('aria-controls');
+    expect(raw?.[1]).toContain('min-h-[24px]');
+    expect(raw?.[1]).toContain('border-border');
+    expect(raw?.[1]).toContain('text-text-secondary');
+    expect(raw?.[1]).toContain('hover:border-border-bright');
+    expect(raw?.[1]).toContain('hover:text-text-primary');
+    expect(raw?.[1]).toContain('focus-visible:outline-accent-bright');
+    expect(body.match(/<button[^>]*>Raw[\s\S]*?<\/button>/g)).toHaveLength(1);
+
+    // A failed auto-opened row still exposes no serialized payload or diagnostic labels.
+    expect(body).not.toContain('<pre');
+    expect(body).not.toContain('truncated-output');
+    expect(body).not.toContain('>Input<');
+    expect(body).not.toContain('>Output<');
+    expect(body.match(/<details/g)).toBeNull();
+    // Raw sits above the full-output control, which stays mounted while Raw is closed.
+    expect(body.indexOf('>Raw')).toBeLessThan(body.indexOf('View full output'));
+    expect(body).toContain('View full output');
   });
 
   test('collapsed tool rows sit flush while mixed content keeps per-item separation', () => {
@@ -647,5 +658,254 @@ describe('NodeRoom tool rows', () => {
     expect(afterIndex).toBeGreaterThan(toolIndex);
     expect(markup).toContain('<div class="mt-1.5">after-tool-1</div>');
     expect(markup).toContain('<div class="mt-1.5">at-end</div>');
+  });
+});
+
+describe('NodeRoom task dispatch bodies', () => {
+  const OMP_INPUT: Record<string, unknown> = {
+    context: 'Read-only review. **Do not edit.**\n\n- skip formatters\n- report file:line',
+    tasks: [
+      {
+        name: 'ScoutBackoff',
+        agent: 'scout',
+        task: 'Map every call site of retry_backoff and backoff across crates/, recording file:line, the attempt argument, whether the caller overrides the ceiling, and any nearby jitter configuration — TAILMARKER.',
+      },
+      {
+        name: 'ScoutCI',
+        agent: 'scout',
+        task: 'Where is CARGO_BUILD_JOBS pinned in .github/workflows?',
+      },
+    ],
+  };
+
+  type ToolItem = Extract<AgentHistoryItem, { kind: 'tool' }>;
+
+  function taskToolItem(
+    input: Record<string, unknown>,
+    toolUseId: string,
+    overrides: Partial<ToolItem> = {}
+  ): ToolItem {
+    return toolItem({
+      id: toolUseId,
+      toolUseId,
+      name: 'Task',
+      input,
+      outputState: 'full',
+      durationMs: null,
+      canLoadFullOutput: false,
+      ...overrides,
+    });
+  }
+
+  /** A subtask card is one flat details — no nested details inside it. */
+  function cardMarkup(row: string, index: number): string {
+    const marker = `<details data-subtask-index="${index}"`;
+    const start = row.indexOf(marker);
+    if (start < 0) throw new Error(`subtask card ${index} not found: ${row}`);
+    const end = row.indexOf('</details>', start);
+    if (end < 0) throw new Error(`subtask card ${index} never closes`);
+    return row.slice(start, end + '</details>'.length);
+  }
+
+  test('OMP batch: collapsed row carries the subagent badge and the shared body-bar text', () => {
+    const markup = renderRoom({ items: [taskToolItem(OMP_INPUT, 'task-omp')] });
+    const row = rowMarkup(markup, 'task-omp');
+    expect(rowOpenTag(row)).not.toMatch(/\sopen(\s|=|>)/);
+    expect(summaryMarkup(row)).toContain('2 subagents');
+    expect(row).toContain('>task · batch · 2 subtasks<');
+  });
+
+  test('OMP batch body: markdown context precedes one card per subtask, after the Raw bar', () => {
+    const markup = renderRoom({
+      items: [taskToolItem(OMP_INPUT, 'task-omp', { outcome: 'failed' })],
+    });
+    const row = rowMarkup(markup, 'task-omp');
+    expect(rowOpenTag(row)).toMatch(/\sopen(\s|=|>)/);
+    const body = row.slice(row.indexOf('</summary>'));
+    const rawAt = body.indexOf('>Raw<');
+    const contextAt = body.indexOf('Read-only review.');
+    const firstCardAt = body.indexOf('data-subtask-index="0"');
+    const secondCardAt = body.indexOf('data-subtask-index="1"');
+    expect(rawAt).toBeGreaterThan(-1);
+    expect(contextAt).toBeGreaterThan(-1);
+    expect(rawAt).toBeLessThan(contextAt);
+    expect(contextAt).toBeLessThan(firstCardAt);
+    expect(firstCardAt).toBeLessThan(secondCardAt);
+    expect(body.match(/data-subtask-index="\d+"/g)).toHaveLength(2);
+    expect(body).not.toContain('>Input<');
+    expect(body).not.toContain('>Output<');
+  });
+
+  test('subtask card anatomy: approval agent, bold name, secondary excerpt, prompt only inside', () => {
+    const markup = renderRoom({
+      items: [taskToolItem(OMP_INPUT, 'task-omp', { outcome: 'failed' })],
+    });
+    const row = rowMarkup(markup, 'task-omp');
+    const card = cardMarkup(row, 0);
+    expect(card).toContain('group/subtask');
+    expect(card).toContain('mt-[5px]');
+    expect(card).toContain('rounded-[6px]');
+    expect(card).toContain('bg-surface-elevated');
+    expect(card).toContain('px-[9px]');
+    expect(card).toContain('py-[6px]');
+
+    const summary = summaryMarkup(card);
+    expect(summary).toContain('min-h-[24px]');
+    expect(summary).toContain('text-[11.5px]');
+    expect(summary).toContain('whitespace-nowrap');
+    expect(summary).toContain('focus-visible:outline-accent-bright');
+    expect(summary).toContain('-outline-offset-2');
+    const agent = /<span class="[^"]*text-node-approval[^"]*">([^<]*)<\/span>/.exec(summary);
+    expect(agent?.[1]).toBe('scout');
+    const agentGroup = /<span class="([^"]*)"><span class="[^"]*text-node-approval/.exec(summary);
+    expect(agentGroup?.[1]).toContain('min-w-0');
+    expect(agentGroup?.[1]).toContain('shrink');
+    expect(agentGroup?.[1]).toContain('overflow-hidden');
+    expect(agentGroup?.[1]).toContain('text-ellipsis');
+    const name = /<span class="([^"]*font-bold[^"]*)"[^>]*>([^<]*)<\/span>/.exec(summary);
+    expect(name?.[2]).toBe('ScoutBackoff');
+    expect(name?.[1]).toContain('min-w-0');
+    expect(name?.[1]).toContain('shrink');
+    expect(name?.[1]).toContain('overflow-hidden');
+    expect(name?.[1]).toContain('text-ellipsis');
+    expect(summary).toContain('text-text-secondary');
+    // Excerpt is the collapsed-whitespace prefix — the tail stays in the nested body.
+    expect(summary).toContain('Map every call site');
+    expect(summary).not.toContain('TAILMARKER');
+
+    const chevron = /<span aria-hidden="true" class="([^"]*)">▶<\/span>/.exec(summary);
+    const classes = chevron?.[1].split(' ') ?? [];
+    expect(classes).toContain('group-open/subtask:rotate-90');
+    expect(classes).not.toContain('rotate-90');
+    expect(classes).toContain('w-[9px]');
+    expect(classes).toContain('text-[10px]');
+    expect(classes).toContain('duration-[120ms]');
+    expect(classes).toContain('motion-reduce:transition-none');
+
+    const box = card.slice(card.indexOf('</summary>'));
+    expect(box).toContain('TAILMARKER');
+    expect(box).toContain('whitespace-pre-wrap');
+    expect(box).toContain('break-words');
+    expect(box).toContain('bg-surface-inset');
+    // Payload strings are React text — never attributes.
+    expect(card).not.toContain('title=');
+    expect(card).not.toContain('aria-label=');
+  });
+
+  test('Claude single dispatch: single-dispatch bar, exactly one card, no context block', () => {
+    const markup = renderRoom({
+      items: [
+        taskToolItem(
+          {
+            description: 'Scout retry-backoff call sites',
+            prompt:
+              'Find every caller of retry_backoff() and backoff() in crates/, reporting file:line and the attempt argument verbatim.',
+            subagent_type: 'Explore',
+          },
+          'task-claude',
+          { name: 'Agent' }
+        ),
+      ],
+    });
+    const row = rowMarkup(markup, 'task-claude');
+    expect(row).toContain('>task · single dispatch<');
+    expect(summaryMarkup(row)).toContain('1 subagent');
+    expect(row.match(/data-subtask-index="\d+"/g)).toHaveLength(1);
+    // No context block: Raw sits in the bar, then the single card.
+    const barAt = row.indexOf('>task · single dispatch<');
+    const rawAt = row.indexOf('>Raw<');
+    const cardAt = row.indexOf('data-subtask-index="0"');
+    expect(barAt).toBeGreaterThan(-1);
+    expect(rawAt).toBeGreaterThan(barAt);
+    expect(cardAt).toBeGreaterThan(rawAt);
+    const card = cardMarkup(row, 0);
+    const summary = summaryMarkup(card);
+    expect(summary).toContain('>Explore<');
+    expect(summary).toContain('Scout retry-backoff call sites');
+    expect(card.slice(card.indexOf('</summary>'))).toContain('the attempt argument verbatim.');
+  });
+
+  test('Claude single dispatch without subagent_type renders no orphan separator', () => {
+    const markup = renderRoom({
+      items: [
+        taskToolItem(
+          {
+            description: 'Scout retry-backoff call sites',
+            prompt: 'Find every caller of retry_backoff() and backoff() in crates/.',
+          },
+          'task-claude',
+          { name: 'Agent' }
+        ),
+      ],
+    });
+    const row = rowMarkup(markup, 'task-claude');
+    const summary = summaryMarkup(cardMarkup(row, 0));
+    expect(summary).not.toContain('·');
+    expect(summary).toContain('Scout retry-backoff call sites');
+    expect(summary).toContain('— Find every caller');
+  });
+
+  test('singular batch wording uses 1 subtask and 1 subagent', () => {
+    const markup = renderRoom({
+      items: [
+        taskToolItem(
+          { context: 'ctx', tasks: [{ name: 'OnlyTask', agent: 'scout', task: 'do it' }] },
+          'task-one'
+        ),
+      ],
+    });
+    const row = rowMarkup(markup, 'task-one');
+    expect(row).toContain('>task · batch · 1 subtask<');
+    expect(summaryMarkup(row)).toContain('1 subagent');
+    expect(summaryMarkup(row)).not.toContain('subagents');
+  });
+
+  test('the 64-subtask boundary renders every card', () => {
+    const tasks = Array.from({ length: 64 }, (_, index) => ({
+      name: `subtask-${index}`,
+      agent: 'scout',
+      task: `prompt ${index}`,
+    }));
+    const markup = renderRoom({ items: [taskToolItem({ context: '', tasks }, 'task-max')] });
+    const row = rowMarkup(markup, 'task-max');
+    expect(row.match(/data-subtask-index="\d+"/g)).toHaveLength(64);
+    expect(row).toContain('data-subtask-index="63"');
+    expect(row).toContain('>task · batch · 64 subtasks<');
+  });
+
+  test('malformed task input falls back to bounded generic fields with no cards or count badge', () => {
+    const markup = renderRoom({
+      items: [taskToolItem({ tasks: 'nope', note: 'x' }, 'task-bad')],
+    });
+    const row = rowMarkup(markup, 'task-bad');
+    expect(row.match(/data-subtask-index="\d+"/g)).toBeNull();
+    expect(summaryMarkup(row)).not.toContain('subagent');
+    expect(row).toContain('>task<');
+    const body = row.slice(row.indexOf('</summary>'));
+    expect(body).toContain('>tasks<');
+    expect(body).toContain('>nope<');
+    expect(body).toContain('>note<');
+    expect(body).toContain('>x<');
+    // Generic rows are key/value text — never a serialized dump.
+    expect(body).not.toContain('"tasks"');
+  });
+
+  test('task context markdown keeps structure and suppresses images, unsafe links, and raw HTML', () => {
+    const input: Record<string, unknown> = {
+      context:
+        'Intro **bold** tail\n\n- first\n- second\n\n![tracker](https://tracker.example/pixel.png)\n\n[click](javascript:alert(1))\n\n<div onclick="boom()">raw</div>',
+      tasks: [{ name: 'ScoutBackoff', agent: 'scout', task: 'do it' }],
+    };
+    const markup = renderRoom({ items: [taskToolItem(input, 'task-md')] });
+    const row = rowMarkup(markup, 'task-md');
+    // Raw JSON is not in the DOM while closed; sanitize the readable body
+    // (bar through the first card, which holds the prompt).
+    const body = row.slice(row.indexOf('</summary>'), row.indexOf('data-subtask-index'));
+    expect(body).toContain('<strong>bold</strong>');
+    expect(body).toContain('>first</li>');
+    expect(body).not.toContain('<img');
+    expect(body).not.toContain('javascript:');
+    expect(body).not.toContain('<div onclick');
+    expect(body).toContain('>click</a>');
   });
 });

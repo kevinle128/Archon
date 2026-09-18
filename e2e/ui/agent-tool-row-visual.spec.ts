@@ -1,3 +1,4 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -9,13 +10,15 @@ import { openLegacyRunDetail, openRunDetail } from '../lib/playwright/run-detail
 import { T } from '../lib/playwright/timeouts';
 
 /**
- * Story 1.1 visual acceptance for the readable tool-call row.
+ * Story 1.1 + Story 1.2 visual acceptance for the readable tool-call row.
  *
  * Behavior is proven elsewhere (workflow-run-hitl*.spec.ts); this spec owns the
  * geometry/focus/motion/contrast evidence recorded in
- * plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md.
- * Captures go to the Playwright output dir via testInfo, not the older suite's
- * capture directory.
+ * plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md
+ * (Story 1.1 row shell) and the Story 1.2 Raw-toggle supplement at
+ * plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md.
+ * Captures go to the Playwright output dir via testInfo; the Story 1.2 Raw
+ * captures are also written to the supplement's reports/evidence/ directory.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -26,6 +29,13 @@ const MOCKUP_DIR = join(
   'ux-designs',
   'ux-Archon-agent-node-room-2026-09-09',
   'mockups'
+);
+const STORY_12_EVIDENCE_DIR = join(
+  REPO_ROOT,
+  'plans',
+  '260918-1038-issue-175-raw-payload-toggle',
+  'reports',
+  'evidence'
 );
 
 type Surface = 'console' | 'legacy';
@@ -40,6 +50,7 @@ const SWEEP_VIEWPORTS = [
   { name: '1440x1000', width: 1440, height: 1000 },
   { name: '1024x900', width: 1024, height: 900 },
   { name: '768x900', width: 768, height: 900 },
+  { name: '460x900', width: 460, height: 900 },
   { name: '390x844', width: 390, height: 844 },
 ] as const;
 
@@ -226,11 +237,18 @@ interface SummaryAxEvidence {
 }
 
 interface AxNode {
+  nodeId?: string;
   backendDOMNodeId?: number;
   ignored?: boolean;
   role?: { value?: unknown };
   name?: { value?: unknown };
-  properties?: { name: string; value?: { value?: unknown } }[];
+  properties?: {
+    name: string;
+    value?: {
+      value?: unknown;
+      relatedSources?: { backendDOMNodeId?: number; idref?: string }[];
+    };
+  }[];
 }
 
 /**
@@ -272,6 +290,105 @@ async function summaryAxEvidence(page: Page): Promise<SummaryAxEvidence> {
       name: typeof named?.name?.value === 'string' ? named.name.value : null,
       role: typeof named?.role?.value === 'string' ? named.role.value : null,
       expanded: typeof expandedProp?.value?.value === 'boolean' ? expandedProp.value.value : null,
+    };
+  } finally {
+    await session.detach();
+  }
+}
+
+interface RawAxEvidence {
+  found: boolean;
+  role: string | null;
+  name: string | null;
+  expanded: boolean | null;
+  controlsPanel: boolean | null;
+}
+
+/**
+ * Chromium AX-tree evidence for the row's Raw toggle: role/name/expanded plus
+ * the `controls` relationship resolved to this row's <pre> panel (matched by
+ * backendDOMNodeId so a sibling row's panel can never satisfy it).
+ */
+async function rawAxEvidence(page: Page, row: Locator): Promise<RawAxEvidence> {
+  const absent: RawAxEvidence = {
+    found: false,
+    role: null,
+    name: null,
+    expanded: null,
+    controlsPanel: null,
+  };
+  const toolId = await row.getAttribute('data-tool-id');
+  if (toolId === null) return absent;
+  const scope = `details[data-tool-id="${toolId}"]`;
+  // <pre> mounts only while Raw is open — getAttribute would wait forever.
+  const panelDomId =
+    (await row.locator('pre').count()) > 0
+      ? await row.locator('pre').first().getAttribute('id')
+      : null;
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('DOM.enable');
+    await session.send('Accessibility.enable');
+    const doc = (await session.send('DOM.getDocument', { depth: 1 })) as {
+      root: { nodeId: number };
+    };
+    const pick = async (selector: string): Promise<number> => {
+      const query = (await session.send('DOM.querySelector', {
+        nodeId: doc.root.nodeId,
+        selector,
+      })) as { nodeId: number };
+      return query.nodeId;
+    };
+    const backendOf = async (nodeId: number): Promise<number | null> => {
+      const described = (await session.send('DOM.describeNode', { nodeId })) as {
+        node: { backendNodeId?: number };
+      };
+      return described.node.backendNodeId ?? null;
+    };
+    const buttonNode = await pick(`${scope} button[aria-expanded]`);
+    if (buttonNode === 0) return absent;
+    const buttonBackend = await backendOf(buttonNode);
+    const preNode = await pick(`${scope} pre`);
+    const preBackend = preNode === 0 ? null : await backendOf(preNode);
+    const tree = (await session.send('Accessibility.getFullAXTree')) as { nodes: AxNode[] };
+    const buttonAx = tree.nodes.find(
+      node => node.backendDOMNodeId === buttonBackend && node.ignored !== true
+    );
+    if (buttonAx === undefined) return absent;
+    const expandedProp = buttonAx.properties?.find(prop => prop.name === 'expanded');
+    // Chromium encodes aria-controls differently across protocol versions:
+    // an idref/idrefList value, or relatedSources entries carrying the
+    // target's backendDOMNodeId and/or DOM idref. Accept every shape.
+    const controlsValue = buttonAx.properties?.find(prop => prop.name === 'controls')?.value;
+    const controlRefs = new Set<string | number>();
+    if (Array.isArray(controlsValue?.value)) {
+      for (const ref of controlsValue.value) {
+        if (typeof ref === 'string' || typeof ref === 'number') controlRefs.add(ref);
+      }
+    } else if (
+      typeof controlsValue?.value === 'string' ||
+      typeof controlsValue?.value === 'number'
+    ) {
+      controlRefs.add(controlsValue.value);
+    }
+    for (const rel of controlsValue?.relatedSources ?? []) {
+      if (rel.backendDOMNodeId !== undefined) controlRefs.add(rel.backendDOMNodeId);
+      if (rel.idref !== undefined) controlRefs.add(rel.idref);
+    }
+    const preAx =
+      preBackend === null
+        ? undefined
+        : tree.nodes.find(node => node.backendDOMNodeId === preBackend);
+    const referencesPanel =
+      (preBackend !== null && controlRefs.has(preBackend)) ||
+      (panelDomId !== null && controlRefs.has(panelDomId)) ||
+      (preAx?.nodeId !== undefined && controlRefs.has(preAx.nodeId));
+    return {
+      found: true,
+      role: typeof buttonAx.role?.value === 'string' ? buttonAx.role.value : null,
+      name: typeof buttonAx.name?.value === 'string' ? buttonAx.name.value : null,
+      expanded: typeof expandedProp?.value?.value === 'boolean' ? expandedProp.value.value : null,
+      controlsPanel: preBackend === null ? null : referencesPanel,
     };
   } finally {
     await session.detach();
@@ -373,9 +490,17 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(summary).toContainText('Read');
     await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
     await expect(summary).toContainText('succeeded');
-    await expect(row.getByText('Input', { exact: true })).toBeHidden();
-    await expect(row.getByText('Output', { exact: true })).toBeHidden();
-    await expect(row.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
+    // Raw is the only row disclosure: present but hidden inside the collapsed
+    // row, closed, and mounting no payload markup until asked. DOM selector —
+    // the hidden control is absent from the accessibility tree.
+    const rawToggle = row.locator('button[aria-expanded]');
+    await expect(rawToggle).toHaveCount(1);
+    await expect(rawToggle).toBeHidden();
+    await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+    expect(await rawToggle.getAttribute('aria-controls')).toBeNull();
+    await expect(row.locator('details')).toHaveCount(0);
+    await expect(row.locator('pre')).toHaveCount(0);
+    await expect(row.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
 
     // The accessible name is engineered state → family/tool → target → facts;
     // chevron and glyph stay decorative. Chromium's AX tree is the AT channel.
@@ -516,12 +641,144 @@ for (const surface of ['console', 'legacy'] as const) {
       await summary.evaluate(el => el.ownerDocument.activeElement === el),
       'arrow keys do nothing — no roving tabindex'
     ).toBe(true);
-    await page.keyboard.press('Tab');
-    const inputSummary = row.getByText('Input', { exact: true }).first();
+
+    // Raw control appearance: closed = secondary label on a quiet border;
+    // hover, focus, and open all flip to bright border + primary text.
+    const tokenBorder = await resolveColorIn(room, 'var(--border)');
+    const tokenBorderBright = await resolveColorIn(room, 'var(--border-bright)');
+    const tokenTextPrimary = await resolveColorIn(room, 'var(--text-primary)');
+    const tokenTextSecondary = await resolveColorIn(room, 'var(--text-secondary)');
+    const tokenInset = await resolveColorIn(room, 'var(--surface-inset)');
+    const rawStyle = async (): Promise<{ color: string; border: string }> =>
+      rawToggle.evaluate(el => {
+        const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+        return { color: cs?.color ?? '', border: cs?.borderTopColor ?? '' };
+      });
+    const closedStyle = await rawStyle();
+    expect(closedStyle.color, 'closed Raw label is secondary text').toBe(
+      tokenTextSecondary.resolved
+    );
+    expect(closedStyle.border, 'closed Raw border is the quiet border').toBe(tokenBorder.resolved);
+    const rawBox = await rawToggle.boundingBox();
+    expect(rawBox, 'Raw control bounding box').toBeTruthy();
+    if (!rawBox) throw new Error('missing Raw control box');
     expect(
-      await inputSummary.evaluate(el => el.ownerDocument.activeElement === el),
-      'Tab follows DOM order into the first diagnostic control'
+      Math.min(rawBox.width, rawBox.height),
+      'Raw target is at least 24px'
+    ).toBeGreaterThanOrEqual(24);
+    await rawToggle.hover();
+    const hoverStyle = await rawStyle();
+    expect(hoverStyle.color, 'hover Raw label is primary text').toBe(tokenTextPrimary.resolved);
+    expect(hoverStyle.border, 'hover Raw border is bright').toBe(tokenBorderBright.resolved);
+    await page.mouse.move(0, 0);
+    // Facts stay left in the body bar; Raw is pinned to its right edge.
+    const bodyBar = rawToggle.locator('xpath=..');
+    const factsBox = await bodyBar.locator('span.min-w-0').boundingBox();
+    const barBox = await bodyBar.boundingBox();
+    expect(factsBox, 'body-bar facts bounding box').toBeTruthy();
+    expect(barBox, 'body-bar bounding box').toBeTruthy();
+    if (!factsBox || !barBox) throw new Error('missing body-bar geometry');
+    expect(factsBox.x, 'facts occupy the body-bar left').toBeLessThanOrEqual(barBox.x + 1);
+    expect(rawBox.x, 'Raw sits after the facts').toBeGreaterThanOrEqual(
+      factsBox.x + factsBox.width - 1
+    );
+    expect(
+      barBox.x + barBox.width - (rawBox.x + rawBox.width),
+      'Raw is pinned to the body-bar right edge'
+    ).toBeLessThanOrEqual(2);
+
+    // AX tree: the Raw toggle is a named expanded/collapsed button; while
+    // closed it controls nothing.
+    const axRawClosed = await rawAxEvidence(page, row);
+    expect(axRawClosed.found, 'Raw control has an AX node').toBe(true);
+    expect(axRawClosed.role).toBe('button');
+    expect(axRawClosed.name).toBe('Raw');
+    expect(axRawClosed.expanded).toBe(false);
+    expect(axRawClosed.controlsPanel).not.toBe(true);
+
+    // Keyboard path: Tab reaches Raw after the summary entry point; Enter and
+    // Space toggle it with a visible focus ring throughout.
+    await page.keyboard.press('Tab');
+    expect(
+      await rawToggle.evaluate(el => el.ownerDocument.activeElement === el),
+      'Tab follows DOM order into the Raw control'
     ).toBe(true);
+    const rawFocus = await rawToggle.evaluate(el => {
+      const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+      return {
+        style: cs?.outlineStyle ?? '',
+        width: cs?.outlineWidth ?? '',
+        color: cs?.outlineColor ?? '',
+        focusVisible: el.matches(':focus-visible'),
+      };
+    });
+    expect(rawFocus.focusVisible, 'keyboard focus on Raw carries :focus-visible').toBe(true);
+    expect(rawFocus.style).toBe('solid');
+    expect(rawFocus.width).toBe('2px');
+    expect(rawFocus.color, 'Raw focus outline resolves to --accent-bright').toBe(accent.resolved);
+    const focusedStyle = await rawStyle();
+    expect(focusedStyle.color, 'focused Raw label is primary text').toBe(tokenTextPrimary.resolved);
+    expect(focusedStyle.border, 'focused Raw border is bright').toBe(tokenBorderBright.resolved);
+
+    await rawToggle.press('Enter');
+    await expect(rawToggle).toHaveAttribute('aria-expanded', 'true');
+    const rawPanel = row.locator('pre');
+    await expect(rawPanel).toHaveCount(1);
+    await expect(rawPanel).toBeVisible();
+    const panelDomId = await rawPanel.getAttribute('id');
+    expect(panelDomId).toBeTruthy();
+    expect(await rawToggle.getAttribute('aria-controls')).toBe(panelDomId);
+    expect(
+      await page.evaluate(id => document.getElementById(id ?? '')?.tagName ?? null, panelDomId)
+    ).toBe('PRE');
+
+    // Canonical paired payload: provider name plus parsed input/output, pretty
+    // printed — nothing else.
+    const panelText = await rawPanel.textContent();
+    expect(panelText).toBeTruthy();
+    const payload = JSON.parse(panelText ?? '') as Record<string, unknown>;
+    expect(Object.keys(payload)).toEqual(['name', 'input', 'output']);
+    expect(payload.name).toBe('Read');
+    expect(payload.input).toEqual({ path: 'HITL_TOOL_INPUT.txt' });
+    expect(payload.output).toBe(HITL_TOOL_OUTPUT);
+
+    // Open panel: primary text on the inset surface, no horizontal scroll.
+    const panelStyle = await rawPanel.evaluate(el => {
+      const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+      return {
+        color: cs?.color ?? '',
+        background: cs?.backgroundColor ?? '',
+        fontSize: cs?.fontSize ?? '',
+        lineHeight: cs?.lineHeight ?? '',
+        overflowX: el.scrollWidth - el.clientWidth,
+      };
+    });
+    expect(panelStyle.color, 'Raw JSON uses primary text').toBe(tokenTextPrimary.resolved);
+    expect(panelStyle.background, 'Raw panel uses the inset surface').toBe(tokenInset.resolved);
+    expect(panelStyle.fontSize).toBe('11.5px');
+    expect(panelStyle.lineHeight).toBe('17.25px');
+    expect(panelStyle.overflowX, 'Raw panel has no horizontal scroll').toBeLessThanOrEqual(1);
+
+    // AX tree open state: expanded true and controls resolves to this panel.
+    await expect
+      .poll(async () => (await rawAxEvidence(page, row)).expanded, { timeout: T.short })
+      .toBe(true);
+    const axRawOpen = await rawAxEvidence(page, row);
+    expect(axRawOpen.controlsPanel, 'AX controls resolves to the Raw panel').toBe(true);
+
+    // Space toggles it back off; the panel leaves the DOM entirely.
+    await rawToggle.press('Space');
+    await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(row.locator('pre')).toHaveCount(0);
+    expect(await rawToggle.getAttribute('aria-controls')).toBeNull();
+
+    // Pointer path: one click mounts the panel, a second removes it.
+    await rawToggle.click();
+    await expect(row.locator('pre')).toHaveCount(1);
+    await rawToggle.click();
+    await expect(row.locator('pre')).toHaveCount(0);
+    await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+
     await summary.press('Space');
     await expect(row).toHaveJSProperty('open', false);
     expect(await summary.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
@@ -540,6 +797,32 @@ for (const surface of ['console', 'legacy'] as const) {
       path: testInfo.outputPath(`${surface}-context-1440.png`),
       fullPage: true,
     });
+
+    // Story 1.2 evidence: closed and open Raw at the canonical 460px panel,
+    // plus a desktop context shot, written to the supplement's evidence dir.
+    mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+    await summary.press('Enter');
+    await expect(row).toHaveJSProperty('open', true);
+    const closedRowShot = await row.screenshot({
+      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-closed-460.png`),
+    });
+    await testInfo.attach(`${surface}-raw-closed-460.png`, {
+      body: closedRowShot,
+      contentType: 'image/png',
+    });
+    await rawToggle.click();
+    await expect(row.locator('pre')).toBeVisible({ timeout: T.medium });
+    const openRowShot = await row.screenshot({
+      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-460.png`),
+    });
+    await testInfo.attach(`${surface}-raw-open-460.png`, {
+      body: openRowShot,
+      contentType: 'image/png',
+    });
+    await page.screenshot({
+      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
+      fullPage: true,
+    });
   });
 
   test(`[P1] [V:hitl.tool-row-${surface}-sweep] HITL readable tool row stays operable and one-line across viewports and 200% zoom on ${surface}`, async ({
@@ -556,15 +839,20 @@ for (const surface of ['console', 'legacy'] as const) {
       await expectSummaryOneLine(summary);
       await summary.press('Enter');
       await expect(row).toHaveJSProperty('open', true);
+      const rawToggle = row.getByRole('button', { name: 'Raw', exact: true });
+      await rawToggle.click();
+      await expect(rawToggle).toHaveAttribute('aria-expanded', 'true');
+      await expect(row.locator('pre')).toBeVisible();
+      await expectNoRoomDrivenOverflow(room, `at ${viewport.name} with Raw open on ${surface}`);
       await summary.press('Space');
       await expect(row).toHaveJSProperty('open', false);
-      await expectNoRoomDrivenOverflow(room, `at ${viewport.name} on ${surface}`);
     }
     const chrome = await page.context().newCDPSession(page);
     try {
       await page.setViewportSize(SPLIT_VIEWPORT);
       const room = await openToolRoom(page, surface, started.runId);
       const summary = room.locator(SUMMARY).first();
+      const row = room.locator(ROW).first();
       await chrome.send('Emulation.setDeviceMetricsOverride', {
         width: SPLIT_VIEWPORT.width / 2,
         height: 500,
@@ -579,8 +867,11 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(summary).toBeVisible();
       await expectSummaryOneLine(summary);
       await summary.press('Enter');
-      await expect(room.locator(ROW).first()).toHaveJSProperty('open', true);
-      await expectNoRoomDrivenOverflow(room, `at 200% zoom on ${surface}`);
+      await expect(row).toHaveJSProperty('open', true);
+      const rawToggle = row.getByRole('button', { name: 'Raw', exact: true });
+      await rawToggle.click();
+      await expect(row.locator('pre')).toBeVisible();
+      await expectNoRoomDrivenOverflow(room, `at 200% zoom with Raw open on ${surface}`);
     } finally {
       await chrome.send('Emulation.clearDeviceMetricsOverride');
       await chrome.detach();
@@ -605,6 +896,7 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
     'neutral badge text': 'var(--text-secondary)',
   } as const;
   const evidence: Record<string, Record<string, number | string>> = {};
+  const rawEvidence: Record<string, Record<string, number | string>> = {};
   for (const surface of ['console', 'legacy'] as const) {
     const room = await openToolRoom(page, surface, started.runId);
     const summary = room.locator(SUMMARY).first();
@@ -627,8 +919,59 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
         floor
       );
     }
+
+    // Story 1.2 Raw tones: closed label = secondary on the body-bar surface;
+    // hover/focus/open share the primary label; the JSON panel is primary text
+    // on the inset surface. Floors are WCAG AA (4.5:1) throughout.
+    const row = room.locator(ROW).first();
+    await summary.click();
+    await expect(row).toHaveJSProperty('open', true);
+    const rawToggle = row.getByRole('button', { name: 'Raw', exact: true });
+    const barBg = await effectiveBackground(rawToggle);
+    const secondary = await resolveColorIn(room, 'var(--text-secondary)');
+    const primary = await resolveColorIn(room, 'var(--text-primary)');
+    const inset = await resolveColorIn(room, 'var(--surface-inset)');
+    const closedLabelRatio = contrastRatio(secondary.c, barBg.c);
+    const activeLabelRatio = contrastRatio(primary.c, barBg.c);
+    surfaceEvidence['Raw body-bar background'] = barBg.resolved;
+    surfaceEvidence['Raw closed label vs body bar'] = Number(closedLabelRatio.toFixed(2));
+    surfaceEvidence['Raw active label vs body bar'] = Number(activeLabelRatio.toFixed(2));
+    expect(
+      closedLabelRatio,
+      `${surface} Raw closed label vs body bar ≥4.5:1`
+    ).toBeGreaterThanOrEqual(4.5);
+    expect(
+      activeLabelRatio,
+      `${surface} Raw hover/focus/open label vs body bar ≥4.5:1`
+    ).toBeGreaterThanOrEqual(4.5);
+    await rawToggle.click();
+    const rawPanel = row.locator('pre');
+    await expect(rawPanel).toBeVisible();
+    const panelBg = await effectiveBackground(rawPanel);
+    expect(panelBg.resolved, `${surface} Raw panel bg is --surface-inset`).toBe(inset.resolved);
+    const jsonRatio = contrastRatio(primary.c, panelBg.c);
+    surfaceEvidence['Raw JSON vs inset panel'] = Number(jsonRatio.toFixed(2));
+    expect(jsonRatio, `${surface} Raw JSON text vs inset panel ≥4.5:1`).toBeGreaterThanOrEqual(4.5);
+    rawEvidence[surface] = {
+      'body-bar background': barBg.resolved,
+      'closed label (--text-secondary)': secondary.resolved,
+      'closed label vs body bar': Number(closedLabelRatio.toFixed(2)),
+      'hover/focus/open label (--text-primary)': primary.resolved,
+      'active label vs body bar': Number(activeLabelRatio.toFixed(2)),
+      'panel background (--surface-inset effective)': panelBg.resolved,
+      'Raw JSON vs panel': Number(jsonRatio.toFixed(2)),
+    };
     evidence[surface] = surfaceEvidence;
   }
+  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  writeFileSync(
+    join(STORY_12_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
+    `${JSON.stringify(rawEvidence, null, 2)}\n`
+  );
+  await testInfo.attach('raw-toggle-contrast.json', {
+    body: JSON.stringify(rawEvidence, null, 2),
+    contentType: 'application/json',
+  });
   await testInfo.attach('tool-row-contrast.json', {
     body: JSON.stringify(evidence, null, 2),
     contentType: 'application/json',

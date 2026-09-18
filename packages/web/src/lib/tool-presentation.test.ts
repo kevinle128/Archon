@@ -10,10 +10,12 @@ import {
   MAX_GENERIC_SCALAR_CODE_POINTS,
   MAX_HEADLINE_SOURCE_CODE_UNITS,
   toolPresentation,
+  toolRawPayloadJson,
   toolRowPresentation,
   type ToolFamily,
   type ToolRowFacts,
 } from './tool-presentation';
+import { MAX_TASK_SUBTASKS, MAX_TASK_TOTAL_TEXT_CODE_UNITS } from './task-normalize';
 
 function call(
   name: string,
@@ -780,6 +782,313 @@ describe('badge ordering', () => {
   });
 });
 
+describe('task body', () => {
+  const ompInput = {
+    context: 'Investigate **auth** drift',
+    tasks: [
+      { name: 'scan middleware', agent: 'explore', task: 'read src/auth/**\nand report' },
+      { name: 'audit tokens', agent: 'reviewer', task: 'diff token issuance' },
+    ],
+  };
+
+  test('OMP batch produces a task body, subagent count badge, and batch facts', () => {
+    const presentation = call('Task', ompInput);
+    expect(presentation.family).toBe('task');
+    expect(presentation.body).toEqual({
+      kind: 'task',
+      context: 'Investigate **auth** drift',
+      subtasks: [
+        {
+          name: 'scan middleware',
+          agent: 'explore',
+          prompt: 'read src/auth/**\nand report',
+          excerpt: 'read src/auth/** and report',
+        },
+        {
+          name: 'audit tokens',
+          agent: 'reviewer',
+          prompt: 'diff token issuance',
+          excerpt: 'diff token issuance',
+        },
+      ],
+    });
+    expect(presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
+    expect(presentation.contentBadges).toEqual([
+      { kind: 'count', text: '2 subagents', tone: 'neutral' },
+    ]);
+  });
+
+  test('a one-task OMP dispatch uses singular wording', () => {
+    const presentation = call('task', {
+      tasks: [{ name: 'only', agent: 'a', task: 'do it' }],
+    });
+    expect(presentation.bodyFacts).toEqual(['batch', '1 subtask']);
+    expect(presentation.contentBadges).toEqual([
+      { kind: 'count', text: '1 subagent', tone: 'neutral' },
+    ]);
+  });
+
+  test('Claude single produces one card, no context, and single-dispatch facts', () => {
+    const presentation = call('Agent', {
+      description: 'review the diff',
+      prompt: 'list risks',
+      subagent_type: 'reviewer',
+    });
+    expect(presentation.body).toEqual({
+      kind: 'task',
+      context: '',
+      subtasks: [
+        {
+          name: 'review the diff',
+          agent: 'reviewer',
+          prompt: 'list risks',
+          excerpt: 'list risks',
+        },
+      ],
+    });
+    expect(presentation.bodyFacts).toEqual(['single dispatch']);
+    expect(presentation.contentBadges).toEqual([
+      { kind: 'count', text: '1 subagent', tone: 'neutral' },
+    ]);
+  });
+
+  test('Claude without subagent_type keeps a null agent on the card', () => {
+    const presentation = call('Agent', { description: 'scan', prompt: 'do it' });
+    expect(presentation.body).toMatchObject({
+      kind: 'task',
+      subtasks: [{ name: 'scan', agent: null, prompt: 'do it' }],
+    });
+    expect(presentation.bodyFacts).toEqual(['single dispatch']);
+  });
+
+  test('the card excerpt is computed by the core while the prompt stays whole', () => {
+    const prompt = `intro\n\n${'x'.repeat(300)}`;
+    const presentation = call('task', {
+      tasks: [{ name: 'a', agent: 'b', task: prompt }],
+    });
+    if (presentation.body?.kind !== 'task') throw new Error('expected task body');
+    const card = presentation.body.subtasks[0];
+    expect(card?.prompt).toBe(prompt);
+    expect(card?.excerpt).not.toContain('\n');
+    expect(card?.excerpt.endsWith('…')).toBe(true);
+  });
+
+  test('malformed task input produces a bounded generic body and no count badge', () => {
+    const presentation = call('Task', { tasks: 'not-an-array', other: 1 });
+    expect(presentation.body).toEqual({
+      kind: 'generic',
+      fields: [
+        { key: 'tasks', value: 'not-an-array' },
+        { key: 'other', value: '1' },
+      ],
+    });
+    expect(presentation.bodyFacts).toEqual([]);
+    expect(presentation.contentBadges).toEqual([]);
+  });
+
+  test('over-budget and over-count task input degrades to the generic body', () => {
+    const over = Array.from({ length: MAX_TASK_SUBTASKS + 1 }, (_, i) => ({
+      name: `n${String(i)}`,
+      agent: 'a',
+      task: 'p',
+    }));
+    const byCount = call('task', { tasks: over });
+    expect(byCount.body?.kind).toBe('generic');
+    expect(byCount.contentBadges).toEqual([]);
+
+    const huge = 'p'.repeat(MAX_TASK_TOTAL_TEXT_CODE_UNITS + 1);
+    const byBudget = call('task', { tasks: [{ name: 'a', agent: 'b', task: huge }] });
+    expect(byBudget.body?.kind).toBe('generic');
+    expect(byBudget.contentBadges).toEqual([]);
+  });
+
+  test('the generic body projects markers, never stringified data', () => {
+    const presentation = call('task', {
+      nothing: 'valid',
+      list: [1, 2, 3],
+      nested: { deep: { deeper: true } },
+      flag: false,
+    });
+    expect(presentation.body).toEqual({
+      kind: 'generic',
+      fields: [
+        { key: 'nothing', value: 'valid' },
+        { key: 'list', value: '[3]' },
+        { key: 'nested', value: '{…}' },
+      ],
+    });
+    // The fourth key is past the fact bound and never appears.
+    expect(JSON.stringify(presentation.body)).not.toContain('flag');
+    expect(JSON.stringify(presentation.body)).not.toContain('deeper');
+  });
+
+  test('the generic body bounds hostile keys and scalar values', () => {
+    const longKey = 'k'.repeat(MAX_GENERIC_SCALAR_CODE_POINTS + 50);
+    const longValue = 'v'.repeat(MAX_GENERIC_SCALAR_CODE_POINTS + 50);
+    const presentation = call('task', { [longKey]: longValue });
+    if (presentation.body?.kind !== 'generic') throw new Error('expected generic body');
+    const field = presentation.body.fields[0];
+    expect([...(field?.key ?? '')].length).toBeLessThanOrEqual(MAX_GENERIC_SCALAR_CODE_POINTS + 1);
+    expect([...(field?.value ?? '')].length).toBeLessThanOrEqual(
+      MAX_GENERIC_SCALAR_CODE_POINTS + 1
+    );
+  });
+
+  test('the generic body stops at the scan and fact bounds', () => {
+    const input: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_GENERIC_KEYS_SCANNED + 10; i++) {
+      input[`k${String(i)}`] = i;
+    }
+    const presentation = call('task', input);
+    if (presentation.body?.kind !== 'generic') throw new Error('expected generic body');
+    expect(presentation.body.fields).toHaveLength(MAX_GENERIC_FACTS);
+    expect(presentation.body.fields.map(field => field.key)).toEqual(['k0', 'k1', 'k2']);
+  });
+
+  test('hostile enumeration reduces to an empty generic field list', () => {
+    const hostile = {
+      get tasks(): unknown {
+        throw new Error('boom');
+      },
+      get alsoThrows(): unknown {
+        throw new Error('boom2');
+      },
+    };
+    const presentation = call('task', hostile);
+    expect(presentation.body).toEqual({ kind: 'generic', fields: [] });
+    expect(presentation.contentBadges).toEqual([]);
+  });
+
+  test('a malformed task headline getter falls back to the label and keeps the generic body', () => {
+    const hostile = {
+      get description(): unknown {
+        throw new Error('boom');
+      },
+    };
+    const presentation = call('Task', hostile);
+    expect(presentation.family).toBe('task');
+    expect(presentation.headline).toBe('Task');
+    expect(presentation.body).toEqual({ kind: 'generic', fields: [] });
+  });
+});
+
+describe('body invariants', () => {
+  test('every non-task family keeps body null and empty bodyFacts', () => {
+    const cases: [string, unknown][] = [
+      ['bash', { command: 'ls' }],
+      ['Read', { path: 'a.txt' }],
+      ['grep', { pattern: 'x' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['eval', { code: 'x=1', language: 'ts' }],
+      ['TodoWrite', { todos: [] }],
+      ['WebFetch', { url: 'https://example.com' }],
+      ['custom_tool', { a: 1 }],
+      ['mcp__github__create_issue', { title: 'bug' }],
+    ];
+    for (const [name, input] of cases) {
+      const presentation = call(name, input);
+      expect(presentation.body).toBeNull();
+      expect(presentation.bodyFacts).toEqual([]);
+    }
+  });
+
+  test('safePresentation returns body null and empty bodyFacts', () => {
+    const poisoned = {
+      get name(): string {
+        throw new Error('boom');
+      },
+      input: {},
+      output: null,
+    };
+    const presentation = toolPresentation(poisoned);
+    expect(presentation.body).toBeNull();
+    expect(presentation.bodyFacts).toEqual([]);
+  });
+});
+
+describe('bodyBarText', () => {
+  test('a non-task row maps badges byte-for-byte after the family prefix', () => {
+    const presentation = row('bash', { command: 'bun test' }, 'oops', {
+      outcome: 'interrupted',
+      exitCode: 1,
+      outputState: 'truncated',
+      durationMs: 2400,
+    });
+    expect(presentation.bodyBarText).toBe('shell · interrupted · exit 1 · truncated · 2.4s');
+  });
+
+  test('a bare non-task row is the family alone', () => {
+    const presentation = row('Read', { path: 'a' }, 'x', SUCCEEDED);
+    expect(presentation.bodyBarText).toBe('file');
+  });
+
+  test('a non-task count badge stays in the bar', () => {
+    const presentation = row('grep', { pattern: 'x' }, 14, {
+      outcome: 'succeeded',
+      outputState: 'full',
+      durationMs: 120,
+    });
+    expect(presentation.bodyBarText).toBe('search · 14 matches · 120ms');
+  });
+
+  test('a batch task row leads with the task facts and never repeats the count', () => {
+    const presentation = row(
+      'Task',
+      {
+        context: 'ctx',
+        tasks: [
+          { name: 'a', agent: 'x', task: 'p1' },
+          { name: 'b', agent: 'y', task: 'p2' },
+        ],
+      },
+      'done',
+      { outcome: 'succeeded', outputState: 'full', durationMs: 1500 }
+    );
+    expect(presentation.bodyBarText).toBe('task · batch · 2 subtasks · 1.5s');
+    expect(presentation.bodyBarText).not.toContain('subagent');
+    // The collapsed row still carries the subagent count badge.
+    expect(presentation.badges).toContainEqual({
+      kind: 'count',
+      text: '2 subagents',
+      tone: 'neutral',
+    });
+  });
+
+  test('a single task row produces "task · single dispatch · <duration>" exactly once', () => {
+    const presentation = row('Agent', { description: 'scan', prompt: 'do it' }, 'done', {
+      outcome: 'succeeded',
+      outputState: 'full',
+      durationMs: 800,
+    });
+    expect(presentation.bodyBarText).toBe('task · single dispatch · 800ms');
+    expect(presentation.bodyBarText.split('single dispatch')).toHaveLength(2);
+    expect(presentation.bodyBarText).not.toContain('subagent');
+  });
+
+  test('runtime facts follow a task row once, in existing order', () => {
+    const presentation = row('task', { tasks: [{ name: 'a', agent: 'b', task: 'p' }] }, 'partial', {
+      outcome: 'interrupted',
+      exitCode: 2,
+      outputState: 'truncated',
+      durationMs: 100,
+    });
+    expect(presentation.bodyBarText).toBe(
+      'task · batch · 1 subtask · interrupted · exit 2 · truncated · 100ms'
+    );
+  });
+
+  test('a malformed task row carries no explicit task facts in the bar', () => {
+    const presentation = row('task', { tasks: 'nope' }, 'x', {
+      outcome: 'failed',
+      exitCode: 1,
+      outputState: 'full',
+    });
+    expect(presentation.bodyBarText).toBe('task · exit 1');
+    expect(presentation.bodyBarText).not.toContain('batch');
+    expect(presentation.bodyBarText).not.toContain('subtask');
+  });
+});
+
 describe('failure containment', () => {
   test('toolPresentation returns a safe generic row when internals throw', () => {
     const poisoned = {
@@ -817,5 +1126,163 @@ describe('failure containment', () => {
       { kind: 'exit', text: 'exit 1', tone: 'danger' },
       { kind: 'duration', text: '10ms', tone: 'muted' },
     ]);
+  });
+});
+
+describe('raw payload', () => {
+  test('generic name keeps the sent name verbatim when the label differs', () => {
+    const presentation = row(
+      'mcp__github__create_issue',
+      { title: 'bug' },
+      { issue: 42 },
+      SUCCEEDED
+    );
+    expect(presentation.label).toBe('github · create_issue');
+    expect(presentation.rawPayload).toEqual({
+      name: 'mcp__github__create_issue',
+      input: { title: 'bug' },
+      output: { issue: 42 },
+    });
+  });
+
+  test('known alias keeps the sent casing, not the normalized family', () => {
+    const presentation = row('TodoWrite', { op: 'add' }, null, SUCCEEDED);
+    expect(presentation.rawPayload.name).toBe('TodoWrite');
+  });
+
+  test('codex command-like name stays verbatim while the label is the family', () => {
+    const name = 'npm test -- --watch';
+    const presentation = row(name, undefined, 'ok', SUCCEEDED);
+    expect(presentation.label).toBe('shell');
+    expect(presentation.rawPayload).toEqual({ name, input: undefined, output: 'ok' });
+  });
+
+  test('over-chip-bound name stays verbatim in the payload', () => {
+    const name = 'x'.repeat(MAX_CHIP_CODE_POINTS + 1);
+    const presentation = row(name, undefined, undefined, SUCCEEDED);
+    expect(presentation.label).toBe('generic');
+    expect(presentation.rawPayload.name).toBe(name);
+  });
+
+  test('object, array, primitive, and null values are preserved structurally', () => {
+    const input = { nested: { list: [1, 2] }, flag: true };
+    const output = { lines: ['a', 'b'], count: 2, extra: null };
+    const presentation = row('custom_tool', input, output, SUCCEEDED);
+    expect(presentation.rawPayload.input).toEqual(input);
+    expect(presentation.rawPayload.output).toEqual(output);
+
+    expect(row('custom_tool', 'plain', 42, SUCCEEDED).rawPayload).toEqual({
+      name: 'custom_tool',
+      input: 'plain',
+      output: 42,
+    });
+    expect(row('custom_tool', null, null, SUCCEEDED).rawPayload).toEqual({
+      name: 'custom_tool',
+      input: null,
+      output: null,
+    });
+  });
+
+  test('a non-string name still captures the readable fields', () => {
+    const weird = { name: 42, input: { a: 1 }, output: null };
+    const presentation = toolRowPresentation(
+      weird as unknown as Parameters<typeof toolRowPresentation>[0],
+      SUCCEEDED
+    );
+    expect(presentation.rawPayload).toEqual({ name: 'generic', input: { a: 1 }, output: null });
+  });
+
+  test('capture failure yields the deterministic generic payload', () => {
+    const poisonedName = {
+      get name(): string {
+        throw new Error('boom');
+      },
+      input: { a: 1 },
+      output: 'x',
+    };
+    expect(toolRowPresentation(poisonedName, SUCCEEDED).rawPayload).toEqual({
+      name: 'generic',
+      input: undefined,
+      output: undefined,
+    });
+    const poisonedInput = {
+      name: 'Read',
+      get input(): unknown {
+        throw new Error('boom');
+      },
+      output: 'x',
+    };
+    expect(toolRowPresentation(poisonedInput, SUCCEEDED).rawPayload).toEqual({
+      name: 'generic',
+      input: undefined,
+      output: undefined,
+    });
+  });
+
+  test('toolRawPayloadJson emits fixed key order with two-space indentation', () => {
+    expect(toolRawPayloadJson({ name: 'Read', input: { path: 'a.ts' }, output: 'text' })).toBe(
+      '{\n  "name": "Read",\n  "input": {\n    "path": "a.ts"\n  },\n  "output": "text"\n}'
+    );
+  });
+
+  test('absent undefined fields are omitted while explicit null is kept', () => {
+    expect(toolRawPayloadJson({ name: 'Bash', input: undefined, output: undefined })).toBe(
+      '{\n  "name": "Bash"\n}'
+    );
+    expect(toolRawPayloadJson({ name: 'Bash', input: null, output: null })).toBe(
+      '{\n  "name": "Bash",\n  "input": null,\n  "output": null\n}'
+    );
+  });
+
+  test('special strings serialize as escaped JSON text, never markup', () => {
+    const json = toolRawPayloadJson({
+      name: 'Bash',
+      input: { cmd: 'echo "hi" \\ done\nnext' },
+      output: '<script>alert(1)</script>',
+    });
+    expect(JSON.parse(json)).toEqual({
+      name: 'Bash',
+      input: { cmd: 'echo "hi" \\ done\nnext' },
+      output: '<script>alert(1)</script>',
+    });
+    expect(json).toContain('\\"hi\\"');
+    expect(json).toContain('done\\nnext');
+    expect(json).not.toContain('\\\\x3c');
+  });
+
+  test('cyclic input yields the documented fallback and keeps a readable name', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const json = toolRawPayloadJson({ name: 'Bash', input: cyclic, output: 'x' });
+    expect(JSON.parse(json)).toEqual({ name: 'Bash', error: 'payload is not serializable' });
+    expect(json).toBe('{\n  "name": "Bash",\n  "error": "payload is not serializable"\n}');
+  });
+
+  test('bigint output yields the documented fallback', () => {
+    const json = toolRawPayloadJson({ name: 'Read', input: undefined, output: BigInt(1) });
+    expect(JSON.parse(json)).toEqual({ name: 'Read', error: 'payload is not serializable' });
+  });
+
+  test('a throwing name getter still returns valid fallback JSON', () => {
+    const hostile = {
+      get name(): string {
+        throw new Error('boom');
+      },
+      input: { a: 1 },
+      output: 'x',
+    };
+    const json = toolRawPayloadJson(hostile);
+    expect(JSON.parse(json)).toEqual({ name: 'generic', error: 'payload is not serializable' });
+  });
+
+  test('a non-string name in the failing document falls back to generic', () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const json = toolRawPayloadJson({
+      name: 42 as unknown as string,
+      input: cyclic,
+      output: undefined,
+    });
+    expect(JSON.parse(json)).toEqual({ name: 'generic', error: 'payload is not serializable' });
   });
 });

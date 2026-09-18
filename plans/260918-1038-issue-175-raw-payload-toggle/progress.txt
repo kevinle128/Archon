@@ -1,0 +1,137 @@
+## Codebase Patterns
+
+### Total-function defensive capture
+- **Where**: `packages/web/src/lib/tool-presentation.ts:559` (`captureRawPayload`), `:573` (`safeRawName`), `:506` (`safePresentation` precedent)
+- **Pattern**: Read attacker-controlled fields inside one `try`; on any throw return the documented deterministic fallback. Non-string-but-readable `name` coerces to `'generic'` (mirrors `typeof input.name === 'string' ? input.name : ''` at `:420`) — coerce the field, keep the readable rest.
+- **Example**: `catch { return { name: 'generic', input: undefined, output: undefined }; }`
+
+### Serializer fallback that cannot rethrow
+- **Where**: `packages/web/src/lib/tool-presentation.ts:589` (`toolRawPayloadJson`)
+- **Pattern**: Build `{ name, input, output }` literal then `JSON.stringify(v, null, 2)` — undefined keys are omitted, null kept, insertion order fixed. On throw, rebuild `{ name: safeRawName(payload), error: 'payload is not serializable' }` — plain strings only, so the fallback stringify structurally cannot throw. No replacer (would silently alter values).
+
+### Test scaffolds in agent-history.test.ts
+- **Where**: `packages/web/src/lib/agent-history.test.ts:44-67` (`toolRow` helper), `:18-42` (`textRow`/`statusRow`), `:69-85` (`event`)
+- **Pattern**: `toolRow({id, seq, name, toolUseId, input?, output?, metadata?})` builds `NodeMessageRow`s; `metadata: {tool_phase: 'call'|'result'}` drives `projectToolTranscript` pairing by `toolUseId`. Card `input` comes from the call row, `output` from the result row, `name` from `call ?? result`.
+- **Gotcha**: narrow item with `if (tool?.kind !== 'tool') throw ...` before reading `.presentation` — the union has no `presentation` on assistant/lifecycle items.
+
+### Lint/format/test commands
+- **Where**: repo root `package.json` scripts
+- **Pattern**: `bun run type-check` (all packages + scripts tsconfig), `bun x eslint <files> --max-warnings 0`, `bun x prettier --check <files>`, `bun test <file>`. Test files (`**/*.test.ts`) are eslint-ignored — lint only production files. Pre-commit husky/lint-staged runs `eslint --fix` + `prettier --write` on staged files.
+
+### Raw toggle contract (both ToolHistory renderers)
+- **Where**: `packages/web/src/components/workflows/NodeRoom.tsx` (`ToolHistory`), `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` (`ToolHistory`)
+- **Pattern**: `rawOpen` useState + `rawPanelId = useId()`; body bar is `flex items-center` with facts in `span.min-w-0` and the Raw `<button>` pinned `ml-auto flex-none`. `aria-expanded` always present, `aria-controls` only while open; `<pre id={rawPanelId}>` renders `toolRawPayloadJson(presentation.rawPayload)` only while open — payload never enters the DOM closed.
+- **Gotcha**: happy-dom tests find the button via `row.querySelector('button[aria-expanded]')` — `textContent === 'Raw'` breaks once the ` ▾` marker mounts. Panel lookup: `win.document.getElementById(aria-controls)` — `useId` values contain `:`/`«»` so CSS id selectors do not work.
+- **Gotcha**: eslint has BOTH `non-nullable-type-assertion-style` (rejects `x as string`) and `no-non-null-assertion` (rejects `x!`) — narrow with `if (x === null) throw ...` instead.
+- **Gotcha**: `closest()` on happy-dom elements returns happy-dom `Element` which does not type-match DOM-lib `Element & {open:boolean}` rows in `toBe(row)` — assert `closest(...)?.getAttribute('data-tool-id')` instead.
+
+### Orphaned yaml fixture pattern
+- **Where**: `packages/web/src/components/workflows/no-hitl-clarify-graph.test.ts`, `packages/workflows/src/__fixtures__/`
+- **Pattern**: `.archon/workflows/defaults/*.yaml` is tracked product config, not a fixture store — deletions there break tests that read them. Small consumed topologies inline into the test; large verbatim node sets (backticks/markdown in prompts) go to `packages/workflows/src/__fixtures__/*.fixture.yaml` read via `join(import.meta.dir, '__fixtures__', ...)`. Loader tests that asserted a deleted file's own topology were re-scoped to fixture-shape guards.
+
+### Playwright vs collapsed <details>
+- **Where**: `e2e/ui/agent-tool-row-visual.spec.ts`, `workflow-run-hitl{,-room}.spec.ts`
+- **Pattern**: `getByRole` queries the accessibility tree — descendants of a collapsed `<details>` are absent from it and return 0 matches. For closed-state assertions inside a collapsed row use a DOM locator (`row.locator('button[aria-expanded]')`); reserve `getByRole` for post-open assertions. Similarly `locator.getAttribute()` auto-waits for existence — check `.count()` first when the element legitimately may not be mounted (Raw `<pre>` closed-state).
+
+### Console unlayered wildcard border
+- **Where**: `packages/web/src/experiments/console/theme.css:142-146`
+- **Pattern**: `.console-root * { border-color: var(--border) }` is UNLAYERED and beats every Tailwind (layered) border utility incl. hover/focus/open variants. State-driven borders inside `.console-root` need a scoped unlayered override (`details[data-tool-id] button[aria-expanded]:is(:hover,:focus-visible,[aria-expanded='true'])`); pseudo-states can't be expressed inline, unlike the static-inline workarounds used by StreamCard/ProjectRow/MessageItem.
+
+---
+
+## 2026-09-18 — US-001: Shared Raw payload contract in tool-presentation core
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/tool-presentation.ts` — added `ToolRawPayload`, `rawPayload` on `ToolRowPresentation`, `captureRawPayload`/`safeRawName` helpers, `toolRawPayloadJson` export; wired `rawPayload` into `toolRowPresentation`
+- `packages/web/src/lib/tool-presentation.test.ts` — new `describe('raw payload')` suite (14 tests)
+- `packages/web/src/lib/agent-history.test.ts` — 3 pairing-boundary tests + `toolRawPayloadJson` import
+
+**Acceptance criteria verified**:
+- [x] `ToolRawPayload` exported with exactly `name`, `input`, `output` in declaration order
+- [x] `ToolRowPresentation` gained `rawPayload: ToolRawPayload`; `ToolPresentation` unchanged
+- [x] `toolRowPresentation` captures original `input.name`/`input.input`/`input.output` verbatim (not normalized label/facts)
+- [x] Total: capture failure yields `{ name: 'generic', input: undefined, output: undefined }`
+- [x] `toolRawPayloadJson` uses `JSON.stringify(v, null, 2)` on a fixed-order literal; undefined omitted, null kept
+- [x] Cyclic/bigint/throwing-name-getter → valid `{ name, error: 'payload is not serializable' }` JSON; never throws; safe string name preserved else 'generic'; fallback cannot throw; no replacer
+- [x] No React/JSON-viewer/redaction/ids/labels/icons/facts/renderer state added
+- [x] Tests prove name fidelity, structural preservation, omission/null semantics, key order, escaping, fallbacks, totality
+- [x] agent-history.test.ts proves pairing boundary (paired, pending-without-output, result-arrival keeps id + updates output)
+- [x] `bun test` on both files (170 pass), `bun run type-check`, scoped eslint, and prettier check all pass; only the 3 files changed
+
+**Learnings**:
+- `ToolRowPresentation` is only ever constructed inside `toolRowPresentation` — adding a required field breaks no call sites; NodeRoom/ConsoleAgentHistoryList only consume fields.
+- The codebase's own precedent (`safePresentation`, `typeof input.name === 'string'` coercion) settled the malformed-name semantics: coerce the bad field, keep readable fields, full fallback only on a throwing read.
+- Card fields for the payload come straight from `toCard` in pair-tool-transcript.ts: `input` = call??result, `output` = result??call, `name` = `call ?? result` — the shared core receives the already-paired trio, no pairing work needed in tool-presentation.
+
+---
+
+## 2026-09-19 — US-002: Raw toggle on Legacy + Console tool rows; remove formatToolIo
+
+**Status**: PASSED
+**Commit**: fc90c62c (+ chore(unblock) 4ebe24a8, d85ca922)
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — rawOpen state + useId panel id; Raw button + conditional pre; nested Input/Output details removed; invalid-detail guard; guard comment clarified
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — same contract with Console `!` overrides
+- `packages/web/src/lib/pair-tool-transcript.ts` — `formatToolIo` removed
+- `NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx`, `ConsoleNodeRoom.test.tsx`, `ConsoleExecutionHistory.test.tsx`, `pair-tool-transcript.test.ts` — focused coverage per phase-02
+
+**Acceptance criteria verified**:
+- [x] Both ToolHistory components add `rawOpen` + `useId()` panel id
+- [x] Nested `Input`/`Output` `<details>` removed from both renderers
+- [x] Facts left/wrapping; Raw button final/right (`ml-auto flex-none`)
+- [x] Native `<button>` "Raw", aria-hidden ` ▾` only open, accurate `aria-expanded`, `aria-controls` only while open
+- [x] min-h-[24px] (24px+ target), explicit closed/hover/focus-visible/open classes, bright-border/primary-text states, Console `!` overrides kept
+- [x] `<pre id>` only while open, after body bar, `toolRawPayloadJson(presentation.rawPayload)`, full documented class list
+- [x] View full output/disabled/error/retry stay after the Raw slot; work in both Raw states
+- [x] Detail success requires tool message + defined output, re-presents facts + rawPayload; invalid detail → `Full output is not available for this call`, old presentation kept, retry offered
+- [x] Nested-toggle propagation guard preserved with clarified invariant comment
+- [x] No payload/pre in DOM while closed; close removes panel not row; pending→paired keeps card id + Raw open + updated output; new item id mounts closed; no live region; no dangerouslySetInnerHTML
+- [x] `formatToolIo` removed from lib + test; `rg "formatToolIo|>Input<|>Output<" packages/web/src` → only negative test assertions
+- [x] All four component files pass (19+29+36+9); `bun --filter @archon/web test` 902 pass; `bun run type-check`, `bun run lint`, `bun run format:check` all clean
+
+**Learnings**:
+- `bun --filter @archon/web test` was red on the clean base — two pre-existing failures qualified via the unblock protocol and fixed as separate `chore(unblock):` commits (no story changes inside them).
+- SSR `renderToStaticMarkup` renders `<details>` children regardless of `open` — closed-Raw defaults ARE assertable statically, but open-state assertions must use the happy-dom mounts.
+- Card id stability (`toCard` id = call row id) is what keeps `rawOpen` alive across pending→paired re-projections; a different `data-tool-id` always means a fresh mount.
+
+**Blocker Ledger**:
+- BLOCKER US-002 | gate=`bun --filter @archon/web test` | cause=`no-hitl-clarify-graph.test.ts` ENOENT on `.archon/workflows/defaults/speckit-ralph-native-no-hitl-feature.yaml` (deleted in 16b01a72; identical fingerprint on clean base) | action=chore(unblock) 4ebe24a8 — inlined the consumed node topology into the test | 2026-09-19
+- BLOCKER US-002 | gate=`bun run format:check` | cause=`plans/.../prd.md` pre-existing prettier violations (file untouched by story diff) | action=chore(unblock) d85ca922 — prettier --write | 2026-09-19
+
+---
+
+## 2026-09-19 — US-003: E2E spec migration, visual/a11y/responsive verification, and delivery
+
+**Status**: PASSED
+**Commit**: 2bc643e4 (+ chore(unblock) 8b685c89, a254f69f)
+**Files changed**:
+- `e2e/ui/agent-tool-row-visual.spec.ts` — Raw anatomy/states/keyboard loop both surfaces, Chromium CDP AX-tree evidence (`rawAxEvidence`), contrast tones incl. Raw label/JSON, 460px added to viewport sweep, evidence captures + `raw-toggle-contrast.json`, header comment cites the Story 1.2 supplement
+- `e2e/ui/workflow-run-hitl.spec.ts` — 2 collapsed-contract sites migrated: one `button[aria-expanded]` per collapsed row, closed, no nested details/pre, payload absent from DOM
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — Legacy expand → closed→open Raw → canonical `{name,input,output}` parse; Console closed-Raw; long-history journey asserts View full output fetch → tail absent while closed → present after open → no horizontal overflow + evidence capture
+- `packages/web/src/experiments/console/theme.css` — scoped unlayered `border-color: var(--border-bright)` for Raw `:hover/:focus-visible/[aria-expanded='true']` (wildcard cascade repair found by verification)
+- `plans/260918-1038-issue-175-raw-payload-toggle/reports/` — `visual-acceptance.md` Story 1.2 supplement + `evidence/` captures
+
+**Acceptance criteria verified**:
+- [x] All 7 old Input/Output assertion sites migrated; `rg` finds only intentional negative guards in NodeRoom.test.tsx + required `View full output` references
+- [x] Collapsed/default contract on both surfaces (closed Raw, no payload markup)
+- [x] Legacy open-Raw canonical JSON `name:'Read'`, `input:{path:'HITL_TOOL_INPUT.txt'}`, `output:'HITL_TOOL_OUTPUT_VISIBLE'`; Console closed-Raw; long-history tail via Raw + overflow assertions + evidence png
+- [x] Visual surface loop: placement, 24px target, closed/hover/focus/open computed styles, panel surface/typography, click toggle in-out, Tab→Enter/Space, focus ring, CDP AX role/name/expanded/controls
+- [x] Viewports 1440/1024/768/460/390 + 200% zoom, no page/panel horizontal scroll
+- [x] Contrast: closed label 8.37/6.14, open label 17.72/16.23, JSON 18.77/16.52 (console/legacy) — all ≥ 4.5 AA
+- [x] No axe dep, no new expensive fixture, no real credentials; evidence + visual-acceptance.md written
+- [x] `bun run --cwd e2e typecheck` clean; `test:ui:hitl` 36 pass / 3 env skips; `bun run validate` fully green (236 invocations, 0 fail, 11,080 pass)
+- [x] PR delivery + `hitl-run-room.json` verify-map scenarios are parent-workflow-owned (map already covers console-tool-output/legacy-tool-output/history-complete); sprint-status flip recorded for the ak-feature workflow per AC
+
+**Learnings**:
+- `getByRole` cannot see inside a collapsed `<details>` (AX tree omits it) — DOM locators for closed state, role queries after opening.
+- `locator.getAttribute()` waits for existence — `.count()` first for legitimately-absent elements, or a closed-state AX read hangs the full test timeout.
+- The Console `.console-root *` wildcard is unlayered → outranks ALL Tailwind layered border utilities; verification caught a real renderer defect (hover/focus/open bright border unreachable) fixed by a scoped unlayered rule.
+- Playwright `xpath=..` parent selector + `document.getElementById` for `useId()` ids (contain `:`/`«»`, unsafe for CSS selectors).
+- Chromium AX `controls` property arrives as `relatedSources`/`idref` encodings — `rawAxEvidence` accepts all shapes and polls because Chromium updates the tree lazily.
+
+**Blocker Ledger**:
+- BLOCKER US-003 | gate=`bun run validate` (check:bundled) | cause=`bundled-defaults.generated.ts` stale after 16b01a72 deletions (same fingerprint on clean base) | action=chore(unblock) 8b685c89 — regenerated embed | 2026-09-19
+- BLOCKER US-003 | gate=`bun run validate` (@archon/workflows test) | cause=7 ENOENT on `speckit-ralph-native-feature.yaml`/`speckit-feature.yaml` deleted in 16b01a72, plus two loader tests asserting the deleted topology — all reproduced on clean base | action=chore(unblock) a254f69f — verbatim node sets extracted to `packages/workflows/src/__fixtures__/`, executor helpers pointed at them, loader tests re-scoped to fixture-shape guards | 2026-09-19
+
+---

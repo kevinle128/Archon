@@ -1,4 +1,8 @@
-import { type Locator, type Page } from '@playwright/test';
+import { mkdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
@@ -33,6 +37,16 @@ const WIDTH_TOLERANCE_PX = 2;
 const RELOAD_RATIO_TOLERANCE = 0.02;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
+
+/** Story 1.2 evidence directory — the Console long-payload Raw capture lands here. */
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const STORY_12_EVIDENCE_DIR = join(
+  REPO_ROOT,
+  'plans',
+  '260918-1038-issue-175-raw-payload-toggle',
+  'reports',
+  'evidence'
+);
 
 async function pageWaitStarter(
   browser: Parameters<typeof createIdentityContext>[0],
@@ -177,10 +191,24 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage si
   const ratio = await roomRatio(page, 'legacy');
   expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
   expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
-  // Output sits behind the row's own closed disclosures — open them first.
-  await room.locator('details[data-tool-id] > summary').first().click();
-  await room.getByText('Output', { exact: true }).first().click();
-  await expect(room.getByText(HITL_TOOL_OUTPUT)).toBeVisible({ timeout: T.medium });
+  // The payload sits behind the row's closed Raw control: expand the row,
+  // confirm nothing is mounted, then open Raw for the canonical JSON.
+  const toolRow = room.locator('details[data-tool-id]').first();
+  await toolRow.locator('summary').first().click();
+  const rawToggle = toolRow.getByRole('button', { name: 'Raw', exact: true });
+  await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toolRow.locator('pre')).toHaveCount(0);
+  await expect(toolRow.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
+  await rawToggle.click();
+  const rawPanel = toolRow.locator('pre');
+  await expect(rawPanel).toBeVisible({ timeout: T.medium });
+  const rawText = await rawPanel.textContent();
+  expect(rawText).toBeTruthy();
+  const payload = JSON.parse(rawText ?? '') as Record<string, unknown>;
+  expect(Object.keys(payload)).toEqual(['name', 'input', 'output']);
+  expect(payload.name).toBe('Read');
+  expect(payload.input).toEqual({ path: 'HITL_TOOL_INPUT.txt' });
+  expect(payload.output).toBe(HITL_TOOL_OUTPUT);
 });
 
 test('[P1] [V:hitl.graph-selection] Graph selection restores the last explicit execution', async ({
@@ -246,9 +274,16 @@ test('[P1] [V:hitl.agent-history] HITL agent history shows a readable tool row w
   await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
   await expect(summary).toContainText('succeeded');
   await expect(summary).toContainText(formatRecordedDuration(Number(recordedDuration)));
-  await expect(toolRow.getByText('Input', { exact: true })).toBeHidden();
-  await expect(toolRow.getByText('Output', { exact: true })).toBeHidden();
-  await expect(toolRow.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
+  // Closed-Raw contract on the default history: the control exists but stays
+  // hidden inside the collapsed row, closed, with no payload mounted. DOM
+  // selector — the hidden control is absent from the accessibility tree.
+  const rawToggle = toolRow.locator('button[aria-expanded]');
+  await expect(rawToggle).toHaveCount(1);
+  await expect(rawToggle).toBeHidden();
+  await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(toolRow.locator('details')).toHaveCount(0);
+  await expect(toolRow.locator('pre')).toHaveCount(0);
+  await expect(toolRow.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
 });
 
 test('[P1] [V:hitl.execution-scope] Execution selector requests the selected scope', async ({
@@ -610,7 +645,7 @@ test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundar
 test('[P1] [V:hitl.history-complete] Complete history renders every distinct tool call', async ({
   page,
   archon,
-}) => {
+}, testInfo: TestInfo) => {
   test.setTimeout(T.xlong);
   await page.setViewportSize(SPLIT_VIEWPORT);
   const started = await requireLongHistoryFixture(page, archon);
@@ -639,17 +674,42 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
       )
   ).sort();
   expect(visibleIds).toEqual(storedIds);
-  // The loadable row's button lives inside its closed disclosure — the AX tree
-  // only exposes it once the row and its Output diagnostic are open.
+  // The full-output action is offered on the expanded row before Raw is ever
+  // opened; the fetched tail stays out of the DOM until Raw is opened, then
+  // renders inside the wrapping panel without sideways scroll.
   const lastRow = room.locator('details[data-tool-id]').last();
   await lastRow.locator('summary').first().click();
-  await lastRow.getByText('Output', { exact: true }).click();
-  const viewFullOutput = room.getByRole('button', { name: 'View full output' });
+  const rawToggle = lastRow.getByRole('button', { name: 'Raw', exact: true });
+  await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(lastRow.locator('pre')).toHaveCount(0);
+  const viewFullOutput = lastRow.getByRole('button', { name: 'View full output' });
   await expect(viewFullOutput).toHaveCount(1);
-  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);
+  const detailPath =
+    `/api/workflows/runs/${encodeURIComponent(started.runId)}` +
+    `/nodes/${encodeURIComponent(HITL_LONG_NODE)}/messages/`;
+  const detailResponse = page.waitForResponse(
+    res => res.request().method() === 'GET' && new URL(res.url()).pathname.startsWith(detailPath),
+    { timeout: T.medium }
+  );
   await viewFullOutput.click();
-  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toBeVisible({
-    timeout: T.medium,
+  expect((await detailResponse).status()).toBe(200);
+  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);
+  await rawToggle.click();
+  const rawPanel = lastRow.locator('pre');
+  await expect(rawPanel).toContainText('[e2e-fake] full output tail', { timeout: T.medium });
+  const panelOverflow = await rawPanel.evaluate(el => el.scrollWidth - el.clientWidth);
+  expect(panelOverflow, 'open Raw panel keeps its 20k payload wrapped').toBeLessThanOrEqual(1);
+  const pageOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(pageOverflow, 'page has no horizontal scroll with long Raw open').toBeLessThanOrEqual(1);
+  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  const rawShot = await rawPanel.screenshot({
+    path: join(STORY_12_EVIDENCE_DIR, 'console-long-raw-open.png'),
+  });
+  await testInfo.attach('console-long-raw-open.png', {
+    body: rawShot,
+    contentType: 'image/png',
   });
 });
 

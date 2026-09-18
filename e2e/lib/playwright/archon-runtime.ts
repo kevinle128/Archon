@@ -32,6 +32,14 @@ const HITL_TWO_ASKS_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-hitl-two-asks.yaml'
 );
+const TASK_DISPATCH_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-task-dispatch.yaml'
+);
 
 /** Name of the seeded workflow whose single AI node runs on the fake provider. */
 export const E2E_WORKFLOW_NAME = 'e2e-usage-record';
@@ -48,6 +56,9 @@ export const HITL_ASK_NODE = 'ask-starter';
 export const HITL_LONG_NODE = 'long-history';
 export const HITL_ASK_ANSWER_NODE = 'ask-answer';
 export const HITL_ASK_DECLINE_NODE = 'ask-decline';
+export const E2E_TASK_DISPATCH_WORKFLOW_NAME = 'e2e-task-dispatch';
+export const TASK_DISPATCH_OMP_NODE = 'omp-dispatch';
+export const TASK_DISPATCH_CLAUDE_NODE = 'claude-dispatch';
 
 /**
  * The one model the seeded config prices. A usage entry for
@@ -118,6 +129,8 @@ export interface ArchonRuntime {
   runHitlLongHistoryWorkflow(): Promise<CliRunResult>;
   /** Run two parallel AskHuman nodes so answered and declined records coexist. */
   runHitlTwoAsksWorkflow(): Promise<CliRunResult>;
+  /** Run the two-node task-dispatch fixture (OMP batch + Claude single) to completion. */
+  runTaskDispatchWorkflow(): Promise<CliRunResult>;
   /**
    * Start the HITL fixture without waiting for CLI exit. `runId` resolves as
    * soon as the run row exists. Use only while work is still running.
@@ -340,6 +353,10 @@ async function startArchonRuntime(
     join(home, 'workflows', `${E2E_HITL_TWO_ASKS_WORKFLOW_NAME}.yaml`),
     readFileSync(HITL_TWO_ASKS_WORKFLOW_FIXTURE)
   );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_TASK_DISPATCH_WORKFLOW_NAME}.yaml`),
+    readFileSync(TASK_DISPATCH_WORKFLOW_FIXTURE)
+  );
 
   writeFileSync(
     join(home, 'config.yaml'),
@@ -476,6 +493,17 @@ async function startArchonRuntime(
       'workflow',
       'run',
       E2E_HITL_TWO_ASKS_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+  };
+
+  const runTaskDispatchWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_TASK_DISPATCH_WORKFLOW_NAME,
       '--folder',
       '--json',
     ]);
@@ -654,6 +682,7 @@ async function startArchonRuntime(
     runUnownedHitlWorkflow,
     runHitlLongHistoryWorkflow,
     runHitlTwoAsksWorkflow,
+    runTaskDispatchWorkflow,
     startHitlWorkflow,
     resumeWorkflow,
     runHitlWorkflowViaWeb,

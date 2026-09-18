@@ -259,7 +259,7 @@ describe('ConsoleNodeRoom', () => {
     );
   }
 
-  test('renders agent text, tool JSON, status entries, and slices a selected loop iteration', async () => {
+  test('renders agent text, tool rows, status entries, and slices a selected loop iteration', async () => {
     const calls: [string, string][] = [];
     const loadMessages = (runId: string, nodeId: string): Promise<WorkflowNodeMessagesResponse> => {
       calls.push([runId, nodeId]);
@@ -288,12 +288,15 @@ describe('ConsoleNodeRoom', () => {
     const toolSummary = toolRowEl?.querySelector('summary');
     expect(toolSummary?.textContent).toContain('Read');
     expect(toolSummary?.textContent).toContain('a.ts');
-    // Serialized payloads stay recorded inside the row's closed diagnostics.
-    for (const diagnostic of Array.from(toolRowEl?.querySelectorAll('details') ?? [])) {
-      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-    }
-    expect(toolRowEl?.textContent).toContain('"path": "a.ts"');
-    expect(toolRowEl?.textContent).toContain('"ok": true');
+    // Serialized payloads stay out of the DOM while the row's Raw panel is closed.
+    const raw = toolRowEl?.querySelector('button[aria-expanded]');
+    expect(raw?.textContent).toBe('Raw');
+    expect(raw?.getAttribute('aria-expanded')).toBe('false');
+    expect(raw?.getAttribute('aria-controls')).toBeNull();
+    expect(toolRowEl?.querySelectorAll('details')).toHaveLength(0);
+    expect(toolRowEl?.querySelector('pre')).toBeNull();
+    expect(toolRowEl?.textContent).not.toContain('"path": "a.ts"');
+    expect(toolRowEl?.textContent).not.toContain('"ok": true');
     expect(host.textContent).toContain('iteration_started');
     expect(host.textContent).toContain('iteration_failed');
     expect(host.textContent).toContain('waiting on you');
@@ -1060,12 +1063,11 @@ describe('ConsoleNodeRoom', () => {
     const bashSummary = bashRow?.querySelector('summary');
     expect(bashSummary?.textContent).toContain('Bash');
     expect(bashSummary?.textContent).toContain(longCmd);
-    // Nested Input/Output diagnostics exist in the DOM but stay closed.
-    const diagnostics = Array.from(bashRow?.querySelectorAll('details') ?? []);
-    expect(diagnostics).toHaveLength(2);
-    for (const diagnostic of diagnostics) {
-      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-    }
+    // The Raw control stays closed; no payload panel or nested diagnostics exist.
+    const bashRaw = bashRow?.querySelector('button[aria-expanded]');
+    expect(bashRaw?.getAttribute('aria-expanded')).toBe('false');
+    expect(bashRow?.querySelectorAll('details')).toHaveLength(0);
+    expect(bashRow?.querySelector('pre')).toBeNull();
   });
 
   test('Tool toggle hides only tool cards and System toggle hides only lifecycle rows', async () => {
@@ -1253,6 +1255,21 @@ describe('ConsoleNodeRoom', () => {
       return button as unknown as HTMLButtonElement;
     }
 
+    function rawButton(row: Element): HTMLButtonElement {
+      const button = row.querySelector('button[aria-expanded]');
+      if (button === null) throw new Error(`Raw button missing: ${row.innerHTML}`);
+      return button as unknown as HTMLButtonElement;
+    }
+
+    function rawPanel(row: Element): HTMLElement {
+      const button = rawButton(row);
+      const panelId = button.getAttribute('aria-controls');
+      if (panelId === null) throw new Error(`Raw panel id missing: ${row.innerHTML}`);
+      const panel = win.document.getElementById(panelId);
+      if (panel === null) throw new Error(`Raw panel ${panelId} missing`);
+      return panel as unknown as HTMLElement;
+    }
+
     /** Text a screen reader announces: skips aria-hidden, uses chip aria-label. */
     function summaryAccessibleName(summary: Element): string {
       const parts: string[] = [];
@@ -1316,17 +1333,17 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.className).toContain('focus-visible:outline-offset-2');
       expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
       expect(summary.className).toContain('focus-visible:outline-accent-bright');
-      // Diagnostics exist in the DOM but stay closed behind the summary.
-      const diagnostics = row.querySelectorAll('details');
-      expect(diagnostics).toHaveLength(2);
-      for (const diagnostic of Array.from(diagnostics)) {
-        expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-        expect(diagnostic.querySelector('summary')?.className).toContain(
-          'focus-visible:outline-accent-bright!'
-        );
-      }
-      expect(row.textContent).toContain('Input');
-      expect(row.textContent).toContain('Output');
+      // One closed Raw control sits in the body; the serialized payload stays out
+      // of the DOM while it is closed and the nested Input/Output diagnostics are gone.
+      const raw = rawButton(row);
+      expect(raw.textContent).toBe('Raw');
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
+      expect(raw.getAttribute('aria-controls')).toBeNull();
+      expect(raw.className).toContain('min-h-[24px]');
+      expect(raw.className).toContain('focus-visible:outline-accent-bright!');
+      expect(row.querySelectorAll('details')).toHaveLength(0);
+      expect(row.querySelector('pre')).toBeNull();
+      expect(row.textContent).not.toContain('chunk');
     });
 
     test('pointer toggles the row and the choice survives polling re-renders', async () => {
@@ -1478,34 +1495,187 @@ describe('ConsoleNodeRoom', () => {
       expect(toolRow('b').open).toBe(false);
     });
 
-    test('nested Input/Output toggles do not mark the outer row touched', async () => {
+    test('the Raw toggle mounts a labelled payload panel and closing it leaves the row open', async () => {
       await act(async () => {
         mountList(historyItems(READ_ROWS));
       });
       const row = toolRow('t-1');
-      const inputDiagnostic = row.querySelectorAll('details')[0] as Element & { open: boolean };
       await act(async () => {
-        click(inputDiagnostic.querySelector('summary') as Element);
+        click(rowSummary(row));
       });
-      expect(inputDiagnostic.open).toBe(true);
-      expect(row.open).toBe(false);
+      expect(row.open).toBe(true);
 
-      // Still untouched: the failed transition auto-opens the outer row; the nested
-      // diagnostic keeps its own state.
-      const failedRows: readonly WorkflowNodeMessage[] = [
-        ...(READ_ROWS[0] === undefined ? [] : [READ_ROWS[0]]),
-        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'boom', {
-          outcome: 'error',
-          exit_code: 2,
-        }),
+      const raw = rawButton(row);
+      await act(async () => {
+        click(raw);
+      });
+      // Toggling Raw never toggles the outer disclosure.
+      expect(row.open).toBe(true);
+      expect(raw.getAttribute('aria-expanded')).toBe('true');
+      // The ▾ marker is decorative; the accessible name stays "Raw".
+      const marker = raw.querySelector('span[aria-hidden="true"]');
+      expect(marker?.textContent).toBe(' ▾');
+      expect(raw.className).toContain('border-border-bright');
+      expect(raw.className).toContain('text-text-primary');
+
+      // aria-controls appears only while open and resolves to this row's panel.
+      const panelId = raw.getAttribute('aria-controls');
+      if (panelId === null) throw new Error('aria-controls missing');
+      const panel = win.document.getElementById(panelId);
+      expect(panel).not.toBeNull();
+      expect(panel?.closest('details[data-tool-id]')?.getAttribute('data-tool-id')).toBe('t-1');
+      expect(panel?.tagName).toBe('PRE');
+      expect(panel?.className).toContain('bg-surface-inset');
+      expect(panel?.className).toContain('rounded-[6px]');
+      expect(panel?.className).toContain('px-2.5');
+      expect(panel?.className).toContain('py-2');
+      expect(panel?.className).toContain('text-text-primary');
+      expect(panel?.textContent).toBe(
+        JSON.stringify({ name: 'Read', input: { path: 'a.ts' }, output: 'chunk' }, null, 2)
+      );
+
+      await act(async () => {
+        click(raw);
+      });
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
+      expect(raw.getAttribute('aria-controls')).toBeNull();
+      expect(win.document.getElementById(panelId)).toBeNull();
+      expect(row.querySelector('pre')).toBeNull();
+      expect(row.textContent).not.toContain('chunk');
+      expect(row.open).toBe(true);
+    });
+
+    test('sibling history lists get distinct useId panel ids that resolve to their own panels', async () => {
+      const firstItems = historyItems([
+        callRow('t-1', 10, 'Read', { path: 'a.ts' }),
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk-one', { outcome: 'success' }),
+      ]);
+      const secondItems = historyItems([
+        callRow('t-2', 12, 'Read', { path: 'b.ts' }),
+        resultRow('t-2', 13, 'Read', { path: 'b.ts' }, 'chunk-two', { outcome: 'success' }),
+      ]);
+      const listProps = {
+        showToolCalls: true,
+        showSystem: true,
+        onLoadFullOutput: async (): Promise<unknown> => undefined,
+      };
+      await act(async () => {
+        root.render(
+          createElement(
+            'div',
+            null,
+            createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+              ...listProps,
+              items: firstItems,
+            }),
+            createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+              ...listProps,
+              items: secondItems,
+            })
+          )
+        );
+      });
+      const first = toolRow('t-1');
+      const second = toolRow('t-2');
+      await act(async () => {
+        click(rowSummary(first));
+        click(rowSummary(second));
+        click(rawButton(first));
+        click(rawButton(second));
+      });
+      const firstId = rawButton(first).getAttribute('aria-controls');
+      const secondId = rawButton(second).getAttribute('aria-controls');
+      if (firstId === null || secondId === null) throw new Error('aria-controls missing');
+      expect(firstId).not.toBe(secondId);
+      const firstPanel = win.document.getElementById(firstId);
+      const secondPanel = win.document.getElementById(secondId);
+      expect(firstPanel?.textContent).toContain('"output": "chunk-one"');
+      expect(secondPanel?.textContent).toContain('"output": "chunk-two"');
+      expect(firstPanel?.closest('details[data-tool-id]')?.getAttribute('data-tool-id')).toBe(
+        't-1'
+      );
+      expect(secondPanel?.closest('details[data-tool-id]')?.getAttribute('data-tool-id')).toBe(
+        't-2'
+      );
+    });
+
+    test('a pending card keeps Raw open and updates the panel when its result pairs', async () => {
+      const pendingRows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Read', { path: 'a.ts' }),
       ];
       await act(async () => {
-        mountList(historyItems(failedRows));
+        mountList(historyItems(pendingRows));
+      });
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+        click(rawButton(row));
+      });
+      expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+      expect(rawPanel(row).textContent).not.toContain('"output"');
+
+      // The paired result keeps the same card id: Raw stays open and picks up output.
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
       });
       const updated = toolRow('t-1');
       expect(updated.open).toBe(true);
-      const updatedInput = updated.querySelectorAll('details')[0] as Element & { open: boolean };
-      expect(updatedInput.open).toBe(true);
+      expect(rawButton(updated).getAttribute('aria-expanded')).toBe('true');
+      expect(rawPanel(updated).textContent).toContain('"output": "chunk"');
+    });
+
+    test('a newly keyed history item starts with Raw closed', async () => {
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+        click(rawButton(row));
+      });
+      expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+
+      const otherRows: readonly WorkflowNodeMessage[] = [
+        callRow('t-2', 12, 'Bash', { command: 'ls' }),
+        resultRow('t-2', 13, 'Bash', { command: 'ls' }, 'out', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(otherRows));
+      });
+      expect(host.querySelector('details[data-tool-id="t-1"]')).toBeNull();
+
+      // The same card id returning later mounts fresh: Raw is closed again.
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const remounted = toolRow('t-1');
+      expect(rawButton(remounted).getAttribute('aria-expanded')).toBe('false');
+      expect(rawButton(remounted).getAttribute('aria-controls')).toBeNull();
+      expect(remounted.querySelector('pre')).toBeNull();
+    });
+
+    test('the Raw panel wraps long unbroken values inside the inset surface', async () => {
+      const longValue = `x/${'y'.repeat(300)}.ts`;
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Read', { path: longValue }),
+        resultRow('t-1', 11, 'Read', { path: longValue }, longValue, { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+        click(rawButton(row));
+      });
+      const panel = rawPanel(row);
+      expect(panel.className).toContain('whitespace-pre-wrap');
+      expect(panel.className).toContain('[overflow-wrap:anywhere]');
+      expect(panel.className).toContain('min-w-0');
+      expect(panel.className).toContain('max-w-full');
+      expect(panel.className).toContain('border');
+      expect(panel.className).toContain('font-mono');
+      expect(panel.textContent).toContain(longValue);
     });
 
     test('focus stays on the summary when later items append to the list', async () => {
@@ -1638,8 +1808,10 @@ describe('ConsoleNodeRoom', () => {
       expect(rowSummary(row).textContent).toContain('truncated');
       await act(async () => {
         click(rowSummary(row));
+        click(rawButton(row));
       });
       expect(row.open).toBe(true);
+      expect(rawPanel(row).textContent).toContain('"output": "chunk"');
       const button = rowButton(row, 'View full output');
       await act(async () => {
         click(button);
@@ -1648,7 +1820,8 @@ describe('ConsoleNodeRoom', () => {
       await act(async () => {
         resolveLoad?.('FULL OUTPUT');
       });
-      expect(row.textContent).toContain('FULL OUTPUT');
+      // The Raw panel re-renders from the complete payload.
+      expect(rawPanel(row).textContent).toContain('"output": "FULL OUTPUT"');
       // The row re-presented with output_state 'full': the truncated badge is gone.
       expect(rowSummary(row).textContent).not.toContain('truncated');
       expect(row.open).toBe(true);
@@ -1693,6 +1866,7 @@ describe('ConsoleNodeRoom', () => {
       await act(async () => {
         click(rowSummary(row));
       });
+      // Loading works with Raw closed: the payload only enters the DOM on demand.
       const button = rowButton(row, 'View full output');
       await act(async () => {
         click(button);
@@ -1702,9 +1876,57 @@ describe('ConsoleNodeRoom', () => {
       await act(async () => {
         click(retry);
       });
-      expect(row.textContent).toContain('FULL');
       expect(row.textContent).not.toContain('network down');
       expect(attempts).toBe(2);
+      // The full payload is loaded even though Raw stayed closed the whole time.
+      expect(row.querySelector('pre')).toBeNull();
+      await act(async () => {
+        click(rawButton(row));
+      });
+      expect(rawPanel(row).textContent).toContain('"output": "FULL"');
+      expect(rowSummary(row).textContent).not.toContain('truncated');
+    });
+
+    test('an unusable full-output detail keeps the old presentation, reports the error, and retries', async () => {
+      let attempts = 0;
+      const onLoadFullOutput = async (): Promise<unknown> => {
+        attempts++;
+        if (attempts === 1) return undefined;
+        return 'FULL';
+      };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+          outcome: 'success',
+          output_state: 'truncated',
+          full_output_available: true,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows), onLoadFullOutput);
+      });
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+        click(rawButton(row));
+      });
+      const button = rowButton(row, 'View full output');
+
+      // A detail response without output keeps the old presentation and offers retry.
+      await act(async () => {
+        click(button);
+      });
+      expect(row.textContent).toContain('Full output is not available for this call');
+      expect(rowSummary(row).textContent).toContain('truncated');
+      expect(rawPanel(row).textContent).toContain('"output": "chunk"');
+
+      await act(async () => {
+        click(rowButton(row, 'Retry'));
+      });
+      expect(row.textContent).not.toContain('not available');
+      expect(attempts).toBe(2);
+      expect(rawPanel(row).textContent).toContain('"output": "FULL"');
+      expect(rowSummary(row).textContent).not.toContain('truncated');
     });
 
     test('drained tool calls mount as collapsed disclosure rows in the selected room', async () => {
@@ -1749,9 +1971,9 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.textContent).toContain('Read');
       expect(summary.textContent).toContain('a.ts');
       expect(summary.textContent).toContain('succeeded');
-      for (const nested of Array.from(drained.querySelectorAll('details'))) {
-        expect((nested as Element & { open: boolean }).open).toBe(false);
-      }
+      expect(drained.querySelectorAll('details')).toHaveLength(0);
+      expect(rawButton(drained).getAttribute('aria-expanded')).toBe('false');
+      expect(drained.querySelector('pre')).toBeNull();
     });
 
     test('a poll-updated failure flips an untouched drained row open once', async () => {
@@ -1817,6 +2039,342 @@ describe('ConsoleNodeRoom', () => {
       const summary = rowSummary(failed);
       expect(summary.textContent).toContain('failed');
       expect(summary.textContent).toContain('exit 2');
+    });
+
+    const OMP_TASK_INPUT: Record<string, unknown> = {
+      context: 'Read-only review. **Do not edit.**\n\n- skip formatters\n- report file:line',
+      tasks: [
+        {
+          name: 'ScoutBackoff',
+          agent: 'scout',
+          task: 'Map every call site of retry_backoff and backoff across crates/, recording file:line, the attempt argument, whether the caller overrides the ceiling, and any nearby jitter configuration — TAILMARKER.',
+        },
+        {
+          name: 'ScoutCI',
+          agent: 'scout',
+          task: 'Where is CARGO_BUILD_JOBS pinned in .github/workflows?',
+        },
+      ],
+    };
+
+    const OMP_TASK_MESSAGES: readonly WorkflowNodeMessage[] = [
+      callRow('task-1', 10, 'Task', OMP_TASK_INPUT, { full_output_available: true }),
+      resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'done', {
+        outcome: 'success',
+        full_output_available: true,
+      }),
+    ];
+
+    function subtaskCard(row: Element, index: number): Element & { open: boolean } {
+      const card = row.querySelector(`details[data-subtask-index="${index}"]`);
+      if (card === null) throw new Error(`subtask card ${index} missing: ${row.innerHTML}`);
+      return card as Element & { open: boolean };
+    }
+
+    function cardSummary(card: Element): HTMLElement {
+      const summary = card.querySelector('summary');
+      if (summary === null) throw new Error(`card summary missing: ${card.innerHTML}`);
+      return summary as unknown as HTMLElement;
+    }
+
+    test('an opened OMP batch row renders the shared body through the selected room', async () => {
+      const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [...OMP_TASK_MESSAGES],
+      });
+      await act(async () => {
+        renderRoom({ run: run({ id: 'run-omp' }), loadMessages });
+      });
+      await flushUntil(
+        'task row',
+        () => host.querySelector('details[data-tool-id="task-1"]') !== null
+      );
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(true);
+      expect(row.textContent).toContain('task · batch · 2 subtasks');
+      expect(row.textContent).toContain('Read-only review.');
+      const cards = row.querySelectorAll('details[data-subtask-index]');
+      expect(cards).toHaveLength(2);
+      const firstSummary = cardSummary(subtaskCard(row, 0));
+      expect(firstSummary.textContent).toContain('scout');
+      expect(firstSummary.textContent).toContain('ScoutBackoff');
+      expect(firstSummary.textContent).toContain('Map every call site');
+      expect(firstSummary.textContent).not.toContain('TAILMARKER');
+      const firstCard = subtaskCard(row, 0);
+      await act(async () => {
+        click(firstSummary);
+      });
+      expect(firstCard.open).toBe(true);
+      expect(firstCard.textContent).toContain('TAILMARKER');
+      // Raw lives in the body bar and precedes the cards.
+      const raw = rawButton(row);
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
+      for (const card of Array.from(cards)) {
+        expect(raw.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      }
+    });
+
+    test('hidden tool calls hide task bodies too', async () => {
+      const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [...OMP_TASK_MESSAGES],
+      });
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-hidden' }),
+          loadMessages,
+          showToolCalls: false,
+        });
+      });
+      await flush();
+      expect(host.querySelector('details[data-tool-id]')).toBeNull();
+      expect(host.textContent).not.toContain('ScoutBackoff');
+      expect(host.textContent).not.toContain('task · batch');
+    });
+
+    test('a Claude single dispatch renders one card with the single-dispatch bar and no context', async () => {
+      const claudeInput: Record<string, unknown> = {
+        description: 'Scout retry-backoff call sites',
+        prompt: 'Find every caller of retry_backoff() and backoff() in crates/.',
+      };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('task-claude', 10, 'Agent', claudeInput),
+        resultRow('task-claude', 11, 'Agent', claudeInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('task-claude');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.textContent).toContain('task · single dispatch');
+      expect(row.textContent).not.toContain('task · batch');
+      const cards = row.querySelectorAll('details[data-subtask-index]');
+      expect(cards).toHaveLength(1);
+      const summary = cardSummary(subtaskCard(row, 0));
+      // Null agent: no agent span and no orphan '·' separator.
+      expect(summary.textContent).not.toContain('·');
+      expect(summary.textContent).toContain('Scout retry-backoff call sites');
+      expect(summary.textContent).toContain('— Find every caller');
+    });
+
+    test('malformed task input renders bounded generic fields with no cards or count badge', async () => {
+      const badInput: Record<string, unknown> = { tasks: 'nope', note: 'x' };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('task-bad', 10, 'Task', badInput),
+        resultRow('task-bad', 11, 'Task', badInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('task-bad');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+      expect(rowSummary(row).textContent).not.toContain('subagent');
+      expect(row.textContent).toContain('tasks');
+      expect(row.textContent).toContain('nope');
+      expect(row.textContent).toContain('note');
+    });
+
+    test('task context markdown suppresses images and unsafe links but keeps structure', async () => {
+      const hostileInput: Record<string, unknown> = {
+        context:
+          'Intro **bold** tail\n\n- first\n- second\n\n![tracker](https://tracker.example/pixel.png)\n\n[click](javascript:alert(1))',
+        tasks: [{ name: 'ScoutBackoff', agent: 'scout', task: 'do it' }],
+      };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('task-md', 10, 'Task', hostileInput),
+        resultRow('task-md', 11, 'Task', hostileInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('task-md');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      // Raw JSON is not in the DOM while closed; sanitize the readable body
+      // (through the first card, which holds the prompt).
+      const cardAt = row.innerHTML.indexOf('data-subtask-index');
+      const body = cardAt < 0 ? row.innerHTML : row.innerHTML.slice(0, cardAt);
+      expect(body).toContain('<strong>bold</strong>');
+      expect(body).toContain('>first</li>');
+      expect(body).not.toContain('<img');
+      expect(body).not.toContain('javascript:');
+    });
+
+    test('nested subtask card toggles do not mark or flip the outer row', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      expect(row.open).toBe(false);
+      const card = subtaskCard(row, 0);
+      await act(async () => {
+        click(cardSummary(card));
+      });
+      expect(card.open).toBe(true);
+      expect(row.open).toBe(false);
+
+      // Still untouched: the failed transition auto-opens the outer row; the
+      // nested card keeps its own state.
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        ...(OMP_TASK_MESSAGES[0] === undefined ? [] : [OMP_TASK_MESSAGES[0]]),
+        resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'boom', { outcome: 'error' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows));
+      });
+      const updated = toolRow('task-1');
+      expect(updated.open).toBe(true);
+      expect(subtaskCard(updated, 0).open).toBe(true);
+    });
+
+    test('Enter and Space toggle the focused card summary; focus is retained', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const card = subtaskCard(row, 0);
+      const summary = cardSummary(card);
+      summary.focus();
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      await act(async () => {
+        summary.dispatchEvent(
+          new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event
+        );
+        click(summary);
+      });
+      expect(card.open).toBe(true);
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      await act(async () => {
+        summary.dispatchEvent(
+          new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event
+        );
+        click(summary);
+      });
+      expect(card.open).toBe(false);
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    });
+
+    test('same tool identity keeps card state across rerenders; a new identity starts closed', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+        click(cardSummary(subtaskCard(row, 0)));
+      });
+      expect(subtaskCard(row, 0).open).toBe(true);
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      expect(subtaskCard(toolRow('task-1'), 0).open).toBe(true);
+
+      const otherRows: readonly WorkflowNodeMessage[] = [
+        callRow('task-9', 20, 'Task', OMP_TASK_INPUT),
+        resultRow('task-9', 21, 'Task', OMP_TASK_INPUT, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(otherRows));
+      });
+      const fresh = toolRow('task-9');
+      await act(async () => {
+        click(rowSummary(fresh));
+      });
+      expect(subtaskCard(fresh, 0).open).toBe(false);
+    });
+
+    test('card summaries follow Raw and precede the full-output control in DOM order', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const summaries = Array.from(row.querySelectorAll('summary'));
+      expect(summaries[0]).toBe(rowSummary(row));
+      expect(summaries[1]).toBe(cardSummary(subtaskCard(row, 0)));
+      expect(summaries[2]).toBe(cardSummary(subtaskCard(row, 1)));
+      expect(summaries).toHaveLength(3);
+      const focusables = Array.from(row.querySelectorAll('summary, button'));
+      expect(focusables[0]).toBe(rowSummary(row));
+      expect(focusables[1]).toBe(rawButton(row));
+      expect(focusables[2]).toBe(cardSummary(subtaskCard(row, 0)));
+      expect(focusables[3]).toBe(cardSummary(subtaskCard(row, 1)));
+      expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(4);
+
+      await act(async () => {
+        click(rawButton(row));
+      });
+      expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+      expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+      expect(rawPanel(row).textContent).toContain('"name"');
+    });
+
+    test('Console card focus delta: +2 px outline offset with the accent token', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const summary = cardSummary(subtaskCard(row, 0));
+      expect(summary.className).toContain('focus-visible:outline-offset-2');
+      expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
+      expect(summary.className).toContain('focus-visible:outline-accent-bright!');
+      const agentGroup = summary.querySelector('.text-node-approval')?.parentElement;
+      const name = Array.from(summary.querySelectorAll('span')).find(element =>
+        element.className.includes('font-bold')
+      );
+      for (const [label, element] of [
+        ['agent', agentGroup],
+        ['name', name],
+      ] as const) {
+        expect(element, `${label} identifier span`).not.toBeNull();
+        expect(element?.className).toContain('min-w-0');
+        expect(element?.className).toContain('shrink');
+        expect(element?.className).toContain('overflow-hidden');
+        expect(element?.className).toContain('text-ellipsis');
+        expect(element?.className).not.toContain('flex-none');
+      }
+      const chevron = summary.querySelector('span[aria-hidden="true"]');
+      const classes = (chevron?.getAttribute('class') ?? '').split(' ');
+      expect(classes).toContain('group-open/subtask:rotate-90');
+      expect(classes).not.toContain('rotate-90');
+    });
+
+    test('subtask indexes are scoped inside the owning tool row', async () => {
+      const rows: readonly WorkflowNodeMessage[] = [
+        ...OMP_TASK_MESSAGES,
+        callRow('task-2', 20, 'Task', {
+          context: '',
+          tasks: [{ name: 'OnlyTask', agent: 'scout', task: 'do it' }],
+        }),
+        resultRow(
+          'task-2',
+          21,
+          'Task',
+          { context: '', tasks: [{ name: 'OnlyTask', agent: 'scout', task: 'do it' }] },
+          'done',
+          { outcome: 'success' }
+        ),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      expect(toolRow('task-1').querySelectorAll('details[data-subtask-index]')).toHaveLength(2);
+      expect(toolRow('task-2').querySelectorAll('details[data-subtask-index]')).toHaveLength(1);
     });
   });
 });
