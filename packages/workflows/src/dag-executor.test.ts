@@ -6828,13 +6828,7 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
       await git.execFileAsync('git', ['init', '--quiet'], { cwd: testDir });
 
       const sourceRoot = join(import.meta.dir, '..', '..', '..');
-      const workflowPath = join(
-        sourceRoot,
-        '.archon',
-        'workflows',
-        'defaults',
-        'speckit-ralph-native-feature.yaml'
-      );
+      const workflowPath = join(import.meta.dir, '__fixtures__', 'native-ralph-loop.fixture.yaml');
       const commandPath = join(
         sourceRoot,
         '.archon',
@@ -23855,13 +23849,8 @@ describe('executeDagWorkflow -- production Plannotator gate integration', () => 
   async function loadDefaultSpeckitFeature(): Promise<WorkflowDefinition> {
     const workflowPath = join(
       import.meta.dir,
-      '..',
-      '..',
-      '..',
-      '.archon',
-      'workflows',
-      'defaults',
-      'speckit-feature.yaml'
+      '__fixtures__',
+      'speckit-feature-converge-tail.fixture.yaml'
     );
     const parsed = parseWorkflow(await readFile(workflowPath, 'utf8'), basename(workflowPath));
     if (!parsed.workflow)

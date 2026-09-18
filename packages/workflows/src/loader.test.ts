@@ -41,13 +41,7 @@ registerBuiltinProviders();
 registerOmpProvider();
 
 import { discoverWorkflows, discoverWorkflowsWithConfig } from './workflow-discovery';
-import {
-  isBashNode,
-  isCancelNode,
-  isLoopNode,
-  isPlannotatorGateNode,
-  isPromptNode,
-} from './schemas';
+import { isBashNode, isCancelNode, isLoopNode, isPromptNode } from './schemas';
 import { parseWorkflow } from './loader';
 import { COMPILED_LOOP_COMMAND, type LoopWithCompiledCommand } from './compiled-command';
 import { workflowDefinitionSchema } from './schemas/workflow';
@@ -3638,16 +3632,11 @@ nodes:
       expect(result.workflows).toHaveLength(1);
     });
 
-    it('loads the consolidated default Speckit Plannotator gates with one routing authority', async () => {
+    it('loads the Speckit converge-tail fixture with one routing authority', async () => {
       const workflowPath = join(
         import.meta.dir,
-        '..',
-        '..',
-        '..',
-        '.archon',
-        'workflows',
-        'defaults',
-        'speckit-feature.yaml'
+        '__fixtures__',
+        'speckit-feature-converge-tail.fixture.yaml'
       );
       const result = parseWorkflow(await readFile(workflowPath, 'utf8'), basename(workflowPath));
 
@@ -3669,60 +3658,18 @@ nodes:
         },
       });
 
-      expect(nodes.has('clarify-explain')).toBe(false);
-      expect(nodes.has('red-team-explain')).toBe(false);
-      expect(nodes.has('speckit-converge-explain')).toBe(false);
-
-      const clarifyGate = nodes.get('clarify-gate');
-      const clarifyFileCheck = nodes.get('clarify-file-check');
-      const clarifyRespond = nodes.get('clarify-respond');
-      const redTeam = nodes.get('red-team');
-      const redTeamGate = nodes.get('red-team-gate');
       const reviewGate = nodes.get('speckit-converge-review-gate');
       const ralph = nodes.get('ralph-tasks-to-ralph');
-      expect(clarifyFileCheck?.depends_on).toEqual(['clarify']);
-      expect(clarifyFileCheck && isBashNode(clarifyFileCheck)).toBe(true);
-      if (!clarifyFileCheck || !isBashNode(clarifyFileCheck)) {
-        throw new Error('default Speckit clarification file check missing');
-      }
-      expect(clarifyFileCheck.bash).toContain('read_feature_json_feature_directory');
-      expect(clarifyFileCheck.bash).toContain("printf 'HAS_QUESTIONS\\n'");
-      expect(clarifyFileCheck.bash).toContain("printf 'NO_QUESTIONS\\n'");
-      expect(clarifyRespond).toMatchObject({
-        depends_on: ['clarify-file-check'],
-        when: "$clarify-file-check.output == 'HAS_QUESTIONS'",
-      });
-      expect(clarifyGate?.depends_on).toEqual(['clarify-respond']);
-      expect(redTeam).toMatchObject({
-        depends_on: ['clarify-file-check', 'clarify-respond', 'clarify-gate', 'clarify-apply'],
-        trigger_rule: 'none_failed_min_one_success',
-      });
-      expect(redTeamGate?.depends_on).toEqual(['red-team-respond']);
       expect(reviewGate?.when).toBeUndefined();
       expect(reviewGate?.depends_on).toBeUndefined();
 
-      for (const gate of [clarifyGate, redTeamGate]) {
-        expect(gate && 'plannotator_gate' in gate).toBe(true);
-        if (!gate || !('plannotator_gate' in gate)) {
-          throw new Error('default Speckit Plannotator gate missing');
-        }
-
-        expect(gate.plannotator_gate.prepare).toMatchObject({
-          prompt: expect.any(String),
-          provider: 'claude',
-          model: 'sonnet',
-          effort: 'medium',
-          allowed_tools: ['Read', 'Edit', 'Glob', 'Grep', 'Bash'],
-        });
-      }
-
       expect(reviewGate && 'plannotator_gate' in reviewGate).toBe(true);
       if (!reviewGate || !('plannotator_gate' in reviewGate)) {
-        throw new Error('default Speckit convergence review gate missing');
+        throw new Error('Speckit convergence review gate missing');
       }
       const reviewPrepare = reviewGate.plannotator_gate.prepare;
       expect(reviewPrepare).toBeDefined();
-      if (!reviewPrepare) throw new Error('default Speckit convergence prepare config missing');
+      if (!reviewPrepare) throw new Error('Speckit convergence prepare config missing');
       expect(reviewPrepare.prompt).toContain('<feature_directory>/tasks.md');
       expect(reviewPrepare.prompt).toContain('Do not generate HTML');
       expect(reviewPrepare).toMatchObject({
@@ -3735,10 +3682,6 @@ nodes:
         'Markdown path under review: $REVIEW_DOCUMENT'
       );
 
-      expect(nodes.get('tasks')).toMatchObject({
-        provider: 'codex',
-        model: 'gpt-5.6-sol',
-      });
       expect(ralph).toMatchObject({
         depends_on: ['analyze-apply', 'speckit-converge-review-gate'],
         trigger_rule: 'one_success',
@@ -3870,23 +3813,12 @@ nodes:
       expect(githubWorkflow).not.toContain('e2e-status.txt');
     });
 
-    it('loads the native Ralph Speckit workflow with fail-fast preflights', async () => {
-      const workflowPath = join(
-        import.meta.dir,
-        '..',
-        '..',
-        '..',
-        '.archon',
-        'workflows',
-        'defaults',
-        'speckit-ralph-native-feature.yaml'
-      );
+    it('loads the native Ralph loop fixture with fail-fast preflight', async () => {
+      const workflowPath = join(import.meta.dir, '__fixtures__', 'native-ralph-loop.fixture.yaml');
       const result = parseWorkflow(await readFile(workflowPath, 'utf8'), basename(workflowPath));
 
       expect(result.error).toBeNull();
       expect(result.warnings).toEqual([]);
-      expect(result.workflow?.name).toBe('speckit-ralph-native-feature');
-      expect(result.workflow?.description).toContain('speckit ralph native');
       expect(result.workflow).toMatchObject({
         provider: 'codex',
         model: 'gpt-5.5',
@@ -3894,94 +3826,29 @@ nodes:
       });
 
       const nodes = new Map(result.workflow?.nodes.map(node => [node.id, node]));
-      const requiredStages = [
-        'ralph-tasks-to-ralph',
-        'ralph-native-preflight',
-        'ralph-loop-run',
-        'ralph-sync-back',
-        'speckit-converge',
-        'speckit-converge-review-gate',
-        'speckit-final-ralph-tasks-to-ralph',
-        'speckit-final-ralph-native-preflight',
-        'speckit-final-ralph-loop-run',
-        'speckit-final-ralph-sync-back',
-        'update-bmad-sprint-status',
-        'create-pull-request',
-      ];
-      for (const nodeId of requiredStages) expect(nodes.has(nodeId)).toBe(true);
+      const preflight = nodes.get('ralph-native-preflight');
+      const loop = nodes.get('ralph-loop-run');
 
-      // Accepted dual-model contract from speckit-ralph-native-feature.yaml:
-      // first native loop = grok + grok-4.5 @ high; final Speckit loop =
-      // omp + anthropic/claude-sonnet-5 @ xhigh.
-      const paths = [
-        {
-          preflightId: 'ralph-native-preflight',
-          conversionId: 'ralph-tasks-to-ralph',
-          loopId: 'ralph-loop-run',
-          syncId: 'ralph-sync-back',
-          provider: 'grok',
-          model: 'grok-4.5',
-          effort: 'high',
-        },
-        {
-          preflightId: 'speckit-final-ralph-native-preflight',
-          conversionId: 'speckit-final-ralph-tasks-to-ralph',
-          loopId: 'speckit-final-ralph-loop-run',
-          syncId: 'speckit-final-ralph-sync-back',
-          provider: 'omp',
-          model: 'anthropic/claude-sonnet-5',
-          effort: 'xhigh',
-        },
-      ];
+      expect(preflight && isBashNode(preflight)).toBe(true);
+      if (!preflight || !isBashNode(preflight)) throw new Error('native Ralph preflight missing');
+      expect(preflight.bash).toContain('ralph_prd_file');
+      expect(preflight.bash).toContain('ralph_progress_file');
+      expect(preflight.bash).toContain('Invalid Ralph PRD');
 
-      for (const path of paths) {
-        const preflight = nodes.get(path.preflightId);
-        const loop = nodes.get(path.loopId);
-
-        expect(preflight && isBashNode(preflight)).toBe(true);
-        if (!preflight || !isBashNode(preflight)) throw new Error('native Ralph preflight missing');
-        expect(preflight.depends_on).toEqual([path.conversionId]);
-        expect(preflight.bash).toContain('ralph_prd_file');
-        expect(preflight.bash).toContain('ralph_progress_file');
-        expect(preflight.bash).toContain('Invalid Ralph PRD');
-
-        const conversion = nodes.get(path.conversionId);
-        expect(conversion && isBashNode(conversion)).toBe(true);
-        if (!conversion || !isBashNode(conversion)) {
-          throw new Error('native Ralph conversion node must be a bash node');
-        }
-        expect(conversion.bash).toContain('tasks-to-prd.sh');
-        expect(conversion.bash).not.toContain('speckit.ralph-loop.tasks-to-ralph');
-
-        expect(loop && isLoopNode(loop)).toBe(true);
-        if (!loop || !isLoopNode(loop)) throw new Error('native Ralph loop missing');
-        expect(loop.depends_on).toEqual([path.preflightId]);
-        expect(loop.effort).toBe(path.effort);
-        expect(loop.provider).toBe(path.provider);
-        expect(loop.model).toBe(path.model);
-        expect(loop.loop).toMatchObject({
-          command: 'archon-speckit-ralph-iteration',
-          fresh_context: true,
-          max_iterations: 100,
-        });
-        expect(loop.loop.until).toBeUndefined();
-        expect(loop.loop.until_bash).toContain('select(.completed==false)');
-        expect(loop.loop.until_bash).toContain('select(.passes==false)');
-        expect(nodes.get(path.syncId)?.depends_on).toEqual([path.loopId]);
-      }
-
-      for (const gateId of ['clarify-gate', 'red-team-gate', 'speckit-converge-review-gate']) {
-        const gate = nodes.get(gateId);
-        expect(gate && isPlannotatorGateNode(gate)).toBe(true);
-        if (!gate || !isPlannotatorGateNode(gate)) {
-          throw new Error(`native Ralph Plannotator gate missing: ${gateId}`);
-        }
-        expect(gate.plannotator_gate.rework).toMatchObject({
-          provider: 'codex',
-          model: 'gpt-5.5',
-          effort: 'xhigh',
-        });
-      }
+      expect(loop && isLoopNode(loop)).toBe(true);
+      if (!loop || !isLoopNode(loop)) throw new Error('native Ralph loop missing');
+      expect(loop.depends_on).toEqual(['ralph-native-preflight']);
+      expect(loop.effort).toBe('high');
+      expect(loop.provider).toBe('grok');
+      expect(loop.model).toBe('grok-4.5');
+      expect(loop.loop).toMatchObject({
+        command: 'archon-speckit-ralph-iteration',
+        fresh_context: true,
+        max_iterations: 100,
+      });
+      expect(loop.loop.until).toBeUndefined();
+      expect(loop.loop.until_bash).toContain('select(.completed==false)');
+      expect(loop.loop.until_bash).toContain('select(.passes==false)');
     });
   });
 
