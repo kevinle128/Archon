@@ -1,0 +1,50 @@
+## Codebase Patterns
+
+### Bounded channel production in lib/ normalizers
+- Where: `packages/web/src/lib/tool-output.ts`
+- Pattern: normalize into a `TextAcc` (parts + unit count + truncated flag) with a single global budget; `sanitizeBounded` strips ANSI CSI/OSC/escapes/control chars inline while copying — never build an unbounded intermediate then slice. List channels go through `boundList(source, map, {trustedTotal, upstreamTruncated, flat})` which yields `omitted` as an exact positive int only when the total is trusted or a clean flat prefix was scanned, else `omitted: null` + `truncated: true`.
+- Example: `pushText(acc, raw)` appends `\n`-separated sources inside `MAX_OUTPUT_TEXT_CODE_UNITS`; `boundList(filenames, e => toOne(stringListItem(e)), {flat: true})`.
+
+### Hostile-input reads
+- Where: `packages/web/src/lib/tool-output.ts` (`safeGet`, `ownKeys`, `applyRecord`'s `get` closure)
+- Pattern: all property access on `unknown` records goes through try/catch readers; a throwing getter/proxy flags `accessError` so the result reports `unreadable` instead of fabricating empty channels. `for..in` + `hasOwnProperty` for own enumerable keys; never scan prototypes; never stringify unknown objects.
+
+### Literal control characters in test/source files
+- Where: `packages/web/src/lib/tool-output.test.ts`, `tool-output.ts` (`REPLACEMENT_CHAR`)
+- Pattern: literal ESC/BEL/U+FFFD bytes embedded via the write tool survive but are invisible and can be silently dropped on rewrite — always spell them as `'\u001b'`/`'\u0007'`/`'\uFFFD'` escapes so the file is reviewable and robust.
+
+---
+
+## Blocker Ledger
+
+BLOCKER US-001 | gate=`bun --filter @archon/web test` | cause=`no-hitl-clarify-graph.test.ts:56` ENOENT `.archon/workflows/defaults/speckit-ralph-native-no-hitl-feature.yaml` — fixture deliberately deleted in 16b01a72 (speckit/ralph cleanup), test orphaned; identical fingerprint reproduced on clean base | action=removed orphaned test file as `chore(unblock)` 17448e91; layout primitives still covered by build-run-graph-input.test.ts | 2025-01-09
+BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-176-tool-family-bodies/prd.md` committed unformatted in 302c3827 — prettier warn on clean base | action=`prettier --write` committed as `chore(unblock)` 0868dde8 (format-only, content-preserving) | 2025-01-09
+
+---
+
+## 2025-01-09 — US-001: Bounded semantic output normalizer
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/tool-output.ts` — NEW: `normalizeToolOutput(output: unknown)` plus exported `NormalizedToolOutput`, `BoundedList<T>`, `ToolOutputMatch`, `ToolOutputField` types and display-limit constants (`MAX_OUTPUT_TEXT_CODE_UNITS` 64Ki, `MAX_LIST_ITEMS` 500, parse/salvage/item/field caps). Simultaneous channels: text, paths, matches, webResults, fields, counts{matches,files}, mode, unreadable. Structural recognition for stdout/stderr, Devin `output:number[]` bytes (integers 0–255 only), file.content / create+content / FileContent / Content, `content[{type:'text',text}]`, filenames, grep content line-parse + Devin `file_matches`, mode/numMatches/numFiles/count, WebFetch result+url, both WebSearch result variants, shallow generic fields (`{…}`/`[n]` markers). ANSI CSI/OSC-8/control stripping during bounded copy; JSON.parse under cap; bounded state-machine salvage for `stdout|stderr|text|content|result` with U+FFFD on cut escapes/lone surrogates; never returns arbitrary literals; unreadable honesty.
+- `packages/web/src/lib/tool-output.test.ts` — NEW: 90 tests covering all provider shapes, simultaneous channels, ANSI/OSC, JSON cap at/at+1/over, salvage boundaries (cut escape, lone/paired surrogates, key-vs-value position), byte-value validation (negative/>255/fractional/non-number), exact vs inexact list omission, hostile inputs (undefined/null/number/boolean/array/proxy), and adversarial sizes for every cap.
+
+**Acceptance criteria verified**:
+- [x] exports + types + constants (~64Ki text, 500 items)
+- [x] simultaneous channels (not first-hit union) — proven by multi-channel test
+- [x] recognized structures per phase-01 table — all rows tested
+- [x] bounded ANSI/OSC stripping, no unbounded intermediate
+- [x] JSON parse cap; over-cap → salvage-or-unreadable
+- [x] salvage state machine: allowlisted keys only, nesting/quotes/escapes tracked, U+FFFD boundaries, unreadable when nothing honest
+- [x] list overflow: `+n` only when exact total known; else truncated+omitted:null
+- [x] direct record/array inspection; prototype/non-finite/symbol/function excluded
+- [x] test tables cover required matrix incl. boundary and adversarial cases; none throw
+- [x] `bun test src/lib/tool-output.test.ts` (90 pass), `bun run type-check`, `bun run lint --max-warnings 0`, `bun run format:check`, `bun --filter @archon/web test` (897 pass) all green
+
+**Learnings**:
+- Two pre-existing failures blocked web-wide gates and needed `chore(unblock)` commits (see Blocker Ledger): an orphaned test referencing a workflow YAML deleted in 16b01a72, and an unformatted committed prd.md.
+- Bun's `bun test <file>` inside `packages/web` runs without root workspace setup; root `bun test` is forbidden per AGENTS.md — package-scoped commands only.
+- `git commit` hooks run lint-staged (eslint --fix + prettier --write) — staged files may be modified by hooks; re-run focused tests after commit if paranoid (they stayed green).
+- Devin `output` byte arrays: only an all-number array qualifies as bytes; non-number elements mean "not a byte array at all" (no unreadable), while numeric out-of-range means "corrupt bytes" (unreadable).
+
+---
