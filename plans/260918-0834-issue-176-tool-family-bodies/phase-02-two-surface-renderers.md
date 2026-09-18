@@ -9,137 +9,186 @@ dependencies: [1]
 
 # Phase 2: Legacy and Console family bodies
 
-> Deep-mode outline. A dedicated scout pass runs before execution to re-read the Story 1.2 renderer changes as merged and refresh the line anchors below.
-
 ## Goal
 
-Render `presentation.body` in the Story 1.2 swap slot on both node rooms with thin, surface-owned JSX and existing tokens, so an expanded row shows a terminal, path list, match list, code block, web result, file preview, or key-value list — and never JSON.
+Render the Phase 1 lazy body contract in the Story 1.2 presented-body slot on Legacy and Console, with the approved anatomy, safe stored-content rendering, responsive behavior, and no changes to Raw or full-output semantics.
 
-## Context links
+## Pre-execution coordination gate
 
-- DESIGN tokens and components: `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md:219-236` (body-box), `:256-257` (kv-list), `:587-597`, `:613`
-- EXPERIENCE body rows: `.../EXPERIENCE.md:112-124`
-- Mockup: `.../mockups/key-transcript-states.html` §D (every arm drawn once per family)
-- Renderers: Legacy `packages/web/src/components/workflows/NodeRoom.tsx` (`ToolHistory` `:314-476`, markdown pipeline `:43-95`); Console `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` (`ToolHistory` `:237-385`, markdown pipeline `:35-38`). **Anchors move once 1.2 merges; re-scout.**
-- 1.2 plan structure: `plans/260918-1038-issue-175-raw-payload-toggle/plan.md` — body bar + `Raw` button, `{rawOpen ? <pre raw> : null}` slot, `View full output` after the slot, `useId()` ids, Console mounted twice per page.
+Issue #175 is open and its current plan targets the same ToolHistory body blocks and tests. Before changing either renderer:
 
-## Pre-execution gate
+1. inspect the code actually merged for #175; do not assume its draft names or DOM;
+2. if #175 is not merged, coordinate ownership or defer renderer edits;
+3. rebase and run #175's focused Raw tests before adding bodies;
+4. record the final swap-slot anchor/state names in the implementation evidence.
 
-- [ ] Story 1.2's PR is merged into `develop` and this branch is rebased on it. If not, **stop and coordinate** — both stories edit the same component tests and body area. Do not implement against the 1.1 bridge.
+This is a merge-conflict gate, not a Story 1.3 product dependency. Phase 1 does not wait on it.
 
-## Requirements
+## Verified design authority
 
-- [ ] Each family renders its declared arm on both surfaces inside a `body-box` (`surface-inset`, 1px `border`, radius 6px, padding `8px 10px`, `11.5px`/1.5 mono, `pre-wrap`, `overflow-wrap: anywhere`).
-- [ ] Terminal: `$` sigil in `node-bash`, the command (full, multi-line), output preformatted; `FAILED` bold in error tone when `outcome === 'failed'`; `no output` / `awaiting output` (running) / `output not readable — open Raw` (unreadable) states in text-secondary.
-- [ ] Matches: pattern and scope line; each item as path in `node-command`, `:line` in text-secondary, then text; non-parsed lines as plain text; `+n more` when `overflow > 0`.
-- [ ] Paths: pattern/scope line; one `node-command` path per line; `+n more`.
-- [ ] Code: source rendered through the surface's `ReactMarkdown` + `rehypeHighlight` as a fenced block (fence longer than the longest backtick run, language sanitized `[A-Za-z0-9_+.-]`, `rehypePlugins` only); result in a second box 6px below.
-- [ ] Web: URL header (plain text, not a link — no navigation from stored data), title beneath when present, markdown body through the existing pipeline.
-- [ ] File: path header in `node-command`, preview preformatted; `no preview` when null.
-- [ ] Generic: kv-list (key text-secondary at `11ch`, value text-primary, `{…}` / `[n]` literal); output as markdown when text, as a second kv-list when fields, absent otherwise.
-- [ ] The body renders **only when the row is open and Raw is closed**, in the 1.2 slot; `View full output` position and behaviour unchanged; a full-output load refreshes the body (already re-presented via `hasFullOutput`).
-- [ ] Console imports nothing from `@/components/`; both surfaces use their own token roots and focus offsets; no shared React component.
+- `EXPERIENCE.md` Component Patterns and State Patterns.
+- `DESIGN.md` body-box tokens, layout at 460px, component specifications, and resolved contrast decisions.
+- `mockups/key-transcript-states.html` §D family states and §F Raw swap.
+- `mockups/key-console-node-room.html` and `key-legacy-node-room.html` for surrounding room geometry.
 
-## Architecture
+The mockups' body content is authoritative for anatomy and visual roles, but later-story todo/task/diff examples do not expand this story's scope.
+
+## Rendering architecture
+
+Each surface owns a small local `ToolBody` switch and stored-markdown component. Console must not import Legacy components.
 
 ```text
-ToolHistory (per surface)
-  presentation = hasFullOutput ? toolRowPresentation(…full…) : item.presentation   (1.1)
-  <details>
-    <summary>…</summary>
-    <div body>
-      <BodyBar … Raw/>                                  (1.2)
-      {rawOpen ? <pre raw/> : <ToolBody body={presentation.body} outcome={presentation.statusLabel} />}
-      View full output / error / Retry                  (1.1/1.2)
+ToolHistory
+  presentation = existing current/full-output summary
+  details open state
+    body bar: family/facts                         # #175 owns Raw placement/state
+    Raw open -> exact raw payload box              # #175
+    Raw closed + row open ->
+      toolBodyPresentation(current payload, presentation.family)
+      -> local ToolBody(body, presentation status)
+    full-output / error / Retry below              # existing behavior
 ```
 
-`ToolBody` is a local function component in each renderer file (Legacy in `NodeRoom.tsx`, Console in `ConsoleAgentHistoryList.tsx`) switching on `body.kind`. Helpers that are pure and identical on both surfaces — `fencedCodeMarkdown(source, language)` and `MatchItem` formatting — live in `packages/web/src/lib/tool-output.ts` or `tool-presentation.ts`, not in a shared component.
+Call `toolBodyPresentation()` only in an execution path gated by `open && !rawOpen`; do not calculate it unconditionally above JSX. A closed row and a Raw-open row must not invoke it. When `hasFullOutput` becomes true, pass `fullOutput`; otherwise pass `item.output`.
 
-## Related code files
+Import only `ToolBody` types/resolver from `@/lib/tool-presentation`. `@/lib/tool-presentation` is already in the Console isolation allowlist, so no allowlist edit is expected.
 
-- Modify: `packages/web/src/components/workflows/NodeRoom.tsx`, `packages/web/src/components/workflows/NodeRoom.test.tsx`, `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`
-- Modify: `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`, `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`, `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` (if it asserts body content)
-- Modify (if the fence helper lands there): `packages/web/src/lib/tool-output.ts` + test
+## Shared visual rules
 
-## File inventory
+- Body container: `.tool-family-body`, `surface-inset`, 1px border, 6px radius, 8px 10px padding, 11.5px/1.5 mono, `white-space: pre-wrap`, `overflow-wrap: anywhere`, `min-width: 0`.
+- Body rail/indent/bar/Raw placement stay as implemented by #175. The bar opens with the family, keeps facts to its left, and keeps Raw at the far right without wrapping at 460px.
+- Terminal: `$` in node-bash, bounded command and output, explicit `running`/`no output`/`output unreadable — open Raw`; failure uses both word/glyph and error color.
+- File: path in node-command, preview preformatted, explicit `no preview` or unreadable copy.
+- Matches: pattern and optional scope, path in node-command, `:line` in text-secondary, then match text. Text-only items remain visible. Paths: one node-command path per line. Show `+n more` for exact omitted counts and `more results omitted` for an inexact capped tail.
+- Code: source through a collision-safe fenced markdown block; language token restricted to `[A-Za-z0-9_+.-]+`; result in a second body box 6px below. Unknown languages render unhighlighted source.
+- Web: URL as inert visible text, optional title, then safe markdown/results. It is not an anchor.
+- Generic: key column width `11ch`, value text-primary, no more than three rows total; optional safe text output follows without JSON serialization.
+- Null body (todo/task): render no placeholder box. Body bar and Raw remain available.
 
-| File                                                                                   | Action | Size    | Test impact                                    |
-| -------------------------------------------------------------------------------------- | ------ | ------- | ---------------------------------------------- |
-| `packages/web/src/components/workflows/NodeRoom.tsx`                                   | modify | +180 L  | `NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx` |
-| `packages/web/src/components/workflows/NodeRoom.test.tsx`                              | modify | +120 L  | —                                              |
-| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                        | modify | +80 L   | interactive matrix (happy-dom)                 |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`  | modify | +180 L  | `ConsoleNodeRoom.test.tsx`                     |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`             | modify | +120 L  | —                                              |
-| `packages/web/src/lib/tool-output.ts` (+ test)                                         | modify | +30 L   | fence helper table                             |
+## Stored-markdown security boundary
 
-## Implementation steps (outline)
+Do not reuse the existing assistant-message `ReactMarkdown` component configuration blindly. Tool output is untrusted stored content and requires a local restricted component map on both surfaces:
 
-1. Scout pass: read both renderers as merged with 1.2; record the slot anchors and the body-bar contract; confirm `Raw` state variable names.
-2. Tests before (red): static anatomy per arm on both surfaces (see matrix); the "no JSON while Raw closed" sweep extended to every family fixture; keyboard/focus unchanged.
-3. Implement Legacy `ToolBody`; make Legacy tests green.
-4. Implement Console `ToolBody` with Console tokens and `+2px` focus offset; make Console tests green; isolation test green.
-5. Refactor: pull any pure formatting duplicated three times into lib; keep JSX per surface.
-6. Regression gate.
+- no `rehype-raw` and no `dangerouslySetInnerHTML`;
+- `a` renders its label plus a visible parenthesized destination as inert text, omitting the duplicate destination when a bare autolink's label already equals it; it has no `href`, click handler, or target;
+- `img` renders alt text plus `[image omitted]`, never an `<img>` and never initiates a request;
+- headings, paragraphs, lists, blockquotes, inline code, and fenced code remain available;
+- `rehype-highlight` remains the only rehype plugin for code, with language auto-detection disabled; unknown languages are allowed and non-fatal.
 
-## Test scenario matrix
+Tests must include explicit markdown links, autolinks, images, raw HTML, `javascript:` URLs, and external image URLs, and assert no active anchor/image/raw element reaches the DOM.
 
-| Path     | Scenario                                                                                              | Surface | Rows           |
-| -------- | ----------------------------------------------------------------------------------------------------- | ------- | -------------- |
-| Critical | Shell row open: `$` sigil + command + output text; `exit 1` row shows `FAILED`; no `{` in body        | both    | Claude + Codex |
-| Critical | Search content row: items render path, `:line`, text; `files_with_matches` row renders flat paths     | both    | Claude + OMP   |
-| Critical | Generic row (unknown tool, object input/output): ≤3 kv rows, `{…}`/`[n]` literal, no JSON             | both    | any            |
-| Critical | Raw open swaps the family body out; Raw closed restores it; `View full output` count stays 1          | both    | any            |
-| High     | Code row: `<code class="hljs language-python">` present; unknown language still renders source        | both    | OMP-style      |
-| High     | Web row: URL header text, title when present, markdown body rendered (a heading element appears)      | both    | Claude         |
-| High     | File row: path header + preview; Claude `Edit` shows `new_string` preview; unreadable state message   | both    | Claude + OMP   |
-| High     | Truncated-at-rest Claude Bash row shows salvaged stdout, `truncated` badge still on the summary       | both    | Claude         |
-| High     | Devin byte-array shell row shows decoded text                                                          | both    | Devin          |
-| Medium   | 501-line paths output shows 500 rows + `+1 more`                                                      | both    | any            |
-| Medium   | Full-output load on a paths row refreshes the item list (post-load body differs from pre-load)        | both    | any            |
-| Medium   | Todo/task rows show the generic kv body; headline `todo updated` unchanged                            | both    | Claude + OMP   |
-| Medium   | Body box tokens: `surface-inset` background class, mono size, `pre-wrap` computed style               | both    | any            |
+## Syntax highlighting
 
-## Tests before / Refactor / Tests after
+Add only scoped overrides in `packages/web/src/index.css` under `.tool-family-body` so agent prose and other existing code blocks do not change:
 
-- **Tests before**: red anatomy tests per arm and the swap interaction on both surfaces; extend the existing "no serialized JSON while Raw closed" sweep (from 1.2) with one fixture per family.
-- **Refactor**: replace the empty 1.2 slot with `<ToolBody/>`; no change to summary, body bar, Raw, or full-output code paths.
-- **Tests after**: per-arm assertions green; existing 1.1/1.2 anatomy, keyboard, focus, and disclosure tests green unchanged.
+- keyword/title/built-in groups: `color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))` (the resolved contrast decision);
+- strings/literals where appropriate: `var(--success)`;
+- comments/annotations: `var(--text-secondary)`;
+- base code: `var(--text-primary)` and transparent background.
 
-## Regression gate
+Do not add a new named token or dependency. Measure the rendered mix against each surface's `surface-inset`; record >=4.5:1.
+
+## Files
+
+| Path                                                                                       | Action                                                             |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `packages/web/src/components/workflows/NodeRoom.tsx`                                       | add Legacy local safe markdown and ToolBody; call resolver lazily  |
+| `packages/web/src/components/workflows/NodeRoom.test.tsx`                                  | static anatomy/content/security tests                              |
+| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                            | disclosure, Raw swap, full-output, keyboard tests                  |
+| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`      | add Console local safe markdown and ToolBody; call resolver lazily |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`                 | Console anatomy/interaction/security tests                         |
+| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` | change only if the merged #175 path asserts ToolHistory bodies     |
+| `packages/web/src/index.css`                                                               | add scoped highlight token mapping                                 |
+
+Do not modify `agent-history.ts`, pair projection, API types, provider code, or backend routes. Do not add `@/lib/tool-output` to Console imports unless a concrete need appears; prefer the public presentation boundary.
+
+## Implementation sequence
+
+1. Pass the #175 coordination gate and characterize the merged Raw swap with focused tests.
+2. Add red renderer tests on both surfaces for every Phase 1 body arm, null bodies, lazy invocation, safe markdown, and full-output recomputation.
+3. Implement Legacy local body renderer and restricted markdown map.
+4. Implement Console local body renderer with equivalent semantics and Console's established focus-offset convention.
+5. Add scoped highlight CSS and contrast/geometry assertions.
+6. Run focused Legacy and Console tests, isolation tests, then all web tests/typecheck/lint/format.
+
+## Test matrix
+
+| Priority | State                                                                | Assertions on both surfaces                                                                                         |
+| -------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| critical | closed row                                                           | body resolver not called; no body content mounted                                                                   |
+| critical | open shell success/failure                                           | `$`, complete bounded command, text output, outcome/exit facts, no `"stdout"` object dump                           |
+| critical | matches / search paths / glob paths                                  | correct anatomy; no invented line number in paths; pattern/scope present; overflow visible                          |
+| critical | unknown generic                                                      | <=3 combined rows; `{…}`/`[n]` allowed; no serialized object; full sent name remains in header/title                |
+| critical | Raw toggle                                                           | family body unmounted/replaced when Raw opens and restored when it closes; resolver skipped while Raw open          |
+| critical | stored markdown attacks                                              | no active `a`, `img`, raw HTML, navigation, or network-capable element; prose structure preserved                   |
+| high     | file normal/empty/unreadable                                         | path/preview/copy match contract; no diff UI                                                                        |
+| high     | code known/unknown language and source containing long backtick runs | collision-safe fence; highlighted token classes only when known; source exact up to cap; result 6px below; no throw |
+| high     | WebFetch/WebSearch                                                   | URL/title/result visible, markdown structured, links/images inert                                                   |
+| high     | truncated-at-rest / transport full-output                            | salvage or unreadable state honest; summary badge stays; loaded full output recomputes body once                    |
+| high     | todo/task                                                            | no fabricated generic/body box; body bar and Raw still work                                                         |
+| medium   | 460px geometry                                                       | summary and body bar do not wrap; body content wraps; no panel-level horizontal overflow                            |
+| medium   | keyboard/a11y                                                        | row summary, Raw, full output, Retry order; names/status announced; focus ring visible; reduced motion unchanged    |
+| medium   | duplicate Console mount/poll rerender                                | normalization happens only for each actually open presented body, not every historical row                          |
+
+Avoid assertions such as “body contains no `{`”; code and `{…}` are valid. Assert absence of serialized keys/object formatting instead.
+
+## Visual acceptance evidence
+
+Capture or assert both Legacy and Console at the contractual 460px panel width for:
+
+1. shell failed/open;
+2. matches with path/line annotations and overflow;
+3. path list;
+4. code known-language plus result and unknown-language fallback;
+5. web markdown with inert link/image content;
+6. generic with scalar/object/array markers;
+7. empty and unreadable body;
+8. truncated row before and after full-output load;
+9. Raw open.
+
+Compare structure/content/states to `key-transcript-states.html`; compare surrounding width and rail geometry to the two room mockups. Later-story todo/task/diff visuals are explicitly excluded.
+
+Use deterministic transcript responses fulfilled at the Playwright route layer in `agent-tool-row-visual.spec.ts` for the family/degraded-state gallery; this exercises production React/CSS without changing the fake provider or production server. Keep those cases labelled as browser visual fixtures, not server end-to-end coverage. Phase 3 separately proves the real persisted Read row.
+
+Record:
+
+- computed body-box size/padding/type;
+- no horizontal panel scroll at 460px;
+- text-primary, text-secondary, syntax keyword, path, string, and focus-ring contrast on both surfaces;
+- keyboard sequence and a screen-reader pass for one terminal and one matches body;
+- reduced-motion behavior.
+
+## Verification
 
 ```bash
 cd packages/web && NODE_ENV=development bun test src/components/workflows/NodeRoom.test.tsx src/components/workflows/LegacyNodeRoom.test.tsx
 cd packages/web && NODE_ENV=development bun test src/experiments/console/
-bun --filter @archon/web test && bun run type-check && bun run lint --max-warnings 0
+bun --filter @archon/web test
+bun run type-check
+bun run lint --max-warnings 0
+bun run format:check
 ```
 
-## Dependency map
+## Completion criteria
 
-- Depends on Phase 1 (`presentation.body`, `tool-output` helpers) and on Story 1.2 merged.
-- Blocks Phase 3 (E2E/visual evidence needs the bodies on screen).
+- [ ] #175 merged implementation was re-scouted/rebased or ownership coordinated.
+- [ ] Every in-scope body arm and degraded state is deterministic on both surfaces.
+- [ ] Closed and Raw-open rows skip the body resolver.
+- [ ] Stored markdown cannot navigate, execute raw HTML, or fetch images.
+- [ ] 460px and contrast evidence meet the design authority.
+- [ ] Raw, full-output, Retry, disclosure, focus, and Console isolation regressions remain green.
+- [ ] Web-wide verification passes.
 
-## Todo
+## Risks and responses
 
-- [ ] Pre-execution gate satisfied (1.2 merged, branch rebased)
-- [ ] Scout pass recorded slot anchors
-- [ ] Red body tests on both surfaces
-- [ ] Legacy `ToolBody` green
-- [ ] Console `ToolBody` green; isolation test green
-- [ ] Regression gate green
+| Risk                                  | Detection                                        | Response                                              |
+| ------------------------------------- | ------------------------------------------------ | ----------------------------------------------------- |
+| #175 DOM/state differs from its draft | pre-execution scout                              | adapt to landed contract; do not recreate Raw state   |
+| Markdown creates active content       | malicious component fixtures                     | restricted local component map and no raw HTML plugin |
+| Highlight theme overrides design      | computed-style/contrast evidence                 | narrowly scoped `.tool-family-body .hljs-*` rules     |
+| Body work returns to polling path     | resolver spy on closed/re-rendered rows          | keep call inside open + presented branch              |
+| Two renderers drift                   | identical table fixtures and semantic assertions | duplicate JSX only; shared data contract              |
 
-## Success criteria
+## Rollback
 
-- Every arm visible on both surfaces with tokens from the design system; no JSON in any default body; Raw swap intact; all package tests green.
-
-## Risk assessment
-
-| Risk                                                                    | Signal                                          | Response                                                                          |
-| ----------------------------------------------------------------------- | ----------------------------------------------- | --------------------------------------------------------------------------------- |
-| 1.2 lands with a different slot shape than its plan                     | Scout pass finds no `rawOpen` slot              | Adapt to the merged shape; body still renders only while Raw is closed            |
-| Fenced-markdown code rendering mangles a source containing `~~~`/```    | Fence-collision test fails                      | Fence = longest backtick run + 1 (min 3); tilde sources are safe in backtick fences |
-| Large bodies slow the room with many open failed rows                   | Test with 40 open rows renders slowly           | Bodies are capped in Phase 1; render `+n more` instead of the tail                |
-
-## Security considerations
-
-- The web arm's URL is rendered as text, not as an anchor, so stored data cannot become a click target. Markdown rendering reuses the existing sanitized `ReactMarkdown` pipeline (no `rehype-raw`).
-- No `dangerouslySetInnerHTML` is introduced.
+Remove the two local ToolBody renderers and scoped CSS. #175's Raw view, current summary rows, full-output flow, and shared Phase 1 pure code remain independently revertible.

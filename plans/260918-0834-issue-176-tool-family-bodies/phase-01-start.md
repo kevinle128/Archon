@@ -1,223 +1,212 @@
 ---
 phase: 1
-title: 'Phase 1: Shared body contract and output normalizer'
+title: 'Phase 1: Shared normalizer and lazy body contract'
 status: pending
 priority: P1
 effort: '1.5d'
 dependencies: []
 ---
 
-# Phase 1: Shared body contract and output normalizer
+# Phase 1: Shared normalizer and lazy body contract
 
 ## Goal
 
-Add a `body` to `ToolPresentation` for all nine families, backed by a pure, bounded, React-free output normalizer that turns every persisted output string — Claude, OMP, Devin, Codex, Grok — into text, a list, scalar fields, or an explicit unreadable state, with red-first table tests carrying Claude, OMP and Devin rows.
+Create a pure, React-free, provider-agnostic output normalizer and a lazy family-body resolver. Preserve the existing four-tier summary resolver and prove that output cannot change a family. Correct the source contracts where they currently disagree with the pinned SDK, the story, or each other.
 
-## Context links
+## Inputs and verified constraints
 
-- Story AC: `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:261-288`
-- Contract: `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md:6-52` (shape), `:65-151` (tiers), `:176-189` (body table)
-- Test plan: `_bmad-output/specs/spec-agent-node-room/test-plan.md:12-36`
-- Shipped presenter: `packages/web/src/lib/tool-presentation.ts` (resolution `:419-503`, row composition `:538-595`)
-- Provider serializers: `packages/providers/src/claude/provider.ts:917-926`, `packages/providers/src/community/omp/event-parser.ts:37-44`, `packages/providers/src/community/devin/event-bridge.ts:51-61`, `packages/providers/src/codex/provider.ts:642-659`, `packages/providers/src/grok/event-parser.ts:22-29`
+- Story 1.3: `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`.
+- Machine contract and tests: `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md` and `test-plan.md`.
+- Current presenter: `packages/web/src/lib/tool-presentation.ts`; it has only the Story 1.1 summary subset and bounded count extraction.
+- Pairing contract: `packages/web/src/lib/pair-tool-transcript.ts`; current and legacy rows can contain `unknown` output even though current providers serialize output as strings.
+- Claude fixtures: pinned `@anthropic-ai/claude-agent-sdk@0.3.209` `sdk-tools.d.ts`. Do not execute a model merely to rediscover its declared shapes.
+- Other shapes: OMP `event-parser.ts`, Devin `event-bridge.ts`, Grok `event-parser.ts`, Codex `provider.ts`, and read-only local-corpus observations.
+- UI polling means body normalization must not happen in `toolPresentation()`, `toolRowPresentation()`, `buildAgentHistory()`, or transcript projection.
 
-## Key insights
+## Contract
 
-- Output is always a string at rest; the family never depends on it. The normalizer is provider-agnostic by **key rules over a parsed object**, so the lib never branches on a provider name.
-- 7.3% of JSON-looking outputs are truncated at rest and unparseable, with no full-output recovery. Salvaging the cut string literal is the only honest presentation short of Raw.
-- Claude `Grep`/`Glob`/`WebFetch`/`WebSearch` output shapes have zero local rows. Capture them first; do not write them into code from memory.
-
-## Requirements
-
-- [ ] `ToolPresentation.body` exists for every resolved presentation, including the safe fallback path (`safePresentation`, `tool-presentation.ts:506-520`).
-- [ ] No body arm and no normalizer output ever contains serialized JSON text; an unrecognized object degrades to ≤3 scalar `key: value` pairs.
-- [ ] Every algorithm is bounded by an exported `MAX_*` constant and terminates on adversarial input (deep objects, huge strings, byte arrays, unterminated literals).
-- [ ] Family resolution stays name-plus-input only; output never reclassifies a family (audit invariant).
-- [ ] Each test table has at least one Claude row and one OMP row, plus a Devin row where the shape differs (`test-plan.md:11`).
-
-## Architecture
-
-### `packages/web/src/lib/tool-output.ts` (new)
+Create `packages/web/src/lib/tool-output.ts` with exported display limits and one non-recursive normalizer. Exact numeric limits are chosen once in implementation and asserted at `limit`, `limit + 1`, and adversarially large inputs; the intended ceilings are approximately 64 Ki code units of parsed/displayed text and 500 rendered list items.
 
 ```ts
-export const MAX_OUTPUT_PARSE_CODE_UNITS = 65_536;  // JSON.parse attempted only under this
-export const MAX_OUTPUT_TEXT_CODE_UNITS = 65_536;   // displayed text head-sliced beyond this, '…' appended
-export const MAX_OUTPUT_LIST_ITEMS = 500;           // matches/paths items kept; the rest is `overflow`
-export const MAX_OUTPUT_BYTE_ARRAY = 65_536;        // Devin byte arrays decoded only under this length
-export const MAX_OUTPUT_FIELDS = 3;                 // reuse of the generic cap (MAX_GENERIC_FACTS)
+export interface ToolOutputMatch {
+  path: string | null;
+  line: number | null;
+  text: string;
+}
 
-export type NormalizedOutput =
-  | { kind: 'text'; text: string; salvaged: boolean }
-  | { kind: 'list'; items: string[]; overflow: number }
-  | { kind: 'fields'; fields: { key: string; value: string }[]; counts: { matches: number | null; files: number | null } }
-  | { kind: 'unreadable' }   // JSON-looking, unparseable, and no literal was cut
-  | { kind: 'empty' };       // undefined / null / ''
+export interface ToolOutputField {
+  key: string;
+  value: string;
+}
 
-export function normalizeToolOutput(output: unknown): NormalizedOutput;
-export function stripAnsi(text: string): string;                    // SGR/CSI only, bounded by text cap
-export function splitLines(text: string, max: number): { lines: string[]; overflow: number };
+export interface NormalizedToolOutput {
+  text: string | null;
+  paths: BoundedList<string>;
+  matches: BoundedList<ToolOutputMatch>;
+  webResults: BoundedList<{ title: string | null; url: string }>;
+  fields: ToolOutputField[];
+  counts: { matches: number | null; files: number | null };
+  mode: 'content' | 'files_with_matches' | 'count' | null;
+  unreadable: boolean;
+}
+
+export interface BoundedList<T> {
+  items: T[];
+  /** 0 when complete, positive when the exact omitted count is known, null when inexact. */
+  omitted: number | null;
+  truncated: boolean;
+}
+
+export function normalizeToolOutput(output: unknown): NormalizedToolOutput;
 ```
 
-Key rules over a parsed object, first hit wins (the order is the contract; each rule has a fixture row):
+This is a channel object, not a discriminated first-hit union. For example, a Grep result can expose `mode`, `matches`, and `counts` together, while WebSearch can expose result titles/URLs plus a count. Every returned string/list is already display-bounded.
 
-| # | Rule                                                                     | Observed source                     |
-| - | ------------------------------------------------------------------------ | ----------------------------------- |
-| 1 | `content: [{ type: 'text', text }]` → join texts with `\n`               | OMP `read`/`grep`, MCP results      |
-| 2 | `stdout` string (+ `\n\n` + `stderr` when non-empty)                     | Claude `Bash`                       |
-| 3 | `file.content` string                                                    | Claude `Read`                       |
-| 4 | `type: 'create'` with `content` string                                   | Claude `Write`                      |
-| 5 | `filenames: string[]` → list                                             | Claude `Glob`, `Grep` files mode `[UNVERIFIED]` |
-| 6 | `mode: 'content'` / `'count'` with `content` string → text               | Claude `Grep` `[UNVERIFIED]`        |
-| 7 | `FileContent.content` / `Content.content` string                         | Devin `read_file`, `list_dir`       |
-| 8 | `output: number[]` → `TextDecoder` over `Uint8Array` (length-capped)     | Devin `run_terminal_command`        |
-| 9 | `result` string                                                          | Claude `WebFetch` `[UNVERIFIED]`    |
-| 10| first string among `text`, `output`, `message`                           | tolerant tail                       |
-| 11| otherwise → `fields` (≤3 scalars, `{…}` / `[n]`), with `counts` read from `count` / `numMatches` / `numLines` / `numFiles` | Claude `Edit`, Devin `SearchReplace`, `StructuredOutput` |
-
-A plain string that does not start with `{`/`[` is `text` as-is (ANSI-stripped, capped). A string that starts with `{`/`[` and fails to parse goes to the salvage scanner: walk the string tracking `"…"` literals and escapes; if the input ends **inside** a literal, decode that literal's content (escapes resolved, bounded) and return `text` with `salvaged: true`; otherwise `unreadable`. A trailing hook marker `...` or transport marker `… [truncated …` stays inside the salvaged text (it is informative and the `truncated` badge already says so).
-
-### `packages/web/src/lib/tool-presentation.ts` (modify)
+In `tool-presentation.ts` add `ToolBody`, `MatchItem`, `ToolField`, and:
 
 ```ts
-export interface MatchItem { path: string | null; line: number | null; text: string }
-
-export type ToolBody =
-  | { kind: 'terminal'; command: string; output: string | null; unreadable: boolean }
-  | { kind: 'file'; path: string; preview: string | null; unreadable: boolean }
-  | { kind: 'matches'; pattern: string; scope: string | null; items: MatchItem[]; overflow: number }
-  | { kind: 'paths'; pattern: string; scope: string | null; items: string[]; overflow: number }
-  | { kind: 'code'; language: string | null; source: string; result: string | null }
-  | { kind: 'web'; url: string; title: string | null; markdown: string | null }
-  | { kind: 'generic'; fields: { key: string; value: string }[]; output: { kind: 'markdown'; text: string } | { kind: 'fields'; fields: { key: string; value: string }[] } | null };
-
-export interface ToolPresentation { …existing…; body: ToolBody }
+export function toolBodyPresentation(
+  input: ToolPresentationInput,
+  resolvedFamily: ToolFamily
+): ToolBody | null;
 ```
 
-Per-family body resolution (inside `resolveToolPresentation`, after the headline switch):
+`ToolPresentation` and `ToolRowPresentation` remain summary-only. `toolBodyPresentation()` must use the supplied family; it must not invoke family resolution again. It returns `null` for todo/task, and catches malformed values to return a bounded unreadable/generic state without throwing.
 
-| Family  | Body                                                                                                                                                   |
-| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| shell   | `terminal`: `command` = input `command`/`cmd`/`script` (full, multi-line) else the **untouched** name (wrapper kept, per EXPERIENCE `:114`); `output` = normalized text (list → joined lines; fields → null) |
-| file    | `file`: `path` = headline source; `preview` = normalized text → input `content` → input after-string (`new_string`/`new_str`/`new_content`) → null   |
-| search  | arm by `input.output_mode` → parsed output `mode` → `matches`. `matches`: items from lines `^([^:\n]+):(\d+)[:-](.*)$`, else `{path:null,line:null,text}`; `paths`: list items or non-empty lines. `count` → `generic` with the count as a badge. `scope` = input `path` |
-| glob    | `paths`: `pattern` = input `pattern` else `path` (the 1.1 rule), `scope` = `path` only when `pattern` present; items = list or non-empty lines (Devin `ListDir` yields indented `- name` lines — bounded and honest) |
-| code    | `code`: `source` = input `code` (untruncated), `language` = input `language`, `result` = normalized text or null                                       |
-| web     | `web`: `url` = input url key; `title` = top-level string `title` in parsed output else null; `markdown` = normalized text                            |
-| todo, task, generic | `generic`: `fields` = ≤3 scalar pairs from input (objects `{…}`, arrays `[n]` — extend `genericFacts` to emit these markers); `output` = text → markdown, fields → fields, else null |
+## Recognized output shapes
 
-Count badge: replace the raw-output `countBadge(input.output)` (`:460`) with counts from the normalized output — `N matches` on the matches arm, `N files` on the paths arm — keeping the OMP `count` key and digit-only string cases green.
+Normalize structural keys only. No recursive “find the first string,” natural-language intent parser, or provider-name branch is allowed.
 
-MCP-named tools keep `family: 'generic'` and now carry a `generic` body. `safePresentation` returns `body: { kind: 'generic', fields: [], output: null }`.
+| Semantic channel | Recognized structure                                                                                | Evidence                                 |
+| ---------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------- |
+| text             | plain string; `content[{type:'text',text}]`                                                         | Codex / OMP / MCP-like results           |
+| terminal         | `stdout` plus non-empty `stderr`                                                                    | Claude `BashOutput`                      |
+| file preview     | `file.content`; `type:'create'` + `content`; `FileContent.content`; `Content.content`               | Claude read/write; Devin read/list       |
+| byte output      | `output: number[]`, decoded with non-fatal `TextDecoder` only when capped values are integers 0-255 | Devin terminal                           |
+| paths            | `filenames: string[]`; Grep paths form                                                              | Claude `GlobOutput` / `GrepOutput`       |
+| matches          | Grep content string and Devin `file_matches[{path,matches[{line_number,content}]}]`                 | pinned Claude type / observed Devin rows |
+| grep mode/counts | `mode`, `numMatches`, `numFiles`, `count`, recognized digit-only count                              | pinned SDK / OMP compatibility           |
+| web fetch        | `result`, optional `url`/`code`                                                                     | Claude `WebFetchOutput`                  |
+| web search       | `results` string entries or entries/content items with `title` and `url`                            | Claude `WebSearchOutput`                 |
+| generic fields   | shallow own top-level entries, stable source order, scalars as text, objects `{…}`, arrays `[n]`    | Story 1.3 generic contract               |
 
-## Related code files
+Ignore unknown nested structures. An unknown JSON object contributes shallow generic fields but never preformatted JSON. Non-finite numbers and symbol/function values contribute nothing. Prototype properties are never scanned.
 
-- Create: `packages/web/src/lib/tool-output.ts`, `packages/web/src/lib/tool-output.test.ts`
-- Modify: `packages/web/src/lib/tool-presentation.ts`, `packages/web/src/lib/tool-presentation.test.ts`
-- Modify: `packages/web/src/experiments/console/console-isolation.test.ts:114-126` (add `@/lib/tool-output` to `approved` — Phase 2 imports it)
-- Read only: `packages/web/src/lib/agent-history.ts:157-192` (no change; presentation already flows)
+## Parsing, truncation, and salvage
 
-## File inventory
+- If `output` is already a record/array, inspect it directly for compatibility; do not stringify it.
+- A non-JSON-looking string becomes bounded text. Strip ANSI CSI, OSC (including OSC-8 links), and escape/control sequences while producing the bounded result so no unbounded intermediate is created; retain ordinary newline/tab text.
+- A JSON-looking string at or below the parse cap uses `JSON.parse`. An over-cap JSON-looking string is unreadable unless the narrow prefix salvage below succeeds; Raw remains available.
+- On failed JSON parse, a bounded state-machine tokenizer may recover only a value associated with an allowlisted semantic key: `stdout`, `stderr`, `text`, `content`, or `result`. It must track key/value position, quotes, escapes, and nesting; do not return an arbitrary last literal.
+- Decode complete JSON escapes. At a cut escape or lone high surrogate, end with U+FFFD rather than throw or silently drop content. Mark the normalized result unreadable when no honest semantic value can be recovered.
+- List overflow is channel-specific. Show `+n more` only when an exact source total makes `omitted` known; otherwise set `truncated: true`, `omitted: null`, and show `more results omitted`. Do not scan an unbounded tail solely to compute an exact number.
+- Bound command and code input separately from output. Code must remain substantially larger than the 80-character headline cap but need not be unbounded; a visible truncation state plus Raw is the safe contract.
 
-| File                                                            | Action | Size   | Test impact                                             |
-| --------------------------------------------------------------- | ------ | ------ | ------------------------------------------------------- |
-| `packages/web/src/lib/tool-output.ts`                           | create | ~250 L | new `tool-output.test.ts`                               |
-| `packages/web/src/lib/tool-output.test.ts`                      | create | ~300 L | —                                                       |
-| `packages/web/src/lib/tool-presentation.ts`                     | modify | +150 L | existing 141 tests must stay green; new body tables     |
-| `packages/web/src/lib/tool-presentation.test.ts`                | modify | +250 L | —                                                       |
-| `packages/web/src/experiments/console/console-isolation.test.ts`| modify | +1 L   | isolation test stays green after Phase 2 import          |
-| `packages/web/src/lib/__fixtures__/tool-output/*.json` (optional) | create | small | captured Claude payloads used by both test files        |
+## Per-family body resolution
 
-## Implementation steps
+| Family    | Body rule                                                                                                                                                                                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| shell     | command from `command`/`cmd`/`script`, else the complete wrapper-preserving sent name; bounded. Output from normalized text. Unreadable and empty/running states are explicit. Exit/outcome remains in existing row/body-bar facts.                                                   |
+| file      | path from the established path-key priority. Preview: normalized text, else input `content`, `new_content`, `new_string`, or `new_str`, else null. Do not compute a diff.                                                                                                             |
+| search    | Pattern/scope from existing inputs. Mode precedence below. Structured matches win over line parsing; content lines parse anchored `path:line:text`/`path-line-text` shapes, with unmatched lines retained as text-only items. Preserve channel-specific truncation/omission metadata. |
+| glob      | Pattern/scope follows the existing Claude-vs-OMP path rule. Use normalized paths, otherwise non-empty text lines. Never parse line numbers.                                                                                                                                           |
+| code      | Source/language from input, bounded with explicit truncation. Result from normalized text. Renderer performs highlighting.                                                                                                                                                            |
+| web       | URL from input, title/results/text from normalized channels. WebSearch results become markdown list content whose links remain inert at render time.                                                                                                                                  |
+| generic   | One shared cap of three fields across input fields followed by normalized output fields. Plain non-JSON output may be safe markdown after the fields. JSON fragments never become markdown.                                                                                           |
+| todo/task | `null`; their bodies belong to Stories 1.5/1.6.                                                                                                                                                                                                                                       |
 
-1. **Capture the unverified Claude shapes.** Run one throwaway workflow node on `provider: claude` (a temporary YAML under the worktree's `.archon/workflows/`, never committed) whose prompt calls `Grep` with `output_mode: content`, `Grep` with the default mode, `Grep` with `output_mode: count`, `Glob`, `WebFetch`, and `WebSearch`. Read the result rows back with `sqlite3 -readonly` from `remote_agent_workflow_node_messages` and copy the `output` strings into fixtures. Replace every `[UNVERIFIED]` tag in this file and in `plan.md` with the observed shape; if a shape differs from rules 5/6/9, adjust the rule table **before** writing code.
-2. **Tests before (red).** Write `tool-output.test.ts` tables and the new `tool-presentation.test.ts` body tables listed under Test scenario matrix. Run `bun test src/lib/tool-output.test.ts src/lib/tool-presentation.test.ts` from `packages/web` and confirm the new cases fail for the right reason (missing module / missing `body`).
-3. **Implement `tool-output.ts`**: parse guard, rule table, byte-array decode, salvage scanner, `stripAnsi`, `splitLines`, bounds. Each helper stops scanning at its cap; no recursion into nested objects beyond the named paths.
-4. **Extend `tool-presentation.ts`**: add `MatchItem`/`ToolBody`, resolve bodies per family, route the count badge through the normalized output, extend `genericFacts` to emit `{…}` / `[n]` for object/array values, give `safePresentation` a body, and rewrite the `ToolPresentation` docblock (`:59`) to describe the contract without story references.
-5. **Refactor under protection**: keep every existing 1.1 assertion green (chip, headline, badges order, adversarial inputs). Where the new count behaviour changes an existing expectation, update the test with the reason in the test name (behaviour, not story id).
-6. **Add `@/lib/tool-output`** to the Console isolation `approved` set.
-7. **Regression gate**: `bun --filter @archon/web test`, then `bun run type-check` and `bun run lint --max-warnings 0`.
+Search mode precedence:
 
-## Test scenario matrix
+1. recognized `input.output_mode`;
+2. normalized output `mode` or unmistakable structured channel (`filenames`/paths versus matches);
+3. exact sent-alias default: Claude `Grep` -> `files_with_matches`; lowercase observed `grep` and other search aliases -> `content`.
 
-| Path       | Scenario                                                                                                             | Provider rows          |
-| ---------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- |
-| Critical   | Claude `Bash` output `{"stdout":"a","stderr":"","interrupted":false}` → terminal output `a`, contains no `{`         | Claude                 |
-| Critical   | OMP `exec` plain text with `[31m` → terminal output stripped of SGR; OMP `grep` content blocks → joined text  | OMP                    |
-| Critical   | Devin `{"type":"Bash","output":[104,105]}` → terminal output `hi`; array over `MAX_OUTPUT_BYTE_ARRAY` → unreadable  | Devin                  |
-| Critical   | Codex `{ name: "/bin/zsh -lc 'bun test'" }` no input, output `…\n[exit code: 1]` → `command` keeps wrapper, output text verbatim | Codex          |
-| Critical   | Truncated `{"stdout":"abc\ndef...` (no closing) → salvaged text `abc\ndef...`, `salvaged: true`; `{"a":1,` → unreadable | Claude               |
-| Critical   | Grep arm: `output_mode: content` → matches; `files_with_matches` → paths; `count` → generic + count badge; absent → matches (OMP) | Claude + OMP  |
-| Critical   | Unknown tool with object input and object output → body fields ≤3, contains no `{` and no `\n  "`; nested object → `{…}`, array → `[3]` | any |
-| Critical   | Every table row: `body` defined; family unchanged when `output` is swapped for `undefined` (audit invariant)         | all                    |
-| High       | Claude `Read` `{"type":"text","file":{"content":"x"}}` → file preview `x`; Claude `Write` `{"type":"create",…}` → content | Claude              |
-| High       | Claude `Edit` output object (no text key) → preview falls back to input `new_string`; OMP `edit` empty output → preview from `new_str`/`content` | Claude + OMP |
-| High       | Claude glob `{pattern:'**/*.tsx', path:'packages/web'}` + `{"filenames":[…]}` → paths items, scope `packages/web`; OMP glob `{path:'src'}` + numbered text → items are lines, scope null | Claude + OMP |
-| High       | Devin `list_dir` indented tree → paths items are the non-empty lines (documented, bounded)                            | Devin                  |
-| High       | `eval` `{code, language:'python'}` + result text → code body, `source` untruncated (> 80 chars asserted), `result` set | OMP-style             |
-| High       | Web `{url}` + `{"result":"# Title\n…"}` → web body markdown; title null unless top-level `title` string               | Claude `[UNVERIFIED]`  |
-| High       | Matches parse: `src/a.ts:12:const x` → `{path:'src/a.ts', line:12, text:'const x'}`; `--` separator line → path null | any                    |
-| Medium     | 501 output lines → 500 items + `overflow: 1`; text over `MAX_OUTPUT_TEXT_CODE_UNITS` → head slice + `…`              | any                    |
-| Medium     | Output `undefined`/`null`/`''` → `empty`; body output null; body never throws on array/number/boolean output          | any                    |
-| Medium     | Todo `{op:'done', task:'x'}` and Claude `{todos:[…]}` → generic body fields (`todos: [3]`), headline still `todo updated` | Claude + OMP        |
-| Medium     | Task OMP `{context, tasks:[…]}` and Claude `{description, prompt}` → generic body fields, prompt truncated at 80      | Claude + OMP           |
-| Medium     | MCP `mcp__server__tool` → generic body, label unchanged                                                              | any                    |
+`count` produces body `kind: 'generic'` with a count field/badge; the resolved family remains `search`, so it does not enter the generic-fallback numerator. The small collapsed count extractor may add recognized numeric JSON keys under its existing low cap, but it must not call the full normalizer. A paths body uses `N files`; matches uses `N matches`.
 
-## Tests before
+## Source-contract corrections
 
-- `tool-output.test.ts`: rule table (one `test.each` row per rule with the observed fixture string), salvage cases, byte-array decode + cap, ANSI strip, `splitLines` overflow, empty/non-string inputs.
-- `tool-presentation.test.ts`: new `describe('body arms')` tables per family, `describe('grep arm precedence')`, `describe('no serialized data in bodies')`, `describe('output never reclassifies family')`.
+Update the two spec files in the same change so implementation and authority do not continue to disagree:
 
-## Refactor
+- `tool-presentation-contract.md`: describe summary and lazy body APIs separately; add the file-preview and web arms shown in its own expanded-body table; state todo/task ownership; keep output unable to reclassify family.
+- `test-plan.md`: correct its audit heading from Story 1.2 to Story 1.3; replace “absent -> matches” with the two sent-alias defaults; replace the generic assertion “contains no `{`” with checks that reject serialized object syntax/quoted JSON keys while allowing the required `{…}` marker. Record the raw-row versus logical-card denominator conflict and link the Phase 3 decision; do not rewrite that metric as settled before owner ratification.
 
-- `countBadge` → reads `NormalizedOutput.counts` and list length; existing OMP `count` key and digit-only string cases keep passing.
-- `genericFacts` → emits `{…}` for objects and `[n]` for arrays instead of skipping them (collapsed rows are unaffected because the headline still joins scalar facts only — add an assertion that the collapsed headline contains no `{…}`).
-- `ToolPresentation` docblock rewritten; `safePresentation` carries a body.
+Do not revise the epic AC, UX decisions, or unrelated later-story sections.
 
-## Tests after
+## Implementation sequence
 
-- Bodies present on every family; the four-tier resolution tests from 1.1 unchanged and green.
-- `console-isolation.test.ts` green with the new approved module.
+1. Add red table tests for the normalizer and lazy body resolver. Use pinned Claude type fixtures and actual OMP/Devin/Codex serialized shapes.
+2. Implement bounded primitive helpers: own-record access, scalar marker conversion, bounded ANSI/text production, shallow lists/fields, byte decoding, line parsing, and narrow JSON salvage.
+3. Implement semantic channel extraction without provider branching or recursive scans.
+4. Add `ToolBody` and `toolBodyPresentation()`; preserve every existing summary resolver assertion.
+5. Extend only the lightweight count extraction needed by collapsed badges.
+6. Update the two machine-contract documents and tests together.
+7. Run focused tests, then all web tests, typecheck, lint, and format check.
 
-## Regression gate
+## Test matrix
+
+| Priority | Case                                                                            | Expected proof                                                                              |
+| -------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| critical | Claude Bash JSON; OMP ANSI/OSC text; Devin byte array; Codex plain text         | same terminal semantics, escapes removed, bytes validated/bounded, no serialized JSON       |
+| critical | Claude `Grep` absent/content/files/count and lowercase OMP `grep` absent        | paths/matches/paths/generic respectively; count labels correct                              |
+| critical | Devin structured `file_matches`                                                 | path, line, and content retained without flattening away structure                          |
+| critical | malformed/truncated JSON at each escape boundary                                | only allowlisted value salvage; replacement char at incomplete escape; otherwise unreadable |
+| critical | unknown object input/output with nested objects and arrays                      | <=3 combined rows, literal `{…}`/`[n]`, no quoted JSON dump                                 |
+| critical | output varied across every family fixture                                       | `toolPresentation(...).family` unchanged                                                    |
+| high     | Claude read/write/edit and OMP/Devin file variants                              | path plus correct preview/fallback, never fabricated diff                                   |
+| high     | Claude Glob and OMP glob/list_dir                                               | pattern/scope rule preserved; flat bounded paths                                            |
+| high     | source >80 chars and >source cap; known/unknown language                        | not headline-truncated; display cap/truncation explicit; language preserved/sanitized later |
+| high     | WebFetch and both WebSearch result variants                                     | URL/title/text/results retained; no raw object serialization                                |
+| high     | todo/task fixtures                                                              | lazy body returns null; summary behavior unchanged                                          |
+| medium   | `undefined`, null, empty, number, boolean, array, hostile proxy/getter          | no throw; safe empty/unreadable result                                                      |
+| medium   | exact cap and cap+1 for text, JSON, bytes, list, fields, command, source        | deterministic bound and overflow behavior                                                   |
+| medium   | byte values negative, >255, fractional, or non-number                           | unreadable/no decode; never silent modulo coercion                                          |
+| medium   | Windows path match, colon in match text, separator lines, malformed line number | no wrong line/path split; unmatched content retained                                        |
+
+Tests must distinguish serialized JSON (`{"key":`, indented quoted keys, object dump) from valid source braces and `{…}`. Do not use a global ban on `{`.
+
+## Files
+
+| Path                                                                    | Action                                                                          |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `packages/web/src/lib/tool-output.ts`                                   | create normalizer and bounded helpers                                           |
+| `packages/web/src/lib/tool-output.test.ts`                              | create provider/adversarial/boundary tables                                     |
+| `packages/web/src/lib/tool-presentation.ts`                             | add body types/resolver and bounded count support; remove story-number docblock |
+| `packages/web/src/lib/tool-presentation.test.ts`                        | add family-body, grep precedence, invariant, and no-serialization tables        |
+| `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md` | reconcile canonical API/arms                                                    |
+| `_bmad-output/specs/spec-agent-node-room/test-plan.md`                  | reconcile grep/generic/audit tests                                              |
+
+Do not change `agent-history.ts` or the Console allowlist in this phase. The renderers will import the body resolver through the already-approved `@/lib/tool-presentation` boundary.
+
+## Verification
 
 ```bash
 cd packages/web && bun test src/lib/tool-output.test.ts src/lib/tool-presentation.test.ts
 bun --filter @archon/web test
-bun run type-check && bun run lint --max-warnings 0 && bun run format:check
+bun run type-check
+bun run lint --max-warnings 0
+bun run format:check
 ```
 
-## Dependency map
+## Completion criteria
 
-- Blocks Phase 2 (renderers consume `presentation.body`) and Phase 3 (the audit imports `toolPresentation`).
-- Depends on nothing in this plan. Depends on Story 1.1 (shipped, `0fb1fd04`).
-- Coordinates with Story 1.2: no file in this phase is touched by 1.2 except `tool-presentation.ts` (1.2 adds `toolRawPayloadJson`); additive on both sides, merge is trivial.
+- [ ] Normalizer exposes simultaneous bounded semantic channels for all verified shapes.
+- [ ] Lazy resolver covers shell/file/search/glob/code/web/generic and returns null for todo/task.
+- [ ] Closed-row summary functions do not invoke full normalization.
+- [ ] Output cannot change family; all existing Story 1.1 tests stay green.
+- [ ] Claude/OMP rows exist in every applicable table, with Devin/Codex rows where their shapes differ.
+- [ ] Contract and test-plan contradictions are corrected.
+- [ ] Focused and web-wide verification passes.
 
-## Todo
+## Risks and responses
 
-- [ ] Capture Claude `Grep`/`Glob`/`WebFetch`/`WebSearch` outputs and replace `[UNVERIFIED]` tags
-- [ ] Red tables in `tool-output.test.ts` and `tool-presentation.test.ts`
-- [ ] Implement `tool-output.ts` with bounds and salvage
-- [ ] Add `ToolBody` and per-family body resolution; route count badge through parsed output
-- [ ] Rewrite `ToolPresentation` docblock; give `safePresentation` a body
-- [ ] Add `@/lib/tool-output` to the Console isolation allowlist
-- [ ] Regression gate green
+| Risk                                    | Detection                             | Response                                                    |
+| --------------------------------------- | ------------------------------------- | ----------------------------------------------------------- |
+| Salvage extracts the wrong literal      | adversarial nested/key/value fixtures | key-position tokenizer, allowlist only, unreadable fallback |
+| Full-output payload blocks the UI       | cap+1/huge input tests                | reject over-cap JSON, bound all scans and rendering         |
+| Grep pending row chooses wrong arm      | exact-name/default table              | explicit structural/mode/alias precedence                   |
+| Normalizer becomes provider switchboard | review sees provider identifiers      | encode documented shapes as structural extractors only      |
+| Generic fields exceed story cap         | combined input/output fixture         | one accumulator and one three-row budget                    |
 
-## Success criteria
+## Rollback
 
-- All new tables green; all 1.1 tests green; `type-check`, `lint`, `format:check` green.
-- Replaying the local corpus with `output: undefined` still yields 20/1,966 generic (family invariant held).
-- No `[UNVERIFIED]` tag remains in the plan.
-
-## Risk assessment
-
-| Risk                                                                                  | Signal                                             | Response                                                                                |
-| ------------------------------------------------------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Captured Claude `Grep`/`WebFetch` shapes differ from rules 5/6/9                      | Step 1 fixture disagrees with the rule table       | Adjust the rule table and fixtures before coding; do not special-case by tool name      |
-| Salvage scanner mis-decodes an escape at the cut                                      | Test with a cut inside `\u00` or `\n`              | Treat an incomplete escape as end of text; assert no throw                              |
-| Count badge change alters an existing 1.1 assertion                                   | Existing `count fact` tests fail                   | Keep OMP `count` and digit-only semantics; update only the raw-JSON-string expectation  |
-| `TextDecoder` unavailable in the bun test runtime                                     | ReferenceError in tests                            | It is a bun global; if absent, decode via `String.fromCharCode` over the capped array   |
-
-## Security considerations
-
-- The normalizer renders text through React text nodes only; no HTML is produced here. Fixtures must not contain real tokens or personal data (scrub captured payloads before committing).
-- Byte-array decode and JSON parse are length-capped so a hostile payload cannot stall the render thread.
+Remove `tool-output.ts`, the body types/resolver/tests, and the two doc corrections. Existing summary presentation and stored/API contracts remain unchanged.
