@@ -46,3 +46,36 @@
 - register() on an already-live handle returns the same handle (idempotent); closed → fresh handle + fresh idempotency scope
 
 ---
+
+## 2026-09-19 — US-002: Executor natural-boundary drain and central cancel cleanup
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/dag-executor.ts` — steering wiring in both AI paths:
+  - `executeNodeInternal`: registers `(workflowRun.id, stepName)` only when `sessionResume`; `turns:` loop wraps the existing re-ask loop; guidance turns delete `resumeInteractions`, `forkSession:false`, rotate `executionScope` via `newTranscriptAttempt`; synchronous `closeIfEmpty()` last gate at the natural boundary — missing session id fails BEFORE drain; drain joins verbatim with `\n\n`; idle-timeout/cancel/credit/empty seal via `close()` before awaited terminal writes; AskHuman `park()` before pause, `steeringPauseCommitted` only after pause succeeds; `finally` logs queued COUNT + close+unregister unless committed
+  - `executeLoopNode` split into a thin lifecycle wrapper (`LoopSteeringLifecycle` box) + `executeLoopNodeInner` — no 1600-line re-indent; per-iteration `turns:` loop inside the `for i` loop so guidance turns never consume an iteration; boundary evaluates the LATEST turn's completion verdict and treats completion/max_iterations as terminal (closeIfEmpty) vs gate/next-iteration as non-terminal (pendingCount, stays live); interactive gate parks before `pauseGateRespectingExternalTransition`, commits only when `paused===true`; `failLoopNode`/`failLoopIteration` close first
+- `packages/core/src/db/workflows.ts` — `discardRunSteeringHandles(runId)` post-commit helper called from `cancelWorkflowRun` AND `cancelRecoveryWorkflowRun`; counts-only logging; cleanup failure cannot roll back; never runs when the transaction threw
+- `packages/workflows/src/dag-executor.test.ts` — +15 tests: direct drain+same-session resume, verbatim join, batch flush per turn + usage fold, no-handle on non-resumable providers, no-session-id fail w/ queue preserved, undrained on empty/provider-error/cancel/credit/idle-timeout, AskHuman park→resume inherits queue, guidance-in-reask prompt, loop drain in-iteration, guidance wins completion + max_iterations boundaries, loop-group namespaced `grp.body` registration
+- `packages/core/src/db/workflows.test.ts` — +7 tests: live+parked discard post-commit, idempotent terminal discard, db-failure preserves handles, cleanup-failure can't fail commit, per-run isolation, both for cancel and recovery-cancel
+
+**Acceptance criteria verified**:
+- [x] register (workflowRun.id, stepName) only when sessionResume === true (both paths; loop-group prompt nodes inherit via stepNamePrefix → `grp.body`)
+- [x] lifecycle try/finally: park on AskHuman, close before terminal writes, warn-count + unregister in finally (loop via wrapper `finally`, direct via function `finally`)
+- [x] outer provider-turn loop wrapping re-ask; guidance joins `\n\n`, resumes prior turn's session id
+- [x] guidance turns drop resumeInteractions, forkSession:false, rotate attempt scope, no extra lifecycle events (1 node_started asserted)
+- [x] per-turn idle-timeout, cancel dominance, per-turn batch flush, credit/empty failures; usage folds across turns (tokens {30,12}, cost 0.03 asserted)
+- [x] non-natural boundaries close + terminal path without draining (cancel/credit/empty/idle/provider-error all assert queue intact)
+- [x] closeIfEmpty last gate: true→break; missing session id fails before drain; else drain+continue synchronously
+- [x] loop: same semantics per-iteration; guidance wins completion AND max_iterations boundaries
+- [x] db/workflows.ts discardRun after commit; content-free counts; cleanup failure can't roll back; also on recovery-cancel + idempotent terminal path
+- [x] empty-queue execution identical (all 608 pre-existing executor tests pass unmodified)
+- [x] focused tests pass (623 executor + 129 db); `bun x tsc --noEmit` clean both packages; eslint --max-warnings 0 clean on source files; prettier applied
+
+**Learnings**:
+- Loop lifecycle without re-indenting: `executeLoopNode` became a thin wrapper owning a `LoopSteeringLifecycle` box (`steeringHandle`/`steeringPauseCommitted`) passed into `executeLoopNodeInner`; `finally` in the wrapper does warn+close+unregister — avoids a 1600-line try-wrap diff
+- TS CFA can't see closure mutation: `nodeTokens`/`newSessionId` assigned inside `runStreamPass` need `= undefined as T | undefined` resets at the turn head or later reads narrow to `never`
+- `no-unnecessary-boolean-literal-compare` + `no-non-null-assertion` together forbid both `=== true` and `!`/`as` — narrow on the value itself (`turnGuidancePrompt !== undefined`), set alongside the boolean
+- Bun `mock()`-typed store: `store.getWorkflowRunStatus = mock(async () => streaming ? 'cancelled' : 'running')` flips mid-stream deterministically — no sleeps needed for cancel tests
+- AskHuman resume re-entry: a parked handle is revived by `register()` on the resumed execution — the SAME handle object keeps its retained queue, so guidance queued pre-park drains post-resume
+
+---
