@@ -2,7 +2,7 @@
  * Console-owned agent history renderer. Uses AgentHistoryItem only as data and
  * never imports Legacy React components.
  */
-import { useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
@@ -10,12 +10,14 @@ import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import {
+  toolBodyPresentation,
   toolRawPayloadJson,
   toolRowPresentation,
   type TaskSubtaskCard,
   type ToolBody,
   type ToolFamily,
   type ToolOutcome,
+  type ToolPresentationInput,
   type ToolRowBadge,
   type ToolRowBadgeTone,
   type ToolRowPresentation,
@@ -298,6 +300,257 @@ function ToolBadge({ badge }: { badge: ToolRowBadge }): ReactElement {
   );
 }
 
+// --- Expanded tool body ---
+// Lazy: ToolBodySwitch is only mounted while the row is open and Raw is
+// closed, so `toolBodyPresentation` never runs for collapsed or Raw rows.
+// Duplicate of the Legacy renderer's JSX — the data contract is shared, the
+// components are not.
+
+const TOOL_BODY_BOX =
+  'tool-family-body min-w-0 whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary';
+
+/** Visible text of a markdown node; element children contribute nothing. */
+function markdownTextOf(node: ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(markdownTextOf).join('');
+  return '';
+}
+
+/**
+ * Stored tool output is untrusted content, so its markdown renders inert:
+ * rehype-raw stays off (raw HTML survives only as escaped text), links become
+ * their label plus a parenthesized destination — never navigable — and images
+ * show alt text plus an omitted marker, so nothing in a body can navigate,
+ * fetch, or run markup. rehype-highlight keeps its default `detect: false`:
+ * only explicit `language-*` fences highlight.
+ */
+const TOOL_BODY_MARKDOWN_COMPONENTS: Components = {
+  a: ({ children, href }): ReactElement => {
+    const label = markdownTextOf(children);
+    const dest = href ?? '';
+    const bare = dest === label || dest.replace(/^https?:\/\//, '') === label;
+    return (
+      <span>
+        {children}
+        {dest !== '' && !bare ? <span className="text-text-secondary"> ({dest})</span> : null}
+      </span>
+    );
+  },
+  img: ({ alt }): ReactElement => (
+    <span>
+      {alt !== undefined && alt !== '' ? alt : 'image'}
+      <span className="text-text-secondary"> [image omitted]</span>
+    </span>
+  ),
+  pre: ({ children }): ReactElement => (
+    <pre className="m-0 whitespace-pre-wrap font-mono">{children}</pre>
+  ),
+  code: ({ children, className }): ReactElement =>
+    className !== undefined &&
+    (className.startsWith('language-') || className.startsWith('hljs')) ? (
+      <code className={`${className} font-mono`}>{children}</code>
+    ) : (
+      <code className="rounded bg-surface px-1 py-px font-mono">{children}</code>
+    ),
+  blockquote: ({ children }): ReactElement => (
+    <blockquote className="border-l-2 border-border pl-2 text-text-secondary">
+      {children}
+    </blockquote>
+  ),
+};
+
+function ToolBodyMarkdown({ markdown }: { markdown: string }): ReactElement {
+  return (
+    <ReactMarkdown
+      remarkPlugins={REMARK_PLUGINS}
+      rehypePlugins={REHYPE_PLUGINS}
+      components={TOOL_BODY_MARKDOWN_COMPONENTS}
+    >
+      {markdown}
+    </ReactMarkdown>
+  );
+}
+
+/** Exact remaining counts report `+n more`; an unknowable tail reports omission. */
+function OmittedTail({
+  omitted,
+  truncated,
+}: {
+  omitted: number | null;
+  truncated: boolean;
+}): ReactElement | null {
+  if (omitted !== null && omitted > 0) {
+    return <div className="text-text-secondary">+{omitted} more</div>;
+  }
+  if (truncated) return <div className="text-text-secondary">more results omitted</div>;
+  return null;
+}
+
+/** Longest run of backticks in `source` plus one, floored at three — a fence the source can never close early. */
+function codeFence(source: string): string {
+  let longest = 0;
+  let run = 0;
+  for (const char of source) {
+    run = char === '`' ? run + 1 : 0;
+    if (run > longest) longest = run;
+  }
+  return '`'.repeat(Math.max(3, longest + 1));
+}
+
+const CODE_LANGUAGE_PATTERN = /^[A-Za-z0-9_+#.-]+$/;
+
+function ToolBodySwitch({
+  input,
+  presentation,
+}: {
+  input: ToolPresentationInput;
+  presentation: ToolRowPresentation;
+}): ReactElement | null {
+  // Keyed on the field values so an unrelated re-render (loading flag, badge
+  // refresh) never re-normalizes; a new output value recomputes exactly once.
+  const body: ToolBody | null = useMemo(
+    () => toolBodyPresentation(input, presentation.family),
+    [input.name, input.input, input.output, presentation.family]
+  );
+  if (body === null) return null;
+
+  switch (body.kind) {
+    case 'terminal':
+      return (
+        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+          <span className="text-node-bash">$</span> {body.command}
+          {'\n'}
+          {body.unreadable ? (
+            <span className="text-text-secondary">output unreadable — open Raw</span>
+          ) : body.output === null ? (
+            <span className="text-text-secondary">
+              {presentation.statusLabel === 'running' ? 'running — no output yet' : 'no output'}
+            </span>
+          ) : (
+            body.output
+          )}
+          {presentation.statusLabel === 'failed' ? (
+            <span
+              className="font-bold"
+              style={{ color: 'color-mix(in oklch, var(--error) 75%, var(--text-primary))' }}
+            >
+              {'\n'}FAILED
+            </span>
+          ) : null}
+        </div>
+      );
+    case 'file':
+      return (
+        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+          <span className="text-node-command">{body.path}</span>
+          {'\n'}
+          {body.unreadable ? (
+            <span className="text-text-secondary">output unreadable — open Raw</span>
+          ) : body.preview === null ? (
+            <span className="text-text-secondary">no preview</span>
+          ) : (
+            body.preview
+          )}
+        </div>
+      );
+    case 'matches':
+      return (
+        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+          <div>
+            <span className="text-text-primary">{body.pattern}</span>
+            {body.scope !== null ? (
+              <span className="text-text-secondary"> in {body.scope}</span>
+            ) : null}
+          </div>
+          {body.items.map(item => (
+            <div
+              key={item.path !== null ? `${item.path}:${item.line ?? ''}:${item.text}` : item.text}
+            >
+              {item.path !== null ? <span className="text-node-command">{item.path}</span> : null}
+              {item.path !== null && item.line !== null ? (
+                <span className="text-text-secondary">:{item.line}</span>
+              ) : null}
+              {item.path !== null ? ' ' : null}
+              {item.text}
+            </div>
+          ))}
+          {body.items.length === 0 ? <div className="text-text-secondary">no matches</div> : null}
+          <OmittedTail omitted={body.omitted} truncated={body.truncated} />
+        </div>
+      );
+    case 'paths':
+      return (
+        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+          {body.items.map(path => (
+            <div key={path} className="text-node-command">
+              {path}
+            </div>
+          ))}
+          {body.items.length === 0 ? <div className="text-text-secondary">no matches</div> : null}
+          <OmittedTail omitted={body.omitted} truncated={body.truncated} />
+        </div>
+      );
+    case 'code': {
+      const language =
+        body.language !== null && CODE_LANGUAGE_PATTERN.test(body.language) ? body.language : '';
+      const fence = codeFence(body.source);
+      return (
+        <>
+          <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+            <ToolBodyMarkdown markdown={`${fence}${language}\n${body.source}\n${fence}`} />
+            {body.truncated ? <div className="text-text-secondary">source truncated</div> : null}
+          </div>
+          {body.result !== null ? (
+            <div className={`${TOOL_BODY_BOX} mt-1.5`} style={{ overflowWrap: 'anywhere' }}>
+              {body.result}
+            </div>
+          ) : null}
+        </>
+      );
+    }
+    case 'web':
+      return (
+        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+          <span className="text-node-command">{body.url}</span>
+          {body.title !== null ? <div className="font-bold">{body.title}</div> : null}
+          {body.markdown !== null ? (
+            <div className="chat-markdown mt-1">
+              <ToolBodyMarkdown markdown={body.markdown} />
+            </div>
+          ) : null}
+          <OmittedTail omitted={body.omitted} truncated={body.truncated} />
+        </div>
+      );
+    case 'generic':
+      return (
+        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+          {body.unreadable ? (
+            <div className="text-text-secondary">output unreadable — open Raw</div>
+          ) : null}
+          {body.fields.map(field => (
+            <div key={field.key} className="flex gap-2.5 leading-[1.7]">
+              <span className="w-[11ch] flex-none overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary">
+                {field.key}
+              </span>
+              <span className="min-w-0 flex-1 text-text-primary">{field.value}</span>
+            </div>
+          ))}
+          {body.markdown !== null ? (
+            <div className="chat-markdown mt-1">
+              <ToolBodyMarkdown markdown={body.markdown} />
+            </div>
+          ) : null}
+          {body.fields.length === 0 && body.markdown === null && !body.unreadable ? (
+            <div className="text-text-secondary">no details</div>
+          ) : null}
+        </div>
+      );
+    default:
+      return <TaskBody body={body} />;
+  }
+}
+
 /**
  * One normalized subtask as a native disclosure: agent · name — excerpt on a
  * single line, full prompt inside. The chevron binds to the card's own `open`
@@ -493,63 +746,74 @@ function ToolHistory({
           ))}
         </span>
       </summary>
-      <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
-        <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
-          <span className="min-w-0">{presentation.bodyBarText}</span>
-          <button
-            type="button"
-            aria-expanded={rawOpen}
-            aria-controls={rawOpen ? rawPanelId : undefined}
-            className={`ml-auto inline-flex min-h-[24px] flex-none cursor-pointer items-center rounded-[4px] border px-[7px] py-px focus-visible:outline-2! focus-visible:outline-accent-bright! ${
-              rawOpen
-                ? 'border-border-bright text-text-primary'
-                : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary focus-visible:border-border-bright focus-visible:text-text-primary'
-            }`}
-            onClick={(): void => {
-              setRawOpen(value => !value);
-            }}
-          >
-            Raw
-            {rawOpen ? <span aria-hidden="true"> ▾</span> : null}
-          </button>
-        </div>
-        {rawOpen ? null : presentation.body?.kind === 'task' ? (
-          <TaskBody body={presentation.body} />
-        ) : null}
-        {rawOpen ? null : presentation.body?.kind === 'generic' ? (
-          <GenericBody body={presentation.body} />
-        ) : null}
-        {rawOpen ? (
-          <pre
-            id={rawPanelId}
-            className="m-0 min-w-0 max-w-full whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary [overflow-wrap:anywhere]"
-          >
-            {toolRawPayloadJson(presentation.rawPayload)}
-          </pre>
-        ) : null}
-        {item.canLoadFullOutput ? (
-          <button
-            type="button"
-            className="mt-1.5 text-xs text-primary hover:text-accent-bright"
-            disabled={loading}
-            onClick={loadFull}
-          >
-            View full output
-          </button>
-        ) : null}
-        {loadError !== null ? (
-          <div className="mt-1.5 text-[11px] text-error">
-            <span>{loadError}</span>
+      {open ? (
+        <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
+          <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
+            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+              {presentation.bodyBarText}
+            </span>
             <button
               type="button"
-              className="ml-2 text-xs text-primary hover:text-accent-bright"
-              onClick={loadFull}
+              aria-expanded={rawOpen}
+              aria-controls={rawOpen ? rawPanelId : undefined}
+              className={`flex min-h-[24px] flex-none items-center rounded-[4px] border px-[7px] font-mono text-[10.5px] focus-visible:outline-2! focus-visible:outline-accent-bright! ${
+                rawOpen
+                  ? 'border-border-bright text-text-primary'
+                  : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary'
+              }`}
+              onClick={(): void => {
+                setRawOpen(value => !value);
+              }}
             >
-              Retry
+              Raw
+              {rawOpen ? <span aria-hidden="true"> ▾</span> : null}
             </button>
           </div>
-        ) : null}
-      </div>
+          {rawOpen ? (
+            <pre
+              id={rawPanelId}
+              className="m-0 min-w-0 max-w-full whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary [overflow-wrap:anywhere]"
+            >
+              {toolRawPayloadJson(presentation.rawPayload)}
+            </pre>
+          ) : presentation.body?.kind === 'task' ? (
+            <TaskBody body={presentation.body} />
+          ) : presentation.body?.kind === 'generic' ? (
+            <GenericBody body={presentation.body} />
+          ) : (
+            <ToolBodySwitch
+              input={{
+                name: item.name,
+                input: item.input,
+                output: hasFullOutput ? fullOutput : item.output,
+              }}
+              presentation={presentation}
+            />
+          )}
+          {item.canLoadFullOutput ? (
+            <button
+              type="button"
+              className="mt-1.5 text-xs text-primary hover:text-accent-bright"
+              disabled={loading}
+              onClick={loadFull}
+            >
+              View full output
+            </button>
+          ) : null}
+          {loadError !== null ? (
+            <div className="mt-1.5 text-[11px] text-error">
+              <span>{loadError}</span>
+              <button
+                type="button"
+                className="ml-2 text-xs text-primary hover:text-accent-bright"
+                onClick={loadFull}
+              >
+                Retry
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </details>
   );
 }

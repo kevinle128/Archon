@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-09-18T12:28:03.664Z",
+  "source": "mac-mini-local-install",
+  "dialect": "sqlite",
+  "denominator": "logical-tool-cards-v1",
+  "auditSourceSha256": "bc5bd3cd50c7513b50a6477ff909e224aae681d08c79fc2f22ac7ef590644f92",
+  "logicalCards": 5540,
+  "genericCards": 89,
+  "fraction": 0.016064981949458483,
+  "genericNames": [
+    {
+      "name": "get_output",
+      "cards": 71
+    },
+    {
+      "name": "get_command_or_subagent_output",
+      "cards": 4
+    },
+    {
+      "name": "StructuredOutput",
+      "cards": 3
+    },
+    {
+      "name": "mcp__archon__AskHuman",
+      "cards": 3
+    },
+    {
+      "name": "ReportFindings",
+      "cards": 2
+    },
+    {
+      "name": "exec",
+      "cards": 2
+    },
+    {
+      "name": "kill_shell",
+      "cards": 2
+    },
+    {
+      "name": "SendMessage",
+      "cards": 1
+    },
+    {
+      "name": "Skill",
+      "cards": 1
+    }
+  ]
+}

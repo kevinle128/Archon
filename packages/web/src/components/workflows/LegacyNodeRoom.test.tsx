@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'development';
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Root } from 'react-dom/client';
@@ -12,6 +12,7 @@ import type {
   WorkflowNodeMessageResponse,
   WorkflowNodeMessagesResponse,
 } from '@/lib/api';
+import * as toolPresentation from '@/lib/tool-presentation';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import type { LogRow } from './build-log-rows';
@@ -888,10 +889,11 @@ describe('LegacyNodeRoom dispatcher', () => {
     expect(summary.textContent).toContain('Read');
     expect(summary.textContent).toContain('a.ts');
     expect(summary.textContent).toContain('succeeded');
-    // Diagnostics stay hidden while the row is collapsed.
-    for (const nested of Array.from(toolRow.querySelectorAll('details'))) {
-      expect((nested as Element & { open: boolean }).open).toBe(false);
-    }
+    // No body content mounts behind a closed row.
+    expect(toolRow.querySelectorAll('details')).toHaveLength(0);
+    expect(toolRow.querySelector('button[aria-expanded]')).toBeNull();
+    expect(toolRow.querySelector('.tool-family-body')).toBeNull();
+    expect(toolRow.textContent).not.toContain('chunk');
   });
 
   test('a poll-updated failure flips an untouched drained row open once', async () => {
@@ -1245,13 +1247,11 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(summary.textContent).toContain('Read');
     expect(summary.textContent).toContain('a.ts');
     expect(summaryAccessibleName(summary)).toBe('succeeded file · Read a.ts');
-    // One Raw control sits in the body; the serialized payload stays out of the
-    // DOM while it is closed and the nested Input/Output diagnostics are gone.
-    const raw = rawButton(row);
-    expect(raw.textContent).toBe('Raw');
-    expect(raw.getAttribute('aria-expanded')).toBe('false');
-    expect(raw.getAttribute('aria-controls')).toBeNull();
+    // The expanded region is unmounted while collapsed — no Raw toggle, no
+    // family body, no serialized payload anywhere in the DOM.
     expect(row.querySelectorAll('details')).toHaveLength(0);
+    expect(row.querySelector('button[aria-expanded]')).toBeNull();
+    expect(row.querySelector('.tool-family-body')).toBeNull();
     expect(row.querySelector('pre')).toBeNull();
     expect(row.textContent).not.toContain('chunk');
   });
@@ -1414,6 +1414,11 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       click(rowSummary(row));
     });
     expect(row.open).toBe(true);
+    // The file body arm renders; the serialized payload does not.
+    const body = row.querySelector('.tool-family-body');
+    expect(body?.textContent).toContain('a.ts');
+    expect(body?.textContent).toContain('chunk');
+    expect(body?.textContent).not.toContain('"name"');
 
     const raw = rawButton(row);
     await act(async () => {
@@ -1427,6 +1432,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(marker?.textContent).toBe(' ▾');
     expect(raw.className).toContain('border-border-bright');
     expect(raw.className).toContain('text-text-primary');
+    // The family body unmounts while the Raw panel is open.
+    expect(row.querySelector('.tool-family-body')).toBeNull();
 
     // aria-controls appears only while open and resolves to this row's panel.
     const panelId = raw.getAttribute('aria-controls');
@@ -1451,8 +1458,111 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(raw.getAttribute('aria-controls')).toBeNull();
     expect(win.document.getElementById(panelId)).toBeNull();
     expect(row.querySelector('pre')).toBeNull();
-    expect(row.textContent).not.toContain('chunk');
+    // The family body remounts with the normalized preview, not the payload.
+    expect(row.querySelector('.tool-family-body')?.textContent).toContain('chunk');
+    expect(row.querySelector('.tool-family-body')?.textContent).not.toContain('"name"');
     expect(row.open).toBe(true);
+  });
+
+  test('the body resolver runs only while open and Raw-closed, and recomputes on full output', async () => {
+    let resolveLoad: ((message: WorkflowNodeMessageResponse) => void) | null = null;
+    const loadMessage = (): Promise<WorkflowNodeMessageResponse> =>
+      new Promise<WorkflowNodeMessageResponse>(resolve => {
+        resolveLoad = resolve;
+      });
+    const rows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'success',
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    const spy = spyOn(toolPresentation, 'toolBodyPresentation');
+    try {
+      await act(async () => {
+        mountItems(historyItems(rows), loadMessage);
+      });
+      // Collapsed row: the resolver never runs and no body mounts.
+      expect(spy).toHaveBeenCalledTimes(0);
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const callsAfterOpen = spy.mock.calls.length;
+      expect(callsAfterOpen).toBeGreaterThan(0);
+
+      // Raw open swaps the body out — the resolver does not run for it.
+      const raw = rawButton(row);
+      await act(async () => {
+        click(raw);
+      });
+      expect(spy.mock.calls.length).toBe(callsAfterOpen);
+      await act(async () => {
+        click(raw);
+      });
+      const callsAfterSwapBack = spy.mock.calls.length;
+      expect(callsAfterSwapBack).toBeGreaterThan(callsAfterOpen);
+
+      // The full-output fetch recomputes the body once against the new output.
+      await act(async () => {
+        click(rowButton(row, 'View full output'));
+      });
+      await act(async () => {
+        resolveLoad?.({
+          id: 'result-t-1',
+          seq: 11,
+          kind: 'tool',
+          payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' }, output: 'FULL OUTPUT' },
+          created_at: CREATED_AT,
+        });
+      });
+      expect(spy.mock.calls.length).toBe(callsAfterSwapBack + 1);
+      const last = spy.mock.calls.at(-1);
+      expect(last?.[0]).toEqual({
+        name: 'Read',
+        input: { path: 'a.ts' },
+        output: 'FULL OUTPUT',
+      });
+      expect(last?.[1]).toBe('file');
+      expect(row.querySelector('.tool-family-body')?.textContent).toContain('FULL OUTPUT');
+
+      // Closing the row unmounts the body entirely.
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(false);
+      expect(row.querySelector('.tool-family-body')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('inside an open body the Raw button is the next tab stop after the summary', async () => {
+    const rows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'success',
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(rows));
+    });
+    const row = toolRow('t-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    const html = row.innerHTML;
+    const summaryEnd = html.indexOf('</summary>');
+    const rawAt = html.indexOf('aria-expanded');
+    const fullAt = html.indexOf('View full output');
+    expect(rawAt).toBeGreaterThan(summaryEnd);
+    expect(rawAt).toBeLessThan(fullAt);
+    // The Raw button is the only control inside the body besides the loader.
+    const buttons = row.querySelectorAll('button');
+    expect(buttons[0]?.getAttribute('aria-expanded')).not.toBeNull();
   });
 
   test('a pending card keeps Raw open and updates the panel when its result pairs', async () => {
@@ -1465,6 +1575,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     const row = toolRow('t-1');
     await act(async () => {
       click(rowSummary(row));
+    });
+    await act(async () => {
       click(rawButton(row));
     });
     expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
@@ -1487,6 +1599,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     const row = toolRow('t-1');
     await act(async () => {
       click(rowSummary(row));
+    });
+    await act(async () => {
       click(rawButton(row));
     });
     expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
@@ -1505,6 +1619,11 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       mountItems(historyItems(READ_ROWS));
     });
     const remounted = toolRow('t-1');
+    // The remounted row is also freshly closed; Raw stays closed once opened.
+    expect(remounted.open).toBe(false);
+    await act(async () => {
+      click(rowSummary(remounted));
+    });
     expect(rawButton(remounted).getAttribute('aria-expanded')).toBe('false');
     expect(rawButton(remounted).getAttribute('aria-controls')).toBeNull();
     expect(remounted.querySelector('pre')).toBeNull();
@@ -1522,6 +1641,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     const row = toolRow('t-1');
     await act(async () => {
       click(rowSummary(row));
+    });
+    await act(async () => {
       click(rawButton(row));
     });
     const panel = rawPanel(row);
@@ -1574,6 +1695,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(rowSummary(row).textContent).toContain('truncated');
     await act(async () => {
       click(rowSummary(row));
+    });
+    await act(async () => {
       click(rawButton(row));
     });
     expect(row.open).toBe(true);
@@ -1709,6 +1832,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     const row = toolRow('t-1');
     await act(async () => {
       click(rowSummary(row));
+    });
+    await act(async () => {
       click(rawButton(row));
     });
     const button = rowButton(row, 'View full output');
@@ -1806,21 +1931,7 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
   });
 
   test('nested subtask card toggles do not mark or flip the outer row', async () => {
-    await act(async () => {
-      mountItems(historyItems(OMP_TASK_ROWS));
-    });
-    const row = toolRow('task-1');
-    expect(row.open).toBe(false);
-    const card = subtaskCard(row, 0);
-    await act(async () => {
-      click(cardSummary(card));
-    });
-    expect(card.open).toBe(true);
-    // The guard keeps the nested toggle from touching the outer row.
-    expect(row.open).toBe(false);
-
-    // Still untouched: the failed transition auto-opens the outer row; the
-    // nested card keeps its own state.
+    // A failed outcome auto-opens the untouched outer row and mounts the cards.
     const failedRows: readonly WorkflowNodeMessageResponse[] = [
       OMP_TASK_ROWS[0],
       resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'boom', { outcome: 'error' }),
@@ -1828,9 +1939,20 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     await act(async () => {
       mountItems(historyItems(failedRows));
     });
-    const updated = toolRow('task-1');
-    expect(updated.open).toBe(true);
-    expect(subtaskCard(updated, 0).open).toBe(true);
+    const row = toolRow('task-1');
+    expect(row.open).toBe(true);
+    const card = subtaskCard(row, 0);
+    await act(async () => {
+      click(cardSummary(card));
+    });
+    expect(card.open).toBe(true);
+    // The guard keeps the nested toggle from touching or flipping the outer row.
+    expect(row.open).toBe(true);
+    await act(async () => {
+      click(cardSummary(card));
+    });
+    expect(card.open).toBe(false);
+    expect(row.open).toBe(true);
   });
 
   test('a closed card chevron is bound to the card state, not the outer row', async () => {
@@ -1888,6 +2010,8 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     const row = toolRow('task-1');
     await act(async () => {
       click(rowSummary(row));
+    });
+    await act(async () => {
       click(cardSummary(subtaskCard(row, 0)));
     });
     expect(subtaskCard(row, 0).open).toBe(true);

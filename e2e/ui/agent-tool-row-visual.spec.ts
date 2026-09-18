@@ -10,13 +10,17 @@ import { openLegacyRunDetail, openRunDetail } from '../lib/playwright/run-detail
 import { T } from '../lib/playwright/timeouts';
 
 /**
- * Story 1.1 + Story 1.2 visual acceptance for the readable tool-call row.
+ * Visual acceptance for the readable tool-call row (Story 1.1), its Raw
+ * payload toggle (Story 1.2), and expanded family bodies (Story 1.3).
  *
  * Behavior is proven elsewhere (workflow-run-hitl*.spec.ts); this spec owns the
  * geometry/focus/motion/contrast evidence recorded in
  * plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md
- * (Story 1.1 row shell) and the Story 1.2 Raw-toggle supplement at
- * plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md.
+ * (Story 1.1 row shell), the Story 1.2 Raw-toggle supplement at
+ * plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md,
+ * and plans/260918-0834-issue-176-tool-family-bodies/reports/implementation-evidence.md.
+ * The gallery tests run on deterministic route-fulfilled transcript fixtures —
+ * labeled as such in their attachments — not fake-provider claims.
  * Captures go to the Playwright output dir via testInfo; the Story 1.2 Raw
  * captures are also written to the supplement's reports/evidence/ directory.
  */
@@ -81,7 +85,8 @@ async function openToolRoom(page: Page, surface: Surface, runId: string): Promis
   }
   const room = roomRegion(page);
   await expect(room).toBeVisible({ timeout: T.medium });
-  await expect(room.locator(SUMMARY)).toBeVisible({ timeout: T.medium });
+  // `.first()`: the Story 1.3 gallery room holds one row per family arm.
+  await expect(room.locator(SUMMARY).first()).toBeVisible({ timeout: T.medium });
   return room;
 }
 
@@ -89,6 +94,118 @@ const ROOM_PANEL_ID: Record<Surface, string> = {
   console: 'console-run-room',
   legacy: 'legacy-run-room',
 };
+
+// --- Story 1.3 family-body gallery ---
+// Browser visual fixtures: deterministic route-fulfilled transcript responses
+// replace only the `inspect-file` node's message page — the run, server, and
+// UI stay real; nothing here claims fake-provider behavior. One row per body
+// arm, plus the generic and degraded (unreadable) arms.
+
+interface GalleryTool {
+  id: string;
+  name: string;
+  input: unknown;
+  output: unknown;
+}
+
+/** One unbroken token longer than the 460px body box — must wrap, never overflow. */
+const GALLERY_WRAP_TOKEN = 'x'.repeat(600);
+
+const GALLERY_TOOLS: GalleryTool[] = [
+  {
+    id: 'gal-shell',
+    name: 'Bash',
+    input: { command: 'bun run validate' },
+    output: `3 packages checked\n${GALLERY_WRAP_TOKEN}`,
+  },
+  {
+    id: 'gal-file',
+    name: 'Read',
+    input: { path: 'src/lib/tool-presentation.ts' },
+    output: 'export const MAX = 1;\nexport const MIN = 0;',
+  },
+  {
+    id: 'gal-search',
+    name: 'Grep',
+    input: { pattern: 'needle', path: 'src', output_mode: 'content' },
+    output: 'src/a.ts:3:const needle = 1;\nsrc/b.ts:9:return needle();',
+  },
+  {
+    id: 'gal-glob',
+    name: 'Glob',
+    input: { pattern: '**/*.test.ts' },
+    output: 'src/a.test.ts\nsrc/b.test.ts\nsrc/c.test.ts',
+  },
+  {
+    id: 'gal-code',
+    name: 'eval',
+    input: { code: 'export const answer = 42;', language: 'typescript' },
+    output: '42',
+  },
+  {
+    id: 'gal-web',
+    name: 'webfetch',
+    input: { url: 'https://example.com/docs' },
+    output: '# Guide\n\nSee [the reference](https://example.com/ref) for details.',
+  },
+  {
+    id: 'gal-generic',
+    name: 'mcp__acme__lookup',
+    input: { record_id: 42, mode: 'fast' },
+    output: { status: 'ok', elapsed: '12ms' },
+  },
+  {
+    id: 'gal-unreadable',
+    name: 'CustomBlob',
+    input: { op: 'dump' },
+    output: { output: [999, 1000] },
+  },
+];
+
+function galleryMessageRows(): {
+  id: string;
+  seq: number;
+  kind: 'tool';
+  payload: { id: string; name: string; input: unknown; output: unknown };
+  created_at: string;
+  metadata: { tool_phase: 'result'; outcome: 'success' };
+}[] {
+  return GALLERY_TOOLS.map((tool, index) => ({
+    id: `gal-msg-${String(index + 1)}`,
+    seq: index + 1,
+    kind: 'tool',
+    payload: { id: tool.id, name: tool.name, input: tool.input, output: tool.output },
+    created_at: '2026-09-18T00:00:00.000Z',
+    metadata: { tool_phase: 'result', outcome: 'success' },
+  }));
+}
+
+/**
+ * Fulfills only the fixture node's transcript page with the gallery rows.
+ * Other requests — message-detail fetches, other nodes' transcripts — continue
+ * to the real server untouched.
+ */
+async function routeGalleryTranscript(page: Page, runId: string): Promise<void> {
+  const pathname = `/api/workflows/runs/${runId}/nodes/${HITL_INSPECT_NODE}/messages`;
+  const rows = galleryMessageRows();
+  const lastSeq = GALLERY_TOOLS.length;
+  await page.route(`**${pathname}**`, async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== pathname) {
+      await route.continue();
+      return;
+    }
+    const afterSeq = Number(url.searchParams.get('afterSeq') ?? '0');
+    await route.fulfill({
+      json: {
+        messages: rows.slice(afterSeq),
+        nextCursor: String(lastSeq),
+        hasMore: false,
+        highWatermark: lastSeq,
+      },
+    });
+  });
+}
 // Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
 const ROOM_RATIO_MIN = 24;
 const ROOM_RATIO_MAX = 60;
@@ -255,7 +372,7 @@ interface AxNode {
  * Reads Chromium's accessibility tree over CDP — the exact name/role/state
  * channel VoiceOver and NVDA consume for this browser pairing.
  */
-async function summaryAxEvidence(page: Page): Promise<SummaryAxEvidence> {
+async function summaryAxEvidence(page: Page, rowIndex = 0): Promise<SummaryAxEvidence> {
   const session = await page.context().newCDPSession(page);
   try {
     await session.send('DOM.enable');
@@ -263,17 +380,25 @@ async function summaryAxEvidence(page: Page): Promise<SummaryAxEvidence> {
     const doc = (await session.send('DOM.getDocument', { depth: 1 })) as {
       root: { nodeId: number };
     };
-    const query = (await session.send('DOM.querySelector', {
+    // Scope to the node room — the Console run page renders its own transcript
+    // rows outside the room.
+    const roomQuery = (await session.send('DOM.querySelector', {
       nodeId: doc.root.nodeId,
-      selector: ROW,
+      selector: `[role="region"][aria-label="${ROOM_NAME}"]`,
     })) as { nodeId: number };
-    if (query.nodeId === 0) return { found: false, name: null, role: null, expanded: null };
+    if (roomQuery.nodeId === 0) return { found: false, name: null, role: null, expanded: null };
+    const query = (await session.send('DOM.querySelectorAll', {
+      nodeId: roomQuery.nodeId,
+      selector: ROW,
+    })) as { nodeIds: number[] };
+    const nodeId = query.nodeIds[rowIndex] ?? 0;
+    if (nodeId === 0) return { found: false, name: null, role: null, expanded: null };
     const described = (await session.send('DOM.describeNode', {
-      nodeId: query.nodeId,
+      nodeId,
     })) as { node: { backendNodeId?: number } };
     const detailsBackendId = described.node.backendNodeId;
     const ax = (await session.send('Accessibility.queryAXTree', {
-      nodeId: query.nodeId,
+      nodeId,
     })) as { nodes: AxNode[] };
     // The summary's accessible node carries the engineered name; the `expanded`
     // state is read off the AX node mapped to THIS row's <details> element so a
@@ -490,14 +615,14 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(summary).toContainText('Read');
     await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
     await expect(summary).toContainText('succeeded');
-    // Raw is the only row disclosure: present but hidden inside the collapsed
-    // row, closed, and mounting no payload markup until asked. DOM selector —
-    // the hidden control is absent from the accessibility tree.
+    await expect(row.getByText('Input', { exact: true })).toHaveCount(0);
+    await expect(row.getByText('Output', { exact: true })).toHaveCount(0);
+    await expect(row.locator('.tool-family-body')).toHaveCount(0);
+    // A collapsed row mounts nothing below the summary: the Raw toggle and any
+    // payload markup appear only once the row opens. DOM selector — the absent
+    // control is absent from the accessibility tree too.
     const rawToggle = row.locator('button[aria-expanded]');
-    await expect(rawToggle).toHaveCount(1);
-    await expect(rawToggle).toBeHidden();
-    await expect(rawToggle).toHaveAttribute('aria-expanded', 'false');
-    expect(await rawToggle.getAttribute('aria-controls')).toBeNull();
+    await expect(rawToggle).toHaveCount(0);
     await expect(row.locator('details')).toHaveCount(0);
     await expect(row.locator('pre')).toHaveCount(0);
     await expect(row.getByText(HITL_TOOL_OUTPUT)).toHaveCount(0);
@@ -876,6 +1001,266 @@ for (const surface of ['console', 'legacy'] as const) {
       await chrome.send('Emulation.clearDeviceMetricsOverride');
       await chrome.detach();
     }
+  });
+
+  test(`[P1] [V:hitl.tool-body-gallery-${surface}] HITL family-body gallery geometry, Raw swap, and accessibility on ${surface}`, async ({
+    page,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 2);
+    await page.setViewportSize(SPLIT_VIEWPORT);
+    const started = await archon.runHitlWorkflow();
+    await routeGalleryTranscript(page, started.runId);
+    let room = await openToolRoom(page, surface, started.runId);
+    await expect(room.locator(ROW)).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
+    const width = await setRoomWidth(page, surface, started.runId);
+    expect(Math.abs(width - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    room = roomRegion(page);
+    const rows = room.locator(ROW);
+    await expect(rows).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
+
+    const rowAt = (index: number): Locator => rows.nth(index);
+    const bodyOf = (index: number): Locator =>
+      rowAt(index).locator(':scope > div > .tool-family-body');
+
+    // Collapsed rows mount no body at all; Input/Output disclosures are gone.
+    for (let i = 0; i < GALLERY_TOOLS.length; i++) {
+      await expect(bodyOf(i)).toHaveCount(0);
+    }
+    await expect(room.getByText('Input', { exact: true })).toHaveCount(0);
+    await expect(room.getByText('Output', { exact: true })).toHaveCount(0);
+
+    for (let i = 0; i < GALLERY_TOOLS.length; i++) {
+      const summary = rowAt(i).locator('summary').first();
+      await summary.scrollIntoViewIfNeeded();
+      await summary.click();
+      await expect(rowAt(i)).toHaveJSProperty('open', true);
+    }
+
+    // --- Per-arm content ---
+    // terminal: command line + wrapped output.
+    const terminal = bodyOf(0);
+    await expect(terminal).toHaveCount(1);
+    await expect(terminal).toContainText('$ bun run validate');
+    await expect(terminal).toContainText('3 packages checked');
+    const terminalBox = await terminal.boundingBox();
+    expect(terminalBox).toBeTruthy();
+    if (!terminalBox) throw new Error('missing terminal body box');
+    // A 600-char unbroken token wraps inside the box instead of overflowing.
+    const terminalFits = await terminal.evaluate(el => el.scrollWidth <= el.clientWidth + 1);
+    expect(terminalFits, 'terminal output wraps — no horizontal scroll').toBe(true);
+    expect(terminalBox.height, 'wrapped long token stacks several lines').toBeGreaterThan(50);
+
+    // file: path header + preview.
+    const fileBody = bodyOf(1);
+    await expect(fileBody).toHaveCount(1);
+    await expect(fileBody.locator('.text-node-command').first()).toHaveText(
+      'src/lib/tool-presentation.ts'
+    );
+    await expect(fileBody).toContainText('export const MAX = 1;');
+
+    // search (content mode): pattern/scope header + path:line match rows.
+    const matches = bodyOf(2);
+    await expect(matches).toHaveCount(1);
+    await expect(matches).toContainText('needle in src');
+    await expect(matches.locator('.text-node-command').first()).toHaveText('src/a.ts');
+    await expect(matches).toContainText(':3');
+    await expect(matches).toContainText('return needle();');
+
+    // glob: path list.
+    const paths = bodyOf(3);
+    await expect(paths).toHaveCount(1);
+    await expect(paths.locator('.text-node-command')).toHaveCount(3);
+    await expect(paths.locator('.text-node-command').first()).toHaveText('src/a.test.ts');
+
+    // code: fenced source box + separate result box.
+    const codeBoxes = bodyOf(4);
+    await expect(codeBoxes).toHaveCount(2);
+    await expect(codeBoxes.first().locator('code.language-typescript')).toHaveCount(1);
+    await expect(codeBoxes.nth(1)).toHaveText('42');
+
+    // web: url header + inert markdown — the link renders as text, never an anchor.
+    const web = bodyOf(5);
+    await expect(web).toHaveCount(1);
+    await expect(web.locator('.text-node-command').first()).toHaveText('https://example.com/docs');
+    await expect(web).toContainText('the reference (https://example.com/ref)');
+    await expect(web.locator('a')).toHaveCount(0);
+
+    // generic: bounded key/value fields.
+    const generic = bodyOf(6);
+    await expect(generic).toHaveCount(1);
+    await expect(generic).toContainText('record_id');
+    await expect(generic).toContainText('42');
+    await expect(generic).toContainText('status');
+    await expect(generic).toContainText('ok');
+
+    // degraded: corrupt byte payload reports unreadable, points at Raw.
+    const unreadable = bodyOf(7);
+    await expect(unreadable).toHaveCount(1);
+    await expect(unreadable).toContainText('output unreadable — open Raw');
+
+    // --- 460px body-bar geometry on every row: one line, Raw at far right. ---
+    for (let i = 0; i < GALLERY_TOOLS.length; i++) {
+      const row = rowAt(i);
+      const bar = row.locator(':scope > div > div').first();
+      const raw = row.getByRole('button', { name: 'Raw' });
+      const barBox = await bar.boundingBox();
+      const rawBox = await raw.boundingBox();
+      if (!barBox || !rawBox) throw new Error(`missing bar/Raw geometry on row ${String(i)}`);
+      expect(barBox.height, `row ${String(i)} body bar stays one line`).toBeLessThanOrEqual(30);
+      expect(barBox.height).toBeGreaterThanOrEqual(24);
+      expect(
+        Math.abs(rawBox.x + rawBox.width - (barBox.x + barBox.width)),
+        `row ${String(i)} Raw is flush right`
+      ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+      expect(rawBox.height, `row ${String(i)} Raw is a 24px target`).toBeGreaterThanOrEqual(24);
+      const barFits = await bar
+        .locator('span')
+        .first()
+        .evaluate(el => el.scrollWidth <= el.clientWidth + 1);
+      expect(barFits, `row ${String(i)} bar text never wraps`).toBe(true);
+    }
+
+    // --- Body box computed style (file row is representative). ---
+    const bodyStyle = await fileBody.evaluate(el => {
+      const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+      return {
+        paddingLeft: cs?.paddingLeft ?? '',
+        paddingRight: cs?.paddingRight ?? '',
+        paddingTop: cs?.paddingTop ?? '',
+        paddingBottom: cs?.paddingBottom ?? '',
+        borderRadius: cs?.borderRadius ?? '',
+        fontSize: cs?.fontSize ?? '',
+        lineHeight: cs?.lineHeight ?? '',
+        fontFamily: cs?.fontFamily ?? '',
+        whiteSpace: cs?.whiteSpace ?? '',
+        overflowWrap: cs?.overflowWrap ?? '',
+      };
+    });
+    expect(bodyStyle.paddingLeft).toBe('10px');
+    expect(bodyStyle.paddingRight).toBe('10px');
+    expect(bodyStyle.paddingTop).toBe('8px');
+    expect(bodyStyle.paddingBottom).toBe('8px');
+    expect(bodyStyle.borderRadius).toBe('6px');
+    expect(bodyStyle.fontSize).toBe('11.5px');
+    expect(bodyStyle.lineHeight).toBe('17.25px');
+    expect(bodyStyle.fontFamily.toLowerCase()).toContain('mono');
+    expect(bodyStyle.whiteSpace).toBe('pre-wrap');
+    expect(bodyStyle.overflowWrap).toBe('anywhere');
+
+    // --- Keyboard order, focus, and expanded state: probed on one terminal
+    // body and one matches body (the per-arm a11y evidence requirement). ---
+    const a11yProbe = async (
+      index: number,
+      chipTitle: string
+    ): Promise<Record<string, unknown>> => {
+      const row = rowAt(index);
+      const summary = row.locator('summary').first();
+      const raw = row.getByRole('button', { name: 'Raw' });
+      await summary.scrollIntoViewIfNeeded();
+      const ax = await summaryAxEvidence(page, index);
+      expect(ax.found, `row ${String(index)} summary has an accessible node`).toBe(true);
+      expect(ax.name ?? '', 'AX name carries state → family/tool → target').toContain('succeeded');
+      expect(ax.name ?? '').toContain(chipTitle);
+      if (ax.expanded !== null) {
+        await expect
+          .poll(async () => (await summaryAxEvidence(page, index)).expanded, { timeout: T.short })
+          .toBe(true);
+      }
+
+      await summary.focus();
+      await page.keyboard.press('Tab');
+      expect(
+        await raw.evaluate(el => el.ownerDocument.activeElement === el),
+        'Tab order: summary → Raw'
+      ).toBe(true);
+      const rawFocus = await raw.evaluate(el => {
+        const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+        return {
+          style: cs?.outlineStyle ?? '',
+          width: cs?.outlineWidth ?? '',
+          color: cs?.outlineColor ?? '',
+          focusVisible: el.matches(':focus-visible'),
+        };
+      });
+      expect(rawFocus.focusVisible, 'keyboard focus shows the Raw outline').toBe(true);
+      expect(rawFocus.style).toBe('solid');
+      expect(rawFocus.width).toBe('2px');
+      const accent = await resolveColorIn(room, 'var(--accent-bright)');
+      expect(rawFocus.color, 'Raw focus outline resolves to --accent-bright').toBe(accent.resolved);
+
+      await expect(raw).toHaveAttribute('aria-expanded', 'false');
+      await raw.press('Enter');
+      await expect(raw).toHaveAttribute('aria-expanded', 'true');
+      // Raw swaps in the exact serialized payload, replacing the family body.
+      const rawBox = row.locator(':scope > div > .tool-family-body').first();
+      const rawText = await rawBox.textContent();
+      expect(rawText ?? '', 'Raw is the serialized payload').toContain('"name"');
+      expect(rawText ?? '').toContain('"input"');
+      expect(rawText ?? '').toContain('"output"');
+      await raw.press('Enter');
+      await expect(raw).toHaveAttribute('aria-expanded', 'false');
+      return { axName: ax.name, rawFocus };
+    };
+
+    const terminalEvidence = await a11yProbe(0, 'shell · Bash');
+    const matchesEvidence = await a11yProbe(2, 'search · Grep');
+
+    // Reduced motion: the chevron transition is the only row animation.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const reduced = await rowAt(1)
+      .locator('summary')
+      .first()
+      .locator('span')
+      .first()
+      .evaluate(el => el.ownerDocument.defaultView?.getComputedStyle(el).transitionProperty ?? '');
+    expect(reduced, 'motion-reduce removes the chevron animation').toBe('none');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+
+    await expectNoRoomDrivenOverflow(room, `gallery fully open on ${surface}`);
+
+    // Contrast: terminal body text and matches path text on the inset box.
+    const contrast: Record<string, number | string> = {};
+    const measureBody = async (
+      label: string,
+      body: Locator,
+      foreground: Locator
+    ): Promise<void> => {
+      const fgCss = await foreground.evaluate(
+        el => el.ownerDocument.defaultView?.getComputedStyle(el).color ?? ''
+      );
+      const fg = await resolveColorIn(room, fgCss);
+      const bg = await effectiveBackground(body);
+      contrast[`${label} fg`] = fg.resolved;
+      contrast[`${label} bg`] = bg.resolved;
+      const ratio = contrastRatio(fg.c, bg.c);
+      contrast[`${label} ratio`] = Number(ratio.toFixed(2));
+      expect(ratio, `${surface} ${label} ≥4.5:1`).toBeGreaterThanOrEqual(4.5);
+    };
+    await measureBody('terminal body text', terminal, terminal);
+    await measureBody('matches path text', matches, matches.locator('.text-node-command').first());
+
+    const roomShot = await room.screenshot();
+    await testInfo.attach(`${surface}-body-gallery-460.png`, {
+      body: roomShot,
+      contentType: 'image/png',
+    });
+    await testInfo.attach(`${surface}-body-gallery-measurements.json`, {
+      body: JSON.stringify(
+        {
+          label: 'browser visual fixtures — deterministic route-fulfilled transcript',
+          surface,
+          roomWidth: width,
+          terminalBox,
+          bodyStyle,
+          contrast,
+          a11y: { terminal: terminalEvidence, matches: matchesEvidence },
+        },
+        null,
+        2
+      ),
+      contentType: 'application/json',
+    });
   });
 }
 

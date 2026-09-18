@@ -17,7 +17,7 @@ Table-driven over the resolver tiers.
 - each Tier 1 alias resolves to the right family
 - `file_path` **and** `path` both resolve; `old_string` **and** `old_str` both resolve
 - **Claude glob** (`{pattern:'**/*.tsx', path:'packages/web'}`) headlines the **pattern** and sets scope to the path; **OMP glob** (`{path:'packages/web/src'}`) headlines the path with a null scope. Assert the Claude row does not headline `packages/web` — that is the exact regression this rule exists to stop
-- grep body arm follows `output_mode`: `content` → `matches`, `files_with_matches` → `paths`, `count` → `generic`, **absent** → `matches`
+- grep body arm follows `output_mode`: `content` → `matches`, `files_with_matches` → `paths`, `count` → `generic` (search family retained). Absent `output_mode` and any declared output mode, the **sent alias** decides: exact `Grep` → `paths` (the SDK `files_with_matches` default); lowercase `grep` and other search aliases → `matches` (content)
 - the five measured aliases resolve: `read_file` → file-read, `run_terminal_command` → shell, `search_replace` → **file-write** (not search), `search_tool` → search, `list_dir` → glob. The `search_replace` case is the substring-matching regression guard and must assert the family is `file`
 - `target_file` resolves as a path key, alongside `file_path` and `path`
 - `eval` with `{code, language}` resolves to family `code` with a `code` body; the headline is the source's first line and the language is a badge. Assert the source is **not** truncated to 80 characters — that truncation is what this family exists to avoid
@@ -27,19 +27,24 @@ Table-driven over the resolver tiers.
 - Codex shape (`{name:'npm test'}`, no input) resolves to `shell` with headline `npm test`
 - an emoji-bearing name passes through unchanged
 - `mcp__server__tool` resolves to `generic` with label `server · tool`
-- an unknown tool with object input renders at most three `key: value` pairs, **asserting the output contains no `{` and no `\n  "`** — the direct test that no JSON dump survives
+- an unknown tool with object input renders at most three `key: value` pairs, **asserting no field carries serialized object syntax or quoted JSON keys (`"`/`": "`/`: {`) while the required `{…}` and `[n]` markers still appear** — the direct test that no JSON dump survives
 - empty, null and array inputs never throw
 - chip rule: a short name is kept verbatim; a long Codex-style name falls back to the family. **Assert `label.length <= 24` for every row in the table**, so no future tool can burst the chip
 - `headlineKind` is `'path'` for the file and glob families, `'text'` for shell and content search
 - a diff is produced only when both sides are present, and never fabricated from one
 - the exit code reaches the row: a `bash` call recording `exit_code: 1` carries an `exit 1` badge on the **collapsed** row. This is CAP-1's own success signal and it is currently unreachable, the code discarding the value after deriving the outcome
+- hostile and oversized outputs stay within the contract ceilings: nested `file_matches` and web-result arrays report their hidden tail, grep path/text values and generic field keys are independently bounded and sanitized, over-cap text ends in an ellipsis without exceeding its ceiling, and assembled web markdown cannot exceed the text ceiling
+- inherited enumerable properties are never emitted and count toward the finite key-scan budget, so a hostile prototype cannot force an unbounded scan
 
-## Generic-fallback corpus audit — CAP-2 / Story 1.2 (the < 2% bound)
+## Generic-fallback corpus audit — CAP-2 / Story 1.3 (the < 2% bound)
 
 The < 2% generic-fallback bound is measured against the deployment corpus (22,867 rows, 2,369 distinct names), **not** reproducible from a CI fixture. So it is a **release-time deployment audit**, not a unit test:
 
-- a **read-only replay script** queries the deployment DB for the distinct tool names + their row counts, runs the resolver over them, and reports the generic-fallback **numerator** (rows resolving to `generic`) and **denominator** (total rows), plus the fraction
+- a **read-only replay script** (`scripts/audit-generic-fallback.ts`) queries the deployment DB for projected tool rows, runs the pairing + resolver over them, and reports the generic-fallback **numerator** (logical cards resolving to `generic`) and **denominator**, plus the fraction
 - the script records its result to a known location (the release audit log) with the corpus snapshot date; the release gate reads the recorded fraction and fails release if it is ≥ 2%
+- `--source` and optional generic-name diagnostics accept identifier-safe values only; record checking rejects unknown fields and non-canonical timestamps, and `--record` refuses to target the SQLite corpus itself before opening either path
+- group projection is streaming and keeps only the current group, rejecting non-monotonic input instead of retaining a set of every prior group; threshold comparison uses exact integer arithmetic
+- **denominator decision — adopted `logical-tool-cards-v1` (2026-09-18):** this section historically read "total rows" (raw storage rows), but paired call/result storage means raw rows double-count modern calls. The PRD's headless coordination-gate clause authorizes adopting the plan's recommended decision when no owner-ratified alternative exists — none was found — so the denominator is one **logical UI tool card per invocation**, projected through `projectToolTranscript()` per `(workflow_run_id, node_id)` group: pending call-only cards and legacy result-only cards each count once; text/status rows never enter the denominator. Only this metric is implemented. Evidence: `plans/260918-0834-issue-176-tool-family-bodies/reports/us-005-audit-decision.md`
 - **no numerator/denominator is frozen in this document** — the corpus is live data; the number is produced by the replay, not asserted here
 - the table-driven alias cases above stay as CI regression tests for named aliases (they cannot prove the corpus-wide bound)
 

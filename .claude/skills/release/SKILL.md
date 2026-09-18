@@ -127,6 +127,49 @@ If this fails, **abort the release entirely** — do not bump version, do not mo
 - Circular imports that break under minification but work under plain `bun run`
 - A newly added package that ships CJS with an unusual wrapper shape
 
+### Step 1.6: Generic-fallback audit record check (MANDATORY before any mutation)
+
+> **Why this is here**: the tool-family bodies feature (#176) carries a release
+> bound — the measured generic-fallback fraction over the designated corpus
+> must stay under 2%. Releasing with a stale, mismatched, or failing record
+> would ship an unverified (or verified-bad) classifier.
+
+```bash
+bun run scripts/audit-generic-fallback.ts --check audit/generic-fallback.json
+```
+
+`--check` reads only the committed record plus the audited classification
+sources (`tool-presentation.ts`, `tool-output.ts`, `pair-tool-transcript.ts`)
+— it never connects to a database. Any nonzero exit aborts the release before
+version or changelog mutation:
+
+- **Missing / unreadable record** — the file must exist and validate.
+- **Stale record** — older than 90 days.
+- **Source-hash mismatch** — a classification or pairing source changed since
+  the record was written, so the recorded fraction no longer describes the
+  shipping classifier.
+- **Empty denominator** — the record measured zero logical tool cards.
+- **Threshold failure** — the recorded generic fraction is `>= 2%`.
+
+**Authorized refresh** (the only remedy for a missing/stale/hash-mismatched
+record): run the audit read-only against the corpus named by the record's
+`source` field (currently the Mac mini local install), commit the refreshed
+record on a feature branch, merge to dev, then re-run `/release`.
+
+```bash
+bun run scripts/audit-generic-fallback.ts --sqlite <corpus-path> \
+  --source <corpus-id> --record audit/generic-fallback.json \
+  --include-generic-names
+# or: --postgres-env <VAR> --source <corpus-id> ... for a PostgreSQL corpus
+```
+
+A **threshold** failure is not a record problem — never lower the 2% bound
+and never hand-edit the record's counts. Read the record's `genericNames`
+aggregates, add evidence-backed family aliases with tests in a separately
+scoped change, refresh the record, and re-run. If the designated corpus is
+unreachable or none has been designated, stop and ask — do not point the
+audit at an arbitrary developer database.
+
 ### Step 2: Detect Stack and Current Version
 
 Detect the project's package manager and version file:
@@ -778,6 +821,7 @@ Include a line in the new release's CHANGELOG that references the broken prior v
   ship features as a patch.
 - **NEVER skip Step 1.5 (pre-flight compiled-binary smoke).** If the stack is a Bun/Node project with a build-binaries script, the `bun build --compile` smoke test runs before version bump, PR, or tag. Skipping it means every bundler regression or module-init crash only surfaces after the tag is pushed — by which point `releases/latest` is already 404-ing for every user. The ~30s cost is paid to keep the failure mode local.
 - If Step 1.5 fails, **abort the release** and fix the underlying issue on a feature branch. Do not "just skip it" and hope CI doesn't repro the problem.
+- **NEVER skip Step 1.6 (generic-fallback audit record check).** A missing, stale, source-mismatched, empty, or `>= 2%` record aborts the release before version mutation. The only remedy is the authorized read-only refresh against the designated corpus — never a lowered threshold or a hand-edited record.
 - NEVER skip the review step — always show the changelog before committing
 - NEVER include "Co-Authored-By: Claude" or any AI attribution in the commit
 - NEVER add emoji to changelog entries unless the user asks

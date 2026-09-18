@@ -265,8 +265,16 @@ describe('ConsoleExecutionHistory', () => {
       'task row',
       () => host.querySelector('details[data-tool-id="task-1"]') !== null
     );
-    const row = host.querySelector('details[data-tool-id="task-1"]');
-    if (row === null) throw new Error('task row missing');
+    const rowEl = host.querySelector('details[data-tool-id="task-1"]');
+    if (rowEl === null) throw new Error('task row missing');
+    const row = rowEl as Element & { open: boolean };
+    // The task body mounts only once the row opens.
+    const summary = row.querySelector('summary');
+    if (summary === null) throw new Error('task row summary missing');
+    await act(async () => {
+      summary.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(row.open).toBe(true);
     expect(row.textContent).toContain('task · batch · 2 subtasks');
     expect(row.textContent).toContain('Read-only review.');
     const cards = row.querySelectorAll('details[data-subtask-index]');
@@ -536,31 +544,35 @@ describe('ConsoleExecutionHistory', () => {
     // Same Console delta: +2 px focus outline offset.
     expect(summary.className).toContain('focus-visible:outline-offset-2');
     expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
-    // The shared Raw anatomy: one closed button, no payload panel, no nested
-    // diagnostics — identical through the execution-history caller.
-    const raw = row.querySelector('button[aria-expanded]');
-    if (raw === null) throw new Error('Raw button missing');
-    expect(raw.textContent).toBe('Raw');
-    expect(raw.getAttribute('aria-expanded')).toBe('false');
-    expect(raw.getAttribute('aria-controls')).toBeNull();
+    // A collapsed row mounts no expanded region: no family body, no Raw
+    // toggle, and never the serialized payload.
+    expect(row.querySelector('.tool-family-body')).toBeNull();
+    expect(row.querySelector('button[aria-expanded]')).toBeNull();
     expect(row.querySelectorAll('details')).toHaveLength(0);
     expect(row.querySelector('pre')).toBeNull();
     expect(row.textContent).not.toContain('chunk');
 
-    // Pointer toggle opens the row; Raw keeps its own closed state.
+    // Pointer toggle opens the row into the family body + Raw swap slot.
     await act(async () => {
       summary.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
     });
     expect(row.open).toBe(true);
-    expect(raw.getAttribute('aria-expanded')).toBe('false');
+    const rawEl = row.querySelector('button[aria-expanded]');
+    if (rawEl === null) throw new Error('Raw toggle missing');
+    expect(rawEl.getAttribute('aria-expanded')).toBe('false');
+    const body = row.querySelector('.tool-family-body');
+    if (body === null) throw new Error('family body missing');
+    expect(body.textContent).toContain('a.ts');
+    expect(body.textContent).toContain('chunk');
+    expect(row.querySelectorAll('details')).toHaveLength(0);
     expect(row.querySelector('pre')).toBeNull();
 
     // Opening Raw through this caller mounts the shared payload panel.
     await act(async () => {
-      raw.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+      rawEl.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
     });
-    expect(raw.getAttribute('aria-expanded')).toBe('true');
-    const panelId = raw.getAttribute('aria-controls');
+    expect(rawEl.getAttribute('aria-expanded')).toBe('true');
+    const panelId = rawEl.getAttribute('aria-controls');
     if (panelId === null) throw new Error('aria-controls missing');
     const panel = win.document.getElementById(panelId);
     expect(panel?.textContent).toBe(

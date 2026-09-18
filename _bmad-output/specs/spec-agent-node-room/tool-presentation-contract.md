@@ -8,10 +8,9 @@ One pure, React-free, provider-agnostic module produces a `ToolPresentation`; bo
 `packages/web/src/lib/tool-presentation.ts`.
 Input is structural rather than tied to `AgentHistoryItem`, so the chat card can adopt it later without a rewrite.
 
-```ts
-import type { components } from './api.generated';
-type GitDiffHunk = components['schemas']['GitDiffHunk']; // re-aliased, not a named export
+The module exposes two API layers. The **summary layer** resolves the collapsed row; the **body layer** resolves the expanded body lazily, only while a row is open with Raw closed, so polling never pays for output normalization.
 
+```ts
 export interface ToolPresentationInput {
   name: string;
   input: unknown;
@@ -29,6 +28,7 @@ export type ToolFamily =
   | 'web'
   | 'generic';
 
+// --- Summary layer: the collapsed row ---
 export interface ToolPresentation {
   family: ToolFamily;
   /** Chip text. The tool name AS SENT when it is a single token of <=24 chars, else the family name. */
@@ -37,28 +37,76 @@ export interface ToolPresentation {
   headline: string;
   /** 'path' elides in the MIDDLE so the filename survives; 'text' elides at the end. */
   headlineKind: 'path' | 'text';
-  /** Collapsed-row secondary facts: '14 matches', '+12 −3', 'exit 1'. */
-  badges: string[];
-  body:
-    | { kind: 'terminal'; command: string }
-    | { kind: 'diff'; path: string; before: string; after: string; hunks: GitDiffHunk[] }
-    | { kind: 'matches'; pattern: string; scope: string | null }
-    | { kind: 'paths'; pattern: string; scope: string | null }
-    | { kind: 'code'; language: string | null; source: string }
-    | { kind: 'task'; context: string; subtasks: TaskSubtask[] }
-    | { kind: 'generic'; fields: { key: string; value: string }[] };
+  /** Family-derived content badges only ('14 matches', 'python'). */
+  contentBadges: ToolRowBadge[];
 }
 
-export interface TaskSubtask {
-  name: string;
-  agent: string | null;
-  prompt: string;
+export interface ToolRowBadge {
+  kind:
+    | 'state'
+    | 'exit'
+    | 'duration'
+    | 'count'
+    | 'output-state'
+    | 'language'
+    | 'operation'
+    | 'placeholder';
+  text: string;
+  tone: 'neutral' | 'muted' | 'danger' | 'warning' | 'running';
 }
 
 export function toolPresentation(input: ToolPresentationInput): ToolPresentation;
+export function toolRowPresentation(
+  input: ToolPresentationInput,
+  facts: ToolRowFacts
+): ToolRowPresentation;
+
+// --- Body layer: the expanded body, resolved lazily ---
+export function toolBodyPresentation(
+  input: ToolPresentationInput,
+  resolvedFamily: ToolFamily
+): ToolBody | null;
+
+export type ToolBody =
+  | { kind: 'terminal'; command: string; output: string | null; unreadable: boolean }
+  | { kind: 'file'; path: string; preview: string | null; unreadable: boolean }
+  | {
+      kind: 'matches';
+      pattern: string;
+      scope: string | null;
+      items: MatchItem[];
+      omitted: number | null;
+      truncated: boolean;
+    }
+  | {
+      kind: 'paths';
+      pattern: string;
+      scope: string | null;
+      items: string[];
+      omitted: number | null;
+      truncated: boolean;
+    }
+  | {
+      kind: 'code';
+      language: string | null;
+      source: string;
+      result: string | null;
+      truncated: boolean;
+    }
+  | {
+      kind: 'web';
+      url: string;
+      title: string | null;
+      markdown: string | null;
+      omitted: number | null;
+      truncated: boolean;
+    }
+  | { kind: 'generic'; fields: ToolField[]; markdown: string | null; unreadable: boolean };
 ```
 
-**There is no `todo` body arm.** Todo state spans calls and folds one level up, in `buildAgentHistory()` — see `todo-fold-contract.md`.
+`toolBodyPresentation` trusts `resolvedFamily` — it never re-runs family resolution, and output content picks the arm within a family but can never change the family itself. A `diff` body arm for file edits belongs to Story 1.4; `task` bodies to Story 1.6. Malformed values degrade to a bounded unreadable/generic body rather than throwing.
+
+**There is no `todo` body arm.** Todo state spans calls and folds one level up, in `buildAgentHistory()` — see `todo-fold-contract.md` (Story 1.5). `toolBodyPresentation` returns `null` for `todo` and `task`.
 
 **`matches` and `paths` are two arms, not one.** Grep returns `path:line: text`; glob returns bare file paths, and a metacharacter-free `path` makes it a recursive directory listing whose output has no line numbers to parse. One arm would force the renderer to guess which it received.
 
@@ -123,6 +171,11 @@ A metacharacter-free `path` in OMP degrades to a recursive directory listing, wh
 
 `GrepInput.output_mode` is `"content" | "files_with_matches" | "count"` and **defaults to `files_with_matches`**.
 So Claude's grep returns bare file paths unless the model asked for content.
+The body arm resolves by precedence:
+
+1. a recognized `input.output_mode`;
+2. the normalized output's own declared `mode`, then an unmistakable structured channel (a `matches` channel means content; a `paths`/`filenames` channel means files_with_matches — matches win because content-mode output also names its files);
+3. the sent-alias default: exact `Grep` → `files_with_matches`; lowercase `grep` and the other search aliases → `content`.
 
 | `output_mode`                  | body arm                                  |
 | ------------------------------ | ----------------------------------------- |
@@ -186,6 +239,22 @@ The headline element needs `min-width: 0` inside the flex row or it will not shr
 | task    | `context` as markdown, then one collapsible card per subtask                                                                                                          |
 | web     | url and title, output as markdown                                                                                                                                     |
 | generic | `key: value` list; output as markdown if it parses as text, else preformatted                                                                                         |
+
+### Bounded output contract
+
+Expanded bodies are bounded before they reach React. Text, commands, code, and the
+assembled web markdown body use a 65,536-code-unit display ceiling. List channels
+emit at most 500 items, inspect at most 2,000 source entries, and bound each path,
+match path/text, title, and URL to 1,024 code units. Field enumeration inspects at
+most 32 entries; emitted keys and scalar values are bounded to 128 and 1,024 code
+units respectively. Inherited properties are never emitted, and they still count
+toward the enumeration budget so a hostile prototype cannot make work unbounded.
+
+Every cut is visible: text bodies retain an ellipsis within their ceiling, while
+list and web bodies set `truncated` and carry an exact positive `omitted` count when
+known or `null` when it is not. Nested `file_matches` and web-result arrays propagate
+their own overflow into that metadata. A family body must not silently discard an
+over-cap tail or assemble many individually bounded values into an unbounded result.
 
 ## Inline diff
 
