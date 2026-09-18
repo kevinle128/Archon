@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Lazy body layer (US-002)
+- Where: `packages/web/src/lib/tool-presentation.ts` (toolBodyPresentation, ToolBody)
+- Pattern: expanded bodies resolve lazily via `toolBodyPresentation(input, resolvedFamily)` — the caller's already-resolved family is authoritative and output never reclassifies it. Renderers (US-003/US-004) call it only while a row is open with Raw closed; summary paths must stay free of `normalizeToolOutput`. `todo`/`task` return null pending Stories 1.5/1.6.
+- Example: `const body = row.open && !rawOpen ? toolBodyPresentation(item, row.family) : null`
+
 ### Bounded channel production in lib/ normalizers
 - Where: `packages/web/src/lib/tool-output.ts`
 - Pattern: normalize into a `TextAcc` (parts + unit count + truncated flag) with a single global budget; `sanitizeBounded` strips ANSI CSI/OSC/escapes/control chars inline while copying — never build an unbounded intermediate then slice. List channels go through `boundList(source, map, {trustedTotal, upstreamTruncated, flat})` which yields `omitted` as an exact positive int only when the total is trusted or a clean flat prefix was scanned, else `omitted: null` + `truncated: true`.
@@ -46,5 +51,34 @@ BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-17
 - Bun's `bun test <file>` inside `packages/web` runs without root workspace setup; root `bun test` is forbidden per AGENTS.md — package-scoped commands only.
 - `git commit` hooks run lint-staged (eslint --fix + prettier --write) — staged files may be modified by hooks; re-run focused tests after commit if paranoid (they stayed green).
 - Devin `output` byte arrays: only an all-number array qualifies as bytes; non-number elements mean "not a byte array at all" (no unreadable), while numeric out-of-range means "corrupt bytes" (unreadable).
+
+---
+
+## 2025-01-10 — US-002: Lazy family-body resolver + spec corrections
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/tool-output.ts` — added `textTruncated` to `NormalizedToolOutput` (derived from the text accumulator's truncated flag); exported `sanitizeBounded`, `looksLikeJson`, `parseMatchLine`, `fieldValue` for reuse by the body resolver
+- `packages/web/src/lib/tool-presentation.ts` — added the lazy body layer: `ToolBody` union (terminal|file|matches|paths|code|web|generic), `MatchItem`/`ToolField` aliases, `MAX_BODY_*` caps, `toolBodyPresentation(input, resolvedFamily)`. Per-family arms per phase-01; search precedence = input.output_mode → declared output mode → structural channel → sent-alias default (exact `Grep` → paths, `grep`/others → matches); `count` mode renders generic body while family stays search. `extractCount` extended with `numMatches`/`numFiles` keys and small JSON-record strings under the existing cap, returning `{value, unit}` — never the full normalizer. Removed the stale story-number docblock
+- `packages/web/src/lib/tool-presentation.test.ts` — 31 new tests: family authority, todo/task null, laziness (getter counter proves summary never reads deep channels), hostile proxy, every family arm, grep precedence chain, sent-alias defaults, exact/unknown omission, generic `{…}`/`[n]` no-serialization, JSON-never-markdown, output-never-reclassifies invariant table, extended count badge
+- `packages/web/src/lib/tool-output.test.ts` — `textTruncated` at/over/absent cases
+- `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md` — split summary vs lazy body APIs; real `ToolBody` union; todo/task ownership stated; output cannot reclassify family; full search-mode precedence documented
+- `_bmad-output/specs/spec-agent-node-room/test-plan.md` — audit heading Story 1.2 → 1.3; absent-mode default replaced with the two sent-alias defaults; "no `{`" assertion replaced with serialized-syntax rejection that keeps `{…}`/`[n]`; raw-row vs logical-card denominator conflict recorded and linked to phase-03 decision
+
+**Acceptance criteria verified**:
+- [x] `ToolBody` union, `MatchItem`, `ToolField`, `toolBodyPresentation(input, resolvedFamily): ToolBody | null` exported
+- [x] supplied family authoritative; never re-resolves; `null` for todo/task; hostile proxy → bounded unreadable generic, never throws
+- [x] all per-family arms per phase-01 rule table (shell/file/search/glob/code/web/generic)
+- [x] exact search precedence incl. count → generic body with search family retained
+- [x] collapsed count extractor stays small/bounded, no normalizer call
+- [x] output-never-reclassifies invariant proven across all nine families
+- [x] no serialized provider objects in bodies; `{…}`/`[n]` markers + prose braces distinguished
+- [x] spec corrections applied to both docs
+- [x] all gates: focused tests 268 pass; `bun --filter @archon/web test` 2055 pass / 0 fail; type-check, lint --max-warnings 0, format:check clean
+
+**Learnings**:
+- The normalizer reads `filenames` twice (shape check + extraction) — assert "summary never reads" via a counter at 0, body reads via `> 0`, not an exact count
+- `countBadge` output for `numFiles`-only records is `N files`; `count`/`numMatches` report `N matches` — the unit travels with the value now
+- Bare `bun test` inside `packages/web` runs everything in one process and dies on `mock.module` pollution (React `act` missing); the package `test` script's split invocations are the real gate
 
 ---
