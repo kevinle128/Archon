@@ -8,14 +8,14 @@
 - **Record:** `audit/generic-fallback.json` (durable, non-evergreen, non-`docs/` location; committed).
 - **Denominator:** `logical-tool-cards-v1` — one logical UI tool card per invocation via `projectToolTranscript()` (decision recorded in `reports/us-005-audit-decision.md`).
 - **Corpus:** `source = mac-mini-local-install`, `dialect = sqlite`.
-- **Generated:** `2026-09-18T11:37:32.069Z`, `schemaVersion = 1`.
-- **Source hash:** `auditSourceSha256 = be62efb5e115043fe83401cd53df49a242dba52a1d041271d6b1e7eca1090340` over the classification/pairing sources.
-- **Result:** `81 / 5132` generic cards → `fraction = 0.01578` (**1.58% < 2%** bound).
-- `genericNames` aggregate counts only (no payloads): `get_output` 63, `get_command_or_subagent_output` 4, `StructuredOutput` 3, `mcp__archon__AskHuman` 3, `ReportFindings` 2, `exec` 2, `kill_shell` 2, `SendMessage` 1, `Skill` 1.
+- **Generated:** `2026-09-18T12:28:03.664Z`, `schemaVersion = 1`.
+- **Source hash:** `auditSourceSha256 = bc5bd3cd50c7513b50a6477ff909e224aae681d08c79fc2f22ac7ef590644f92` over the classification/pairing sources.
+- **Result:** `89 / 5540` generic cards → `fraction = 0.01606` (**1.61% < 2%** bound).
+- `genericNames` aggregate counts only (no payloads): `get_output` 71, `get_command_or_subagent_output` 4, `StructuredOutput` 3, `mcp__archon__AskHuman` 3, `ReportFindings` 2, `exec` 2, `kill_shell` 2, `SendMessage` 1, `Skill` 1.
 
 ```text
 $ bun run scripts/audit-generic-fallback.ts --check audit/generic-fallback.json
-audit record OK: 81/5132 generic cards (1.58% < 2%), dialect=sqlite, generated=2026-09-18T11:37:32.069Z
+audit record OK: 89/5540 generic cards (1.61% < 2%), dialect=sqlite, generated=2026-09-18T12:28:03.664Z
 EXIT=0
 ```
 

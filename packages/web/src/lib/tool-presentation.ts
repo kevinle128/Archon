@@ -13,6 +13,7 @@ import { formatDurationMs } from './format';
 import {
   MAX_LIST_ITEMS,
   MAX_LIST_ITEM_TEXT_CODE_UNITS,
+  MAX_FIELD_KEY_CODE_UNITS,
   MAX_OUTPUT_TEXT_CODE_UNITS,
   fieldValue,
   looksLikeJson,
@@ -206,10 +207,13 @@ function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
-/** True when the record owns at least one enumerable key; stops after the first hit. */
+/** True when a bounded scan finds an own enumerable key. */
 function hasKeys(record: Record<string, unknown> | null): boolean {
   if (record === null) return false;
+  let scanned = 0;
   for (const key in record) {
+    if (scanned >= MAX_GENERIC_KEYS_SCANNED) break;
+    scanned++;
     if (hasOwn(record, key)) return true;
   }
   return false;
@@ -317,12 +321,14 @@ function genericFacts(record: Record<string, unknown> | null): string[] {
   const facts: string[] = [];
   let scanned = 0;
   for (const key in record) {
-    if (!hasOwn(record, key)) continue;
     if (scanned >= MAX_GENERIC_KEYS_SCANNED) break;
     scanned++;
+    if (!hasOwn(record, key)) continue;
     const text = scalarText(record[key]);
     if (text === null) continue;
-    facts.push(`${key}: ${text}`);
+    const boundedKey = sanitizeBounded(key, MAX_FIELD_KEY_CODE_UNITS).text;
+    if (boundedKey.length === 0) continue;
+    facts.push(`${boundedKey}: ${text}`);
     if (facts.length >= MAX_GENERIC_FACTS) break;
   }
   return facts;
@@ -365,9 +371,9 @@ function extractCountFromRecord(
   let scanned = 0;
   let files: number | null = null;
   for (const key in record) {
-    if (!hasOwn(record, key)) continue;
     if (scanned >= MAX_COUNT_KEYS_SCANNED) break;
     scanned++;
+    if (!hasOwn(record, key)) continue;
     if (key === 'count' || key === 'numMatches') {
       const value = record[key];
       return isCountValue(value) ? { value, unit: 'matches' } : null;
@@ -710,9 +716,9 @@ function inputFields(record: Record<string, unknown> | null): ToolField[] {
   const fields: ToolField[] = [];
   let scanned = 0;
   for (const key in record) {
-    if (!hasOwn(record, key)) continue;
     if (scanned >= MAX_GENERIC_KEYS_SCANNED) break;
     scanned++;
+    if (!hasOwn(record, key)) continue;
     let value: unknown;
     try {
       value = record[key];
@@ -721,10 +727,27 @@ function inputFields(record: Record<string, unknown> | null): ToolField[] {
     }
     const text = fieldValue(value);
     if (text === null) continue;
-    fields.push({ key, value: text });
+    const boundedKey = sanitizeBounded(key, MAX_FIELD_KEY_CODE_UNITS).text;
+    if (boundedKey.length === 0) continue;
+    fields.push({ key: boundedKey, value: text });
     if (fields.length >= MAX_BODY_FIELDS) break;
   }
   return fields;
+}
+
+/** Add a visible truncation marker without exceeding the original code-unit budget. */
+function withBoundedEllipsis(value: string, maxUnits: number): string {
+  if (maxUnits <= 0) return '';
+  if (value.length < maxUnits) return `${value}…`;
+  if (maxUnits === 1) return '…';
+  const last = value.charCodeAt(maxUnits - 1);
+  const cut = last >= 0xdc00 && last <= 0xdfff ? maxUnits - 2 : maxUnits - 1;
+  return `${value.slice(0, Math.max(0, cut))}…`;
+}
+
+function normalizedDisplayText(normalized: NormalizedToolOutput): string | null {
+  if (normalized.text === null || !normalized.textTruncated) return normalized.text;
+  return withBoundedEllipsis(normalized.text, MAX_OUTPUT_TEXT_CODE_UNITS);
 }
 
 /**
@@ -762,7 +785,16 @@ function pathLine(line: string): string | null {
 
 function matchLine(line: string): MatchItem | null {
   if (line.trim().length === 0) return null;
-  return parseMatchLine(line);
+  const parsed = parseMatchLine(line);
+  if (parsed === null) return null;
+  return {
+    path:
+      parsed.path === null
+        ? null
+        : sanitizeBounded(parsed.path, MAX_LIST_ITEM_TEXT_CODE_UNITS).text,
+    line: parsed.line,
+    text: sanitizeBounded(parsed.text, MAX_LIST_ITEM_TEXT_CODE_UNITS).text,
+  };
 }
 
 /**
@@ -809,8 +841,43 @@ function genericBody(
   }
   // Only a plain non-JSON string is prose worth rendering; JSON fragments and
   // structured records stay as fields, never markdown.
-  const markdown = typeof output === 'string' && !looksLikeJson(output) ? normalized.text : null;
+  const markdown =
+    typeof output === 'string' && !looksLikeJson(output) ? normalizedDisplayText(normalized) : null;
   return { kind: 'generic', fields, markdown, unreadable: normalized.unreadable };
+}
+
+function webMarkdown(normalized: NormalizedToolOutput): {
+  markdown: string | null;
+  omitted: number | null;
+  truncated: boolean;
+} {
+  const parts: string[] = [];
+  let units = 0;
+  const text = normalizedDisplayText(normalized);
+  if (text !== null) {
+    parts.push(text);
+    units = text.length;
+  }
+
+  let renderedResults = 0;
+  for (const result of normalized.webResults.items) {
+    const line = `- [${result.title ?? result.url}](${result.url})`;
+    const separator = renderedResults > 0 ? '\n' : parts.length === 0 ? '' : '\n\n';
+    if (units + separator.length + line.length > MAX_OUTPUT_TEXT_CODE_UNITS) break;
+    if (separator.length > 0) parts.push(separator);
+    parts.push(line);
+    units += separator.length + line.length;
+    renderedResults++;
+  }
+
+  const locallyOmitted = normalized.webResults.items.length - renderedResults;
+  const omitted =
+    normalized.webResults.omitted === null ? null : normalized.webResults.omitted + locallyOmitted;
+  return {
+    markdown: parts.length === 0 ? null : parts.join(''),
+    omitted,
+    truncated: normalized.webResults.truncated || locallyOmitted > 0,
+  };
 }
 
 function resolveToolBody(
@@ -827,8 +894,10 @@ function resolveToolBody(
       const command = sanitizeBounded(sent, MAX_BODY_COMMAND_CODE_UNITS);
       return {
         kind: 'terminal',
-        command: command.truncated ? `${command.text}…` : command.text,
-        output: normalized.text,
+        command: command.truncated
+          ? withBoundedEllipsis(command.text, MAX_BODY_COMMAND_CODE_UNITS)
+          : command.text,
+        output: normalizedDisplayText(normalized),
         unreadable: normalized.unreadable,
       };
     }
@@ -838,8 +907,12 @@ function resolveToolBody(
         const written = firstStringField(record, FILE_PREVIEW_KEYS);
         if (written !== null) {
           const bounded = sanitizeBounded(written, MAX_OUTPUT_TEXT_CODE_UNITS);
-          preview = bounded.truncated ? `${bounded.text}…` : bounded.text;
+          preview = bounded.truncated
+            ? withBoundedEllipsis(bounded.text, MAX_OUTPUT_TEXT_CODE_UNITS)
+            : bounded.text;
         }
+      } else {
+        preview = normalizedDisplayText(normalized);
       }
       return {
         kind: 'file',
@@ -907,27 +980,19 @@ function resolveToolBody(
         language:
           language === null ? null : truncateCodePoints(language, MAX_GENERIC_SCALAR_CODE_POINTS),
         source: source.text,
-        result: normalized.text,
+        result: normalizedDisplayText(normalized),
         truncated: source.truncated,
       };
     }
     case 'web': {
-      const parts: string[] = [];
-      if (normalized.text !== null) parts.push(normalized.text);
-      if (normalized.webResults.items.length > 0) {
-        parts.push(
-          normalized.webResults.items
-            .map(result => `- [${result.title ?? result.url}](${result.url})`)
-            .join('\n')
-        );
-      }
+      const content = webMarkdown(normalized);
       return {
         kind: 'web',
         url: salientField(record, URL_KEYS, name, 'web'),
         title: normalized.fields.find(field => field.key === 'title')?.value ?? null,
-        markdown: parts.length === 0 ? null : parts.join('\n\n'),
-        omitted: normalized.webResults.omitted,
-        truncated: normalized.webResults.truncated,
+        markdown: content.markdown,
+        omitted: content.omitted,
+        truncated: content.truncated,
       };
     }
     default:

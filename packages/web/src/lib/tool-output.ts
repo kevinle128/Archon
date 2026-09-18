@@ -25,6 +25,10 @@ export const MAX_FIELD_KEYS_SCANNED = 32;
 export const MAX_OUTPUT_FIELDS = 32;
 /** Per-field scalar text bound. */
 export const MAX_FIELD_VALUE_CODE_UNITS = 1_024;
+/** Per-field key bound. Keys are stored data too and must not bypass the display budget. */
+export const MAX_FIELD_KEY_CODE_UNITS = 128;
+/** Hard ceiling for one sanitizer pass, including discarded controls/escapes. */
+export const MAX_SANITIZE_SCAN_CODE_UNITS = 65_536;
 
 export interface ToolOutputMatch {
   path: string | null;
@@ -112,12 +116,20 @@ function safeGet(record: Record<string, unknown>, key: string): unknown {
   }
 }
 
-/** Own enumerable keys; null when enumeration itself throws (hostile proxy). */
-function ownKeys(record: Record<string, unknown>): string[] | null {
+/**
+ * At most `limit` enumerable keys are inspected and only own keys are returned;
+ * null when enumeration itself throws (hostile proxy). Counting inherited
+ * entries too keeps a hostile prototype from making the scan unbounded.
+ */
+function ownKeys(record: Record<string, unknown>, limit: number): string[] | null {
   try {
     const keys: string[] = [];
+    let inspected = 0;
     for (const key in record) {
-      if (Object.prototype.hasOwnProperty.call(record, key)) keys.push(key);
+      if (inspected >= limit) break;
+      inspected++;
+      if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+      keys.push(key);
     }
     return keys;
   } catch {
@@ -138,8 +150,8 @@ function nonEmptyString(value: unknown): string | null {
  * CSI/OSC leader). Returns the index just past the sequence; an unterminated
  * sequence consumes the rest of the string, matching terminal behavior.
  */
-function skipEscapeSequence(raw: string, i: number): number {
-  const n = raw.length;
+function skipEscapeSequence(raw: string, i: number, scanLimit: number): number {
+  const n = Math.min(raw.length, scanLimit);
   const first = raw.charCodeAt(i);
   if (i + 1 >= n) return n;
   const next = raw.charCodeAt(i + 1);
@@ -184,11 +196,16 @@ export function sanitizeBounded(
   let units = 0;
   let truncated = false;
   const n = raw.length;
+  const scanLimit = Math.min(
+    n,
+    MAX_SANITIZE_SCAN_CODE_UNITS,
+    Math.max(0, Math.max(maxUnits, 1) * 4)
+  );
   let i = 0;
-  while (i < n) {
+  while (i < scanLimit) {
     const code = raw.charCodeAt(i);
     if (code === ANSI_ESC || code === 0x9b || code === 0x9d) {
-      i = skipEscapeSequence(raw, i);
+      i = skipEscapeSequence(raw, i, scanLimit);
       continue;
     }
     if ((code < 0x20 && code !== 0x0a && code !== 0x09) || (code >= 0x7f && code <= 0x9f)) {
@@ -208,6 +225,7 @@ export function sanitizeBounded(
     units += width;
     i += width;
   }
+  if (i < n) truncated = true;
   return { text: parts.join(''), truncated };
 }
 
@@ -243,6 +261,18 @@ interface ListOptions {
   flat: boolean;
 }
 
+interface MappedItems<T> {
+  items: readonly T[];
+  /** The mapper stopped before exhausting a nested source. */
+  truncated: boolean;
+}
+
+type ListMapResult<T> = readonly T[] | MappedItems<T>;
+
+function mappedItems<T>(result: ListMapResult<T>): MappedItems<T> {
+  return Array.isArray(result) ? { items: result, truncated: false } : (result as MappedItems<T>);
+}
+
 /**
  * Bounded list production. `map` returns the display items for one source
  * entry (empty array = the entry contributes nothing). `+n more` is only
@@ -252,28 +282,38 @@ interface ListOptions {
  */
 function boundList<S, T>(
   source: readonly S[],
-  map: (entry: S) => readonly T[],
+  map: (entry: S) => ListMapResult<T>,
   options: ListOptions
 ): BoundedList<T> {
   const items: T[] = [];
   let scanned = 0;
   let sawSkipped = false;
+  let nestedTruncated = false;
   const scanLimit = Math.min(source.length, LIST_SCAN_LIMIT);
   while (scanned < scanLimit && items.length < MAX_LIST_ITEMS) {
-    const produced = map(source[scanned]);
+    const mapped = mappedItems(map(source[scanned]));
+    const produced = mapped.items;
     scanned++;
+    if (mapped.truncated) nestedTruncated = true;
     if (produced.length === 0) {
       sawSkipped = true;
       continue;
     }
+    const remaining = MAX_LIST_ITEMS - items.length;
+    if (produced.length > remaining) nestedTruncated = true;
+    let added = 0;
     for (const item of produced) {
-      if (items.length >= MAX_LIST_ITEMS) break;
+      if (added >= remaining) break;
       items.push(item);
+      added++;
     }
   }
   const reachedEnd = scanned >= source.length;
   const upstream = options.upstreamTruncated === true;
   const trusted = options.trustedTotal;
+  if (nestedTruncated) {
+    return { items, omitted: null, truncated: true };
+  }
   if (typeof trusted === 'number' && Number.isInteger(trusted) && trusted >= items.length) {
     const omitted = trusted - items.length;
     return { items, omitted, truncated: omitted > 0 || upstream };
@@ -643,6 +683,7 @@ function applyContentArray(acc: TextAcc, blocks: readonly unknown[]): void {
     const text = contentBlockText(blocks[i]);
     if (text !== null) pushText(acc, text);
   }
+  if (blocks.length > limit) acc.truncated = true;
 }
 
 function stringListItem(entry: unknown): string | null {
@@ -650,12 +691,12 @@ function stringListItem(entry: unknown): string | null {
   return text === null ? null : itemText(text);
 }
 
-function fileMatchItems(entry: unknown): ToolOutputMatch[] {
+function fileMatchItems(entry: unknown): MappedItems<ToolOutputMatch> {
   const record = asRecord(entry);
-  if (record === null) return [];
+  if (record === null) return { items: [], truncated: false };
   const path = nonEmptyString(safeGet(record, 'path'));
   const sub = safeGet(record, 'matches');
-  if (!Array.isArray(sub)) return [];
+  if (!Array.isArray(sub)) return { items: [], truncated: false };
   const out: ToolOutputMatch[] = [];
   const limit = Math.min(sub.length, LIST_SCAN_LIMIT);
   for (let i = 0; i < limit; i++) {
@@ -670,23 +711,23 @@ function fileMatchItems(entry: unknown): ToolOutputMatch[] {
       text: itemText(content),
     });
   }
-  return out;
+  return { items: out, truncated: sub.length > limit };
 }
 
-function webResultItems(entry: unknown): { title: string | null; url: string }[] {
+function webResultItems(entry: unknown): MappedItems<{ title: string | null; url: string }> {
   const record = asRecord(entry);
-  if (record === null) return [];
+  if (record === null) return { items: [], truncated: false };
   const single = webHit(record);
-  if (single !== null) return [single];
+  if (single !== null) return { items: [single], truncated: false };
   const content = safeGet(record, 'content');
-  if (!Array.isArray(content)) return [];
+  if (!Array.isArray(content)) return { items: [], truncated: false };
   const out: { title: string | null; url: string }[] = [];
   const limit = Math.min(content.length, LIST_SCAN_LIMIT);
   for (let i = 0; i < limit; i++) {
     const hit = webHit(asRecord(content[i]));
     if (hit !== null) out.push(hit);
   }
-  return out;
+  return { items: out, truncated: content.length > limit };
 }
 
 function webHit(
@@ -718,7 +759,7 @@ function applyFields(
   state: NormState,
   get: (key: string) => unknown
 ): void {
-  const keys = ownKeys(record);
+  const keys = ownKeys(record, MAX_FIELD_KEYS_SCANNED);
   if (keys === null) {
     state.accessError = true;
     return;
@@ -729,8 +770,20 @@ function applyFields(
     scanned++;
     const text = fieldValue(get(key));
     if (text === null) continue;
-    state.fields.push({ key, value: text });
+    const boundedKey = sanitizeBounded(key, MAX_FIELD_KEY_CODE_UNITS);
+    if (boundedKey.text.length === 0) continue;
+    state.fields.push({ key: boundedKey.text, value: text });
   }
+}
+
+function boundedMatchLine(line: string): ToolOutputMatch | null {
+  const parsed = parseMatchLine(line);
+  if (parsed === null) return null;
+  return {
+    path: parsed.path === null ? null : itemText(parsed.path),
+    line: parsed.line,
+    text: itemText(parsed.text),
+  };
 }
 
 function applyRecord(record: Record<string, unknown>, state: NormState): void {
@@ -825,7 +878,10 @@ function applyRecord(record: Record<string, unknown>, state: NormState): void {
   } else if (grepShaped && contentString !== null) {
     const sanitized = sanitizeBounded(contentString, MAX_OUTPUT_TEXT_CODE_UNITS);
     const lines = sanitized.text.split('\n');
-    state.matches = boundList(lines, line => toOne(parseMatchLine(line)), { flat: true });
+    state.matches = boundList(lines, line => toOne(boundedMatchLine(line)), {
+      upstreamTruncated: sanitized.truncated,
+      flat: true,
+    });
   }
 
   // Web search results: string entries are model commentary; items with url are results.

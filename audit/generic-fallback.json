@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "generatedAt": "2026-09-18T11:37:32.069Z",
+  "generatedAt": "2026-09-18T12:28:03.664Z",
   "source": "mac-mini-local-install",
   "dialect": "sqlite",
   "denominator": "logical-tool-cards-v1",
-  "auditSourceSha256": "be62efb5e115043fe83401cd53df49a242dba52a1d041271d6b1e7eca1090340",
-  "logicalCards": 5132,
-  "genericCards": 81,
-  "fraction": 0.01578332034294622,
+  "auditSourceSha256": "bc5bd3cd50c7513b50a6477ff909e224aae681d08c79fc2f22ac7ef590644f92",
+  "logicalCards": 5540,
+  "genericCards": 89,
+  "fraction": 0.016064981949458483,
   "genericNames": [
     {
       "name": "get_output",
-      "cards": 63
+      "cards": 71
     },
     {
       "name": "get_command_or_subagent_output",

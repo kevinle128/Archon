@@ -56,7 +56,14 @@
 import { Database } from 'bun:sqlite';
 import { SQL } from 'bun';
 import { createHash } from 'node:crypto';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { resolve } from 'node:path';
 import {
   projectToolTranscript,
@@ -82,6 +89,11 @@ export const MAX_GENERIC_NAMES = 25;
 export const MAX_GENERIC_NAME_CODE_UNITS = 128;
 /** Malformed-row identities listed before the audit aborts. */
 export const MAX_MALFORMED_REPORTED = 10;
+/** Non-secret record identifiers are tokens, never paths, URLs, or free-form text. */
+export const MAX_SOURCE_ID_CODE_UNITS = 128;
+
+const SOURCE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const GENERIC_NAME_PATTERN = /^[A-Za-z0-9_.:@+-]+$/;
 
 export const AUDIT_SOURCE_FILES = [
   'packages/web/src/lib/tool-presentation.ts',
@@ -212,6 +224,14 @@ export function toPairableMessage(row: ProjectedRow): PairableMessage {
     id: toolUseId,
   };
   if (inputPresent) payload.input = input;
+  if (
+    row.output_present !== true &&
+    row.output_present !== false &&
+    row.output_present !== 1 &&
+    row.output_present !== 0
+  ) {
+    throw new MalformedRowError(identity, 'payload.output presence projection is not boolean');
+  }
   if (row.output_present === true || row.output_present === 1) {
     payload.output = OUTPUT_PRESENT;
   }
@@ -253,18 +273,26 @@ export interface TallyOptions {
 
 /**
  * A sent name earns a place in the record only when it is one bounded
- * whitespace-free token — the same rule that earns the chip. A name carrying
- * whitespace is a command line (Codex), not an identifier, and may embed
- * arguments or paths; it is counted in genericCards but never recorded by name.
+ * identifier-safe token. Whitespace, slashes, controls, and other path/command
+ * punctuation are withheld because a durable aggregate must not expose
+ * arguments or local paths. Withheld names still count in genericCards.
  */
 function isAggregatableName(name: string): boolean {
   if (name.length === 0 || name.length > MAX_GENERIC_NAME_CODE_UNITS) return false;
-  return !/\s/.test(name);
+  return GENERIC_NAME_PATTERN.test(name);
 }
 
 interface GroupKey {
   runId: string;
   nodeId: string;
+}
+
+function compareGroupKeys(a: GroupKey, b: GroupKey): number {
+  if (a.runId < b.runId) return -1;
+  if (a.runId > b.runId) return 1;
+  if (a.nodeId < b.nodeId) return -1;
+  if (a.nodeId > b.nodeId) return 1;
+  return 0;
 }
 
 /**
@@ -284,7 +312,6 @@ export class ToolCardTally {
   private readonly maxNodeToolRows: number;
   private currentKey: GroupKey | null = null;
   private group: PairableMessage[] = [];
-  private readonly completedGroups = new Set<string>();
 
   constructor(options?: TallyOptions) {
     this.names = options?.includeGenericNames === true ? new Map<string, number>() : null;
@@ -295,9 +322,8 @@ export class ToolCardTally {
     const runId = requireNonEmptyString(row, row.workflow_run_id, 'workflow_run_id');
     const nodeId = requireNonEmptyString(row, row.node_id, 'node_id');
     const message = toPairableMessage(row);
-    const key = `${runId}\n${nodeId}`;
-    if (this.currentKey === null || key !== `${this.currentKey.runId}\n${this.currentKey.nodeId}`) {
-      if (this.completedGroups.has(key)) {
+    if (runId !== this.currentKey?.runId || nodeId !== this.currentKey?.nodeId) {
+      if (this.currentKey !== null && compareGroupKeys({ runId, nodeId }, this.currentKey) <= 0) {
         throw new AuditDataError(
           `tool rows for ${identityText(safeIdentity(row))} arrived out of order — ` +
             'the keyset page stream must stay ordered by (workflow_run_id, node_id, seq)'
@@ -333,9 +359,6 @@ export class ToolCardTally {
         this.names.set(item.name, (this.names.get(item.name) ?? 0) + 1);
       }
     }
-    if (this.currentKey !== null) {
-      this.completedGroups.add(`${this.currentKey.runId}\n${this.currentKey.nodeId}`);
-    }
     this.group = [];
   }
 
@@ -370,7 +393,15 @@ export function tallyProjectedRows(
 
 /** Integer threshold: exactly 2% fails — no float ambiguity. */
 export function fractionExceeded(genericCards: number, logicalCards: number): boolean {
-  return genericCards * 100 >= logicalCards * THRESHOLD_PERCENT;
+  if (
+    !Number.isSafeInteger(genericCards) ||
+    genericCards < 0 ||
+    !Number.isSafeInteger(logicalCards) ||
+    logicalCards <= 0
+  ) {
+    return true;
+  }
+  return BigInt(genericCards) * 100n >= BigInt(logicalCards) * BigInt(THRESHOLD_PERCENT);
 }
 
 export interface AuditRecord {
@@ -484,10 +515,17 @@ function buildRecord(
   }
   const now = options?.now ?? new Date();
   const repoRoot = options?.repoRoot ?? resolve(import.meta.dir, '..');
+  const source = options?.sourceId ?? 'unspecified';
+  if (!isSourceId(source)) {
+    throw new AuditUsageError(
+      `source id must match ${SOURCE_ID_PATTERN.source}, start with an alphanumeric character, ` +
+        `and be at most ${String(MAX_SOURCE_ID_CODE_UNITS)} code units`
+    );
+  }
   const record: AuditRecord = {
     schemaVersion: RECORD_SCHEMA_VERSION,
     generatedAt: now.toISOString(),
-    source: options?.sourceId ?? 'unspecified',
+    source,
     dialect,
     denominator: DENOMINATOR,
     auditSourceSha256: computeAuditSourceSha256(repoRoot),
@@ -546,7 +584,10 @@ export function auditSqlite(dbPath: string, options?: AuditRunOptions): AuditRec
   try {
     db = new Database(dbPath, { readonly: true });
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const rawDetail = error instanceof Error ? error.message : String(error);
+    const detail = rawDetail
+      .replaceAll(dbPath, '[redacted SQLite path]')
+      .replaceAll(resolve(dbPath), '[redacted SQLite path]');
     const walHint = /unable to open|cannot open/i.test(detail)
       ? ' — if this is a cleanly checkpointed WAL database there is no -shm for a ' +
         'read-only handle to attach to; run while the install is up or audit a checkpointed copy'
@@ -624,7 +665,10 @@ export async function auditPostgres(
     });
   } catch (error) {
     if (error instanceof AuditDataError) throw error;
-    const detail = error instanceof Error ? error.message : String(error);
+    const rawDetail = error instanceof Error ? error.message : String(error);
+    const detail = rawDetail
+      .replaceAll(connectionUrl, '[redacted PostgreSQL URL]')
+      .replace(/postgres(?:ql)?:\/\/[^@\s]+@/gi, 'postgresql://[redacted]@');
     throw new AuditDataError(`cannot complete the PostgreSQL audit: ${detail}`);
   } finally {
     await sql.close().catch(() => undefined);
@@ -656,6 +700,14 @@ function requireRecordField<T>(
 const isNonEmptyString = (v: unknown): string | null =>
   typeof v === 'string' && v.length > 0 ? v : null;
 
+function isSourceId(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_SOURCE_ID_CODE_UNITS &&
+    SOURCE_ID_PATTERN.test(value)
+  );
+}
+
 const isSafeInt = (v: unknown): number | null =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 ? v : null;
 
@@ -683,11 +735,28 @@ export function checkRecord(
   }
   if (!isRecord(parsed)) failCheck('audit record is not a JSON object');
 
+  const allowedRecordFields = new Set([
+    'schemaVersion',
+    'generatedAt',
+    'source',
+    'dialect',
+    'denominator',
+    'auditSourceSha256',
+    'logicalCards',
+    'genericCards',
+    'fraction',
+    'genericNames',
+  ]);
+  const unknownRecordField = Object.keys(parsed).find(field => !allowedRecordFields.has(field));
+  if (unknownRecordField !== undefined) {
+    failCheck(`record contains unsupported field ${unknownRecordField}`);
+  }
+
   requireRecordField(parsed, 'schemaVersion', v =>
     v === RECORD_SCHEMA_VERSION ? RECORD_SCHEMA_VERSION : null
   );
   requireRecordField(parsed, 'denominator', v => (v === DENOMINATOR ? DENOMINATOR : null));
-  const source = requireRecordField(parsed, 'source', isNonEmptyString);
+  const source = requireRecordField(parsed, 'source', value => (isSourceId(value) ? value : null));
   const dialect = requireRecordField(parsed, 'dialect', v =>
     v === 'sqlite' || v === 'postgresql' ? v : null
   );
@@ -710,6 +779,9 @@ export function checkRecord(
 
   const generatedMs = Date.parse(generatedAt);
   if (Number.isNaN(generatedMs)) failCheck('record generatedAt is not a parseable timestamp');
+  if (new Date(generatedMs).toISOString() !== generatedAt) {
+    failCheck('record generatedAt must be a canonical UTC ISO timestamp');
+  }
   const now = options?.now ?? new Date();
   const ageMs = now.getTime() - generatedMs;
   if (ageMs < -MAX_FUTURE_SKEW_MS) failCheck('record generatedAt is in the future');
@@ -731,18 +803,41 @@ export function checkRecord(
     failCheck('record fraction disagrees with genericCards/logicalCards — malformed');
   }
 
+  let genericNames: { name: string; cards: number }[] | undefined;
   if (parsed.genericNames !== undefined) {
-    if (
-      !Array.isArray(parsed.genericNames) ||
-      !parsed.genericNames.every(
-        entry =>
-          isRecord(entry) &&
-          isNonEmptyString(entry.name) !== null &&
-          isSafeInt(entry.cards) !== null &&
-          (entry.cards as number) > 0
-      )
-    ) {
-      failCheck('record genericNames is malformed');
+    if (!Array.isArray(parsed.genericNames) || parsed.genericNames.length > MAX_GENERIC_NAMES) {
+      failCheck('record genericNames is malformed or exceeds its cap');
+    }
+    genericNames = [];
+    const seen = new Set<string>();
+    let namedCards = 0;
+    for (const entry of parsed.genericNames) {
+      if (!isRecord(entry) || Object.keys(entry).some(key => key !== 'name' && key !== 'cards')) {
+        failCheck('record genericNames is malformed');
+      }
+      const name = isNonEmptyString(entry.name);
+      const cards = isSafeInt(entry.cards);
+      if (
+        name === null ||
+        cards === null ||
+        cards === 0 ||
+        !isAggregatableName(name) ||
+        seen.has(name)
+      ) {
+        failCheck('record genericNames violates the bounded identifier privacy policy');
+      }
+      seen.add(name);
+      namedCards += cards;
+      genericNames.push({ name, cards });
+    }
+    if (namedCards > genericCards) {
+      failCheck('record genericNames counts exceed genericCards');
+    }
+    const sorted = [...genericNames].sort(
+      (a, b) => b.cards - a.cards || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
+    );
+    if (genericNames.some((entry, index) => entry !== sorted[index])) {
+      failCheck('record genericNames is not in deterministic count/name order');
     }
   }
 
@@ -765,16 +860,29 @@ export function checkRecord(
     genericCards,
     fraction,
   };
-  if (parsed.genericNames !== undefined) {
-    record.genericNames = parsed.genericNames as { name: string; cards: number }[];
-  }
+  if (genericNames !== undefined) record.genericNames = genericNames;
   return record;
 }
 
 export function writeRecordAtomic(recordPath: string, record: AuditRecord): void {
   const tmp = `${recordPath}.${String(process.pid)}.${String(Date.now())}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
-  renameSync(tmp, recordPath);
+  try {
+    writeFileSync(tmp, `${JSON.stringify(record, null, 2)}\n`, 'utf8');
+    renameSync(tmp, recordPath);
+  } finally {
+    if (existsSync(tmp)) {
+      try {
+        unlinkSync(tmp);
+      } catch {
+        // Preserve the write/rename failure; the temp path contains no secrets.
+      }
+    }
+  }
+}
+
+function canonicalPathForComparison(path: string): string {
+  const absolute = resolve(path);
+  return existsSync(absolute) ? realpathSync(absolute) : absolute;
 }
 
 interface CliArgs {
@@ -886,6 +994,21 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (args.recordPath !== undefined && args.sourceId === undefined) {
       throw new AuditUsageError('--record requires --source <id> (a non-secret corpus identity)');
+    }
+    if (args.sourceId !== undefined && !isSourceId(args.sourceId)) {
+      throw new AuditUsageError(
+        `--source must be an identifier of at most ${String(MAX_SOURCE_ID_CODE_UNITS)} code ` +
+          'units containing only letters, numbers, dot, underscore, and hyphen'
+      );
+    }
+    if (
+      args.sqlitePath !== undefined &&
+      args.recordPath !== undefined &&
+      canonicalPathForComparison(args.sqlitePath) === canonicalPathForComparison(args.recordPath)
+    ) {
+      throw new AuditUsageError(
+        '--record must not target the SQLite corpus — the audit database is read-only'
+      );
     }
     const options: AuditRunOptions = { includeGenericNames: args.includeGenericNames };
     if (args.sourceId !== undefined) options.sourceId = args.sourceId;

@@ -240,6 +240,22 @@ The headline element needs `min-width: 0` inside the flex row or it will not shr
 | web     | url and title, output as markdown                                                                                                                                     |
 | generic | `key: value` list; output as markdown if it parses as text, else preformatted                                                                                         |
 
+### Bounded output contract
+
+Expanded bodies are bounded before they reach React. Text, commands, code, and the
+assembled web markdown body use a 65,536-code-unit display ceiling. List channels
+emit at most 500 items, inspect at most 2,000 source entries, and bound each path,
+match path/text, title, and URL to 1,024 code units. Field enumeration inspects at
+most 32 entries; emitted keys and scalar values are bounded to 128 and 1,024 code
+units respectively. Inherited properties are never emitted, and they still count
+toward the enumeration budget so a hostile prototype cannot make work unbounded.
+
+Every cut is visible: text bodies retain an ellipsis within their ceiling, while
+list and web bodies set `truncated` and carry an exact positive `omitted` count when
+known or `null` when it is not. Nested `file_matches` and web-result arrays propagate
+their own overflow into that metadata. A family body must not silently discard an
+over-cap tail or assemble many individually bounded values into an unbounded result.
+
 ## Inline diff
 
 `packages/web` has **no** line-diff algorithm. The existing adapter at `packages/web/src/components/workflows/source-control/git-hunk-adapter.ts` (57 lines) only **converts** an already-computed `GitDiffHunk` — one the server's git routes produced — into `react-diff-view`'s shape. It computes nothing, and no differ is among the package's declared dependencies.

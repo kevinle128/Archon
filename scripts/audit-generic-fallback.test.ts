@@ -20,7 +20,15 @@
 import { describe, test, expect } from 'bun:test';
 import { Database } from 'bun:sqlite';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
@@ -250,6 +258,9 @@ describe('toPairableMessage validation', () => {
     expect(() => toPairableMessage(rowOf(1, 'bash', 'tu_1', { input_json: 'not-json{' }))).toThrow(
       MalformedRowError
     );
+    expect(() => toPairableMessage(rowOf(1, 'bash', 'tu_1', { output_present: 'yes' }))).toThrow(
+      MalformedRowError
+    );
   });
 });
 
@@ -325,9 +336,11 @@ describe('tallyProjectedRows denominator', () => {
       rowOf(4, 'mcp__srv__tool', 'tu_4'),
       // over the name bound: counted as generic but never recorded by name
       rowOf(5, 'x'.repeat(200), 'tu_5'),
+      // path-like single tokens are also withheld from the durable record
+      rowOf(6, '/Users/operator/private-tool', 'tu_6'),
     ];
     const tally = tallyProjectedRows(rows, { includeGenericNames: true });
-    expect(tally.genericCards).toBe(5);
+    expect(tally.genericCards).toBe(6);
     // count desc, then name asc — deterministic
     expect(tally.genericNames).toEqual([
       { name: 'frobnicate', cards: 2 },
@@ -343,6 +356,7 @@ describe('fractionExceeded integer threshold', () => {
     expect(fractionExceeded(1, 51)).toBe(false); // ~1.96%
     expect(fractionExceeded(2, 50)).toBe(true); // 4%
     expect(fractionExceeded(0, 100)).toBe(false);
+    expect(fractionExceeded(Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER)).toBe(true);
   });
 });
 
@@ -658,6 +672,45 @@ describe('record write + check', () => {
       expect(() => checkRecord(ctx.recordPath)).toThrow(AuditPolicyError);
       writeFileSync(ctx.recordPath, JSON.stringify({ schemaVersion: 99 }));
       expect(() => checkRecord(ctx.recordPath)).toThrow(AuditPolicyError);
+
+      writeFileSync(ctx.recordPath, JSON.stringify({ ...baseRecord(), databaseUrl: 'secret' }));
+      expect(() => checkRecord(ctx.recordPath)).toThrow(/unsupported field databaseUrl/);
+    });
+  });
+
+  test('record source and generic-name aggregates enforce the privacy policy', async () => {
+    await withSandbox(ctx => {
+      const pathSource = baseRecord({ source: '/Users/operator/.archon/archon.db' });
+      writeFileSync(ctx.recordPath, JSON.stringify(pathSource));
+      expect(() => checkRecord(ctx.recordPath)).toThrow(/field source/);
+
+      const pathName = baseRecord({
+        genericCards: 2,
+        fraction: 0.02,
+        genericNames: [{ name: '/Users/operator/tool', cards: 1 }],
+      });
+      writeFileSync(ctx.recordPath, JSON.stringify(pathName));
+      expect(() => checkRecord(ctx.recordPath)).toThrow(/privacy policy/);
+
+      const unsorted = baseRecord({
+        genericCards: 2,
+        fraction: 0.02,
+        genericNames: [
+          { name: 'zeta', cards: 1 },
+          { name: 'alpha', cards: 1 },
+        ],
+      });
+      writeFileSync(ctx.recordPath, JSON.stringify(unsorted));
+      expect(() => checkRecord(ctx.recordPath)).toThrow(/deterministic/);
+    });
+  });
+
+  test('failed atomic rename leaves no temporary record', async () => {
+    await withSandbox(ctx => {
+      mkdirSync(ctx.recordPath);
+      expect(() => writeRecordAtomic(ctx.recordPath, baseRecord())).toThrow();
+      expect(readdirSync(ctx.root)).toEqual(['record.json']);
+      expect(readdirSync(ctx.recordPath)).toEqual([]);
     });
   });
 
@@ -767,6 +820,32 @@ describe('CLI contract (subprocess)', () => {
     });
   });
 
+  test('--record cannot overwrite the SQLite corpus', async () => {
+    await withSandbox(async ctx => {
+      createFixture(ctx.dbPath, [callRow(1, 'bash', 'tu_1')]);
+      const before = readFileSync(ctx.dbPath);
+      const result = await runCli(
+        ['--sqlite', ctx.dbPath, '--source', 'cli', '--record', ctx.dbPath],
+        ctx.root
+      );
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('--record must not target the SQLite corpus');
+      expect(readFileSync(ctx.dbPath)).toEqual(before);
+    });
+  });
+
+  test('--source rejects paths and free-form text before opening the corpus', async () => {
+    await withSandbox(async ctx => {
+      const result = await runCli(
+        ['--sqlite', ctx.dbPath, '--source', '/Users/operator/private.db'],
+        ctx.root
+      );
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('--source must be an identifier');
+      expect(readdirSync(ctx.root)).toEqual([]);
+    });
+  });
+
   test('--check never opens a database and rejects audit flags', async () => {
     await withSandbox(async ctx => {
       writeFileSync(ctx.recordPath, '{bad json');
@@ -780,13 +859,15 @@ describe('CLI contract (subprocess)', () => {
 
   test('missing corpus is a data/access failure, not a fallback', async () => {
     await withSandbox(async ctx => {
+      const missing = join(ctx.root, 'absent.db');
       const result = await runCli(
-        ['--sqlite', join(ctx.root, 'absent.db'), '--source', 'x'],
+        ['--sqlite', missing, '--source', 'x'],
         ctx.root,
         scrubbedEnv({ DATABASE_URL: 'postgres://unused@localhost:1/unused' })
       );
       expect(result.exitCode).toBe(3);
       expect(result.stderr).toContain('cannot open the SQLite corpus read-only');
+      expect(result.stderr).not.toContain(missing);
       expect(readdirSync(ctx.root)).toEqual([]);
     });
   });

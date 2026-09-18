@@ -2,12 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   MAX_FIELD_KEYS_SCANNED,
+  MAX_FIELD_KEY_CODE_UNITS,
   MAX_FIELD_VALUE_CODE_UNITS,
   MAX_JSON_PARSE_CODE_UNITS,
   MAX_LIST_ITEM_TEXT_CODE_UNITS,
   MAX_LIST_ITEMS,
   MAX_OUTPUT_FIELDS,
   MAX_OUTPUT_TEXT_CODE_UNITS,
+  MAX_SANITIZE_SCAN_CODE_UNITS,
   MAX_SALVAGE_SCAN_CODE_UNITS,
   normalizeToolOutput,
 } from './tool-output';
@@ -103,6 +105,18 @@ describe('ansi and control stripping', () => {
   test('control characters drop but newline and tab survive', () => {
     const normalized = normalize('a\rb\nc\td\u007fe\u0007f\u0001');
     expect(normalized.text).toBe('ab\nc\tdef');
+  });
+
+  test('discarded controls and unterminated escapes cannot make sanitization scan an unbounded tail', () => {
+    const controls = '\u0001'.repeat(MAX_SANITIZE_SCAN_CODE_UNITS + 1);
+    const normalizedControls = normalize(controls);
+    expect(normalizedControls.text).toBeNull();
+    expect(normalizedControls.textTruncated).toBe(true);
+
+    const unterminatedOsc = `${ESC}]8;;${'x'.repeat(MAX_SANITIZE_SCAN_CODE_UNITS + 1)}`;
+    const normalizedOsc = normalize(unterminatedOsc);
+    expect(normalizedOsc.text).toBeNull();
+    expect(normalizedOsc.textTruncated).toBe(true);
   });
 });
 
@@ -624,12 +638,61 @@ describe('bounds and adversarial inputs', () => {
     expect(normalized.paths.items[0]).toHaveLength(MAX_LIST_ITEM_TEXT_CODE_UNITS);
   });
 
+  test('grep match paths and text are bounded per item', () => {
+    const longPath = 'p'.repeat(MAX_LIST_ITEM_TEXT_CODE_UNITS + 50);
+    const longText = 't'.repeat(MAX_LIST_ITEM_TEXT_CODE_UNITS + 50);
+    const normalized = normalize({ mode: 'content', content: `${longPath}:7:${longText}` });
+    expect(normalized.matches.items).toEqual([
+      {
+        path: 'p'.repeat(MAX_LIST_ITEM_TEXT_CODE_UNITS),
+        line: 7,
+        text: 't'.repeat(MAX_LIST_ITEM_TEXT_CODE_UNITS),
+      },
+    ]);
+  });
+
+  test('truncated grep content reports an inexact omitted tail', () => {
+    const normalized = normalize({
+      mode: 'content',
+      content: `a.ts:1:${'x'.repeat(MAX_OUTPUT_TEXT_CODE_UNITS)}`,
+    });
+    expect(normalized.matches.truncated).toBe(true);
+    expect(normalized.matches.omitted).toBeNull();
+  });
+
+  test('nested match and web-result lists cannot silently overflow the item cap', () => {
+    const matches = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => ({
+      line_number: i + 1,
+      content: `hit-${String(i)}`,
+    }));
+    const normalizedMatches = normalize({ file_matches: [{ path: 'a.ts', matches }] });
+    expect(normalizedMatches.matches.items).toHaveLength(MAX_LIST_ITEMS);
+    expect(normalizedMatches.matches.truncated).toBe(true);
+    expect(normalizedMatches.matches.omitted).toBeNull();
+
+    const content = Array.from({ length: MAX_LIST_ITEMS + 1 }, (_, i) => ({
+      title: `result-${String(i)}`,
+      url: `https://example.com/${String(i)}`,
+    }));
+    const normalizedWeb = normalize({ results: [{ content }] });
+    expect(normalizedWeb.webResults.items).toHaveLength(MAX_LIST_ITEMS);
+    expect(normalizedWeb.webResults.truncated).toBe(true);
+    expect(normalizedWeb.webResults.omitted).toBeNull();
+  });
+
   test('field values are bounded', () => {
     const big = 'v'.repeat(MAX_FIELD_VALUE_CODE_UNITS + 50);
     const normalized = normalize({ big });
     const field = normalized.fields.find(f => f.key === 'big');
     expect(field).toBeDefined();
     expect(field!.value).toHaveLength(MAX_FIELD_VALUE_CODE_UNITS);
+  });
+
+  test('field keys are sanitized and bounded', () => {
+    const key = `\u001b[31m${'k'.repeat(MAX_FIELD_KEY_CODE_UNITS + 50)}`;
+    const normalized = normalize({ [key]: 'value' });
+    expect(normalized.fields).toHaveLength(1);
+    expect(normalized.fields[0]?.key).toBe('k'.repeat(MAX_FIELD_KEY_CODE_UNITS));
   });
 
   test('byte arrays decode at most the text-cap prefix', () => {

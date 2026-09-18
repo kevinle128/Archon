@@ -17,7 +17,11 @@ import {
   type ToolFamily,
   type ToolRowFacts,
 } from './tool-presentation';
-import { MAX_LIST_ITEMS, MAX_OUTPUT_TEXT_CODE_UNITS } from './tool-output';
+import {
+  MAX_FIELD_KEY_CODE_UNITS,
+  MAX_LIST_ITEMS,
+  MAX_OUTPUT_TEXT_CODE_UNITS,
+} from './tool-output';
 
 function call(
   name: string,
@@ -922,7 +926,7 @@ describe('terminal body', () => {
     const b = body('Bash', { command: long }, 'done', 'shell');
     if (b?.kind !== 'terminal') throw new Error('expected terminal');
     expect(b.command.endsWith('…')).toBe(true);
-    expect([...b.command].length).toBe(MAX_BODY_COMMAND_CODE_UNITS + 1);
+    expect(b.command).toHaveLength(MAX_BODY_COMMAND_CODE_UNITS);
   });
 
   test('wrapper-preserving sent name supplies the command when input lacks one', () => {
@@ -1176,6 +1180,18 @@ describe('web body', () => {
     expect(b.markdown).toBe('- [A](https://a)\n- [https://b](https://b)');
     expect(b.title).toBeNull();
   });
+
+  test('assembled web markdown stays inside the text budget and reports omitted results', () => {
+    const results = Array.from({ length: MAX_LIST_ITEMS }, (_, i) => ({
+      title: `title-${String(i)}-${'x'.repeat(900)}`,
+      url: `https://example.com/${String(i)}/${'y'.repeat(900)}`,
+    }));
+    const b = body('WebSearch', { url: 'query' }, { results }, 'web');
+    if (b?.kind !== 'web') throw new Error('expected web');
+    expect(b.markdown?.length ?? 0).toBeLessThanOrEqual(MAX_OUTPUT_TEXT_CODE_UNITS);
+    expect(b.truncated).toBe(true);
+    expect(b.omitted).toBeGreaterThan(0);
+  });
 });
 
 describe('generic body', () => {
@@ -1231,6 +1247,20 @@ describe('generic body', () => {
     if (json?.kind !== 'generic') throw new Error('expected generic');
     expect(json.markdown).toBeNull();
     expect(json.fields).toEqual([{ key: 'a', value: '1' }]);
+  });
+
+  test('generic field keys are bounded and display text marks truncation within its cap', () => {
+    const key = 'k'.repeat(MAX_FIELD_KEY_CODE_UNITS + 20);
+    const b = body(
+      'mystery',
+      { [key]: true },
+      'x'.repeat(MAX_OUTPUT_TEXT_CODE_UNITS + 1),
+      'generic'
+    );
+    if (b?.kind !== 'generic') throw new Error('expected generic');
+    expect(b.fields[0]?.key).toHaveLength(MAX_FIELD_KEY_CODE_UNITS);
+    expect(b.markdown).toHaveLength(MAX_OUTPUT_TEXT_CODE_UNITS);
+    expect(b.markdown?.endsWith('…')).toBe(true);
   });
 });
 

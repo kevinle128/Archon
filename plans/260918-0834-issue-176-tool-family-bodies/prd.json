@@ -21,7 +21,7 @@
       "dependsOn": [],
       "priority": 1,
       "passes": true,
-      "notes": "Implemented in iteration 1. Files: packages/web/src/lib/tool-output.ts, packages/web/src/lib/tool-output.test.ts (90 tests). Required chore(unblock) commits for two pre-existing failures: orphaned no-hitl-clarify-graph.test.ts (fixture deleted in 16b01a72) and unformatted plans/prd.md."
+      "notes": "Implemented in iteration 1 and repaired in final review. Files: packages/web/src/lib/tool-output.ts and tool-output.test.ts. The orphaned no-hitl clarify graph test is preserved with its removed workflow topology as an inline fixture; it is not deleted to hide the pre-existing missing-YAML failure."
     },
     {
       "id": "US-002",
@@ -123,7 +123,7 @@
       "dependsOn": ["US-005"],
       "priority": 6,
       "passes": true,
-      "notes": "Implemented in iteration 6. Audit record at audit/generic-fallback.json (81/5132 = 1.58% < 2%); release SKILL.md Step 1.6 pre-mutation --check; hitl-room spec asserts file body + exact Raw payload on both surfaces; visual spec gained the 8-arm route-fulfilled gallery (460px geometry, Raw swap, a11y, contrast, reduced-motion); evidence at reports/implementation-evidence.md. Gates: bun run validate, e2e typecheck, test:ui:hitl (38 pass / 3 auth-gated skips) all green. Unblock commit 14ccc5ad restored missing speckit fixtures."
+      "notes": "Implemented in iteration 6 and repaired by the final review. Audit record at audit/generic-fallback.json (89/5540 = 1.61% < 2%); release SKILL.md Step 1.6 pre-mutation --check; hitl-room spec asserts file body + exact Raw payload on both surfaces; visual spec gained the 8-arm route-fulfilled gallery (460px geometry, Raw swap, a11y, contrast, reduced-motion); evidence at reports/implementation-evidence.md. Gates: bun run validate, e2e typecheck, test:ui:hitl (38 pass / 3 auth-gated skips) all green. The no-HITL clarify regression test remains present with an inline fixture."
     }
   ]
 }

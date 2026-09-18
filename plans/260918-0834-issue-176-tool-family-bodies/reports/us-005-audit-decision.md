@@ -65,7 +65,8 @@ output body test proves the record stays ~1 KB and contains no output content.
 Rows stream in keyset order `(workflow_run_id, node_id, seq, id)` inside one
 snapshot transaction — a call/result pair split across a page boundary still
 pairs once (tested at `pageSize: 1`). Memory holds only the current node group
-plus aggregates; `MAX_NODE_TOOL_ROWS = 10_000` fails closed with the row
+plus aggregates; monotonic group-order validation does not retain prior group
+keys. `MAX_NODE_TOOL_ROWS = 10_000` fails closed with the row
 identity when a node exceeds it (a transcript that size needs inspection, not a
 silent count). A 2 000-row/200-group fixture at `pageSize: 13` verifies the
 streaming path end-to-end.
@@ -102,20 +103,19 @@ denominator, `genericCards ≤ logicalCards`, `fraction ===
 genericCards/logicalCards` recomputed exactly, `genericNames` shape, then the
 threshold. Every check failure is exit 1 (the release cannot prove the bound).
 
-`--record` requires `--source <id>` (a non-secret corpus identity — the
-alternative would be writing the DB path, which is disallowed) and writes via
-same-directory temp file + atomic rename; no `.tmp` litter survives.
+`--record` requires `--source <id>` (a bounded identifier-safe non-secret
+corpus identity — paths and URLs are rejected), refuses to target the SQLite
+corpus itself, and writes via same-directory temp file + atomic rename with
+failure cleanup; no `.tmp` litter survives.
 
 ## Aggregate privacy decision
 
 `--include-generic-names` records `{name, cards}` aggregates, count-descending
-then name-ascending, capped at 25 entries — but only for names that are a
-single whitespace-free token of ≤128 code units (the same rule that earns the
-chip). Whitespace-bearing names are command lines (Codex-style), may embed
-arguments or paths, and are counted but never recorded; over-long names
-likewise. In practice the resolver classifies whitespace names as `shell`, so
-the bound rarely binds — it exists so a future resolver change cannot leak a
-command line into the durable record.
+then name-ascending, capped at 25 entries — but only for bounded ASCII
+identifier tokens. Whitespace, slashes, controls, and other path/command
+punctuation are counted but never recorded. The checker re-enforces that
+privacy rule, order, uniqueness, cap, count consistency, and the record's exact
+field allowlist so a hand-edited record cannot smuggle payload or path data.
 
 ## Test evidence
 
