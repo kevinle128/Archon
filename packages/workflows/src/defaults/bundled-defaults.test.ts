@@ -417,7 +417,7 @@ describe('bundled-defaults', () => {
           depends_on?: string[];
           when?: string;
           bash?: string;
-          output_format?: { properties?: { ready?: { type?: string } } };
+          output_format?: { properties?: { report?: { type?: string } } };
         }>;
       };
       const review = workflow.nodes.find(node => node.id === 'verify-and-fix-plan');
@@ -433,17 +433,14 @@ describe('bundled-defaults', () => {
       expect(prompt).toContain(
         'add visual acceptance criteria for the required states and viewports'
       );
-      expect(review?.output_format?.properties?.ready?.type).toBe('boolean');
+      expect(review?.output_format?.properties?.report?.type).toBe('string');
+      expect(review?.when).toBeUndefined();
 
-      const ready = workflow.nodes.find(node => node.id === 'verified-plan-ready');
-      expect(ready?.when).toBe('$verify-and-fix-plan.output.ready == true');
-
-      const blocked = workflow.nodes.find(node => node.id === 'verified-plan-blocked');
-      expect(blocked?.when).toBe('$verify-and-fix-plan.output.ready == false');
-      expect(blocked?.bash).toContain('exit 1');
+      expect(workflow.nodes.some(node => node.id === 'verified-plan-ready')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'verified-plan-blocked')).toBe(false);
 
       const build = workflow.nodes.find(node => node.id === 'build-ralph-prd');
-      expect(build?.depends_on).toEqual(['verified-plan-ready']);
+      expect(build?.depends_on).toEqual(['verify-and-fix-plan']);
     });
 
     it('ak-implement runs Ralph as a native in-parent loop', () => {
@@ -515,14 +512,101 @@ describe('bundled-defaults', () => {
       expect(finalFix?.prompt).not.toContain('hand fixes back to Grok');
       expect(finalFix?.prompt).not.toContain('implementation-report.md');
 
-      const failed = workflow.nodes.find(node => node.id === 'stop-on-final-fix-failure');
-      expect(failed?.depends_on).toEqual(['codex-final-fix']);
-      expect(failed?.when).toBe("$codex-final-fix.output.gate == 'FAIL'");
-      expect(failed?.cancel).toContain('$codex-final-fix.output.summary');
+      expect(workflow.nodes.some(node => node.id === 'stop-on-final-fix-failure')).toBe(false);
+      expect(finalFix?.when).toBeUndefined();
+      expect(finalFix?.output_format?.required).not.toContain('gate');
 
       const createPr = workflow.nodes.find(node => node.id === 'create-pull-request');
       expect(createPr?.depends_on).toEqual(['codex-final-fix']);
-      expect(createPr?.when).toBe("$codex-final-fix.output.gate == 'PASS'");
+      expect(createPr?.when).toBeUndefined();
+    });
+
+    it('ak-feature matches ak-implement after the plan node', () => {
+      const workflow = Bun.YAML.parse(BUNDLED_WORKFLOWS['ak-feature']) as {
+        nodes: Array<{
+          id: string;
+          bash?: string;
+          cancel?: string;
+          depends_on?: string[];
+          effort?: string;
+          model?: string;
+          prompt?: string;
+          provider?: string;
+          trigger_rule?: string;
+          when?: string;
+          workflow?: string;
+          output_format?: {
+            required?: string[];
+            properties?: {
+              report?: { type?: string };
+              terminal?: { type?: string };
+            };
+          };
+          loop?: {
+            command?: string;
+            fresh_context?: boolean;
+            max_iterations?: number;
+            until_bash?: string;
+            until_field?: string;
+          };
+        }>;
+      };
+
+      expect(workflow.nodes.some(node => node.workflow === 'archon-ralph-dag')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'ralph-implement')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'validate-plan')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'resolve-plan-source')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'verified-plan-ready')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'verified-plan-blocked')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'stop-on-final-fix-failure')).toBe(false);
+
+      const plan = workflow.nodes.find(node => node.id === 'plan');
+      expect(plan?.depends_on).toEqual(['setup']);
+      expect(plan?.prompt).toContain('/ak:plan --deep --tdd');
+      expect(plan?.provider).toBe('claude');
+
+      const resolve = workflow.nodes.find(node => node.id === 'resolve-plan');
+      expect(resolve?.depends_on).toEqual(['plan']);
+      expect(resolve?.bash).toContain('plans/*/');
+      expect(resolve?.bash).toContain('{"plan_path":"%s","prd_dir":"%s"}');
+      expect(resolve?.bash).not.toContain('.archon/ralph');
+
+      const review = workflow.nodes.find(node => node.id === 'verify-and-fix-plan');
+      expect(review?.depends_on).toEqual(['resolve-plan']);
+      expect(review?.provider).toBe('codex');
+      expect(review?.output_format?.properties?.report?.type).toBe('string');
+      expect(review?.when).toBeUndefined();
+
+      const build = workflow.nodes.find(node => node.id === 'build-ralph-prd');
+      expect(build?.depends_on).toEqual(['verify-and-fix-plan']);
+      expect(build?.prompt).toContain('$resolve-plan.output.prd_dir');
+      expect(build?.prompt).toContain('never `.archon/ralph/`');
+
+      const setup = workflow.nodes.find(node => node.id === 'setup');
+      expect(setup?.bash).toContain('$ARTIFACTS_DIR/ak-feature/base-sha.txt');
+
+      const preflight = workflow.nodes.find(node => node.id === 'ralph-native-preflight');
+      expect(preflight?.depends_on).toEqual(['build-ralph-prd']);
+      expect(preflight?.bash).toContain('$build-ralph-prd.output.prd_dir');
+      expect(preflight?.bash).toContain('$ARTIFACTS_DIR/superpowers/prd-dir.txt');
+
+      const loop = workflow.nodes.find(node => node.id === 'ralph-loop-run');
+      expect(loop?.depends_on).toEqual(['ralph-native-preflight']);
+      expect(loop?.provider).toBe('devin');
+      expect(loop?.model).toBe('swe-2-max');
+      expect(loop?.loop?.command).toBe('archon-ralph-project-aware-iteration');
+      expect(loop?.loop?.until_field).toBe('terminal');
+
+      const finalFix = workflow.nodes.find(node => node.id === 'codex-final-fix');
+      expect(finalFix?.depends_on).toEqual(['ralph-loop-run']);
+      expect(finalFix?.trigger_rule).toBe('all_done');
+      expect(finalFix?.prompt).toContain('$ARTIFACTS_DIR/ak-feature/base-sha.txt');
+      expect(finalFix?.when).toBeUndefined();
+      expect(finalFix?.output_format?.required).not.toContain('gate');
+
+      const createPr = workflow.nodes.find(node => node.id === 'create-pull-request');
+      expect(createPr?.depends_on).toEqual(['codex-final-fix']);
+      expect(createPr?.when).toBeUndefined();
     });
 
     it('archon-superpower-feature-verify-loop proves before PR and blocks on exhaustion', () => {

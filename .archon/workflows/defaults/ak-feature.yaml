@@ -4,26 +4,22 @@ description: |
   pipeline running fully unattended in a worktree.
   Triggers: "ck feature", "claudekit feature", "ck plan and cook", "ck deep tdd",
             "plan then cook", "ck pipeline", "claude kit feature".
-  Does: deep TDD planning (/ak:plan --deep --tdd) -> independent Codex gpt-5.6-sol
-        verify + fix of the plan (answers any questions the planner could not
-        decide, and writes verification-report.md beside the plan) ->
-        conversion of the verified plan into a Ralph PRD (prd.md + prd.json
-        stories) -> autonomous story-by-story implementation via the
-        archon-ralph-dag sub-run (fresh context per story, validate + commit
-        each), then a pushed branch, draft PR, and completion report.
-  NOT for: quick one-file fixes, bug fixes, PR reviews, or running an existing plan
-        (use archon-plan-to-pr for an existing plan).
+  Does: deep TDD planning (/ak:plan --deep --tdd) -> independent Codex verify +
+        fix of the plan -> conversion of the plan into a Ralph PRD (prd.md +
+        prd.json) CO-LOCATED with it -> autonomous story-by-story implementation
+        via a native in-parent Ralph loop -> Codex repairs any remaining Ralph
+        blockers, plan gaps, or defects -> create a PR after the Codex repair
+        step. Never trusts ralph-loop-run.
+  NOT for: quick one-file fixes, bug fixes, PR reviews, or running an existing
+        plan (use ak-implement for an existing plan).
 
-# Default provider for ck:plan (Claude Opus). validate-plan overrides to Codex.
-# build-ralph-prd overrides to omp. The ralph-implement node runs the
-# archon-ralph-dag sub-run as authored (its own per-node providers). Codex
-# reasoning effort may be set with workflow/node `effort`; legacy
-# assistants.codex.modelReasoningEffort remains the provider default.
+# Default provider for the plan node (Claude Opus). Later nodes declare their
+# own providers. Codex reasoning effort is set per Codex node with `effort`.
 provider: claude
 
 nodes:
   # ───────────────────────────────────────────────────────────────────
-  # STEP 1 / 5 — Setup
+  # STEP 1 / 6 — Setup
   # ───────────────────────────────────────────────────────────────────
   - id: setup
     bash: |
@@ -34,18 +30,19 @@ nodes:
       echo "HEAD=$(git rev-parse --short HEAD 2>/dev/null || echo 'no-git')"
       echo "ARTIFACTS_DIR=$ARTIFACTS_DIR"
       git fetch --all --prune 2>/dev/null || true
-      mkdir -p plans
+      mkdir -p plans "$ARTIFACTS_DIR/ak-feature"
+      git rev-parse HEAD > "$ARTIFACTS_DIR/ak-feature/base-sha.txt"
       echo ""
-      echo "Pipeline: /ak:plan --deep --tdd  ->  codex gpt-5.6-sol verify+fix  ->  plan->Ralph PRD  ->  archon-ralph-dag (loop + PR)"
-      echo "Starting Step 1 of 5: deep TDD planning..."
+      echo "Pipeline: /ak:plan --deep --tdd  ->  Codex verify+fix  ->  plan->Ralph PRD (co-located)  ->  native Ralph loop  ->  Codex final repair  ->  PR"
+      echo "Starting Step 1 of 6: deep TDD planning..."
 
   # ───────────────────────────────────────────────────────────────────
-  # STEP 2 / 5 — Deep TDD plan (Claude + ck:plan), fully autonomous
+  # STEP 2 / 6 — Deep TDD plan (Claude + ck:plan), fully autonomous
   # ───────────────────────────────────────────────────────────────────
   - id: plan
     prompt: |
       /ak:plan --deep --tdd $ARGUMENTS
-      When finished, print `PLAN_DIR=<absolute path to the plan directory>`.
+      When finished, trigger advisor review, after that print `PLAN_DIR=<absolute path to the plan directory>`.
     depends_on: [setup]
     provider: claude
     model: opus
@@ -54,11 +51,11 @@ nodes:
       - AskUserQuestion
 
   # ───────────────────────────────────────────────────────────────────
-  # STEP 3a — Resolve the freshly created plan directory
+  # STEP 3 / 6 — Resolve the freshly created plan directory
   # The active-plan pointer ck:plan writes is session-scoped and does not survive
   # across workflow nodes, so locate the newest plan dir by mtime. Diagnostics go
-  # to stderr; stdout is ONLY the absolute path so downstream nodes can consume it
-  # via $resolve-plan.output.
+  # to stderr; stdout is ONLY JSON {"plan_path","prd_dir"}. A directory plan
+  # co-locates the Ralph PRD in that same directory (never .archon/ralph/).
   # ───────────────────────────────────────────────────────────────────
   - id: resolve-plan
     bash: |
@@ -68,31 +65,89 @@ nodes:
         echo "ERROR: no plan directory with plan.md found under ./plans/" >&2
         exit 1
       fi
-      ABS_PLAN_DIR="$(cd "$PLAN_DIR" && pwd)"
-      echo "Resolved plan dir: $ABS_PLAN_DIR" >&2
-      ls -la "$ABS_PLAN_DIR" >&2
-      printf '%s' "$ABS_PLAN_DIR"
+      PLAN_PATH="$(cd "$PLAN_DIR" && pwd)"
+      PRD_DIR="$PLAN_PATH"
+      echo "Resolved plan: $PLAN_PATH" >&2
+      echo "PRD dir (co-located): $PRD_DIR" >&2
+      ls -la "$PLAN_PATH" >&2
+      printf '{"plan_path":"%s","prd_dir":"%s"}' "$PLAN_PATH" "$PRD_DIR"
     depends_on: [plan]
     always_run: true
 
-  # ───────────────────────────────────────────────────────────────────
-  # STEP 3b / 5 — Independent Codex gpt-5.6-sol verify + fix (replaces ck:plan's
-  # human review gates) and answers the planner's open questions.
-  # ───────────────────────────────────────────────────────────────────
-  - id: validate-plan
+  - id: verify-and-fix-plan
     prompt: |
-      /ak:plan validate `$resolve-plan.output`.
+      Review and revise the complete plan at `$resolve-plan.output.plan_path`.
+      Treat the current plan as an unverified draft.
+      Do not trust its claims, assumptions, scope, file references, technical decisions, or conclusions.
+
+      Independently inspect the repository, documentation, code, tests, configuration, existing behavior, and any mockups, wireframes, prototypes, or other design artifacts referenced by or co-located with the plan.
+      Use repository evidence to verify every material part of the plan.
+
+      Determine:
+
+      - What goal the plan is trying to achieve.
+      - Whether that goal matches the actual project need.
+      - Whether the proposed solution fully meets that goal.
+      - Whether the scope is correct and complete.
+      - Whether any requirements, decisions, or steps conflict.
+      - Whether the plan conflicts with existing behavior, contracts, architecture, conventions, or repository rules.
+      - When the plan includes UI work, whether it matches every applicable design artifact for layout, content, states, interactions, and responsive behavior; resolve conflicts according to the repository's documented design authority and add visual acceptance criteria for the required states and viewports. If repository evidence does not resolve a design conflict, do not guess; record the conflict in the plan and list it as a blocker.
+      - Whether the design is correct, simple, maintainable, secure, scalable, and reliable.
+      - Whether the named files, components, dependencies, and code paths are accurate.
+      - Whether the implementation order is practical and complete.
+      - Whether compatibility, migration, rollout, failure handling, and operational concerns are covered.
+      - Whether the test and validation strategy can prove the result.
+      - Whether the acceptance criteria are complete, measurable, and tied to the goal.
+      - Whether the plan contains unsupported assumptions, gaps, unnecessary work, duplication, or premature abstractions.
+
+      Trace the affected behavior end to end.
+      Check direct and indirect effects outside the files named by the plan.
+      Look for important cases that the plan author may have missed.
+
+      Fix every verified problem directly in the plan.
+      Add missing details that an implementing engineer needs.
+      Remove incorrect, conflicting, redundant, or unnecessary content.
+      Keep the solution focused and proportional to the goal.
+
+      Do not implement production code.
+      Your task is to make the plan ready for implementation.
+
+      After revising the plan, review it again from these perspectives:
+
+      1. Product goal and user outcome.
+      2. Architecture and technical correctness.
+      3. Public and internal contracts.
+      4. Security, reliability, and data integrity.
+      5. Performance and scalability.
+      6. Implementation completeness.
+      7. Testing and verification.
+      8. Operations, compatibility, migration, and rollback.
+      9. Simplicity and long-term maintainability.
+
+      Finish with a concise report that states:
+
+      - Your interpretation of the goal.
+      - The evidence you inspected.
+      - The important problems you found.
+      - The changes you made.
+      - Any remaining risks, assumptions, or unresolved questions.
+
+      Return the report in `report`.
     depends_on: [resolve-plan]
     provider: codex
     effort: xhigh
     model: gpt-5.6-sol
     context: fresh
+    output_format:
+      type: object
+      properties:
+        report:
+          type: string
+      required: [report]
 
   # ───────────────────────────────────────────────────────────────────
-  # STEP 4 / 5 — Convert the verified ck plan into a Ralph PRD
-  # Reads the WHOLE verified plan dir (plan.md + every phase-*.md +
-  # verification-report.md) and writes a Ralph PRD (prd.md + prd.json) under
-  # .archon/ralph/<slug>/ so archon-ralph-dag implements it story-by-story.
+  # STEP 4 / 6 — Convert the plan into a Ralph PRD, CO-LOCATED with the plan
+  # Directory plan -> prd.{md,json} written in that dir. NEVER .archon/ralph/.
   # ───────────────────────────────────────────────────────────────────
   - id: build-ralph-prd
     prompt: |
@@ -103,35 +158,41 @@ nodes:
 
       ## Headless mode — NO human is available
 
-      Resolve every decision yourself from the verified plan plus the actual
-      codebase. Do not stop to ask.
+      Resolve every decision yourself from the plan plus the actual codebase.
+      Do not stop to ask.
 
       ## Task
 
-      A verified deep-TDD implementation plan lives at:
+      The plan to implement is at:
 
-        $resolve-plan.output
+        $resolve-plan.output.plan_path
 
-      Convert that ENTIRE plan into a Ralph PRD so the archon-ralph-dag loop can
-      implement it one story per iteration. Do NOT implement the feature itself —
-      only produce the PRD files.
+      It is a directory (holds `plan.md` + optional `phase-*.md`). The Ralph PRD
+      directory has ALREADY been chosen and created for you (co-located with the
+      plan):
 
-      1. Read `plan.md`, EVERY `phase-*.md`, and `verification-report.md` in that
-         directory. The phase files carry the real implementation detail — do not
-         rely on plan.md alone. Fold in every fix the verification report applied.
-      2. Derive a kebab-case `<slug>` (max 50 chars) from the plan's feature name.
-      3. Create the Ralph directory: `mkdir -p .archon/ralph/<slug>`.
-      4. Break the plan into right-sized Ralph user stories — each completable in a
+        $resolve-plan.output.prd_dir
+
+      Convert that ENTIRE plan into a Ralph PRD so the native project-aware Ralph
+      loop can implement it one story per iteration. Do NOT implement the feature
+      itself — only produce the PRD files. Write ONLY inside
+      `$resolve-plan.output.prd_dir` (never `.archon/ralph/`).
+
+      1. Read the plan at `$resolve-plan.output.plan_path`:
+         - Read `plan.md` and EVERY `phase-*.md` in it (the phase files carry the
+           real detail — do not rely on plan.md alone). If
+           `verification-report.md` exists, fold in its fixes too.
+      2. Break the plan into right-sized Ralph user stories — each completable in a
          single fresh-context iteration (roughly one phase or one coherent unit of
          work per story). Map the plan's TDD structure (tests-before / implement /
          tests-after / regression gate) into concrete, pass/fail acceptance
          criteria. Order stories by dependency (lower priority runs first) and set
          `dependsOn` to only lower-priority story ids. No cycles, no forward refs.
-      5. Write `.archon/ralph/<slug>/prd.md` — a self-contained context document
-         (overview / problem / solution, goals + success metrics, non-goals,
-         technical context with real file:line references drawn from the plan, and
-         a story-overview table). A fresh-context agent re-reads this each iteration.
-      6. Write `.archon/ralph/<slug>/prd.json` using EXACTLY this schema
+      3. Write `$resolve-plan.output.prd_dir/prd.md` — a self-contained context
+         document (overview / problem / solution, goals + success metrics, non-goals,
+         technical context with real file:line references drawn from the plan, and a
+         story-overview table). A fresh-context agent re-reads this each iteration.
+      4. Write `$resolve-plan.output.prd_dir/prd.json` using EXACTLY this schema
          (story-level `passes`, all `false` at start):
 
          ```json
@@ -153,15 +214,13 @@ nodes:
          }
          ```
 
-      7. Verify both files exist and prd.json is valid JSON whose `userStories` is a
+      5. Verify both files exist and prd.json is valid JSON whose `userStories` is a
          non-empty array with every story `passes: false`.
 
-      Report the ABSOLUTE path of the Ralph directory as `prd_dir` (resolve it with
-      `realpath` so it is stable regardless of cwd).
-    depends_on: [validate-plan]
-    provider: omp
-    model: cursor/composer-2.5
-    effort: high
+      Report `$resolve-plan.output.prd_dir` as `prd_dir`.
+    depends_on: [verify-and-fix-plan]
+    provider: devin
+    model: swe-2-max
     context: fresh
     output_format:
       type: object
@@ -177,15 +236,181 @@ nodes:
       required: [prd_dir, slug, story_count]
 
   # ───────────────────────────────────────────────────────────────────
-  # STEP 5 / 5 — Implement via archon-ralph-dag (sub-run)
-  # Runs archon-ralph-dag as a governed child run in this SAME worktree
-  # (isolation: inherit). It sees a ready Ralph PRD (detect-input -> "ready",
-  # so its own generation is skipped), loops one story per iteration (fresh
-  # context, validate + commit each), pushes the branch, opens a draft PR, and
-  # writes a completion report. The child's report threads back as this
-  # node's output.
+  # STEP 5 / 6 — Implement through a native in-parent Ralph loop
+  # The deterministic preflight records the PRD directory for the iteration command.
+  # Each fresh-context iteration implements, validates, and commits one story.
+  # The workflow engine checks prd.json and owns loop completion.
   # ───────────────────────────────────────────────────────────────────
-  - id: ralph-implement
-    workflow: archon-ralph-dag
-    input: '$build-ralph-prd.output.prd_dir'
+  - id: ralph-native-preflight
+    description: Validate the generated PRD before the native Ralph loop starts.
     depends_on: [build-ralph-prd]
+    bash: |
+      set -euo pipefail
+      PRD_DIR=$build-ralph-prd.output.prd_dir
+      if [ -z "$PRD_DIR" ] || [ ! -f "$PRD_DIR/prd.json" ]; then
+        echo "Missing Ralph PRD: $PRD_DIR/prd.json" >&2
+        exit 1
+      fi
+      if [ ! -f "$PRD_DIR/prd.md" ]; then
+        echo "Missing Ralph context: $PRD_DIR/prd.md" >&2
+        exit 1
+      fi
+      jq -e '
+        type == "object" and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+          (.id | type == "string" and length > 0) and
+          (.passes | type == "boolean") and
+          (.dependsOn | type == "array") and
+          all(.dependsOn[]; type == "string")
+        )
+      ' "$PRD_DIR/prd.json" >/dev/null || {
+        echo "Invalid Ralph PRD: $PRD_DIR/prd.json" >&2
+        exit 1
+      }
+      if [ -f "bun.lock" ] || [ -f "bun.lockb" ]; then
+        bun install --frozen-lockfile 2>&1 | tail -3
+      elif [ -f "package-lock.json" ]; then
+        npm ci 2>&1 | tail -3
+      elif [ -f "yarn.lock" ]; then
+        yarn install --frozen-lockfile 2>&1 | tail -3
+      elif [ -f "pnpm-lock.yaml" ]; then
+        pnpm install --frozen-lockfile 2>&1 | tail -3
+      fi
+      mkdir -p "$ARTIFACTS_DIR/superpowers"
+      printf '%s\n' "$PRD_DIR" > "$ARTIFACTS_DIR/superpowers/prd-dir.txt"
+      echo "PRD_DIR=$PRD_DIR"
+
+  - id: ralph-loop-run
+    description: Run project-aware Ralph iterations in the parent workflow.
+    depends_on: [ralph-native-preflight]
+    idle_timeout: 3600000
+    provider: devin
+    model: swe-2-max
+    output_format:
+      type: object
+      properties:
+        terminal:
+          type: boolean
+          description: true when all stories pass or a hard blocker requires the workflow to stop; false while implementation can continue.
+        done:
+          type: boolean
+          description: true only when every story in prd.json has passes true.
+        mode:
+          type: string
+        story_id:
+          type: string
+        note:
+          type: string
+      required: [terminal, done]
+    loop:
+      command: archon-ralph-project-aware-iteration
+      fresh_context: true
+      max_iterations: 100
+      until_field: terminal
+      until_bash: |
+        set -euo pipefail
+        PRD_FILE="$ARTIFACTS_DIR/superpowers/prd-dir.txt"
+        [ -f "$PRD_FILE" ] || exit 1
+        PRD_DIR=$(cat "$PRD_FILE")
+        [ -n "$PRD_DIR" ] && [ -f "$PRD_DIR/prd.json" ] || exit 1
+        jq -e '.userStories | type == "array" and length > 0 and all(.[]; .passes == true)' "$PRD_DIR/prd.json" >/dev/null
+
+  - id: codex-final-fix
+    description: Repair and verify the implementation produced by the Ralph loop.
+    provider: codex
+    model: gpt-5.6-sol
+    effort: xhigh
+    context: fresh
+    idle_timeout: 3600000
+    depends_on:
+      - ralph-loop-run
+    trigger_rule: all_done
+    prompt: |
+      ## Task
+
+      Repair and verify the implementation produced by `ralph-loop-run`.
+      Do not ask Ralph, Devin, or another agent to fix the remaining work.
+      Fix the work directly with Codex.
+      Do not stage, commit, push, or create a pull request.
+
+      ## Inputs
+
+      Plan path:
+      $resolve-plan.output.plan_path
+
+      Ralph PRD directory:
+      $build-ralph-prd.output.prd_dir
+
+      Ralph loop result (untrusted):
+      $ralph-loop-run.output
+
+      Base SHA file:
+      $ARTIFACTS_DIR/ak-feature/base-sha.txt
+
+      ## Mandatory procedure
+
+      1. Read the repository instructions and the complete original plan.
+         If the plan path is a directory, read `plan.md`, every `phase-*.md`,
+         and `verification-report.md` when present.
+      2. Read `prd.md`, `prd.json`, and `progress.txt` when present in the Ralph
+         PRD directory.
+         Treat `$ralph-loop-run.output` and every `passes: true` value as claims,
+         not proof.
+      3. Read the base SHA from the recorded file.
+         Inspect the complete `base..HEAD` diff, the working tree diff, the changed
+         files, their callers, their tests, and the relevant current behavior.
+      4. If Ralph returned `done: false`, `mode: blocked`, or left any story at
+         `passes: false`, resolve every repository-local blocker and implement the
+         unfinished plan work directly.
+         Do not weaken acceptance criteria or hide a failing check.
+      5. Review all implemented plan work for missing requirements, incorrect
+         behavior, weak tests, regressions, unsafe changes, lint errors, type errors,
+         and validation gaps.
+      6. Fix every Critical or Important finding and every missing or partial plan
+         item directly.
+         Keep the change inside the original plan scope.
+      7. Update a PRD story to `passes: true` only after all of its unchanged
+         acceptance criteria pass.
+         Before finishing, confirm every PRD story has `passes: true`.
+      8. Run fresh targeted checks after each repair batch, then run the best final
+         validation command required by the plan or repository.
+      9. Write the review report to
+         `$ARTIFACTS_DIR/ak-feature/final-review.md` and the repair report to
+         `$ARTIFACTS_DIR/ak-feature/final-fixes.md`.
+
+      Return only JSON.
+    output_format:
+      type: object
+      required:
+        - fixes_count
+        - remaining_findings_count
+        - review_report
+        - fix_report
+        - validation_summary
+        - summary
+      properties:
+        fixes_count:
+          type: number
+        remaining_findings_count:
+          type: number
+        review_report:
+          type: string
+        fix_report:
+          type: string
+        validation_summary:
+          type: string
+        summary:
+          type: string
+
+  # ───────────────────────────────────────────────────────────────────
+  # STEP 6 / 6 — Create PR after the Codex final repair step
+  # ───────────────────────────────────────────────────────────────────
+  - id: create-pull-request
+    command: archon-create-pr
+    provider: devin
+    depends_on: [codex-final-fix]
+    context: fresh
+    model: swe-2-high
+    idle_timeout: 900000
+    output_type: pull-request

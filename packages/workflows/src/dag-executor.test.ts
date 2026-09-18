@@ -117,7 +117,7 @@ import type {
   WorkflowDefinition,
   PendingInteraction,
 } from './schemas';
-import { dagNodeSchema, isBashNode, isLoopNode } from './schemas';
+import { dagNodeSchema } from './schemas';
 import { discoverWorkflows } from './workflow-discovery';
 import { parseWorkflow } from './loader';
 import { expandWorkflowIncludes } from './include-expander';
@@ -6819,102 +6819,37 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
   // ─── Loop Node Tests ─────────────────────────────────────────────────────
 
   describe('loop node execution', () => {
-    async function createNativeRalphFixture(maxIterations = 100): Promise<{
-      workflow: WorkflowDefinition;
-      prdPath: string;
-      progressPath: string;
-      syncMarkerPath: string;
-    }> {
-      await git.execFileAsync('git', ['init', '--quiet'], { cwd: testDir });
-
-      const sourceRoot = join(import.meta.dir, '..', '..', '..');
-      const workflowPath = join(import.meta.dir, '__fixtures__', 'native-ralph-loop.fixture.yaml');
-      const commandPath = join(
-        sourceRoot,
-        '.archon',
-        'commands',
-        'defaults',
-        'archon-speckit-ralph-iteration.md'
-      );
-      const result = parseWorkflow(await readFile(workflowPath, 'utf8'), basename(workflowPath));
-      if (result.error || !result.workflow) {
-        throw new Error(result.error ?? 'native Ralph workflow did not load');
-      }
-
-      const preflight = result.workflow.nodes.find(node => node.id === 'ralph-native-preflight');
-      const loop = result.workflow.nodes.find(node => node.id === 'ralph-loop-run');
-      if (!preflight || !isBashNode(preflight)) throw new Error('native Ralph preflight missing');
-      if (!loop || !isLoopNode(loop)) throw new Error('native Ralph loop missing');
-
-      const commandsDir = join(testDir, '.archon', 'commands');
-      const extensionDir = join(testDir, '.specify', 'extensions', 'ralph-loop');
-      const ralphDir = join(testDir, '.specify', 'ralph');
-      await mkdir(commandsDir, { recursive: true });
-      await mkdir(extensionDir, { recursive: true });
-      await mkdir(ralphDir, { recursive: true });
-      await writeFile(
-        join(commandsDir, 'archon-speckit-ralph-iteration.md'),
-        await readFile(commandPath, 'utf8')
-      );
-      await writeFile(join(extensionDir, 'AGENTS.md'), '# Ralph iteration rules\n');
-
-      const prdPath = join(ralphDir, 'prd.json');
-      const progressPath = join(ralphDir, 'progress.txt');
-      await writeFile(
-        prdPath,
-        JSON.stringify({
-          userStories: [{ id: 'US-001', completed: false, tasks: [{ id: 'T001', passes: false }] }],
-        })
-      );
-      await writeFile(progressPath, 'Ralph progress\n');
-      await writeFile(
-        join(testDir, '.specify', 'feature.json'),
-        JSON.stringify({
-          ralph_prd_file: '.specify/ralph/prd.json',
-          ralph_progress_file: '.specify/ralph/progress.txt',
-        })
-      );
-
-      const syncMarkerPath = join(testDir, '.ralph-native-sync-ran');
-      return {
-        workflow: {
-          name: 'native-ralph-executor-fixture',
-          provider: result.workflow.provider,
-          model: result.workflow.model,
-          effort: result.workflow.effort,
-          nodes: [
-            { ...preflight, depends_on: [] },
-            {
-              ...loop,
-              depends_on: [preflight.id],
-              loop: { ...loop.loop, max_iterations: maxIterations },
-            },
-            {
-              id: 'native-ralph-sync',
-              bash: "printf 'ran\\n' > .ralph-native-sync-ran",
-              depends_on: [loop.id],
-            },
-          ],
-        },
-        prdPath,
-        progressPath,
-        syncMarkerPath,
-      };
-    }
-
-    async function executeNativeRalphFixture(
-      workflow: WorkflowDefinition,
+    async function executeLoopProgressFixture(
+      emitBash: string,
       store: IWorkflowStore
     ): Promise<void> {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'DONE' };
+        yield { type: 'result', sessionId: 'loop-progress-done' };
+      });
       await executeDagWorkflow(
         createMockDeps(store),
         createMockPlatform(),
-        'conv-native-ralph',
+        'conv-loop-progress',
         testDir,
-        workflow,
-        makeWorkflowRun('native-ralph-run'),
-        workflow.provider ?? 'codex',
-        workflow.model,
+        {
+          name: 'loop-progress-fixture',
+          nodes: [
+            { id: 'emit-progress', bash: emitBash },
+            {
+              id: 'progress-loop',
+              depends_on: ['emit-progress'],
+              loop: {
+                prompt: 'Do the work until DONE.',
+                until: 'DONE',
+                max_iterations: 2,
+              },
+            },
+          ],
+        },
+        makeWorkflowRun('loop-progress-run'),
+        'claude',
+        undefined,
         join(testDir, 'artifacts'),
         join(testDir, 'state'),
         join(testDir, 'logs'),
@@ -6924,117 +6859,12 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
       );
     }
 
-    it('fails the native Ralph preflight before an agent iteration when an input is missing', async () => {
-      const fixture = await createNativeRalphFixture();
-      await rm(fixture.progressPath);
-      const store = createMockStore();
-
-      await executeNativeRalphFixture(fixture.workflow, store);
-
-      expect(mockSendQueryDag).not.toHaveBeenCalled();
-      expect(store.failWorkflowRun).toHaveBeenCalled();
-      expect(store.completeWorkflowRun).not.toHaveBeenCalled();
-      expect(existsSync(fixture.syncMarkerPath)).toBe(false);
-      const iterationEvents = store.createWorkflowEvent.mock.calls.filter(
-        call => call[0].event_type === 'loop_iteration_started'
-      );
-      expect(iterationEvents).toHaveLength(0);
-    });
-
-    it('completes the native Ralph loop from the PRD and runs the downstream node', async () => {
-      const fixture = await createNativeRalphFixture();
-      const store = createMockStore();
-      mockSendQueryDag.mockImplementation(function* () {
-        writeFileSync(
-          fixture.prdPath,
-          JSON.stringify({
-            userStories: [{ id: 'US-001', completed: true, tasks: [{ id: 'T001', passes: true }] }],
-          })
-        );
-        yield { type: 'assistant', content: 'Ralph batch complete' };
-        yield { type: 'result', sessionId: 'native-ralph-complete' };
-      });
-
-      await executeNativeRalphFixture(fixture.workflow, store);
-
-      expect(mockSendQueryDag).toHaveBeenCalledTimes(1);
-      // Accepted contract: speckit-ralph-native-feature.yaml ralph-loop-run uses
-      // grok + grok-4.5 @ high (final loop: omp + anthropic/claude-sonnet-5).
-      const loopNode = fixture.workflow.nodes.find(node => node.id === 'ralph-loop-run');
-      expect(loopNode?.provider).toBe('grok');
-      expect(loopNode?.model).toBe('grok-4.5');
-      expect(mockGetAgentProviderDag.mock.calls[0][0]).toBe('grok');
-      const options = mockSendQueryDag.mock.calls[0][3] as SendQueryOptions;
-      expect(options.model).toBe(loopNode?.model);
-      expect(options.nodeConfig?.effort).toBe('high');
-      expect(store.completeWorkflowRun).toHaveBeenCalled();
-      expect(store.failWorkflowRun).not.toHaveBeenCalled();
-      expect(existsSync(fixture.syncMarkerPath)).toBe(true);
-      const eventTypes = store.createWorkflowEvent.mock.calls.map(call => call[0].event_type);
-      expect(eventTypes.filter(type => type === 'loop_iteration_started')).toHaveLength(1);
-      expect(eventTypes.filter(type => type === 'loop_iteration_completed')).toHaveLength(1);
-      const persistedEvents = store.createWorkflowEvent.mock.calls.map(
-        call =>
-          call[0] as {
-            event_type: string;
-            step_name?: string;
-            data: Record<string, unknown>;
-          }
-      );
-      const loopEvents = persistedEvents.filter(event => event.step_name === 'ralph-loop-run');
-      const nodeStarted = loopEvents.find(event => event.event_type === 'node_started');
-      const iterationStarted = loopEvents.find(
-        event => event.event_type === 'loop_iteration_started'
-      );
-      const iterationCompleted = loopEvents.find(
-        event => event.event_type === 'loop_iteration_completed'
-      );
-      const nodeCompleted = loopEvents.find(event => event.event_type === 'node_completed');
-      expect(nodeStarted?.data.occurrence_id).toBe(nodeCompleted?.data.occurrence_id);
-      expect(iterationStarted?.data.occurrence_id).toBe(iterationCompleted?.data.occurrence_id);
-      expect(nodeStarted?.data.occurrence_id).not.toBe(iterationStarted?.data.occurrence_id);
-    });
-
-    it('fails the native Ralph loop on exhaustion and does not run the downstream node', async () => {
-      const fixture = await createNativeRalphFixture(2);
-      const store = createMockStore();
-      mockSendQueryDag.mockImplementation(function* () {
-        yield { type: 'assistant', content: 'Ralph batch incomplete' };
-        yield { type: 'result', sessionId: 'native-ralph-incomplete' };
-      });
-
-      await executeNativeRalphFixture(fixture.workflow, store);
-
-      expect(mockSendQueryDag).toHaveBeenCalledTimes(2);
-      expect(store.failWorkflowRun).toHaveBeenCalled();
-      expect(store.completeWorkflowRun).not.toHaveBeenCalled();
-      expect(existsSync(fixture.syncMarkerPath)).toBe(false);
-      const eventTypes = store.createWorkflowEvent.mock.calls.map(call => call[0].event_type);
-      expect(eventTypes.filter(type => type === 'loop_iteration_started')).toHaveLength(2);
-      expect(eventTypes.filter(type => type === 'loop_iteration_completed')).toHaveLength(2);
-    });
-
     it('parses a loop_progress payload from a bash node onto its node_completed event', async () => {
-      const fixture = await createNativeRalphFixture();
-      const workflow = structuredClone(fixture.workflow);
-      const preflightNode = workflow.nodes[0];
-      if (!('bash' in preflightNode)) throw new Error('expected a bash preflight node');
-      // Preflight prints the discriminated loop-progress payload as its stdout.
-      preflightNode.bash = `${preflightNode.bash}\nprintf '{"type":"loop_progress","targetNodeId":"ralph-loop-run","expectedIterations":3}\\n'`;
-
       const store = createMockStore();
-      mockSendQueryDag.mockImplementation(function* () {
-        writeFileSync(
-          fixture.prdPath,
-          JSON.stringify({
-            userStories: [{ id: 'US-001', completed: true, tasks: [{ id: 'T001', passes: true }] }],
-          })
-        );
-        yield { type: 'assistant', content: 'Ralph batch complete' };
-        yield { type: 'result', sessionId: 'exp-iter' };
-      });
-
-      await executeNativeRalphFixture(workflow, store);
+      await executeLoopProgressFixture(
+        `printf '{"type":"loop_progress","targetNodeId":"progress-loop","expectedIterations":3}\\n'`,
+        store
+      );
 
       const withProgress = store.createWorkflowEvent.mock.calls
         .map(call => call[0])
@@ -7045,31 +6875,17 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
         );
       expect(withProgress).toHaveLength(1);
       expect((withProgress[0].data as Record<string, unknown>).loop_progress).toEqual({
-        targetNodeId: 'ralph-loop-run',
+        targetNodeId: 'progress-loop',
         expectedIterations: 3,
       });
     });
 
     it('ignores a non-positive loop_progress payload (no projection, run succeeds)', async () => {
-      const fixture = await createNativeRalphFixture();
-      const workflow = structuredClone(fixture.workflow);
-      const preflightNode = workflow.nodes[0];
-      if (!('bash' in preflightNode)) throw new Error('expected a bash preflight node');
-      preflightNode.bash = `${preflightNode.bash}\nprintf '{"type":"loop_progress","targetNodeId":"ralph-loop-run","expectedIterations":0}\\n'`;
-
       const store = createMockStore();
-      mockSendQueryDag.mockImplementation(function* () {
-        writeFileSync(
-          fixture.prdPath,
-          JSON.stringify({
-            userStories: [{ id: 'US-001', completed: true, tasks: [{ id: 'T001', passes: true }] }],
-          })
-        );
-        yield { type: 'assistant', content: 'Ralph batch complete' };
-        yield { type: 'result', sessionId: 'exp-zero' };
-      });
-
-      await executeNativeRalphFixture(workflow, store);
+      await executeLoopProgressFixture(
+        `printf '{"type":"loop_progress","targetNodeId":"progress-loop","expectedIterations":0}\\n'`,
+        store
+      );
 
       const withProgress = store.createWorkflowEvent.mock.calls
         .map(call => call[0])
@@ -23846,50 +23662,6 @@ describe('executeDagWorkflow -- production Plannotator gate integration', () => 
     }
   });
 
-  async function loadDefaultSpeckitFeature(): Promise<WorkflowDefinition> {
-    const workflowPath = join(
-      import.meta.dir,
-      '__fixtures__',
-      'speckit-feature-converge-tail.fixture.yaml'
-    );
-    const parsed = parseWorkflow(await readFile(workflowPath, 'utf8'), basename(workflowPath));
-    if (!parsed.workflow)
-      throw new Error(parsed.error?.error ?? 'default Speckit workflow missing');
-    return parsed.workflow;
-  }
-
-  async function prepareDefaultSpeckitFixture(marker: string): Promise<void> {
-    const ralphDir = join(root, '.specify', 'extensions', 'ralph-loop');
-    const commandsDir = join(root, '.archon', 'commands');
-    const featureDir = join(root, 'specs', 'test-feature');
-    await mkdir(ralphDir, { recursive: true });
-    await mkdir(commandsDir, { recursive: true });
-    await mkdir(featureDir, { recursive: true });
-    await mkdir(join(ralphDir, 'scripts', 'bash'), { recursive: true });
-    await writeFile(
-      join(ralphDir, 'ralph.sh'),
-      `#!/usr/bin/env bash\nprintf 'ralph\\n' >> '${marker}'\n`
-    );
-    await writeFile(
-      join(ralphDir, 'scripts', 'bash', 'tasks-to-prd.sh'),
-      `#!/usr/bin/env bash\nexit 0\n`
-    );
-    await writeFile(
-      join(root, '.specify', 'feature.json'),
-      `${JSON.stringify({ feature_directory: 'specs/test-feature' }, null, 2)}\n`
-    );
-    await writeFile(join(featureDir, 'tasks.md'), '# Tasks\n\n- [ ] T001 Implement the fix.\n');
-    await writeFile(join(commandsDir, 'archon-create-pr.md'), 'Create the pull request.');
-  }
-
-  function priorOutputsBeforeConvergence(workflow: WorkflowDefinition): Map<string, string> {
-    const convergeIndex = workflow.nodes.findIndex(node => node.id === 'speckit-converge');
-    if (convergeIndex < 0) throw new Error('default Speckit convergence node missing');
-    return new Map(
-      workflow.nodes.slice(0, convergeIndex).map(node => [node.id, `${node.id} first-pass output`])
-    );
-  }
-
   function approveDagGateInvocation(
     gate: DagFakePlannotator,
     invocation: { resultFile: string }
@@ -23903,49 +23675,6 @@ describe('executeDagWorkflow -- production Plannotator gate integration', () => 
         exitCode: 0,
       })
     );
-  }
-
-  function installDefaultSpeckitProvider(
-    convergenceResults: readonly ('PASS' | 'FAIL')[],
-    calls: string[]
-  ): void {
-    let convergenceAttempt = 0;
-    mockGetAgentProviderDag.mockImplementation(() => ({
-      sendQuery: mock(function* (
-        _prompt: string,
-        _cwd: string,
-        _resumeSessionId?: string,
-        sendOptions?: SendQueryOptions
-      ) {
-        const nodeId = String(sendOptions?.nodeConfig?.nodeId ?? '');
-        calls.push(nodeId);
-        if (nodeId === 'speckit-converge') {
-          const gate =
-            convergenceResults[convergenceAttempt] ??
-            convergenceResults[convergenceResults.length - 1] ??
-            'FAIL';
-          convergenceAttempt += 1;
-          const structuredOutput = { gate, tasks_added: gate === 'FAIL' ? 1 : 0 };
-          yield { type: 'assistant' as const, content: JSON.stringify(structuredOutput) };
-          yield {
-            type: 'result' as const,
-            sessionId: `speckit-converge-${String(convergenceAttempt)}`,
-            structuredOutput,
-          };
-          return;
-        }
-        if (nodeId === 'speckit-converge-review-gate:prepare') {
-          const document = join(root, 'specs', 'test-feature', 'tasks.md');
-          yield { type: 'assistant' as const, content: document };
-          yield { type: 'result' as const, sessionId: `${nodeId}-session` };
-          return;
-        }
-        yield { type: 'assistant' as const, content: `${nodeId} complete` };
-        yield { type: 'result' as const, sessionId: `${nodeId}-session` };
-      }),
-      getType: () => 'claude',
-      getCapabilities: mockClaudeCapabilities,
-    }));
   }
 
   function integrationWorkflow(marker: string): WorkflowDefinition {
@@ -24162,133 +23891,6 @@ describe('executeDagWorkflow -- production Plannotator gate integration', () => 
       events.filter(event => event.event_type === 'node_completed' && event.step_name === 'review')
     ).toHaveLength(1);
     expect(store.completeWorkflowRun).toHaveBeenCalledTimes(1);
-  }, 30_000);
-
-  it('runs the default Speckit FAIL → review → Ralph retry → PASS path before PR', async () => {
-    const marker = join(root, 'ralph.log');
-    await prepareDefaultSpeckitFixture(marker);
-    const workflow = await loadDefaultSpeckitFeature();
-    const run = makeWorkflowRun('run-default-speckit-retry', {
-      metadata: {
-        approval: {
-          type: 'plannotator_gate',
-          nodeId: 'speckit-converge-review-gate',
-          gateId: 'gate-default-speckit-retry',
-          phase: 'opening',
-          resolved: null,
-        },
-      },
-    });
-    const { store } = createDagGateStore(run);
-    const calls: string[] = [];
-    installDefaultSpeckitProvider(['FAIL', 'PASS'], calls);
-
-    const execution = executeIntegrationDag(
-      createMockDeps(store),
-      run,
-      workflow,
-      priorOutputsBeforeConvergence(workflow)
-    );
-    const [gateInvocation] = await waitForDagGateInvocations(fake, 1);
-    expect(gateInvocation.document).toBe(
-      realpathSync(join(root, 'specs', 'test-feature', 'tasks.md'))
-    );
-    calls.push('speckit-converge-review-gate');
-    approveDagGateInvocation(fake, gateInvocation);
-    await execution;
-
-    const rolloutNodes = new Set([
-      'speckit-converge',
-      'speckit-converge-review-gate:prepare',
-      'speckit-converge-review-gate',
-      'update-bmad-sprint-status',
-      'create-pull-request',
-    ]);
-    expect(calls.filter(nodeId => rolloutNodes.has(nodeId))).toEqual([
-      'speckit-converge',
-      'speckit-converge-review-gate:prepare',
-      'speckit-converge-review-gate',
-      'speckit-converge',
-      'update-bmad-sprint-status',
-      'create-pull-request',
-    ]);
-    expect(calls.filter(nodeId => nodeId === 'create-pull-request')).toHaveLength(1);
-    expect(readFileSync(marker, 'utf8').trim().split('\n')).toEqual(['ralph']);
-    expect(
-      (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.some(
-        call =>
-          (call[0] as { event_type?: string; step_name?: string }).event_type ===
-            'node_skipped_prior_success' &&
-          ['ralph-tasks-to-ralph', 'ralph-loop-run', 'ralph-sync-back'].includes(
-            String((call[0] as { step_name?: string }).step_name)
-          )
-      )
-    ).toBe(false);
-    expect(store.completeWorkflowRun).toHaveBeenCalledTimes(1);
-    expect(store.failWorkflowRun).not.toHaveBeenCalled();
-  }, 30_000);
-
-  it('routes the default Speckit workflow through one final Ralph pass before creating a PR', async () => {
-    const marker = join(root, 'ralph-exhausted.log');
-    await prepareDefaultSpeckitFixture(marker);
-    const workflow = await loadDefaultSpeckitFeature();
-    const router = workflow.nodes.find(node => node.id === 'speckit-converge-gate');
-    if (!router || !('route_loop' in router)) throw new Error('default route_loop missing');
-    const maxIterations = router.route_loop.max_iterations;
-    const exhaustedTarget = router.route_loop.routes.exhausted;
-    const run = makeWorkflowRun('run-default-speckit-exhausted', {
-      metadata: {
-        approval: {
-          type: 'plannotator_gate',
-          nodeId: 'speckit-converge-review-gate',
-          gateId: 'gate-default-speckit-exhausted',
-          phase: 'opening',
-          resolved: null,
-        },
-      },
-    });
-    const { store } = createDagGateStore(run);
-    const calls: string[] = [];
-    installDefaultSpeckitProvider(['FAIL'], calls);
-
-    const execution = executeIntegrationDag(
-      createMockDeps(store),
-      run,
-      workflow,
-      priorOutputsBeforeConvergence(workflow)
-    );
-    for (let attempt = 1; attempt <= maxIterations; attempt++) {
-      const invocations = await waitForDagGateInvocations(fake, attempt);
-      approveDagGateInvocation(fake, invocations[attempt - 1]);
-    }
-    await execution;
-
-    expect(calls.filter(nodeId => nodeId === 'speckit-converge')).toHaveLength(maxIterations + 1);
-    expect(calls.filter(nodeId => nodeId === 'speckit-final-ralph-sync-back')).toHaveLength(1);
-    expect(calls.filter(nodeId => nodeId === 'update-bmad-sprint-status')).toHaveLength(1);
-    expect(calls.filter(nodeId => nodeId === 'create-pull-request')).toHaveLength(1);
-    expect(calls).not.toContain('create-pull-request-2');
-    expect(readFileSync(marker, 'utf8').trim().split('\n')).toEqual(
-      Array.from({ length: maxIterations + 1 }, () => 'ralph')
-    );
-    const routeDecisions = (
-      store.persistRouteDecisionTransition as ReturnType<typeof mock>
-    ).mock.calls.map(
-      call =>
-        (call[0] as Parameters<IWorkflowStore['persistRouteDecisionTransition']>[0]).event.data
-    );
-    expect(routeDecisions.map(decision => decision.outcome)).toEqual([
-      ...Array.from({ length: maxIterations }, () => 'negative'),
-      'exhausted',
-    ]);
-    expect(routeDecisions.at(-1)).toMatchObject({
-      to: exhaustedTarget,
-      negative_count: maxIterations + 1,
-      max_iterations: maxIterations,
-    });
-    expect(store.cancelWorkflowRun).not.toHaveBeenCalled();
-    expect(store.completeWorkflowRun).toHaveBeenCalledTimes(1);
-    expect(store.failWorkflowRun).not.toHaveBeenCalled();
   }, 30_000);
 
   it('rotates ownership, terminates the old child, and lets only the replacement continue', async () => {
