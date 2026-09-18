@@ -5,6 +5,7 @@ import type { Root } from 'react-dom/client';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 
+import type { ConsoleAgentHistoryListProps } from './inspect/ConsoleAgentHistoryList';
 import type { LogRow } from './inspect/build-log-rows';
 import type { Run } from '../primitives/run';
 import type {
@@ -1211,7 +1212,8 @@ describe('ConsoleNodeRoom', () => {
 
     function mountList(
       items: readonly AgentHistoryItem[],
-      onLoadFullOutput?: (item: Extract<AgentHistoryItem, { kind: 'tool' }>) => Promise<unknown>
+      onLoadFullOutput?: (item: Extract<AgentHistoryItem, { kind: 'tool' }>) => Promise<unknown>,
+      extensions: Pick<ConsoleAgentHistoryListProps, 'renderAfterItem' | 'renderAtEnd'> = {}
     ): void {
       root.render(
         createElement(consoleHistoryList.ConsoleAgentHistoryList, {
@@ -1219,6 +1221,7 @@ describe('ConsoleNodeRoom', () => {
           showToolCalls: true,
           showSystem: true,
           onLoadFullOutput: onLoadFullOutput ?? (async (): Promise<unknown> => undefined),
+          ...extensions,
         })
       );
     }
@@ -1318,6 +1321,9 @@ describe('ConsoleNodeRoom', () => {
       expect(diagnostics).toHaveLength(2);
       for (const diagnostic of Array.from(diagnostics)) {
         expect((diagnostic as Element & { open: boolean }).open).toBe(false);
+        expect(diagnostic.querySelector('summary')?.className).toContain(
+          'focus-visible:outline-accent-bright!'
+        );
       }
       expect(row.textContent).toContain('Input');
       expect(row.textContent).toContain('Output');
@@ -1548,6 +1554,32 @@ describe('ConsoleNodeRoom', () => {
       expect(glyph?.className).toContain('var(--running)');
     });
 
+    test('todo headline is secondary and extension content keeps explicit spacing', async () => {
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-todo', 10, 'TodoWrite', { todos: [{ content: 'x' }] }),
+        resultRow('t-todo', 11, 'TodoWrite', { todos: [{ content: 'x' }] }, 'updated', {
+          outcome: 'success',
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows), undefined, {
+          renderAfterItem: item => `after-${item.id}`,
+          renderAtEnd: 'at-end',
+        });
+      });
+      const summary = rowSummary(toolRow('t-todo'));
+      const headline = Array.from(summary.querySelectorAll('span')).find(
+        span => span.textContent === 'todo updated'
+      );
+      expect(headline?.className).toContain('text-text-secondary');
+      expect(headline?.className).not.toContain('text-text-primary');
+      const spaced = Array.from(host.querySelectorAll('div')).filter(
+        div => div.className === 'mt-1.5'
+      );
+      expect(spaced.map(div => div.textContent)).toContain('after-call-t-todo');
+      expect(spaced.map(div => div.textContent)).toContain('at-end');
+    });
+
     test('collapsed tool rows sit flush while assistant and lifecycle items keep margins', async () => {
       const rows: readonly WorkflowNodeMessage[] = [
         callRow('t-1', 10, 'Read', { path: 'a.ts' }),
@@ -1620,6 +1652,23 @@ describe('ConsoleNodeRoom', () => {
       // The row re-presented with output_state 'full': the truncated badge is gone.
       expect(rowSummary(row).textContent).not.toContain('truncated');
       expect(row.open).toBe(true);
+
+      // A later poll must refresh outcome facts without discarding the fetched output.
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        rows[0],
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+          outcome: 'error',
+          exit_code: 2,
+          output_state: 'truncated',
+          full_output_available: true,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows), onLoadFullOutput);
+      });
+      expect(rowSummary(toolRow('t-1')).textContent).toContain('failed');
+      expect(rowSummary(toolRow('t-1')).textContent).toContain('exit 2');
+      expect(toolRow('t-1').textContent).toContain('FULL OUTPUT');
     });
 
     test('a failed full-output load shows the error and Retry reloads', async () => {

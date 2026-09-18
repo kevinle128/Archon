@@ -8,7 +8,8 @@ policy.
 **Evidence sources**
 
 - `e2e/ui/agent-tool-row-visual.spec.ts` — 6 HITL Playwright cases, all passing
-  (Chromium, @playwright/test 1.60.0). Captures live in `evidence/` beside this
+  in a fresh final-review run (Chromium, @playwright/test 1.60.0), including
+  page-level overflow at 390×844. Captures live in `evidence/` beside this
   report and as `testInfo` attachments / `outputPath` files.
 - `e2e/ui/workflow-run-hitl-visual.spec.ts` — legacy whole-view suite; only its
   readiness locator changed (`details[data-tool-id] > summary`, visible direct
@@ -63,11 +64,13 @@ At the measured 460 px room width on both surfaces:
 - Row summary visible, single line, Enter toggles open, Space toggles closed.
 - Room region stays inside the viewport; room has no internal horizontal
   scroll; no element inside the room overflows the page edge.
+- Page-level overflow is ≤1 px at every required viewport on both surfaces.
 
-**Known pre-existing (not Story 1.1):** at 390 px the Legacy page has ~300 px
-of page-level horizontal scroll caused by TopNav `A.flex` anchors (app chrome,
-untouched by this story — verified by the offender scan; zero offenders live
-inside the room region). Recorded here and in the progress blocker ledger.
+**Final-review repair:** the first restored page-level run exposed 300 px of
+Legacy overflow at 390×844 from TopNav anchors. TopNav now bounds its single-line
+navigation with `max-w-full overflow-x-auto`, keeping every control reachable
+without expanding the page. The unchanged page-level assertion then passed on
+all six visual cases and the full HITL selector.
 
 ## 4. Disclosure behavior + motion
 
@@ -89,11 +92,13 @@ inside the room region). Recorded here and in the progress blocker ledger.
 - Console `outline-offset: +2px`; Legacy `-2px` — the single documented surface
   delta, asserted in computed style.
 
-**Story 1.1 fix recorded:** the unlayered `.console-root :focus-visible` theme
+**Story 1.1 fixes recorded:** the unlayered `.console-root :focus-visible` theme
 rule (`outline: 2px solid var(--accent-ring)`, 30 % alpha) beat the layered
 utility on Console. The summary now uses `focus-visible:outline-accent-bright!`
 so the row's focus ring is the required opaque accent — verified computed
-`oklch(0.64 0.295 330)` on Console, `oklch(0.72 0.18 250)` on Legacy.
+`oklch(0.64 0.295 330)` on Console, `oklch(0.72 0.18 250)` on Legacy. Final
+review applied the same important override to the nested Input/Output summaries,
+which were subject to the same Console theme rule.
 
 ## 6. Chromium accessibility-tree evidence (AT channel)
 
@@ -156,11 +161,12 @@ closed-by-default Input/Output bridge remains; leaner badge set.
 
 Required pairings could not be executed in this environment:
 
-- **Windows + Chromium + NVDA** — no Windows VM available (Parallels absent on
-  this host); cannot install or reach one from the worktree.
-- **macOS + Chromium/Safari + VoiceOver** — this session has no assistive
-  access: TCC denies `osascript`/AX API automation and VoiceOver cannot be
-  driven non-interactively.
+- **Windows + Chromium + NVDA** — no Windows VM or NVDA runtime is available
+  (`prlctl`, `VBoxManage`, and `nvda` are absent); cannot install or reach a
+  pairing from the worktree.
+- **macOS 26.6 (25G72) + Chromium/Safari + VoiceOver** — this session has no
+  assistive access: `System Events` reports `UI elements enabled = false`, so
+  TCC denies AX automation and VoiceOver cannot be driven non-interactively.
 
 Recorded fields that _were_ obtainable: the exact name/role/state channel both
 ATs consume (Chromium AX tree, §6) — closed/open names, ordering, expanded
@@ -173,7 +179,9 @@ NVDA 2024.x + Chromium, and macOS 15 + VoiceOver + Chromium/Safari, on the
 
 ## Result
 
-All automated gates green; one Story-1.1 geometry defect (Console transcript
-padding) and one Story-1.1 focus-color defect (Console 30 %-alpha ring) found
-by this verification and fixed. Manual AT sign-off remains an open blocker
-recorded above; everything else passes.
+**BLOCKED on manual AT only.** All automated gates are green after final-review
+repairs: the focused visual spec passes 6/6, the full HITL selector passes 36
+with 3 environment skips, Web and E2E type-checks pass, and `bun run validate`
+passes. Manual AT sign-off remains open as recorded above. US-005 and the
+complete Story 1.1 gate must remain failed until the required pairings pass or
+an authorized design-owner decision accepts an alternative pairing.

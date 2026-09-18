@@ -269,7 +269,12 @@ function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): 
   const split = presentation.headlineKind === 'path' ? splitHeadline(presentation.headline) : null;
   if (split === null) {
     return (
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-text-primary">
+      <span
+        className={cn(
+          'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap',
+          presentation.family === 'todo' ? 'text-text-secondary' : 'text-text-primary'
+        )}
+      >
         {presentation.headline}
       </span>
     );
@@ -320,11 +325,23 @@ function ToolHistory({
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
   const [fullOutput, setFullOutput] = useState<unknown>(undefined);
+  const [hasFullOutput, setHasFullOutput] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadedPresentation, setLoadedPresentation] = useState<ToolRowPresentation | null>(null);
 
-  const presentation = loadedPresentation ?? item.presentation;
+  // Rebuild from the latest polled item facts after a full-output fetch. Storing
+  // a presentation snapshot here would freeze outcome/exit/duration updates.
+  const presentation = hasFullOutput
+    ? toolRowPresentation(
+        { name: item.name, input: item.input, output: fullOutput },
+        {
+          outcome: item.outcome,
+          exitCode: item.exitCode,
+          durationMs: item.durationMs,
+          outputState: 'full',
+        }
+      )
+    : item.presentation;
 
   // An untouched row that turns failed opens once; nothing ever auto-closes.
   useEffect(() => {
@@ -338,17 +355,7 @@ function ToolHistory({
       .then((message): void => {
         const output = message.kind === 'tool' ? message.payload.output : undefined;
         setFullOutput(output);
-        setLoadedPresentation(
-          toolRowPresentation(
-            { name: item.name, input: item.input, output },
-            {
-              outcome: item.outcome,
-              exitCode: item.exitCode,
-              durationMs: item.durationMs,
-              outputState: 'full',
-            }
-          )
-        );
+        setHasFullOutput(true);
         setLoading(false);
       })
       .catch((error: unknown): void => {
@@ -438,7 +445,7 @@ function ToolHistory({
             Output
           </summary>
           <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-            {formatToolIo(fullOutput === undefined ? item.output : fullOutput)}
+            {formatToolIo(hasFullOutput ? fullOutput : item.output)}
           </pre>
         </details>
         {item.canLoadFullOutput ? (
@@ -491,7 +498,9 @@ export function NodeRoom({
     body = (
       <div className="flex min-h-0 flex-1 flex-col">
         <RoomIncompleteNotice error={error} onRetry={onRetry} />
-        {renderAtEnd}
+        {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
+          <div className="mt-1.5">{renderAtEnd}</div>
+        )}
       </div>
     );
   } else if (items.length === 0) {
@@ -530,7 +539,9 @@ export function NodeRoom({
           );
         })}
         {error !== null ? <RoomIncompleteNotice error={error} onRetry={onRetry} /> : null}
-        {renderAtEnd}
+        {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
+          <div className="mt-1.5">{renderAtEnd}</div>
+        )}
       </div>
     );
   }

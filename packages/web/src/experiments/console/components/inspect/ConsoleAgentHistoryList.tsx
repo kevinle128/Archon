@@ -201,8 +201,9 @@ function splitHeadline(headline: string): { head: string; tail: string } | null 
 function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): ReactElement {
   const split = presentation.headlineKind === 'path' ? splitHeadline(presentation.headline) : null;
   if (split === null) {
+    const tone = presentation.family === 'todo' ? 'text-text-secondary' : 'text-text-primary';
     return (
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-text-primary">
+      <span className={`min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap ${tone}`}>
         {presentation.headline}
       </span>
     );
@@ -244,11 +245,23 @@ function ToolHistory({
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
   const [fullOutput, setFullOutput] = useState<unknown>(undefined);
+  const [hasFullOutput, setHasFullOutput] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadedPresentation, setLoadedPresentation] = useState<ToolRowPresentation | null>(null);
 
-  const presentation = loadedPresentation ?? item.presentation;
+  // Rebuild from the latest polled item facts after a full-output fetch. Storing
+  // a presentation snapshot here would freeze outcome/exit/duration updates.
+  const presentation = hasFullOutput
+    ? toolRowPresentation(
+        { name: item.name, input: item.input, output: fullOutput },
+        {
+          outcome: item.outcome,
+          exitCode: item.exitCode,
+          durationMs: item.durationMs,
+          outputState: 'full',
+        }
+      )
+    : item.presentation;
 
   // An untouched row that turns failed opens once; nothing ever auto-closes.
   useEffect(() => {
@@ -261,17 +274,7 @@ function ToolHistory({
     void onLoadFullOutput(item)
       .then((output): void => {
         setFullOutput(output);
-        setLoadedPresentation(
-          toolRowPresentation(
-            { name: item.name, input: item.input, output },
-            {
-              outcome: item.outcome,
-              exitCode: item.exitCode,
-              durationMs: item.durationMs,
-              outputState: 'full',
-            }
-          )
-        );
+        setHasFullOutput(true);
         setLoading(false);
       })
       .catch((error: unknown): void => {
@@ -339,7 +342,7 @@ function ToolHistory({
           {[presentation.family, ...facts.map(badge => badge.text)].join(' · ')}
         </div>
         <details className="mt-1">
-          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright">
+          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright!">
             Input
           </summary>
           <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
@@ -347,11 +350,11 @@ function ToolHistory({
           </pre>
         </details>
         <details className="mt-1">
-          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright">
+          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright!">
             Output
           </summary>
           <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-            {formatToolIo(fullOutput === undefined ? item.output : fullOutput)}
+            {formatToolIo(hasFullOutput ? fullOutput : item.output)}
           </pre>
         </details>
         {item.canLoadFullOutput ? (
@@ -420,16 +423,24 @@ export function ConsoleAgentHistoryList({
       {items.map(item => {
         const after = renderAfterItem?.(item);
         if (item.kind === 'tool' && !showToolCalls) {
-          return after === undefined || after === null ? null : <div key={item.id}>{after}</div>;
+          return after === undefined || after === null ? null : (
+            <div key={item.id} className="my-1.5">
+              {after}
+            </div>
+          );
         }
         if (item.kind === 'lifecycle' && !showSystem) {
-          return after === undefined || after === null ? null : <div key={item.id}>{after}</div>;
+          return after === undefined || after === null ? null : (
+            <div key={item.id} className="my-1.5">
+              {after}
+            </div>
+          );
         }
         if (item.kind === 'assistant') {
           return (
             <div key={item.id} className="my-1.5">
               <AssistantHistory item={item} />
-              {after}
+              {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
             </div>
           );
         }
@@ -437,18 +448,20 @@ export function ConsoleAgentHistoryList({
           return (
             <div key={item.id}>
               <ToolHistory item={item} onLoadFullOutput={onLoadFullOutput} />
-              {after}
+              {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
             </div>
           );
         }
         return (
           <div key={item.id} className="my-1.5">
             <LifecycleHistory item={item} />
-            {after}
+            {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
           </div>
         );
       })}
-      {renderAtEnd}
+      {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
+        <div className="mt-1.5">{renderAtEnd}</div>
+      )}
     </div>
   );
 }

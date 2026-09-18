@@ -160,11 +160,10 @@ async function expectSummaryOneLine(summary: Locator): Promise<void> {
 }
 
 /**
- * The room must never force horizontal scrolling where it is visible: the room
- * region fits inside the viewport, it never scrolls horizontally itself, and no
- * descendant pokes past the page edge. Outside offenders (e.g. the pre-existing
- * TopNav anchors on legacy at 390px) are reported for the record, not waived —
- * they live outside this story's surface.
+ * The page and room must never force horizontal scrolling where the room is
+ * visible. Keep page-level overflow in this assertion because the acceptance
+ * criterion explicitly requires it; naming outside offenders makes failures
+ * actionable without silently narrowing the gate.
  */
 async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<void> {
   const report = await room.evaluate(roomEl => {
@@ -193,6 +192,10 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
   });
   expect(report.roomInsideViewport, `room stays inside viewport ${context}`).toBe(true);
   expect(report.roomScroll, `room has no horizontal scroll ${context}`).toBeLessThanOrEqual(1);
+  expect(
+    report.pageOverflow,
+    `page has no horizontal overflow ${context} (outside offenders: ${report.outsideSample.join(', ') || 'none'})`
+  ).toBeLessThanOrEqual(1);
   expect(
     report.insideCount,
     `no room element overflows the page ${context} (outside offenders: ${report.outsideSample.join(', ') || 'none'}; page overflow ${String(report.pageOverflow)}px)`

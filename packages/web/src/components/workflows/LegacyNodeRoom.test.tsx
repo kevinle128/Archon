@@ -1368,6 +1368,23 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     // The row re-presented with output_state 'full': the truncated badge is gone.
     expect(rowSummary(row).textContent).not.toContain('truncated');
     expect(row.open).toBe(true);
+
+    // A later poll must refresh outcome facts without discarding the fetched output.
+    const failedRows: readonly WorkflowNodeMessageResponse[] = [
+      rows[0],
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'error',
+        exit_code: 2,
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedRows), loadMessage);
+    });
+    expect(rowSummary(toolRow('t-1')).textContent).toContain('failed');
+    expect(rowSummary(toolRow('t-1')).textContent).toContain('exit 2');
+    expect(toolRow('t-1').textContent).toContain('FULL OUTPUT');
   });
 
   test('a failed full-output load shows the error and Retry reloads', async () => {

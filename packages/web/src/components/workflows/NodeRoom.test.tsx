@@ -324,6 +324,7 @@ describe('NodeRoom', () => {
     expect(ordered.indexOf('Read')).toBeGreaterThan(ordered.indexOf('extension-text-1'));
     expect(ordered.indexOf('extension-tool-1')).toBeGreaterThan(ordered.indexOf('Read'));
     expect(ordered.indexOf('end-extension')).toBeGreaterThan(ordered.indexOf('extension-tool-1'));
+    expect(ordered).toContain('<div class="mt-1.5">end-extension</div>');
 
     const empty = renderRoom({ items: [], renderAfterItem, renderAtEnd: 'end-extension' });
     expect(visibleText(empty)).toBe('end-extension');
@@ -544,6 +545,9 @@ describe('NodeRoom tool rows', () => {
     expect(chip('t-search')).toContain('var(--node-prompt) 45%');
     expect(chip('t-todo')).toContain('var(--node-approval) 40%');
     expect(chip('t-gen')).toContain('text-text-secondary');
+    const todoSummary = summaryMarkup(rowMarkup(markup, 't-todo'));
+    expect(todoSummary).toContain('text-text-secondary">todo updated</span>');
+    expect(todoSummary).not.toContain('text-text-primary">todo updated</span>');
 
     const summary = summaryMarkup(rowMarkup(markup, 't-shell'));
     expect(summary).toContain('font-mono');
@@ -636,10 +640,12 @@ describe('NodeRoom tool rows', () => {
     const markup = renderRoom({
       items,
       renderAfterItem: item => `after-${item.id}`,
+      renderAtEnd: 'at-end',
     });
     const toolIndex = markup.indexOf('data-tool-id="tool-use-1"');
     const afterIndex = markup.indexOf('after-tool-1');
     expect(afterIndex).toBeGreaterThan(toolIndex);
     expect(markup).toContain('<div class="mt-1.5">after-tool-1</div>');
+    expect(markup).toContain('<div class="mt-1.5">at-end</div>');
   });
 });
