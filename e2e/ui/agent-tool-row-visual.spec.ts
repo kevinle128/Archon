@@ -966,7 +966,7 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
   mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
   writeFileSync(
     join(STORY_12_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
-    JSON.stringify(rawEvidence, null, 2)
+    `${JSON.stringify(rawEvidence, null, 2)}\n`
   );
   await testInfo.attach('raw-toggle-contrast.json', {
     body: JSON.stringify(rawEvidence, null, 2),

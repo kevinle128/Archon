@@ -119,8 +119,14 @@ contract (`expectNoRoomDrivenOverflow`) — all pass.
 The rendered payload is the canonical `presentation.rawPayload` pair —
 provider-facing `name` plus parsed `input`/`output` — identical on Legacy and
 Console by shared construction (US-001 serializer), asserted from live DOM on
-both surfaces. Mockups predate this story and contain no Raw control — the
-delta is the documented later-story change, not a divergence.
+both surfaces. The implementation matches `key-transcript-states.html` §F:
+facts remain left in the body bar, `Raw` stays at the far right, the open state
+adds the `▾` marker, and the JSON replaces the body slot in an inset bordered
+box. The shipped JSON uses `text-primary`, following `DESIGN.md`'s structured
+`body-box` binding; that authoritative binding intentionally overrides §F's
+older inline `text-tertiary` annotation. The reviewed 460px and desktop
+captures show the same structure on Legacy and Console without horizontal
+overflow.
 
 ## 9. Evidence files
 

@@ -1545,15 +1545,35 @@ describe('ConsoleNodeRoom', () => {
       expect(row.open).toBe(true);
     });
 
-    test('sibling rows get distinct useId panel ids that each resolve to their own panel', async () => {
-      const rows: readonly WorkflowNodeMessage[] = [
+    test('sibling history lists get distinct useId panel ids that resolve to their own panels', async () => {
+      const firstItems = historyItems([
         callRow('t-1', 10, 'Read', { path: 'a.ts' }),
         resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk-one', { outcome: 'success' }),
+      ]);
+      const secondItems = historyItems([
         callRow('t-2', 12, 'Read', { path: 'b.ts' }),
         resultRow('t-2', 13, 'Read', { path: 'b.ts' }, 'chunk-two', { outcome: 'success' }),
-      ];
+      ]);
+      const listProps = {
+        showToolCalls: true,
+        showSystem: true,
+        onLoadFullOutput: async (): Promise<unknown> => undefined,
+      };
       await act(async () => {
-        mountList(historyItems(rows));
+        root.render(
+          createElement(
+            'div',
+            null,
+            createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+              ...listProps,
+              items: firstItems,
+            }),
+            createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+              ...listProps,
+              items: secondItems,
+            })
+          )
+        );
       });
       const first = toolRow('t-1');
       const second = toolRow('t-2');
