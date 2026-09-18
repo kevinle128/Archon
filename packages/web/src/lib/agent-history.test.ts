@@ -856,4 +856,60 @@ describe('buildAgentHistory', () => {
     >;
     expect(parsed).toEqual({ name: 'Bash', input: { cmd: 'make' }, output: 'done' });
   });
+
+  test('a paired task dispatch carries its body, facts, and body bar on the item presentation', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [
+        event({
+          id: 'e-task',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'task-1', duration_ms: 40 },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-task',
+          seq: 1,
+          name: 'Task',
+          toolUseId: 'task-1',
+          input: {
+            context: 'ctx',
+            tasks: [
+              { name: 'a', agent: 'x', task: 'prompt a' },
+              { name: 'b', agent: 'y', task: 'prompt b' },
+            ],
+          },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'result-task',
+          seq: 2,
+          name: 'Task',
+          toolUseId: 'task-1',
+          output: 'done',
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(tool.presentation.body).toMatchObject({
+      kind: 'task',
+      context: 'ctx',
+      subtasks: [
+        { name: 'a', agent: 'x', prompt: 'prompt a' },
+        { name: 'b', agent: 'y', prompt: 'prompt b' },
+      ],
+    });
+    expect(tool.presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
+    expect(tool.presentation.bodyBarText).toBe('task · batch · 2 subtasks · 40ms');
+    expect(tool.presentation.badges).toContainEqual({
+      kind: 'count',
+      text: '2 subagents',
+      tone: 'neutral',
+    });
+  });
 });
