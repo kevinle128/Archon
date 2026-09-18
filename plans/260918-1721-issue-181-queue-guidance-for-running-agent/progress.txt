@@ -13,6 +13,15 @@
 ### Lint scope
 - `*.test.ts` files are in the eslint ignore list — passing a test file explicitly to eslint emits a "file ignored" warning that fails `--max-warnings 0`; use `--no-warn-ignored` or lint only source files
 
+### OpenAPI type generation without a port
+- **Where**: `packages/web/package.json` `generate:types` (hardcodes `http://localhost:3090`), `registerApiRoutes` in `packages/server/src/routes/api.ts`
+- **Pattern**: when 3090 is owned by ANOTHER workspace's server, do NOT hit it (stale types). `registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager)` on a bare `new OpenAPIHono({ defaultHook: validationErrorHook })` registers every route — handlers capture deps lazily, nothing connects at registration. `await app.request('/api/openapi.json')` dumps the doc; `openapi-typescript <file>` accepts file paths, not just URLs. Script must live inside `packages/server/` (Bun resolves imports relative to the FILE, not cwd) — e.g. `dump-openapi.tmp.ts`, delete after
+- **Gotcha**: `startServer()` picks a RANDOM port when 3090 is taken (`opts.port ?? getPort()`) — a `dev:server` boot under collision silently binds elsewhere AND the hardcoded `generate:types` URL still hits the wrong server
+
+### Hono malformed-JSON vs route-scoped validation hooks
+- **Where**: `packages/server/src/routes/api.ts` send-route middleware
+- **Pattern**: `@hono/zod-openapi`'s json validator throws `HTTPException` inside compose BEFORE a route-scoped `validationErrorHook` runs; `try/catch` around `await next()` cannot intercept it (compose catches at the middleware level). Pre-parse `c.req.json()` in `app.use` middleware — Hono caches the raw body so the downstream validator re-reads it unchanged; malformed → map directly to the desired error shape
+
 ### Git
 - Pre-commit runs lint-staged (eslint --fix + prettier on staged files) — works fine, no bypass needed
 - `git commit -m "$(cat <<'EOF' ... EOF)"` heredoc broke in this shell; multiple `-m` flags worked
@@ -77,5 +86,33 @@
 - `no-unnecessary-boolean-literal-compare` + `no-non-null-assertion` together forbid both `=== true` and `!`/`as` — narrow on the value itself (`turnGuidancePrompt !== undefined`), set alongside the boolean
 - Bun `mock()`-typed store: `store.getWorkflowRunStatus = mock(async () => streaming ? 'cancelled' : 'running')` flips mid-stream deterministically — no sleeps needed for cancel tests
 - AskHuman resume re-entry: a parked handle is revived by `register()` on the resumed execution — the SAME handle object keeps its retained queue, so guidance queued pre-park drains post-resume
+
+---
+
+## 2026-09-20 — US-003: Canonical typed send route in the server
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/schemas/workflow.schemas.ts` — `sendWorkflowNodeBodySchema` (strict; `message` refined non-blank but never transformed so whitespace survives verbatim; `message_id` uuid; `intent` enum), `sendWorkflowNodeResponseSchema` (strict; `success:true` + `state: queued|awaiting_send_now`), `steeringErrorSchema` (strict nested `{success:false,error:{code,message}}`); all `z` from `@hono/zod-openapi`, `z.infer` types
+- `packages/server/src/routes/openapi-defaults.ts` — `steeringValidationErrorHook` maps Zod failures to nested `invalid_request`; global `validationErrorHook`/`apiError` untouched
+- `packages/server/src/routes/api.ts` — `sendWorkflowNodeRoute` (200/400/401/403/404/409/422 documented), `steeringJsonError` doc helper, `steeringError` nested-error helper, `TERMINAL_API_NODE_STATUSES` (completed/failed/skipped), `app.use` middleware (auth BEFORE body validation + JSON pre-parse for malformed bodies), handler: auth → validated body → load run → project node state + registry handle → 404/409/422 target ladder → re-read run status → sync `handle.enqueue` → translate (closed→409, not_live→422, ok→200 `state:'queued'`; `send_now` queues identically)
+- `packages/server/src/routes/api.workflow-runs.test.ts` — +27 tests: actor ladder (starter/member/admin 200, identity-less `operatorUserId:null`), 401-before-400 ordering, validation matrix (blank/missing/extra keys/malformed JSON/bad uuid/bad intent), whitespace preservation, unknown run/node, terminal run/node, closed/detached/parked/live handles, 3-send receipt order, duplicate replay before/after drain + while parked, changed-prose no-overwrite, terminal-projection-wins, run-status race, handle-close race, no-mutation assertions on every rejection
+- `packages/web/src/lib/api.generated.d.ts` — regenerated (+123 lines: send path POST, SendWorkflowNodeBody/SendWorkflowNodeResponse/SteeringError schemas; NO queue GET)
+
+**Acceptance criteria verified**:
+- [x] All three schemas strict, `@hono/zod-openapi` z, `z.infer` derived types
+- [x] `registerOpenApiRoute(createRoute(...), handler, steeringValidationErrorHook)`; nested `invalid_request`; global hook untouched
+- [x] Auth before body validation (middleware); any resolved identity allowed; identity-less → `operatorUserId: null`
+- [x] Handler order: auth→validation→load run→node state/handle→re-read status→enqueue→translate
+- [x] Duplicate `message_id` replays original 200 incl. while parked; changed prose never overwrites
+- [x] `send_now` → `queued`; rejections never repair handles / write transcripts / write workflow events (asserted via `mockCreateWorkflowEvent`/`mockAddMessage`/`mockUpdateWorkflowRun` not-called)
+- [x] No queue GET route, no caps, no unrelated auth/contract edits (contract file untouched)
+- [x] Focused `-t 'queued guidance'` 27/27; full file 227 pass / 9 todo / 0 fail; server `tsc --noEmit` clean; eslint `--max-warnings 0` clean (incl. `--no-warn-ignored` on test file); prettier clean; web `tsc --noEmit` clean
+
+**Learnings**:
+- Port 3090 was owned by a DIFFERENT workspace's server (`/Volumes/WD_BLACK/workspace/opensource/Archon`) — hitting `generate:types` URL would have emitted STALE types. Solution: dumped the doc in-process (`registerApiRoutes` on a bare `OpenAPIHono` needs only `{}` deps since handlers capture them lazily) → `openapi-typescript /tmp/openapi.json` — no port needed at all; openapi-typescript accepts file paths, not just URLs
+- Hono malformed-JSON: `@hono/zod-openapi`'s validator throws `HTTPException` inside compose BEFORE the route-scoped hook runs; `try/catch` around `await next()` cannot intercept it (compose catches at middleware level). Fix: pre-parse `c.req.json()` in the route middleware — Hono caches the raw body so the downstream validator re-reads it unchanged; malformed → map directly to the nested error
+- `handle?.snapshot().phase === 'closed'` — optional-chain short-circuits the whole chain on undefined; eslint `prefer-optional-chain` requires it over `x !== undefined && x.y === z`
+- Rejected-request no-mutation assertions: snapshot `handle.snapshot()` before + after and diff `phase`/`acceptedCount`/`queued` — cheaper than intercepting registry internals
 
 ---

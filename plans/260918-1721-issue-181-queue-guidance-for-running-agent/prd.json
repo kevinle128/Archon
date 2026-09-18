@@ -71,8 +71,8 @@
       "technicalNotes": "Phase-02-server-send-and-queue-routes.md is the source of truth; mutation order is a correctness requirement, not style. Uses getSteeringRegistry() from US-001/US-002 via the ./steering-registry subpath. Avoid new mock.module pollution in tests; use the existing route-test setup and reset the registry between cases. Do not run a duplicate server on port 3090.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/server/src/routes/schemas/workflow.schemas.ts (SendWorkflowNodeBody/SendWorkflowNodeResponse/SteeringError), openapi-defaults.ts (steeringValidationErrorHook), routes/api.ts (route + auth/malformed-JSON middleware + handler), api.workflow-runs.test.ts (+27 tests), packages/web/src/lib/api.generated.d.ts regenerated."
     },
     {
       "id": "US-004",
