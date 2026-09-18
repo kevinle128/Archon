@@ -1,11 +1,22 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { Root } from 'react-dom/client';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import type { WorkflowNodeMessageResponse } from '@/lib/api';
+import type { TodoPhase } from '@/lib/todo-state';
 import { toolRowPresentation } from '@/lib/tool-presentation';
 
 import { NodeRoom, selectNodeRoomMessages } from './NodeRoom';
+import { TodoStrip } from './TodoStrip';
+
+const react = await import('react');
+const reactDomClient = await import('react-dom/client');
+
+const act = react.act;
+const createElement = react.createElement;
+const createRoot = reactDomClient.createRoot;
 
 const CREATED_AT = '2026-09-06T00:00:00.000Z';
 
@@ -172,6 +183,7 @@ function renderRoom(
     error?: string | null;
     renderAfterItem?: (item: AgentHistoryItem) => React.ReactNode;
     renderAtEnd?: React.ReactNode;
+    embedded?: boolean;
   } = {}
 ): string {
   const defaultItems: AgentHistoryItem[] = [
@@ -193,6 +205,7 @@ function renderRoom(
       }}
       renderAfterItem={overrides.renderAfterItem}
       renderAtEnd={overrides.renderAtEnd}
+      embedded={overrides.embedded ?? false}
     />
   );
 }
@@ -658,5 +671,575 @@ describe('NodeRoom tool rows', () => {
     expect(afterIndex).toBeGreaterThan(toolIndex);
     expect(markup).toContain('<div class="mt-1.5">after-tool-1</div>');
     expect(markup).toContain('<div class="mt-1.5">at-end</div>');
+  });
+
+  test('embedded mode returns the body without a room region for the pane to re-own', () => {
+    const markup = renderRoom({ embedded: true });
+    expect(markup).not.toContain('role="region"');
+    expect(markup).not.toContain('aria-label="review room"');
+    expect(markup).toContain('first');
+    expect(markup).toContain('data-tool-id="tool-use-1"');
+  });
+});
+
+const TODO_STRIP_PHASES: TodoPhase[] = [
+  {
+    phase: 'Research',
+    items: [
+      { content: 'Read the spec', status: 'completed' },
+      { content: 'Map the message path', status: 'in_progress' },
+      { content: 'Check contract conflicts', status: 'pending' },
+      { content: 'Inspect the mockups', status: 'pending' },
+      { content: 'Confirm the tokens', status: 'pending' },
+      { content: 'Define acceptance cases', status: 'pending' },
+    ],
+  },
+  {
+    phase: 'Implement',
+    items: [
+      { content: 'Add the fold', status: 'pending' },
+      { content: 'Wire Legacy', status: 'pending' },
+      { content: 'Wire Console', status: 'pending' },
+      { content: 'Add the tests', status: 'pending' },
+      { content: 'Run the suite', status: 'blocked', blocker: 'CI has one build job' },
+      { content: 'Review output', status: 'abandoned' },
+    ],
+  },
+];
+
+function stripBody(markup: string): string {
+  const start = markup.indexOf('data-testid="todo-list"');
+  if (start < 0) throw new Error('todo list body missing');
+  return markup.slice(start);
+}
+
+function stripRow(body: string, content: string): string {
+  const index = body.indexOf(content);
+  if (index < 0) throw new Error(`strip row ${content} missing`);
+  const start = body.lastIndexOf('<li', index);
+  const end = body.indexOf('</li>', index);
+  return body.slice(start, end + '</li>'.length);
+}
+
+function stripRowTag(row: string): string {
+  return row.slice(0, row.indexOf('>') + 1);
+}
+
+describe('TodoStrip markup', () => {
+  function stripMarkup(phases: readonly TodoPhase[] = TODO_STRIP_PHASES): string {
+    return renderToStaticMarkup(<TodoStrip phases={phases} />);
+  }
+
+  test('renders nothing when the folded todo state is empty', () => {
+    expect(stripMarkup([])).toBe('');
+  });
+
+  test('renders a collapsed full-bleed section, disclosure button, meter, count, and hidden body', () => {
+    const markup = stripMarkup();
+    const sectionTag = /<section[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(sectionTag).toContain('aria-label="Todo"');
+    expect(sectionTag).toContain('flex-none');
+    expect(sectionTag).toContain('border-b');
+    expect(sectionTag).toContain('bg-surface-elevated');
+    expect(sectionTag).not.toContain('rounded');
+    // The strip is not a landmark: the room region owns the landmark.
+    expect(markup.match(/role="region"/g)).toBeNull();
+
+    const buttonTag = /<button[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(buttonTag).toContain('type="button"');
+    expect(buttonTag).toContain('aria-expanded="false"');
+    expect(buttonTag).toContain('w-full');
+    expect(buttonTag).toContain('min-h-[24px]');
+    expect(buttonTag).toContain('px-[10px]');
+    expect(buttonTag).toContain('py-[6px]');
+    expect(buttonTag).toContain('gap-2');
+    expect(buttonTag).toContain('whitespace-nowrap');
+    expect(buttonTag).toContain('hover:bg-surface-hover');
+    expect(buttonTag).toContain('focus-visible:outline-accent-bright');
+    expect(buttonTag).toContain('-outline-offset-2');
+    const controls = /aria-controls="([^"]+)"/.exec(buttonTag)?.[1];
+    expect(controls ?? '').not.toBe('');
+
+    const bodyTag = /<div[^>]*data-testid="todo-list"[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(bodyTag).toContain(`id="${controls ?? 'missing'}"`);
+    expect(bodyTag).toContain('hidden');
+    expect(bodyTag).toContain('max-h-[168px]');
+    expect(bodyTag).toContain('overflow-y-auto');
+    expect(bodyTag).toContain('border-t');
+
+    expect(markup).toContain('>TODO<');
+    // Representative item: in-progress content, glyph, and a hidden status phrase.
+    expect(markup).toContain('Map the message path');
+    expect(markup).toContain('<span class="sr-only">in progress</span>');
+    expect(markup).toContain('◐');
+    // Meter is decorative; the count carries the fact in text.
+    const meterTag = /<span[^>]*data-testid="todo-meter"[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(meterTag).toContain('aria-hidden="true"');
+    expect(markup.match(/h-\[3px\]/g)?.length).toBe(12);
+    expect(markup).toContain('>1/12<');
+    // The caret is decorative and communicates state through rotation only.
+    expect(markup).toContain('▾');
+    const caret = /<span aria-hidden="true"[^>]*>▾<\/span>/.exec(markup)?.[0] ?? '';
+    expect(caret).not.toContain('rotate-180');
+    expect(markup).not.toContain('Raw');
+  });
+
+  test('renders phase headings and item rows with one accessible status phrase each', () => {
+    const markup = stripMarkup();
+    const body = stripBody(markup);
+    expect(markup.match(/<h3[^>]*>/g)?.length).toBe(2);
+    const headingTag = /<h3[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(headingTag).toContain('uppercase');
+    expect(headingTag).toContain('text-[10px]');
+    expect(markup).toContain('>Research<');
+    expect(markup).toContain('>Implement<');
+    expect(markup.match(/<ul/g)?.length).toBe(2);
+    expect(markup.match(/<li/g)?.length).toBe(12);
+
+    expect(accessibleName(stripRow(body, 'Read the spec'))).toBe('completed Read the spec');
+    expect(accessibleName(stripRow(body, 'Map the message path'))).toBe(
+      'in progress Map the message path'
+    );
+    expect(accessibleName(stripRow(body, 'Check contract conflicts'))).toBe(
+      'pending Check contract conflicts'
+    );
+    // The hidden phrase carries the reason; the visible suffix stays decorative.
+    expect(accessibleName(stripRow(body, 'Run the suite'))).toBe(
+      'blocked — CI has one build job Run the suite'
+    );
+    expect(accessibleName(stripRow(body, 'Review output'))).toBe('abandoned Review output');
+
+    expect(body.match(/· blocked: CI has one build job/g)?.length).toBe(1);
+    expect(body.match(/· dropped/g)?.length).toBe(1);
+    const suffix = /<span aria-hidden="true"[^>]*>· blocked: CI has one build job<\/span>/.exec(
+      body
+    );
+    expect(suffix).not.toBeNull();
+
+    // The current row gets the surface fill and inset running marker; no other
+    // row (blocked or otherwise) does.
+    const currentTag = stripRowTag(stripRow(body, 'Map the message path'));
+    expect(currentTag).toContain('bg-surface');
+    expect(currentTag).toContain('text-text-primary');
+    expect(currentTag).toContain('shadow-[inset_2px_0_0_var(--accent-bright)]');
+    expect(stripRowTag(stripRow(body, 'Run the suite'))).not.toContain('bg-surface');
+    expect(stripRowTag(stripRow(body, 'Read the spec'))).not.toContain('bg-surface');
+    expect(stripRow(stripRow(body, 'Review output'), 'Review output')).toContain('line-through');
+  });
+
+  test('never puts agent-authored strings into ids, labels, titles, or classes', () => {
+    const markup = stripMarkup();
+    expect(
+      markup.match(
+        /(?:id|aria-label|title|class)="[^"]*(?:Read the spec|Map the message path|blocked:|· dropped)[^"]*"/g
+      )
+    ).toBeNull();
+  });
+
+  test('keeps the fixed-height internally scrolling body for long lists', () => {
+    const many: TodoPhase[] = [
+      {
+        phase: 'All',
+        items: Array.from({ length: 40 }, (_, index) => ({
+          content: `Task ${index}`,
+          status: 'pending' as const,
+        })),
+      },
+    ];
+    const markup = stripMarkup(many);
+    expect(markup).toContain('max-h-[168px]');
+    expect(markup).toContain('overflow-y-auto');
+    expect(markup).toContain('>0/40<');
+    expect(markup.match(/h-\[3px\]/g)?.length).toBe(40);
+    // No in-progress item falls back to the first pending item in the header.
+    expect(markup).toContain('Task 0');
+    expect(markup).toContain('<span class="sr-only">pending</span>');
+  });
+});
+
+const INSTALLED_GLOBAL_KEYS = [
+  'window',
+  'document',
+  'self',
+  'HTMLElement',
+  'Element',
+  'Node',
+  'Text',
+  'DocumentFragment',
+  'SVGElement',
+  'HTMLButtonElement',
+  'navigator',
+  'location',
+  'getComputedStyle',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'MutationObserver',
+  'Event',
+  'CustomEvent',
+  'KeyboardEvent',
+  'MouseEvent',
+  'FocusEvent',
+  'IS_REACT_ACT_ENVIRONMENT',
+] as const;
+
+const previousGlobals = new Map<string, PropertyDescriptor | undefined>();
+
+function snapshotGlobals(): void {
+  previousGlobals.clear();
+  for (const key of INSTALLED_GLOBAL_KEYS) {
+    previousGlobals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+  }
+}
+
+function restoreGlobals(): void {
+  for (const key of INSTALLED_GLOBAL_KEYS) {
+    const descriptor = previousGlobals.get(key);
+    if (descriptor === undefined) {
+      Reflect.deleteProperty(globalThis, key);
+    } else {
+      Object.defineProperty(globalThis, key, descriptor);
+    }
+  }
+  previousGlobals.clear();
+}
+
+function installHappyDom(): Window {
+  snapshotGlobals();
+  const win = new Window({ url: 'https://localhost/' });
+  const bag: Record<string, unknown> = {
+    window: win,
+    document: win.document,
+    self: win,
+    HTMLElement: win.HTMLElement,
+    Element: win.Element,
+    Node: win.Node,
+    Text: win.Text,
+    DocumentFragment: win.DocumentFragment,
+    SVGElement: win.SVGElement,
+    HTMLButtonElement: win.HTMLButtonElement,
+    navigator: win.navigator,
+    location: win.location,
+    getComputedStyle: win.getComputedStyle.bind(win),
+    requestAnimationFrame: (cb: FrameRequestCallback): number => {
+      const handle = win.requestAnimationFrame(cb as unknown as (time: number) => void);
+      return Number(handle);
+    },
+    cancelAnimationFrame: win.cancelAnimationFrame.bind(win),
+    MutationObserver: win.MutationObserver,
+    Event: win.Event,
+    CustomEvent: win.CustomEvent,
+    KeyboardEvent: win.KeyboardEvent,
+    MouseEvent: win.MouseEvent,
+    FocusEvent: win.FocusEvent,
+    IS_REACT_ACT_ENVIRONMENT: true,
+  };
+  Object.assign(globalThis as object, bag);
+  return win;
+}
+
+describe('TodoStrip interaction', () => {
+  let win: Window;
+  let host: Element;
+  let root: Root;
+
+  beforeEach(() => {
+    win = installHappyDom();
+    const el = win.document.createElement('div');
+    win.document.body.appendChild(el);
+    host = el as unknown as Element;
+    root = createRoot(host);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    win.close();
+    restoreGlobals();
+  });
+
+  test('opens and closes on click, keeps aria-expanded/hidden in agreement, and holds focus', async () => {
+    await act(async () => {
+      root.render(createElement(TodoStrip, { phases: TODO_STRIP_PHASES }));
+    });
+    const strip = host.querySelector('section[aria-label="Todo"]');
+    if (strip === null) throw new Error('missing todo strip');
+    const buttonEl = strip.querySelector('button');
+    if (buttonEl === null) throw new Error('missing strip button');
+    const button = buttonEl as HTMLElement;
+    const bodyId = button.getAttribute('aria-controls');
+    if (bodyId === null) throw new Error('missing aria-controls');
+    const body = strip.querySelector(`[id="${bodyId}"]`);
+    if (body === null) throw new Error('missing strip body');
+
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(body.hasAttribute('hidden')).toBe(true);
+    expect(strip.textContent).toContain('TODO');
+    expect(strip.textContent).toContain('1/12');
+
+    await act(async () => {
+      button.focus();
+      button.click();
+    });
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(body.hasAttribute('hidden')).toBe(false);
+    expect((win.document.activeElement as unknown) === button).toBe(true);
+    expect(strip.textContent).toContain('Run the suite');
+
+    await act(async () => {
+      button.click();
+    });
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    expect(body.hasAttribute('hidden')).toBe(true);
+    expect((win.document.activeElement as unknown) === button).toBe(true);
+  });
+});
+
+describe('NodeRoom task dispatch bodies', () => {
+  const OMP_INPUT: Record<string, unknown> = {
+    context: 'Read-only review. **Do not edit.**\n\n- skip formatters\n- report file:line',
+    tasks: [
+      {
+        name: 'ScoutBackoff',
+        agent: 'scout',
+        task: 'Map every call site of retry_backoff and backoff across crates/, recording file:line, the attempt argument, whether the caller overrides the ceiling, and any nearby jitter configuration — TAILMARKER.',
+      },
+      {
+        name: 'ScoutCI',
+        agent: 'scout',
+        task: 'Where is CARGO_BUILD_JOBS pinned in .github/workflows?',
+      },
+    ],
+  };
+
+  type ToolItem = Extract<AgentHistoryItem, { kind: 'tool' }>;
+
+  function taskToolItem(
+    input: Record<string, unknown>,
+    toolUseId: string,
+    overrides: Partial<ToolItem> = {}
+  ): ToolItem {
+    return toolItem({
+      id: toolUseId,
+      toolUseId,
+      name: 'Task',
+      input,
+      outputState: 'full',
+      durationMs: null,
+      canLoadFullOutput: false,
+      ...overrides,
+    });
+  }
+
+  /** A subtask card is one flat details — no nested details inside it. */
+  function cardMarkup(row: string, index: number): string {
+    const marker = `<details data-subtask-index="${index}"`;
+    const start = row.indexOf(marker);
+    if (start < 0) throw new Error(`subtask card ${index} not found: ${row}`);
+    const end = row.indexOf('</details>', start);
+    if (end < 0) throw new Error(`subtask card ${index} never closes`);
+    return row.slice(start, end + '</details>'.length);
+  }
+
+  test('OMP batch: collapsed row carries the subagent badge and the shared body-bar text', () => {
+    const markup = renderRoom({ items: [taskToolItem(OMP_INPUT, 'task-omp')] });
+    const row = rowMarkup(markup, 'task-omp');
+    expect(rowOpenTag(row)).not.toMatch(/\sopen(\s|=|>)/);
+    expect(summaryMarkup(row)).toContain('2 subagents');
+    expect(row).toContain('>task · batch · 2 subtasks<');
+  });
+
+  test('OMP batch body: markdown context precedes one card per subtask, after the Raw bar', () => {
+    const markup = renderRoom({
+      items: [taskToolItem(OMP_INPUT, 'task-omp', { outcome: 'failed' })],
+    });
+    const row = rowMarkup(markup, 'task-omp');
+    expect(rowOpenTag(row)).toMatch(/\sopen(\s|=|>)/);
+    const body = row.slice(row.indexOf('</summary>'));
+    const rawAt = body.indexOf('>Raw<');
+    const contextAt = body.indexOf('Read-only review.');
+    const firstCardAt = body.indexOf('data-subtask-index="0"');
+    const secondCardAt = body.indexOf('data-subtask-index="1"');
+    expect(rawAt).toBeGreaterThan(-1);
+    expect(contextAt).toBeGreaterThan(-1);
+    expect(rawAt).toBeLessThan(contextAt);
+    expect(contextAt).toBeLessThan(firstCardAt);
+    expect(firstCardAt).toBeLessThan(secondCardAt);
+    expect(body.match(/data-subtask-index="\d+"/g)).toHaveLength(2);
+    expect(body).not.toContain('>Input<');
+    expect(body).not.toContain('>Output<');
+  });
+
+  test('subtask card anatomy: approval agent, bold name, secondary excerpt, prompt only inside', () => {
+    const markup = renderRoom({
+      items: [taskToolItem(OMP_INPUT, 'task-omp', { outcome: 'failed' })],
+    });
+    const row = rowMarkup(markup, 'task-omp');
+    const card = cardMarkup(row, 0);
+    expect(card).toContain('group/subtask');
+    expect(card).toContain('mt-[5px]');
+    expect(card).toContain('rounded-[6px]');
+    expect(card).toContain('bg-surface-elevated');
+    expect(card).toContain('px-[9px]');
+    expect(card).toContain('py-[6px]');
+
+    const summary = summaryMarkup(card);
+    expect(summary).toContain('min-h-[24px]');
+    expect(summary).toContain('text-[11.5px]');
+    expect(summary).toContain('whitespace-nowrap');
+    expect(summary).toContain('focus-visible:outline-accent-bright');
+    expect(summary).toContain('-outline-offset-2');
+    const agent = /<span class="[^"]*text-node-approval[^"]*">([^<]*)<\/span>/.exec(summary);
+    expect(agent?.[1]).toBe('scout');
+    const agentGroup = /<span class="([^"]*)"><span class="[^"]*text-node-approval/.exec(summary);
+    expect(agentGroup?.[1]).toContain('min-w-0');
+    expect(agentGroup?.[1]).toContain('shrink');
+    expect(agentGroup?.[1]).toContain('overflow-hidden');
+    expect(agentGroup?.[1]).toContain('text-ellipsis');
+    const name = /<span class="([^"]*font-bold[^"]*)"[^>]*>([^<]*)<\/span>/.exec(summary);
+    expect(name?.[2]).toBe('ScoutBackoff');
+    expect(name?.[1]).toContain('min-w-0');
+    expect(name?.[1]).toContain('shrink');
+    expect(name?.[1]).toContain('overflow-hidden');
+    expect(name?.[1]).toContain('text-ellipsis');
+    expect(summary).toContain('text-text-secondary');
+    // Excerpt is the collapsed-whitespace prefix — the tail stays in the nested body.
+    expect(summary).toContain('Map every call site');
+    expect(summary).not.toContain('TAILMARKER');
+
+    const chevron = /<span aria-hidden="true" class="([^"]*)">▶<\/span>/.exec(summary);
+    const classes = chevron?.[1].split(' ') ?? [];
+    expect(classes).toContain('group-open/subtask:rotate-90');
+    expect(classes).not.toContain('rotate-90');
+    expect(classes).toContain('w-[9px]');
+    expect(classes).toContain('text-[10px]');
+    expect(classes).toContain('duration-[120ms]');
+    expect(classes).toContain('motion-reduce:transition-none');
+
+    const box = card.slice(card.indexOf('</summary>'));
+    expect(box).toContain('TAILMARKER');
+    expect(box).toContain('whitespace-pre-wrap');
+    expect(box).toContain('break-words');
+    expect(box).toContain('bg-surface-inset');
+    // Payload strings are React text — never attributes.
+    expect(card).not.toContain('title=');
+    expect(card).not.toContain('aria-label=');
+  });
+
+  test('Claude single dispatch: single-dispatch bar, exactly one card, no context block', () => {
+    const markup = renderRoom({
+      items: [
+        taskToolItem(
+          {
+            description: 'Scout retry-backoff call sites',
+            prompt:
+              'Find every caller of retry_backoff() and backoff() in crates/, reporting file:line and the attempt argument verbatim.',
+            subagent_type: 'Explore',
+          },
+          'task-claude',
+          { name: 'Agent' }
+        ),
+      ],
+    });
+    const row = rowMarkup(markup, 'task-claude');
+    expect(row).toContain('>task · single dispatch<');
+    expect(summaryMarkup(row)).toContain('1 subagent');
+    expect(row.match(/data-subtask-index="\d+"/g)).toHaveLength(1);
+    // No context block: Raw sits in the bar, then the single card.
+    const barAt = row.indexOf('>task · single dispatch<');
+    const rawAt = row.indexOf('>Raw<');
+    const cardAt = row.indexOf('data-subtask-index="0"');
+    expect(barAt).toBeGreaterThan(-1);
+    expect(rawAt).toBeGreaterThan(barAt);
+    expect(cardAt).toBeGreaterThan(rawAt);
+    const card = cardMarkup(row, 0);
+    const summary = summaryMarkup(card);
+    expect(summary).toContain('>Explore<');
+    expect(summary).toContain('Scout retry-backoff call sites');
+    expect(card.slice(card.indexOf('</summary>'))).toContain('the attempt argument verbatim.');
+  });
+
+  test('Claude single dispatch without subagent_type renders no orphan separator', () => {
+    const markup = renderRoom({
+      items: [
+        taskToolItem(
+          {
+            description: 'Scout retry-backoff call sites',
+            prompt: 'Find every caller of retry_backoff() and backoff() in crates/.',
+          },
+          'task-claude',
+          { name: 'Agent' }
+        ),
+      ],
+    });
+    const row = rowMarkup(markup, 'task-claude');
+    const summary = summaryMarkup(cardMarkup(row, 0));
+    expect(summary).not.toContain('·');
+    expect(summary).toContain('Scout retry-backoff call sites');
+    expect(summary).toContain('— Find every caller');
+  });
+
+  test('singular batch wording uses 1 subtask and 1 subagent', () => {
+    const markup = renderRoom({
+      items: [
+        taskToolItem(
+          { context: 'ctx', tasks: [{ name: 'OnlyTask', agent: 'scout', task: 'do it' }] },
+          'task-one'
+        ),
+      ],
+    });
+    const row = rowMarkup(markup, 'task-one');
+    expect(row).toContain('>task · batch · 1 subtask<');
+    expect(summaryMarkup(row)).toContain('1 subagent');
+    expect(summaryMarkup(row)).not.toContain('subagents');
+  });
+
+  test('the 64-subtask boundary renders every card', () => {
+    const tasks = Array.from({ length: 64 }, (_, index) => ({
+      name: `subtask-${index}`,
+      agent: 'scout',
+      task: `prompt ${index}`,
+    }));
+    const markup = renderRoom({ items: [taskToolItem({ context: '', tasks }, 'task-max')] });
+    const row = rowMarkup(markup, 'task-max');
+    expect(row.match(/data-subtask-index="\d+"/g)).toHaveLength(64);
+    expect(row).toContain('data-subtask-index="63"');
+    expect(row).toContain('>task · batch · 64 subtasks<');
+  });
+
+  test('malformed task input falls back to bounded generic fields with no cards or count badge', () => {
+    const markup = renderRoom({
+      items: [taskToolItem({ tasks: 'nope', note: 'x' }, 'task-bad')],
+    });
+    const row = rowMarkup(markup, 'task-bad');
+    expect(row.match(/data-subtask-index="\d+"/g)).toBeNull();
+    expect(summaryMarkup(row)).not.toContain('subagent');
+    expect(row).toContain('>task<');
+    const body = row.slice(row.indexOf('</summary>'));
+    expect(body).toContain('>tasks<');
+    expect(body).toContain('>nope<');
+    expect(body).toContain('>note<');
+    expect(body).toContain('>x<');
+    // Generic rows are key/value text — never a serialized dump.
+    expect(body).not.toContain('"tasks"');
+  });
+
+  test('task context markdown keeps structure and suppresses images, unsafe links, and raw HTML', () => {
+    const input: Record<string, unknown> = {
+      context:
+        'Intro **bold** tail\n\n- first\n- second\n\n![tracker](https://tracker.example/pixel.png)\n\n[click](javascript:alert(1))\n\n<div onclick="boom()">raw</div>',
+      tasks: [{ name: 'ScoutBackoff', agent: 'scout', task: 'do it' }],
+    };
+    const markup = renderRoom({ items: [taskToolItem(input, 'task-md')] });
+    const row = rowMarkup(markup, 'task-md');
+    // Raw JSON is not in the DOM while closed; sanitize the readable body
+    // (bar through the first card, which holds the prompt).
+    const body = row.slice(row.indexOf('</summary>'), row.indexOf('data-subtask-index'));
+    expect(body).toContain('<strong>bold</strong>');
+    expect(body).toContain('>first</li>');
+    expect(body).not.toContain('<img');
+    expect(body).not.toContain('javascript:');
+    expect(body).not.toContain('<div onclick');
+    expect(body).toContain('>click</a>');
   });
 });

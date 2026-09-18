@@ -1,0 +1,17 @@
+name: e2e-todo-strip
+description: "E2E — deterministic folded todo calls plus a long scrolling transcript for the pinned todo strip."
+mutates_checkout: false
+
+nodes:
+  - id: todo-plan
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"emitTodo":true,"emitTool":true,"repeatTool":60}<</E2E_SCENARIO>>
+      $ARGUMENTS
+  - id: no-todo
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"emitTool":true}<</E2E_SCENARIO>>
+      $ARGUMENTS

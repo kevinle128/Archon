@@ -340,7 +340,7 @@ Flow 3's protagonist is named by role, not by name: `project-context.md` declare
    They open the `task` row, because a dispatch is the one row whose headline cannot say what happened inside it: the batch context reads as markdown, then one card per subtask, each with its agent name in semibold, its subtask name, and its prompt. `TaskSubtask` carries no per-subtask outcome, so the cards say what was dispatched, never how each one ended — the row's own glyph is the only status. They close it again.
 4. **Climax:** the eighth row is already open — `✕ run_terminal_command cargo test … exit 101 · 41.2s` — and beneath it the terminal body shows the panic, `left: 31 right: 30`. They know what failed and why without a single click.
 5. The `Run 2 · retry` header follows, then the assistant's one-line diagnosis, the `edit` row with `+2 −2`, the same test now `exit 0`, an `eval` row.
-6. They open the `todo` row: the folded checklist shows `4/6 done`, Research complete, Implement three of four, `◐ Run full auto_retry suite`.
+6. They open the collapsed `Todo` strip pinned at the top of the panel — the header already reads `◐ Run full auto_retry suite` and `4/6`; expanded it shows Research complete and Implement three of four.
 7. The last row is `◐ run_terminal_command CARGO_BUILD_JOBS=1 cargo test … running · 1m 48s`. They leave it open in a tab.
 
 Failure: a row's result never arrives → the glyph still follows the outcome (`–` only when the outcome itself is unknown), badge `output missing`; Raw still shows the call. Nothing is fabricated.
