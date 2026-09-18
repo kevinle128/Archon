@@ -753,6 +753,37 @@ describe('projectTodoState — output hygiene and robustness', () => {
     expect(result).toEqual([]);
   });
 
+  test('falsy wrong-type targets reject instead of becoming all-target operations', () => {
+    const prior = {
+      todos: [
+        { content: 'a', status: 'in_progress' },
+        { content: 'b', status: 'in_progress' },
+      ],
+    };
+    for (const malformed of [
+      { op: 'done', task: 0 },
+      { op: 'done', task: null },
+      { op: 'drop', phase: false },
+      { op: 'rm', task: 0 },
+      { op: 'block', task: 0, phase: 'Tasks' },
+      { op: 'unblock', task: 0, phase: 'Tasks' },
+      { ops: [{ op: 'done', task: 0 }] },
+    ]) {
+      expect(projectTodoState([prior, malformed])).toEqual([
+        phase('Tasks', [item('a', IN_PROGRESS), item('b', IN_PROGRESS)]),
+      ]);
+    }
+  });
+
+  test('empty-string targets retain the provider all-target fallback', () => {
+    expect(
+      projectTodoState([
+        { op: 'init', items: ['a', 'b'] },
+        { op: 'done', task: '', phase: '' },
+      ])
+    ).toEqual([phase('Tasks', [item('a', COMPLETED), item('b', COMPLETED)])]);
+  });
+
   test('a {view} entry is the only no-op that resolves; other shapes stay no-ops', () => {
     const result = projectTodoState([
       { op: 'init', items: ['a'] },

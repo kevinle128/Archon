@@ -2,11 +2,10 @@
 
 ## 1. Commit, baseline, and evidence sources
 
-- **Code under test**: `27971448` (US-004 renderers) plus the two US-005
-  cause-aligned fixes recorded in §11: `ConsoleNodeRoom.tsx` room region
-  `overflow-clip` + `[overflow-clip-margin:4px]`, and `ConsoleTodoStrip.tsx`
-  section `p-[4px]`. The metrics file's `meta.commit` field reads `27971448`
-  because the evidence run predates this story's own commit.
+- **Code under test**: `00fd30a5` plus the uncommitted Codex final-review
+  repairs recorded in §11. The metrics file's `meta.commit` field reads
+  `00fd30a5` because the final-review task explicitly prohibits committing;
+  the evidence was regenerated from the repaired working tree.
 - **Run under test**: dedicated synthetic `e2e-todo-strip` run
   (`e2e/fixtures/workflows/e2e-todo-strip.yaml` → `archon.runTodoStripWorkflow()`).
   `todo-plan` emits init(12) → done → block → drop; `no-todo` emits tool calls
@@ -44,7 +43,7 @@
 | Property      | Contract                                                             | Legacy                                           | Console                         | Result |
 | ------------- | -------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------- | ------ |
 | Container     | full-width, flex-none, surface-elevated, no radius, 1 px bottom rule | flex 0 0, elevated, 0 px radius, 1 px            | same                            | PASS   |
-| Header        | one line, 6/10 padding, ≥24 px target, 8 px gaps, surface-hover      | `6px 10px`, gap 8, min-h 24 (29.25), nowrap      | same                            | PASS   |
+| Header        | one line, full width, 6/10 padding, ≥24 px target, 8 px gaps, hover  | `459.67×29.25`, `6px 10px`, gap 8, nowrap        | `460×29.25`, same               | PASS   |
 | Label         | 10 px / 700 / uppercase / 0.07 em                                    | all present                                      | all present                     | PASS   |
 | Summary       | 11.5 px mono, elided, fixed glyph                                    | 11.5 JetBrains Mono, hidden/ellipsis/nowrap, `◐` | 11.5 Geist Mono, same           | PASS   |
 | Meter         | 12 cells, 3 px high, 2 px gap, status tokens, aria-hidden            | 12 / 3 px / 2 px                                 | same                            | PASS   |
@@ -55,7 +54,9 @@
 | Current row   | surface bg + 2 px inset running marker                               | surface bg + `2px 0 0` inset accent              | same (running token)            | PASS   |
 | Focus ring    | Legacy −2 px inside; Console +2 px outset, visible all sides         | −2 px (never clipped)                            | +2 px outset fully painted (§6) | PASS   |
 
-One deliberate deviation is recorded in §11 (Console section `p-[4px]`).
+The Console room reserves a 4 px outer paint area only while the strip is
+mounted; the strip and its header remain full-width inside that room, preserving
+the same measured anatomy as Legacy. The cause-aligned focus fix is in §11.
 
 ## 4. Fixed-strip and two-scroll-container proof
 
@@ -125,9 +126,9 @@ Floors: text/glyphs ≥4.5:1, focus ring ≥3:1. Summary:
 | Representative (text-primary on elevated)       | 14.08        | 16.72        |
 | Completed glyph / item text                     | 5.81 / 5.33  | 8.97 / 7.90  |
 | In-progress glyph / item text (on surface)      | 7.39 / 15.28 | 7.72 / 17.72 |
-| Pending glyph / item text                       | 6.48 / 6.48  | 9.24 / 9.24  |
-| Blocked glyph / item text                       | 9.21 / 6.48  | 11.17 / 9.24 |
-| Abandoned glyph / item text                     | 6.48 / 6.48  | 9.24 / 9.24  |
+| Pending glyph / item text                       | 5.33 / 5.33  | 7.90 / 7.90  |
+| Blocked glyph / item text                       | 7.58 / 5.33  | 9.54 / 7.90  |
+| Abandoned glyph / item text                     | 5.33 / 5.33  | 7.90 / 7.90  |
 | Focus ring on elevated / on hover               | 6.80 / 6.51  | 4.57 / 4.35  |
 
 The meter cells (5.81 / 8.97) and the 2 px inset running marker are redundant
@@ -136,13 +137,15 @@ they are not the sole channel. No token failed; nothing was escalated.
 
 ## 8. Chromium accessibility-tree evidence
 
-`page.accessibility.snapshot()` walks the real Chromium AX tree per surface:
+Chromium CDP's `Accessibility.queryAXTree` walks the real AX tree per surface:
 
 - exactly one region named `Todo`, inside the node-room region
   (`<nodeId> room`);
 - header exposes role `button` with an assembled name
-  (`TODO in progress Map the message path 1/12`), `expanded` false → true, and
-  `controls` → the body id;
+  (`TODO in progress Map the message path 1/12`) and `expanded` false → true;
+- the DOM assertion separately proves that `aria-controls` resolves to the
+  body inside the strip (Chromium's queried AX nodes do not serialize that
+  relation);
 - collapsed: no heading/list nodes below the strip; expanded: two phase
   headings and a list of 12 listitems appear;
 - heading names arrive uppercase (`RESEARCH`, `IMPLEMENT`) because Chromium AX
@@ -181,11 +184,11 @@ Required pairings could not be executed in this environment:
   assistive access: `System Events` reports `UI elements enabled = false`, so
   TCC denies AX automation and VoiceOver cannot be driven non-interactively.
 
-What _was_ obtained: the exact name/role/state channel both ATs consume —
-the Chromium AX tree in §8 (region/button/expanded/controls, heading + list +
-12 listitems, one status phrase per item, decorative exclusion), DOM-order tab
-behavior, focus retention, and reduced-motion semantics — all verified
-programmatically. Spoken-announcement wording ("collapsed"/"expanded"
+What _was_ obtained: the name/role/state channel both ATs consume — the
+Chromium AX tree in §8 (region/button/expanded, heading + list + 12 listitems,
+one status phrase per item, decorative exclusion), a valid DOM
+`aria-controls` relationship, DOM-order tab behavior, focus retention, and
+reduced-motion semantics — all verified programmatically. Spoken-announcement wording ("collapsed"/"expanded"
 phrasing) still needs a human pairing and is a **blocker for full sign-off**,
 not waived. Recommended session: Windows 11 + NVDA 2024.x + Chromium, and
 macOS + VoiceOver + Chromium/Safari, on the `e2e-todo-strip` run.
@@ -198,7 +201,7 @@ Commands run (all green, in the required order):
 | ---------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
 | Focused spec           | `bun run --cwd e2e test:ui -- --grep 'todo strip'`              | 24 passed                                                                                               |
 | HITL regression        | `bun run --cwd e2e test:ui:hitl`                                | 36 passed, 3 env skips                                                                                  |
-| Web unit + types       | `(cd packages/web && bun run test && bun run type-check)`       | 908+454+53 pass, 0 fail; tsc clean                                                                      |
+| Web unit + types       | `(cd packages/web && bun run test && bun run type-check)`       | 2,041 pass across six isolated legs, 0 fail; tsc clean                                                  |
 | Providers unit + types | `(cd packages/providers && bun run test && bun run type-check)` | 0 fail across all files; tsc clean                                                                      |
 | E2E types              | `(cd e2e && npm run typecheck)`                                 | clean                                                                                                   |
 | Lint                   | `bun run lint --max-warnings 0`                                 | 0 errors, 0 warnings                                                                                    |
@@ -219,12 +222,12 @@ Deviations / cause-aligned fixes made during this story:
    `console-inspect-room`, the react-resizable-panels panel (`overflow:auto`)
    and group (`overflow:hidden`), all flush with the strip's edges — and the
    room panel is flush with the window's right edge, so no ancestor clip-margin
-   can paint past the viewport. Fix: region → `overflow-clip` +
-   `[overflow-clip-margin:4px]` (`ConsoleNodeRoom.tsx`), and the Console strip
-   section gained `p-[4px]` (`ConsoleTodoStrip.tsx`) so the full-bleed chrome
-   (elevated bg, bottom rule, zero radius, full width) is unchanged while the
-   button gains the 4 px paint room the +2 px outset ring requires on all four
-   sides. Recorded here rather than silently switching to the prototype's −2 px.
+   can paint past the viewport. Ralph's first repair added padding to the strip
+   section, but that made the two renderers' headers different sizes and no
+   longer full width. The final repair keeps the strip itself identical and
+   reserves a conditional 4 px outer margin on the Console room region, with
+   `overflow-clip` + `[overflow-clip-margin:4px]`. The +2 px outline now fits the
+   viewport on all sides while the measured strip/header anatomy matches Legacy.
 2. Tailwind v4 `rotate-180` → standalone `rotate` property (spec asserts
    `rotate`, not `transform`).
 3. Chromium AX names reflect `text-transform: uppercase` (spec lowercases
@@ -239,14 +242,26 @@ Deviations / cause-aligned fixes made during this story:
    `speckit-ralph-native-feature.yaml` (absent on this branch's lineage, present
    at `80268f5c`) fixing 7 `dag-executor.test.ts` failures, with the generated
    file regenerated (30→32 workflows).
+6. **Malformed falsy todo targets** such as `{op:"done",task:0}` and
+   `{op:"rm",phase:false}` previously fell through to the bare all-target form
+   and could complete or remove every task. Optional target fields are now
+   type-checked whenever present; focused regression cases include direct and
+   batched calls while preserving the documented empty-string fallback.
+7. **Contrast evidence sampling** reused an uncleared canvas pixel, so a
+   transparent row could inherit the previous opaque sample. The sampler now
+   clears before every color parse; regenerated metrics use the actual elevated
+   backgrounds and the corrected ratios in §7.
+8. **AX evidence accuracy**: Chromium's `Accessibility.queryAXTree` does not
+   serialize the `aria-controls` relation. The relation is now proven directly
+   in the DOM, while the AX query asserts only the properties it exposes.
 
-**Final status: automated acceptance PASSED; story sign-off BLOCKED on two
-items this loop cannot own:**
+**Final status: implementation and repository verification PASSED.** The two
+external delivery/sign-off constraints remain explicitly recorded:
 
 - Manual AT pairings (§10) — no Windows/NVDA and no scriptable VoiceOver in
-  this environment; per the story's own note, `passes` stays `false` until a
-  pairing passes or an authorized owner accepts an alternative.
-- PR formation — the AC asks for a PR from `.github/pull_request_template.md`
-  targeting `develop` with `Closes #178`; this Ralph loop is contractually
-  forbidden from opening PRs (the parent workflow owns PR lifecycle), so this
-  criterion is delegated to the parent, with this report linked for the body.
+  this environment. The acceptance criterion explicitly requires an honest
+  BLOCKED record when unavailable; no manual AT pass is claimed.
+- PR formation — the final-review instruction explicitly prohibits staging,
+  committing, pushing, or opening a PR. No PR was created and sprint status was
+  not advanced; this report contains the evidence needed by the owning release
+  workflow.

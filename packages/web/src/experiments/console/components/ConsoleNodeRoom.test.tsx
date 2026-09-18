@@ -2467,6 +2467,7 @@ describe('ConsoleNodeRoom', () => {
       const region = regions[0];
       if (region === undefined) throw new Error('missing room region');
       expect(region.getAttribute('aria-label')).toBe('review room');
+      expect(region.getAttribute('class') ?? '').toContain('m-[4px]');
       const strip = stripSection();
       const scroller = host.querySelector('[data-testid="console-node-room-scroll"]');
       if (scroller === null) throw new Error('missing scroller');
@@ -2521,6 +2522,9 @@ describe('ConsoleNodeRoom', () => {
       });
       await flushUntil('fixture rows', () => (host.textContent ?? '').includes('first'));
       expect(stripSection()).toBeNull();
+      expect(host.querySelector('[role="region"]')?.getAttribute('class') ?? '').not.toContain(
+        'm-[4px]'
+      );
     });
 
     test('merges an initial page and later mutation pages into the final strip state', async () => {

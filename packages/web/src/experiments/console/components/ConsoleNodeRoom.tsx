@@ -144,12 +144,24 @@ function RoomPlaceholder({ children }: { children: string }): ReactElement {
   );
 }
 
-function RoomRegion({ nodeId, children }: { nodeId: string; children: ReactNode }): ReactElement {
+function RoomRegion({
+  nodeId,
+  children,
+  allowOutsetFocus = false,
+}: {
+  nodeId: string;
+  children: ReactNode;
+  allowOutsetFocus?: boolean;
+}): ReactElement {
   return (
     <section
       role="region"
       aria-label={nodeId + ' room'}
-      className="flex min-h-0 flex-1 flex-col overflow-clip [overflow-clip-margin:4px]"
+      className={
+        allowOutsetFocus
+          ? 'm-[4px] flex min-h-0 flex-1 flex-col overflow-clip [overflow-clip-margin:4px]'
+          : 'flex min-h-0 flex-1 flex-col overflow-clip [overflow-clip-margin:4px]'
+      }
     >
       {children}
     </section>
@@ -613,6 +625,7 @@ export function ConsoleNodeRoom({
           nowMs,
         });
   const items = agentHistory.items;
+  const showTodoStrip = agentActive && agentHistory.todos.length > 0;
   const visibleAsks =
     row !== null && resolution?.kind === 'agent'
       ? selectVisibleNodeAskInteractions({
@@ -871,8 +884,8 @@ export function ConsoleNodeRoom({
       {nodeId === null ? (
         body
       ) : (
-        <RoomRegion nodeId={nodeId}>
-          {agentActive && agentHistory.todos.length > 0 ? (
+        <RoomRegion nodeId={nodeId} allowOutsetFocus={showTodoStrip}>
+          {showTodoStrip ? (
             <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
           ) : null}
           <div

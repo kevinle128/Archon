@@ -212,14 +212,19 @@ function applyStart(phases: TodoPhase[], record: Record<string, unknown>): TodoP
  * must match exactly, and neither means every task in every phase.
  */
 function resolveTargets(phases: TodoPhase[], record: Record<string, unknown>): TodoItem[] | null {
-  if (record.task) {
-    if (typeof record.task !== 'string') return null;
-    const hit = findTask(phases, record.task);
+  const task = record.task;
+  const phase = record.phase;
+  // Optional target fields still have to be strings when present. Without
+  // this guard, malformed falsy values such as `task: 0` fall through to the
+  // provider's bare all-target form and can complete/drop every task.
+  if (task !== undefined && typeof task !== 'string') return null;
+  if (phase !== undefined && typeof phase !== 'string') return null;
+  if (task) {
+    const hit = findTask(phases, task);
     return hit ? [hit.item] : null;
   }
-  if (record.phase) {
-    if (typeof record.phase !== 'string') return null;
-    const target = phases.find(phase => phase.phase === record.phase);
+  if (phase) {
+    const target = phases.find(candidate => candidate.phase === phase);
     return target ? [...target.items] : null;
   }
   return phases.flatMap(phase => phase.items);
@@ -274,16 +279,18 @@ function applyUnblock(phases: TodoPhase[], record: Record<string, unknown>): Tod
 }
 
 function applyRemove(phases: TodoPhase[], record: Record<string, unknown>): TodoPhase[] | null {
-  if (record.task) {
-    if (typeof record.task !== 'string') return null;
-    const hit = findTask(phases, record.task);
+  const task = record.task;
+  const phaseName = record.phase;
+  if (task !== undefined && typeof task !== 'string') return null;
+  if (phaseName !== undefined && typeof phaseName !== 'string') return null;
+  if (task) {
+    const hit = findTask(phases, task);
     if (!hit) return null;
     hit.phase.items = hit.phase.items.filter(candidate => candidate !== hit.item);
     return phases;
   }
-  if (record.phase) {
-    if (typeof record.phase !== 'string') return null;
-    const target = phases.find(phase => phase.phase === record.phase);
+  if (phaseName) {
+    const target = phases.find(phase => phase.phase === phaseName);
     if (!target) return null;
     target.items = [];
     return phases;

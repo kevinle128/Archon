@@ -680,6 +680,7 @@ for (const surface of ['console', 'legacy'] as const) {
         columnGap: cs?.columnGap ?? '',
         minHeight: cs?.minHeight ?? '',
         whiteSpace: cs?.whiteSpace ?? '',
+        width: band.width,
         height: band.height,
         childrenInside,
       };
@@ -690,6 +691,11 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(header.paddingRight).toBe('10px');
     expect(header.columnGap).toBe('8px');
     expect(header.whiteSpace).toBe('nowrap');
+    expect(header.width, 'header target width ≥24px').toBeGreaterThanOrEqual(24);
+    expect(
+      Math.abs(header.width - (stripBox?.width ?? 0)),
+      'header remains full-width inside the strip container'
+    ).toBeLessThanOrEqual(1);
     expect(header.height, 'header target ≥24px').toBeGreaterThanOrEqual(24);
     expect(header.height, 'header stays one line').toBeLessThanOrEqual(40);
     expect(header.childrenInside, 'all header children inside the single-line band').toBe(true);
@@ -894,6 +900,7 @@ for (const surface of ['console', 'legacy'] as const) {
         padding: `6px 10px`,
         columnGap: header.columnGap,
         minHeight: header.minHeight,
+        measuredWidth: header.width,
         measuredHeight: header.height,
         whiteSpace: header.whiteSpace,
       },
@@ -936,6 +943,9 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(strip).toHaveCount(1);
       // Header stays one line; count + caret survive; overflow never escapes.
       const buttonBox = await button.boundingBox();
+      expect(buttonBox?.width ?? 0, `header target width ≥24px at ${label}`).toBeGreaterThanOrEqual(
+        24
+      );
       expect(buttonBox?.height ?? 0, `header target ≥24px at ${label}`).toBeGreaterThanOrEqual(24);
       expect(buttonBox?.height ?? 99, `header one line at ${label}`).toBeLessThanOrEqual(40);
       await expect(spanWithText(button, '1/12')).toBeVisible();
@@ -1184,8 +1194,21 @@ for (const surface of ['console', 'legacy'] as const) {
         }
         node = node.parentElement;
       }
-      return { reach, clippers };
+      const viewport = {
+        width: el.ownerDocument.documentElement.clientWidth,
+        height: el.ownerDocument.documentElement.clientHeight,
+      };
+      return {
+        reach,
+        clippers,
+        fitsViewport:
+          outline.top >= -0.5 &&
+          outline.left >= -0.5 &&
+          outline.bottom <= viewport.height + 0.5 &&
+          outline.right <= viewport.width + 0.5,
+      };
     });
+    expect(outlineCheck.fitsViewport, 'focus outline fits inside the browser viewport').toBe(true);
     const violation = outlineCheck.clippers.find(clipper => !clipper.fits);
     expect(
       violation,
@@ -1302,6 +1325,15 @@ for (const surface of ['console', 'legacy'] as const) {
     const room = await openNodeRoom(page, surface, run.runId, TODO_STRIP_TODO_NODE);
     const strip = room.locator(STRIP);
     const button = strip.getByRole('button');
+    const bodyId = await button.getAttribute('aria-controls');
+    if (bodyId === null) throw new Error('todo header does not reference its body');
+    expect(
+      await strip.evaluate((element, controlledId) => {
+        const controlled = element.ownerDocument.getElementById(controlledId);
+        return controlled !== null && element.contains(controlled);
+      }, bodyId),
+      'aria-controls references the todo body inside the strip'
+    ).toBe(true);
 
     // Collapsed tree: exactly one region named Todo inside the node-room
     // region; the header button carries the assembled name and expanded=false;
@@ -1476,6 +1508,11 @@ test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
       const ctx = el.ownerDocument.createElement('canvas').getContext('2d');
       const parse = (css: string): { resolved: string; c: Rgba } => {
         if (ctx === null) return { resolved: css, c: { r: 0, g: 0, b: 0, a: 0 } };
+        // Each effective-background lookup reuses this canvas. Clear the
+        // prior opaque pixel first: drawing a transparent fill with normal
+        // source-over compositing does not erase it and would make a later
+        // transparent row appear opaque against the previous row's surface.
+        ctx.clearRect(0, 0, 1, 1);
         ctx.fillStyle = css;
         ctx.fillRect(0, 0, 1, 1);
         const data = ctx.getImageData(0, 0, 1, 1).data;
