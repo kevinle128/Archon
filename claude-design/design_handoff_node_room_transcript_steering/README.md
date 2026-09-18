@@ -76,6 +76,15 @@ intent ("see the agent's current todo list **as state**, not as mutations").
 
 **Needs updating:** `todo-fold-contract.md`, and CAP-3's success criterion.
 
+> **Resolved (2026-09-18):** the pinned strip was adopted, but at the canonical **top** of the
+> transcript panel — first child of the room region, immediately above the transcript scroller —
+> not between transcript and dock as prototyped here. `todo-fold-contract.md` now states the
+> pinned-strip model; the placement text above and the panel-order table under
+> `Console Node Room.dc.html` below are prototype history. The strip anatomy (§Pinned todo strip)
+> remains the build reference; the mock's body-bar/Raw footer and the demo-only `todoEnd` lifecycle
+> rewrite are not adopted — the strip renders the folded `TodoPhase[]` unchanged and node lifecycle
+> events never rewrite todo statuses.
+
 ### 2. Per-item `Send now` inside the queue, gated on soft-inject
 
 **Contract today:** `control-states.md` — *"No per-item send while generating. While the agent
@@ -185,6 +194,11 @@ Panel column, top to bottom:
 The strips are **flex siblings of the scroller, never children of it** — they cannot cover the last
 transcript row, which on a running node is the row being watched (SC 2.4.11).
 
+> Prototype ordering — superseded: canonical placement puts the **todo strip at the top of the
+> panel**, first child of the room region immediately above the transcript scroller, so `transcript`
+> and `todo strip` swap in the table above. The queue band and composer dock keep their bottom
+> slots.
+
 **Controls above the frame are review scaffolding, not product UI:** the 8 agent sub-states, the
 `prompt` / `loop ×3` node-kind switch, and the `claude · soft-inject` / `codex · queue only`
 transport switch. Do not build them.
@@ -263,7 +277,10 @@ align-items:baseline; line-height:1.75; padding:1px 4px 1px 2px; radius:4px`, 12
 column, mono 11.5px. The **current** item gets `background: var(--surface)` plus
 `box-shadow: inset 2px 0 0 <running>` and text-primary — a shape, not just a colour. Item glyphs:
 `☑` done, `◐` current, `⊘` blocked, `☐` pending, `☐` + line-through + `· dropped` abandoned.
-Body bar + 24px Raw button at the foot.
+~~Body bar + 24px Raw button at the foot.~~
+
+> Not adopted: the body-bar/Raw footer — a fold across many calls has no single truthful raw
+> payload, and Raw belongs to an individual tool row (CAP-7).
 
 **Default collapsed.** Expanded by default the strip plus the dock took 63% of the panel and left the
 transcript ~183px, which breaks CAP-1 (scanning a forty-call node) and `DESIGN.md`'s own rule that
@@ -275,6 +292,11 @@ to ~300px and stacks with the draft box's own cap.
 **It follows the node's lifecycle, not just the iteration.** On a completed node the plan reads
 `☑ … 6/6`; on the 30-minute-failed node the interrupted item returns to `☐` and the count stays
 `4/6` — it must not claim work finished. A completed pill above a running `◐` is the defect to avoid.
+
+> Not adopted — demo-only `todoEnd` rewrite. The mocks' `todoEnd` knob fabricates statuses on
+> terminal nodes (every item `done` on a completed node; the interrupted item demoted to `☐` on a
+> failed one). The shipped strip renders the folded `TodoPhase[]` unchanged: only recorded todo
+> calls change statuses, so a failed node keeps showing the item that was `◐` when it stopped.
 
 ### Queue band — restructured
 

@@ -8,6 +8,9 @@ import {
   E2E_FAKE_LOOP_DONE,
   E2E_FAKE_TASK_OMP_INPUT,
   E2E_FAKE_TASK_TOOL_NAME,
+  E2E_FAKE_TODO_INPUTS,
+  E2E_FAKE_TODO_OUTPUT,
+  E2E_FAKE_TODO_TOOL_NAME,
   E2E_FAKE_TOOL_NAME,
   E2E_FAKE_TOOL_OUTPUT,
   E2E_FAKE_TOOL_PASS_TEXT,
@@ -143,6 +146,7 @@ describe('E2eFakeProvider', () => {
     expect(lastOutput).toContain('[e2e-fake] full output tail');
   });
 
+
   test('taskDispatch omp emits one Task call with the exact batch input and paired result', async () => {
     const prompt = '<<E2E_SCENARIO>>{"taskDispatch":"omp"}<</E2E_SCENARIO>>';
     const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
@@ -213,6 +217,106 @@ describe('E2eFakeProvider', () => {
       await expect(
         collect(provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp'))
       ).rejects.toThrow('scenario directive failed validation');
+    }
+  });
+
+
+  test('emitTodo emits four ordered todo call/result pairs first', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"emitTodo":true}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    const tools = chunks.filter(chunk => chunk.type === 'tool');
+    const results = chunks.filter(chunk => chunk.type === 'tool_result');
+    expect(tools).toHaveLength(E2E_FAKE_TODO_INPUTS.length);
+    expect(results).toHaveLength(E2E_FAKE_TODO_INPUTS.length);
+    for (let index = 0; index < E2E_FAKE_TODO_INPUTS.length; index += 1) {
+      const tool = tools[index];
+      const result = results[index];
+      if (tool?.type !== 'tool' || result?.type !== 'tool_result') {
+        throw new Error('expected tool pair');
+      }
+      const toolCallId = `e2e-fake-todo-sess-${String(index + 1)}`;
+      expect(tool.toolName).toBe(E2E_FAKE_TODO_TOOL_NAME);
+      expect(tool.toolCallId).toBe(toolCallId);
+      expect(tool.toolInput).toEqual(E2E_FAKE_TODO_INPUTS[index]);
+      expect(result.toolName).toBe(E2E_FAKE_TODO_TOOL_NAME);
+      expect(result.toolCallId).toBe(toolCallId);
+      expect(result.toolOutput).toBe(E2E_FAKE_TODO_OUTPUT);
+      expect(result.toolOutcome).toBe('success');
+      expect(chunks[index * 2]?.type).toBe('tool');
+      expect(chunks[index * 2 + 1]?.type).toBe('tool_result');
+    }
+    expect(chunks[8]).toEqual({
+      type: 'assistant',
+      content: '[e2e-fake] deterministic response',
+    });
+    expect(chunks[9]).toMatchObject({ type: 'result', sessionId: 'sess' });
+  });
+
+  test('emitTodo + emitTool + repeatTool keeps todo pairs first and Read calls unchanged', async () => {
+    const prompt =
+      '<<E2E_SCENARIO>>{"emitTodo":true,"emitTool":true,"repeatTool":3}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    const tools = chunks.filter(chunk => chunk.type === 'tool');
+    const results = chunks.filter(chunk => chunk.type === 'tool_result');
+    expect(tools).toHaveLength(4 + 3);
+    expect(results).toHaveLength(4 + 3);
+    expect(chunks[8]).toEqual({ type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT });
+    for (let index = 0; index < 4; index += 1) {
+      const tool = tools[index];
+      if (tool?.type !== 'tool') throw new Error('expected tool');
+      expect(tool.toolName).toBe(E2E_FAKE_TODO_TOOL_NAME);
+      expect(tool.toolCallId).toBe(`e2e-fake-todo-sess-${String(index + 1)}`);
+      expect(chunks[index * 2]?.type).toBe('tool');
+      expect(chunks[index * 2 + 1]?.type).toBe('tool_result');
+    }
+    for (let index = 0; index < 3; index += 1) {
+      const tool = tools[4 + index];
+      if (tool?.type !== 'tool') throw new Error('expected tool');
+      expect(tool.toolName).toBe(E2E_FAKE_TOOL_NAME);
+      expect(tool.toolInput).toEqual({ path: 'HITL_TOOL_INPUT.txt' });
+      expect(tool.toolCallId).toBe(`e2e-fake-tool-sess-${String(index + 1)}`);
+      expect(chunks[9 + index * 2]?.type).toBe('tool');
+      expect(chunks[10 + index * 2]?.type).toBe('tool_result');
+    }
+  });
+
+  test('rejects non-boolean emitTodo and unknown keys alongside it', async () => {
+    const invalid = ['{"emitTodo":"yes"}', '{"emitTodo":1}', '{"emitTodo":true,"bogus":true}'];
+    for (const body of invalid) {
+      await expect(
+        collect(provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp'))
+      ).rejects.toThrow('scenario directive failed validation');
+    }
+  });
+
+  test('emitTodo absent or false yields no todo chunks and preserves old behavior', async () => {
+    const cases = [
+      {
+        body: '{"emitTool":true}',
+        expectedToolCalls: 1,
+        firstChunk: { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT },
+      },
+      {
+        body: '{"emitTodo":false}',
+        expectedToolCalls: 0,
+        firstChunk: { type: 'assistant', content: '[e2e-fake] deterministic response' },
+      },
+      {
+        body: '{"emitTodo":false,"emitTool":true,"repeatTool":2}',
+        expectedToolCalls: 2,
+        firstChunk: { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT },
+      },
+    ];
+    for (const { body, expectedToolCalls, firstChunk } of cases) {
+      const chunks = await collect(
+        provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp', 'sess')
+      );
+      expect(chunks[0]).toEqual(firstChunk);
+      const tools = chunks.filter(chunk => chunk.type === 'tool');
+      expect(tools).toHaveLength(expectedToolCalls);
+      expect(
+        chunks.some(chunk => chunk.type === 'tool' && chunk.toolName === E2E_FAKE_TODO_TOOL_NAME)
+      ).toBe(false);
     }
   });
 
