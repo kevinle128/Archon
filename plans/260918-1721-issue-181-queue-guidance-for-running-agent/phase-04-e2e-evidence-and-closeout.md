@@ -29,7 +29,7 @@ Test before (in `provider.test.ts`): `echoPrompt` yields the directive-stripped 
 
 ## Fixture and runtime
 
-- `e2e/fixtures/workflows/e2e-queue-guidance.yaml`: one node `steer-me`, `provider: e2e-fake`, `model: e2e-fake-model`, `mutates_checkout: false`, prompt with the delay directive above followed by `$ARGUMENTS`.
+- `e2e/fixtures/workflows/e2e-queue-guidance.yaml`: node `steer-me` (`prompt:`) and node `steer-loop` (`loop:`, `until: E2E_LOOP_DONE`, `max_iterations: 3`, `depends_on: [steer-me]`), both `provider: e2e-fake`, `model: e2e-fake-model`, `mutates_checkout: false`, prompts carrying the delay directive followed by `$ARGUMENTS` (use `delayMs: 4000` on the loop node so three iterations stay inside the spec timeout, and set `test.setTimeout(90_000)` on the loop case). A drained turn's prompt is the operator's verbatim text (D4), so the YAML directive does **not** travel with it: the queued message itself carries `<<E2E_SCENARIO>>{"echoPrompt":true,"doneWhenPromptIncludes":"finish"}<</E2E_SCENARIO>> finish`, which makes the drained turn both echo and emit the loop's completion signal. <!-- Updated: advisor review -->
 - `archon-runtime.ts`: add `startQueueGuidanceWorkflowViaWeb()` following `runHitlWorkflowViaWeb` (register codebase, create conversation, `POST /api/workflows/e2e-queue-guidance/run`, `waitForRunId`) but returning after `waitForRunStatus(runId, 'running')`, plus a `waitForRunStatus(runId, 'completed')` awaiter. The runtime already sets `ARCHON_E2E_FAKE_PROVIDER=1` on the server, so the in-process executor uses the fake. A CLI-spawned run must not be used — it is `422` by design (D1).
 
 ## E2E spec (`e2e/ui/agent-queue-guidance.spec.ts`)
@@ -41,7 +41,8 @@ Both shells (Legacy route and Console route), tagged `[P0]`/`[P1]` like the sibl
 3. **Route contract via `starterFetch`** on the live node: duplicate `message_id` replays the receipt and the queue length stays 1; empty message → 400 `invalid_request`; unknown node → 404 `not_found`; after completion → 409 `node_finished` with the draft still in the field; a CLI-detached run (`startHitlWorkflow` shape on the same fixture) → 422 `not_steerable_here` and the dock shows only the disclosure line.
 4. **Ask block**: using the existing HITL fixture parked at an ask, the dock renders Send with `aria-disabled="true"`, no `disabled` attribute, `aria-describedby` resolving to `answer the agent's question first`; `Meta+Enter` makes no request (assert via `GET …/queue`).
 5. **Accessibility**: `role="status"` announces `1 message pending delivery` after the first queue; `document.activeElement` remains the textarea; axe scan of the dock has no violations; header text is lowercase in the DOM with `text-transform: uppercase` computed; `prefers-reduced-motion: reduce` emulation renders identically.
-6. **Visual**: screenshots at 460 px (Legacy) and the Console panel width for `generating`, `QUEUED · 2`, blocked, and disclosure states; the scroller scrolls behind the dock; contrast measurements of the send label, hint, and band text recorded in `reports/evidence/queue-dock-contrast.json` (≥ 4.5:1).
+6. **Loop node**: a second fixture node (or a second fixture file) `loop:` with `until: E2E_LOOP_DONE` and the fake's `doneWhenPromptIncludes`, first iteration held open with `delayMs`; queue one `echoPrompt` message during iteration 1; assert the echo appears in the transcript **inside iteration 1's occurrence group** (not as a new iteration), the loop still terminates on its signal, and the node completes.
+7. **Visual**: screenshots at 460 px (Legacy) and the Console panel width for `generating`, `QUEUED · 2`, blocked, and disclosure states; the scroller scrolls behind the dock; contrast measurements of the send label, hint, and band text recorded in `reports/evidence/queue-dock-contrast.json` (≥ 4.5:1).
 
 ## Tests before (red first)
 
@@ -65,7 +66,7 @@ bun run validate
 
 ## Closeout
 
-1. Update `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md`: add `GET /api/workflows/runs/:runId/nodes/:nodeId/queue` to the Routes table and its response shape to Response schemas; note that 2.1 always returns `state: 'queued'` and that `awaiting_send_now` arrives with Story 2.3.
+1. Update `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md`: add `GET /api/workflows/runs/:runId/nodes/:nodeId/queue` to the Routes table and its response shape to Response schemas; record the public bounds (`message` ≤ 16 000 characters; 50 pending messages per node, the 51st → `400 invalid_request`); note that 2.1 always returns `state: 'queued'` and that `awaiting_send_now` arrives with Story 2.3.
 2. Write `plans/260918-1721-issue-181-queue-guidance-for-running-agent/reports/acceptance.md` mapping each Story 2.1 acceptance criterion to its test name and evidence file; record any manual-AT blocker honestly.
 3. Open the PR from `.github/pull_request_template.md` (Problem and outcome, Review guidance, Solution, Validation), target `develop`, `Closes #181`; conventional commit messages, no plan/phase/finding codes in code or commits.
 4. The owning BMad workflow moves `2-1-queue-guidance-for-a-running-agent` to `done` after the gates; do not hand-edit early.
@@ -75,6 +76,7 @@ bun run validate
 | Path | Priority | Case |
 |------|----------|------|
 | Real drain on same session | Critical | echo of both messages in order in turn N+1 |
+| Loop node drain | Critical | echo inside iteration 1's occurrence group; loop ends on signal |
 | Detached refusal | Critical | CLI run → 422 + disclosure |
 | Keyboard | High | shortcut sends; Enter newline |
 | Ask block | High | `aria-disabled` + reason; shortcut no-op |

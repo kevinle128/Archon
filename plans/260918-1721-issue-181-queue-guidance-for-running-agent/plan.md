@@ -3,7 +3,7 @@ title: 'Issue 181 queue guidance for a running agent'
 description: 'Implementation-ready TDD plan for ANR Story 2.1: an in-process steering registry, the typed send route, a natural-turn-boundary drain in the DAG executor, and the Queue composer dock in both node rooms.'
 status: pending
 priority: P1
-effort: '4 phases / about 22h'
+effort: '4 phases / about 26h'
 issue: 'https://github.com/kevinle128/Archon/issues/181'
 branch: archon/thread-37c215a0
 tags: [issue-181, agent-node-room, epic-2, workflows, server, web, tdd, deep]
@@ -35,9 +35,9 @@ Authority order used by every phase:
 Repository inspection (scout reports under `plans/reports/scout-260919-0007-*.md`) established:
 
 - No steering code exists. There is no in-process registry of running runs/nodes, no send route, and no multi-turn-on-one-session loop. This is new infrastructure.
-- One turn is `aiClient.sendQuery(prompt, cwd, resumeSessionId, options)` wrapped by `withIdleTimeout` inside `runStreamPass` (`packages/workflows/src/dag-executor.ts:2266-2967`). The provider session id is captured **only** from the `result` chunk (`dag-executor.ts:2536`). The existing structured-output re-ask loop (`:2992-3121`) deliberately runs later passes on a **fresh** session; turn N+1 must therefore pass the captured id explicitly.
+- One turn is `aiClient.sendQuery(prompt, cwd, resumeSessionId, options)` wrapped by `withIdleTimeout` inside `runStreamPass` (`packages/workflows/src/dag-executor.ts:2266-2967`). The provider session id is captured **only** from the `result` chunk (`if (msg.sessionId) newSessionId = msg.sessionId;`, `dag-executor.ts:2565` at planning time). The existing structured-output re-ask loop (`:2992-3121`) deliberately runs later passes on a **fresh** session; turn N+1 must therefore pass the captured id explicitly.
 - `nodeAbortController` (`dag-executor.ts:2209`) is one-shot and belongs to Cancel. This story never touches it; the drain is gated on `!nodeIdleTimedOut && !nodeAbortController.signal.aborted`, the same guard `canReask` uses (`:3031-3032`).
-- `executeNodeInternal` has eleven terminal returns plus a function-level `catch` (`:3332`). `executeLoopNode` (`:5150`) is a separate duplicated implementation; loop-node steering is Story 2.3's stated scope.
+- `executeNodeInternal` has eleven terminal returns plus a function-level `catch` (`:3332`). `executeLoopNode` (`:5150`) is a separate duplicated implementation with its own per-iteration `attempts:` re-ask loop, `AskHumanAwaitingError` catch, and completion channels (`until_field` → `until` → `until_bash`); the owner chose to cover it in 2.1 as well (Validation Log Q2).
 - Transcript rows are keyed by the namespaced `stepName` (`dag-executor.ts:1978-1981`), which is also what `GET /api/workflows/runs/{runId}/nodes/{nodeId}/messages` accepts. The registry keys on the same identifier so the client addresses one id.
 - Node running/terminal state is derived from `workflow_events` via `projectLatestEffectiveNodeStates` (`packages/workflows/src/retry-state.ts:92`); there is no status column.
 - Every existing route returns a flat `{ error, detail? }`; the steering contract's `{ success: false, error: { code, message } }` shape needs its own helper and a route-scoped validation hook (`registerOpenApiRoute`'s third argument, precedent `workflowEnvValidationErrorHook` in `packages/server/src/routes/openapi-defaults.ts:37-47`).
@@ -60,9 +60,9 @@ Repository inspection (scout reports under `plans/reports/scout-260919-0007-*.md
 | D9 | **Actor grant**: any resolved identity is allowed (any role); no identity is `401` only when `isWebAuthEnabled() || isApiGateEnabled()`; otherwise (solo install) allowed with `operator_user_id: null`. | Contract names "identity-less install → allowed"; this is `answerAskHuman`'s shape, not `confirmPermission`'s. Retry/cancel/approve rules are untouched. |
 | D10 | **Add `GET /api/workflows/runs/{runId}/nodes/{nodeId}/queue`** returning `{ steerable, queued: [...] }`, under the same actor grant as `send`, polled at 1000 ms while steerable and 3000 ms once not. | `QUEUED · n` cannot be truthful after the executor drains without a read path, and Console has no SSE. The epic rule places shared transport in the first story that needs it; Story 2.9 shrinks to convergence and withdraw refresh. |
 | D15 | **Bounds on the in-memory registry**: 50 pending messages per handle, 500 remembered ids per handle, 16 000-character messages; a credit-exhaustion signal at a turn boundary stops the chain. | The registry is one process-wide singleton; unbounded growth or an unbounded operator-driven turn chain would be a memory or spend DoS on every run in the process. No cap on the number of turns: each turn needs a fresh operator send and the credit check runs at every boundary. |
-| D11 | **Loop nodes are not registered in 2.1**; a running loop node answers `422 not_steerable_here` and the dock shows the disclosure line. | Story 2.3 explicitly lists AI loop nodes and loop-group provider nodes; `executeLoopNode` is a separate implementation. The 422 path is tested so the gap is loud, not silent. |
+| D11 | **AI loop nodes are steerable in 2.1** (owner decision, Validation Log Q2). `executeLoopNode` gets the same registry, park, and drain treatment: at an iteration boundary the handle is drained without closing (`drain()`), a drained turn runs inside the current iteration on the same session, and the completion channels are evaluated on the drained turn's output; only the node's final boundary uses `drainOrClose()`. Loop-group body nodes already run through `executeNodeInternal` and are registered under their namespaced `stepName`. | `executeLoopNode` is a separate implementation (about +4h); covering it now means every AI node kind a room can open is steerable, and `422 not_steerable_here` is left to mean exactly what the contract says — no live handle in this process. |
 | D12 | **No Stop control and no per-item delete in 2.1.** | A control that cannot act must not be drawn (SPEC). Stop lands with the interrupt route (2.3); delete lands with the withdraw route (2.2). |
-| D13 | **State-8 disclosure uses neutral copy**: `not steerable here · this node's live session is not in this server process`. | The server cannot tell "detached" from "loop node in 2.1"; the ratified EXPERIENCE.md:187 copy names detach as the cause. Validation question Q3 asks whether to keep the ratified copy instead. |
+| D13 | **State-8 disclosure uses neutral copy**: `not steerable here · this node's live session is not in this server process`. | The server cannot tell a detached run from any other reason a live handle is absent (a node between `node_started` and registration, a provider without `sessionResume`, a parked node with no pending ask visible yet); the ratified EXPERIENCE.md:187 copy names detach as the cause. Owner confirmed the neutral wording (Validation Log Q4). |
 | D14 | **No transcript row and no new workflow event at drain.** | The operator row is Story 2.8; a turn-start event is forbidden by SPEC. The queue read path is the drain signal. |
 
 ## Architecture
@@ -72,7 +72,7 @@ sequenceDiagram
   participant UI as Node room dock (Legacy / Console)
   participant API as POST …/send · GET …/queue
   participant REG as SteeringRegistry (in-process, keyed runId:stepName)
-  participant EX as executeNodeInternal turn loop
+  participant EX as executeNodeInternal / executeLoopNode turn loop
   participant P as Provider session
 
   EX->>REG: register(runId, stepName) before turn 1 (phase live)
@@ -95,7 +95,7 @@ sequenceDiagram
   EX->>REG: unregister in finally
 ```
 
-The turn loop wraps the existing re-ask loop; the code below it (idle-timeout notice, Cancel check, credit and empty-output checks, `node_completed`) is unchanged and runs once, after the loop's final `break`.
+The turn loop wraps the existing re-ask loop; the code below it (idle-timeout notice, Cancel check, credit and empty-output checks, `node_completed`) is unchanged and runs once, after the loop's final `break`. In `executeLoopNode` the same turn loop sits inside each iteration and uses the non-closing `drain()` until the completion channels say the loop is done.
 
 ## Phases
 
@@ -107,6 +107,8 @@ The turn loop wraps the existing re-ask loop; the code below it (idle-timeout no
 | 4 | [E2E evidence, gates, and closeout](./phase-04-e2e-evidence-and-closeout.md) | Pending |
 
 Phase 1 is planned in full detail (deep mode). Phases 2-4 are planned to execution depth but each gets a dedicated scout pass at cook time against the then-current tree, because Phase 1 and Phase 2 change the surfaces they build on.
+
+Effort: Phase 1 11h, Phase 2 5h, Phase 3 6h, Phase 4 4h.
 
 ## Dependency map
 
@@ -121,7 +123,7 @@ Phase 1 is planned in full detail (deep mode). Phases 2-4 are planned to executi
 |------|--------|-------------|
 | `packages/workflows/src/steering-registry.ts` | Create | New unit suite |
 | `packages/workflows/src/steering-registry.test.ts` | Create | Registry contract |
-| `packages/workflows/src/dag-executor.ts` | Modify (`executeNodeInternal` only) | Turn-loop suites in `dag-executor.test.ts` |
+| `packages/workflows/src/dag-executor.ts` | Modify (`executeNodeInternal` and `executeLoopNode`) | Turn-loop suites in `dag-executor.test.ts` |
 | `packages/workflows/src/dag-executor.test.ts` | Modify | New drain/park/close cases |
 | `packages/workflows/package.json` | Modify (exports subpath `./steering-registry`; append the new test file to the explicit `test` chain) | Boundary; CI coverage |
 | `packages/server/src/routes/schemas/workflow.schemas.ts` | Modify | Schema tests via route tests |
@@ -206,11 +208,31 @@ bun run validate
 | 18 | New workflows test file not in the explicit `test` chain | High | Accept | Phase 1, inventory |
 | 19 | Try/catch anchor misdescribed | Medium | Accept | Phase 1 |
 | 20 | Per-second projection cost while polling a non-steerable node | Medium | Accept (3000 ms back-off) | Phase 2, Phase 3 |
-| 21 | `stepName` stability across resume entry points unproven | Medium | Reject — top-level nodes use an empty prefix (`dag-executor.ts:1978-1981`); loop-group bodies are excluded by D11; `retry-node` starts a new execution whose old handle was unregistered on failure | — |
+| 21 | `stepName` stability across resume entry points unproven | Medium | Reject — top-level nodes use an empty prefix (`dag-executor.ts:1978-1981`); loop-group bodies derive the same `stepNamePrefix + node.id` on every entry; `retry-node` starts a new execution whose old handle was unregistered on failure | — |
 
 ### Whole-Plan Consistency Sweep
 
 Decision delta: D5 (per-turn session id, `forkSession`/`resumeInteractions` per turn), D7 (parked queue visible; loud discard), D10 (grant on the read route; back-off), D15 (bounds and boundary credit check), Phase 4 echo scoped to a directive. Swept `plan.md` and all four phase files for: "echo on generic resume" (removed), `queued: []` for parked (replaced), the try anchor (corrected), the three-argument `runStreamPass` call (now four), and "cost/tokens fold as re-ask" (replaced by the explicit token sum). No contradictions remain.
+
+## Validation Log
+
+### Session 1 — 2026-09-19 (mode: prompt; 5 questions, re-asked once with full context in Vietnamese at the operator's request)
+
+| # | Question | Decision | Propagated to |
+|---|----------|----------|---------------|
+| Q1 | Actor grant for send/queue: keep the ratified any-authenticated grant, or narrow to owner/admin? | **Keep the ratified grant** (any authenticated identity; solo install allowed); retry/cancel/approve rules unchanged. The credential-reuse consequence (red-team #1) is accepted by the owner. | D9, Phase 2 `authorizeSteering` |
+| Q2 | AI loop nodes in 2.1 or deferred to Story 2.3? | **Include loop nodes in 2.1** (+4h). | D11, Phase 1 `executeLoopNode` section and tests, Phase 4 loop E2E case, effort |
+| Q3 | Add `GET …/queue` in 2.1 and document it in the contract? | **Yes.** | D10, Phase 2, Phase 4 closeout |
+| Q4 | State-8 disclosure copy: neutral wording or the ratified detached wording? | **Neutral wording.** | D13, Phase 3 `DISCLOSURE_NOT_STEERABLE` |
+| Q5 | Stop and per-item delete controls in the 2.1 dock? | **Omit both** until Stories 2.3 and 2.2 land. | D12, Phase 3 |
+
+### Verification Results
+- Claims checked: 24 (Fact Checker, Security Adversary) + 13 contracts (Contract Verifier) + 7 flows (Flow Tracer)
+- Verified: 41 | Failed: 3 (all corrected in Red Team Session 1: session-id line drift, token fold, parked queue read) | Unverified: 0
+- Tier: Standard (4 phases)
+
+### Whole-Plan Consistency Sweep
+After propagating Q2, swept all files for "loop nodes are not registered", "never registered", "Story 2.3's stated scope", and "`executeNodeInternal` only"; each occurrence was rewritten. D11, the architecture note, the file inventory, red-team #21, and the Phase 1/4 tests now agree that AI loop nodes are steerable in 2.1. No unresolved contradiction remains.
 
 ## Definition of done
 

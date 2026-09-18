@@ -3,7 +3,7 @@ phase: 1
 title: 'Engine: steering registry and natural-boundary drain'
 status: pending
 priority: P1
-effort: '7h'
+effort: '11h'
 dependencies: []
 ---
 
@@ -11,7 +11,7 @@ dependencies: []
 
 ## Outcome
 
-`@archon/workflows` owns a process-local steering registry keyed `(runId, stepName)` and `executeNodeInternal` runs a turn loop: after a turn ends naturally and the re-ask loop settles, it drains queued operator messages as turn N+1 on the same provider session, or, when the queue is empty, closes the handle in the same tick and completes the node exactly as today. No interrupt, no abort, no transcript row, no new event. Cancel's `nodeAbortController` and its three read sites are byte-for-byte unchanged.
+`@archon/workflows` owns a process-local steering registry keyed `(runId, stepName)`, and both `executeNodeInternal` (direct AI nodes, including loop-group body nodes) and `executeLoopNode` (AI loop nodes) run a turn loop: after a turn ends naturally and the re-ask loop settles, they drain queued operator messages as turn N+1 on the same provider session, or, when the queue is empty at the node's final boundary, close the handle in the same tick and complete the node exactly as today. No interrupt, no abort, no transcript row, no new event. Cancel's `nodeAbortController` and its three read sites are byte-for-byte unchanged.
 
 At phase end the registry suite and the new executor cases are green, and the existing `dag-executor.test.ts` suite is green untouched.
 
@@ -20,7 +20,7 @@ At phase end the registry suite and the new executor cases are green, and the ex
 - `_bmad-output/specs/spec-agent-node-room/engine-integration.md` §2 (natural end auto-drains; multi-turn on one session), §3 (in-process registry).
 - `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md` (idempotent duplicate, "teardown queue check is the last gate", every rejection leaves state unchanged).
 - `plans/reports/scout-260919-0007-executor-turn-loop.md` (turn mechanics with `file:line`).
-- `packages/workflows/src/dag-executor.ts:2266-2300` (`runStreamPass`), `:2536` (session id capture), `:2995-3121` (re-ask loop), `:3110-3330` (post-loop checks and completion), `:3332-3340` (function-level catch, `AskHumanAwaitingError` → `pauseOnAskHuman`).
+- `packages/workflows/src/dag-executor.ts:2266-2300` (`runStreamPass`), the `if (msg.sessionId) newSessionId = msg.sessionId;` line inside the `result` branch (`:2565` at planning time; session id capture), `:2995-3121` (re-ask loop), `:3110-3330` (post-loop checks and completion), `:3332-3340` (function-level catch, `AskHumanAwaitingError` → `pauseOnAskHuman`).
 - `packages/workflows/src/event-emitter.ts:363-368` (singleton precedent).
 
 ## Preflight
@@ -60,8 +60,12 @@ export class NodeSteeringHandle {
   get phase(): SteeringHandlePhase;
   enqueue(msg: QueuedOperatorMessage): EnqueueResult;
   /** Atomic: returns queued messages in receipt order and empties the queue;
-   *  when the queue is empty, flips phase to 'closed' in the same call. */
+   *  when the queue is empty, flips phase to 'closed' in the same call.
+   *  Used at a node's FINAL natural boundary. */
   drainOrClose(): QueuedOperatorMessage[];
+  /** Same drain, never closes — used at a loop node's per-iteration boundary,
+   *  where an empty queue means "run the next iteration", not "node finished". */
+  drain(): QueuedOperatorMessage[];
   park(): void;                        // live → parked; queue kept
   resume(): void;                      // parked → live
   snapshot(): SteeringHandleSnapshot;
@@ -82,11 +86,11 @@ export function createSteeringRegistry(): SteeringRegistry;   // isolated instan
 Rules the class enforces:
 
 - `enqueue` on `closed` → `{ ok: false, reason: 'closed' }`; on `parked` → `{ ok: false, reason: 'not_live' }`; on `live` → append, remember `message_id` in an `accepted` set for the handle's lifetime; a repeated `message_id` returns `{ ok: true, state: 'queued', duplicate: true }` **without** a second queue entry, before or after the original drained (D6).
-- `drainOrClose` on `parked` or `closed` returns `[]` and does not change phase (a parked node has nothing live to run the turn).
+- `drainOrClose` on `parked` or `closed` returns `[]` and does not change phase (a parked node has nothing live to run the turn). `drain` behaves the same but never closes a `live` handle.
 - `register` on an existing `closed` handle replaces it with a fresh one (a retried node is a new execution; the old accepted-id memory must not leak into it).
 - Everything is synchronous; no `await` between read and phase change (single-threaded loop guarantees atomicity).
 
-## Executor changes (`executeNodeInternal` only)
+## Executor changes (`executeNodeInternal`)
 
 All edits sit inside the existing function-level `try { … } catch (error) { … }`. Its `try` opens **after** `runStreamPass`, `buildReaskPrompt`, and `emitReask` are declared (the `try` immediately precedes the `let reaskAttempt = 0;` line, roughly 700 lines below `runStreamPass`'s declaration), and its `catch` starts with `const err = error as Error;` followed by the throttle-map cleanup. <!-- Updated: Red Team Session 1 - anchor corrected -->
 
@@ -139,6 +143,21 @@ Registration (step 1) therefore happens before that `try`; the `finally` (step 7
 10. **`packages/workflows/package.json`**: append `&& bun test src/steering-registry.test.ts` to the explicit `test` chain (the chain is hand-maintained; a file not listed never runs under `bun run validate`). <!-- Updated: Red Team Session 1 -->
 8. **Operator prose is verbatim.** `turnPrompt` is never passed through `buildPromptWithContext` or `substituteNodeOutputRefs`; a `$` in operator text is text.
 
+## Executor changes (`executeLoopNode`) <!-- Updated: Validation Session 1 - loop nodes included in 2.1 (owner decision Q2) -->
+
+`executeLoopNode` (`dag-executor.ts`, starts at `async function executeLoopNode(`) duplicates the turn machinery: an outer `for (let i = startIteration; i <= loop.max_iterations; i++)` iteration loop, an inner `attempts: while (true)` re-ask loop whose `sendQuery` call passes `finalPrompt` and `reaskAttempt === 0 ? resumeSessionId : undefined`, its own `AskHumanAwaitingError` catch (`pauseOnAskHuman` → `return { state: 'pending', … }`), and the completion channels (`until_field` → `until` signal → `until_bash`) evaluated after the attempts loop on that iteration's output. Apply the same pattern with loop semantics:
+
+1. **Register once per node**, before the iteration loop, when the resolved provider has `sessionResume` — same key `stepName`; `register()` resumes a parked handle.
+2. **Turn loop inside each iteration.** Wrap the `attempts:` loop and the completion-channel evaluation in `iterationTurns: while (true)`: the first turn uses the iteration's `finalPrompt` and the iteration's computed `resumeSessionId`; the completion channels are evaluated on **that turn's** output; then
+   - if the loop is **not** complete → `queued = steering.drain()` (never closes — the next iteration is still coming);
+   - if the loop **is** complete (signal, field, `until_bash`, or `i === loop.max_iterations`) → `queued = steering.drainOrClose()` (this is the node's final boundary; an empty queue seals the handle in the same tick);
+   - `queued.length === 0` → `break iterationTurns` and continue with today's code (advance the iteration or finish the node);
+   - otherwise the drained messages become the next turn's prompt on `currentSessionId` (the id captured from this turn's `result`; reset per turn and required, as in D5), `reaskAttempt` resets, the attempt id rotates (`newTranscriptAttempt(iterationExecutionScope)`), `resumeInteractions` are dropped and `forkSession` is `false` on the drained turn, and the loop re-runs — the drained turn's output replaces the iteration output, so the completion channels run against what the agent produced **after** the guidance, before the loop decides to iterate or finish. A drained turn does not consume an iteration index; `$LOOP_PREV_OUTPUT` for the next iteration is the last turn's output.
+   - The same guards apply: no drain when the iteration idle-timed out or the node abort signal is set; `detectCreditExhaustion` at the boundary stops the chain; a missing session id logs `steering.drain_skipped_no_session` and stops.
+3. **Park on ask** in the loop's `AskHumanAwaitingError` catch, before `pauseOnAskHuman`; **unregister** (with the discard `warn`) in a `finally` on the function-level try/catch (`try {` near the top of the function, `} catch (error) {` at its end), skipping a parked handle.
+4. Interactive-gate loops (`interactive: true`, approval between iterations) are unchanged: the gate pause is a `pending` return like the ask path — park the handle there too so messages queued before the gate survive approval.
+5. `foldIterationUsage()` already folds each pass into `loopTotalCostUsd`/`loopTotalTokens`; a drained turn is one more pass through the same fold, so no new accumulator is needed here (unlike `executeNodeInternal`).
+
 ## Tests before (red first)
 
 Create `packages/workflows/src/steering-registry.test.ts`:
@@ -147,6 +166,7 @@ Create `packages/workflows/src/steering-registry.test.ts`:
 - enqueue on live appends in call order; `snapshot().queued` preserves order and `received_at`.
 - duplicate `message_id` → `{ ok: true, duplicate: true }`, queue length unchanged; after `drainOrClose` the same id still replays `duplicate: true` and re-adds nothing.
 - `drainOrClose` with items returns them in order, empties the queue, phase stays `live`; with an empty queue returns `[]` and phase becomes `closed`; enqueue afterwards → `{ ok: false, reason: 'closed' }`.
+- `drain` with an empty queue returns `[]` and the phase stays `live`; enqueue afterwards is accepted.
 - `park` keeps the queue, enqueue → `not_live`, `drainOrClose` → `[]` and stays `parked`; `register` on a parked key resumes it to `live` with the queue intact.
 - `register` on a closed key returns a fresh handle whose accepted-id memory is empty.
 - `createSteeringRegistry()` instances are independent; `getSteeringRegistry()` returns one instance across calls; `clear()` empties it.
@@ -173,12 +193,16 @@ Add to `packages/workflows/src/dag-executor.test.ts` a `describe('queued guidanc
 - **re-ask still works on the drained turn**: `output_format` node; turn 2's first pass returns prose, the re-ask runs on a fresh session (existing behaviour preserved), then validates.
 - **missing session id skips the drain with a warn**: fake `result` without `sessionId` and a queued message → one `sendQuery`, node completes, `steering.drain_skipped_no_session` logged.
 - **ask-pause parks the handle**: fake throws `AskHumanAwaitingError` mid-turn with a queued message; handle phase is `parked` and the queue is intact; a re-run of the node (resume path) re-registers to `live` and drains it at the next natural end.
-- **loop node is never registered**: `executeLoopNode` path leaves `get(runId, nodeId)` undefined (documents D11).
+- **loop node registers and drains inside an iteration** (`describe('queued guidance drain — loop nodes', …)`, using the existing loop fixtures with `until` / `doneWhenPromptIncludes`-style completion): a message queued during iteration 1's turn runs as a second turn of iteration 1 on the session iteration 1 returned (`resumeSessionId === s1`, no `resumeInteractions`, `forkSession !== true`); the iteration counter is still 1; the completion signal emitted by the drained turn ends the loop; the handle is closed by `drainOrClose` then unregistered; exactly one `node_completed`.
+- **loop node with an empty queue at an iteration boundary keeps iterating**: `drain()` (not `drainOrClose`) is used, the handle stays `live`, iteration 2 starts and a message queued during iteration 2 drains there.
+- **loop node final boundary seals**: on the completing iteration with an empty queue, a later `enqueue` returns `closed`.
+- **loop node ask pause parks**: `AskHumanAwaitingError` in an iteration leaves the handle `parked` with the queue intact; the resumed loop re-registers and drains at that iteration's boundary.
+- **`max_iterations` reached with a queued message**: the queued message still drains as a final turn before the node completes (the final boundary is after the max-iteration check).
 
 ## Refactor (protected changes)
 
-- Only `executeNodeInternal` changes; `executeLoopNode`, `executeLoopGroupNode`, the cancel poll, `withIdleTimeout`, `canReask`, and the `:3124` Cancel check are untouched.
-- Keep the re-ask loop body textually intact; the diff should read as "declare turn loop, rename `resumeSessionId` → `turnResumeId` in one call, add the boundary block, add `park`, add `finally`".
+- `executeNodeInternal` and `executeLoopNode` change; `executeLoopGroupNode` (whose body nodes already run through `executeNodeInternal` and are therefore registered under their namespaced `stepName`), the cancel poll, `withIdleTimeout`, `canReask`, and the Cancel checks are untouched.
+- Keep both re-ask loop bodies textually intact; each diff should read as "declare turn loop, redirect the resume id and prompt through turn variables, add the boundary block, add `park`, add `finally`".
 
 ## Tests after
 

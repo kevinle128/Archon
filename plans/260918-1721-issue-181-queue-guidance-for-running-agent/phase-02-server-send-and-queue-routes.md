@@ -61,7 +61,7 @@ Types derive with `z.infer`; `TRIGGER`-style constants are derived from `.option
 - `steeringValidationErrorHook` in `openapi-defaults.ts`: on Zod failure returns `steeringError`-shaped `400 invalid_request` with `formatSafeZodIssueDetail` as the message (never echo message bodies).
 - `authorizeSteering(c): Promise<{ operatorUserId: string | null } | { error: Response }>` implementing D9: identity → allow; none with `isWebAuthEnabled() || isApiGateEnabled()` → `401 unauthenticated`; none otherwise → allow with `null`. Reused by both routes and, later, by interrupt/keepalive/withdraw.
 - `resolveSteeringTarget(runId, nodeId)`: registry-first, then DB:
-  1. `handle = getSteeringRegistry().get(runId, nodeId)`; if `handle.phase === 'live'` → `{ kind: 'live', handle }`.
+  1. `handle = getSteeringRegistry().get(runId, nodeId)`; if `handle.phase === 'live'` → `{ kind: 'live', handle }`; if `handle.phase === 'closed'` → `{ kind: 'finished' }` **without a DB read** — the handle was sealed at the node's final boundary and `node_completed` may not be written yet, so the event projection would still say `running`; this branch is what makes the contract's "last gate" (D3) reachable at the route layer. <!-- Updated: advisor review -->
   2. `run = workflowDb.getWorkflowRun(runId)`; missing → `{ kind: 'not_found' }`.
   3. `events = workflowEventDb.listWorkflowEvents(runId)`, `pending = listPendingInteractions(runId)`, `state = projectLatestEffectiveNodeStates(events, pending).get(nodeId)?.state`, settled against `run.status` the way `settleApiWorkflowNodeStatesForRunStatus` does.
   4. no state and no handle → `{ kind: 'not_found' }` (unknown node id for this run).
@@ -84,7 +84,7 @@ Types derive with `z.infer`; `TRIGGER`-style constants are derived from `.option
 `GET …/queue`: <!-- Updated: Red Team Session 1 - same actor grant as send; parked queue is visible -->
 
 - Applies the same `authorizeSteering` grant as `send` (the queued text is an operator's undelivered guidance, not a committed transcript row).
-- `resolveSteeringTarget` → `not_found` 404; `live` → `{ steerable: true, queued: handle.snapshot().queued }`; **parked** → `{ steerable: false, queued: handle.snapshot().queued }` (the messages survive the ask and must stay visible); anything else → `{ steerable: false, queued: [] }` (200). A finished node is `steerable: false`, not 409 — the dock decides what to render from `steerable` plus the node status it already has.
+- `resolveSteeringTarget` → `not_found` 404; `live` → `{ steerable: true, queued: handle.snapshot().queued }`; **parked** → `{ steerable: false, queued: handle.snapshot().queued }` (the messages survive the ask and must stay visible); `closed` and anything else → `{ steerable: false, queued: [] }` (200). A finished node is `steerable: false`, not 409 — the dock decides what to render from `steerable` plus the node status it already has.
 
 `GET /api/openapi.json` picks both up automatically.
 
@@ -100,7 +100,7 @@ Send route cases (assert status, body shape, and that `handle.snapshot()` and th
 - 400 `invalid_request` for: empty `message`, non-uuid `message_id`, unknown `intent`, extra key (`.strict()`); body is the steering error shape, not `{ error }`.
 - 404 `not_found` for an unknown run; 404 for a node id with no projected state and no handle.
 - 409 `node_finished` for a node projected `completed`/`failed`/`skipped`, and for a run whose status is terminal.
-- 409 `node_finished` when the handle is `closed` (register, `drainOrClose()` on empty, then send).
+- 409 `node_finished` when the handle is `closed` (register, `drainOrClose()` on empty, then send) — with the run mock still reporting the node as `running`, proving the registry branch answers before the projection.
 - 422 `not_steerable_here` for a running node with no handle (detached), and for a parked handle.
 - 200 `queued` for a live handle; queue length 1; `received_at` ISO.
 - duplicate `message_id` → second call 200 with the same body; queue length still 1.
