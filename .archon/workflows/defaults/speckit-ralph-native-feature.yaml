@@ -1,0 +1,855 @@
+name: speckit-ralph-native-feature
+description: |
+  Use when: User explicitly wants the Speckit SDD pipeline with Archon-native Ralph iterations.
+  Triggers: "speckit ralph native", "native ralph feature", "ralph native workflow",
+            "speckit native loop", "native ralph loop".
+  Does: Specify → clarify (with Plannotator live review when questions exist) → red-team
+        (with Plannotator live review gate) → plan → tasks → analyze → tasks-to-ralph →
+        native Ralph loop → sync-back →
+        converge gate → human review before retry → final Ralph pass on exhaustion →
+        BMAD sprint status update → PR creation.
+  NOT for: Speckit feature requests that do not explicitly require the native Ralph loop.
+  NOT for: Quick one-file fixes, bug fixes, PR reviews.
+  NOT for: When a spec already exists (use archon-speckit-plan-to-tasks instead).
+  NOT for: Spec generation only without planning (use archon-speckit-spec instead).
+provider: codex
+model: gpt-5.5
+effort: xhigh
+# Human gates (plannotator_gate) require foreground on web so the live annotate URL is usable.
+interactive: true
+
+nodes:
+  - id: setup
+    bash: |
+      echo "=== SPECKIT SDD PIPELINE ==="
+      echo "Feature: $ARGUMENTS"
+      FEATURE_SLUG=$(echo "$ARGUMENTS" | tr '[:upper:]' '[:lower:]' | tr -s ' ' '-' | sed 's/[^a-z0-9-]//g' | sed 's/--*/-/g' | cut -c1-60)
+      echo "FEATURE_SLUG=$FEATURE_SLUG"
+      echo "PROJECT_ROOT=$(pwd)"
+      echo "HEAD=$(git rev-parse --short HEAD 2>/dev/null || echo 'no-git')"
+      git fetch --all --prune 2>/dev/null || true
+      echo "ARTIFACTS_DIR=$ARTIFACTS_DIR"
+      echo ""
+      echo "Artifacts will be saved to: $ARTIFACTS_DIR"
+      echo "Starting Step 1 of 7: Generating feature specification..."
+
+  - id: specify
+    prompt: |
+      /speckit-specify create detail spec for $ARGUMENTS,
+      read related documents for understand the origin context and purpose,
+      save references document to let the next phases know the origin purpose,
+      read deeply to understand before writing,
+      don't guess, spawn sub-agents for help
+    depends_on:
+      - setup
+    effort: xhigh
+    provider: claude
+    model: "fable"
+    context: fresh
+
+  - id: clarify
+    prompt: |
+      $speckit-clarifybatch --turn 10
+    depends_on:
+      - specify
+    effort: xhigh
+    provider: codex
+    model: gpt-5.6-sol
+    context: fresh
+
+  - id: clarify-file-check
+    bash: |
+      set -euo pipefail
+      source .specify/scripts/bash/common.sh
+
+      repo_root=$(get_repo_root)
+      feature_dir=$(read_feature_json_feature_directory "$repo_root")
+      if [ -z "$feature_dir" ]; then
+        echo "clarify-file-check: .specify/feature.json has no valid feature_directory" >&2
+        exit 1
+      fi
+      if [[ "$feature_dir" != /* ]]; then
+        feature_dir="$repo_root/$feature_dir"
+      fi
+      if [ ! -d "$feature_dir" ]; then
+        echo "clarify-file-check: feature directory does not exist: $feature_dir" >&2
+        exit 1
+      fi
+
+      questions_file="$feature_dir/clarification-questions.md"
+      if [ -f "$questions_file" ]; then
+        printf 'HAS_QUESTIONS\n'
+      elif [ -e "$questions_file" ]; then
+        echo "clarify-file-check: expected a regular file: $questions_file" >&2
+        exit 1
+      else
+        printf 'NO_QUESTIONS\n'
+      fi
+    depends_on:
+      - clarify
+
+  - id: clarify-respond
+    prompt: |
+      ## Persona
+
+      You are a SHARP SOLUTION ARCHITECT who lives by KISS and YAGNI. You
+      DO NOT overthink. You DO NOT invent problems that don't exist. Your
+      first instinct on any question is "is this a real problem?" — most
+      aren't, and you skip those without ceremony. When the problem IS real,
+      you pick the SIMPLEST durable answer that matches the feature intent and
+      local project constraints — never the most elaborate architecture you can imagine.
+      You think in invariants and contracts because they keep things simple long-term,
+      not because complexity impresses anyone. You push back on weak
+      questions, reject band-aids, and reject over-engineering with equal
+      force. You name trade-offs explicitly. No speculative abstractions.
+      No feature flags or "TODO: revisit" comments. No future-proofing for
+      requirements nobody has asked for.
+
+      ## Task
+
+      Draft answers to clarification questions in the file produced by the
+      previous `clarify` node. The file is the single source of truth —
+      no chat-only Q&A drafts.
+      Run all commands from the current working directory; use only relative paths.
+
+      ## Instructions
+      1. Read .specify/feature.json to resolve <feature_directory>.
+      2. If there is a grill-me reference, read it and follow all decisions.
+      3. Read <feature_directory>/clarification-questions.md. Confirm it
+         exists and has `Status: PENDING`. If missing or already ARCHIVED,
+         STOP and report BLOCKED — do NOT fabricate questions.
+      4. trigger speckit-clarification-answer-review skill
+    depends_on:
+      - clarify-file-check
+    when: "$clarify-file-check.output == 'HAS_QUESTIONS'"
+    effort: xhigh
+    provider: omp
+    model: "xai-oauth/grok-4.6"
+    context: fresh
+
+  - id: clarify-gate
+    plannotator_gate:
+      prepare:
+        prompt: |
+          ## Goal
+          Using vietnamese
+          Produce a self-contained HTML explainer for the clarification-questions file,
+          then hand a **stable absolute path** to the next node (`plannotator_gate`).
+
+          ## Steps
+          1. Read `.specify/feature.json` to resolve `<feature_directory>`.
+          2. Confirm `<feature_directory>/clarification-questions.md` exists (Status PENDING
+             or drafted answers present). If missing, STOP and report BLOCKED.
+          3. Generate a visual explainer for that file using
+             `/plannotator-visual-explainer` (or equivalent). Content must:
+             - Describe the feature and end-to-end flow (UML/sequence style) at
+               function/class level where useful.
+             - For each step, state what it does.
+             - For each open clarification / issue: where it sits in the flow, why it
+               is a problem, and the proposed resolution.
+          4. **Persist the final HTML** at this exact path (overwrite OK):
+             `<feature_directory>/visual/speckit-clarify-explainer.html`
+             - Copy from wherever visual-explainer wrote the file if needed
+               (`cp` / write).
+             - Do **not** rely on an annotate session inside this node as the human
+               gate — the next node opens a supervised live Plannotator review.
+          5. Verify the file exists and is non-empty.
+
+          ## Final output (contract — required)
+          Print **ONLY**
+          (no markdown fence, no extra commentary after the path):
+          `<feature_directory>/visual/speckit-clarify-explainer.html`.
+        effort: medium
+        provider: claude
+        model: sonnet
+        allowed_tools:
+          - Read
+          - Edit
+          - Glob
+          - Grep
+          - Bash
+      message: |
+        Clarification answers + explainer are ready for live Plannotator review.
+
+        - Open the live annotate URL (Ask AI, annotations).
+        - **Owner only:** Approve or Send Annotations.
+        - Teammates may Close without ending the session (`--persist-session`).
+        - After Approve, next step runs `$speckit-clarifybatch --apply`.
+
+        Crash recovery: `archon workflow review-open <run-id>` (then `resume` if the process died).
+      capture_response: true
+      rework:
+        provider: codex
+        model: gpt-5.5
+        effort: xhigh
+        prompt: |
+          You are handling human Plannotator annotations on clarification artifacts.
+          Annotations are freeform reviewer notes. Classify each one before editing.
+
+          HTML path under review: $REVIEW_DOCUMENT
+          Annotations:
+          $REVIEW_ANNOTATIONS
+
+          Canonical source MD (answers live here — not under visual/):
+          `<feature_directory>/clarification-questions.md`
+
+          ## Two annotation kinds (pick exactly one per note)
+
+          1. **content change** — reviewer wants different answer, status, wording, or
+             missing content in the *source of truth*.
+             → Edit `<feature_directory>/clarification-questions.md`, then regenerate HTML.
+
+          2. **visual clarify / explain** — reviewer asks to explain, expand, or make
+             something clearer in the *explainer* (questions like "what does this mean?",
+             "show the flow in more detail", "elaborate here") without changing the
+             committed answers/status in the MD.
+             → Update/regenerate the HTML only. Do **not** edit the source MD.
+
+          Pure LGTM / "looks good" / ack with no ask → no MD and no HTML rewrite.
+          If ambiguous between (1) and (2), prefer **visual clarify** (HTML only) —
+          never invent source-MD edits.
+
+          ## Instructions
+          1. Read `.specify/feature.json` for `<feature_directory>`.
+          2. Read the source MD and the current HTML under review.
+          3. Classify every annotation as content change, visual clarify, or no-op.
+          4. Apply **content change** notes only to the source MD.
+          5. If any content change or visual-clarify note needs work (or HTML is stale
+             after an MD edit), write the explainer HTML to:
+             `<feature_directory>/visual/speckit-clarify-explainer.html` (overwrite OK).
+             Visual-clarify work may add diagrams, callouts, or deeper explanations in
+             the HTML while keeping MD answers/status unchanged.
+          6. Print ONLY the absolute path to that HTML for the next annotate session
+             (one line, no fence). Prefer the stable path above, resolved absolute.
+    depends_on:
+      - clarify-respond
+
+  - id: clarify-apply
+    prompt: |
+      $speckit-clarifybatch --apply
+    depends_on:
+      - clarify-gate
+    provider: claude
+    effort: xhigh
+    model: sonnet
+    context: fresh
+
+    skills: [speckit-clarifybatch]
+  - id: red-team
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>, then run:
+      $speckit.red-team.run <feature_directory> --yes
+    depends_on:
+      - clarify-file-check
+      - clarify-respond
+      - clarify-gate
+      - clarify-apply
+    trigger_rule: none_failed_min_one_success
+    effort: high
+    provider: claude
+    model: "claude-opus-4-8[1M]"
+    context: fresh
+    skills: [speckit-red-team-run]
+    denied_tools:
+      - Bash
+
+  - id: red-team-respond
+    prompt: |
+      ## Persona
+
+      You are a SHARP SOLUTION ARCHITECT who lives by KISS and YAGNI. You
+      DO NOT overthink. You DO NOT invent problems that don't exist. Your
+      first instinct on any finding is "is this a real problem?" — most
+      aren't, and you skip those without ceremony. When the problem IS real,
+      you pick the SIMPLEST durable fix that matches the feature intent and
+      local project constraints — never the most elaborate architecture you can imagine. You think in
+      invariants and contracts because they keep things simple long-term,
+      not because complexity impresses anyone. You push back on weak
+      findings, reject band-aids, and reject over-engineering with equal
+      force. You name trade-offs explicitly. No speculative abstractions.
+      No feature flags or "TODO: revisit" comments. No future-proofing for
+      requirements nobody has asked for.
+
+      ## Task
+
+      Draft per-finding resolutions for a red-team findings file produced by
+      the previous `red-team` node. The file is the single source of truth —
+      no chat-only RECAP drafts. Mirror of the `clarify-respond` flow above
+      (file-centric, in-place edits).
+      Run all commands from the current working directory; use only relative paths.
+
+      ## Stance: critical-thinking, bounded-verification, long-term-only
+
+      A red-team finding is an ACCUSATION, not a verdict. Treat each finding as
+      a hypothesis to be tested against the feature artifacts before picking a
+      resolution category. Do not auto-accept the reviewer's framing; do not
+      auto-apply their proposed fix. Your job is to:
+        (a) verify the finding's premise against the actual spec,
+        (b) inspect narrowly relevant local code/docs only when needed to
+            resolve an existing contract, API, data shape, or integration point,
+        (c) propose the LONG-TERM resolution — never a work-around / band-aid.
+
+      ## Instructions
+
+      1. Read .specify/feature.json to resolve <feature_directory>.
+      2. Glob `<feature_directory>/red-team-findings-*.md` and pick the MOST
+         RECENT file whose filename does NOT contain `-applied-` (highest
+         YYYY-MM-DD, then highest -NN). Confirm the file's §2 Findings table
+         has `Status` blank (not yet resolved). If file missing, or already
+         archived (filename contains `-applied-`), STOP and report BLOCKED —
+         do NOT fabricate findings.
+      3. Read `<feature_directory>/spec.md` for context.
+      4. If there is a grill-me reference, read it and follow all decisions.
+
+      5. trigger speckit-red-team-answer-review skill
+    depends_on:
+      - red-team
+    effort: xhigh
+    provider: codex
+    model: "gpt-5.6-sol"
+    context: fresh
+
+  - id: red-team-gate
+    plannotator_gate:
+      prepare:
+        prompt: |
+          ## Goal
+          Using vietnamese
+          Produce a self-contained HTML explainer for the latest red-team findings
+          file, then hand a **stable absolute path** to `red-team-gate`.
+
+          ## Steps
+          1. Read `.specify/feature.json` to resolve `<feature_directory>`.
+          2. Glob `<feature_directory>/red-team-findings-*.md` and pick the MOST
+             RECENT file whose name does NOT contain `-applied-`. If missing, STOP
+             and report BLOCKED.
+          3. Generate a visual explainer with `/plannotator-visual-explainer` for that
+             file. Cover:
+             - Feature + end-to-end flow (UML/sequence) at function/class level
+             - Each step's purpose
+             - **Only** findings with Status `spec-fix` or `new-OQ` (or blank Status
+               still being resolved as those categories): where they sit in the flow,
+               why they matter, proposed fix
+          4. Persist final HTML at:
+             `<feature_directory>/visual/speckit-red-team-explainer.html` (overwrite OK).
+             Do not use this node's annotate session as the human gate.
+          5. Verify the file exists and is non-empty.
+
+          ## Final output (contract — required)
+          Print **ONLY** `<feature_directory>/visual/speckit-red-team-explainer.html` (one line, no fence).
+        effort: medium
+        provider: claude
+        model: sonnet
+        allowed_tools:
+          - Read
+          - Edit
+          - Glob
+          - Grep
+          - Bash
+      message: |
+        Red-team resolutions + explainer are ready for live Plannotator review.
+
+        - **Owner only:** Approve or Send Annotations.
+        - Teammates may Close without ending the session (`--persist-session`).
+        - After Approve: `/speckit.red-team.apply --allow-historical-edits`.
+
+        Crash recovery: `archon workflow review-open <run-id>` (then `resume` if needed).
+      capture_response: true
+      rework:
+        provider: codex
+        model: gpt-5.5
+        effort: xhigh
+        prompt: |
+          You are handling human Plannotator annotations on red-team findings.
+          Annotations are freeform reviewer notes. Classify each one before editing.
+
+          HTML path under review: $REVIEW_DOCUMENT
+          Annotations:
+          $REVIEW_ANNOTATIONS
+
+          Canonical source MD (findings / Status / Resolutions Log — not under visual/):
+          latest non-applied `red-team-findings-*.md` under `<feature_directory>/`
+
+          ## Two annotation kinds (pick exactly one per note)
+
+          1. **content change** — reviewer wants different status, resolution text,
+             severity, or other source-of-truth edits in the findings MD.
+             → Edit that MD file, then regenerate HTML.
+
+          2. **visual clarify / explain** — reviewer asks to explain, expand, or make
+             a finding/resolution clearer in the *explainer* without changing the
+             committed Status / Resolutions Log in the MD.
+             → Update/regenerate the HTML only. Do **not** edit the findings MD.
+
+          Pure LGTM / "looks good" / ack with no ask → no MD and no HTML rewrite.
+          If ambiguous between (1) and (2), prefer **visual clarify** (HTML only) —
+          never invent source-MD edits.
+
+          ## Instructions
+          1. Read `.specify/feature.json` for `<feature_directory>`.
+          2. Open the latest non-applied findings MD and the current HTML under review.
+          3. Classify every annotation as content change, visual clarify, or no-op.
+          4. Apply **content change** notes only to the findings MD.
+          5. If any content change or visual-clarify note needs work (or HTML is stale
+             after an MD edit), write the explainer HTML to:
+             `<feature_directory>/visual/speckit-red-team-explainer.html` (overwrite OK).
+             Visual-clarify work may add diagrams, callouts, or deeper explanations in
+             the HTML while keeping MD Status / Resolutions Log unchanged.
+          6. Print ONLY the absolute path to that HTML for the next annotate session
+             (one line, no fence). Prefer the stable path above, resolved absolute.
+    depends_on:
+      - red-team-respond
+
+  - id: red-team-apply
+    prompt: |
+      /speckit.red-team.apply --allow-historical-edits
+    depends_on:
+      - red-team-gate
+    provider: claude
+    effort: xhigh
+    model: sonnet
+    context: fresh
+    skills: [speckit-red-team-apply]
+
+  - id: plan
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>, then run:
+      /speckit-plan create detail plan <feature_directory>
+    depends_on:
+      - red-team-apply
+    effort: xhigh
+    provider: codex
+    model: "gpt-6-astra"
+    context: fresh
+
+  - id: tasks
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>, then run:
+      /speckit-tasks <feature_directory>
+    depends_on:
+      - plan
+    effort: xhigh
+    provider: omp
+    model: "xai-oauth/grok-4.6"
+    context: fresh
+
+  - id: analyze
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>.
+      If there is a grill-me reference, read it and follow all decisions.
+      Then run:
+      /speckit-analyzebatch <feature_directory>
+    depends_on:
+      - tasks
+    provider: codex
+    effort: xhigh
+    model: gpt-5.6-sol
+    context: fresh
+
+  - id: analyze-respond
+    prompt: |
+      ## Persona
+
+      You are a SHARP SOLUTION ARCHITECT who lives by KISS and YAGNI. You
+      DO NOT overthink. You DO NOT invent problems that don't exist. Your
+      first instinct on any finding is "is this a real problem?" — most
+      aren't, and you skip those without ceremony. When the problem IS real,
+      you pick the SIMPLEST durable fix that matches the feature intent and
+      local project constraints — never the most elaborate architecture you can imagine. You think in
+      invariants and contracts because they keep things simple long-term,
+      not because complexity impresses anyone. You push back on weak
+      findings, reject band-aids, and reject over-engineering with equal
+      force. You name trade-offs explicitly. No speculative abstractions.
+      No feature flags or "TODO: revisit" comments. No future-proofing for
+      requirements nobody has asked for.
+
+      ## Task
+
+      Draft per-finding resolutions for the analyze findings file produced
+      by the previous `analyze` node. The file is the single source of
+      truth — no chat-only RECAP drafts.
+      Run all commands from the current working directory; use only relative paths.
+
+      ## Instructions
+
+      1. Read .specify/feature.json to resolve <feature_directory>.
+      2. Glob `<feature_directory>/analyze-findings-*.md` and pick the MOST
+         RECENT file whose filename does NOT contain `-applied-` (highest
+         YYYY-MM-DD, then highest -NN). Confirm the file's header has
+         `Status: PENDING` and §2 Findings table has the `Status` column blank.
+         If the file is missing, or already archived (filename contains
+         `-applied-`), STOP and report BLOCKED — do NOT fabricate findings.
+      3. Read `<feature_directory>/spec.md`, `plan.md`, and `tasks.md` for context.
+      4. For EACH finding row in §2 Findings, INVESTIGATE FIRST — do not punt
+         ambiguity to a human when the answer is available in bounded local
+         context. Start with spec.md / plan.md / tasks.md. Inspect code only
+         when the finding depends on an existing API, data model, integration
+         point, workflow, or documented behavior. Do NOT inspect sibling or
+         external repositories unless the user's feature request explicitly
+         names them.
+
+         **Scope-preservation invariant (read first):** if the finding asks
+         for a broader redesign outside this feature's stated scope, do not
+         route it to `spec-fix`. Use `skipped`, `out-of-scope`, or
+         `accepted-risk` as appropriate and cite the local evidence you used.
+
+         Only then choose ONE resolution category:
+           - spec-fix       finding is valid AND you derived the correct answer
+                            from requirements, feature artifacts, or narrowly
+                            relevant local code/docs. Propose a concrete diff
+                            to spec.md / plan.md / tasks.md (the artifact named
+                            in the §2 Location column) and explain WHY that
+                            answer is correct in the `Rationale:` line.
+           - accepted-risk  acknowledge but do not edit; record under
+                            `## Accepted Risks` of the relevant artifact.
+           - out-of-scope   cross-reference only; no artifact edit.
+           - skipped        Use when ANY of:
+                              (a) finding's premise is wrong (the artifact
+                                  doesn't actually say what the finding claims,
+                                  or the inconsistency dissolves on read);
+                              (b) recommended fix CONFLICTS with verified
+                                  requirements or a required local contract;
+                              (c) the finding asks the spec to expand beyond
+                                  the feature scope without evidence that the
+                                  broader redesign is required.
+                            Reason MUST cite the verification source
+                            (file:line + quoted snippet, or the artifact
+                            path:line that disproves the premise).
+      5. Edit the findings file IN-PLACE using the Edit tool. For EACH finding ID:
+         a. §2 Findings table — fill the `Status` column with the chosen category.
+         b. §3 Resolutions Log block — fill the payload per category:
+              - spec-fix: `Target: <path>` (typically `<feature_directory>/spec.md`,
+                `plan.md`, or `tasks.md`), then a `Before:` / `After:` snippet pair.
+
+                LITERAL-SUBSTRING CONTRACT (CRITICAL — apply will reject anything
+                else with `Before-snippet not found in <target>`):
+                  * `Before:` MUST be a VERBATIM SUBSTRING of `Target:` —
+                    literal text COPIED from the file using the Read tool.
+                    NOT a paraphrase. NOT a description of the gap.
+                    NOT a directive like "FR-X is missing …".
+                  * `After:` MUST be the intended replacement of that exact
+                    `Before:` text (so apply can do `target.replace(before, after)`
+                    mechanically).
+                  * `Before:` MUST appear EXACTLY ONCE in `Target:`. After
+                    drafting, run `grep -c -F "<Before>" <Target>` and confirm
+                    the result is `1`. If `0`, you paraphrased — re-read
+                    `Target:` and copy literal text. If `>1`, expand `Before:`
+                    with surrounding context until unique.
+
+                WRONG (will fail apply):
+                  Before: FR-021 is missing a result-subtype mapping for max_tokens.
+                  After:  Add a row stating max_tokens maps to error_during_execution.
+
+                RIGHT (passes apply):
+                  Before: | error_during_execution | runtime errors | errors[0] populated |
+                  After:  | error_during_execution | runtime errors, max_tokens, model_context_window_exceeded | errors[0] populated |
+
+                After the Before/After pair, ALSO emit a `Rationale:` line
+                (one paragraph) explaining HOW you derived the After text:
+                cite the file paths, symbols, table rows, or local docs
+                that prove this is the correct answer. The maintainer reads
+                this to verify your reasoning, not just your diff.
+
+              - accepted-risk: `Rationale:` (one paragraph) + optional `Tags:`
+                line. Include `[regulatory-review]` tag when the finding touches
+                money path / regulatory path / compliance / disclosure / KYC /
+                AML / SEC / SFC / FCA / GDPR signals (apply phase will also
+                auto-tag, but be explicit when obvious).
+              - out-of-scope: `Cross-reference: <spec path or ID>` + `Reason:`.
+              - skipped: `Reason: <why>`.
+      6. Do NOT modify finding ID, category, severity, location, summary, or
+         recommendation in §2. Do NOT touch §1 Session Summary or §5 Session
+         Metadata YAML — `/speckit-analyzebatch --apply` manages those at apply time.
+      7. After editing, print "RESOLUTIONS_DRAFTED" and the absolute path of
+         the findings file, then STOP.
+    depends_on:
+      - analyze
+    effort: xhigh
+    provider: omp
+    model: "xai-oauth/grok-4.6"
+    context: fresh
+
+  - id: analyze-apply
+    prompt: |
+      $speckit-analyzebatch --apply --allow-historical-edits
+    depends_on:
+      - analyze-respond
+    provider: claude
+    effort: xhigh
+    model: sonnet
+    context: fresh
+
+    skills: [speckit-analyzebatch]
+  - id: ralph-tasks-to-ralph
+    bash: |
+      set -euo pipefail
+      bash .specify/extensions/ralph-loop/scripts/bash/tasks-to-prd.sh
+    depends_on:
+      - analyze-apply
+      - speckit-converge-review-gate
+    trigger_rule: one_success
+
+  - id: ralph-native-preflight
+    bash: |
+      set -euo pipefail
+      RLN_ROOT=$(git rev-parse --show-toplevel)
+      RLN_FEATURE="$RLN_ROOT/.specify/feature.json"
+      RLN_RULES="$RLN_ROOT/.specify/extensions/ralph-loop/AGENTS.md"
+      [ -f "$RLN_FEATURE" ] || { echo "Missing $RLN_FEATURE" >&2; exit 1; }
+      [ -f "$RLN_RULES" ] || { echo "Missing $RLN_RULES" >&2; exit 1; }
+      RLN_PRD=$(jq -er '.ralph_prd_file | select(type == "string" and length > 0)' "$RLN_FEATURE")
+      RLN_PROGRESS=$(jq -er '.ralph_progress_file | select(type == "string" and length > 0)' "$RLN_FEATURE")
+      case "$RLN_PRD" in /*) : ;; *) RLN_PRD="$RLN_ROOT/$RLN_PRD" ;; esac
+      case "$RLN_PROGRESS" in /*) : ;; *) RLN_PROGRESS="$RLN_ROOT/$RLN_PROGRESS" ;; esac
+      [ -f "$RLN_PRD" ] || { echo "Missing $RLN_PRD" >&2; exit 1; }
+      [ -f "$RLN_PROGRESS" ] || { echo "Missing $RLN_PROGRESS" >&2; exit 1; }
+      jq -e '
+        type == "object" and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+          (.completed | type == "boolean") and
+          (.tasks | type == "array" and length > 0) and
+          all(.tasks[]; .passes | type == "boolean")
+        )
+      ' "$RLN_PRD" >/dev/null || { echo "Invalid Ralph PRD: $RLN_PRD" >&2; exit 1; }
+    depends_on:
+      - ralph-tasks-to-ralph
+
+  - id: ralph-loop-run
+    loop:
+      command: archon-speckit-ralph-iteration
+      fresh_context: true
+      max_iterations: 100
+      until_bash: |
+        set -euo pipefail
+        RLN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        RLN_PRD=$(jq -r '.ralph_prd_file // empty' "$RLN_ROOT/.specify/feature.json" 2>/dev/null)
+        [ -n "$RLN_PRD" ] || exit 1
+        case "$RLN_PRD" in /*) : ;; *) RLN_PRD="$RLN_ROOT/$RLN_PRD" ;; esac
+        [ -f "$RLN_PRD" ] || exit 1
+        if jq -e '[.userStories[] | select(.completed==false)] | length == 0' "$RLN_PRD" >/dev/null 2>&1; then
+          exit 0
+        fi
+        jq -e '[.userStories[].tasks[]? | select(.passes==false)] | length == 0' "$RLN_PRD" >/dev/null 2>&1
+    depends_on:
+      - ralph-native-preflight
+    effort: high
+    provider: grok
+    model: grok-4.5
+    # effort: xhigh
+    # provider: codex
+    # model: gpt-5.6-terra
+
+  - id: ralph-sync-back
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>, then run:
+      /speckit.ralph-loop.sync-back <feature_directory>
+    depends_on:
+      - ralph-loop-run
+    provider: omp
+    effort: medium
+    model: xai-oauth/grok-4.5
+    context: fresh
+
+  - id: speckit-converge
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>.
+      run speckit-converge
+      Return PASS only when there are no any problem.
+      Return FAIL when it added one or more tasks to tasks.md .
+    depends_on:
+      - ralph-sync-back
+    provider: codex
+    effort: xhigh
+    model: gpt-5.6-sol
+    context: fresh
+    output_format:
+      type: object
+      properties:
+        gate:
+          type: string
+          enum: [PASS, FAIL]
+        tasks_added:
+          type: number
+      required:
+        - gate
+        - tasks_added
+    output_type: speckit-convergence
+
+  # PASS → PR preparation; FAIL → reviewed Ralph retry; exhausted → one final Ralph pass → PR preparation.
+  - id: speckit-converge-gate
+    depends_on: [speckit-converge]
+    route_loop:
+      condition: "$speckit-converge.output.gate == 'PASS'"
+      max_iterations: 3
+      routes:
+        positive: cargo-clean-before-pr
+        negative: speckit-converge-review-gate
+        exhausted: speckit-final-ralph-tasks-to-ralph
+
+  - id: speckit-converge-review-gate
+    plannotator_gate:
+      prepare:
+        prompt: |
+          ## Goal
+          Open the active feature's `tasks.md` directly in the supervised
+          `speckit-converge-review-gate` session.
+
+          Converge reported:
+          - gate: $speckit-converge.output.gate
+          - tasks_added: $speckit-converge.output.tasks_added
+
+          ## Steps
+          1. Read `.specify/feature.json` to resolve `<feature_directory>`.
+          2. Confirm `<feature_directory>/tasks.md` exists, is a regular file, and is readable.
+          3. Resolve it to an absolute path.
+          4. Do not generate HTML and do not start a separate Plannotator session.
+             The supervised gate opens the returned Markdown file.
+
+          ## Final output (contract — required)
+          Print only the absolute path to `<feature_directory>/tasks.md`.
+          Do not add a Markdown fence or commentary.
+        effort: medium
+        provider: claude
+        model: sonnet
+        allowed_tools:
+          - Read
+          - Bash
+      message: |
+        Speckit convergence added $speckit-converge.output.tasks_added task(s) to `tasks.md`.
+
+        Review the tasks added by this converge pass directly in `tasks.md`.
+        - **Owner only:** Approve or Send Annotations.
+        - Teammates may Close without ending the session (`--persist-session`).
+        - After Approve: re-run `ralph-tasks-to-ralph` and the Ralph implementation loop.
+
+        Crash recovery: `archon workflow review-open <run-id>` (then `resume` if needed).
+      capture_response: true
+      rework:
+        provider: codex
+        model: gpt-5.5
+        effort: xhigh
+        prompt: |
+          You are handling human Plannotator annotations on the tasks added by
+          this `speckit-converge` pass.
+
+          Markdown path under review: $REVIEW_DOCUMENT
+          Annotations:
+          $REVIEW_ANNOTATIONS
+
+          Converge context: tasks_added=$speckit-converge.output.tasks_added
+
+          ## Instructions
+          1. Read `.specify/feature.json` for `<feature_directory>`.
+          2. Confirm `$REVIEW_DOCUMENT` is that feature's `tasks.md`.
+          3. Apply each actionable annotation directly to the new or related tasks.
+          4. Preserve unrelated, pre-existing, and completed tasks.
+          5. Treat a pure approval or acknowledgement as a no-op.
+          6. Do not generate HTML and do not start another Plannotator session.
+          7. Print only the absolute path to the updated `tasks.md`.
+             Do not add a Markdown fence or commentary.
+
+  - id: speckit-final-ralph-tasks-to-ralph
+    bash: |
+      set -euo pipefail
+      bash .specify/extensions/ralph-loop/scripts/bash/tasks-to-prd.sh
+    depends_on: [speckit-converge-gate]
+
+  - id: speckit-final-ralph-native-preflight
+    bash: |
+      set -euo pipefail
+      RLN_ROOT=$(git rev-parse --show-toplevel)
+      RLN_FEATURE="$RLN_ROOT/.specify/feature.json"
+      RLN_RULES="$RLN_ROOT/.specify/extensions/ralph-loop/AGENTS.md"
+      [ -f "$RLN_FEATURE" ] || { echo "Missing $RLN_FEATURE" >&2; exit 1; }
+      [ -f "$RLN_RULES" ] || { echo "Missing $RLN_RULES" >&2; exit 1; }
+      RLN_PRD=$(jq -er '.ralph_prd_file | select(type == "string" and length > 0)' "$RLN_FEATURE")
+      RLN_PROGRESS=$(jq -er '.ralph_progress_file | select(type == "string" and length > 0)' "$RLN_FEATURE")
+      case "$RLN_PRD" in /*) : ;; *) RLN_PRD="$RLN_ROOT/$RLN_PRD" ;; esac
+      case "$RLN_PROGRESS" in /*) : ;; *) RLN_PROGRESS="$RLN_ROOT/$RLN_PROGRESS" ;; esac
+      [ -f "$RLN_PRD" ] || { echo "Missing $RLN_PRD" >&2; exit 1; }
+      [ -f "$RLN_PROGRESS" ] || { echo "Missing $RLN_PROGRESS" >&2; exit 1; }
+      jq -e '
+        type == "object" and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+          (.completed | type == "boolean") and
+          (.tasks | type == "array" and length > 0) and
+          all(.tasks[]; .passes | type == "boolean")
+        )
+      ' "$RLN_PRD" >/dev/null || { echo "Invalid Ralph PRD: $RLN_PRD" >&2; exit 1; }
+    depends_on: [speckit-final-ralph-tasks-to-ralph]
+
+  - id: speckit-final-ralph-loop-run
+    loop:
+      command: archon-speckit-ralph-iteration
+      fresh_context: true
+      max_iterations: 100
+      until_bash: |
+        set -euo pipefail
+        RLN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        RLN_PRD=$(jq -r '.ralph_prd_file // empty' "$RLN_ROOT/.specify/feature.json" 2>/dev/null)
+        [ -n "$RLN_PRD" ] || exit 1
+        case "$RLN_PRD" in /*) : ;; *) RLN_PRD="$RLN_ROOT/$RLN_PRD" ;; esac
+        [ -f "$RLN_PRD" ] || exit 1
+        if jq -e '[.userStories[] | select(.completed==false)] | length == 0' "$RLN_PRD" >/dev/null 2>&1; then
+          exit 0
+        fi
+        jq -e '[.userStories[].tasks[]? | select(.passes==false)] | length == 0' "$RLN_PRD" >/dev/null 2>&1
+    depends_on: [speckit-final-ralph-native-preflight]
+    effort: xhigh
+    provider: omp
+    model: "anthropic/claude-sonnet-5"
+
+  - id: speckit-final-ralph-sync-back
+    prompt: |
+      Read .specify/feature.json to resolve <feature_directory>, then run:
+      /speckit.ralph-loop.sync-back <feature_directory>
+    depends_on: [speckit-final-ralph-loop-run]
+    provider: codex
+    effort: medium
+    model: gpt-5.6-terra
+    context: fresh
+
+  - id: cargo-clean-before-pr
+    bash: |
+      if [ -f Cargo.toml ]; then
+        cargo clean
+      fi
+    depends_on: [speckit-converge-gate]
+
+  - id: speckit-final-cargo-clean-before-pr
+    bash: |
+      if [ -f Cargo.toml ]; then
+        cargo clean
+      fi
+    depends_on: [speckit-final-ralph-sync-back]
+
+  - id: update-bmad-sprint-status
+    prompt: |
+      Read `.specify/feature.json` and the active feature's `spec.md` to identify the
+      corresponding BMAD story.
+      Read `_bmad-output/implementation-artifacts/sprint-status.yaml` completely.
+      Match the feature to exactly one story under `development_status` by its story
+      identifier and title, not only by its current status.
+      If exactly one matching story is `backlog`, change only that status to `done`.
+      If the matching story is already `done`, make no change and succeed.
+      If the file is missing, the match is absent or ambiguous, or the matching story
+      has any other status, stop with a clear error and do not modify the file.
+      Verify the final status before completing.
+    provider: codex
+    effort: medium
+    depends_on: [cargo-clean-before-pr, speckit-final-cargo-clean-before-pr]
+    trigger_rule: one_success
+    context: fresh
+    model: gpt-5.6-terra
+
+  - id: create-pull-request
+    command: archon-create-pr
+    depends_on: [update-bmad-sprint-status]
+    context: fresh
+    provider: omp
+    model: cursor/composer-2.5
+    effort: hight
+    idle_timeout: 900000
+    output_type: pull-request

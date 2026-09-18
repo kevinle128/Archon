@@ -171,6 +171,16 @@ The exact set may shrink if an assertion is already covered, but production chan
 
 Keep each phase green before proceeding. Do not leave deliberately failing E2E assertions between phases.
 
+## Coordination with Story 1.6 (issue #179)
+
+<!-- Added 2026-09-18 by plans/260918-0825-issue-179-subagent-dispatch-subtasks (red-team findings F2/F3) -->
+
+Story 1.6 (`plans/260918-0825-issue-179-subagent-dispatch-subtasks/`) renders `task`-family rows as a `TaskBody` (context markdown + one nested `<details data-subtask-index>` card per subtask) in the **same** body region this story rewrites. Both plans are pending; either may land first.
+
+- **If 1.6 has already merged when this story is implemented:** keep the `TaskBody`/`SubtaskCard` local functions on both surfaces and move the one conditional (`presentation.body?.kind === 'task' ? <TaskBody …/> : null`) into the Raw swap slot as `rawOpen ? <raw box> : <TaskBody …/>`. Do not delete them with the Input/Output bridge.
+- **Either order:** the assertions written as "no `<details>` inside a tool row" / `querySelectorAll('details').length === 0` (Phase 2 steps 3, 11, 12 and the Phase 2 success criterion) mean "no Input/Output disclosures". Scope them to exclude `[data-subtask-index]` cards, or keep them on non-task fixtures only, so 1.6's cards are not a regression by definition.
+- The bubbled-toggle guard stays for exactly this reason (Red Team finding 6 above).
+
 ## Validation and delivery
 
 Run targeted checks during each phase, then from the repository root:

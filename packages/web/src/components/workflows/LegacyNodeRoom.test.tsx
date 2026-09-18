@@ -1626,4 +1626,205 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(rawPanel(row).textContent).toContain('"output": "FULL"');
     expect(rowSummary(row).textContent).not.toContain('truncated');
   });
+
+  const OMP_TASK_INPUT: Record<string, unknown> = {
+    context: 'Read-only review. **Do not edit.**\n\n- skip formatters\n- report file:line',
+    tasks: [
+      {
+        name: 'ScoutBackoff',
+        agent: 'scout',
+        task: 'Map every call site of retry_backoff and backoff across crates/, recording file:line, the attempt argument, whether the caller overrides the ceiling, and any nearby jitter configuration — TAILMARKER.',
+      },
+      {
+        name: 'ScoutCI',
+        agent: 'scout',
+        task: 'Where is CARGO_BUILD_JOBS pinned in .github/workflows?',
+      },
+    ],
+  };
+
+  const OMP_TASK_ROWS: readonly WorkflowNodeMessageResponse[] = [
+    callRow('task-1', 10, 'Task', OMP_TASK_INPUT),
+    resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'done', {
+      outcome: 'success',
+      full_output_available: true,
+    }),
+  ];
+
+  function subtaskCard(row: Element, index: number): Element & { open: boolean } {
+    const card = row.querySelector(`details[data-subtask-index="${index}"]`);
+    if (!(card instanceof win.HTMLElement)) {
+      throw new Error(`subtask card ${index} missing: ${row.innerHTML}`);
+    }
+    return card as Element & { open: boolean };
+  }
+
+  function cardSummary(card: Element): HTMLElement {
+    const summary = card.querySelector('summary');
+    if (!(summary instanceof win.HTMLElement)) {
+      throw new Error(`card summary missing: ${card.innerHTML}`);
+    }
+    return summary;
+  }
+
+  test('an opened OMP row renders the shared bar, context, then one card per subtask', async () => {
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    const row = toolRow('task-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    expect(row.open).toBe(true);
+    expect(row.textContent).toContain('task · batch · 2 subtasks');
+    expect(row.textContent).toContain('Read-only review.');
+    const cards = row.querySelectorAll('details[data-subtask-index]');
+    expect(cards).toHaveLength(2);
+    const firstSummary = cardSummary(subtaskCard(row, 0));
+    expect(firstSummary.textContent).toContain('scout');
+    expect(firstSummary.textContent).toContain('ScoutBackoff');
+    // Excerpt is a collapsed-whitespace prefix; the tail lives in the nested body.
+    expect(firstSummary.textContent).toContain('Map every call site');
+    expect(firstSummary.textContent).not.toContain('TAILMARKER');
+    // DOM order: Raw lives in the body bar and precedes the cards.
+    const raw = rawButton(row);
+    expect(raw.getAttribute('aria-expanded')).toBe('false');
+    for (const card of Array.from(cards)) {
+      expect(raw.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    }
+  });
+
+  test('nested subtask card toggles do not mark or flip the outer row', async () => {
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    const row = toolRow('task-1');
+    expect(row.open).toBe(false);
+    const card = subtaskCard(row, 0);
+    await act(async () => {
+      click(cardSummary(card));
+    });
+    expect(card.open).toBe(true);
+    // The guard keeps the nested toggle from touching the outer row.
+    expect(row.open).toBe(false);
+
+    // Still untouched: the failed transition auto-opens the outer row; the
+    // nested card keeps its own state.
+    const failedRows: readonly WorkflowNodeMessageResponse[] = [
+      OMP_TASK_ROWS[0],
+      resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'boom', { outcome: 'error' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedRows));
+    });
+    const updated = toolRow('task-1');
+    expect(updated.open).toBe(true);
+    expect(subtaskCard(updated, 0).open).toBe(true);
+  });
+
+  test('a closed card chevron is bound to the card state, not the outer row', async () => {
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    const row = toolRow('task-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    expect(row.open).toBe(true);
+    const card = subtaskCard(row, 0);
+    expect(card.open).toBe(false);
+    const chevron = cardSummary(card).querySelector('span[aria-hidden="true"]');
+    const classes = (chevron?.getAttribute('class') ?? '').split(' ');
+    // Rotation follows the card's own [open], not the outer row's React state.
+    expect(classes).toContain('group-open/subtask:rotate-90');
+    expect(classes).not.toContain('rotate-90');
+  });
+
+  test('Enter and Space toggle the focused card summary; focus is retained', async () => {
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    const row = toolRow('task-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    const card = subtaskCard(row, 0);
+    const summary = cardSummary(card);
+    summary.focus();
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    await act(async () => {
+      summary.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event
+      );
+      click(summary);
+    });
+    expect(card.open).toBe(true);
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    await act(async () => {
+      summary.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event
+      );
+      click(summary);
+    });
+    expect(card.open).toBe(false);
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+  });
+
+  test('same tool identity keeps card state across rerenders; a new identity starts closed', async () => {
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    const row = toolRow('task-1');
+    await act(async () => {
+      click(rowSummary(row));
+      click(cardSummary(subtaskCard(row, 0)));
+    });
+    expect(subtaskCard(row, 0).open).toBe(true);
+    // Poll: freshly projected items with the same identity preserve the card.
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    expect(subtaskCard(toolRow('task-1'), 0).open).toBe(true);
+
+    const otherRows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('task-9', 20, 'Task', OMP_TASK_INPUT),
+      resultRow('task-9', 21, 'Task', OMP_TASK_INPUT, 'done', { outcome: 'success' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(otherRows));
+    });
+    const fresh = toolRow('task-9');
+    await act(async () => {
+      click(rowSummary(fresh));
+    });
+    expect(subtaskCard(fresh, 0).open).toBe(false);
+  });
+
+  test('card summaries follow Raw and precede the full-output control in DOM order', async () => {
+    await act(async () => {
+      mountItems(historyItems(OMP_TASK_ROWS));
+    });
+    const row = toolRow('task-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    const summaries = Array.from(row.querySelectorAll('summary'));
+    expect(summaries[0]).toBe(rowSummary(row));
+    expect(summaries[1]).toBe(cardSummary(subtaskCard(row, 0)));
+    expect(summaries[2]).toBe(cardSummary(subtaskCard(row, 1)));
+    expect(summaries).toHaveLength(3);
+    const focusables = Array.from(row.querySelectorAll('summary, button'));
+    expect(focusables[0]).toBe(rowSummary(row));
+    expect(focusables[1]).toBe(rawButton(row));
+    expect(focusables[2]).toBe(cardSummary(subtaskCard(row, 0)));
+    expect(focusables[3]).toBe(cardSummary(subtaskCard(row, 1)));
+    expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(4);
+
+    await act(async () => {
+      click(rawButton(row));
+    });
+    expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+    expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+    expect(rawPanel(row).textContent).toContain('"name"');
+  });
 });

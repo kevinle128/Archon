@@ -2040,5 +2040,341 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.textContent).toContain('failed');
       expect(summary.textContent).toContain('exit 2');
     });
+
+    const OMP_TASK_INPUT: Record<string, unknown> = {
+      context: 'Read-only review. **Do not edit.**\n\n- skip formatters\n- report file:line',
+      tasks: [
+        {
+          name: 'ScoutBackoff',
+          agent: 'scout',
+          task: 'Map every call site of retry_backoff and backoff across crates/, recording file:line, the attempt argument, whether the caller overrides the ceiling, and any nearby jitter configuration — TAILMARKER.',
+        },
+        {
+          name: 'ScoutCI',
+          agent: 'scout',
+          task: 'Where is CARGO_BUILD_JOBS pinned in .github/workflows?',
+        },
+      ],
+    };
+
+    const OMP_TASK_MESSAGES: readonly WorkflowNodeMessage[] = [
+      callRow('task-1', 10, 'Task', OMP_TASK_INPUT, { full_output_available: true }),
+      resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'done', {
+        outcome: 'success',
+        full_output_available: true,
+      }),
+    ];
+
+    function subtaskCard(row: Element, index: number): Element & { open: boolean } {
+      const card = row.querySelector(`details[data-subtask-index="${index}"]`);
+      if (card === null) throw new Error(`subtask card ${index} missing: ${row.innerHTML}`);
+      return card as Element & { open: boolean };
+    }
+
+    function cardSummary(card: Element): HTMLElement {
+      const summary = card.querySelector('summary');
+      if (summary === null) throw new Error(`card summary missing: ${card.innerHTML}`);
+      return summary as unknown as HTMLElement;
+    }
+
+    test('an opened OMP batch row renders the shared body through the selected room', async () => {
+      const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [...OMP_TASK_MESSAGES],
+      });
+      await act(async () => {
+        renderRoom({ run: run({ id: 'run-omp' }), loadMessages });
+      });
+      await flushUntil(
+        'task row',
+        () => host.querySelector('details[data-tool-id="task-1"]') !== null
+      );
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(true);
+      expect(row.textContent).toContain('task · batch · 2 subtasks');
+      expect(row.textContent).toContain('Read-only review.');
+      const cards = row.querySelectorAll('details[data-subtask-index]');
+      expect(cards).toHaveLength(2);
+      const firstSummary = cardSummary(subtaskCard(row, 0));
+      expect(firstSummary.textContent).toContain('scout');
+      expect(firstSummary.textContent).toContain('ScoutBackoff');
+      expect(firstSummary.textContent).toContain('Map every call site');
+      expect(firstSummary.textContent).not.toContain('TAILMARKER');
+      const firstCard = subtaskCard(row, 0);
+      await act(async () => {
+        click(firstSummary);
+      });
+      expect(firstCard.open).toBe(true);
+      expect(firstCard.textContent).toContain('TAILMARKER');
+      // Raw lives in the body bar and precedes the cards.
+      const raw = rawButton(row);
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
+      for (const card of Array.from(cards)) {
+        expect(raw.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+      }
+    });
+
+    test('hidden tool calls hide task bodies too', async () => {
+      const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [...OMP_TASK_MESSAGES],
+      });
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-hidden' }),
+          loadMessages,
+          showToolCalls: false,
+        });
+      });
+      await flush();
+      expect(host.querySelector('details[data-tool-id]')).toBeNull();
+      expect(host.textContent).not.toContain('ScoutBackoff');
+      expect(host.textContent).not.toContain('task · batch');
+    });
+
+    test('a Claude single dispatch renders one card with the single-dispatch bar and no context', async () => {
+      const claudeInput: Record<string, unknown> = {
+        description: 'Scout retry-backoff call sites',
+        prompt: 'Find every caller of retry_backoff() and backoff() in crates/.',
+      };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('task-claude', 10, 'Agent', claudeInput),
+        resultRow('task-claude', 11, 'Agent', claudeInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('task-claude');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.textContent).toContain('task · single dispatch');
+      expect(row.textContent).not.toContain('task · batch');
+      const cards = row.querySelectorAll('details[data-subtask-index]');
+      expect(cards).toHaveLength(1);
+      const summary = cardSummary(subtaskCard(row, 0));
+      // Null agent: no agent span and no orphan '·' separator.
+      expect(summary.textContent).not.toContain('·');
+      expect(summary.textContent).toContain('Scout retry-backoff call sites');
+      expect(summary.textContent).toContain('— Find every caller');
+    });
+
+    test('malformed task input renders bounded generic fields with no cards or count badge', async () => {
+      const badInput: Record<string, unknown> = { tasks: 'nope', note: 'x' };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('task-bad', 10, 'Task', badInput),
+        resultRow('task-bad', 11, 'Task', badInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('task-bad');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+      expect(rowSummary(row).textContent).not.toContain('subagent');
+      expect(row.textContent).toContain('tasks');
+      expect(row.textContent).toContain('nope');
+      expect(row.textContent).toContain('note');
+    });
+
+    test('task context markdown suppresses images and unsafe links but keeps structure', async () => {
+      const hostileInput: Record<string, unknown> = {
+        context:
+          'Intro **bold** tail\n\n- first\n- second\n\n![tracker](https://tracker.example/pixel.png)\n\n[click](javascript:alert(1))',
+        tasks: [{ name: 'ScoutBackoff', agent: 'scout', task: 'do it' }],
+      };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('task-md', 10, 'Task', hostileInput),
+        resultRow('task-md', 11, 'Task', hostileInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      const row = toolRow('task-md');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      // Raw JSON is not in the DOM while closed; sanitize the readable body
+      // (through the first card, which holds the prompt).
+      const cardAt = row.innerHTML.indexOf('data-subtask-index');
+      const body = cardAt < 0 ? row.innerHTML : row.innerHTML.slice(0, cardAt);
+      expect(body).toContain('<strong>bold</strong>');
+      expect(body).toContain('>first</li>');
+      expect(body).not.toContain('<img');
+      expect(body).not.toContain('javascript:');
+    });
+
+    test('nested subtask card toggles do not mark or flip the outer row', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      expect(row.open).toBe(false);
+      const card = subtaskCard(row, 0);
+      await act(async () => {
+        click(cardSummary(card));
+      });
+      expect(card.open).toBe(true);
+      expect(row.open).toBe(false);
+
+      // Still untouched: the failed transition auto-opens the outer row; the
+      // nested card keeps its own state.
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        ...(OMP_TASK_MESSAGES[0] === undefined ? [] : [OMP_TASK_MESSAGES[0]]),
+        resultRow('task-1', 11, 'Task', OMP_TASK_INPUT, 'boom', { outcome: 'error' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows));
+      });
+      const updated = toolRow('task-1');
+      expect(updated.open).toBe(true);
+      expect(subtaskCard(updated, 0).open).toBe(true);
+    });
+
+    test('Enter and Space toggle the focused card summary; focus is retained', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const card = subtaskCard(row, 0);
+      const summary = cardSummary(card);
+      summary.focus();
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      await act(async () => {
+        summary.dispatchEvent(
+          new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event
+        );
+        click(summary);
+      });
+      expect(card.open).toBe(true);
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      await act(async () => {
+        summary.dispatchEvent(
+          new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event
+        );
+        click(summary);
+      });
+      expect(card.open).toBe(false);
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    });
+
+    test('same tool identity keeps card state across rerenders; a new identity starts closed', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+        click(cardSummary(subtaskCard(row, 0)));
+      });
+      expect(subtaskCard(row, 0).open).toBe(true);
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      expect(subtaskCard(toolRow('task-1'), 0).open).toBe(true);
+
+      const otherRows: readonly WorkflowNodeMessage[] = [
+        callRow('task-9', 20, 'Task', OMP_TASK_INPUT),
+        resultRow('task-9', 21, 'Task', OMP_TASK_INPUT, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(otherRows));
+      });
+      const fresh = toolRow('task-9');
+      await act(async () => {
+        click(rowSummary(fresh));
+      });
+      expect(subtaskCard(fresh, 0).open).toBe(false);
+    });
+
+    test('card summaries follow Raw and precede the full-output control in DOM order', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const summaries = Array.from(row.querySelectorAll('summary'));
+      expect(summaries[0]).toBe(rowSummary(row));
+      expect(summaries[1]).toBe(cardSummary(subtaskCard(row, 0)));
+      expect(summaries[2]).toBe(cardSummary(subtaskCard(row, 1)));
+      expect(summaries).toHaveLength(3);
+      const focusables = Array.from(row.querySelectorAll('summary, button'));
+      expect(focusables[0]).toBe(rowSummary(row));
+      expect(focusables[1]).toBe(rawButton(row));
+      expect(focusables[2]).toBe(cardSummary(subtaskCard(row, 0)));
+      expect(focusables[3]).toBe(cardSummary(subtaskCard(row, 1)));
+      expect(focusables.indexOf(rowButton(row, 'View full output'))).toBe(4);
+
+      await act(async () => {
+        click(rawButton(row));
+      });
+      expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+      expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
+      expect(rawPanel(row).textContent).toContain('"name"');
+    });
+
+    test('Console card focus delta: +2 px outline offset with the accent token', async () => {
+      await act(async () => {
+        mountList(historyItems(OMP_TASK_MESSAGES));
+      });
+      const row = toolRow('task-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const summary = cardSummary(subtaskCard(row, 0));
+      expect(summary.className).toContain('focus-visible:outline-offset-2');
+      expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
+      expect(summary.className).toContain('focus-visible:outline-accent-bright!');
+      const agentGroup = summary.querySelector('.text-node-approval')?.parentElement;
+      const name = Array.from(summary.querySelectorAll('span')).find(element =>
+        element.className.includes('font-bold')
+      );
+      for (const [label, element] of [
+        ['agent', agentGroup],
+        ['name', name],
+      ] as const) {
+        expect(element, `${label} identifier span`).not.toBeNull();
+        expect(element?.className).toContain('min-w-0');
+        expect(element?.className).toContain('shrink');
+        expect(element?.className).toContain('overflow-hidden');
+        expect(element?.className).toContain('text-ellipsis');
+        expect(element?.className).not.toContain('flex-none');
+      }
+      const chevron = summary.querySelector('span[aria-hidden="true"]');
+      const classes = (chevron?.getAttribute('class') ?? '').split(' ');
+      expect(classes).toContain('group-open/subtask:rotate-90');
+      expect(classes).not.toContain('rotate-90');
+    });
+
+    test('subtask indexes are scoped inside the owning tool row', async () => {
+      const rows: readonly WorkflowNodeMessage[] = [
+        ...OMP_TASK_MESSAGES,
+        callRow('task-2', 20, 'Task', {
+          context: '',
+          tasks: [{ name: 'OnlyTask', agent: 'scout', task: 'do it' }],
+        }),
+        resultRow(
+          'task-2',
+          21,
+          'Task',
+          { context: '', tasks: [{ name: 'OnlyTask', agent: 'scout', task: 'do it' }] },
+          'done',
+          { outcome: 'success' }
+        ),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      expect(toolRow('task-1').querySelectorAll('details[data-subtask-index]')).toHaveLength(2);
+      expect(toolRow('task-2').querySelectorAll('details[data-subtask-index]')).toHaveLength(1);
+    });
   });
 });

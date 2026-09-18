@@ -1,0 +1,18 @@
+name: e2e-task-dispatch
+description: "E2E — two deterministic task-dispatch tool payloads (OMP batch + Claude single) emitted by the env-gated fake provider for the node-room proof."
+mutates_checkout: false
+
+nodes:
+  - id: omp-dispatch
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"taskDispatch":"omp"}<</E2E_SCENARIO>>
+      $ARGUMENTS
+  - id: claude-dispatch
+    depends_on: [omp-dispatch]
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"taskDispatch":"claude"}<</E2E_SCENARIO>>
+      $ARGUMENTS
