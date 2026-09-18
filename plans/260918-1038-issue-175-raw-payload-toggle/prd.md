@@ -134,8 +134,8 @@ endpoint (`getWorkflowNodeMessage`) for full output.
   (7 old Input/Output assertion sites across the three — find via the `rg`
   command in phase-03).
 - Evidence output: `plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md`
-  + `reports/evidence/` (synthetic payloads only — never real credentials or
-  customer data).
+  - `reports/evidence/` (synthetic payloads only — never real credentials or
+    customer data).
 
 ### Contract details that must survive implementation
 
@@ -165,7 +165,7 @@ endpoint (`getWorkflowNodeMessage`) for full output.
   CSS-selector-safe). Two sibling `ConsoleAgentHistoryList` mounts must produce
   distinct ids.
 - The existing nested-toggle propagation guard (`event.target !==
-  event.currentTarget` in `onToggle`) stays — later subtasks add more
+event.currentTarget` in `onToggle`) stays — later subtasks add more
   interactive body controls; clarify the invariant in its comment.
 - Serialization happens only while Raw is open. No memoization/workers without
   measured evidence; record visibly slow fixtures as follow-ups.
@@ -198,8 +198,8 @@ pass, `ak-feature` moves sprint-status key
 
 ## Story overview
 
-| ID | Title | Maps to | Depends on |
-|----|-------|---------|------------|
-| US-001 | Shared Raw payload contract + unit tests | Phase 01 | — |
-| US-002 | Raw toggle on Legacy + Console tool rows; remove `formatToolIo` | Phase 02 | US-001 |
-| US-003 | E2E spec migration, visual/accessibility/responsive verification, delivery | Phase 03 | US-002 |
+| ID     | Title                                                                      | Maps to  | Depends on |
+| ------ | -------------------------------------------------------------------------- | -------- | ---------- |
+| US-001 | Shared Raw payload contract + unit tests                                   | Phase 01 | —          |
+| US-002 | Raw toggle on Legacy + Console tool rows; remove `formatToolIo`            | Phase 02 | US-001     |
+| US-003 | E2E spec migration, visual/accessibility/responsive verification, delivery | Phase 03 | US-002     |
