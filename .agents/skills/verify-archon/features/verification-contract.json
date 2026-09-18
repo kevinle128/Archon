@@ -24,6 +24,7 @@
     "packages/paths/src/**",
     "packages/workflows/src/dag-executor.test.ts",
     "packages/workflows/src/defaults/bundled-defaults.generated.ts",
+    "packages/workflows/src/defaults/bundled-defaults.test.ts",
     "packages/workflows/src/loader.test.ts",
     "scripts/feature-verify-workflow.test.ts",
     "scripts/test-verification-skills.ts",

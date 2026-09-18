@@ -234,6 +234,79 @@ test('catalog impact paths match at least one checkout file', async (): Promise<
   expect(dead).toEqual([]);
 });
 
+test('readable tool row paths stay mapped to executable behaviors', async (): Promise<void> => {
+  const catalog = await loadCatalog();
+  const changedPaths = [
+    'e2e/ui/agent-tool-row-visual.spec.ts',
+    'packages/web/src/components/layout/TopNav.tsx',
+    'packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx',
+    'packages/web/src/lib/agent-history.test.ts',
+    'packages/web/src/lib/tool-presentation.ts',
+    'packages/workflows/src/defaults/bundled-defaults.test.ts',
+    'plans/260907-1454-workflow-run-hitl-mockup-alignment/reports/captures/legacy-actual-390x844.png',
+    'plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md',
+  ];
+  const changed = {
+    base_sha: 'a'.repeat(40),
+    head_sha: 'b'.repeat(40),
+    changed_paths: changedPaths,
+    dirty: false,
+  };
+  const selection = normalizeProposal(
+    catalog,
+    {
+      version: 1,
+      base_sha: changed.base_sha,
+      head_sha: changed.head_sha,
+      changed_paths: changedPaths,
+      affected_behaviors: [
+        {
+          id: 'hitl.history',
+          confidence: 'high',
+          rationale: 'Tool transcript projection and rendering changed.',
+        },
+        {
+          id: 'hitl.room-layout',
+          confidence: 'high',
+          rationale: 'Room geometry and responsive overflow changed.',
+        },
+        {
+          id: 'hitl.room-navigation',
+          confidence: 'high',
+          rationale: 'The narrow Legacy navigation changed.',
+        },
+        {
+          id: 'hitl.answer',
+          confidence: 'high',
+          rationale: 'The room components share the browser Ask surfaces.',
+        },
+        {
+          id: 'console.navigation',
+          confidence: 'high',
+          rationale: 'The Console runs shell renders the new rows.',
+        },
+        {
+          id: 'verification.contract',
+          confidence: 'high',
+          rationale: 'The bundled workflow contract test changed.',
+        },
+      ],
+      coverage_gaps: [],
+    },
+    changed
+  );
+
+  expect(selection.behavior_ids).toEqual([
+    'console.navigation',
+    'hitl.answer',
+    'hitl.history',
+    'hitl.room-layout',
+    'hitl.room-navigation',
+    'verification.contract',
+  ]);
+  expect(selection.broadened_features).toEqual([]);
+});
+
 test('known room ownership consumers require Ask lifecycle proof even with high-confidence history impact', async (): Promise<void> => {
   const catalog = await loadCatalog();
   for (const path of [
