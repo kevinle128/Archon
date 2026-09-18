@@ -30,6 +30,47 @@ export const E2E_FAKE_TOOL_OUTPUT = 'HITL_TOOL_OUTPUT_VISIBLE';
 export const E2E_FAKE_LOOP_DONE = 'E2E_LOOP_DONE';
 export const E2E_FAKE_TOOL_PASS_TEXT = '[e2e-fake] tool pass';
 
+/**
+ * Deterministic task-dispatch payloads for the node-room e2e proof. The OMP
+ * batch mirrors the OMP `Task` tool input (`{context?, tasks:[{name, agent,
+ * task}]}`); the Claude single mirrors the Claude `Agent` tool input
+ * (`{description, prompt}` — `subagent_type` intentionally absent to exercise
+ * the nullable-agent path). The markdown context carries emphasis, a list, an
+ * image URL, and a `javascript:` link so the renderer's safe-markdown path is
+ * exercised; the image host is reserved-invalid so a real request always fails.
+ */
+export const E2E_FAKE_TASK_TOOL_NAME = 'Task';
+export const E2E_FAKE_AGENT_TOOL_NAME = 'Agent';
+export const E2E_FAKE_TASK_OMP_IMAGE_URL = 'https://e2e.invalid/task-dispatch-diagram.png';
+export const E2E_FAKE_TASK_OMP_INPUT = {
+  context: [
+    'Dispatch **two** review passes over the staged diff:',
+    '',
+    '- correctness of every new code path',
+    '- security of every new code path',
+    '',
+    `![dispatch diagram](${E2E_FAKE_TASK_OMP_IMAGE_URL})`,
+    '[release notes](javascript:alert(1))',
+  ].join('\n'),
+  tasks: [
+    {
+      name: 'correctness-review',
+      agent: 'reviewer',
+      task: 'Review the staged diff for correctness.\nCheck boundary conditions and error paths.\nReport each finding on its own line.',
+    },
+    {
+      name: 'security-review',
+      agent: 'auditor',
+      task: 'Audit the staged diff for security issues.\nFocus on injection, secrets, and unsafe calls.\nReport each finding on its own line.',
+    },
+  ],
+} as const;
+export const E2E_FAKE_AGENT_INPUT = {
+  description: 'Summarize the staged diff',
+  prompt:
+    'Summarize the staged diff.\nList each changed file and its purpose.\nKeep it under ten lines.',
+} as const;
+
 const ASK_HUMAN_TOOL_NAME = 'AskHuman';
 
 const DEFAULT_ASK_QUESTIONS = [
@@ -50,8 +91,23 @@ const scenarioSchema = z
     doneWhenPromptIncludes: z.string().min(1).optional(),
     repeatTool: z.number().int().min(1).max(200).optional(),
     largeLastToolOutput: z.boolean().optional(),
+    taskDispatch: z.enum(['omp', 'claude']).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((scenario, ctx) => {
+    if (scenario.taskDispatch === undefined) return;
+    // taskDispatch emits its own fixed tool pair; the emitTool family of keys
+    // would be dead or contradictory config, so the combination is invalid.
+    for (const key of ['emitTool', 'repeatTool', 'largeLastToolOutput'] as const) {
+      if (scenario[key] !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [key],
+          message: `task_dispatch_mutually_exclusive_with_${key}`,
+        });
+      }
+    }
+  });
 
 type E2eScenario = z.infer<typeof scenarioSchema>;
 
@@ -343,6 +399,21 @@ export class E2eFakeProvider implements IAgentProvider {
           toolOutcome: 'success',
         };
       }
+    } else if (scenario.taskDispatch !== undefined) {
+      const toolName =
+        scenario.taskDispatch === 'omp' ? E2E_FAKE_TASK_TOOL_NAME : E2E_FAKE_AGENT_TOOL_NAME;
+      const toolInput =
+        scenario.taskDispatch === 'omp' ? E2E_FAKE_TASK_OMP_INPUT : E2E_FAKE_AGENT_INPUT;
+      const toolCallId = `e2e-fake-tool-${sessionId}`;
+      yield { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT };
+      yield { type: 'tool', toolName, toolInput: structuredClone(toolInput), toolCallId };
+      yield {
+        type: 'tool_result',
+        toolName,
+        toolOutput: E2E_FAKE_TOOL_OUTPUT,
+        toolCallId,
+        toolOutcome: 'success',
+      };
     } else {
       yield { type: 'assistant', content: '[e2e-fake] deterministic response' };
     }

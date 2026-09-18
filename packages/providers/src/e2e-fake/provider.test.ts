@@ -3,7 +3,11 @@ import { describe, expect, test } from 'bun:test';
 import { AskHumanAwaitingError, type MessageChunk, type NativeTool } from '../types';
 import { E2E_FAKE_CAPABILITIES } from './capabilities';
 import {
+  E2E_FAKE_AGENT_INPUT,
+  E2E_FAKE_AGENT_TOOL_NAME,
   E2E_FAKE_LOOP_DONE,
+  E2E_FAKE_TASK_OMP_INPUT,
+  E2E_FAKE_TASK_TOOL_NAME,
   E2E_FAKE_TOOL_NAME,
   E2E_FAKE_TOOL_OUTPUT,
   E2E_FAKE_TOOL_PASS_TEXT,
@@ -137,6 +141,79 @@ describe('E2eFakeProvider', () => {
     const lastOutput = results[1]?.type === 'tool_result' ? results[1].toolOutput : '';
     expect(lastOutput.length).toBeGreaterThan(16_384);
     expect(lastOutput).toContain('[e2e-fake] full output tail');
+  });
+
+  test('taskDispatch omp emits one Task call with the exact batch input and paired result', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"taskDispatch":"omp"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    expect(chunks).toHaveLength(4);
+    expect(chunks[0]).toEqual({ type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT });
+    expect(chunks[1]).toEqual({
+      type: 'tool',
+      toolName: E2E_FAKE_TASK_TOOL_NAME,
+      toolInput: E2E_FAKE_TASK_OMP_INPUT,
+      toolCallId: 'e2e-fake-tool-sess',
+    });
+    expect(chunks[2]).toEqual({
+      type: 'tool_result',
+      toolName: E2E_FAKE_TASK_TOOL_NAME,
+      toolOutput: E2E_FAKE_TOOL_OUTPUT,
+      toolCallId: 'e2e-fake-tool-sess',
+      toolOutcome: 'success',
+    });
+    expect(chunks[3]).toMatchObject({ type: 'result', sessionId: 'sess' });
+  });
+
+  test('taskDispatch omp input carries markdown context and two distinct subtasks', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"taskDispatch":"omp"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    const tool = chunks[1];
+    if (tool?.type !== 'tool') throw new Error('expected tool');
+    const input = tool.toolInput as {
+      context: string;
+      tasks: { name: string; agent: string; task: string }[];
+    };
+    expect(input.context).toContain('**');
+    expect(input.context).toContain('- ');
+    expect(input.context).toContain('![');
+    expect(input.context).toContain('javascript:');
+    expect(input.tasks).toHaveLength(2);
+    expect(new Set(input.tasks.map(t => t.name)).size).toBe(2);
+    expect(new Set(input.tasks.map(t => t.agent)).size).toBe(2);
+    for (const task of input.tasks) expect(task.task).toContain('\n');
+  });
+
+  test('taskDispatch claude emits one Agent call with no subagent_type key', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"taskDispatch":"claude"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    expect(chunks).toHaveLength(4);
+    expect(chunks[0]).toEqual({ type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT });
+    const tool = chunks[1];
+    if (tool?.type !== 'tool') throw new Error('expected tool');
+    expect(tool.toolName).toBe(E2E_FAKE_AGENT_TOOL_NAME);
+    expect(tool.toolInput).toEqual(E2E_FAKE_AGENT_INPUT);
+    expect(Object.hasOwn(tool.toolInput as Record<string, unknown>, 'subagent_type')).toBe(false);
+    const result = chunks[2];
+    if (result?.type !== 'tool_result') throw new Error('expected tool_result');
+    expect(result.toolName).toBe(E2E_FAKE_AGENT_TOOL_NAME);
+    expect(result.toolCallId).toBe(tool.toolCallId);
+    expect(result.toolOutcome).toBe('success');
+    expect(result.toolOutput).toBe(E2E_FAKE_TOOL_OUTPUT);
+  });
+
+  test('rejects taskDispatch combined with emitTool, repeatTool, or largeLastToolOutput', async () => {
+    const invalid = [
+      '{"taskDispatch":"omp","emitTool":true}',
+      '{"taskDispatch":"claude","emitTool":false}',
+      '{"taskDispatch":"omp","repeatTool":2}',
+      '{"taskDispatch":"claude","largeLastToolOutput":true}',
+      '{"taskDispatch":"serial"}',
+    ];
+    for (const body of invalid) {
+      await expect(
+        collect(provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp'))
+      ).rejects.toThrow('scenario directive failed validation');
+    }
   });
 
   test('rejects 0, 201, non-integer, and non-number repeatTool', async () => {
