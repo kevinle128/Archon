@@ -490,19 +490,37 @@ describe('ConsoleExecutionHistory', () => {
     // Same Console delta: +2 px focus outline offset.
     expect(summary.className).toContain('focus-visible:outline-offset-2');
     expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
-    // Nested diagnostics stay closed and the payload is not shown by default.
-    for (const nested of Array.from(row.querySelectorAll('details'))) {
-      expect((nested as Element & { open: boolean }).open).toBe(false);
-    }
+    // The shared Raw anatomy: one closed button, no payload panel, no nested
+    // diagnostics — identical through the execution-history caller.
+    const raw = row.querySelector('button[aria-expanded]');
+    if (raw === null) throw new Error('Raw button missing');
+    expect(raw.textContent).toBe('Raw');
+    expect(raw.getAttribute('aria-expanded')).toBe('false');
+    expect(raw.getAttribute('aria-controls')).toBeNull();
+    expect(row.querySelectorAll('details')).toHaveLength(0);
+    expect(row.querySelector('pre')).toBeNull();
+    expect(row.textContent).not.toContain('chunk');
 
-    // Pointer toggle opens the row; diagnostics keep their own closed state.
+    // Pointer toggle opens the row; Raw keeps its own closed state.
     await act(async () => {
       summary.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
     });
     expect(row.open).toBe(true);
-    for (const nested of Array.from(row.querySelectorAll('details'))) {
-      expect((nested as Element & { open: boolean }).open).toBe(false);
-    }
+    expect(raw.getAttribute('aria-expanded')).toBe('false');
+    expect(row.querySelector('pre')).toBeNull();
+
+    // Opening Raw through this caller mounts the shared payload panel.
+    await act(async () => {
+      raw.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(raw.getAttribute('aria-expanded')).toBe('true');
+    const panelId = raw.getAttribute('aria-controls');
+    if (panelId === null) throw new Error('aria-controls missing');
+    const panel = win.document.getElementById(panelId);
+    expect(panel?.textContent).toBe(
+      JSON.stringify({ name: 'Read', input: { path: 'a.ts' }, output: 'chunk' }, null, 2)
+    );
+    expect(row.open).toBe(true);
   });
 
   test('polls only active execution rows in a live run', () => {

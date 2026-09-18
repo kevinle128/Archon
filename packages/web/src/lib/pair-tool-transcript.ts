@@ -72,11 +72,6 @@ function isToolResult(message: TTool): boolean {
   return message.payload.output !== undefined;
 }
 
-export function formatToolIo(value: unknown): string {
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value, null, 2);
-}
-
 export function projectToolTranscript<T extends PairableMessage>(
   messages: readonly T[]
 ): ProjectedTranscriptItem<T>[] {
