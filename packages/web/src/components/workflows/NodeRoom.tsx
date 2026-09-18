@@ -37,6 +37,12 @@ export interface NodeRoomProps {
   loadMessage?: typeof getWorkflowNodeMessage;
   renderAfterItem?: (item: AgentHistoryItem) => React.ReactNode;
   renderAtEnd?: React.ReactNode;
+  /**
+   * When true, NodeRoom returns only its body — the parent owns the room
+   * region landmark and scrolling (used by the transcript pane so the todo
+   * strip can sit beside the scroller inside the region).
+   */
+  embedded?: boolean;
 }
 
 const UNKNOWN_SCOPE_NOTICE =
@@ -201,15 +207,20 @@ export function RoomPlaceholder({ children }: { children: string }): React.React
 export function RoomRegion({
   nodeId,
   children,
+  scrollable = true,
 }: {
   nodeId: string;
   children: React.ReactNode;
+  scrollable?: boolean;
 }): React.ReactElement {
   return (
     <section
       role="region"
       aria-label={nodeId + ' room'}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      className={cn(
+        'flex min-h-0 flex-1 flex-col',
+        scrollable ? 'overflow-y-auto' : 'overflow-hidden'
+      )}
     >
       {children}
     </section>
@@ -660,6 +671,7 @@ export function NodeRoom({
   loadMessage = getWorkflowNodeMessage,
   renderAfterItem,
   renderAtEnd,
+  embedded = false,
 }: NodeRoomProps): React.ReactElement {
   if (nodeId === null) {
     return <RoomPlaceholder>Select a node</RoomPlaceholder>;
@@ -720,5 +732,6 @@ export function NodeRoom({
     );
   }
 
+  if (embedded) return <>{body}</>;
   return <RoomRegion nodeId={nodeId}>{body}</RoomRegion>;
 }

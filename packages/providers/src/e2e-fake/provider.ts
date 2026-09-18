@@ -71,6 +71,48 @@ export const E2E_FAKE_AGENT_INPUT = {
     'Summarize the staged diff.\nList each changed file and its purpose.\nKeep it under ten lines.',
 } as const;
 
+/**
+ * Deterministic todo-call sequence for the pinned-strip e2e fixture. Folding
+ * the four calls yields 12 items across `Research`/`Implement` exercising all
+ * five statuses: `Read the spec` completed, `Map the message path`
+ * auto-promoted to in progress, `Run the suite` blocked, `Review output`
+ * abandoned, and eight pending.
+ */
+export const E2E_FAKE_TODO_TOOL_NAME = 'todo';
+export const E2E_FAKE_TODO_OUTPUT = '[e2e-fake] todo updated';
+export const E2E_FAKE_TODO_INPUTS: readonly Record<string, unknown>[] = [
+  {
+    op: 'init',
+    list: [
+      {
+        phase: 'Research',
+        items: [
+          'Read the spec',
+          'Map the message path',
+          'Check contract conflicts',
+          'Inspect the mockups',
+          'Confirm the tokens',
+          'Define acceptance cases',
+        ],
+      },
+      {
+        phase: 'Implement',
+        items: [
+          'Add the fold',
+          'Wire Legacy',
+          'Wire Console',
+          'Add the tests',
+          'Run the suite',
+          'Review output',
+        ],
+      },
+    ],
+  },
+  { op: 'done', task: 'Read the spec' },
+  { op: 'block', task: 'Run the suite', reason: 'CI has one build job' },
+  { op: 'drop', task: 'Review output' },
+];
+
 const ASK_HUMAN_TOOL_NAME = 'AskHuman';
 
 const DEFAULT_ASK_QUESTIONS = [
@@ -86,6 +128,7 @@ const DEFAULT_ASK_QUESTIONS = [
 const scenarioSchema = z
   .object({
     emitTool: z.boolean().optional(),
+    emitTodo: z.boolean().optional(),
     askHuman: z.boolean().optional(),
     delayMs: z.number().int().nonnegative().optional(),
     doneWhenPromptIncludes: z.string().min(1).optional(),
@@ -371,6 +414,25 @@ export class E2eFakeProvider implements IAgentProvider {
         resumed: true,
       };
       return;
+    }
+
+    if (scenario.emitTodo === true) {
+      for (const [index, input] of E2E_FAKE_TODO_INPUTS.entries()) {
+        const toolCallId = `e2e-fake-todo-${sessionId}-${String(index + 1)}`;
+        yield {
+          type: 'tool',
+          toolName: E2E_FAKE_TODO_TOOL_NAME,
+          toolInput: { ...input },
+          toolCallId,
+        };
+        yield {
+          type: 'tool_result',
+          toolName: E2E_FAKE_TODO_TOOL_NAME,
+          toolOutput: E2E_FAKE_TODO_OUTPUT,
+          toolCallId,
+          toolOutcome: 'success',
+        };
+      }
     }
 
     if (scenario.emitTool === true) {

@@ -569,6 +569,44 @@ describe('ConsoleExecutionHistory', () => {
     expect(row.open).toBe(true);
   });
 
+  test('renders no Todo strip section for todo tool input', async () => {
+    renderHistory({
+      loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-todo-1',
+            seq: 1,
+            kind: 'tool',
+            payload: {
+              name: 'todo',
+              id: 'todo-1',
+              input: {
+                op: 'init',
+                phase: 'Research',
+                items: ['Read the spec', 'Map the message path'],
+              },
+            },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+          {
+            id: 'result-todo-1',
+            seq: 2,
+            kind: 'tool',
+            payload: { name: 'todo', id: 'todo-1', output: 'todo updated' },
+            metadata: { tool_phase: 'result', outcome: 'success' },
+            created_at: CREATED_AT,
+          },
+        ],
+      }),
+    });
+    await flushUntil(
+      'todo row',
+      () => host.querySelector('details[data-tool-id="todo-1"]') !== null
+    );
+    expect(host.querySelector('section[aria-label="Todo"]')).toBeNull();
+  });
+
   test('polls only active execution rows in a live run', () => {
     expect(historyModule.shouldPollExecutionHistory(true, 'running')).toBe(true);
     expect(historyModule.shouldPollExecutionHistory(true, 'awaiting')).toBe(true);

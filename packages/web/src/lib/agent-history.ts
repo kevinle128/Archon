@@ -9,6 +9,7 @@ import type { NodeMessageRow } from './node-message-pages';
 import type { ToolTranscriptCard } from './pair-tool-transcript';
 import { projectToolTranscript } from './pair-tool-transcript';
 import { projectTextTranscript } from './project-text-transcript';
+import { projectTodoState, type TodoPhase } from './todo-state';
 import { toolRowPresentation, type ToolRowPresentation } from './tool-presentation';
 
 export interface AgentHistoryInput {
@@ -50,6 +51,11 @@ export type AgentHistoryItem =
       state: string;
       detail: string | null;
     };
+
+export interface AgentHistory {
+  items: AgentHistoryItem[];
+  todos: TodoPhase[];
+}
 
 type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
 type ToolCard = ToolTranscriptCard<NodeMessageRow>;
@@ -244,7 +250,7 @@ export function toolRuntime(
   return { durationMs: matches[0] ?? null };
 }
 
-export function buildAgentHistory(input: AgentHistoryInput): AgentHistoryItem[] {
+export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
   const projected = projectToolTranscript(projectTextTranscript(input.rows));
   const items: AgentHistoryItem[] = [];
   for (let index = 0; index < projected.length; index++) {
@@ -289,5 +295,14 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistoryItem[] 
       });
     }
   }
-  return items;
+  // Fold recorded inputs of todo-family tools in projected seq order; the
+  // projection above may keep arrival order when rows arrive unsorted.
+  const todoInputs = items
+    .filter(
+      (item): item is Extract<AgentHistoryItem, { kind: 'tool' }> =>
+        item.kind === 'tool' && item.presentation.family === 'todo'
+    )
+    .sort((left, right) => left.seq - right.seq)
+    .map(item => item.input);
+  return { items, todos: projectTodoState(todoInputs) };
 }
