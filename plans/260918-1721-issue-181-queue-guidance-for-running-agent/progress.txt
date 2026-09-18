@@ -1,0 +1,48 @@
+## Codebase Patterns
+
+### Process-singleton module (event-emitter pattern)
+- **Where**: `packages/workflows/src/event-emitter.ts:361-375`, mirrored in `steering-registry.ts`
+- **Pattern**: module-level `let instance: T | null = null`; `getX()` lazily constructs; separate `createX()` returns isolated instances for tests (never shares singleton state); reset via `clearForTests()`/`resetX()`
+- **Example**: `getSteeringRegistry()` (prod) vs `createSteeringRegistry()` (tests)
+
+### Package exports + test chain (packages/workflows)
+- **Where**: `packages/workflows/package.json`
+- **Pattern**: every importable module gets an explicit `"./name": "./src/name.ts"` entry in `exports`; the package `test` script is an explicit `&&`-chained list of `bun test <file>` invocations — new test files MUST be appended or `bun run validate` silently skips them
+- **Gotcha**: `bun --filter @archon/workflows` does NOT match — run `bun run type-check`/`bun test` from inside `packages/workflows/` instead
+
+### Lint scope
+- `*.test.ts` files are in the eslint ignore list — passing a test file explicitly to eslint emits a "file ignored" warning that fails `--max-warnings 0`; use `--no-warn-ignored` or lint only source files
+
+### Git
+- Pre-commit runs lint-staged (eslint --fix + prettier on staged files) — works fine, no bypass needed
+- `git commit -m "$(cat <<'EOF' ... EOF)"` heredoc broke in this shell; multiple `-m` flags worked
+
+---
+
+## 2026-09-19 — US-001: Steering registry module in @archon/workflows
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/steering-registry.ts` — new registry: `NodeSteeringHandle` (live/parked/closed, sync enqueue, idempotent receipts via accepted-id map, closeIfEmpty last gate, non-closing drain, park/resume/close, snapshot, discard) + `SteeringRegistry` (nested Map runId→nodeId→handle; register resumes parked/replaces closed; discardRun closes+clears+removes per-run) + `getSteeringRegistry()`/`createSteeringRegistry()`
+- `packages/workflows/src/steering-registry.test.ts` — 33 contract tests, no sleeps/network
+- `packages/workflows/package.json` — added `"./steering-registry"` export subpath; appended `bun test src/steering-registry.test.ts` to the test script chain
+
+**Acceptance criteria verified**:
+- [x] Module exports all contract types + classes; `QueuedOperatorMessage`/`AcceptedSteeringReceipt`/`SteeringHandlePhase`/`EnqueueResult`/`SteeringHandleSnapshot` match phase-01 verbatim
+- [x] register() live-create / parked-resume-with-queue / closed-replace
+- [x] enqueue sync; live appends in receipt order; parked→not_live; closed→closed
+- [x] Duplicate id returns original receipt BEFORE phase logic (works while parked AND closed); different-prose duplicate keeps original; module has no logger so content can never be logged
+- [x] >500 ids test passes — no eviction of any kind
+- [x] closeIfEmpty sync-closes live+empty only; false w/o mutation otherwise (incl. parked)
+- [x] drain atomic + non-closing + preserves accepted memory
+- [x] park retains/blocks; resume re-lives same handle; close refuses enqueue, retains items for counting
+- [x] discardRun closes/clears/removes only named run, returns {handles, queued}, held refs left closed+empty
+- [x] `./steering-registry` subpath only (index.ts untouched — still exports only retry-state); test file appended to test chain
+- [x] `bun test src/steering-registry.test.ts` → 33 pass; `bun run type-check` clean; eslint --max-warnings 0 clean; prettier clean
+
+**Learnings**:
+- Contract nuance: duplicate-id check runs BEFORE phase checks — a replayed id returns the original receipt even on a parked or closed handle (verified by tests; required by US-003's "replay while parked" rule)
+- `discard()` added on the handle as registry-internal teardown (closes + clears queue + clears accepted map, returns dropped count) so held references can't drain/accept after discardRun — contract allows "equivalent" API
+- register() on an already-live handle returns the same handle (idempotent); closed → fresh handle + fresh idempotency scope
+
+---

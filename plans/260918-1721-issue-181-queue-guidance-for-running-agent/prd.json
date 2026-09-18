@@ -22,8 +22,8 @@
       "technicalNotes": "Follow phase-01-start.md 'Registry contract' section verbatim — names may follow nearby conventions but all invariants are required. Mirror the process-singleton pattern used by the workflow event emitter. Tests use no sleeps or network calls. This story is ONLY the registry module + its tests + package.json export/test-script entry; executor wiring is US-002.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: packages/workflows/src/steering-registry.ts, packages/workflows/src/steering-registry.test.ts, packages/workflows/package.json."
     },
     {
       "id": "US-002",
