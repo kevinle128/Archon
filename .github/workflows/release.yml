@@ -368,7 +368,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: dev
+          ref: develop
 
       - name: Get version
         id: version
@@ -391,4 +391,4 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add homebrew/archon.rb
           git diff --cached --quiet || git commit -m "chore: update Homebrew formula for ${{ steps.version.outputs.version }}"
-          git push origin dev
+          git push origin develop

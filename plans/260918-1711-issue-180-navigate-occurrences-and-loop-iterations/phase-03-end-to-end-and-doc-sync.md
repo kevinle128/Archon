@@ -1,9 +1,9 @@
 ---
 phase: 3
 title: 'Integration, visual evidence, documentation, and gates'
-status: blocked
+status: pending
 priority: P1
-effort: 'Estimate after B1/B2/B4'
+effort: 'Evidence matrix, doc verification, gates; reachability fixed by recorded B1'
 dependencies: [1, 2]
 ---
 
@@ -13,22 +13,12 @@ dependencies: [1, 2]
 
 Prove the accepted Story 1.7 behavior through the reachable public path, capture visual/accessibility evidence for every required state on both shells, synchronize only the canonical documents affected by the accepted decisions, and run repository gates.
 
-## Integration strategy depends on B1
+## Integration strategy (B1 recorded: compatibility-only, 2026-09-19)
 
-### If B1 is compatibility-only
-
-- Keep all occurrence/attempt network assertions green: choosing an occurrence execution sends exact filters and returns one group with no headings/navigator.
+- Keep all occurrence/attempt network assertions green: choosing an occurrence execution sends exact `occurrenceId`/`attemptId` filters and returns one group with no headings/navigator.
 - Use component tests as the primary proof of multi-occurrence behavior.
 - A Playwright test may intercept/seed a valid node-scoped multi-occurrence response to prove browser layout and navigation, but its report must call it **renderer integration**, not a real modern-loop reachability test.
-- Do not modify the current loop fixture, call the view `All iterations`, or claim Story 2.10 is unblocked.
-
-### If B1 adds a first-class aggregate loop view
-
-- Add a real workflow/run path that selects the aggregate view through its approved UI entry and observes an unambiguous aggregate request/selection identity.
-- Prove exact isolation for retry epochs, nested loops, route activations, and Ask ownership per the accepted contract.
-- Prove the aggregate request cannot cross the selected run/node or broaden the installation's existing authorization policy, and that error logging contains identifiers rather than transcript/Ask bodies.
-- Record page count, time to first rendered group, completed render time, and interaction responsiveness for the verified 3,465-row / seven-occurrence local sample. Compare against the owner-approved budget from Phase 1.
-- Preserve regression coverage for selecting two individual iterations and seeing two distinct occurrence-filtered requests.
+- Do not modify the current loop fixture, call the view `All iterations`, or claim Story 2.10 is unblocked — the AD-7 amendment records that Story 2.10 stays blocked on a future reachability decision.
 
 Do not write an E2E test whose fixture cannot reach the asserted state under the accepted runtime.
 
@@ -45,19 +35,19 @@ Capture both Legacy and Console after behavior is final. Use the repository's ex
 | Colliding route/nested base labels             | Distinct B4-approved visible and accessible names; no raw UUIDs                                                               |
 | Console filtered to one displayable group      | No headings/navigator; attached Ask remains if present                                                                        |
 | Partial/error state with already loaded groups | Existing rows/headings remain; incomplete notice and retry remain reachable                                                   |
-| Live append after navigation                   | B2-approved scroll/focus/follow outcome; no unexpected snap                                                                   |
-| Target removed on filter/scope change          | B2-approved reset/reconciliation; no stale value or dead target                                                               |
+| Live append after navigation                   | Manual-hold state: appends do not move the viewport or focus; `Jump to latest` re-pins                                        |
+| Target removed on filter/scope change          | Select returns to `N occurrences` placeholder; focus lands on the select or the scroller, never `<body>`                      |
 
 Required viewports/layouts:
 
 1. **Authoritative room width:** both shells with the room at 460px; verify 10.5px mono uppercase headings, `0.08em`, `text-secondary`, `10px 0 5px`, 1px rule to right edge, no horizontal overflow, and unchanged one-line transcript rows.
-2. **Host small viewport:** use the route's existing small-viewport breakpoint (record the actual viewport used, with 390×844 as the current regression precedent if still supported); verify the transcript introduces no breakpoint, headings stay contained, and the approved control remains operable.
-3. **Keyboard/focus state:** capture the B2-defined focus-visible result on both shells; Console uses its opaque accent-bright focus token and Legacy its existing focus treatment.
+2. **Host small viewport:** use the route's existing small-viewport breakpoint (record the actual viewport used, with 390×844 as the current regression precedent if still supported); verify the transcript introduces no breakpoint, headings stay contained, and the `Jump to` select remains operable with end-elision.
+3. **Keyboard/focus state:** capture the B2-defined focus result on both shells — focus moves to the target `h3` heading after commit; the select carries the shell focus ring (Console's opaque accent-bright token, Legacy's existing treatment).
 
 ## Accessibility evidence
 
-- Accessibility tree contains one heading at the B2-approved level per rendered occurrence with the exact visible name and no heading for prefix/unkeyed content.
-- Approved navigator has the exact accessible name, current/default state, and relationship specified by B2.
+- Accessibility tree contains one `h3` heading per rendered occurrence with the exact visible name and no heading for prefix/unkeyed content.
+- The navigator exposes the `Jump to` label as its accessible name, the `N occurrences` placeholder at rest, option names identical to the headings, and `aria-controls` naming the current target heading after a commit.
 - DOM/accessibility order matches the visual group order.
 - Keyboard-only traversal and activation work on both shells with the same outcome.
 - Navigation does not cause per-row live-region announcements; existing transition/failure status behavior is unchanged.
@@ -74,18 +64,18 @@ Required viewports/layouts:
 
 ## Documentation sync
 
-Read each document immediately before editing and update only accepted behavior:
+The canonical documents were amended at the decision gate (2026-09-19): `EXPERIENCE.md` carries the B2 navigator contract and the B4 disambiguation rule, `DESIGN.md` the navigator component (delta 5), and `ARCHITECTURE-SPINE.md` the B1 amendment on AD-7. Remaining work here is verification, not drafting:
 
-1. **Always after B2:** correct `EXPERIENCE.md` so the existing `Execution` control is still described as filtering while the approved Story 1.7 navigator has its distinct navigation/focus behavior. Update component, accessibility, and responsive text required by the adopted artifact.
-2. **Only if B1 changes fetch/selection:** amend AD-7 and the Information Architecture section with the first-class aggregate contract, including nesting/retry/route/paging/Ask boundaries. Do not append the rejected `loopParent` workaround.
-3. **If visual authority was added in Phase 1:** ensure `DESIGN.md` and any adopted mock/handoff agree; remove superseded contradictory wording rather than leaving two answers.
+1. Re-read each amended section and confirm the built behavior matches it — `Execution` still described as filtering, the `Jump to` navigator as scrolling; remove any wording that drifted from what shipped.
+2. AD-7's fetch/selection contract is unchanged (compatibility-only), so no aggregate text may appear; the B1 amendment already records that.
+3. If the implementation had to deviate from the delta-5 component spec, reconcile `DESIGN.md`/`EXPERIENCE.md` so one answer remains — do not leave two.
 4. Do not edit generated types, schemas, unrelated specs, or sprint status as documentation cleanup.
 
-After updates, verify every link and every claimed path against code/tests.
+After verification, check every link and every claimed path against code/tests.
 
 ## Validation commands
 
-Finalize exact Playwright filenames/grep after B1 fixes the integration path.
+B1 is compatibility-only, so no real-path Playwright spec exists for a modern aggregate loop. The optional seeded/intercepted spec is `e2e/ui/occurrence-navigation.spec.ts` and is labelled renderer-integration evidence in the report — if it is not written, the e2e gate is `(cd e2e && bun run typecheck)` alone.
 
 ```bash
 (cd packages/web && bun test src/lib/project-text-transcript.test.ts src/lib/agent-history.test.ts src/lib/occurrence-groups.test.ts)
@@ -94,7 +84,8 @@ Finalize exact Playwright filenames/grep after B1 fixes the integration path.
 (cd packages/web && bun run type-check)
 bun run lint --max-warnings 0
 (cd e2e && bun run typecheck)
-# B1-specific Playwright command(s), recorded here after the gate.
+# Optional renderer-integration spec if written:
+# (cd e2e && bun run test:ui -- occurrence-navigation.spec.ts)
 bun run validate
 ```
 
@@ -114,15 +105,15 @@ Create `reports/acceptance.md` during implementation. For every acceptance crite
 
 ## PR and workflow handoff
 
-- Use the branch target confirmed by B3; do not guess between `dev` and `develop`. Refresh from it and re-run focused baselines before opening a PR.
+- The PR base is `develop` (B3 recorded 2026-09-19). Refresh from it — after PR #202 resolves — and re-run focused baselines before opening a PR.
 - Use `.github/pull_request_template.md` explicitly; keep required sections, remove instructional comments/unused sections, and include `Closes #180` only when all accepted issue criteria are actually met.
-- Conventional title: `feat(web): navigate transcript occurrences` (adjust if B1 adds a separately reviewed public contract).
+- Conventional title: `feat(web): navigate transcript occurrences` — no public contract was added, so no qualifier is needed.
 - Run `bun run validate` before PR.
 - The owning BMad workflow moves `1-7-navigate-transcript-occurrences-and-loop-iterations` to `done` only after implementation evidence and acceptance are complete.
 
 ## Exit criteria
 
-- [ ] Integration evidence accurately matches B1 reachability; no mocked renderer test is called server E2E.
+- [ ] Integration evidence matches the recorded compatibility-only reachability; no mocked renderer test is called server E2E.
 - [ ] Visual matrix and accessibility checks pass on both shells at required layouts.
 - [ ] Existing Execution/filter, pagination, Ask, todo, and scroll contracts remain green.
 - [ ] Canonical docs have one non-conflicting answer for filtering versus navigation.
@@ -132,4 +123,4 @@ Create `reports/acceptance.md` during implementation. For every acceptance crite
 
 ## Rollback
 
-For the common Web-only path, revert the focused PR; no database or cleanup action. If B1 authorized a public/API change, execute the separately documented compatibility/rollback steps added at the decision gate.
+Revert the focused PR; no database or cleanup action. B1 adopted compatibility-only, so there is no public/API change needing a separate rollback plan.

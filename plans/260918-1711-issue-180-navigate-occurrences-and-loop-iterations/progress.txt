@@ -1,0 +1,62 @@
+## Codebase Patterns
+
+### Dated decision recording convention
+- **Where**: `ARCHITECTURE-SPINE.md` (AD amendments), `EXPERIENCE.md` (`adopted delta N, YYYY-MM-DD`), `DESIGN.md` (same delta scheme — last used was delta 4, so new records are delta 5+).
+- **Pattern**: gate decisions are recorded as dated amendments inside the owning canonical artifact (never only in `plan.md`); the plan then indexes into them. Amendments state consequences explicitly so no implementer re-derives them.
+
+### Execution/occurrence label vocabulary
+- **Where**: `packages/web/src/components/workflows/build-log-rows.ts:94-103` (and its Console twin).
+- **Pattern**: `baseName ×N` for loop-ancestry iteration, `baseName #N` for `route_activation_seq`. The B4 rule reuses `#N` inside occurrence headings; `·` separates facts; `›` joins an ancestry path; `Attempt`, `Pass`, reason-only labels, raw UUIDs are all forbidden.
+
+### Scroll-follow is a pure reducer
+- **Where**: `packages/web/src/lib/room-scroll-follow.ts` (`createScrollFollow` / `onRoomScroll` / `jumpToLatest`), used identically by `NodeTranscriptPane.tsx` and `ConsoleNodeRoom.tsx`.
+- **Pattern**: `{follow, scrollTop, pinToBottom}`; a reader scroll >24px from bottom flips to manual hold. New navigation interactions must be explicit transitions on this reducer (e.g. `jumpToOccurrence` → manual-hold), never `ignoreNextScroll`-style event suppression.
+
+### Two controls beside the transcript, different kinds
+- **Pattern**: `Execution` (header `<select aria-label="Execution">`, `NodeRoomHeader.tsx:64` / `ConsoleRoomHeader.tsx:60`) **filters** — it changes which messages load. The Story 1.7 `Jump to` navigator **scrolls** — it moves within loaded messages and issues no request. They are deliberately separate controls; never merge them.
+
+### Room structure for scroll controls
+- **Where**: `NodeTranscriptPane.tsx:406-428`, `ConsoleNodeRoom.tsx:891-905`.
+- **Pattern**: `RoomRegion > [TodoStrip?] > overflow-y-auto scroller > bottom row`. The `Jump to latest` button renders conditionally (`!follow.follow && running|awaiting`) as a sibling after the scroller — the navigator control row takes the same sibling position.
+
+### In-room heading convention
+- **Where**: `TodoStrip.tsx:162`, `NodePalette.tsx:37`.
+- **Pattern**: room title is `h2`; in-room sub-section labels are `h3` uppercase text-secondary — occurrence headers adopt `h3` and `tabindex="-1"` (programmatic focus only, not a `Tab` stop).
+
+### Branch reality: `develop`, not `dev`
+- **Pattern**: `origin/HEAD` = `develop`; `origin/dev` is deleted; local `dev` is stale (~68 behind). AGENTS.md, e2e-smoke.yml, release.yml were corrected 2026-09-19. `.claude/skills/release/SKILL.md` still encodes `dev`→`main` (residual debt, release-time fix — also touched by PR #202).
+
+---
+
+## 2026-09-19 — US-001: Close decision gates B1–B4, refresh plan, preflight
+
+**Status**: PASSED
+**Files changed**:
+- `_bmad-output/.../ARCHITECTURE-SPINE.md` — AD-7 amendment recording B1 (compatibility-only; modern loop rows show no headings/navigator; Story 2.10 stays blocked on a future reachability decision; `loopParent`/`All iterations` stays rejected).
+- `_bmad-output/.../EXPERIENCE.md` — IA amendment (navigator scrolls vs Execution filters), Component Patterns → Occurrence navigator, 4 State Pattern rows, Interaction Primitives, 4 Accessibility Floor bullets (h3, focus, names, no announcement), B4 disambiguation rule + examples in Occurrence grouping, resolved-question row amended; `updated:` bumped.
+- `_bmad-output/.../DESIGN.md` — Occurrence navigator component entry (delta 5); `updated:` bumped.
+- `AGENTS.md` — `dev`→`develop` (working branch + `/release` comparison), the stale repository authority.
+- `.github/workflows/e2e-smoke.yml` — push trigger `[main, dev]`→`[main, develop]` + comment.
+- `.github/workflows/release.yml` — `ref: dev`→`develop`, `git push origin dev`→`develop`.
+- `plans/.../plan.md` — comprehensive refresh: frontmatter unblocked, Recorded decisions section, behavior-table note, resolved technical decisions, scope/inventory (+`room-scroll-follow` rows, navigator details, decisions-consumed list), acceptance criteria, test strategy + commands, compatibility/rollback, new Performance budget + Preflight record, risks, unresolved-questions closed.
+- `plans/.../phase-01-start.md` — gates A–D marked recorded with locations; preflight record appended; frontmatter in-progress.
+- `plans/.../phase-02-two-shell-headers-and-selector.md` — navigator section replaced with the concrete B2 contract; h3/id concretized; exit criteria resolved; frontmatter pending.
+- `plans/.../phase-03-end-to-end-and-doc-sync.md` — compatibility-only integration strategy, concrete matrix/a11y rows, doc-sync becomes verification, Playwright path recorded, PR base `develop`; frontmatter pending.
+
+**Acceptance criteria verified**:
+- [x] B1 recorded in AD-7 amendment + EXPERIENCE.md — compatibility-only is the default; the un-authored aggregate contract fields are named; rejected `loopParent`/`All iterations` stays rejected.
+- [x] Compatibility-only consequences explicit: modern loop occurrence rows show no headings/navigator; Story 2.10 remains blocked — stated in AD-7 amendment, plan.md B1, and the behavior-table note.
+- [x] B2 recorded as adopted artifact (EXPERIENCE.md + DESIGN.md delta 5) covering control type, Execution relationship, copy, placement, sizes, states, pointer/keyboard activation, focus destination, live-poll/scroll-follow, vanished-target, 460px + small-viewport, accessible name, h3 relationship, announcement — commit-on-change only, no inferred key heuristics.
+- [x] B4 rule in Occurrence grouping with concrete examples: `Run 1 #1`/`Run 1 #2` (route seq), `Iteration 1 › Iteration 3`/`Iteration 2 › Iteration 3` + `· <node_id>` (nested), `· occurrence K` residual, suffix ordering (`Run 1 #2 · retry`), navigator names = final labels, never raw UUIDs.
+- [x] B3 = `develop` from git evidence (origin HEAD, open PRs #202/#205, `origin/dev` deleted, local `dev` 68 behind); stale authority corrected (AGENTS.md, e2e-smoke.yml, release.yml) so plan/CI/PR base agree; SKILL.md residual debt recorded.
+- [x] plan.md updated: verified behavior table, file inventory, acceptance criteria, test list, performance budget, compatibility, rollback, all B1–B4 decisions.
+- [x] Preflight recorded in plan.md: issue #180 (open, `status:processing`, milestone Agent Node Room), sprint `1-7`=backlog, git status/branch/base/worktrees surveyed, PR #202 overlap itemized, focused baselines re-run green (27+96+72 tests, type-check clean), no unrelated production changes.
+- [x] No production source file modified — `git status` shows only docs/config/plan files.
+
+**Learnings**:
+- The gate was closable entirely from repository evidence: AD-7 already asserted the compatibility-only reading, so B1 was recorded as an amendment rather than a new decision — the cheapest honest record is often strengthening what the artifact already says.
+- B2's real risk was conflating two select semantics (filter vs scroll). Writing "it is an action, not a position indicator" into the contract prevents a whole class of stale-value bugs.
+- B4 needed only typed fields (`route_activation_seq`, deeper `loop_ancestry`, differing `node_id`) plus one ordinal fallback — no new vocabulary was required once `#N` was recognized as the shipped route suffix.
+- B3 was broader than AGENTS.md: CI triggers and the release job also carried `dev`. The residual `.claude/skills/release/SKILL.md` was left deliberately — it overlaps open PR #202 and its own `origin/dev` ancestry check fails loudly rather than silently.
+
+---

@@ -1,9 +1,9 @@
 ---
 phase: 2
 title: 'Grouped renderers and approved navigator'
-status: blocked
+status: pending
 priority: P1
-effort: 'Estimate after B2/B4 fix interaction and labels'
+effort: 'Two renderers plus navigator row; contract fixed by recorded B2/B4'
 dependencies: [1]
 ---
 
@@ -30,7 +30,7 @@ If the merged structures differ, update the plan inventory before code. Preserve
 
 - `NodeTranscriptPane` computes the grouping from `items`.
 - `NodeRoom` keeps its current flat path for `showHeaders=false`.
-- For multiple groups: render `prefixItems` first with no heading; then one semantic heading at the B2-approved level and the group's current item rendering. Keep `renderAfterItem`, partial-load notice, retry, and `renderAtEnd` in their current logical positions.
+- For multiple groups: render `prefixItems` first with no heading; then one `h3` heading per group and the group's current item rendering. Keep `renderAfterItem`, partial-load notice, retry, and `renderAtEnd` in their current logical positions.
 
 ### Console
 
@@ -43,17 +43,17 @@ If the merged structures differ, update the plan inventory before code. Preserve
 ### Both shells
 
 - Shells render the core label verbatim and never derive retry/iteration/failure.
-- Use the B2-approved heading level and the exact DESIGN styling: 10.5px mono uppercase, `0.08em`, `text-secondary`, `10px 0 5px`, flex label plus 1px `border` rule to the right edge.
+- Headings are `h3` with the exact DESIGN styling: 10.5px mono uppercase, `0.08em`, `text-secondary`, `10px 0 5px`, flex label plus 1px `border` rule to the right edge.
 - Keep header JSX local to each shell unless the refreshed code reveals an established same-shell boundary. Console must not import Legacy components.
-- Stable React keys and navigator targets use `occurrence_id`, not array index. A DOM id, if B2 needs one, is namespaced with React `useId`; the label remains plain text escaped by React.
+- Stable React keys and navigator targets use `occurrence_id`, not array index. Each heading's DOM id is namespaced with React `useId` plus the group's `occurrence_id`; the label remains plain text escaped by React.
 
 ## Tests first — paired heading behavior
 
 Use the same test names/assertion intent in `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`:
 
 - zero/one occurrence → zero occurrence headings and no navigator;
-- two occurrences → two semantic headings at the approved level, in group order with exact core labels;
-- two groups whose retry/ancestry base label collides → distinct B4-approved headings and navigator names;
+- two occurrences → two `h3` headings, in group order with exact core labels;
+- two groups whose retry/ancestry base label collides → distinct B4-qualified headings and navigator names (`Run 1 #1`/`Run 1 #2`, `Iteration 1 › Iteration 3`/`Iteration 2 › Iteration 3`, residual `· occurrence K`);
 - attempts inside one occurrence → no extra heading;
 - leading unscoped prefix renders before the first heading and exactly once;
 - non-contiguous occurrence rows render under one unique heading and exactly once;
@@ -78,22 +78,21 @@ Keep `LegacyNodeRoom.test.tsx` compiling for its direct `NodeRoom` mounting patt
 3. Preserve current empty/loading/error behavior based on original `items` and extras.
 4. Run heading/filter tests before navigation changes.
 
-## Implement only the approved navigator
+## Implement the approved navigator (B2 recorded 2026-09-19)
 
-Replace this section with the exact B2 contract before code. At minimum the implementation must:
+The adopted contract lives in `EXPERIENCE.md` (Information Architecture; Component Patterns → Occurrence navigator; State Patterns → Navigator rows; Interaction Primitives; Accessibility Floor) and `DESIGN.md` Components → Occurrence navigator (delta 5). Implementation:
 
-- mount in the approved location and use approved copy/control type;
-- derive options only from rendered occurrence headings;
-- target headings by stable occurrence key;
-- define a reducer/state transition for interaction with live follow and restored scroll rather than suppressing guessed DOM events;
-- keep “Jump to latest” and the existing Execution filter independent;
-- reset or reconcile state when scope/filter/poll removes a target, exactly as B2 specifies;
-- implement pointer, keyboard, focus-visible, and announcement behavior without browser-specific native-select key heuristics;
-- have paired Legacy/Console tests with identical outcomes.
+- mount one control row at the bottom edge of the room region, after the transcript scroller — inside `NodeTranscriptPane.tsx` and `ConsoleNodeRoom.tsx`, the same sibling position `Jump to latest` occupies; `Jump to` at the left, `Jump to latest` at the right edge. `NodeRoomHeader.tsx` and `ConsoleRoomHeader.tsx` are untouched: B2 adopted a second, separate control, so the `Execution` select stays a pure filter and the conditional re-scout branch below is closed;
+- a native `<select>` with a real associated `<label>` reading `Jump to`; the first option is the disabled placeholder `{N} occurrences` with the real count; the remaining options are the rendered headings' labels verbatim in group order, valued by `occurrence_id` — on Console, from the same displayable-group list the headings use;
+- occurrence headings render as `h3`, programmatically focusable (`tabindex="-1"`), DOM id namespaced with `useId` + the group's `occurrence_id`;
+- commit on `change` only, with no custom key handlers: if the target heading is not fully visible, scroll it to the top of the transcript viewport; then move DOM focus to it;
+- navigation is an explicit `jumpToOccurrence` transition in `room-scroll-follow.ts` yielding the manual-hold state (`follow:false, pinToBottom:false`) — not an `ignoreNextScroll` event-suppression flag; `Jump to latest` re-pins unchanged;
+- the select is an action, not a position indicator: it shows the last committed navigation and resets to the placeholder when its target leaves the displayed set; below two displayable groups the whole control is absent, never disabled;
+- if the focused heading unmounts, focus moves to the select while it renders, else to the transcript scroller — never `<body>`;
+- no live-region announcement on navigation; the moved focus delivers the heading's name;
+- paired Legacy/Console tests with identical outcomes.
 
-If B2 changes the existing `Execution` control instead of adding a second control, re-scout and update `NodeRoomHeader.tsx`, `ConsoleRoomHeader.tsx`, their options model, E2E contracts, and the file inventory before editing.
-
-## Scroll/follow cases required after B2
+## Scroll/follow cases required (contract fixed by B2)
 
 Translate the approved behavior into reducer and shell tests:
 
@@ -121,8 +120,8 @@ bun run lint --max-warnings 0
 
 - [ ] All three consumers render correct headings and preserve flat behavior.
 - [ ] Console filters and attached Asks cannot create empty/orphaned groups.
-- [ ] B2-approved navigation passes equivalent Legacy/Console interaction tests.
-- [ ] Existing Execution filtering and request scope remain unchanged unless B1 explicitly authorizes and tests a new aggregate model.
+- [ ] The B2-recorded navigation contract passes equivalent Legacy/Console interaction tests.
+- [ ] Existing `Execution` filtering and request scope remain unchanged — B1 adopted compatibility-only, so no aggregate model exists to test.
 - [ ] No Console isolation violation, new token, one-use component proliferation, or row-anatomy rewrite.
 
 ## Rollback

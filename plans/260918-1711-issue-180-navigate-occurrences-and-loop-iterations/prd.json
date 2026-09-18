@@ -18,8 +18,8 @@
       "technicalNotes": "Plan refs: plan.md 'Blocking decisions' B1–B4 and 'Verified end-to-end behavior today' table; phase-01-start.md 'Gate A–D' and 'Preflight after the gate'. Canonical docs: _bmad-output/specs/spec-agent-node-room/{SPEC.md,test-plan.md} (CAP-6), _bmad-output/planning-artifacts/epics-agent-node-room/epics.md (Story 1.7), ARCHITECTURE-SPINE.md AD-7 + AD-12 item 7, EXPERIENCE.md (IA / occurrence grouping / Execution-is-a-filter), DESIGN.md (heading typography + 460px authority), claude-design/design_handoff_node_room_transcript_steering/. This story edits docs/plan only — zero code changes.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Docs-only gate story completed 2026-09-19. B1 recorded in ARCHITECTURE-SPINE.md (AD-7 amendment) + EXPERIENCE.md: compatibility-only node-scoped grouping; modern loop occurrence rows show no headings/navigator; Story 2.10 stays blocked on a future reachability decision; loopParent/'All iterations' rejected. B2 recorded in EXPERIENCE.md (IA/Component/State/Primitive/Floor) + DESIGN.md delta 5: separate native <select> 'Jump to' navigator, never merged with the Execution filter. B4 recorded in EXPERIENCE.md Occurrence grouping: typed-field qualifiers (#N route seq, ancestry path, differing node_id, · occurrence K) with concrete examples; navigator names equal final labels; no raw IDs. B3 resolved to develop via git evidence; stale authority corrected in AGENTS.md, e2e-smoke.yml, release.yml; .claude/skills/release/SKILL.md residual debt recorded (overlaps PR #202). plan.md + phase-01/02/03 refreshed. Preflight recorded in plan.md: issue #180 open, sprint backlog, worktree clean, baselines green (27+96+72 tests, type-check clean). Zero production source files changed."
     },
     {
       "id": "US-002",

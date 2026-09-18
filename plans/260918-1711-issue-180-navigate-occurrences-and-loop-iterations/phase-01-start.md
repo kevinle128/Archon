@@ -1,9 +1,9 @@
 ---
 phase: 1
 title: 'Decision gate and shared-core correctness'
-status: blocked
+status: in-progress
 priority: P1
-effort: 'Estimate after B1/B2/B4'
+effort: 'Gate closed 2026-09-19; projection + grouping core remain'
 dependencies: []
 ---
 
@@ -39,6 +39,8 @@ Required outputs:
 
 The former `loopParent` / `All iterations` design is not an accepted default.
 
+**Recorded 2026-09-19: compatibility-only.** The decision lives in the `ARCHITECTURE-SPINE.md` AD-7 amendment (issue #180 decision B1) and `EXPERIENCE.md` Information Architecture; `plan.md` reflects it. Modern loop occurrence rows show no headings/navigator and Story 2.10 remains blocked on a future reachability decision. No aggregate selection mapper or scope-key consumer is scouted or edited.
+
 ## Gate B — record B2
 
 The UX/product owner must approve an artifact covering:
@@ -56,9 +58,13 @@ Required outputs:
 2. Replace Phase 2's conditional navigator steps with exact component locations and assertions.
 3. Add exact visual states/viewports to Phase 3.
 
+**Recorded 2026-09-19: second, separate `Jump to` select.** The contract lives in `EXPERIENCE.md` (Information Architecture; Component Patterns → Occurrence navigator; State Patterns → Navigator rows; Interaction Primitives; Accessibility Floor) and `DESIGN.md` Components → Occurrence navigator (delta 5). Phase 2's navigator section and Phase 3's matrix/a11y rows now carry the concrete contract.
+
 ## Gate C — confirm the working branch
 
 `AGENTS.md` requires `dev`, while origin HEAD, the current worktree base, and active PRs use `develop`; local `dev` is 68 commits behind and is not tracked on origin. Obtain a maintainer decision before branch mutation or PR work, then correct the stale repository authority so future implementers do not have to rediscover the conflict.
+
+**Recorded 2026-09-19: `develop`.** Evidence: `origin/HEAD` is `refs/remotes/origin/develop`; open PRs #202/#205 target `develop`; `origin/dev` is deleted and local `dev` is 68 commits behind. Corrections applied: `AGENTS.md` (working branch + release comparison), `e2e-smoke.yml` push trigger, `release.yml` checkout ref and formula push. Residual debt recorded in `plan.md`: `.claude/skills/release/SKILL.md` still encodes `dev`→`main` (also touched by open PR #202 — maintainer release-time fix).
 
 ## Gate D — make occurrence labels distinguishable
 
@@ -71,12 +77,16 @@ Product/UX must extend or constrain the canonical label rule for two distinct oc
 
 Record the rule in the owning occurrence-grouping authority and add its exact examples to the Phase 1/2 tests before implementation.
 
+**Recorded 2026-09-19: typed-field disambiguation.** The rule lives in `EXPERIENCE.md` Occurrence grouping: `route_activation_seq` → ` #N`; deeper `loop_ancestry` → iteration path `Iteration M › Iteration N` (then nearest differing ancestry `node_id`); residual ties → `· occurrence K` by first-appearance order. Reason suffixes trail the qualifier; navigator option text and accessible names equal the final label; no raw ids.
+
 ## Preflight after the gate
 
 1. Check issue #180, sprint state, `git status`, branch/base, active worktrees, and open PRs.
 2. PR #202 currently overlaps both renderer files. After B3 confirms the target and PR #202 resolves, refresh from that target; preserve its row anatomy and tests.
 3. Re-run focused green baselines before adding red tests.
 4. Confirm no production file is already dirty for unrelated user work.
+
+**Recorded 2026-09-19:** issue #180 open (`status:processing`, milestone "Agent Node Room"); sprint-status `1-7` = `backlog`; `git status` clean on `archon/thread-499eb44c`; base `develop` confirmed; active worktrees surveyed; open PRs #202 (overlaps `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`, `ConsoleNodeRoom.test.tsx`, `NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx`, `ConsoleExecutionHistory.test.tsx`, `console-isolation.test.ts`) and #205 noted; focused baselines green — lib 27 tests, Legacy renderers 96, Console 72, `bun run type-check` clean; no production file dirty.
 
 ## Tests first — text projection and history scope
 
