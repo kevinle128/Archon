@@ -122,8 +122,8 @@
       "technicalNotes": "Phase 3 release/E2E/closeout half (phase-03 \u00a7Release integration, \u00a7E2E and visual verification, \u00a7Execution sequence steps 4-8, \u00a7Completion criteria). HITL fake provider emits one Read call with input path HITL_TOOL_INPUT.txt / output HITL_TOOL_OUTPUT_VISIBLE \u2014 assert exactly that. Rollback: release step + audit files removable independently of UI bodies.",
       "dependsOn": ["US-005"],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 6. Audit record at audit/generic-fallback.json (81/5132 = 1.58% < 2%); release SKILL.md Step 1.6 pre-mutation --check; hitl-room spec asserts file body + exact Raw payload on both surfaces; visual spec gained the 8-arm route-fulfilled gallery (460px geometry, Raw swap, a11y, contrast, reduced-motion); evidence at reports/implementation-evidence.md. Gates: bun run validate, e2e typecheck, test:ui:hitl (38 pass / 3 auth-gated skips) all green. Unblock commit 14ccc5ad restored missing speckit fixtures."
     }
   ]
 }

@@ -103,6 +103,48 @@ async function waitForRoom(page: Page, nodeId: string): Promise<Locator> {
   return room;
 }
 
+/**
+ * Story 1.3 contract for the deterministic `inspect-file` Read row, identical
+ * on both surfaces: collapsed rows mount no body; opening shows the file
+ * family body (path header + preview, never serialized JSON); Raw swaps in
+ * the exact stored payload and back out. Input/Output diagnostic disclosures
+ * no longer exist.
+ */
+async function expectFileFamilyBody(row: Locator): Promise<void> {
+  const body = row.locator('.tool-family-body');
+  await expect(row).toHaveJSProperty('open', false);
+  await expect(body).toHaveCount(0);
+  await expect(row.getByText('Input', { exact: true })).toHaveCount(0);
+  await expect(row.getByText('Output', { exact: true })).toHaveCount(0);
+
+  await row.locator('summary').first().click();
+  await expect(row).toHaveJSProperty('open', true);
+  await expect(body).toHaveCount(1);
+  await expect(body.locator('.text-node-command').first()).toHaveText('HITL_TOOL_INPUT.txt');
+  await expect(body).toContainText(HITL_TOOL_OUTPUT);
+  expect(await body.textContent(), 'family body is not the serialized payload').not.toContain(
+    '"output"'
+  );
+
+  const raw = row.getByRole('button', { name: 'Raw' });
+  await expect(raw).toHaveAttribute('aria-expanded', 'false');
+  await raw.click();
+  await expect(raw).toHaveAttribute('aria-expanded', 'true');
+  await expect(body).toHaveCount(1);
+  expect(await body.textContent(), 'Raw shows the exact stored payload').toBe(
+    JSON.stringify(
+      { name: 'Read', input: { path: 'HITL_TOOL_INPUT.txt' }, output: HITL_TOOL_OUTPUT },
+      null,
+      2
+    )
+  );
+
+  await raw.click();
+  await expect(raw).toHaveAttribute('aria-expanded', 'false');
+  await expect(body.locator('.text-node-command').first()).toHaveText('HITL_TOOL_INPUT.txt');
+  await expect(body).toContainText(HITL_TOOL_OUTPUT);
+}
+
 function executionSection(page: Page, nodeId: string): Locator {
   return page.locator('section[data-execution-row-id]').filter({ hasText: nodeId }).first();
 }
@@ -177,10 +219,11 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage si
   const ratio = await roomRatio(page, 'legacy');
   expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
   expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
-  // Output sits behind the row's own closed disclosures — open them first.
-  await room.locator('details[data-tool-id] > summary').first().click();
-  await room.getByText('Output', { exact: true }).first().click();
-  await expect(room.getByText(HITL_TOOL_OUTPUT)).toBeVisible({ timeout: T.medium });
+  const row = room.locator('details[data-tool-id]').first();
+  // The collapsed summary names the file family; the Story 1.3 body/Raw swap
+  // contract is identical on both surfaces.
+  await expect(row.locator('summary [aria-label="file · Read"]')).toHaveCount(1);
+  await expectFileFamilyBody(row);
 });
 
 test('[P1] [V:hitl.graph-selection] Graph selection restores the last explicit execution', async ({
@@ -241,14 +284,12 @@ test('[P1] [V:hitl.agent-history] HITL agent history shows a readable tool row w
   const toolRow = room.locator(`details[data-tool-id="${toolUseId ?? ''}"]`);
   const summary = room.locator(`details[data-tool-id="${toolUseId ?? ''}"] > summary`);
   await expect(summary).toBeVisible({ timeout: T.medium });
-  await expect(toolRow).toHaveJSProperty('open', false);
   await expect(summary).toContainText('Read');
   await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
   await expect(summary).toContainText('succeeded');
   await expect(summary).toContainText(formatRecordedDuration(Number(recordedDuration)));
-  await expect(toolRow.getByText('Input', { exact: true })).toBeHidden();
-  await expect(toolRow.getByText('Output', { exact: true })).toBeHidden();
-  await expect(toolRow.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
+  await expect(summary.locator('[aria-label="file · Read"]')).toHaveCount(1);
+  await expectFileFamilyBody(toolRow);
 });
 
 test('[P1] [V:hitl.execution-scope] Execution selector requests the selected scope', async ({
@@ -640,10 +681,9 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   ).sort();
   expect(visibleIds).toEqual(storedIds);
   // The loadable row's button lives inside its closed disclosure — the AX tree
-  // only exposes it once the row and its Output diagnostic are open.
+  // only exposes it once the row is open.
   const lastRow = room.locator('details[data-tool-id]').last();
   await lastRow.locator('summary').first().click();
-  await lastRow.getByText('Output', { exact: true }).click();
   const viewFullOutput = room.getByRole('button', { name: 'View full output' });
   await expect(viewFullOutput).toHaveCount(1);
   await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);

@@ -1,5 +1,18 @@
 ## Codebase Patterns
 
+### Release-gate record check placement
+- Where: `.claude/skills/release/SKILL.md` (Step 1.6, after compiled-binary preflight, before stack/version detection)
+- Pattern: a pre-mutation check step runs `bun run scripts/audit-generic-fallback.ts --check audit/generic-fallback.json`; `--check` reads only the committed record + hashed classification sources, never a database. Document the authorized refresh (read-only audit against the record's `source` corpus on a feature branch) and forbid threshold-lowering/hand-edits. `release` is not in `BUNDLED_SKILLS` — verify with `check:bundled-skill` before assuming a generated derivative exists.
+
+### Playwright AX queries must be room-scoped on Console
+- Where: `e2e/ui/agent-tool-row-visual.spec.ts` (`summaryAxEvidence`)
+- Pattern: the Console run page renders its own transcript outside the node room, so a page-level CDP `DOM.querySelector` for `details[data-tool-id]`/`summary` can resolve a row outside the room under test. Scope the query root to `[role="region"][aria-label="<nodeId> room"]` first, then query inside it.
+- Gotcha: a multi-row room also breaks `toBeVisible` strict-mode on `room.locator('summary')` — assert `.first()`.
+
+### Route-fulfilled transcript gallery for visual E2E
+- Where: `e2e/ui/agent-tool-row-visual.spec.ts` (`routeGalleryTranscript`, `GALLERY_TOOLS`)
+- Pattern: drive body-arm galleries with `page.route()` on `/api/workflows/runs/:runId/nodes/:nodeId/messages*` returning a deterministic message list — real run, real room, one row per family arm; label the fixtures in every `testInfo.attach` payload so reviewers don't read them as provider claims. Query params (cursor/occurrence/attempt) vary — match the route on the base path with a glob.
+
 ### Read-only DB access without @archon/core adapters
 - Where: `scripts/audit-generic-fallback.ts`
 - Pattern: DB adapters are unsafe for read-only tooling — `SqliteAdapter`'s constructor enables WAL + applies schema (writes). SQLite: `new Database(path, { readonly: true })` + `PRAGMA query_only = ON` inside one deferred txn. PostgreSQL: direct `Bun.sql` client + `sql.begin` + `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`; never PostgresAdapter or `pg`. Pass the PG URL via an env-var NAME flag (`--postgres-env VAR`) so credentials stay off argv.
@@ -61,6 +74,7 @@
 
 BLOCKER US-001 | gate=`bun --filter @archon/web test` | cause=`no-hitl-clarify-graph.test.ts:56` ENOENT `.archon/workflows/defaults/speckit-ralph-native-no-hitl-feature.yaml` — fixture deliberately deleted in 16b01a72 (speckit/ralph cleanup), test orphaned; identical fingerprint reproduced on clean base | action=removed orphaned test file as `chore(unblock)` 17448e91; layout primitives still covered by build-run-graph-input.test.ts | 2025-01-09
 BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-176-tool-family-bodies/prd.md` committed unformatted in 302c3827 — prettier warn on clean base | action=`prettier --write` committed as `chore(unblock)` 0868dde8 (format-only, content-preserving) | 2025-01-09
+BLOCKER US-006 | gate=`bun run validate` (`bun --filter '*' --parallel test`) | cause=`dag-executor.test.ts` ENOENT `.archon/workflows/defaults/speckit-feature.yaml` + `speckit-ralph-native-feature.yaml` (7 fails, 606 pass) — deleted in 16b01a72, absent on this lineage; identical fingerprint on clean base | action=restored both fixtures from sibling-thread unblock 915cf18c + regenerated bundled-defaults.generated.ts (29→31) as `chore(unblock)` 14ccc5ad | 2026-09-18
 
 ---
 
@@ -198,5 +212,32 @@ BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-17
 - `eslint quotes` with `avoidEscape:true` allows `"WHERE kind = 'tool'"` double-quoted SQL fragments; `no-non-null-assertion` forbids `!` — restructure with `else if` narrowing instead.
 - `bun test` default 5s budget bites a 15k-row fixture — keep corpus-scale tests ~1-2k rows; the structural bound (page size + group ceiling) is what needs demonstrating.
 - Local PG for dialect testing: `docker run postgres:17-alpine` on a spare port; test creates/drops an isolated database via `ARCHON_AUDIT_TEST_PG_URL`.
+
+---
+## 2026-09-18 — US-006: Release gate, E2E/visual specs, validation, closeout
+
+**Status**: PASSED
+**Files changed**:
+- `audit/generic-fallback.json` — authoritative record: `mac-mini-local-install` sqlite corpus, `logical-tool-cards-v1`, 81/5132 generic = 1.58% < 2%, `auditSourceSha256` pinned.
+- `.claude/skills/release/SKILL.md` — new mandatory Step 1.6 runs `scripts/audit-generic-fallback.ts --check audit/generic-fallback.json` after preflight and before version/changelog mutation; documents the five rejection causes, the authorized read-only refresh, and the no-threshold-lowering/no-hand-edit rules; matching NEVER-skip bullet added. `release` is not bundled — no generated derivative needed.
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — shared `expectFileFamilyBody(row)` contract applied at all three `inspect-file` row sites (Console agent-history + both Legacy room tests): collapsed mounts no body, no `Input`/`Output` disclosures, file body shows `HITL_TOOL_INPUT.txt` header + `HITL_TOOL_OUTPUT_VISIBLE` preview without the serialized `"output"` key, Raw swaps in the exact pretty-printed payload and back; `history-complete` full-output fetch retained.
+- `e2e/ui/agent-tool-row-visual.spec.ts` — new `tool-body-gallery-{console,legacy}` test: `routeGalleryTranscript()` fulfills only the `inspect-file` messages page with a deterministic 8-arm fixture (terminal/file/matches/paths/code/web/generic/unreadable); asserts collapsed-no-body, per-arm content, one-line 24–30px body bar with Raw flush right, 8/10px padding, 6px radius, 11.5/17.25 mono, pre-wrap+anywhere, no room/page overflow; keyboard order + `:focus-visible` 2px `--accent-bright` + `aria-expanded` + reduced-motion probed on terminal and matches rows; computed-style contrast measured live. `summaryAxEvidence` gained a row index + room-region scoping (Console page transcript no longer shadows). Viewport sweep + mockup anatomy retained.
+- `plans/…/reports/implementation-evidence.md` — commands + results, audit identity (no payloads), #175 swap-slot anchors, measurements, contrast table, SR pass.
+- `plans/260907-1454-workflow-run-hitl-mockup-alignment/reports/captures/*.png` — tracked captures regenerated by the mandated `test:ui:hitl` run (row now carries family chip/body); committed refreshed per repo convention.
+
+**Acceptance criteria verified**:
+- [x] Record at durable non-evergreen `audit/generic-fallback.json`: current, source-hash matched, nonzero denominator, 1.58% < 2%
+- [x] Release SKILL.md Step 1.6 mandatory pre-mutation check; never connects to a client DB; failure explains authorized refresh; never suggests lowering the bound; no bundled derivative required (`release` not in BUNDLED_SKILLS); no script alias needed
+- [x] hitl-room spec on BOTH surfaces: real Read row → file family, path header, preview, no Input/Output disclosures; Raw exact payload + restore; collapsed rows mount nothing; full-output retained; no fake-provider expansion
+- [x] visual spec extended in place: labeled route-fulfilled gallery; 460px one-line bar, Raw far right, box padding/radius/type, wrapped long content, no horizontal overflow; 1440/1024/768/390 sweep retained; Raw/summary AX name + expanded, keyboard order, 24px targets, focus, reduced-motion; captures via testInfo
+- [x] reports/implementation-evidence.md created with all required evidence
+- [x] `bun run validate` green; `bun --cwd e2e run typecheck` green; `bun run --cwd e2e test:ui:hitl` 38 pass / 3 pre-existing auth-gated skips; never root `bun test`
+- [x] Story 1.3 ACs re-read and satisfied; `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` `1-3-…` → done; evidence file follows the established reports/ convention
+
+**Learnings**:
+- The Console run page mounts its own transcript outside the room region — any page-level DOM/AX query must be scoped to `[role="region"][aria-label="<nodeId> room"]` (see Codebase Patterns).
+- Missing `.archon/workflows/defaults/*.yaml` fixtures are a recurring environment blocker on this lineage (16b01a72 deleted them); the unblock fix is restore-from-sibling + regenerate bundled defaults — twice now (see Blocker Ledger).
+- `git stash push --include-untracked` + `git stash pop` round-trips cleanly even with untracked `audit/` + 16 modified PNG captures; lint-staged can drop a staged generated file from the commit — verify `git show --stat` after committing generated artifacts.
+- Long `bun run validate` runs must be launched with `timeout: 0` (backgrounded) — the exec wall-clock timeout SIGINTs the process group mid-test.
 
 ---
