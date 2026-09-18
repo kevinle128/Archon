@@ -3,174 +3,185 @@ phase: 3
 title: 'Web: Queue composer dock in both shells'
 status: pending
 priority: P1
-effort: '6h'
 dependencies: [2]
 ---
 
-# Phase 3: Web: Queue composer dock in both shells
+# Phase 3: Web Queue dock in both shells
 
 ## Outcome
 
-Both node rooms (Legacy `NodeTranscriptPane` and Console `ConsoleNodeRoom`) mount a composer dock pinned to the bottom of the node panel while the node is `running` or `awaiting`. In the `generating` state the field is enabled, the send control reads `Queue`, `Cmd`/`Ctrl`+`Enter` submits, plain `Enter` inserts a newline, accepted messages show in a `QUEUED · n` band in receipt order with the word `sent`, and the unsent draft is labelled `this tab only`. A pending ask for this node makes Send `aria-disabled` with `answer the agent's question first` via `aria-describedby`, and the shortcut uses the same guard. A running node with no live handle shows only the disclosure line. Shared logic lives in `packages/web/src/lib/steering-dock.ts`; the JSX is written twice, thin.
+Legacy and Console node rooms render the Story 2.1 composer while the selected live agent node is generating. The operator can queue non-blank guidance by button or guarded shortcut, immediately see accepted receipts in order under `QUEUED · n`, and continue typing without disturbing the current turn. Ask-paused nodes keep the dock visible but block submission with an accessible reason. A canonical 422 replaces the dock with the adopted detached disclosure.
 
-Cook-time scout: re-read `NodeTranscriptPane.tsx` (`RoomRegion scrollable={false}` return block), `ConsoleNodeRoom.tsx` (local `RoomRegion`, `rowStatus`, `pendingInteractions` filter), `ask-answer-controller.ts` in both shells, and `console-isolation.test.ts`'s approved-lib allowlist.
+This phase uses the POST response as its only queue evidence. It does not add polling, queue rehydration, cross-tab convergence, delivered state, terminal `NEVER SENT`, Stop, or per-item delete controls.
 
-## Context links
+## Files
 
-- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md` lines 89-94 (copy table), 128-140 (dock anatomy), 178 (ask-parked node), 184 (draft is per tab), 187 (state 8), 204-206 (shortcut and queue scope), 241-250 (live region, focus, accessible name, uppercase via CSS).
-- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md` lines 298-354 (dock spacing, field, controls), 365-383 (draft box), 475-481 (contrast), 495-501 (focus ring), 624-651 (state table).
-- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/review-accessibility-steering.md` (serialized polite region, `aria-disabled` never `disabled`, shortcut gate, reduced motion).
-- `plans/reports/scout-260919-0007-web-dock-and-e2e.md` (mount points `NodeTranscriptPane.tsx:406-428`, `ConsoleNodeRoom.tsx:883-905`; pollers; `ApprovalPanel.tsx:116` shortcut precedent; `motion-reduce:` precedent; `aria-describedby` id convention).
-- `plans/reports/scout-260919-0007-ux-dock-generating-state.md`.
+| File                                                                           | Change                                                                     |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
+| `packages/web/src/lib/api.ts`                                                  | Add typed Legacy `sendNodeGuidance`.                                       |
+| `packages/web/src/lib/steering-dock.ts`                                        | New framework-free state/predicate/shortcut helpers.                       |
+| `packages/web/src/lib/steering-dock.test.ts`                                   | State reducer, idempotent retry, and shortcut tests.                       |
+| `packages/web/src/components/workflows/ComposerDock.tsx`                       | New Legacy renderer.                                                       |
+| `packages/web/src/components/workflows/ComposerDock.test.tsx`                  | Legacy interaction/accessibility tests.                                    |
+| `packages/web/src/components/workflows/NodeTranscriptPane.tsx`                 | Mount the full-bleed band/dock after the transcript scroller/jump control. |
+| `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`            | Visibility, position, and ask wiring.                                      |
+| `packages/web/src/experiments/console/skills/runs.ts`                          | Add typed Console send helper through the approved request layer.          |
+| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`      | New Console renderer.                                                      |
+| `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` | Console interaction/accessibility tests.                                   |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`          | Mount the band/dock in the same flex position.                             |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`     | Visibility, position, and ask wiring.                                      |
+| `packages/web/src/experiments/console/console-isolation.test.ts`               | Add the new room file and approve only the shared steering helper import.  |
 
-## Shared logic (`packages/web/src/lib/steering-dock.ts`)
+Use the regenerated declarations from Phase 2. `@archon/web` must not import runtime values from server or workflows packages.
 
-Framework-free; add `@/lib/steering-dock` to the Console approved-lib allowlist in `console-isolation.test.ts`.
+## Shared state and submission behavior
+
+Keep transport injection framework-free so both shell renderers use identical rules while retaining their package boundaries.
+
+Suggested state:
 
 ```ts
-export type DockVisibility = 'hidden' | 'disclosure' | 'composer';
-export interface DockInputs {
-  rowStatus: 'pending' | 'running' | 'awaiting' | 'completed' | 'failed' | 'skipped';
-  hasPendingAskForNode: boolean;
-  steerable: boolean | null;   // null until the first queue read
+interface LocalSentReceipt {
+  readonly messageId: string;
+  readonly message: string;
+  readonly state: 'queued';
 }
-export function selectDockVisibility(i: DockInputs): DockVisibility;
-// running|awaiting → 'composer' unless (running && steerable === false && !hasPendingAskForNode) → 'disclosure'; else 'hidden'
-export function selectSendBlock(i: DockInputs): { blocked: boolean; reason: string | null };
-// hasPendingAskForNode || rowStatus === 'awaiting' → { blocked: true, reason: 'answer the agent\'s question first' }
-export function isSubmitShortcut(e: { key: string; metaKey: boolean; ctrlKey: boolean; isComposing?: boolean }): boolean;
-export function formatQueuedHeader(n: number): string;          // 'queued · 3' (CSS uppercases)
-export function formatQueuedAnnouncement(n: number): string;    // '3 messages pending delivery' / '1 message pending delivery'
-export const DISCLOSURE_NOT_STEERABLE = "not steerable here · this node's live session is not in this server process";
-export function draftStorageKey(runId: string, nodeId: string): string; // 'archon:steer-draft:<runId>:<nodeId>' (sessionStorage — per tab)
-export function newMessageId(): string; // crypto.randomUUID()
 
-export interface SteeringDockDeps {
-  send(runId: string, nodeId: string, body: { message: string; message_id: string; intent: 'queue' }): Promise<{ success: true; message_id: string; state: string }>;
-  fetchQueue(runId: string, nodeId: string): Promise<{ steerable: boolean; queued: QueuedItem[] }>;
+interface PendingSubmission {
+  readonly messageId: string;
+  readonly message: string;
 }
-export class SteeringDockController {
-  constructor(deps: SteeringDockDeps, runId: string, nodeId: string, onChange: (s: DockState) => void);
-  state: DockState; // { queued: QueuedItem[]; steerable: boolean | null; inFlight: boolean; lastError: { code: string; message: string } | null }
-  queue(text: string): Promise<'accepted' | 'refused'>; // trims, stamps id, dedupes concurrent submits, optimistic append, reconciles on refetch
-  refresh(): Promise<void>;                             // GET …/queue; replaces `queued`, sets `steerable`
-  dispose(): void;
+
+interface SteeringDockState {
+  readonly sent: readonly LocalSentReceipt[];
+  readonly inFlight: boolean;
+  readonly pendingRetry: PendingSubmission | null;
+  readonly refusal: { code: string; message: string } | null;
 }
 ```
 
-Behavior rules:
+Required behavior:
 
-- `queue()` refuses (returns `'refused'`, no request) when the text trims to empty or a submit is in flight. On 200 it appends the receipt optimistically and triggers `refresh()`; on any error it restores the text to the composer (front of the draft) and records `lastError` for the `role="alert"`.
-- `refresh()` carries a monotonic request counter and discards any response that is not the latest issued, so a timer-triggered GET that resolves after a send-triggered GET cannot regress `queued` and make a just-sent message vanish for a tick. <!-- Updated: Red Team Session 1 -->
-- Poll cadence: 1000 ms while `steerable` is `true` or `null`; 3000 ms once `steerable === false` (detached/parked nodes cost a server-side event projection per miss).
-- A parked node (pending ask) shows the still-queued messages returned by `GET …/queue` under `QUEUED · n` with Send blocked — they were accepted and will drain after the answer.
-- Pending-ask precedence: `selectDockVisibility` returns `'composer'` (with Send blocked) for an ask-parked node even though the server would say `steerable: false` — the ask reason wins over the disclosure (EXPERIENCE.md:178).
-- Message ids are stamped once per submit and retried with the same id (idempotent).
+- Reject blank-only drafts locally without a request, but send the original non-blank string unchanged.
+- Allow one request at a time. Button and shortcut call the same guarded action.
+- Stamp a UUID once per submission. If the response is lost or a request fails ambiguously, preserve the text and id; retrying unchanged text reuses that id. Editing the draft creates a new submission/id.
+- On 200, append once by `message_id`, in successful acceptance order; clear the draft and pending retry; keep focus in the textarea. A replayed success must not duplicate the local row.
+- Keep local `sent` receipts for the mounted live room. Do not remove them based on time or infer delivery. Clear them only when the component changes execution/unmounts; Story 2.9 will replace this with authoritative queue projection.
+- Persist the unsent draft and ambiguous retry id in `sessionStorage`, scoped by run and namespaced node id. Do not persist accepted queue items in browser storage.
+- Render operator text as an ordinary escaped React text node with end elision; never feed it to Markdown, HTML, or `dangerouslySetInnerHTML`.
+- On 422 `not_steerable_here`, preserve the draft/retry data and switch to detached disclosure. On 409 or another failure, preserve the field text and announce the error; terminal read-only reconciliation belongs to Story 2.11.
+- A pending ask or `awaiting` row blocks send before transport. The exact reason is `answer the agent's question first`. A sibling node's ask must not block this node.
+- A terminal/unknown selected execution renders no dock. A non-live historical execution must never issue a steering request.
 
-API helpers: `sendNodeGuidance(runId, nodeId, body)` and `getNodeQueue(runId, nodeId)` in `packages/web/src/lib/api.ts` (Legacy, via `fetchJSON`) and the same two in `packages/web/src/experiments/console/skills/runs.ts` (Console, via `requestJson`), typed from `api.generated`.
+Expose small pure helpers for visibility, blocked reason, storage key, header/count wording, announcement wording, and shortcut detection. Avoid a polling controller and request-race counters because there is no read request in this story.
 
-## Renderers
+## API helpers
 
-Legacy `packages/web/src/components/workflows/ComposerDock.tsx` and Console `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`; each owns a 1000 ms `refresh()` loop while `rowStatus` is `running`/`awaiting` (same `setTimeout` shape as the message drain loop) and disposes on unmount or node change.
+Add only `sendNodeGuidance(runId, nodeId, body)`:
 
-Anatomy (both shells, tokens only):
+- Legacy uses the existing `fetchJSON` layer in `lib/api.ts`;
+- Console uses its approved `requestJson` path in `experiments/console/skills/runs.ts`;
+- both return the generated success type and surface the nested steering `status/code/message` in a typed error the component can distinguish;
+- neither retries automatically (the caller controls UUID reuse) nor logs the message.
 
-- Container: `flex-none`, last child of `RoomRegion`, `bg-surface-elevated`, top `border-border`, padding 8px 10px, gap 6px, `data-testid="composer-dock"`.
-- Disclosure state: one line of `text-text-secondary` text, `DISCLOSURE_NOT_STEERABLE`, no field, no controls.
-- Draft box (only when `queued.length > 0`): header `queued · n` as lowercase DOM text with `uppercase tracking-[0.07em] text-[10px] font-bold text-text-secondary`; list items in receipt order, `text-text-secondary`, each with the word `sent` (no dot), min 24 px rows, scrolls internally past `33vh`; no per-item controls in 2.1 (D12).
-- Field: `<textarea>` with a visually hidden `<label>` `message to <nodeId>` (accessible name states the node), `min-h-[56px]`, sans, `bg-surface-inset`, 6 px radius, focus ring `outline-2 outline-accent-bright`; a hint line `Cmd/Ctrl+Enter to send · this tab only` in `text-text-secondary` (the `this tab only` label attaches to the unsent draft only).
-- Send control: `<button type="button">` bordered (`border-border-bright`, transparent fill, `text-text-primary`, weight 500, 11.5 px, `min-h-[32px] min-w-[84px]`, right edge), visible text `Queue` first in the accessible name, `aria-keyshortcuts="Meta+Enter Control+Enter"`; when blocked: `aria-disabled="true"` (never `disabled`), dimmed to `text-text-secondary`, `aria-describedby` pointing at a `<p id={`${useId()}:send-blocked-reason`}>` with the reason text; click and shortcut are no-ops while blocked (same predicate).
-- Live regions: one `role="status"` polite region per dock announcing `formatQueuedAnnouncement(n)` when the count changes; one `role="alert"` for a refused/failed send (`could not queue · <message>`).
-- Keyboard: `onKeyDown` — `isSubmitShortcut(e)` and not blocked → `preventDefault` and `queue(text)`; plain `Enter` is untouched (native newline); IME-composing guard (`e.nativeEvent.isComposing || keyCode === 229`).
-- Focus: after a successful queue, focus stays in the textarea and it is cleared; never programmatic focus to `<body>`.
-- Motion: no animation is introduced; any transition added later uses `motion-reduce:transition-none`.
-- Draft persistence: `sessionStorage` under `draftStorageKey`; read on mount, write on change, clear on successful queue.
+## Layout and visual contract
 
-Mount points:
+Final `EXPERIENCE.md`/`DESIGN.md` override older co-located mock details.
 
-- Legacy: in `NodeTranscriptPane.tsx`'s `<RoomRegion nodeId={row.nodeId} scrollable={false}>` return, after `{jumpButton}`; props `runId`, `nodeId={row.nodeId}`, `rowStatus`, `hasPendingAskForNode` derived from the existing `selectVisibleNodeAskInteractions(...)` result having any `status === 'pending'`.
-- Console: in `ConsoleNodeRoom.tsx`'s local `RoomRegion`, after the `Jump to latest` button; same props from `run.id`, `nodeId`, `rowStatus`, and Console's `select-visible-node-ask-interactions`.
-- Non-live executions (a different run selected) never mount the dock — `rowStatus` there is terminal.
+### Placement
 
-## Tests before (red first)
+- Keep each `RoomRegion` a flex column. The transcript scroller remains the flexible child. Render the full-width queue band, when non-empty, immediately above the composer dock and outside the dock's padded column; render the dock as the final fixed sibling. It must reduce the transcript viewport, never overlay transcript rows.
+- Preserve the todo strip, transcript follow/jump behavior, focused-row scroll position, ask card, and shell-specific framing.
 
-`packages/web/src/lib/steering-dock.test.ts`:
+### Queue band
 
-- visibility table: every `rowStatus` × `steerable` × `hasPendingAsk` combination (pending/completed/failed/skipped → hidden; running+false+noAsk → disclosure; running+null → composer; awaiting → composer blocked; running+false+ask → composer blocked).
-- `isSubmitShortcut`: Meta+Enter and Ctrl+Enter true; plain Enter, Shift+Enter, composing false.
-- header/announcement formatting incl. singular.
-- controller: `queue('')` refused without a call; double submit while in flight makes one request; success appends receipt then refresh replaces list; failure restores text and sets `lastError`; ids are uuids and stable across retry; `refresh` sets `steerable`; `dispose` stops loops; an older in-flight `refresh` resolving after a newer one is discarded (counter); cadence is 1000 ms then 3000 ms after `steerable: false`.
+- Do not render an empty band.
+- Full-bleed `surface-elevated`, one-pixel top rule, using the todo strip's header idiom and item geometry; it is not an inset rounded well.
+- Lowercase DOM header `queued · n` with CSS uppercase, phase-label tracking/weight, and text-secondary.
+- A labelled list named `Queued messages, n`; one list item per local accepted receipt in order; each item includes the visible word `sent`, never a color-only indicator.
+- Internal scrolling above `33vh`; rows stay compact and readable. There are no delete/keep controls in Story 2.1.
+- `this tab only` never labels this band; it applies only to unsubmitted draft text.
 
-`ComposerDock.test.tsx` (Legacy) and `ConsoleComposerDock.test.tsx` (Console), each with happy-dom (`installHappyDom` helper on Console; inline `Window` on Legacy) and a stubbed deps object:
+### Composer and controls
 
-- generating: field enabled, button text starts with `Queue`, accessible name contains the shortcut, `this tab only` present, no Stop control, no per-item delete.
-- Cmd+Enter and Ctrl+Enter dispatch a send with `intent: 'queue'`; plain Enter does not and the textarea value gains a newline.
-- after send: draft box header text `queued · 1`, item text and `sent` word present, textarea empty, `document.activeElement` is the textarea, `role="status"` text is `1 message pending delivery`.
-- two sends keep order; a refetch that drops the first (drained) renders `queued · 1` with the second.
-- blocked (ask): `aria-disabled="true"`, no `disabled` attribute, `aria-describedby` resolves to the reason text, click and Cmd+Enter make no request.
-- disclosure: exact `DISCLOSURE_NOT_STEERABLE` text, no textarea, no button.
-- hidden: nothing rendered for a completed node.
-- failure: send rejects → textarea restored to the text, `role="alert"` rendered.
-- `sessionStorage` round-trip of the draft.
-- uppercase is CSS: DOM text is `queued · 1`, class list contains `uppercase`.
+- Dock: fixed bottom sibling, `surface-elevated`, top border, design-token padding/gap.
+- Textarea: real label `message to <node name or id>`, sans body text, `surface-inset`, border, medium radius, at least 56px high, and the shell's documented high-contrast focus ring.
+- Hint: `Cmd/Ctrl+Enter to send · this tab only` in text-secondary.
+- Queue control: bordered/transparent in **both** shells, right aligned, at least 32px high and 84px wide, text-primary, visible label `Queue`. Its accessible name starts with `Queue` and includes the shortcut and current waiting count; set `aria-keyshortcuts="Meta+Enter Control+Enter"`.
+- No Stop control and no per-item delete control.
+- Ask-blocked Queue remains focusable with `aria-disabled="true"` (not native `disabled`), text-secondary as the contrast floor, and `aria-describedby` pointing to the exact visible reason. Click and shortcut use the same no-op guard.
 
-Shell mount tests (`NodeTranscriptPane.test.tsx`, `ConsoleNodeRoom.test.tsx`): dock present for a running row, absent for a completed row, inside the room landmark as the last child, Send blocked when the room has a pending ask for that node.
+### Keyboard, focus, status, and motion
 
-`console-isolation.test.ts`: add `components/ConsoleComposerDock.tsx` to the `roomFiles` array **and** `@/lib/steering-dock` to the `approved` set — the first test only forbids `@/lib/api`, `@/components`, `@/stores`, `@/contexts`, `@/routes`, `@/hooks`; the positive allowlist test scans only the files listed in `roomFiles`, so a new file that is not listed is never checked. <!-- Updated: Red Team Session 1 -->
+- `Cmd`/`Ctrl`+`Enter` submits only when non-blank, not blocked, not in flight, and not composing. Guard both `nativeEvent.isComposing` and key code 229.
+- Plain Enter and Shift+Enter retain native newline behavior.
+- Successful send clears the textarea but leaves focus there. A rejected send never sends focus to `<body>`.
+- Use one polite `role="status"` region per node room for queue-count changes; use `role="alert"` for a failed/refused submission. Do not create one live region per list item.
+- Add no animation. Any incidental transition must honor reduced motion.
 
-## Refactor (protected changes)
+### Detached disclosure
 
-- `NodeTranscriptPane` and `ConsoleNodeRoom` gain only the mount and the two derived props; their scroll, follow, todo strip, and ask-card behaviour is untouched (existing tests stay green).
+After a canonical 422, replace the band, field, hint, and controls with the final adopted line exactly:
 
-## Tests after
+`not steerable here · this run was started detached, so its live session is not in this process`
 
-- `bun run --cwd packages/web type-check` and `lint`; all `src/components/` and `src/experiments/console/` suites green.
-- Manual check at 460 px (Legacy) and the Console panel width: the scroller scrolls behind the dock; the dock never wraps its control off-screen.
+Use text-secondary and preserve the draft/retry in tab-local storage. Proactive discovery before the first POST is not possible without the Story 2.9 read contract; do not invent one.
 
-## Regression gate
+## Mounting rules
+
+- Legacy: mount after the existing jump-to-latest control in `NodeTranscriptPane`'s `RoomRegion`. Pass `runId`, namespaced `row.nodeId`, row status, display label, and whether `selectVisibleNodeAskInteractions(...)` has a pending ask for this exact node.
+- Console: mount in the analogous position in `ConsoleNodeRoom` using its existing filtered pending-interaction data and request helper.
+- Show composer for `running`; show it blocked for this node's `awaiting`/pending-ask state; hide it for pending-not-started, completed, failed, skipped, cold/unknown, or a historical non-live execution.
+- The post-422 disclosure has precedence over generating composer state. A real pending ask has its blocked reason rather than detached copy because no request should have been made from that state.
+
+## Tests first
+
+### Shared logic
+
+- visibility table for all row statuses, same-node ask, sibling ask, and 422 disclosure;
+- Meta+Enter/Ctrl+Enter versus plain/Shift+Enter and IME composition;
+- blank-only text refused locally while original non-blank whitespace is sent;
+- one in-flight request, stable UUID on ambiguous retry, new UUID after edit, replayed 200 deduped locally;
+- success ordering, draft clearing, error preservation, 422 disclosure, and sessionStorage round trip;
+- header, accessible name/count, and singular/plural announcement wording.
+
+### Component parity in both shells
+
+- generating/empty: field and bordered Queue visible; `this tab only`; no queue band, Stop, or delete;
+- accepted one/two: full-bleed labelled list, ordered text, lowercase DOM header with CSS uppercase, visible `sent`, correct count/status announcement;
+- shortcut submits, plain Enter adds a newline, composing shortcut does nothing;
+- success keeps textarea focus; failed/409 send preserves draft and renders alert;
+- ask block uses `aria-disabled`, no `disabled` attribute, valid `aria-describedby`, text-secondary class, and no request from click or shortcut;
+- 422 renders only the exact disclosure while retaining sessionStorage draft;
+- terminal/historical/cold state renders no dock;
+- mount is a sibling after the scroller/jump control, not inside the scrolling transcript; queue band is outside the padded composer well.
+
+Update `console-isolation.test.ts` so the new Console component is actually included in the positive file list and only imports the approved shared logic/request seams.
+
+## Visual acceptance
+
+Capture/inspect both shells in these states: generating empty, generating with two receipts, ask-blocked with reason, and detached after 422.
+
+- Legacy: verify the node panel at 460 CSS px wide in the normal desktop shell.
+- Console: verify at a 1440×900 desktop viewport and record the actual rendered node-panel width; also constrain the component harness to 460 CSS px to compare dock behavior directly with Legacy.
+- At each width: no horizontal overflow or clipped Queue control; the field remains at least 56px high; the band caps at 33vh and scrolls internally; the transcript's last row can be revealed above the dock; focus rings are not clipped.
+- Text/background and focus-ring contrast use the final design tokens and meet the documented 4.5:1 text and 3:1 non-text floors. The ask-blocked label must use text-secondary, not tertiary.
+- With `prefers-reduced-motion: reduce`, state changes introduce no motion and retain identical content/order.
+
+If implementation evidence contradicts the final design prose, stop and record the conflict; do not resolve it from an older mockup.
+
+## Verification
 
 ```bash
 (cd packages/web && bun test src/lib/steering-dock.test.ts)
 (cd packages/web && NODE_ENV=development bun test src/components/workflows/ComposerDock.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx src/components/workflows/NodeRoom.test.tsx src/components/workflows/LegacyNodeRoom.test.tsx)
 (cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleComposerDock.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/console-isolation.test.ts)
-(cd packages/web && bun run type-check && bun run lint)
+(cd packages/web && bun run type-check)
+bun x eslint packages/web/src/lib/steering-dock.ts packages/web/src/lib/steering-dock.test.ts packages/web/src/components/workflows/ComposerDock.tsx packages/web/src/components/workflows/ComposerDock.test.tsx packages/web/src/components/workflows/NodeTranscriptPane.tsx packages/web/src/components/workflows/NodeTranscriptPane.test.tsx packages/web/src/experiments/console/skills/runs.ts packages/web/src/experiments/console/components/ConsoleComposerDock.tsx packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx packages/web/src/experiments/console/console-isolation.test.ts --max-warnings 0
 ```
 
-## Test scenario matrix
+## Exit criteria
 
-| Path | Priority | Case |
-|------|----------|------|
-| Queue press → receipt | Critical | 200 → band, focus stays, status announcement |
-| Shortcut guard | Critical | Cmd/Ctrl+Enter sends; plain Enter newline; blocked → no-op |
-| Ask block | Critical | `aria-disabled` + `aria-describedby`, no `disabled` |
-| Drain reflected | High | refetch drops delivered item, count updates |
-| Disclosure | High | exact copy, no controls |
-| Failure path | High | text restored, alert |
-| Boundary | Medium | Console isolation allowlist |
-| Draft persistence | Medium | sessionStorage per tab |
-
-## Todo
-
-- [ ] `steering-dock.ts` + tests
-- [ ] api helpers (Legacy + Console)
-- [ ] `ComposerDock.tsx` + tests; mount in `NodeTranscriptPane`
-- [ ] `ConsoleComposerDock.tsx` + tests; mount in `ConsoleNodeRoom`; allowlist
-- [ ] shell mount tests; suites green; type-check/lint clean
-
-## Success criteria
-
-Story 2.1's dock acceptance criteria (composer enabled, `Queue`, `QUEUED · n`, `this tab only`, shortcut, ask block with reason, reduced motion) each have a passing component test in both shells.
-
-## Risk assessment
-
-- **Two renderers drift**: the shared predicates keep semantics identical; the two test files assert the same table.
-- **Polling cost**: one extra 1000 ms GET per open live node room; stops when the node leaves `running`/`awaiting`.
-- **Optimistic vs server order**: the server snapshot always wins on refresh.
-
-## Security considerations
-
-The dock sends operator prose to a route that already applies the actor grant; no secrets are stored; `sessionStorage` holds only the unsent draft.
-
-## Next steps
-
-Phase 4 proves the loop end to end and collects visual/a11y evidence.
+- Both shells implement identical Story 2.1 semantics through their approved boundaries.
+- All required dock states, view widths, keyboard/focus paths, list/live-region semantics, contrast, and reduced-motion behavior have automated or captured evidence.
+- The diff contains no queue GET/polling, Stop/delete, delivered inference, transcript reconciliation, or terminal read-only UI.
