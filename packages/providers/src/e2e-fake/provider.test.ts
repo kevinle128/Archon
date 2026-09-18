@@ -146,7 +146,6 @@ describe('E2eFakeProvider', () => {
     expect(lastOutput).toContain('[e2e-fake] full output tail');
   });
 
-
   test('taskDispatch omp emits one Task call with the exact batch input and paired result', async () => {
     const prompt = '<<E2E_SCENARIO>>{"taskDispatch":"omp"}<</E2E_SCENARIO>>';
     const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
@@ -219,7 +218,6 @@ describe('E2eFakeProvider', () => {
       ).rejects.toThrow('scenario directive failed validation');
     }
   });
-
 
   test('emitTodo emits four ordered todo call/result pairs first', async () => {
     const prompt = '<<E2E_SCENARIO>>{"emitTodo":true}<</E2E_SCENARIO>>';
