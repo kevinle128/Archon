@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-verification:snapshot:1",
+  "title": "Project verification checkout snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "base_sha", "head_sha", "changed_paths", "dirty"],
+  "properties": {
+    "version": {"const": 1},
+    "base_sha": {"$ref": "#/$defs/gitSha"}, "head_sha": {"$ref": "#/$defs/gitSha"},
+    "changed_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
+    "dirty": {"type": "boolean"}
+  },
+  "$defs": {
+    "gitSha": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*\\u0000)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[*?\\[])(?!.*//).+$"}
+  }
+}

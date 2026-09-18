@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import { env } from 'node:process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,13 +41,9 @@ const DRAFT_OTHER = 'shared-ask-draft';
 
 /** Story 1.2 evidence directory — the Console long-payload Raw capture lands here. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const STORY_12_EVIDENCE_DIR = join(
-  REPO_ROOT,
-  'plans',
-  '260918-1038-issue-175-raw-payload-toggle',
-  'reports',
-  'evidence'
-);
+const STORY_12_EVIDENCE_DIR =
+  env.ARCHON_VERIFY_EVIDENCE ??
+  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
 
 async function pageWaitStarter(
   browser: Parameters<typeof createIdentityContext>[0],

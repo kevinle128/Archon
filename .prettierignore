@@ -30,6 +30,7 @@ package-lock.json
 # Agent commands and documentation (user-managed)
 .agent/
 .agents/
+.plans/verifications/
 .claude/
 .archon/
 .qoder/

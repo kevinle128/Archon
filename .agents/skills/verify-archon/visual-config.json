@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "sources": [
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/SPEC.md",
+      "sha256": "7889c1167cdac5c26eb61fd974aa51c30ffc21fa6a90e797734d214b7178af0c"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/hitl-contract.md",
+      "sha256": "9f424167f815ad0e8452828ca90992ebacc44289117ca46727216182ec0069f8"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md",
+      "sha256": "b2f5c1a6e565676e4e4c137059866789f77981ab5204b3a82d11513f8c296750"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md",
+      "sha256": "b49e8b502f6f75cfe4ba59eba675e0d2ce1ea011e3f966b418819cd3f1435a27"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/console.html",
+      "sha256": "3544e7971d04bbbd8944e7b8d65b283977f1825ce42a48ae32e76308b971f911"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/index.html",
+      "sha256": "d347e2984424458dcc1d81efde48f82aea750d0802020cfad1e1be05332bf79c"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/app.js",
+      "sha256": "71c31d2d3294418bf99f784b7a1d39b256cc1775c65985a81df6b689e14a57a2"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/console-app.js",
+      "sha256": "de7b0b13d6f8cace4d7d6a1010d71f9e9f95c65ff654804fb0874dcad6cf18fe"
+    },
+    {
+      "path": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/styles.css",
+      "sha256": "381e7192d65defb041bda04818d818da493489b23dacda0ce9b1ad199e381bff"
+    },
+    {
+      "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
+      "sha256": "798be292e82bcf9d423702b4af275cb492b1ea724da7c1e5f84a2e257fc428cd"
+    },
+    {
+      "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
+      "sha256": "1ca28a6ac813ccd70428649efa3355fdc7cb8a4b99afaa31abcdadc40ab2874d"
+    },
+    {
+      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
+      "sha256": "20ba39cec1bf6ed76f90b6bf6885fb1673d9bce70148a4a701e1afb1fecaf96b"
+    },
+    {
+      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md",
+      "sha256": "8593595633fd800993165bf1b08372042652013a385f428d2cdc4b52cb04cf15"
+    },
+    {
+      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
+      "sha256": "0716b16ebe3ffc56dd4a5e93c330db36b55e60dc15c22dcb02a3dfe878319460"
+    },
+    {
+      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
+      "sha256": "42bf518d81ea6cd2f5ff34c675e40dce7c630203783f536b7d2fe929352c2e8e"
+    },
+    {
+      "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
+      "sha256": "b8377b9c71f6020775fcdfaff797e51c6b84b867b9b67cd7a4c370589e7c9e08"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/README.md",
+      "sha256": "6587540f5df6c369fcc761621f030876ddf93b5faca376dd67f83cc350250715"
+    },
+    {
+      "path": "packages/docs-web/src/content/docs/brand/index.md",
+      "sha256": "6cbef294819fe38ac308d41c9c85dbbb4216626abb9babe0596ecd974d4b18cc"
+    },
+    {
+      "path": "packages/web/src/index.css",
+      "sha256": "ccb4af1ac10ae13b5b0b3934e7cbe383e7e4e3d5aab2b2c2e3f9e0954c987b65"
+    },
+    {
+      "path": "packages/web/src/experiments/console/theme.css",
+      "sha256": "a265cc8690abe6779d71ec0f00d42b6a27503b6eeda174c6291cbc9b09221a4a"
+    }
+  ],
+  "criteria": [
+    {
+      "id": "row-anatomy",
+      "states": [
+        "row-closed"
+      ],
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md#components",
+      "expected": "One scan line, chevron then status then family then target then facts; legible text, balanced spacing, and visible state glyph. Compare style and order, not fixture text."
+    },
+    {
+      "id": "raw-disclosure",
+      "states": [
+        "raw-open"
+      ],
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md#components",
+      "expected": "Raw control at the right of the body bar, open suffix, inset wrapped JSON, readable foreground, minimum 24 px target. Final DESIGN overrides the stale mockup tertiary JSON and 22 px row."
+    },
+    {
+      "id": "ask-card",
+      "states": [
+        "ask-pending"
+      ],
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-design.md#core-user-experience",
+      "expected": "Warning-toned pending card, readable question, selectable options and reachable Submit; no content or controls clipped in the selected card."
+    },
+    {
+      "id": "layout-and-focus",
+      "states": [
+        "row-closed",
+        "raw-open",
+        "ask-pending"
+      ],
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md#accessibility-floor",
+      "expected": "Required content fits the measured region; keyboard focus is visible; desktop and narrow states remain readable. Check only the selected room/card, not future mockup features."
+    }
+  ],
+  "surfaces": [
+    "console",
+    "legacy"
+  ],
+  "states": [
+    "row-closed",
+    "raw-open",
+    "ask-pending"
+  ],
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 1000
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "desktop_room_width": 460,
+  "theme": "dark",
+  "device_scale_factor": 1,
+  "zoom": 1,
+  "comparison": "Side-by-side review plus measured geometry; fixture text, node counts and durations differ, so no single pixel threshold is valid.",
+  "accepted_differences": [
+    "DESIGN.md wins over mockup-only 22 px targets and tertiary Raw text.",
+    "Current semantic tokens apply separately on Console and Legacy.",
+    "Mockup-only Replay, view-as, steering dock, future tool family bodies and unrelated nodes are excluded.",
+    "References are resized to the measured region width; browser and region dimensions are recorded separately."
+  ],
+  "width_tolerance_px": 2,
+  "measurement_rules": [
+    "The 2 px tolerance applies only to the desktop room width and matching actual/reference region widths. It does not apply to image height.",
+    "Judge height through the configured content-fit and single-line criteria. The final DESIGN minimum target size takes precedence over older mockup row heights.",
+    "Report only a mismatch to a configured criterion; do not invent additional pixel-equality rules."
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "id": "http-api",
+  "description": "Solo HTTP project, conversation, workflow and Ask lifecycle",
+  "impact_paths": [
+    "packages/server/src/routes/api.ts",
+    "packages/server/src/routes/schemas/",
+    "packages/server/src/index.ts",
+    "packages/server/src/adapters/web/"
+  ],
+  "behaviors": [
+    {
+      "id": "http.lifecycle",
+      "description": "HTTP writes can be read back; a real web run resumes after a persisted Ask decision; invalid or duplicate requests fail.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/server/src/routes/api.ts",
+        "packages/server/src/routes/schemas/",
+        "packages/server/src/adapters/web/"
+      ],
+      "scenarios": [
+        "http.lifecycle"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "http.lifecycle",
+      "runner": {
+        "kind": "http",
+        "id": "http.lifecycle"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "Project and conversation creation use real HTTP and SQLite",
+        "Workflow save, update, read and delete persist",
+        "Malformed request is 400 and missing workflow is 404",
+        "Real Ask answer is stored, duplicate is 409, and web run completes"
+      ]
+    }
+  ]
+}

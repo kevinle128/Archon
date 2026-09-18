@@ -1,4 +1,5 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { env } from 'node:process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -30,13 +31,9 @@ const MOCKUP_DIR = join(
   'ux-Archon-agent-node-room-2026-09-09',
   'mockups'
 );
-const STORY_12_EVIDENCE_DIR = join(
-  REPO_ROOT,
-  'plans',
-  '260918-1038-issue-175-raw-payload-toggle',
-  'reports',
-  'evidence'
-);
+const STORY_12_EVIDENCE_DIR =
+  env.ARCHON_VERIFY_EVIDENCE ??
+  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
 
 type Surface = 'console' | 'legacy';
 

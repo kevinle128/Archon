@@ -11,6 +11,7 @@ export default tseslint.config(
       'packages/*/dist/**',
       'dist/**',
       'coverage/**',
+      '.plans/verifications/**', // Retained verification evidence and disposable control tooling
       '.agents/examples/**',
       'packages/docs-web/**',
       'workspace/**',
@@ -49,6 +50,7 @@ export default tseslint.config(
       'packages/*/src/**/*.{ts,tsx}',
       'scripts/**/*.ts',
       '.agents/skills/verify-archon/lib/**/*.ts',
+      '.agents/skills/verify-archon/bin/**/*.ts',
     ],
     languageOptions: {
       parserOptions: {

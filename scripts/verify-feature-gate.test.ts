@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import visualConfig from '../.agents/skills/verify-archon/visual-config.json';
 import {
   beginAttempt,
   prepareAttempt,
@@ -17,6 +18,7 @@ import {
   snapshot,
   toolingDigest,
   writeJson,
+  TOOLING_REPO,
 } from '../.agents/skills/verify-archon/lib/io';
 
 let dir: string;
@@ -109,6 +111,54 @@ afterEach(async (): Promise<void> => {
 
 test('valid exact-head complete proof permits PR authorization', async (): Promise<void> => {
   expect((await assertPass(repo, artifacts, attemptId)).ok).toBe(true);
+});
+
+test('functional PASS with a visual failure cannot authorize the workflow', async (): Promise<void> => {
+  // The gate checks the pinned design inputs before it can inspect a UI result.
+  await writeFile(
+    join(repo, '.git/info/exclude'),
+    visualConfig.sources.map(source => `/${source.path}`).join('\n') + '\n'
+  );
+  for (const source of visualConfig.sources) {
+    await mkdir(dirname(join(repo, source.path)), { recursive: true });
+    await copyFile(join(TOOLING_REPO, source.path), join(repo, source.path));
+  }
+  const current = await snapshot(repo, baseSha);
+  const selected = normalizeProposal(
+    await loadCatalog(),
+    {
+      version: 1,
+      base_sha: current.base_sha,
+      head_sha: current.head_sha,
+      changed_paths: current.changed_paths,
+      affected_behaviors: [
+        { id: 'install.health', confidence: 'high', rationale: 'CLI fixture change' },
+        { id: 'ui.tools', confidence: 'high', rationale: 'Required tool-row visual proof' },
+      ],
+      coverage_gaps: [],
+    },
+    current
+  );
+  await writeJson(join(attempt, 'selection.json'), selected);
+  await writeJson(join(attempt, 'normalization.json'), {
+    ok: true,
+    selection_sha256: digest(selected),
+  });
+  const result = (await readJson(proofPath)) as Record<string, unknown>;
+  await writeJson(proofPath, {
+    ...result,
+    selection_sha256: digest(selected),
+    behavior_ids: selected.behavior_ids,
+    scenario_ids: selected.scenario_ids,
+    scenarios: selected.scenario_ids.map(id => ({
+      id,
+      status: id === 'ui.visual' ? 'failed' : 'passed',
+      errors: id === 'ui.visual' ? ['Required visual criterion failed'] : [],
+    })),
+  });
+  const gate = await recordAttempt(repo, artifacts, attemptId);
+  expect(gate.ok).toBe(false);
+  expect(gate.errors.join(' ')).toContain('ui.visual');
 });
 
 test('proposal path ordering does not invalidate otherwise identical proof', async (): Promise<void> => {
@@ -257,9 +307,9 @@ test('normalization uses the real helper and reports coverage gaps, never a fall
     'install.health',
   ]);
   await expect(
-    normalizeAttempt(repo, artifacts, { ...proposal, coverage_gaps: ['Unmapped user action'] })
-  ).rejects.toThrow('Unresolved coverage gaps');
+    normalizeAttempt(repo, artifacts, { ...proposal, coverage_gaps: ['workflow.other-semantics'] })
+  ).rejects.toThrow('Coverage gap');
   expect((await recordAttempt(repo, artifacts, attemptId)).errors.join(' ')).toContain(
-    'Unmapped user action'
+    'workflow.other-semantics'
   );
 });

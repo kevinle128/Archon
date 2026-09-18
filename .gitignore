@@ -68,6 +68,7 @@ e2e-screenshots/
 .agents/rca-reports/
 .agents/plans/
 .agents/pr-reviews
+.plans/verifications/
 .claude/PRPs/
 .claude/archon/
 .claude/mockups/

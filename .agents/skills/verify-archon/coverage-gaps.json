@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "gaps": [
+    {
+      "id": "auth.login-and-roles",
+      "description": "Opt-in Better Auth login and multi-user authorization",
+      "impact_paths": [
+        "packages/server/src/auth/",
+        "packages/web/src/routes/LoginPage.tsx",
+        "packages/web/src/components/auth/"
+      ],
+      "reason": "Deferred: this scope runs the solo SQLite deployment; it does not prove Postgres sessions or 401/403 ownership."
+    },
+    {
+      "id": "providers.live",
+      "description": "Real AI vendor execution and external platform delivery",
+      "impact_paths": [
+        "packages/providers/src/claude/",
+        "packages/providers/src/codex/",
+        "packages/adapters/"
+      ],
+      "reason": "No real vendor calls or remote messages are authorized; deterministic E2E provider events do not prove these integrations."
+    },
+    {
+      "id": "ui.other-surfaces",
+      "description": "Builder, settings, chat, source control, docs and other UI behavior outside the agreed run journeys",
+      "impact_paths": [
+        "packages/docs-web/",
+        "packages/web/src/routes/WorkflowBuilderPage.tsx",
+        "packages/web/src/experiments/console/builder/"
+      ],
+      "reason": "No qualified journey for these semantics; broad run paths must not imply coverage."
+    },
+    {
+      "id": "workflow.other-semantics",
+      "description": "Workflow features outside deterministic execution and simple approval/retry",
+      "impact_paths": [],
+      "reason": "Sub-runs, container writeback, real provider reasoning, external hooks, full binding lifecycle, parallel races and advanced loop variants need dedicated scenarios."
+    }
+  ]
+}

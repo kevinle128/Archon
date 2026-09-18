@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-verification:catalog:1",
+  "title": "Project verification catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "features", "gaps", "catalog_sha256"],
+  "properties": {
+    "version": {"const": 1},
+    "features": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/feature"}},
+    "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}},
+    "catalog_sha256": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*\\u0000)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[*?\\[])(?!.*//).+$"},
+    "paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runner": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "id"],
+      "properties": {"kind": {"$ref": "#/$defs/id"}, "id": {"$ref": "#/$defs/id"}}
+    },
+    "scenario": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "runner", "prerequisites", "proof_obligations"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "runner": {"$ref": "#/$defs/runner"},
+        "prerequisites": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "proof_obligations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "behavior": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "priority", "impact_paths", "scenarios"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "description": {"type": "string", "minLength": 1},
+        "priority": {"type": "integer", "minimum": 0}, "impact_paths": {"$ref": "#/$defs/paths"},
+        "scenarios": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}
+      }
+    },
+    "feature": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "impact_paths", "behaviors", "scenarios"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "description": {"type": "string", "minLength": 1},
+        "impact_paths": {"$ref": "#/$defs/paths"},
+        "behaviors": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/behavior"}},
+        "scenarios": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scenario"}}
+      }
+    },
+    "gap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "impact_paths", "reason"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "description": {"type": "string", "minLength": 1},
+        "impact_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}, "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}
