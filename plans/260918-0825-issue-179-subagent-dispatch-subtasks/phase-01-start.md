@@ -1,213 +1,200 @@
 ---
 phase: 1
-title: 'Phase 1: Shared task contract and red unit tests'
+title: 'Phase 1: Shared normalization and presentation contract'
 status: todo
 priority: P1
-effort: '3h'
+effort: '4h'
 dependencies: []
 ---
 
-# Phase 1: Shared task contract and red unit tests
+# Phase 1: Shared normalization and presentation contract
 
 ## Goal
 
-Produce the one shared, React-free contract both renderers consume: `normalizeTaskDispatch()` in a new `lib/task-normalize.ts`, and `ToolPresentation.body` (task arm only) plus the `N subagent(s)` badge in `tool-presentation.ts` — test-first, bounded, never throwing.
+Build and prove the single React-free interpretation of a task dispatch. Valid OMP and Claude inputs produce the canonical task body, exact body-bar facts, and collapsed count badge. Invalid or over-budget inputs produce a bounded generic body. Nothing in this phase changes a renderer or a real provider.
 
-## Context links
+## Required reading
 
-- Plan index: [plan.md](./plan.md) — read "Resolved source conflicts and decisions" first; every rule below is one of them.
-- Scout report: [reports/scout-report.md](./reports/scout-report.md).
-- Contract: `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md:44-52` (`body` union, `TaskSubtask`), `:214-226` (normalizer table).
-- Test plan: `_bmad-output/specs/spec-agent-node-room/test-plan.md:55-59`.
-- Existing patterns to mirror (none of these are exported, and `task-normalize.ts` must not import from `tool-presentation.ts`): `tool-presentation.ts:159-164` `asRecord`, `:166-170` `stringField`, `:274-285` `truncateCodePoints` (code-point-safe truncation). `firstNonEmptyLine` (`:256-272`) is **not** a fit: it rejects an over-cap source outright, whereas the excerpt needs a bounded scan window followed by a hard length cap. The normalizer carries its own small copies. <!-- Updated: Red Team 2026-09-18 — findings A1/S4 -->
+- [plan.md](./plan.md), especially “Corrected technical decisions.”
+- [reports/scout-report.md](./reports/scout-report.md).
+- `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md`: `ToolPresentation`, `TaskSubtask`, expanded task/generic arms, provider normalizers.
+- `_bmad-output/specs/spec-agent-node-room/test-plan.md`: CAP-4 cases.
+- `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md`: AD-1 through AD-3, AD-8, AD-10, AD-14.
+- Current `packages/web/src/lib/tool-presentation.ts` and `.test.ts`; do not rely on line numbers after rebasing.
 
-## Key insights
+## Files
 
-- `toolPresentation()` already wraps resolution in try/catch (`tool-presentation.ts:522-528`); assembling the body inside `resolveToolPresentation` (`:419-511`, `case 'task'` at `:481`) inherits that guarantee. The normalizer still must not throw on its own, because Phase 2 tests call it directly and a future caller (chat card) may too.
-- `task-normalize.ts` must import nothing from `tool-presentation.ts` (that file imports the normalizer) — copy the record and code-point helpers locally rather than creating a cycle; extraction into a shared helper waits for the rule of three.
-- Preflight before writing the red tests: confirm the two provider shapes against the installed SDKs, not only the spec prose — Claude `AgentInput` in `@anthropic-ai/claude-agent-sdk`'s `sdk-tools.d.ts` (`description`, `prompt`, `subagent_type?`) and the OMP dispatch tool's `{ context, tasks: [{ name, agent, task }] }` in the OMP/Pi package under `node_modules` (read from the implementing session; the planning session's hook blocked that path). Record both citations in the PR. <!-- Updated: Red Team 2026-09-18 — finding A4 -->
-- `taskHeadline` (`:384-396`) stays as shipped; its `description` preference is already tested (`tool-presentation.test.ts:357-364`).
-
-## File inventory
-
-| Path | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/web/src/lib/task-normalize.ts` | Create | ~120 lines | New file `task-normalize.test.ts` |
-| `packages/web/src/lib/task-normalize.test.ts` | Create | ~150 lines | CAP-4 table, precedence, malformed, bounded, never-throws |
-| `packages/web/src/lib/tool-presentation.ts` | Modify | +~35 lines | `tool-presentation.test.ts` |
-| `packages/web/src/lib/tool-presentation.test.ts` | Modify | +~60 lines | `body` for task, `body: null` sweep, badge singular/plural |
-| `packages/web/src/lib/agent-history.test.ts` | Modify | +~20 lines | One tool card carrying a dispatch exposes `presentation.body` |
+| Path                                             | Action                                                                                 |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `packages/web/src/lib/task-normalize.ts`         | Create                                                                                 |
+| `packages/web/src/lib/task-normalize.test.ts`    | Create                                                                                 |
+| `packages/web/src/lib/tool-presentation.ts`      | Modify                                                                                 |
+| `packages/web/src/lib/tool-presentation.test.ts` | Modify                                                                                 |
+| `packages/web/src/lib/agent-history.test.ts`     | Add one end-to-end projection case only if it adds evidence beyond the presenter tests |
+| `packages/web/src/lib/agent-history.ts`          | No change expected                                                                     |
 
 ## Contract to implement
 
+### `task-normalize.ts`
+
+Use descriptive exported constants so the safety policy is testable:
+
 ```ts
-// packages/web/src/lib/task-normalize.ts
 export const MAX_TASK_SUBTASKS = 64;
-export const MAX_TASK_EXCERPT_SOURCE_CODE_UNITS = 4096; // scan window for the first non-empty line
-export const MAX_TASK_EXCERPT_CODE_POINTS = 160;        // hard cap on the one-line excerpt
-export const MAX_TASK_TEXT_CODE_POINTS = 65536;         // cap on `prompt` and `context` as rendered
+export const MAX_TASK_IDENTIFIER_CODE_UNITS = 256;
+export const MAX_TASK_TOTAL_TEXT_CODE_UNITS = 256 * 1024;
+export const MAX_TASK_EXCERPT_CODE_POINTS = 160;
 
 export interface TaskSubtask {
-  name: string;          // OMP `name`; Claude `description` or ''
-  agent: string | null;  // OMP `agent`; Claude `subagent_type`; null when absent/non-string/empty
-  prompt: string;        // OMP `task`; Claude `prompt` — at most MAX_TASK_TEXT_CODE_POINTS, `…` when cut
-  excerpt: string;       // first non-empty line inside the scan window, cut to MAX_TASK_EXCERPT_CODE_POINTS, `…` when anything follows; '' when none
+  name: string;
+  agent: string | null;
+  prompt: string;
 }
 
-export interface TaskDispatch {
-  context: string | null;   // OMP `context` when a non-empty string (same text cap); Claude always null
-  subtasks: TaskSubtask[];  // at least one entry
-  unscanned: number;        // elements past MAX_TASK_SUBTASKS — real dispatches the reader cannot see
-  dropped: number;          // malformed elements skipped — never valid dispatches
+export interface NormalizedTaskDispatch {
+  mode: 'batch' | 'single';
+  context: string;
+  subtasks: TaskSubtask[];
 }
 
-export function normalizeTaskDispatch(input: unknown): TaskDispatch | null;
+export function normalizeTaskDispatch(input: unknown): NormalizedTaskDispatch | null;
+export function taskPromptExcerpt(prompt: string): string;
 ```
 
-Resolution order inside `normalizeTaskDispatch`:
+Rules:
 
-1. `input` must be a plain record (not null, not array) — else `null`.
-2. If `record.tasks` is an array → OMP batch. Iterate with `for (let i = 0; i < Math.min(tasks.length, MAX_TASK_SUBTASKS); i++)`. Element qualifies when it is a record with string `name` and string `task`; `agent` is a non-empty string or `null`. Non-qualifying elements increment `dropped`. `unscanned = tasks.length - scanned`. Zero qualifying → `null`.
-3. Else if `record.prompt` is a string → Claude single: one entry `{ name: nonEmptyString(description) ?? '', agent: nonEmptyString(subagent_type), prompt, excerpt }`, `context: null`, `unscanned: 0`, `dropped: 0`.
-4. Else `null`.
-5. `context` (OMP only): `typeof record.context === 'string' && record.context.trim().length > 0 ? boundedText(record.context) : null`.
-6. `boundedText(value)`: code-point-safe truncation to `MAX_TASK_TEXT_CODE_POINTS` with a trailing `…` when cut (local copy of the `truncateCodePoints` technique — iterate with `for (const char of value)`, never `String.prototype.slice`, so a surrogate pair is never split). Applied to `prompt` and `context`; `name` and `agent` are identifiers and get the same helper at 200 code points.
-7. `excerpt(prompt)`: scan at most `MAX_TASK_EXCERPT_SOURCE_CODE_UNITS` leading code units for the first non-empty trimmed line (a bounded scan window, not a display length); if none → `''`; cut that line to `MAX_TASK_EXCERPT_CODE_POINTS` code points; append `…` when the line was cut, when later non-empty text exists in the window, or when the prompt exceeds the window. The result is always a genuine one-liner suitable for a `<summary>` accessible name.
-8. Wrap the body in `try { … } catch { return null; }` — a hostile getter or exotic object must degrade, not throw.
+1. Wrap the public normalizer in `try/catch`; a throwing getter or exotic historical value returns `null`.
+2. Accept only a non-null, non-array object. An own `tasks` key selects OMP even if Claude-like keys are also present; a malformed `tasks` value does not fall through to Claude.
+3. OMP requires `tasks` to contain 1–64 elements. Every element requires non-blank string `name`, `agent`, and `task`. Trim outer whitespace from identifiers; preserve the prompt text exactly. `context` is optional; absent/blank becomes `''`, a non-blank string is preserved, and any present non-string value rejects the dispatch.
+4. Claude applies only when no own `tasks` key exists. Require non-blank string `description` and `prompt`; trim the description for `name`, preserve the prompt, and map absent/blank `subagent_type` to `null`. A present non-string `subagent_type` rejects the dispatch.
+5. Reject an identifier longer than `MAX_TASK_IDENTIFIER_CODE_UNITS`. Before trimming or scanning string contents and before allocating the result, sum the original UTF-16 lengths of context, names, agents, and prompts while walking at most 64 entries; reject as soon as the cumulative sum exceeds `MAX_TASK_TOTAL_TEXT_CODE_UNITS`. Do not truncate normalized data and do not return a partial batch.
+6. Return fresh arrays/objects so later callers cannot mutate the stored payload through the presentation.
+7. `taskPromptExcerpt()` is total and deterministic. Collapse line breaks/whitespace to a readable single line, copy no more than 160 Unicode code points, and add `…` only when content was omitted. It must not split a surrogate pair or inspect beyond `MAX_TASK_TOTAL_TEXT_CODE_UNITS`; production callers pass only accepted prompts, and the direct helper still has its own bound.
+8. Keep the module dependency-free. `tool-presentation.ts` imports it, so importing presenter helpers back would create a cycle. A small local record/string guard is clearer than a new abstraction.
+
+The cap response is deliberately whole-dispatch fallback. Do not reintroduce `dropped`, `unscanned`, partial cards, “not shown” notices, or truncated prompts: none exists in the product contract, and each would make a different claim about what was delegated.
+
+### `tool-presentation.ts`
+
+Add the minimum body model required by this story:
 
 ```ts
-// packages/web/src/lib/tool-presentation.ts additions
-import { normalizeTaskDispatch, type TaskSubtask } from './task-normalize';
+export interface GenericField {
+  key: string;
+  value: string;
+}
 
-export type ToolBody = {
-  kind: 'task';
-  context: string | null;
-  subtasks: TaskSubtask[];
-  unscanned: number;
-  dropped: number;
-};
-// Other family arms (terminal, diff, matches, paths, code, web, generic) arrive with Story 1.3.
+export interface TaskSubtaskCard extends TaskSubtask {
+  excerpt: string;
+}
+
+export type ToolBody =
+  | { kind: 'task'; context: string; subtasks: TaskSubtaskCard[] }
+  | { kind: 'generic'; fields: GenericField[] };
 
 export interface ToolPresentation {
-  …existing fields…
-  /** Family body arm, or null when no arm exists yet — renderers then show the bar-only body. */
+  // existing members unchanged
   body: ToolBody | null;
+  bodyFacts: string[];
+}
+
+export interface ToolRowPresentation extends ToolPresentation {
+  // existing runtime members unchanged
+  bodyBarText: string;
 }
 ```
 
-In `resolveToolPresentation`, `case 'task'`: after `headline = taskHeadline(record)`, call `normalizeTaskDispatch(input.input)`; when non-null set `body = { kind: 'task', ...dispatch }` and push `{ kind: 'count', text: subagentBadgeText(n), tone: 'neutral' }` where `n = subtasks.length + unscanned` — malformed `dropped` elements were never dispatches and are not counted — and the text is `1 subagent` / `${n} subagents`. Every other family sets `body: null`. `safePresentation` (`:506-520`) returns `body: null` on both paths. The `mcp` early return (`:424-434`) also sets `body: null`.
+Implementation details:
 
-`ToolRowPresentation extends ToolPresentation` so the field reaches `AgentHistoryItem.presentation` with no change to `agent-history.ts`.
+- Initialize `body: null` and `bodyFacts: []` for existing families and both safe fallback paths.
+- In the task branch, call `normalizeTaskDispatch(input.input)` once, then enrich its canonical `TaskSubtask[]` into `TaskSubtaskCard[]` with `taskPromptExcerpt()` so both shells receive every displayed string.
+  - Batch: task body, `['batch', singularOrPlural(n, 'subtask')]`, and one `count` badge with `subagent` wording.
+  - Single: task body, `['single dispatch']`, and `1 subagent`.
+  - `null`: generic body from the raw input record, no subagent badge, no explicit task bar facts.
+- Add a bounded, internally caught `genericBodyFields()` separate from the existing collapsed `genericFacts()` behavior. Scan at most the existing `MAX_GENERIC_KEYS_SCANNED` own keys and emit at most `MAX_GENERIC_FACTS`. Bound displayed keys and scalar values; represent an array as `[length]` and a non-null object as `{…}`. Never stringify. A non-record input or hostile property enumeration produces `[]`, preserving the generic body.
+- Contain `taskHeadline()` field access inside the task branch. A malformed getter must fall back to the normal task label/headline while retaining the generic body; it must not escape to the whole-presenter fallback and lose the body.
+- Do not attach that generic body to non-task tools in this story. Story 1.3 owns the broad rollout.
+- In `toolRowPresentation()`, assemble badges exactly as today. For a normalized task, keep `bodyFacts` first, exclude the redundant task `count` badge, and append state/exit/output-state/duration text in existing order. Otherwise map every non-placeholder badge to text as today. Prefix the resolved family and join the final `bodyBarText` in the core. This preserves current non-task bars, keeps droppable runtime facts reachable, and prevents two shells from composing copy independently.
+- Preserve `taskHeadline()`, aliases, family inference, chip logic, outcome glyphs, badge tones/order, and safe row fallback.
 
-## Tests before (red first)
+## Tests first
 
 ### `task-normalize.test.ts`
 
-| Case | Input | Expected |
-| --- | --- | --- |
-| OMP batch (test-plan `:56`) | `{ context: 'Read-only.', tasks: [{ name: 'A', agent: 'scout', task: 'p1' }, { name: 'B', agent: 'scout', task: 'p2\nmore' }] }` | 2 subtasks, `context: 'Read-only.'`, `unscanned: 0`, `dropped: 0`, `subtasks[1].excerpt === 'p2…'` |
-| Claude single (`:57`) | `{ description: 'Scout', prompt: 'Find callers', subagent_type: 'Explore' }` | 1 subtask `{ name: 'Scout', agent: 'Explore', prompt: 'Find callers', excerpt: 'Find callers' }`, `context: null` |
-| Claude without agent (`:58`) | `{ description: 'Scout', prompt: 'x' }` | `agent: null` |
-| Claude without description | `{ prompt: 'x' }` | `name: ''` |
-| Precedence | `{ description: 'd', prompt: 'p', tasks: [{ name: 'n', task: 't' }] }` | OMP wins: 1 subtask named `n` |
-| Empty/blank context | `{ context: '   ', tasks: [...] }` | `context: null` |
-| Non-string agent | `{ tasks: [{ name: 'n', agent: 7, task: 't' }] }` | `agent: null` |
-| Malformed elements dropped | `{ tasks: [null, 'str', { name: 'ok', task: 't' }, { name: 'no-task' }] }` | 1 subtask, `dropped: 3`, `unscanned: 0` |
-| All malformed | `{ tasks: [null, {}] }` | `null` |
-| Empty array | `{ tasks: [] }` | `null` |
-| Cap | `{ tasks: Array.from({ length: 100 }, (_, i) => ({ name: String(i), task: 't' })) }` | `subtasks.length === 64`, `unscanned === 36`, `dropped === 0` |
-| Cap plus malformed | 70 elements, 5 malformed within the first 64 | `subtasks.length === 59`, `dropped === 5`, `unscanned === 6` |
-| Excerpt: leading blank lines | `prompt: '\n\n  first\nsecond'` | `excerpt: 'first…'` |
-| Excerpt: single line | `prompt: 'only'` | `excerpt: 'only'` |
-| Excerpt: whitespace-only prompt | `prompt: '  \n '` | `excerpt: ''` |
-| Excerpt: long single line | `'a'.repeat(5000)` | `excerpt === 'a'.repeat(160) + '…'`, `prompt.length === 5000` |
-| Excerpt: exactly at cap | `'a'.repeat(160)` | `excerpt === 'a'.repeat(160)` (no `…`) |
-| Excerpt: surrogate pair at the cut | 159 `a` then `'😀'` then `'b'` | excerpt ends with the whole `😀` followed by `…`; no lone surrogate (`/[\uD800-\uDFFF]/` never matches an isolated unit) |
-| Text cap | `prompt: 'x'.repeat(70000)` | `prompt === 'x'.repeat(65536) + '…'`; same for `context` |
-| Text cap with surrogates | 65535 `a` then `'😀😀'` | cut lands on a code-point boundary |
-| Not a record | `undefined`, `null`, `'str'`, `[]`, `42` | `null` |
-| Hostile getter | object whose `tasks` getter throws | `null`, no throw |
-| Determinism | same input twice | `toEqual` |
+Write a compact table plus explicit boundary cases:
+
+| Case                                                                                | Expected                                                                      |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| OMP with two tasks and markdown context                                             | `mode: 'batch'`, context preserved, two exact `{name, agent, prompt}` entries |
+| OMP without context                                                                 | empty context, cards still valid                                              |
+| Claude with `subagent_type`                                                         | `mode: 'single'`, one entry using description/prompt/type, empty context      |
+| Claude without or with blank `subagent_type`                                        | one entry with `agent: null`                                                  |
+| Own valid `tasks` plus Claude keys                                                  | batch mapping; proves deterministic discriminator                             |
+| Missing Claude description or prompt                                                | `null`                                                                        |
+| OMP missing/non-string name, agent, or task in any element                          | whole result `null`, including a batch with one valid and one invalid element |
+| Empty/non-array/over-64 `tasks`                                                     | `null`                                                                        |
+| Present non-string context or subagent type                                         | `null`                                                                        |
+| `undefined`, `null`, primitives, arrays                                             | `null`                                                                        |
+| Getter for `tasks`, `context`, or an element field throws                           | `null`, no exception                                                          |
+| Exactly-at and one-over identifier limits                                           | success / `null`                                                              |
+| Exactly-at and one-over cumulative text budget                                      | success / `null`; accepted prompts remain byte-for-byte unchanged             |
+| Excerpt with paragraphs, repeated whitespace, emoji at the cut, exact cap, over cap | one line, code-point safe, ellipsis only when omitted                         |
+| Excerpt source beyond the cumulative scan bound                                     | bounded deterministic result; no full-source scan                             |
+| Same input twice                                                                    | deep-equal result                                                             |
+
+The three canonical cases from `test-plan.md` must be individually named so coverage remains traceable.
 
 ### `tool-presentation.test.ts`
 
-- `call('Task', claudeInput).body` equals `{ kind: 'task', context: null, subtasks: [...], unscanned: 0, dropped: 0 }`; `contentBadges` contains `{ kind: 'count', text: '1 subagent', tone: 'neutral' }`.
-- `call('task', ompInput).body.subtasks.length === 2`; badge text `2 subagents`.
-- Badge counts unscanned but not dropped: 70 valid elements → `70 subagents`; `[valid, null, null]` → `1 subagent` with `dropped: 2`.
-- `call('task', { garbage: true }).body === null` and no count badge; `headline` is the chip label (unchanged 1.1 behaviour).
-- Sweep: for one representative input per non-task family (`bash`, `Read`, `Grep`, `Glob`, `eval`, `todo`, `WebFetch`, `mcp__s__t`, unknown) `body === null`.
-- `toolRowPresentation(...).body` is the same value as `toolPresentation(...).body`, and the `N subagents` badge sits in `badges` before `exit`/`duration` (existing content-badge order).
-- `safePresentation` path (name is not a string) → `body: null`.
+Add tests that prove:
 
-### `agent-history.test.ts`
+- OMP task body, `2 subagents`, and `bodyFacts: ['batch', '2 subtasks']`.
+- Singular OMP wording (`1 subagent`, `1 subtask`).
+- Claude body, `1 subagent`, and `bodyFacts: ['single dispatch']`, with and without agent.
+- Malformed and over-budget task input produces `{ kind: 'generic', fields: ... }`, no count badge, and never throws.
+- Generic body projection is bounded, includes scalar/`[n]`/`{…}` values, bounds a hostile long key, does not stringify nested data, and internally reduces a throwing getter to an empty generic field list.
+- One representative of every non-task family still has `body: null`; MCP and `safePresentation` return `body: null`/empty `bodyFacts`.
+- The task body carries the canonical name/agent/prompt plus an excerpt computed by the core; neither renderer computes display text.
+- `toolRowPresentation()` preserves existing complete `bodyBarText` for a failed/truncated/duration non-task row. A task row with duration produces `task · single dispatch · <duration>` exactly once; it never repeats `N subagents` in the body bar.
+- Existing badge order and task headline tests remain unchanged.
 
-- A `tool` row `{ name: 'Task', id: 't1', input: claudeInput }` paired with its result → the item's `presentation.body?.kind === 'task'` and `presentation.badges` includes `1 subagent`.
+### Optional `agent-history.test.ts`
 
-Run before implementing; every new case must fail for the right reason (missing module / missing field), not for a typo:
+Add one paired task call/result only if needed to prove that the new fields reach `AgentHistoryItem.presentation` without changing `agent-history.ts`. Do not duplicate all presenter cases here.
 
-```bash
-cd packages/web && bun test src/lib/task-normalize.test.ts src/lib/tool-presentation.test.ts src/lib/agent-history.test.ts
-```
+## Implementation order
 
-## Refactor (protected changes)
+1. Change sprint status from `backlog` to `in-progress` when implementation actually begins.
+2. Add the normalizer tests and confirm they fail because the module is absent.
+3. Implement the normalizer and make its tests green.
+4. Add presentation tests and confirm they fail for missing body/bar fields.
+5. Extend the presentation types and task branch; keep all construction sites exhaustive.
+6. Run the complete `src/lib/` suite and web type-check. Fix regressions; do not weaken existing Story 1.1 assertions.
 
-1. Create `task-normalize.ts` per the contract above; docblock states it is provider-shape → shared-shape only, React-free, and imports nothing from `tool-presentation.ts`.
-2. Add `ToolBody`, `body` to `ToolPresentation`, the task-arm assembly and badge in `case 'task'`, `body: null` in the `mcp` return and both `safePresentation` returns.
-3. Do not touch `taskHeadline`, alias tables, or any other family branch.
-
-## Tests after
-
-- All Phase 1 tests green; the whole `src/lib/` suite green (existing 1.1 tables unchanged).
-- `bun run type-check` in `packages/web` green — the two renderers compile untouched because `body` is additive and they never destructure `ToolPresentation` exhaustively.
-
-## Regression gate
+## Commands
 
 ```bash
-cd packages/web && bun test src/lib/ && bun run type-check
+cd packages/web
+bun test src/lib/task-normalize.test.ts
+bun test src/lib/tool-presentation.test.ts src/lib/agent-history.test.ts
+bun test src/lib/
+bun run type-check
 ```
 
-## Test scenario matrix
+## Exit criteria
 
-| Priority | Scenario | Test |
-| --- | --- | --- |
-| Critical | Both provider shapes normalize (AC1) | `task-normalize.test.ts` rows 1–3 |
-| Critical | Malformed never throws, degrades to `null` (AC3) | rows "All malformed", "Not a record", "Hostile getter"; `tool-presentation.test.ts` garbage case |
-| Critical | Bounded scan with surfaced cap; bounded text | rows "Cap", "Cap plus malformed", "Text cap" rows |
-| High | Precedence and field fallbacks | rows "Precedence", "Claude without description", "Non-string agent" |
-| High | Excerpt semantics incl. 160-code-point cap and surrogate safety | seven excerpt rows |
-| High | Badge singular/plural; counts `unscanned`, never `dropped` | `tool-presentation.test.ts` |
-| Medium | `body: null` for every other family | sweep |
-| Medium | Item-level plumbing | `agent-history.test.ts` |
+- Both canonical shapes and every malformed/boundary case have deterministic unit evidence.
+- The shared presentation alone decides task vs generic body, count badge, and the complete body-bar string.
+- No renderer or real provider changed.
+- `src/lib/` and web type-check pass.
 
-## Dependency map
+## Risks and safeguards
 
-- Produces: `TaskSubtask`, `TaskDispatch`, `ToolBody`, `ToolPresentation.body`, `N subagent(s)` badge → consumed by Phase 2 renderers.
-- Consumes: Story 1.1 helpers in `tool-presentation.ts`; `AgentHistoryItem.presentation` plumbing in `agent-history.ts:186-189` (unchanged).
-- Coordinates with: Story 1.3 will extend `ToolBody` with the remaining arms; keep the union in one exported type so that extension is additive.
+- **Contract overlap with Story 1.3:** keep the generic arm canonical and narrowly attached only to malformed task-family input. Rebase onto an existing arm/helper if 1.3 lands first.
+- **Accidental data loss:** accepted prompts/context are never truncated; rejected inputs take the generic path and later remain inspectable through Raw.
+- **UI freeze:** array count, identifier size, cumulative text, excerpt scan, generic keys, and generic fields all have deterministic bounds.
+- **Sensitive logging:** this read-only projection does not log payloads, prompts, tool names, or generated fallback values.
 
-## Todo
+## Handoff to Phase 2
 
-- [ ] Write `task-normalize.test.ts` (red).
-- [ ] Extend `tool-presentation.test.ts` and `agent-history.test.ts` (red).
-- [ ] Implement `task-normalize.ts`.
-- [ ] Add `ToolBody`/`body`/badge to `tool-presentation.ts`.
-- [ ] `cd packages/web && bun test src/lib/ && bun run type-check` green.
-
-## Success criteria
-
-All rows of the scenario matrix pass; no renderer file changed in this phase; `ToolPresentation.body` is `null` for every non-task presentation and for every failed task normalization.
-
-## Risk assessment
-
-- Circular import between `task-normalize.ts` and `tool-presentation.ts` → keep the normalizer dependency-free (local helpers).
-- Story 1.3 lands first and adds `body` with a different shape → this phase's union is the contract's shape; rebase onto theirs, keeping the task arm and the `unscanned`/`dropped` counts.
-- `unscanned`/`dropped` tempt a "silent cap" → both counts are part of the arm and Phase 2 renders each.
-- A 4096-code-unit excerpt would leak near-whole single-line prompts into the always-present `<summary>` accessible name → the 160-code-point cap is the fix; the 4096 window only bounds the newline search.
-
-## Security considerations
-
-Pure data transformation on already-authorized payloads; no HTML, no `dangerouslySetInnerHTML`, no attribute injection. Bounded loops, code-point-safe caps on every emitted string (`prompt`/`context` 65536, `excerpt` 160, `name`/`agent` 200), and try/catch protect the transcript from hostile stored payloads: a multi-megabyte `task` string cannot force an unbounded `<pre>` layout.
-
-## Next steps
-
-Phase 2 consumes `presentation.body` on both surfaces. Before starting it, run the deep-mode scout pass: re-verify the body-region line numbers in both renderers against the current `develop` (Story 1.2 may have moved them).
+Phase 2 consumes only `presentation.body` and `presentation.bodyBarText`. If a renderer needs to inspect `item.input`, derive an excerpt, or compose body-bar words, the Phase 1 boundary is incomplete and must be fixed before continuing.
