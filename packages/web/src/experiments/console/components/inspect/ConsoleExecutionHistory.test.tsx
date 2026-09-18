@@ -231,6 +231,52 @@ describe('ConsoleExecutionHistory', () => {
     expect(host.textContent).not.toContain('occ-a-assistant');
   });
 
+  test('an OMP task dispatch renders context and one card per subtask inside the owning row', async () => {
+    const ompInput: Record<string, unknown> = {
+      context: 'Read-only review. **Do not edit.**\n\n- report file:line',
+      tasks: [
+        { name: 'ScoutBackoff', agent: 'scout', task: 'Map every retry_backoff call site.' },
+        { name: 'ScoutCI', agent: 'scout', task: 'Where is CARGO_BUILD_JOBS pinned?' },
+      ],
+    };
+    renderHistory({
+      loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-task-1',
+            seq: 10,
+            kind: 'tool',
+            payload: { name: 'Task', id: 'task-1', input: ompInput },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+          {
+            id: 'result-task-1',
+            seq: 11,
+            kind: 'tool',
+            payload: { name: 'Task', id: 'task-1', input: ompInput, output: 'done' },
+            metadata: { tool_phase: 'result', outcome: 'success' },
+            created_at: CREATED_AT,
+          },
+        ],
+      }),
+    });
+    await flushUntil(
+      'task row',
+      () => host.querySelector('details[data-tool-id="task-1"]') !== null
+    );
+    const row = host.querySelector('details[data-tool-id="task-1"]');
+    if (row === null) throw new Error('task row missing');
+    expect(row.textContent).toContain('task · batch · 2 subtasks');
+    expect(row.textContent).toContain('Read-only review.');
+    const cards = row.querySelectorAll('details[data-subtask-index]');
+    expect(cards).toHaveLength(2);
+    const firstSummary = cards[0]?.querySelector('summary');
+    expect(firstSummary?.textContent).toContain('scout');
+    expect(firstSummary?.textContent).toContain('ScoutBackoff');
+    expect(firstSummary?.textContent).toContain('Map every retry_backoff call site.');
+  });
+
   test('renders a matching Ask after recorded history', async () => {
     renderHistory({
       pendingInteractions: [
