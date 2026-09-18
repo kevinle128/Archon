@@ -162,3 +162,41 @@
 
 ---
 
+## 2025-09-19 — US-005: E2E evidence, acceptance report, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts` — opt-in strict-schema `echoPrompt`; emits `[e2e-fake] echo:` / `[e2e-fake] resumed echo:` of the directive-stripped prompt before result/sentinel handling
+- `packages/providers/src/e2e-fake/provider.test.ts` — +7 tests: strip, usage-directive strip, resumed session id reuse, echo→E2E_LOOP_DONE→result ordering, default parity, invalid type, abort during delay
+- `e2e/fixtures/workflows/e2e-queue-guidance.yaml` — direct `steer-me` node, bounded `delayMs`, echo opt-in via runtime scenario
+- `e2e/fixtures/workflows/e2e-queue-guidance-loop.yaml` — loop `steer-loop`, `until: E2E_LOOP_DONE`, max_iterations 3
+- `e2e/lib/playwright/archon-runtime.ts` — seeds both fixtures into isolated ARCHON_HOME; `startWorkflowViaWeb` (web dispatch → `{runId, conversationId, codebaseId}` once live); generic tracked `startDetachedWorkflow` (PID/command/port/worktree in runtime cleanup); `startHitlWorkflow` delegates to it; `starterFetch` exposed
+- `e2e/ui/agent-queue-guidance.spec.ts` — new spec, 11 tests: both-shell direct drain, both-shell loop delivery, blocked Ask UI, detached 422 disclosure, route-smoke ladder, both-shell visual/a11y evidence
+- `plans/.../reports/acceptance.md` — criterion→evidence map; `reports/evidence/us-005-*` — 12 PNGs + measurements.json
+- `plans/.../prd.md` + `plans/reports/scout-260919-*.md` — prettier-only formatting (format:check gate)
+
+**Acceptance criteria verified**:
+- [x] `echoPrompt` strict field; exactly one echo chunk, resumed prefix iff `resumeSessionId`, before result, stripped once; `doneWhenPromptIncludes` still on stripped prompt; absent = identical chunks
+- [x] Provider tests prove strip, reuse, ordering, unchanged default, abort (`Query aborted`)
+- [x] Two separate fixtures: direct `steer-me` bounded delay; loop `steer-loop` `until: E2E_LOOP_DONE` small max_iterations
+- [x] Runtime: fixtures seeded via existing copy block; web-dispatch helper returns ids once running; tracked detached-CLI helper always cleaned through runtime cleanup; existing status polling, no fixed sleeps/untracked processes
+- [x] Spec both-shell on fresh web-dispatched runs: no empty band, enabled Queue + `this tab only` hint, plain Enter newline/no request, shortcut queues `first correction` (queued·1 + sent + announcement + cleared + focus), button queues `second correction` (queued·2 ordered), resumed echo exactly `first correction\n\nsecond correction` in one occurrence, no extra node_started/operator row/delivered badge
+- [x] Loop: queued `finish now` during delayed iteration 1 → resumed echo + E2E_LOOP_DONE inside ×1 group, no ×2 group, run completes
+- [x] Route smoke: 200 canonical / 400 invalid_request / 404 not_found / 409 node_finished (no new transcript row) / 422 not_steerable_here (detached, during delay)
+- [x] Blocked: focusable `aria-disabled="true"` (no native disabled), reason `answer the agent's question first`, click(force)+shortcut no request. Detached: submit→422→exact disclosure as only dock content, draft/retry in sessionStorage, no NEVER SENT UI asserted
+- [x] Visual/a11y: Console 1440×900 (panel 696px) + 460px harness, Legacy 460px; generating-empty/two-receipt/ask-blocked/post-422/reduced-motion captures; computed contrast (text ≥5.33:1, focus ring ≥5.14:1); band 33vh cap + internal scroll, no overlay/overflow, last transcript row reachable; labelled textarea/list, Queue accessible name, role=status/alert, aria-describedby, focus retention, IME+plain-Enter guards; no axe added
+- [x] acceptance.md maps criteria→tests/artifacts with commands, dimensions, honest deferrals (PR + sprint-status owned elsewhere)
+- [x] Diff contains no migration, GET queue route, contract edit, Stop/delete, operator row, or later-story reconciliation
+- [x] Processes reconciled — no stray PID owned by this worktree (foreign-worktree e2e server on 3409 observed and left)
+- [x] Full verification chain green (see report table)
+
+**Learnings**:
+- Playwright a11y actionability: `aria-disabled="true"` fails `click()` actionability forever — use `click({force:true})` for blocked no-op assertions
+- Legacy run detail opens on the Graph tab; `locator.count() > 0` races initial render — `await expect(tab).toBeVisible()` before clicking Logs
+- Console room defaults to "Attempt 1" execution view; loop echo rows render in the page-level iteration stream group (`steer-loop ×1`), assert DOM order on page text not inside the room region
+- Node-end row splits label/status into separate spans — never match contiguous `'<node> completed'` text
+- ARCHON_E2E_PROOF=1 keeps `test-finished-1.png`; spec writes durable captures via `page.screenshot({path: EVIDENCE_DIR/...})` into the plan's evidence dir
+- e2e test runs can regenerate OTHER plans' tracked PNG evidence (hitl suite → 260907 captures) — restore foreign dirs before staging; only stage own evidence
+- Port-collision on retry is infra, not product: runtime refuses to bind an occupied port; a foreign worktree's orphaned e2e server can hold 340x ports — check `ps ... command` for the owning worktree path before touching it
+
+---

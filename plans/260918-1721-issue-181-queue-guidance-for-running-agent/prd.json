@@ -120,8 +120,8 @@
       "technicalNotes": "Phase-04-e2e-evidence-and-closeout.md governs. Executor unit tests remain the exact resume-id proof; the fake's 'resumed echo' prefix is the browser-visible cross-layer proof. Each both-shell case needs a fresh direct run \u2014 a completed run cannot demonstrate a live composer. If a required visual state cannot be captured deterministically, mark it a blocker in the acceptance report rather than substituting a mock. Follow the runtime's tracked-process ownership model exactly.",
       "dependsOn": ["US-004"],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: packages/providers/src/e2e-fake/provider.ts, packages/providers/src/e2e-fake/provider.test.ts, e2e/fixtures/workflows/e2e-queue-guidance{,-loop}.yaml, e2e/lib/playwright/archon-runtime.ts, e2e/ui/agent-queue-guidance.spec.ts, reports/acceptance.md + reports/evidence/us-005-*. Full verification chain green (provider 31, workflows 33+623, core 7, server 227, web 48+52+86, e2e typecheck, queue-guidance spec 11/11, hitl 36, bun run validate). PR creation + sprint-status deferred to owning workflows per parent-owned lifecycle."
     }
   ]
 }
