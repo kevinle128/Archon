@@ -754,8 +754,6 @@ describe('buildAgentHistory', () => {
     expect(items[2]).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
   });
 
-  });
-
   test('a paired call/result carries the canonical raw payload', () => {
     const { items } = buildAgentHistory({
       nodeId: NODE_ID,
@@ -913,8 +911,6 @@ describe('buildAgentHistory', () => {
       text: '2 subagents',
       tone: 'neutral',
     });
-  });
-
   });
 
   test('returns empty todos when no tool resolves to the todo family', () => {

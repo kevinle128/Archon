@@ -113,7 +113,6 @@ export const E2E_FAKE_TODO_INPUTS: readonly Record<string, unknown>[] = [
   { op: 'drop', task: 'Review output' },
 ];
 
-
 const ASK_HUMAN_TOOL_NAME = 'AskHuman';
 
 const DEFAULT_ASK_QUESTIONS = [
@@ -297,5 +296,216 @@ function parseScenarioDirective(directive: string): E2eScenario {
     parsed = JSON.parse(directive);
   } catch (err) {
     throw new Error(
+      `e2e-fake: scenario directive is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  const result = scenarioSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`e2e-fake: scenario directive failed validation: ${result.error.message}`);
+  }
+  return result.data;
+}
 
-[Showing lines 1-300 of 514. Use :301 to continue]
+function findAskHumanTool(nativeTools: NativeTool[] | undefined): NativeTool {
+  const tool = nativeTools?.find(candidate => candidate.name === ASK_HUMAN_TOOL_NAME);
+  if (!tool) {
+    throw new Error(
+      'e2e-fake: askHuman scenario requires the registered AskHuman native tool on sendQuery options'
+    );
+  }
+  return tool;
+}
+
+async function waitUnlessAborted(delayMs: number, abortSignal?: AbortSignal): Promise<void> {
+  if (delayMs <= 0) return;
+  await new Promise<void>((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(new Error('Query aborted'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      abortSignal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(new Error('Query aborted'));
+    };
+    abortSignal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+function parseUsageDirective(directive: string): UsageBreakdown {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(directive);
+  } catch (err) {
+    throw new Error(
+      `e2e-fake: usage directive is not valid JSON: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
+  const result = usageBreakdownSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`e2e-fake: usage directive failed validation: ${result.error.message}`);
+  }
+  return result.data;
+}
+
+/**
+ * Env-gated fake agent provider for end-to-end tests.
+ *
+ * Usage still comes only from `<<E2E_USAGE>>` (unchanged contract). Optional
+ * `<<E2E_SCENARIO>>` JSON drives typed tool / AskHuman / delay / loop-done
+ * behavior by calling the real native-tool handler and emitting `tool` +
+ * `tool_result` chunks. Registered ONLY when `ARCHON_E2E_FAKE_PROVIDER` is set.
+ */
+export class E2eFakeProvider implements IAgentProvider {
+  getType(): string {
+    return 'e2e-fake';
+  }
+
+  getCapabilities(): ProviderCapabilities {
+    return E2E_FAKE_CAPABILITIES;
+  }
+
+  async *sendQuery(
+    prompt: string,
+    _cwd: string,
+    resumeSessionId?: string,
+    requestOptions?: SendQueryOptions
+  ): AsyncGenerator<MessageChunk> {
+    if (requestOptions?.abortSignal?.aborted) throw new Error('Query aborted');
+
+    const usageDirective = extractDelimitedBlock(
+      prompt,
+      DIRECTIVE_OPEN,
+      DIRECTIVE_CLOSE,
+      'usage directive'
+    );
+    const scenarioDirective = extractDelimitedBlock(
+      prompt,
+      SCENARIO_OPEN,
+      SCENARIO_CLOSE,
+      'scenario directive'
+    );
+    const scenario: E2eScenario =
+      scenarioDirective === undefined ? {} : parseScenarioDirective(scenarioDirective);
+    const sessionId = resumeSessionId ?? `e2e-fake-${randomUUID()}`;
+    const resumed = resumeSessionId !== undefined ? true : undefined;
+
+    await waitUnlessAborted(scenario.delayMs ?? 0, requestOptions?.abortSignal);
+    if (requestOptions?.abortSignal?.aborted) throw new Error('Query aborted');
+
+    const usageBreakdown =
+      usageDirective === undefined ? undefined : parseUsageDirective(usageDirective);
+
+    const resumeInteractions = requestOptions?.resumeInteractions;
+    if (resumeInteractions !== undefined && resumeInteractions.length > 0) {
+      const first = resumeInteractions[0];
+      const resumeText = first.declined
+        ? '[e2e-fake] ask declined'
+        : `[e2e-fake] ask answered ${JSON.stringify(first.payload)}`;
+      yield { type: 'assistant', content: resumeText };
+      log.info({ sessionId, resumed: true }, 'e2e-fake.query_completed_resume');
+      yield {
+        type: 'result',
+        sessionId,
+        ...(usageBreakdown !== undefined ? { usageBreakdown } : {}),
+        resumed: true,
+      };
+      return;
+    }
+
+    if (scenario.emitTodo === true) {
+      for (const [index, input] of E2E_FAKE_TODO_INPUTS.entries()) {
+        const toolCallId = `e2e-fake-todo-${sessionId}-${String(index + 1)}`;
+        yield {
+          type: 'tool',
+          toolName: E2E_FAKE_TODO_TOOL_NAME,
+          toolInput: { ...input },
+          toolCallId,
+        };
+        yield {
+          type: 'tool_result',
+          toolName: E2E_FAKE_TODO_TOOL_NAME,
+          toolOutput: E2E_FAKE_TODO_OUTPUT,
+          toolCallId,
+          toolOutcome: 'success',
+        };
+      }
+    }
+
+    if (scenario.emitTool === true) {
+      const repeat = scenario.repeatTool ?? 1;
+      yield { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT };
+      for (let index = 0; index < repeat; index += 1) {
+        const toolCallId =
+          scenario.repeatTool === undefined
+            ? `e2e-fake-tool-${sessionId}`
+            : `e2e-fake-tool-${sessionId}-${String(index + 1)}`;
+        yield {
+          type: 'tool',
+          toolName: E2E_FAKE_TOOL_NAME,
+          toolInput: { ...E2E_FAKE_TOOL_INPUT },
+          toolCallId,
+        };
+        const toolOutput =
+          scenario.largeLastToolOutput === true && index === repeat - 1
+            ? `${E2E_FAKE_TOOL_OUTPUT}\n${'x'.repeat(20_000)}\n[e2e-fake] full output tail`
+            : E2E_FAKE_TOOL_OUTPUT;
+        yield {
+          type: 'tool_result',
+          toolName: E2E_FAKE_TOOL_NAME,
+          toolOutput,
+          toolCallId,
+          toolOutcome: 'success',
+        };
+      }
+    } else if (scenario.taskDispatch !== undefined) {
+      const toolName =
+        scenario.taskDispatch === 'omp' ? E2E_FAKE_TASK_TOOL_NAME : E2E_FAKE_AGENT_TOOL_NAME;
+      const toolInput =
+        scenario.taskDispatch === 'omp' ? E2E_FAKE_TASK_OMP_INPUT : E2E_FAKE_AGENT_INPUT;
+      const toolCallId = `e2e-fake-tool-${sessionId}`;
+      yield { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT };
+      yield { type: 'tool', toolName, toolInput: structuredClone(toolInput), toolCallId };
+      yield {
+        type: 'tool_result',
+        toolName,
+        toolOutput: E2E_FAKE_TOOL_OUTPUT,
+        toolCallId,
+        toolOutcome: 'success',
+      };
+    } else {
+      yield { type: 'assistant', content: '[e2e-fake] deterministic response' };
+    }
+
+    const promptOutsideDirectives = stripDelimitedBlock(
+      stripDelimitedBlock(prompt, SCENARIO_OPEN, SCENARIO_CLOSE),
+      DIRECTIVE_OPEN,
+      DIRECTIVE_CLOSE
+    );
+    if (
+      scenario.doneWhenPromptIncludes !== undefined &&
+      promptOutsideDirectives.includes(scenario.doneWhenPromptIncludes)
+    ) {
+      yield { type: 'assistant', content: E2E_FAKE_LOOP_DONE };
+    }
+
+    if (scenario.askHuman === true) {
+      const askTool = findAskHumanTool(requestOptions?.nativeTools);
+      const toolUseId = `e2e-fake-ask-${sessionId}`;
+      await askTool.handler({ questions: DEFAULT_ASK_QUESTIONS }, { toolUseId, sessionId });
+      throw new Error('e2e-fake: AskHuman handler returned without pausing the run');
+    }
+
+    if (usageBreakdown === undefined) {
+      log.info({ sessionId }, 'e2e-fake.query_completed_no_usage');
+      yield { type: 'result', sessionId, resumed };
+      return;
+    }
+
+    log.info({ sessionId, entries: usageBreakdown.length }, 'e2e-fake.query_completed');
+    yield { type: 'result', sessionId, usageBreakdown, resumed };
+  }
+}

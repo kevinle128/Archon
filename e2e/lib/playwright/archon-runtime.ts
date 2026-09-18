@@ -144,6 +144,11 @@ export interface ArchonRuntime {
   /** Run the two-node task-dispatch fixture (OMP batch + Claude single) to completion. */
   runTaskDispatchWorkflow(): Promise<CliRunResult>;
   /**
+   * Run the todo-strip fixture: `todo-plan` emits four folded todo calls plus a
+   * long Read transcript; `no-todo` emits ordinary tool calls only.
+   */
+  runTodoStripWorkflow(): Promise<CliRunResult>;
+  /**
    * Start the HITL fixture without waiting for CLI exit. `runId` resolves as
    * soon as the run row exists. Use only while work is still running.
    */
@@ -301,5 +306,436 @@ interface OwnedProcess {
 
 export async function createArchonRuntime(workerIndex: number): Promise<ArchonRuntime> {
   if (!existsSync(WEB_DIST_INDEX)) {
+    throw new Error(
+      `Web UI bundle missing at ${WEB_DIST_INDEX}. Build it once with \`bun run build:web\` from the repo root before running e2e.`
+    );
+  }
 
-[Showing lines 1-300 of 734. Use :301 to continue]
+  const portBase = Number(process.env.ARCHON_E2E_PORT_BASE ?? '3400');
+  const port = portBase + workerIndex;
+  if (!Number.isInteger(portBase) || portBase < 1024 || port > 65535) {
+    throw new Error(
+      'ARCHON_E2E_PORT_BASE must be an integer between 1024 and 65535 minus the worker index'
+    );
+  }
+  if (await isPortListening(port)) {
+    throw new Error(
+      `Port ${port} is already in use by an unrelated process. Refusing to launch this worker's Archon server.`
+    );
+  }
+  const base = mkdtempSync(join(tmpdir(), 'archon-e2e-'));
+  const owned: OwnedProcess[] = [];
+  const stop = async (): Promise<void> => {
+    try {
+      for (const item of [...owned].reverse()) {
+        await terminateChild(item.child, item.exited);
+      }
+    } finally {
+      rmSync(base, { recursive: true, force: true });
+    }
+  };
+  let initialized = false;
+  try {
+    const runtime = await startArchonRuntime(port, base, owned, stop);
+    initialized = true;
+    return runtime;
+  } finally {
+    if (!initialized) await stop();
+  }
+}
+
+async function startArchonRuntime(
+  port: number,
+  base: string,
+  owned: OwnedProcess[],
+  stop: () => Promise<void>
+): Promise<ArchonRuntime> {
+  const home = join(base, 'home');
+  const workdir = join(base, 'workdir');
+  mkdirSync(join(home, 'workflows'), { recursive: true });
+  mkdirSync(workdir, { recursive: true });
+  writeFileSync(
+    join(home, 'workflows', `${E2E_WORKFLOW_NAME}.yaml`),
+    readFileSync(WORKFLOW_FIXTURE)
+  );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_HITL_WORKFLOW_NAME}.yaml`),
+    readFileSync(HITL_WORKFLOW_FIXTURE)
+  );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_HITL_LONG_WORKFLOW_NAME}.yaml`),
+    readFileSync(HITL_LONG_WORKFLOW_FIXTURE)
+  );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_HITL_TWO_ASKS_WORKFLOW_NAME}.yaml`),
+    readFileSync(HITL_TWO_ASKS_WORKFLOW_FIXTURE)
+  );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_TASK_DISPATCH_WORKFLOW_NAME}.yaml`),
+    readFileSync(TASK_DISPATCH_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_TODO_STRIP_WORKFLOW_NAME}.yaml`),
+    readFileSync(TODO_STRIP_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'config.yaml'),
+    [
+      'pricing:',
+      '  models:',
+      `    - provider: ${PRICED_MODEL_PROVIDER}`,
+      `      model: ${PRICED_MODEL}`,
+      `      input: ${String(PRICED_RATE_INPUT_PER_M)}`,
+      `      output: ${String(PRICED_RATE_OUTPUT_PER_M)}`,
+      '',
+    ].join('\n')
+  );
+
+  const baseURL = `http://127.0.0.1:${port}`;
+  const starterUserId = randomUUID();
+  const dbPath = join(home, 'archon.db');
+
+  const track = (child: ChildProcess, command: string): Promise<number> => {
+    const exited = new Promise<number>(resolve => {
+      child.once('error', () => resolve(-1));
+      child.once('exit', code => resolve(code ?? -1));
+    });
+    owned.push({ child, exited, command });
+    return exited;
+  };
+
+  const server: ChildProcess = spawn('bun', [SERVER_ENTRY], {
+    cwd: home,
+    env: isolatedEnv(home, port),
+    stdio: 'pipe',
+  });
+  let serverLog = '';
+  server.stdout?.on('data', d => (serverLog += String(d)));
+  server.stderr?.on('data', d => (serverLog += String(d)));
+  server.once('error', error => (serverLog += error.message));
+  const serverExited = track(server, `bun ${SERVER_ENTRY} PORT=${String(port)}`);
+
+  try {
+    await waitForHealth(baseURL, 30_000);
+  } catch (err) {
+    await terminateChild(server, serverExited);
+    throw new Error(
+      `${(err as Error).message}\n--- server log (tail) ---\n${serverLog.slice(-2000)}`
+    );
+  }
+
+  const dbDeadline = Date.now() + 10_000;
+  while (!existsSync(dbPath) && Date.now() < dbDeadline) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+  if (!existsSync(dbPath)) {
+    await terminateChild(server, serverExited);
+    throw new Error(`SQLite database was not created at ${dbPath}`);
+  }
+  seedStarterIdentities(dbPath, starterUserId);
+
+  const spawnCli = (
+    args: string[],
+    env: NodeJS.ProcessEnv = isolatedEnv(home)
+  ): { child: ChildProcess; stdout: { text: string }; exited: Promise<number> } => {
+    const cli = spawn('bun', args, { cwd: workdir, env, stdio: 'pipe' });
+    const buf = { text: '' };
+    cli.stdout?.on('data', d => (buf.text += String(d)));
+    cli.stderr?.on('data', d => (buf.text += String(d)));
+    cli.once('error', error => (buf.text += error.message));
+    const exited = track(cli, `bun ${args.join(' ')}`);
+    return { child: cli, stdout: buf, exited };
+  };
+
+  const runCli = async (args: string[], env?: NodeJS.ProcessEnv): Promise<CliRunResult> => {
+    const launched = spawnCli(args, env);
+    const code = await launched.exited;
+    if (code !== 0) {
+      throw new Error(
+        `\`bun ${args.join(' ')}\` exited ${code}\n--- output ---\n${launched.stdout.text}`
+      );
+    }
+    return parseCliEnvelope(launched.stdout.text);
+  };
+
+  const runWorkflow = async (directive?: string): Promise<string> => {
+    const args = [CLI_ENTRY, 'workflow', 'run', E2E_WORKFLOW_NAME];
+    if (directive) args.push(directive);
+    args.push('--folder', '--json');
+    const result = await runCli(args);
+    return result.runId;
+  };
+
+  const runHitlWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([CLI_ENTRY, 'workflow', 'run', E2E_HITL_WORKFLOW_NAME, '--folder', '--json']);
+  };
+
+  const runUnownedHitlWorkflow = async (): Promise<CliRunResult> => {
+    // Empty ARCHON_USER_ID alone falls back to USER/USERNAME in resolveCliUserId.
+    // Remove all three in this subprocess to exercise actual solo CLI ownership.
+    return runCli([CLI_ENTRY, 'workflow', 'run', E2E_HITL_WORKFLOW_NAME, '--folder', '--json'], {
+      ...isolatedEnv(home),
+      ARCHON_USER_ID: '',
+      USER: '',
+      USERNAME: '',
+    });
+  };
+
+  const runHitlLongHistoryWorkflow = async (): Promise<CliRunResult> => {
+    try {
+      return await runCli([
+        CLI_ENTRY,
+        'workflow',
+        'run',
+        E2E_HITL_LONG_WORKFLOW_NAME,
+        '--folder',
+        '--json',
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('e2e-fake: scenario directive failed validation') &&
+        error.message.includes('"unrecognized_keys"') &&
+        error.message.includes('"repeatTool"')
+      ) {
+        throw new UnsupportedSetupError(
+          'Target fake provider rejects the long-history repeatTool directive',
+          { cause: error }
+        );
+      }
+      throw error;
+    }
+  };
+
+  const runHitlTwoAsksWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_HITL_TWO_ASKS_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+  };
+
+  const runTaskDispatchWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_TASK_DISPATCH_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+  };
+
+  const runTodoStripWorkflow = async (): Promise<CliRunResult> => {
+    try {
+      return await runCli([
+        CLI_ENTRY,
+        'workflow',
+        'run',
+        E2E_TODO_STRIP_WORKFLOW_NAME,
+        '--folder',
+        '--json',
+      ]);
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes('e2e-fake: scenario directive failed validation') &&
+        error.message.includes('"unrecognized_keys"') &&
+        error.message.includes('"emitTodo"')
+      ) {
+        throw new UnsupportedSetupError(
+          'Target fake provider rejects the todo-strip emitTodo directive',
+          { cause: error }
+        );
+      }
+      throw error;
+    }
+  };
+
+  const listWorkflowRunIds = async (workflowName: string): Promise<string[]> => {
+    const res = await fetch(`${baseURL}/api/workflows/runs?limit=50`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      runs?: { id?: string; workflow_name?: string; workflowName?: string }[];
+    };
+    return (body.runs ?? [])
+      .filter(
+        run =>
+          Boolean(run.id) &&
+          (run.workflow_name === workflowName || run.workflowName === workflowName)
+      )
+      .map(run => run.id as string);
+  };
+
+  const waitForRunId = async (
+    workflowName: string,
+    timeoutMs: number,
+    excludeIds: ReadonlySet<string>
+  ): Promise<string> => {
+    const deadline = Date.now() + timeoutMs;
+    let lastErr = 'no runs';
+    while (Date.now() < deadline) {
+      try {
+        const ids = await listWorkflowRunIds(workflowName);
+        const fresh = ids.find(id => !excludeIds.has(id));
+        if (fresh) return fresh;
+        lastErr = `no new ${workflowName} run yet (${String(ids.length)} listed)`;
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : String(err);
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    throw new Error(
+      `Live run id for ${workflowName} not observed within ${timeoutMs}ms (${lastErr})`
+    );
+  };
+
+  const startHitlWorkflow = async (): Promise<LiveWorkflowRun> => {
+    const knownIds = new Set(await listWorkflowRunIds(E2E_HITL_WORKFLOW_NAME));
+    const args = [CLI_ENTRY, 'workflow', 'run', E2E_HITL_WORKFLOW_NAME, '--folder', '--json'];
+    const launched = spawnCli(args);
+    const pid = launched.child.pid;
+    if (pid === undefined) {
+      throw new Error('HITL workflow CLI spawned without a pid');
+    }
+    const wait = async (): Promise<CliRunResult> => {
+      const code = await launched.exited;
+      if (code !== 0) {
+        throw new Error(
+          `live HITL workflow exited ${code}\n--- output ---\n${launched.stdout.text}`
+        );
+      }
+      return parseCliEnvelope(launched.stdout.text);
+    };
+    return {
+      pid,
+      command: `bun ${args.join(' ')}`,
+      port,
+      workdir,
+      runId: waitForRunId(E2E_HITL_WORKFLOW_NAME, 30_000, knownIds),
+      wait,
+    };
+  };
+
+  const resumeWorkflow = async (runId: string): Promise<CliRunResult> => {
+    const args = [CLI_ENTRY, 'workflow', 'resume', runId];
+    const cli = spawn('bun', args, { cwd: workdir, env: isolatedEnv(home), stdio: 'pipe' });
+    let out = '';
+    cli.stdout?.on('data', d => (out += String(d)));
+    cli.stderr?.on('data', d => (out += String(d)));
+    const code = await track(cli, `bun ${args.join(' ')}`);
+    if (code !== 0) {
+      throw new Error(`\`workflow resume\` exited ${code}\n--- output ---\n${out}`);
+    }
+    return { runId, stdout: out, state: 'completed' };
+  };
+
+  const starterFetch = async (path: string, init: RequestInit = {}): Promise<Response> => {
+    const headers = new Headers(init.headers);
+    if (!headers.has('X-Archon-User')) {
+      headers.set('X-Archon-User', E2E_STARTER_WEB_USER);
+    }
+    if (init.body !== undefined && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json');
+    }
+    return fetch(`${baseURL}${path}`, { ...init, headers });
+  };
+
+  const readRunStatus = async (runId: string): Promise<string | undefined> => {
+    const res = await starterFetch(`/api/workflows/runs/${encodeURIComponent(runId)}`);
+    if (!res.ok) return undefined;
+    const body = (await res.json()) as { run?: { status?: string } };
+    return body.run?.status;
+  };
+
+  const waitForRunStatus = async (
+    runId: string,
+    status: string,
+    timeoutMs = 60_000
+  ): Promise<void> => {
+    const deadline = Date.now() + timeoutMs;
+    let last = 'no status';
+    while (Date.now() < deadline) {
+      try {
+        const current = await readRunStatus(runId);
+        if (current === status) return;
+        last = current ?? `HTTP miss`;
+      } catch (err) {
+        last = err instanceof Error ? err.message : String(err);
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+    throw new Error(
+      `Run ${runId} did not reach status '${status}' within ${timeoutMs}ms (last: ${last})`
+    );
+  };
+
+  const runHitlWorkflowViaWeb = async (): Promise<HitlWebRun> => {
+    const knownIds = new Set(await listWorkflowRunIds(E2E_HITL_WORKFLOW_NAME));
+    const codebaseRes = await starterFetch('/api/codebases', {
+      method: 'POST',
+      body: JSON.stringify({ path: workdir }),
+    });
+    if (!codebaseRes.ok) {
+      throw new Error(
+        `register folder codebase failed: HTTP ${String(codebaseRes.status)}\n${await codebaseRes.text()}`
+      );
+    }
+    const codebase = (await codebaseRes.json()) as { id?: string };
+    if (!codebase.id) {
+      throw new Error(`codebase response missing id: ${JSON.stringify(codebase)}`);
+    }
+    const convRes = await starterFetch('/api/conversations', {
+      method: 'POST',
+      body: JSON.stringify({ codebaseId: codebase.id }),
+    });
+    if (!convRes.ok) {
+      throw new Error(
+        `create conversation failed: HTTP ${String(convRes.status)}\n${await convRes.text()}`
+      );
+    }
+    const conv = (await convRes.json()) as { conversationId?: string };
+    if (!conv.conversationId) {
+      throw new Error(`conversation response missing conversationId: ${JSON.stringify(conv)}`);
+    }
+    const runRes = await starterFetch(
+      `/api/workflows/${encodeURIComponent(E2E_HITL_WORKFLOW_NAME)}/run`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ conversationId: conv.conversationId, message: 'e2e hitl web' }),
+      }
+    );
+    if (!runRes.ok) {
+      throw new Error(`web HITL run failed: HTTP ${String(runRes.status)}\n${await runRes.text()}`);
+    }
+    const runId = await waitForRunId(E2E_HITL_WORKFLOW_NAME, 30_000, knownIds);
+    await waitForRunStatus(runId, 'paused');
+    return { runId, conversationId: conv.conversationId, codebaseId: codebase.id };
+  };
+
+  return {
+    baseURL,
+    home,
+    workdir,
+    starterUserId,
+    starterWebUser: E2E_STARTER_WEB_USER,
+    teammateWebUser: E2E_TEAMMATE_WEB_USER,
+    runWorkflow,
+    runHitlWorkflow,
+    runUnownedHitlWorkflow,
+    runHitlLongHistoryWorkflow,
+    runHitlTwoAsksWorkflow,
+    runTaskDispatchWorkflow,
+    runTodoStripWorkflow,
+    startHitlWorkflow,
+    resumeWorkflow,
+    runHitlWorkflowViaWeb,
+    waitForRunStatus,
+    stop,
+  };
+}
