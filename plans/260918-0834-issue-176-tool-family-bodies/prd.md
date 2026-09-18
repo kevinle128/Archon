@@ -34,11 +34,13 @@ Expanded tool rows expose raw provider payloads instead of answering "what ran a
 ## Technical context
 
 Authority documents (read first):
+
 - `plans/260918-0834-issue-176-tool-family-bodies/plan.md` + `phase-01-start.md`, `phase-02-two-surface-renderers.md`, `phase-03-audit-gate-and-verification.md` — the full verified plan; phase files carry binding detail.
 - `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md`, `test-plan.md` — machine contract (Phase 1 corrects known contradictions).
 - `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/` `DESIGN.md`, `EXPERIENCE.md`, `mockups/key-transcript-states.html` — design authority.
 
 Code touch points:
+
 - `packages/web/src/lib/tool-presentation.ts` — existing summary resolver + bounded count extractor; add `ToolBody`/`toolBodyPresentation()` here.
 - `packages/web/src/lib/tool-output.ts` — NEW: `normalizeToolOutput`, `NormalizedToolOutput`, `BoundedList<T>` channel contract.
 - `packages/web/src/lib/pair-tool-transcript.ts` — `projectToolTranscript()` pairing (audit denominator; do not modify).
@@ -50,6 +52,7 @@ Code touch points:
 - `e2e/ui/workflow-run-hitl-room.spec.ts`, `e2e/ui/agent-tool-row-visual.spec.ts` — deterministic Read body + Raw swap; route-fulfilled visual gallery.
 
 Key contracts:
+
 - Claude fixtures: pinned `@anthropic-ai/claude-agent-sdk@0.3.209` `sdk-tools.d.ts` output declarations — no exploratory model runs.
 - Grep mode precedence: `input.output_mode` → output `mode`/unmistakable structure → sent-alias default (exact `Grep` → `files_with_matches`/paths; lowercase `grep`/other aliases → `content`). `count` → generic body arm + count badge; family stays `search`.
 - JSON salvage: bounded tokenizer recovers ONLY `stdout|stderr|text|content|result` values; U+FFFD at cut escapes/lone surrogates; else unreadable.
@@ -59,16 +62,17 @@ Key contracts:
 - Verification: `bun --filter @archon/web test`, `bun run validate`, `bun run --cwd e2e typecheck`, `bun run --cwd e2e test:ui:hitl`. NEVER root `bun test`.
 
 Coordination gates (headless resolutions):
+
 - **#175 (Story 1.2 Raw swap):** Phase 2 renderers occupy #175's presented-body/Raw swap slot. Re-scout merged #175 code first; if still unmerged with no code landed, implement the minimal swap slot (body bar + Raw toggle replacing presented body) in the renderer as part of the story and record it in evidence.
-- **Audit-authority blocker:** No human is available. Adopt the plan's documented *Recommended decision* (logical-tool-cards-v1 denominator, explicit read-only connection args for the selected dialect(s), no implicit `~/.archon`/`DATABASE_URL` target, explicit `--record`, record schema per phase-03, release rejects missing/stale/hash-mismatched/empty/`>=0.02`), record that adoption in `test-plan.md` and `reports/implementation-evidence.md`. If the repo shows the owner already ratified a different policy, implement that instead.
+- **Audit-authority blocker:** No human is available. Adopt the plan's documented _Recommended decision_ (logical-tool-cards-v1 denominator, explicit read-only connection args for the selected dialect(s), no implicit `~/.archon`/`DATABASE_URL` target, explicit `--record`, record schema per phase-03, release rejects missing/stale/hash-mismatched/empty/`>=0.02`), record that adoption in `test-plan.md` and `reports/implementation-evidence.md`. If the repo shows the owner already ratified a different policy, implement that instead.
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-|----|-------|-------|------------|
-| US-001 | Bounded semantic output normalizer | 1 | — |
-| US-002 | Lazy family-body resolver + spec corrections | 1 | US-001 |
-| US-003 | Legacy ToolBody renderer + safe markdown + scoped CSS | 2 | US-002 |
-| US-004 | Console ToolBody renderer + geometry/a11y evidence | 2 | US-003 |
-| US-005 | Read-only generic-fallback audit CLI | 3 | US-004 |
-| US-006 | Release gate, E2E/visual specs, validation, closeout | 3 | US-005 |
+| ID     | Title                                                 | Phase | Depends on |
+| ------ | ----------------------------------------------------- | ----- | ---------- |
+| US-001 | Bounded semantic output normalizer                    | 1     | —          |
+| US-002 | Lazy family-body resolver + spec corrections          | 1     | US-001     |
+| US-003 | Legacy ToolBody renderer + safe markdown + scoped CSS | 2     | US-002     |
+| US-004 | Console ToolBody renderer + geometry/a11y evidence    | 2     | US-003     |
+| US-005 | Read-only generic-fallback audit CLI                  | 3     | US-004     |
+| US-006 | Release gate, E2E/visual specs, validation, closeout  | 3     | US-005     |
