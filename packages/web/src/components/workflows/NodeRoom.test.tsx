@@ -81,7 +81,7 @@ function visibleText(markup: string): string {
 }
 
 function assistantItem(id: string, seq: number, text: string): AgentHistoryItem {
-  return { kind: 'assistant', id, seq, role: 'assistant', text };
+  return { kind: 'assistant', id, seq, role: 'assistant', text, execution: null };
 }
 
 function lifecycleItem(
@@ -90,7 +90,7 @@ function lifecycleItem(
   state: string,
   detail: string | null = null
 ): AgentHistoryItem {
-  return { kind: 'lifecycle', id, seq, state, detail };
+  return { kind: 'lifecycle', id, seq, state, detail, execution: null };
 }
 
 function toolItem(
@@ -111,6 +111,7 @@ function toolItem(
     canLoadFullOutput: true,
     outputState: 'truncated' as const,
     messageId: 'msg-tool-1',
+    execution: null,
     ...overrides,
   };
   return {

@@ -9,6 +9,10 @@ export interface ProjectableTextMetadata {
   message_id?: string;
   block_id?: string;
   text_mode?: 'complete' | 'delta' | 'snapshot';
+  execution?: {
+    occurrence_id?: string;
+    attempt_id?: string;
+  };
 }
 
 export interface ProjectableTextMessage {
@@ -39,7 +43,13 @@ function streamKey(metadata: ProjectableTextMetadata | null | undefined): string
   if (streamId.length === 0 && messageId.length === 0 && blockId.length === 0) {
     return '';
   }
-  return `${streamId}\0${messageId}\0${blockId}`;
+  return `${streamId}\0${messageId}\0${blockId}\0${executionIdentity(metadata)}`;
+}
+
+function executionIdentity(metadata: ProjectableTextMetadata | null | undefined): string {
+  const occurrence = metadata?.execution?.occurrence_id ?? '';
+  const attempt = metadata?.execution?.attempt_id ?? '';
+  return `${occurrence}\0${attempt}`;
 }
 
 function textMode(
@@ -54,6 +64,7 @@ export function projectTextTranscript<T extends ProjectableTextMessage>(
   const projected: T[] = [];
   const openByKey = new Map<string, T & { kind: 'text'; payload: { text: string } }>();
   let anonymousDelta: (T & { kind: 'text'; payload: { text: string } }) | undefined;
+  let anonymousIdentity: string | undefined;
 
   for (const message of messages) {
     if (!isTextMessage(message)) {
@@ -73,8 +84,10 @@ export function projectTextTranscript<T extends ProjectableTextMessage>(
 
     if (mode === 'delta') {
       if (key.length === 0) {
-        if (anonymousDelta === undefined) {
+        const identity = executionIdentity(message.metadata);
+        if (anonymousDelta === undefined || anonymousIdentity !== identity) {
           anonymousDelta = { ...message, payload: { text: message.payload.text } };
+          anonymousIdentity = identity;
           projected.push(anonymousDelta);
         } else {
           anonymousDelta.payload = { text: anonymousDelta.payload.text + message.payload.text };

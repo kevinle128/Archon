@@ -19,6 +19,9 @@ export interface AgentHistoryInput {
   nowMs: number;
 }
 
+/** Typed execution scope carried on wire rows; `null` on pre-scope history. */
+export type TranscriptExecution = NonNullable<NonNullable<NodeMessageRow['metadata']>['execution']>;
+
 export type AgentHistoryItem =
   | {
       kind: 'assistant';
@@ -26,6 +29,7 @@ export type AgentHistoryItem =
       seq: number;
       role: 'assistant';
       text: string;
+      execution: TranscriptExecution | null;
     }
   | {
       kind: 'tool';
@@ -43,6 +47,7 @@ export type AgentHistoryItem =
       outputState: 'full' | 'truncated' | 'missing' | 'unknown';
       presentation: ToolRowPresentation;
       messageId: string;
+      execution: TranscriptExecution | null;
     }
   | {
       kind: 'lifecycle';
@@ -50,6 +55,7 @@ export type AgentHistoryItem =
       seq: number;
       state: string;
       detail: string | null;
+      execution: TranscriptExecution | null;
     };
 
 export interface AgentHistory {
@@ -194,6 +200,7 @@ function toToolItem(
       { outcome, exitCode, durationMs, outputState, runningElapsedMs }
     ),
     messageId: card.result?.id ?? card.call?.id ?? card.id,
+    execution: card.call?.metadata?.execution ?? card.result?.metadata?.execution ?? null,
   };
 }
 
@@ -282,6 +289,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         seq: message.seq,
         role: 'assistant',
         text: message.payload.text,
+        execution: message.metadata?.execution ?? null,
       });
       continue;
     }
@@ -292,6 +300,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         seq: message.seq,
         state: message.payload.state,
         detail: message.payload.detail ?? null,
+        execution: message.metadata?.execution ?? null,
       });
     }
   }

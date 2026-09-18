@@ -9,6 +9,7 @@ function text(
     stream_id?: string;
     message_id?: string;
     block_id?: string;
+    execution?: { occurrence_id?: string; attempt_id?: string };
   }
 ): {
   id: string;
@@ -65,5 +66,121 @@ describe('projectTextTranscript', () => {
       'new',
       'keep',
     ]);
+  });
+
+  test('keeps identical keyed streams in different occurrences as separate blocks', () => {
+    const occurrence = (id: string): { occurrence_id: string; attempt_id: string } => ({
+      occurrence_id: id,
+      attempt_id: 'att-1',
+    });
+    const projected = projectTextTranscript([
+      text('t1', 'Hel', {
+        text_mode: 'delta',
+        message_id: 'm1',
+        block_id: 'b1',
+        execution: occurrence('occ-a'),
+      }),
+      text('t2', 'lo', {
+        text_mode: 'delta',
+        message_id: 'm1',
+        block_id: 'b1',
+        execution: occurrence('occ-a'),
+      }),
+      text('t3', 'Hel', {
+        text_mode: 'delta',
+        message_id: 'm1',
+        block_id: 'b1',
+        execution: occurrence('occ-b'),
+      }),
+      text('t4', 'lo', {
+        text_mode: 'delta',
+        message_id: 'm1',
+        block_id: 'b1',
+        execution: occurrence('occ-b'),
+      }),
+    ]);
+    expect(projected).toHaveLength(2);
+    expect(projected.map(row => (row.kind === 'text' ? row.payload.text : ''))).toEqual([
+      'Hello',
+      'Hello',
+    ]);
+  });
+
+  test('keeps identical keyed streams in different attempts of one occurrence separate', () => {
+    const projected = projectTextTranscript([
+      text('t1', 'Hel', {
+        text_mode: 'delta',
+        message_id: 'm1',
+        block_id: 'b1',
+        execution: { occurrence_id: 'occ-a', attempt_id: 'att-1' },
+      }),
+      text('t2', 'lo', {
+        text_mode: 'delta',
+        message_id: 'm1',
+        block_id: 'b1',
+        execution: { occurrence_id: 'occ-a', attempt_id: 'att-2' },
+      }),
+    ]);
+    expect(projected).toHaveLength(2);
+    expect(projected.map(row => (row.kind === 'text' ? row.payload.text : ''))).toEqual([
+      'Hel',
+      'lo',
+    ]);
+  });
+
+  test('merges anonymous deltas only while execution identity is unchanged', () => {
+    const projected = projectTextTranscript([
+      text('t1', 'a', {
+        text_mode: 'delta',
+        execution: { occurrence_id: 'occ-a', attempt_id: 'att-1' },
+      }),
+      text('t2', 'b', {
+        text_mode: 'delta',
+        execution: { occurrence_id: 'occ-a', attempt_id: 'att-1' },
+      }),
+      text('t3', 'x', {
+        text_mode: 'delta',
+        execution: { occurrence_id: 'occ-b', attempt_id: 'att-1' },
+      }),
+      text('t4', 'y', {
+        text_mode: 'delta',
+        execution: { occurrence_id: 'occ-b', attempt_id: 'att-1' },
+      }),
+      text('t5', 'z', { text_mode: 'delta' }),
+    ]);
+    expect(projected.map(row => (row.kind === 'text' ? row.payload.text : ''))).toEqual([
+      'ab',
+      'xy',
+      'z',
+    ]);
+  });
+
+  test('preserves historical behavior for a metadata-less sequence', () => {
+    const projected = projectTextTranscript([
+      text('t1', 'a', { text_mode: 'delta' }),
+      text('t2', 'b', { text_mode: 'delta' }),
+      text('t3', 'c', { text_mode: 'delta', message_id: 'm1' }),
+      text('t4', 'd', { text_mode: 'delta', message_id: 'm1' }),
+      text('t5', 'e', { text_mode: 'delta' }),
+    ]);
+    expect(projected.map(row => (row.kind === 'text' ? row.payload.text : ''))).toEqual([
+      'ab',
+      'cd',
+      'e',
+    ]);
+  });
+
+  test('does not mutate input rows or the input array', () => {
+    const rows = [
+      text('t1', 'Hel', { text_mode: 'delta', message_id: 'm1', block_id: 'b1' }),
+      text('t2', 'lo', { text_mode: 'delta', message_id: 'm1', block_id: 'b1' }),
+      text('t3', 'x', { text_mode: 'delta' }),
+      text('t4', 'y', { text_mode: 'delta' }),
+    ];
+    const projected = projectTextTranscript(rows);
+    expect(rows).toHaveLength(4);
+    expect(rows.map(row => row.payload.text)).toEqual(['Hel', 'lo', 'x', 'y']);
+    expect(projected).toHaveLength(2);
+    expect(projected[0]?.kind === 'text' ? projected[0].payload.text : '').toBe('Hello');
   });
 });
