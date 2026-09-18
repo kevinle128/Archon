@@ -1,5 +1,17 @@
 ## Codebase Patterns
 
+### Asserting lazy resolver calls (spyOn ESM namespace)
+- Where: `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`
+- Pattern: `import * as ns from '@/lib/tool-presentation'` + `spyOn(ns, 'toolBodyPresentation')` DOES intercept calls made from inside NodeRoom.tsx under Bun (verified) — `mock.module()` is unnecessary and would pollute the process. Pair with `useMemo` keyed on the input's field values in the component so `calls + 1` is the exact post-load count (unrelated renders like the loading flag don't re-normalize).
+- Example: `const spy = spyOn(toolPresentation, 'toolBodyPresentation'); …; expect(spy.mock.calls.at(-1)?.[0]).toEqual({name, input, output})`
+
+### Element lookup in component tests (eslint dual rule)
+- Where: `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` (`rowButton`, `rawButton`, `rowSummary`)
+- Pattern: `non-nullable-type-assertion-style` forbids `as T` to strip null AND `no-non-null-assertion` forbids `!` — the sanctioned form is a helper that throws on null then returns `as unknown as T` (double assertion escapes both rules).
+
+### Commit message bodies with special chars
+- Pattern: `git commit -m "$(cat <<'EOF' … EOF)"` fails with "bad substitution: no closing `)'" when the body contains `(`/`)` — write the message to a temp file and use `git commit -F`. lint-staged (eslint --fix + prettier --write) runs on staged files and may modify them; tests stayed green.
+
 ### Lazy body layer (US-002)
 - Where: `packages/web/src/lib/tool-presentation.ts` (toolBodyPresentation, ToolBody)
 - Pattern: expanded bodies resolve lazily via `toolBodyPresentation(input, resolvedFamily)` — the caller's already-resolved family is authoritative and output never reclassifies it. Renderers (US-003/US-004) call it only while a row is open with Raw closed; summary paths must stay free of `normalizeToolOutput`. `todo`/`task` return null pending Stories 1.5/1.6.
@@ -80,5 +92,33 @@ BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-17
 - The normalizer reads `filenames` twice (shape check + extraction) — assert "summary never reads" via a counter at 0, body reads via `> 0`, not an exact count
 - `countBadge` output for `numFiles`-only records is `N files`; `count`/`numMatches` report `N matches` — the unit travels with the value now
 - Bare `bun test` inside `packages/web` runs everything in one process and dies on `mock.module` pollution (React `act` missing); the package `test` script's split invocations are the real gate
+
+---
+## 2025-09-26 — US-003: Legacy ToolBody renderer + safe markdown + scoped CSS
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — #175 re-scout found no merged swap slot (issue still backlog, no branch/PR/code; redteam finding 1 confirmed) so the minimal body-bar/Raw slot was built here: family-first bar (`family · sent-name-when-chip-fell-back · facts`), Raw button with `aria-expanded`, in-place raw swap via `formatToolIo`, expanded region mounted only while `open`. `ToolBodySwitch` covers terminal/file/matches/paths/code/web/generic arms (`useMemo` on field values → exactly one recompute on full-output load); restricted markdown = remark-gfm + remark-breaks + rehype-highlight (detect:false), no rehype-raw/`dangerouslySetInnerHTML`, inert `a`/`img` overrides, dynamic code fence + `CODE_LANGUAGE_PATTERN` allowlist; `+n more` vs `more results omitted` via `OmittedTail`; explicit unreadable/no-preview/no-output/FAILED states
+- `packages/web/src/index.css` — scoped `.tool-family-body .hljs*` overrides (keyword→node-prompt 70% mix, string/number/literal→success, comment/meta/doctag→text-secondary, base→text-primary on transparent) + `pre > code` reset for unfenced blocks
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — static-markup matrix: closed row, family bar facts, shell/file/matches/paths/code/web/generic arms, `+2 more`/`more results omitted`, markdown attacks (escaped HTML, stripped `javascript:` hrefs, hostile language class, embedded backticks), todo/task deferred, Raw button order
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — DOM behavior: closed rows mount nothing, Raw swap in/out, `spyOn`-backed laziness (0 calls collapsed, none for Raw, exactly +1 on full-output load carrying the fetched output), keyboard order (Raw is the next control after summary), body recomputes on full output
+- `plans/…/reports/us-003-contrast-evidence.md` — WCAG ratios vs `--surface-inset`: text-primary 16.52, text-secondary 6.28, node-bash 8.92, node-command 5.56, FAILED mix 6.65, hljs keyword mix 6.90, success 6.76, primary 6.27, error 4.66; text-tertiary (2.73) and unmixed node-prompt (4.40) measured and deliberately unused for required content
+
+**Acceptance criteria verified**:
+- [x] #175 gate re-scouted — no merged slot → minimal body-bar/Raw slot implemented in NodeRoom.tsx
+- [x] `toolBodyPresentation()` only on `open && !rawOpen`; memoized → recomputes exactly once on full-output load (spy-proven)
+- [x] Legacy-local ToolBody switch + restricted markdown in NodeRoom.tsx; imports from `@/lib/tool-presentation`
+- [x] no `rehype-raw`/`dangerouslySetInnerHTML`; inert a/img; rehype-highlight only, `detect:false`
+- [x] `.tool-family-body` box, per-family anatomy, `+n more` vs `more results omitted`
+- [x] scoped `.tool-family-body .hljs-*` CSS; contrast evidence recorded (all body tones ≥ 4.5:1)
+- [x] component tests cover the full matrix incl. closed row, Raw toggle, markdown attacks, truncation, todo/task, keyboard order
+- [x] focused tests 59 pass; `bun test src/components/` 450 pass; `type-check`, eslint `--max-warnings 0` (touched files), `prettier --check` all clean
+
+**Learnings**:
+- Top-level array outputs are parsed as content blocks, not byte payloads — unreadable fixtures need malformed JSON (`'{"unterminated'`), not `output: [300]`.
+- Sanitized `javascript:` hrefs arrive as `''` — emit the parenthesized destination only when non-empty, else `()` renders.
+- Raw HTML in stored markdown surfaces as *escaped text* (no rehype-raw) — attack assertions must reject live tags/attributes and require the escaped forms, not absence of the string.
+- `useMemo` keyed on `{name, input, output, family}` field values (not the fresh input object) is what makes "recompute once on full-output load" literally true across loading-flag renders.
+- `git commit -m "$(cat <<'EOF'…)"` breaks on bodies containing parens; use `git commit -F` (see Codebase Patterns).
 
 ---
