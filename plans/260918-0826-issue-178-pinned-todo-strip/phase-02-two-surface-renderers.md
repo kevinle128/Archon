@@ -1,121 +1,220 @@
 ---
 phase: 2
-title: 'Phase 2: Legacy and Console renderers'
+title: 'Two node-room renderers'
 status: pending
 priority: P1
-effort: '5h'
+effort: '4h'
 dependencies: [1]
 ---
 
-# Phase 2: Legacy and Console renderers
+# Phase 2: Two node-room renderers
 
-## Overview
+## Outcome
 
-Render the folded `todos` as a pinned strip on both shells with identical anatomy and surface-specific tokens: a Legacy `TodoStrip` mounted by `NodeTranscriptPane` above its scroller, and a Console `ConsoleTodoStrip` mounted by `ConsoleNodeRoom` above its scroller and by `ConsoleExecutionHistory` at the top of the log section. Component tests go red first on all three mounts, then the two strips make them green. Row markup from Story 1.1 does not change: every todo call already reads `todo updated` with an `op:` badge.
+Render the shared todo state in the two actual node rooms with identical semantics and design anatomy. Correct Legacy's region/scroller ownership so the strip is both pinned and inside the room landmark. Keep Console inline execution history strip-free.
 
-**Scout first (deep mode).** Before editing, re-read `NodeTranscriptPane.tsx` (the `return` block near `:365-395`), `ConsoleNodeRoom.tsx` (the `return` block near `:866-890`), `ConsoleExecutionHistory.tsx` (the `history`/`body` block near `:297-340`), and the three test files' mount helpers. If Story 1.2 (#175) has landed, its row-body rewrite moved lines in `NodeRoom.tsx`/`ConsoleAgentHistoryList.tsx`; this phase does not edit those files, but their tests' fixtures may have changed shape.
+Phase 1's behavior E2E cases finish green here. Phase 3 owns measured visual/a11y evidence and broad gates.
 
-## Requirements
+## Re-scout before editing
 
-- Functional: strip present when `todos.length > 0`, absent otherwise; phase labels and per-item glyph + status word; blocked reason and dropped suffix; collapsible header; live updates in place.
-- Functional: the strip is outside each room's scroll container; on the Console log section it is static at the top of the body.
-- Functional: Console `showToolCalls` off keeps the strip; `showSystem` has no effect.
-- Non-functional: no Legacy import from Console; tokens only from each shell's existing utilities; `useId()` for `aria-controls`; zero ESLint warnings; no new dependency.
+Story 1.2 may have landed since Phase 1. Re-read the current:
 
-## Architecture
+- `NodeRoom.tsx` props, return boundary, and tool-body code;
+- `NodeTranscriptPane.tsx` return block and scroll-follow effects;
+- `ConsoleNodeRoom.tsx` history construction and return block;
+- relevant mount helpers in `NodeRoom.test.tsx`, `NodeTranscriptPane.test.tsx`, `LegacyNodeRoom.test.tsx`, and `ConsoleNodeRoom.test.tsx`.
 
-Shared, pure: `summarizeTodoState` from Phase 1. Each strip is ~120 lines of JSX plus two token maps.
+Preserve any accepted Raw implementation. This phase neither changes `ConsoleAgentHistoryList.tsx` nor specifies what a todo row shows when expanded, except that it must not show the checklist.
+
+## Renderer interfaces
+
+Create two thin components:
 
 ```tsx
-// packages/web/src/components/workflows/TodoStrip.tsx (Legacy)
-export interface TodoStripProps { phases: readonly TodoPhase[]; scopeKey: string }
-export function TodoStrip({ phases, scopeKey }: TodoStripProps): React.ReactElement | null
+// Legacy
+export interface TodoStripProps {
+  phases: readonly TodoPhase[];
+}
+export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null;
+
+// Console file defines this identical narrow prop locally; it does not import Legacy.
+export interface ConsoleTodoStripProps {
+  phases: readonly TodoPhase[];
+}
+export function ConsoleTodoStrip({ phases }: ConsoleTodoStripProps): React.ReactElement | null;
 ```
 
-- Returns `null` when `phases.length === 0`.
-- `open` state: `useState(true)`; reset to `true` when `scopeKey` changes (a `useEffect` keyed on `scopeKey`, mirroring how the panes key their page state by `resolvedScopeKey`). Polling re-renders keep the same `scopeKey`, so the state survives.
-- `const listId = useId()`.
-- Markup exactly as `plan.md` → End-to-end design: `<section aria-label="Todo" className="flex-none border-b border-border bg-surface-elevated">`, header `<button type="button" aria-expanded={open} aria-controls={listId} onClick=…>` with children `TODO` label, current-item glyph (`aria-hidden`) + `sr-only` status word + elided `content` (or the first phase name when `current` is null, with no glyph), `done/total`, chevron `▾` (`aria-hidden`, `rotate-180` when closed, `transition-transform duration-[120ms] motion-reduce:transition-none`); body `<div id={listId} hidden={!open} className="max-h-[168px] overflow-y-auto border-t border-border px-2.5 pb-2 pt-1">` containing, per phase, `<h3 className="mt-1 text-[10px] uppercase tracking-[0.07em] text-text-secondary">{phase}</h3>` and `<ul className="m-0 list-none p-0 font-mono text-[11.5px] leading-[1.85] text-text-secondary">` of `<li>` rows.
-- Item row: `<span aria-hidden className={GLYPH_CLASS[status]}>{GLYPH[status]}</span> <span className="sr-only">{STATUS_WORD[status]}</span> <span className={status === 'abandoned' ? 'line-through' : undefined}>{content}</span>` plus `<span className="text-text-secondary"> · dropped</span>` for abandoned and `<span className="text-text-secondary"> · blocked{blocker ? `: ${blocker}` : ''}</span>` for blocked.
-- Token maps (Legacy): `GLYPH = { completed: '☑', in_progress: '◐', blocked: '⊘', pending: '☐', abandoned: '☐' }`; `GLYPH_CLASS = { completed: 'text-success', in_progress: 'text-accent-bright', blocked: 'text-warning', pending: 'text-text-secondary', abandoned: 'text-text-secondary' }`; `STATUS_WORD = { completed: 'completed', in_progress: 'in progress', blocked: 'blocked', pending: 'pending', abandoned: 'abandoned' }`. Header: `min-h-[24px] w-full px-2.5 py-1.5 text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2`.
+Locations:
 
-`ConsoleTodoStrip.tsx` (`packages/web/src/experiments/console/components/inspect/`) is the same component with Console tones: `in_progress` → `text-[color:var(--running)]` (the pair `ConsoleAgentHistoryList.tsx:169-175` already uses), focus offset `focus-visible:outline-offset-2` as the Console summary uses, and a `position?: 'pinned' | 'static'` prop that only changes the border edge (`border-b` when pinned above a scroller, `border-b` plus `mb-1.5` when static in the log section). It imports `TodoPhase`/`summarizeTodoState` from `@/lib/todo-state` and nothing from `@/components/`.
+- `packages/web/src/components/workflows/TodoStrip.tsx`
+- `packages/web/src/experiments/console/components/ConsoleTodoStrip.tsx`
 
-Mount points:
+Console imports shared types/functions from `@/lib/todo-state` and nothing from `@/components/`. Do not place the Console component under `inspect/`; it belongs to the selected node-room shell and has no inline-log caller.
 
-- `NodeTranscriptPane.tsx` (`:365-395`): `<div className="flex min-h-0 flex-1 flex-col">` gains `<TodoStrip phases={history.todos} scopeKey={resolvedScopeKey} />` as the first child, before the `data-testid="node-transcript-scroll"` div. (Bottom placement, if chosen in validation: move it after the scroller and before `Jump to latest`, and flip `border-b` → `border-t`.)
-- `ConsoleNodeRoom.tsx` (`:872-889`): inside `<RoomRegion>` before the scroll div: `<ConsoleTodoStrip phases={history.todos} scopeKey={resolvedScopeKey} position="pinned" />`. It sits outside `ConsoleAgentHistoryList`, so `showToolCalls` cannot touch it.
-- `ConsoleExecutionHistory.tsx` (`:297-308`): wrap `history` so the strip precedes the list: `<><ConsoleTodoStrip phases={history.todos} scopeKey={resolvedScopeKey} position="static" />{list}</>`; keep the error/loading branches as they are (a failed first page has no todos to show).
+Both components:
 
-`scopeKey` on each mount is the existing `resolvedScopeKey`/`nodeMessageScopeKey(...)` value the pane already computes for its page state, so the strip resets exactly when the transcript does.
+- return `null` when `phases` is empty;
+- use `useState(false)` — collapsed on every fresh mount;
+- use `useId()` for a body id that remains mounted with `hidden={!open}`;
+- call `summarizeTodoState()` and use `TODO_STATUS_PRESENTATION` for glyph/label only;
+- render identical element order, visible strings, accessibility semantics, meter cells, suffixes, and disclosure behavior;
+- differ only in existing surface token classes (`in_progress` is Legacy `--accent-bright`, Console `--running`; focus offsets remain −2/+2).
 
-## Related Code Files
+Do not pass a `scopeKey` prop or reset state in an effect. Each shell conditionally mounts the component only for non-empty `todos`, with `key={resolvedScopeKey}`. Stable key means polling preserves state/focus; changed key gives React's normal clean reset without an intermediate stale frame. Conditional mounting ensures an all-removed state destroys disclosure state, so a later new list in the same scope starts collapsed.
+
+## Markup and styling contract
+
+### Container and header
+
+- `<section aria-label="Todo">`, `flex-none`, full bleed, `surface-elevated`, 1 px **bottom** border, no radius.
+- Full-width button, `type="button"`, `aria-expanded`, `aria-controls`, 6 px vertical / 10 px horizontal padding, at least 24 px tall, 8 px gaps, one line.
+- `TODO`: 10 px, 700, uppercase, 0.07em tracking, text-secondary.
+- Representative item group: fixed glyph column, visually hidden status phrase, one-line/elided 11.5 px mono content in text-primary, `min-width: 0`.
+- Meter: one 3 px-high flex cell per item with 2 px gaps; completed success, in-progress running, blocked warning, pending/abandoned border-bright; entire meter `aria-hidden="true"`.
+- Count: completed/total, 10 px mono text-secondary, no wrap.
+- Caret: decorative `▾`, 9 px tertiary, rotates 180° while open over 120 ms; `motion-reduce:transition-none`.
+- Hover uses surface-hover. Focus-visible is 2 px opaque accent-bright; Legacy offset −2 px, Console +2 px.
+
+### Expanded body
+
+- The body stays in the DOM, is `hidden` while collapsed, and uses `padding: 4px 10px 8px`, top border, `max-height: 168px`, and `overflow-y: auto`.
+- Phase headings: semantic `h3`, 10 px, uppercase, 0.07em, text-secondary, 4 px top margin (the final DESIGN value overrides the prototype's 8 px).
+- Each phase owns a list. Item rows are 11.5 px mono, line-height 1.85, flex baseline, 8 px gap, 1/4/1/2 px padding, 4 px radius.
+- Status glyph and accessible phrase come from the shared map. Render task/blocker strings only as text nodes.
+- Abandoned content is line-through with visible `· dropped`; blocked carries visible `· blocked: <reason>` when present. Hide the visible suffix from AT when the equivalent complete status phrase is supplied visually-hidden, avoiding repeated status text.
+- The first in-progress item is the current row. Give it `surface` background, text-primary, and a 2 px inset marker using the surface's running token. Do not style blocked/last-completed header fallbacks as current body rows.
+
+Use a small stable locator only where semantic selectors cannot express the test: `data-testid="todo-meter"` and `data-testid="todo-list"` are sufficient. Do not encode task text/status into ids or aria labels.
+
+## Correct Legacy ownership
+
+The current hierarchy is `NodeTranscriptPane scroller > NodeRoom > RoomRegion`. The required hierarchy is `RoomRegion > strip + scroller > NodeRoom content`.
+
+Make the smallest explicit API change in `NodeRoom.tsx`:
+
+1. Add optional `embedded?: boolean` to `NodeRoomProps`, default `false`.
+2. After computing its existing `body`, return the body in a fragment when embedded; otherwise preserve today's `<RoomRegion nodeId>{body}</RoomRegion>` behavior. `nodeId === null` keeps returning the existing placeholder with no landmark.
+3. Add optional `scrollable?: boolean` to exported `RoomRegion`, default `true`. Existing room kinds keep `overflow-y-auto`; the transcript pane passes `false`, which uses `overflow-hidden` because its child owns scrolling.
+
+In `NodeTranscriptPane.tsx`:
+
+1. Retain `{ items, todos }` from Phase 1.
+2. Build the existing scroller/Jump content once. When `todos.length > 0`, put `<TodoStrip key={resolvedScopeKey} phases={todos} />` immediately before `node-transcript-scroll`; otherwise mount nothing.
+3. Render `<NodeRoom embedded ...>` inside the scroller. Make the scroller a flex column as well as the overflow owner so loading, empty, and error placeholders retain the centering/fill behavior they previously received from `RoomRegion`.
+4. For a selected row, wrap strip + scroller + Jump in `<RoomRegion nodeId={row.nodeId} scrollable={false}>`.
+5. For `row === null`, preserve the current no-landmark Select-a-node behavior in the plain flex wrapper.
+
+Do not change scroll-follow calculations or move the Jump button into the transcript scroller. The strip changes available scroller height; the existing follow effect must continue to use that scroller's own metrics.
+
+## Mount Console
+
+In `ConsoleNodeRoom.tsx`:
+
+1. Retain `{ items, todos }` from Phase 1 for agent history; other node kinds keep `todos: []`/no strip.
+2. Inside the existing agent node's `RoomRegion`, conditionally mount `<ConsoleTodoStrip key={resolvedScopeKey} phases={todos} />` immediately before `console-node-room-scroll` only when `todos.length > 0`.
+3. Leave `ConsoleAgentHistoryList` and its `showToolCalls`/`showSystem` filtering unchanged. Because the strip is outside the list, Tool calls off cannot hide it.
+4. Leave `ConsoleExecutionHistory` at `.items` only; no `position` prop or static strip variant exists.
+
+## Tests first: shared Legacy semantics
+
+Extend `NodeRoom.test.tsx` with direct `TodoStrip` coverage so read-spine AD-12 has a Legacy renderer assertion independent of paging:
+
+- `[]` returns no Todo section;
+- non-empty state renders section/button/meter/body relationship and starts collapsed;
+- header is current item + `1/12`, meter has 12 decorative cells, body remains hidden;
+- click opens/closes; `aria-expanded`, `aria-controls`, and `hidden` agree; focus stays on button;
+- both phase headings/lists and all five glyph/label/suffix treatments render;
+- current row contains background/inset-marker classes; abandoned is struck through; blocked reason is text;
+- status phrases exist once in accessible markup and agent strings are absent from id/aria-label/title;
+- 40 arbitrary items do not change the required max-height/overflow classes;
+- `NodeRoom embedded` has no region while default mode retains exactly one.
+
+Prefer semantic DOM assertions. Class assertions are appropriate only for the contract tokens/geometry that happy-dom cannot measure; Phase 3 verifies computed styles in a browser.
+
+## Tests first: Legacy integration
+
+Extend `NodeTranscriptPane.test.tsx`:
+
+- todo fixture -> exactly one `<review room>` region, with strip as its first child and immediate previous sibling of `node-transcript-scroll`; the scroller contains no nested region;
+- no-todo and row-null states -> no strip; row-null still has no room landmark;
+- two page responses with init on one page and later mutation on another -> final summary/state uses ordered merged rows;
+- open the strip, append a polled todo call under the same scope -> same section/button node identity, remains open/focused, count/state update;
+- remove every todo -> strip/component unmounts; add a fresh list under the same scope -> newly mounted strip is collapsed;
+- change `scopeKey`/selected row -> a newly mounted collapsed strip;
+- later-page error after todo rows -> strip remains with last good state and incomplete notice appears; first-page error -> no strip;
+- loading, empty, and first-page error placeholders retain their existing fill/centering after the scroller becomes the embedded content's flex parent;
+- existing completed/running scroll restoration and Jump tests stay unchanged and green.
+
+Extend `LegacyNodeRoom.test.tsx` only for integration regressions needed after the embedded/region refactor: selected agent has one room landmark; no selection has none; stdout/gate/child/route/loop rooms retain one and their prior scroll classes.
+
+Run the Legacy group red, implement, then green:
+
+```bash
+cd packages/web
+NODE_ENV=development bun test src/components/workflows/NodeRoom.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx src/components/workflows/LegacyNodeRoom.test.tsx
+```
+
+## Tests first: Console equivalence
+
+Extend `ConsoleNodeRoom.test.tsx` with the same fixture and assertions:
+
+- present/absent, collapsed header, meter/count, toggle/state/focus, phase/item/status anatomy;
+- strip is inside the one node-room region and immediately precedes `console-node-room-scroll`;
+- polling under the same scope preserves identity/open/focus and updates state; scope change resets collapsed;
+- later load failure retains last good state; first-page failure has none;
+- `showToolCalls=false` leaves the strip while every tool row is gone;
+- no special `showSystem` assertion — the strip never enters that filter;
+- no checklist text exists under any tool row;
+- `ConsoleExecutionHistory.test.tsx` regression from Phase 1 remains at zero Todo strips.
+
+Implement `ConsoleTodoStrip.tsx`, mount it, then run:
+
+```bash
+cd packages/web
+NODE_ENV=development bun test src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx src/experiments/console/console-isolation.test.ts
+```
+
+## Phase sweep
+
+Run package-level Web tests/type/lint and the outside-in behavior spec:
+
+```bash
+(cd packages/web && bun run test && bun run type-check)
+bun run lint --max-warnings 0
+bun run --cwd e2e test:ui -- --grep 'todo strip'
+```
+
+The E2E cases from Phase 1 must now pass. If geometry/contrast additions from Phase 3 are not yet present, do not claim visual acceptance.
+
+## Files
 
 - Create: `packages/web/src/components/workflows/TodoStrip.tsx`
-- Create: `packages/web/src/experiments/console/components/inspect/ConsoleTodoStrip.tsx`
+- Modify: `packages/web/src/components/workflows/NodeRoom.tsx`
+- Modify: `packages/web/src/components/workflows/NodeRoom.test.tsx`
 - Modify: `packages/web/src/components/workflows/NodeTranscriptPane.tsx`
-- Modify: `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`
-- Modify: `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx`
 - Modify: `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`
+- Modify: `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`
+- Create: `packages/web/src/experiments/console/components/ConsoleTodoStrip.tsx`
+- Modify: `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`
 - Modify: `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
-- Modify: `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx`
-- Verify only: `packages/web/src/experiments/console/console-isolation.test.ts`, `packages/web/src/components/workflows/NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx`
-- Read-only: `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`, `tool-presentation.ts`
+- Verify: `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx`
+- Verify: `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx`
+- Verify: `packages/web/src/experiments/console/console-isolation.test.ts`
 
-## Implementation Steps
+## Exit criteria
 
-### Red — component tests on the three mounts
+- [ ] Both node rooms render equivalent, collapsed-by-default strips from the same folded state.
+- [ ] Legacy has one landmark containing the strip and scroller; other room kinds retain existing behavior.
+- [ ] Both strips are scroller siblings, not sticky descendants or overlays.
+- [ ] State survives same-scope polling/focus and resets on scope change; error cases preserve only reconstructed state.
+- [ ] Tool calls off affects rows only; inline Console history has no strip.
+- [ ] No inline checklist or Story 1.2 regression.
+- [ ] Focused and package Web tests/type/lint plus behavior E2E are green.
 
-1. `NodeTranscriptPane.test.tsx` (happy-dom harness at `:1-60`, mount pattern in `describe('NodeTranscriptPane')` `:250+`): add a `TODO_ROWS` fixture of three `tool` rows named `todo` with the Phase 1 `E2E_FAKE_TODO_INPUTS`-shaped inputs (local literal, not an import from providers), plus one `Read` row. Cases:
-   - renders `section[aria-label="Todo"]` as a **preceding sibling** of `[data-testid="node-transcript-scroll"]` (assert `strip.nextElementSibling === scroller`); phase headings `Research`/`Implement` present; four `li` rows; `Locate the backoff cap` row contains `in progress`; `Run the suite` row contains `blocked: CI has one build job`; header text contains `1/4`.
-   - a transcript with only the `Read` row renders no `section[aria-label="Todo"]`.
-   - no checklist text inside any `details[data-tool-id]`; the three todo rows' summaries contain `todo updated` and `op: init` / `op: done` / `op: block`.
-   - header click → `aria-expanded="false"` and the list element has `hidden`; click again → visible; a polling refresh (second page with one more todo row appended) keeps `aria-expanded="false"` and updates the header count; changing the selected row to another node resets to expanded.
-   - the strip element identity survives a polling re-render (capture the `section` node before and after; `toBe`).
-2. `ConsoleNodeRoom.test.tsx` (`describe('ConsoleNodeRoom')` `:190+`, mount options with `showToolCalls` at `:1019`/`:1074`): same present/absent/sibling-of-scroller cases against `[data-testid="console-node-room-scroll"]` and the `<nodeId> room` region; plus `showToolCalls: false` → strip present, `details[data-tool-id]` count 0; `showSystem: false` → strip unchanged.
-3. `ConsoleExecutionHistory.test.tsx` (mount at `:174`, `showToolCalls` at `:280`): strip present above the list for the todo fixture (first child of the section body), absent for the plain fixture, present with `showToolCalls: false`.
-4. Run `cd packages/web && bun test src/components/workflows/NodeTranscriptPane.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — red.
+## Risks and safeguards
 
-### Green — Legacy
-
-5. Create `TodoStrip.tsx` per Architecture. Keep the token maps at module top like `NodeRoom.tsx`'s `CHIP_TONE`/`GLYPH_TONE`. No `useEffect` other than the `scopeKey` reset.
-6. `NodeTranscriptPane.tsx`: replace the Phase 1 `history.items` shim with `const { items, todos } = history` and mount `<TodoStrip>` as the first child of the outer flex column. Pass `resolvedScopeKey`.
-7. Run the Legacy test file — green.
-
-### Green — Console
-
-8. Create `ConsoleTodoStrip.tsx` per Architecture; confirm `console-isolation.test.ts` still passes (no `@/components/` import).
-9. `ConsoleNodeRoom.tsx`: mount inside `RoomRegion` before the scroll div, `position="pinned"`; `ConsoleExecutionHistory.tsx`: mount before the list, `position="static"`.
-10. Run the two Console test files and `console-isolation.test.ts` — green.
-
-### Sweep
-
-11. `cd packages/web && bun run test && bun run type-check && bun run lint` (from the package — never root `bun test`). Confirm `NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx`, and `ConsoleNodeRoom tool rows` tests are untouched and green — the row contract from Story 1.1 has not moved.
-12. Re-run the Phase 1 E2E spec locally (`bun run --cwd e2e test:ui -- --grep 'todo strip'`) — behaviour cases green; visual evidence is Phase 3.
-
-## Todo
-
-- [ ] Red component tests on `NodeTranscriptPane`, `ConsoleNodeRoom`, `ConsoleExecutionHistory`
-- [ ] `TodoStrip.tsx` green on Legacy
-- [ ] `ConsoleTodoStrip.tsx` green on both Console mounts
-- [ ] Console isolation, Web tests, type-check, lint green
-- [ ] Phase 1 E2E behaviour cases green
-
-## Success Criteria
-
-- [ ] Both shells render the same anatomy: section → header button (`aria-expanded`, `aria-controls`) → headings + lists; token classes differ only where each shell's row already differs.
-- [ ] The strip is a sibling outside the scroller on both rooms and static at the top of the Console log section.
-- [ ] Todo rows in the transcript are unchanged one-line rows; no checklist text exists inside any `details[data-tool-id]`.
-- [ ] Console `showToolCalls` off hides rows but not the strip.
-- [ ] Toggle state survives polling and resets on scope change; the strip node identity survives re-renders.
-
-## Risk Assessment
-
-- **Sticky vs sibling.** A sticky strip inside `NodeRoom` would be defeated by `RoomRegion`'s own `overflow-y-auto` (`NodeRoom.tsx:141-154`); the sibling placement is deliberate and the "preceding sibling of the scroller" assertion pins it.
-- **Two Console mounts on one page.** `useId()` prevents duplicate `aria-controls` targets; tests never build a selector from the id.
-- **Scroll-follow interplay.** The strip changes the scroller's height when it appears; `room-scroll-follow` keys on the scroller's own metrics, so pin-to-bottom keeps working. If a test shows the follow flag flipping when the strip mounts, wrap the scroll effect's dependency on `pageState.rows.length` review in Phase 3 rather than special-casing the strip.
-- **Long plans.** The 168 px cap with internal scroll keeps a 40-item plan from swallowing the room; a nested scroller inside a flex column is the pattern the queue band also adopts (DESIGN.md:646).
-
-## Security Considerations
-
-- All todo text renders as React text nodes; nothing goes into `title`, `aria-label`, `id`, or `dangerouslySetInnerHTML`. The `blocker` reason is agent-authored prose and is treated the same way.
+- **Nested scrolling:** only `todo-list` and the transcript scroll. The outer Legacy region is overflow-hidden in transcript mode; other rooms keep their current scrollable default.
+- **Landmark drift:** tests assert exactly one named region, not merely strip/scroller sibling order.
+- **Polling reset:** key only by existing resolved scope. Never key by todo count/content.
+- **Console isolation:** no import from `@/components/`; run the isolation test immediately after creating the Console file.
+- **Concurrent Raw work:** resolve overlaps inside current row tests; never delete newly accepted Raw assertions to make this story green.

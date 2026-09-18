@@ -1,6 +1,6 @@
 ---
 phase: 3
-title: 'Phase 3: End-to-end and visual verification'
+title: 'End-to-end and visual verification'
 status: pending
 priority: P1
 effort: '3h'
@@ -9,81 +9,198 @@ dependencies: [1, 2]
 
 # Phase 3: End-to-end and visual verification
 
-## Overview
+## Outcome
 
-Prove the strip on a real stored run on both surfaces, collect the geometry, contrast, keyboard, reduced-motion, and screen-reader evidence the DESIGN contract requires, run every gate, and write `reports/visual-acceptance.md` in the shape Story 1.1 established (`plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md`). No product code changes are planned here; a failure found by evidence is fixed on both surfaces together.
+Prove the strip through real stored workflow messages on Legacy and Console, including both scrolling boundaries, the strip's own long-plan scroll, responsive behavior, design anatomy, keyboard/focus/motion, contrast, and accessibility-tree semantics. Run regression and repository gates, then record evidence without overstating unavailable manual assistive-technology coverage.
 
-**Scout first (deep mode).** Re-read `e2e/ui/agent-tool-row-visual.spec.ts` helpers (`openToolRoom` `:55-72`, `boundingBox`/geometry pattern `:101-128`, focus evidence `:489-505`, `contrastRatio` `:352`, the 460 px room setup and the viewport sweep `:38-46`) and reuse them rather than re-implementing; confirm the Phase 1 spec's node ids and the Phase 2 markup before adding assertions.
+No feature work is scheduled here. Any failure must be fixed at its owning shared model or in both renderers as appropriate, then added to the evidence report.
 
-## Requirements
+## E2E evidence ownership
 
-- Functional: the Phase 1 spec is green on Console and Legacy, including the pinned assertion at both scroll extremes and the absent-strip case.
-- Visual: geometry matches `plan.md` → Visual criteria at 460 px; the strip stays one column and never introduces horizontal scroll at 390 × 844 or at 200 % zoom; the checklist caps at 168 px and scrolls internally.
-- Accessible: contrast ≥ 4.5:1 for every strip tone on `surface-elevated` on both shells; header target ≥ 24 × 24; chevron honours reduced motion; screen-reader pass reads section name, header state, phase headings, and per-item status words.
-- Process: `bun run validate` green; local HITL suite green; PR body records the local E2E pass and `Closes #178`.
+Extend `e2e/ui/agent-todo-strip.spec.ts`; do not modify the concurrently owned `agent-tool-row-visual.spec.ts`. Its helpers are file-local, so copy only the small navigation/measurement/color utilities this spec needs. Keep selectors scoped to the named room region and use semantic locators first.
 
-## Related Code Files
+Use the dedicated synthetic `e2e-todo-strip` run. Screenshots and JSON may contain only its known strings. Store durable evidence under this plan's `reports/evidence/`, following the Story 1.1 precedent; also attach captures through Playwright for failure diagnostics.
 
-- Modify: `e2e/ui/agent-todo-strip.spec.ts` (add visual/geometry/contrast cases)
-- Create: `plans/260918-0826-issue-178-pinned-todo-strip/reports/visual-acceptance.md` and `reports/evidence/*.png`
-- Verify only: `e2e/ui/workflow-run-hitl.spec.ts`, `e2e/ui/workflow-run-hitl-room.spec.ts`, `e2e/ui/workflow-run-hitl-visual.spec.ts`, `e2e/ui/agent-tool-row-visual.spec.ts`
-- Read-only: `_bmad-output/.../DESIGN.md:86-88, :235-247, :599-603`, `EXPERIENCE.md:121-122, :163-165`
+## Behavior on a real run
 
-## Implementation Steps
+Run the Phase 2 behavior cases on Chromium and retain assertions for both surfaces:
 
-### Behaviour, on the real run
+- `todo-plan` has exactly one Todo section inside its room; `no-todo` has none;
+- default collapsed header reports the auto-promoted item and `1/12`;
+- Enter/Space toggle, keep focus, and expose the two phases/all five status treatments;
+- 12 decorative meter cells; no checklist under a todo transcript row;
+- Console Tool calls off keeps the strip and removes tool rows.
 
-1. `bun run --cwd e2e test:ui -- --grep 'todo strip'` on Chromium. All Phase 1 cases must pass on both surfaces: present, pinned at both scroll extremes, one-line todo rows with no inline checklist, absent on `no-todo`, Console `Tool calls` checkbox off keeps the strip, keyboard toggle.
-2. `bun run --cwd e2e test:ui:hitl` — the existing HITL specs stay green (regression: the strip mounts above every room, including rooms with no todos where it renders nothing).
+For pinning, do more than `toBeInViewport()`:
 
-### Geometry and style (extend the spec)
+1. Capture strip and transcript-scroller boxes and the scroller's initial `scrollTop`.
+2. Scroll transcript to its bottom and wait until `scrollTop` settles.
+3. Prove first/last visible transcript rows changed and the strip's top, left, width, and height stayed within 1 px.
+4. Scroll back to zero and repeat the fixed-box assertion.
+5. Prove the strip does not geometrically overlap the transcript viewport or Jump button.
 
-3. Add `[P1] [V:todo-strip-<surface>]` per surface, reusing the 460 px room setup: computed styles of the section (`background-color` = `surface-elevated`, 1 px border on the transcript edge), header (`min-height ≥ 24`, padding `6px 10px`, `TODO` label `10px`/uppercase/`0.07em`), phase heading (`10px`, uppercase, `margin-top 4px`), list (`11.5px` mono, `line-height` ≈ `21.3px` = 1.85), body `max-height 168px` + `overflow-y: auto`. Capture `todo-strip-<surface>-460.png` to the Playwright output dir.
-4. Pinned evidence: after scrolling the room scroller to `scrollHeight`, capture `todo-strip-<surface>-scrolled.png` with the strip `toBeInViewport()` and the last tool row visible below it.
-5. Viewport sweep (reuse `SWEEP_VIEWPORTS` at `:41-46` and the 200 % zoom step from `:545+`): at each size assert `document.documentElement.scrollWidth <= clientWidth` and that the strip header stays one line (`boundingBox().height` ≤ 2 × line height).
-6. Long plan: temporarily drive the fake with an `init` of 40 items in the fixture? **No** — keep fixtures deterministic; instead assert in the component test (Phase 2) that the body carries `max-h-[168px] overflow-y-auto`, and in this spec assert the computed `max-height` only. Record the decision in the report.
+For the checklist's own scroll:
 
-### Keyboard, focus, motion
+1. Expand the 12-item body.
+2. Assert computed max-height `168px`, `overflow-y: auto`, and `scrollHeight > clientHeight`.
+3. Scroll the body to its bottom; prove a final item becomes visible while the transcript `scrollTop` and strip container box stay unchanged.
 
-7. Tab from the run header/toolbar into the strip header: the first focusable inside the region is the strip's button (top placement), then the first row summary. Assert `:focus-visible` outline colour resolves to `--accent-bright` and outline width 2 px, using the summary's focus pattern (`:489-505`). `Space`/`Enter` toggle; focus stays on the button after toggling (no focus loss when the list is hidden).
-8. Reduced motion: emulate `prefers-reduced-motion: reduce` and assert the chevron's computed `transition-duration` is `0s`; without it, `120ms`.
+## Geometry and design comparison
 
-### Contrast
+At a measured room width of `460 ± 2 px` on both surfaces, collect computed values and screenshots for collapsed and expanded states:
 
-9. Extend the `[V:hitl.tool-row-contrast]` approach: resolve each strip tone (`text-secondary` label/items, `success`, `running`/`accent-bright`, `warning`, `text-primary` current item) against `surface-elevated` and against `surface-hover` (header hover), on both shells, ≥ 4.5:1. Record every ratio in the report table. If any tone fails, stop and raise with the owner — do not invent a new token (DESIGN.md Do/Don't).
+| Element         | Required evidence                                                         |
+| --------------- | ------------------------------------------------------------------------- |
+| Container       | full room width, flex-none, surface-elevated, no radius, 1 px bottom rule |
+| Header          | one line; 6 px/10 px padding; min target ≥24 px; 8 px gaps; surface-hover |
+| Label           | 10 px, 700, uppercase, 0.07em, text-secondary                             |
+| Current summary | 11.5 px mono, text-primary, fixed glyph, elided item                      |
+| Meter           | 12 cells, 3 px high, 2 px gap, status token mapping, aria-hidden          |
+| Count/caret     | 10 px count; 9 px caret; caret 0° closed / 180° open                      |
+| Body            | 4/10/8 padding, top rule, 168 px cap, actual internal overflow            |
+| Phase/item      | phase 10 px/0.07em/4 px top margin; item 11.5 px/1.85 line height         |
+| Current row     | surface background, text-primary, visible 2 px inset running marker       |
 
-### Screen reader (manual, recorded)
+The canonical top position intentionally differs from the old `.dc.html` screenshots. Compare anatomy, sizing, state, and tokens to the prototypes; compare placement to SPEC/epic/architecture. Record that distinction rather than treating the old bottom order as a visual failure.
 
-10. macOS VoiceOver + Safari and Windows NVDA + Firefox (or the pairings the Story 1.1 report used): navigate to the room, hear `Todo, region`, `TODO … 1/4, expanded, button`, `Research, heading`, `list, 4 items`, `completed, Read the spec`, `in progress, Locate the backoff cap`, `blocked, Run the suite, blocked: CI has one build job`. Collapse: `collapsed`. Record transcripts in the report.
+Capture at least:
 
-### Gates and report
+- `legacy-todo-collapsed-460.png`
+- `legacy-todo-expanded-460.png`
+- `console-todo-collapsed-460.png`
+- `console-todo-expanded-460.png`
+- a scrolled-room image for each surface showing the fixed strip and changed transcript content
+- `todo-strip-metrics.json` with geometry, overflow, token colors, and ratios
 
-11. `cd packages/web && bun run test && bun run type-check && bun run lint`; `cd packages/providers && bun run test`; `cd e2e && npm run typecheck`; root `bun run validate`. Never root `bun test`.
-12. Write `reports/visual-acceptance.md`: evidence sources, geometry matrix (contract / Console / Legacy / result), pinned evidence, viewport sweep, contrast table, keyboard/motion results, screen-reader transcripts, deviations with rationale (meter/Raw/body-bar exclusions, default-expanded decision, placement decision), and the local E2E pass record for the PR.
-13. Open the PR from the repo template with `Closes #178`; the Validation section links the report and states that the HITL and todo-strip specs ran locally because `test.yml` does not trigger `e2e-hitl` on `develop`.
+## Responsive and zoom matrix
 
-## Todo
+Run both surfaces at:
 
-- [ ] Phase 1 spec green on both surfaces; HITL suite green
-- [ ] Geometry, pinned, sweep, focus, motion, contrast cases added and green
-- [ ] Two screen-reader passes recorded
-- [ ] `bun run validate` green
-- [ ] `reports/visual-acceptance.md` written with evidence captures
-- [ ] PR opened with `Closes #178` and the local E2E record
+- 1440×1000
+- 1024×900
+- 768×900
+- 390×844
+- Chromium 200% zoom emulation using the established device-metrics approach
 
-## Success Criteria
+At every size/state assert:
 
-- [ ] Every `plan.md` acceptance criterion has passing automated evidence or a named manual record in the report.
-- [ ] No contrast ratio below 4.5:1, no target below 24 × 24, no horizontal overflow at any swept viewport or at 200 % zoom.
-- [ ] The strip is in the viewport at both scroll extremes on both rooms (captures attached).
-- [ ] All gates pass; the diff contains only the files in the plan's inventory.
+- Todo header stays one line; representative text elides before count/caret are lost;
+- section and body stay within the room; `scrollWidth <= clientWidth` for room and body;
+- page overflow is ≤1 px;
+- all header controls remain visible and target size stays ≥24×24 px;
+- expanding/collapsing does not cover the transcript's first row;
+- internal body scroll remains usable at the narrowest width.
 
-## Risk Assessment
+## Keyboard, focus, and reduced motion
 
-- **Evidence reveals a token gap** (e.g. `warning` on `surface-elevated` under 4.5:1 on one shell). Stop, record the measurement, raise with the owner; the fix is a token decision, not a per-component colour.
-- **Flaky pinned assertion.** `toBeInViewport()` after programmatic scroll can race a layout pass; wait for the scroller's `scrollTop` to settle before asserting, as the long-history spec does for page drains.
-- **Screen-reader availability.** If one OS pairing is unavailable on the machine, record the one that ran and name the missing pairing as an open item in the PR rather than claiming both.
+For each surface:
 
-## Security Considerations
+1. Tab to the Todo header as the first focusable control inside the room region; no hidden body child enters tab order while collapsed.
+2. Enter opens and Space closes; focus remains on the same button. Click has the same state transition.
+3. Focus outline computes to 2 px solid opaque `--accent-bright`, with Legacy −2 px / Console +2 px offset.
+   Prove the complete outline is visible on all four sides of the full-bleed Console button; do not silently switch it to the prototype's −2 px value to avoid a clipping defect.
+4. With normal motion, caret transform transition is 120 ms and open rotation is 180°. With `prefers-reduced-motion: reduce`, `transition-property` is `none`; do not incorrectly require the authored duration value to become `0s`.
+5. After a simulated same-scope live update, focus and expansion remain. Scope navigation mounts a new collapsed control.
 
-- Captures contain only the synthetic fixture strings from `E2E_FAKE_TODO_INPUTS`; no production payloads are recorded in the report.
+## Contrast and non-color status
+
+Resolve actual CSS colors in-browser against the effective backgrounds and write numeric ratios to the metrics JSON:
+
+- text-secondary label/count/items on surface-elevated;
+- text-primary representative/current content on surface-elevated/surface;
+- completed success, in-progress running, blocked warning, pending/abandoned secondary glyphs on their actual row backgrounds;
+- opaque accent-bright focus ring on surface-elevated/surface-hover (3:1 non-text floor).
+
+Text/glyphs must clear 4.5:1. The meter and current inset marker are redundant decoration (text count, glyph, and status phrase carry the information), so do not misreport them as the sole status channel. If a required token fails, record the exact surface/value and escalate a token decision rather than inventing a local color.
+
+## Accessibility-tree and manual AT review
+
+Use Chromium's accessibility tree to verify:
+
+- one region named `Todo` nested inside the node-room region;
+- header role button, a useful name assembled from TODO + status/current item + count, and expanded false/true;
+- meter, caret, and decorative glyphs excluded;
+- phase headings and lists exposed when expanded and hidden when collapsed;
+- each item exposes one status phrase; blocked reason and abandoned state are not duplicated;
+- no agent-authored task/blocker text appears in ids, labels, or titles;
+- focus remains on the header across activation and live rerender.
+
+Attempt and record one Windows + NVDA + Chromium pairing and one macOS + VoiceOver + Safari/Chromium pairing. Verify navigation, collapsed/expanded announcement, phase/list traversal, five statuses, and focus retention. Do not prescribe or claim exact screen-reader punctuation. If either environment is unavailable, record the exact limitation and mark manual AT sign-off **BLOCKED**, following the prior Story 1.1 report.
+
+## Regression and gates
+
+Run in this order so failures stay attributable:
+
+```bash
+bun run --cwd e2e test:ui -- --grep 'todo strip'
+bun run --cwd e2e test:ui:hitl
+
+(cd packages/web && bun run test && bun run type-check)
+(cd packages/providers && bun run test && bun run type-check)
+(cd e2e && npm run typecheck)
+
+bun run lint --max-warnings 0
+bun run validate
+```
+
+Also verify the existing Story 1.1 visual spec if Story 1.2 has not already run it against the final branch. Never substitute root `bun test` for the package-isolated scripts.
+
+The regression record must explicitly cover:
+
+- Legacy/Console no-todo rooms;
+- pagination, live refresh, error/retry, scroll restoration, stick-to-bottom, and Jump to latest;
+- Console Tool calls toggle and isolation rule;
+- non-agent Legacy rooms and exactly-one-landmark behavior;
+- current Story 1.2 Raw/Input-Output baseline;
+- provider behavior when `emitTodo` is absent.
+
+## Acceptance report and PR
+
+Create `reports/visual-acceptance.md` with:
+
+1. commit/baseline and evidence sources;
+2. behavior matrix by surface;
+3. geometry table with contract/Legacy/Console/result;
+4. fixed-strip and two-scroll-container proof;
+5. responsive/zoom results;
+6. keyboard/focus/motion results;
+7. contrast table and metrics-file link;
+8. Chromium AX evidence;
+9. manual visual comparison, distinguishing canonical placement from prototype anatomy;
+10. manual AT pairings or explicit blockers;
+11. exact commands/results, deviations, and final status.
+
+Open the PR from `.github/pull_request_template.md`, target `develop`, keep only applicable sections, link the report, state the locally run E2E suites, and include `Closes #178`. Do not mark the story done while a required manual AT blocker remains unless an authorized owner accepts an alternative.
+
+After every implementation/evidence gate passes, let the owning BMad workflow move `1-5-track-the-agents-current-todo-state-in-a-pinned-strip` from `backlog` to `done`. Do not manually advance it before the gate, and do not confuse issue #178's stale generated `CAP-5` / `diff-hunks` footer with the canonical CAP-3 scope.
+
+## Files
+
+- Modify: `e2e/ui/agent-todo-strip.spec.ts`
+- Create: `plans/260918-0826-issue-178-pinned-todo-strip/reports/visual-acceptance.md`
+- Create: `plans/260918-0826-issue-178-pinned-todo-strip/reports/evidence/*.png`
+- Create: `plans/260918-0826-issue-178-pinned-todo-strip/reports/evidence/todo-strip-metrics.json`
+- Workflow-owned after gates: `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`
+- Verify only: existing HITL and Story 1.1 visual specs
+- Fix product/test files only when a failed criterion proves a cause-aligned defect
+
+## Exit criteria
+
+- [ ] Real stored todo/no-todo runs pass on both routes.
+- [ ] Bounding boxes prove the strip does not move while transcript content scrolls.
+- [ ] The 12-item body proves a separate, functional 168 px internal scroll.
+- [ ] Geometry/anatomy/tokens match the resolved design contract at 460 px.
+- [ ] No room/page overflow at the viewport matrix or 200% zoom.
+- [ ] Required text/glyph contrast, focus contrast, target size, keyboard, and reduced-motion checks pass.
+- [ ] AX evidence passes; manual AT is either passed or honestly blocks final sign-off.
+- [ ] Regression suites and `bun run validate` pass.
+- [ ] Evidence report and synthetic captures are complete; PR is correctly formed.
+
+## Risks and safeguards
+
+- A visible strip is not proof of pinning; require unchanged geometry plus changed transcript rows.
+- A CSS max-height is not proof of long-plan behavior; require real `scrollHeight > clientHeight` and internal scroll.
+- Screenshots support human review but never replace computed geometry, contrast, or AX assertions.
+- Programmatic scroll can race layout; poll settled scroll metrics rather than adding fixed sleeps.
+- Do not claim prototype parity for placement; explain the authority-resolved top-position difference.
+- Do not commit any capture from a non-synthetic run.
