@@ -1,5 +1,14 @@
 ## Codebase Patterns
 
+### Porting markup-regex tests to happy-dom
+- Where: `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
+- Pattern: happy-dom `innerHTML` does NOT escape `"`/`'` inside text nodes — Legacy assertions like `not.toContain('" onload="')` or `toContain('onload=&quot;')` fail under DOM mounting. Assert DOM facts instead: `el.getAttribute('onload')` null-sweeps over `querySelectorAll('*')`, `querySelector('a'/'img'/'script'/'b')` null checks, and `code[class*="language-"]` absence for hostile language values.
+- Example: `for (const el of Array.from(row.querySelectorAll('*'))) expect(el.getAttribute('onload')).toBeNull();`
+
+### Console isolation allowlist edits
+- Where: `packages/web/src/experiments/console/console-isolation.test.ts`
+- Pattern: the approved shared-module `Set` is the gate for `@/lib/*` imports into Console room files. Adding a module requires the concrete need documented inline next to the entry; `@/lib/tool-output` was added for `sanitizeBounded` (sent-name bar fallback) because `tool-presentation` does not re-export it.
+
 ### Asserting lazy resolver calls (spyOn ESM namespace)
 - Where: `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`
 - Pattern: `import * as ns from '@/lib/tool-presentation'` + `spyOn(ns, 'toolBodyPresentation')` DOES intercept calls made from inside NodeRoom.tsx under Bun (verified) — `mock.module()` is unnecessary and would pollute the process. Pair with `useMemo` keyed on the input's field values in the component so `calls + 1` is the exact post-load count (unrelated renders like the loading flag don't re-normalize).
@@ -120,5 +129,31 @@ BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-17
 - Raw HTML in stored markdown surfaces as *escaped text* (no rehype-raw) — attack assertions must reject live tags/attributes and require the escaped forms, not absence of the string.
 - `useMemo` keyed on `{name, input, output, family}` field values (not the fresh input object) is what makes "recompute once on full-output load" literally true across loading-flag renders.
 - `git commit -m "$(cat <<'EOF'…)"` breaks on bodies containing parens; use `git commit -F` (see Codebase Patterns).
+
+---
+## 2026-09-28 — US-004: Console ToolBody renderer + geometry/a11y evidence
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — Console-local `ToolBodySwitch` (terminal/file/matches/paths/code/web/generic arms), `ToolBodyMarkdown` with the same restricted component map (inert a/img, `rehype-highlight` detect:false, no rehype-raw/`dangerouslySetInnerHTML`), `OmittedTail`, `codeFence`/`CODE_LANGUAGE_PATTERN`, `TOOL_BODY_BOX`. `ToolHistory` gains `rawOpen` + the US-003 swap slot: expanded region mounts only while `open`; family bar `family · sent-name-when-chip-fell-back · facts` with `sanitizeBounded(name, MAX_ALIAS_NAME_CODE_UNITS)`; Raw button `aria-expanded` far right; `formatToolIo` exact payload under Raw; `useMemo` keyed on field values → lazy resolve only while `open && !rawOpen`, exactly one recompute on full-output load. Console `focus-visible:outline-offset-2` kept.
+- `packages/web/src/experiments/console/console-isolation.test.ts` — added `@/lib/tool-output` to the approved shared set with documented concrete need (sent-name sanitization; `tool-presentation` does not re-export `sanitizeBounded`).
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — new `Console tool family bodies` describe (15 tests): bar anatomy + keyboard order, `spyOn` laziness (0 closed, none Raw-open even under full-output fetch, +1 on remount with fetched output), Raw swap/restore, all arms + degraded states, `+n more`/`more results omitted`, generic ≤3 rows + `{…}`/`[n]`, code highlight/hostile-language/fence-collision, web + markdown attacks, todo/task null bodies. Updated stale closed-row/nested-details assertions in the existing describe.
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — closed-row/pointer-toggle assertions updated to the new contract (no expanded region while collapsed; open row mounts family body + Raw slot).
+- `plans/…/reports/us-004-geometry-a11y-evidence.md` — geometry (460px, box metrics, no-h-scroll construction), keyboard order, SR pass (terminal + matches), reduced-motion, contrast (US-003 table applies — same tokens/box), commands+results.
+
+**Acceptance criteria verified**:
+- [x] Console-local ToolBody switch + restricted markdown; no Legacy imports; allowlist edit documented with concrete need
+- [x] `toolBodyPresentation()` only on `open && !rawOpen`; spy-proven laziness + single recompute on full-output load carrying the fetched output
+- [x] focus-offset convention preserved (+2px); Raw placement/state mirrors the US-003 slot (#175 still open — authoritative lookup, no merged implementation)
+- [x] ConsoleNodeRoom.test.tsx covers the Legacy matrix: closed row, shell, matches/paths/glob, generic, Raw swap/restore, markdown attacks, file states, code languages + fence, web, truncated→full recompute, todo/task null
+- [x] 460px evidence: one-line summary + bar, Raw far right, in-box wrapping, no panel h-scroll; box metrics recorded
+- [x] keyboard order summary → Raw → full-output/Retry; aria-expanded, visible focus ring, ≥24px targets, reduced-motion unchanged; contrast table recorded (all ≥4.5:1)
+- [x] ConsoleExecutionHistory.test.tsx updated for the swap slot; console-isolation.test.ts green
+- [x] `NODE_ENV=development bun test src/experiments/console/` 912 pass; `bun --filter @archon/web test` 2085 pass; type-check, lint --max-warnings 0, format:check clean
+
+**Learnings**:
+- happy-dom `innerHTML` doesn't escape quotes in text nodes — port markup-regex attack assertions to DOM attribute sweeps (see Codebase Patterns).
+- The generic-arm `{…}`/`[n]` markers and `2 matches` count text come from content badges/normalizer, not the row — reuse `toolItem`/`openToolItem` helpers (direct `AgentHistoryItem` + `initialOpen`) rather than driving `buildAgentHistory` for body-matrix tests.
+- `formatToolIo` takes the whole `{name, input, output}` payload object for the Raw slot.
 
 ---

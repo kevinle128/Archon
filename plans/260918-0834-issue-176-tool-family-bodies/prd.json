@@ -82,8 +82,8 @@
       "technicalNotes": "Phase 2 Console half + both-surface geometry/contrast evidence (phase-02 \u00a7Pre-execution coordination gate, \u00a7Shared visual rules, test matrix medium rows, \u00a7Visual acceptance evidence items measurable at component level). Same design authorities as US-003. Do not add @/lib/tool-output to Console imports unless proven necessary.",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented iteration 4 (84b54de6). Console-local ToolBodySwitch + Raw swap slot in ConsoleAgentHistoryList.tsx mirrors US-003 Legacy semantics (#175 still open — no merged implementation). @/lib/tool-output added to isolation allowlist with documented need (sanitizeBounded sent-name fallback; tool-presentation does not re-export it). Files: ConsoleAgentHistoryList.tsx, ConsoleNodeRoom.test.tsx, ConsoleExecutionHistory.test.tsx, console-isolation.test.ts, reports/us-004-geometry-a11y-evidence.md. 912 console + 2085 web tests green; type-check/lint/format clean."
     },
     {
       "id": "US-005",
