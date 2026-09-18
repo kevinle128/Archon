@@ -2,15 +2,15 @@
  * Console-owned agent history renderer. Uses AgentHistoryItem only as data and
  * never imports Legacy React components.
  */
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
-import { formatToolIo } from '@/lib/pair-tool-transcript';
 import {
+  toolRawPayloadJson,
   toolRowPresentation,
   type ToolFamily,
   type ToolOutcome,
@@ -244,6 +244,8 @@ function ToolHistory({
 }): ReactElement {
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
+  const [rawOpen, setRawOpen] = useState<boolean>(false);
+  const rawPanelId = useId();
   const [fullOutput, setFullOutput] = useState<unknown>(undefined);
   const [hasFullOutput, setHasFullOutput] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -273,6 +275,11 @@ function ToolHistory({
     setLoadError(null);
     void onLoadFullOutput(item)
       .then((output): void => {
+        if (output === undefined) {
+          setLoadError('Full output is not available for this call');
+          setLoading(false);
+          return;
+        }
         setFullOutput(output);
         setHasFullOutput(true);
         setLoading(false);
@@ -284,8 +291,9 @@ function ToolHistory({
   };
 
   const onToggle = (event: React.SyntheticEvent<HTMLDetailsElement>): void => {
-    // Nested Input/Output disclosures bubble toggle events; only the outer
-    // row's own toggle counts.
+    // Toggle events dispatched by nested interactive body elements bubble up
+    // to this row; only the outer row's own toggle may mark it touched or
+    // rewrite `open`.
     if (event.target !== event.currentTarget) return;
     // React's controlled `open` write echoes back as a toggle event; a genuine
     // user activation flips the DOM state away from the rendered state first.
@@ -338,25 +346,35 @@ function ToolHistory({
         </span>
       </summary>
       <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
-        <div className="mb-1.5 flex items-baseline gap-2 font-mono text-[10.5px] text-text-secondary">
-          {[presentation.family, ...facts.map(badge => badge.text)].join(' · ')}
+        <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
+          <span className="min-w-0">
+            {[presentation.family, ...facts.map(badge => badge.text)].join(' · ')}
+          </span>
+          <button
+            type="button"
+            aria-expanded={rawOpen}
+            aria-controls={rawOpen ? rawPanelId : undefined}
+            className={`ml-auto inline-flex min-h-[24px] flex-none cursor-pointer items-center rounded-[4px] border px-[7px] py-px focus-visible:outline-2! focus-visible:outline-accent-bright! ${
+              rawOpen
+                ? 'border-border-bright text-text-primary'
+                : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary focus-visible:border-border-bright focus-visible:text-text-primary'
+            }`}
+            onClick={(): void => {
+              setRawOpen(value => !value);
+            }}
+          >
+            Raw
+            {rawOpen ? <span aria-hidden="true"> ▾</span> : null}
+          </button>
         </div>
-        <details className="mt-1">
-          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright!">
-            Input
-          </summary>
-          <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-            {formatToolIo(item.input)}
+        {rawOpen ? (
+          <pre
+            id={rawPanelId}
+            className="m-0 min-w-0 max-w-full whitespace-pre-wrap rounded-[6px] border border-border bg-surface-inset px-2.5 py-2 font-mono text-[11.5px] leading-[1.5] text-text-primary [overflow-wrap:anywhere]"
+          >
+            {toolRawPayloadJson(presentation.rawPayload)}
           </pre>
-        </details>
-        <details className="mt-1">
-          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright!">
-            Output
-          </summary>
-          <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-            {formatToolIo(hasFullOutput ? fullOutput : item.output)}
-          </pre>
-        </details>
+        ) : null}
         {item.canLoadFullOutput ? (
           <button
             type="button"

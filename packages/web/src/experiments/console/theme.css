@@ -145,6 +145,16 @@
   border-color: var(--border);
 }
 
+/* Unlayered rules beat layered Tailwind utilities, so the wildcard pin above
+   also defeats the tool row's Raw toggle border states. Restore the intended
+   bright border for its hover/focus/open states (see the button's classes in
+   ConsoleAgentHistoryList). */
+.console-root
+  details[data-tool-id]
+  button[aria-expanded]:is(:hover, :focus-visible, [aria-expanded='true']) {
+  border-color: var(--border-bright);
+}
+
 .console-root ::selection {
   background: var(--accent-ring);
   color: var(--text-primary);

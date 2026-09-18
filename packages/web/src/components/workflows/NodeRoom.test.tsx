@@ -255,7 +255,7 @@ describe('selectNodeRoomMessages', () => {
 });
 
 describe('NodeRoom', () => {
-  test('renders assistant, tool, and lifecycle history with expanded I/O', () => {
+  test('renders assistant, tool, and lifecycle history', () => {
     const unselected = renderRoom({ nodeId: null, items: [] });
     expect(visibleText(unselected)).toBe('Select a node');
     expect(unselected).not.toContain('role="region"');
@@ -280,8 +280,7 @@ describe('NodeRoom', () => {
     expect(loaded).toContain('succeeded');
     expect(loaded).toContain('1.5s');
     expect(loaded).toContain('<details');
-    expect(loaded).toContain('Input');
-    expect(loaded).toContain('Output');
+    expect(loaded).toContain('>Raw');
     expect(loaded).toContain('View full output');
     expect(loaded).toContain('truncated');
     expect(loaded).toContain('started');
@@ -295,8 +294,11 @@ describe('NodeRoom', () => {
     const summary = summaryMarkup(row);
     expect(summary).toContain('>Read<');
     expect(summary).toContain('a.ts');
-    // Serialized payload stays behind the closed diagnostic disclosures.
-    expect(row.match(/<details[^>]*\sopen(\s|=|>)/g)).toBeNull();
+    // Serialized payload stays out of the DOM while Raw is closed.
+    expect(row).not.toContain('<pre');
+    expect(row).not.toContain('truncated-output');
+    expect(row).not.toContain('>Input<');
+    expect(row).not.toContain('>Output<');
   });
 
   test('shows unknown-scope notice and keeps truncated output when detail load is offered', () => {
@@ -579,7 +581,7 @@ describe('NodeRoom tool rows', () => {
     expect(openTag).not.toContain('shadow');
   });
 
-  test('opened body starts with the family then every summary fact, diagnostics stay closed controls', () => {
+  test('opened body starts with the family then every summary fact and one closed Raw control', () => {
     const items: AgentHistoryItem[] = [
       toolItem({ outcome: 'failed', exitCode: 2, toolUseId: 't-fail' }),
     ];
@@ -589,30 +591,39 @@ describe('NodeRoom tool rows', () => {
 
     const bodyStart = row.indexOf('</summary>') + '</summary>'.length;
     const body = row.slice(bodyStart);
-    const bar = /<div class="([^"]*)"[^>]*>([^<]*)<\/div>/.exec(body);
-    expect(bar?.[2]).toBe('file · exit 2 · truncated · 1.5s');
-    expect(bar?.[1]).toContain('text-[10.5px]');
-    expect(bar?.[1]).toContain('font-mono');
-    expect(bar?.[1]).toContain('text-text-secondary');
     expect(body).toContain('ml-[29px]');
     expect(body).toContain('border-l-2');
     expect(body).toContain('pl-2.5');
+    const bar = /<div class="([^"]*)"[^>]*><span class="([^"]*)">([^<]*)<\/span>/.exec(body);
+    expect(bar?.[3]).toBe('file · exit 2 · truncated · 1.5s');
+    expect(bar?.[1]).toContain('text-[10.5px]');
+    expect(bar?.[1]).toContain('font-mono');
+    expect(bar?.[1]).toContain('text-text-secondary');
+    expect(bar?.[2]).toContain('min-w-0');
 
-    // A failed auto-opened row still exposes no serialized payload: both diagnostics closed.
-    const diagnostics = [
-      ...body.matchAll(/<details([^>]*)>\s*<summary([^>]*)>(Input|Output)<\/summary>/g),
-    ];
-    expect(diagnostics).toHaveLength(2);
-    for (const match of diagnostics) {
-      expect(match[1]).not.toMatch(/\sopen(\s|=|>)/);
-      expect(match[2]).toContain('text-text-secondary');
-      expect(match[2]).toContain('min-h-[24px]');
-      expect(match[2]).toContain('focus-visible:outline-accent-bright');
-      expect(match[2]).not.toContain('aria-hidden');
-    }
-    // Input precedes Output and the full-output control stays below both.
-    expect(body.indexOf('>Input<')).toBeLessThan(body.indexOf('>Output<'));
-    expect(body.indexOf('>Output<')).toBeLessThan(body.indexOf('View full output'));
+    // Exactly one Raw control: native button, closed by default, 24px target.
+    const raw = /<button([^>]*)>Raw[\s\S]*?<\/button>/.exec(body);
+    expect(raw).not.toBeNull();
+    expect(raw?.[1]).toContain('type="button"');
+    expect(raw?.[1]).toContain('aria-expanded="false"');
+    expect(raw?.[1]).not.toContain('aria-controls');
+    expect(raw?.[1]).toContain('min-h-[24px]');
+    expect(raw?.[1]).toContain('border-border');
+    expect(raw?.[1]).toContain('text-text-secondary');
+    expect(raw?.[1]).toContain('hover:border-border-bright');
+    expect(raw?.[1]).toContain('hover:text-text-primary');
+    expect(raw?.[1]).toContain('focus-visible:outline-accent-bright');
+    expect(body.match(/<button[^>]*>Raw[\s\S]*?<\/button>/g)).toHaveLength(1);
+
+    // A failed auto-opened row still exposes no serialized payload or diagnostic labels.
+    expect(body).not.toContain('<pre');
+    expect(body).not.toContain('truncated-output');
+    expect(body).not.toContain('>Input<');
+    expect(body).not.toContain('>Output<');
+    expect(body.match(/<details/g)).toBeNull();
+    // Raw sits above the full-output control, which stays mounted while Raw is closed.
+    expect(body.indexOf('>Raw')).toBeLessThan(body.indexOf('View full output'));
+    expect(body).toContain('View full output');
   });
 
   test('collapsed tool rows sit flush while mixed content keeps per-item separation', () => {

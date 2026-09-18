@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
 import { buildAgentHistory, toolRuntime, type AgentHistoryItem } from './agent-history';
+import { toolRawPayloadJson } from './tool-presentation';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
 const NOW_MS = Date.parse(CREATED_AT) + 30_000;
@@ -751,5 +752,108 @@ describe('buildAgentHistory', () => {
     expect(items[3]).toMatchObject({ outcome: 'succeeded' });
     expect(items[5]).toMatchObject({ outcome: 'succeeded' });
     expect(items[2]).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+  });
+
+  test('a paired call/result carries the canonical raw payload', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-raw',
+          seq: 1,
+          name: 'mcp__github__create_issue',
+          toolUseId: 'raw-1',
+          input: { title: 'bug' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'result-raw',
+          seq: 2,
+          name: 'mcp__github__create_issue',
+          toolUseId: 'raw-1',
+          output: { issue: 42 },
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool?.kind !== 'tool') throw new Error('expected a tool item');
+    // The raw payload keeps the provider-facing name, not the mcp chip label.
+    expect(tool.presentation.label).toBe('github · create_issue');
+    expect(tool.presentation.rawPayload).toEqual({
+      name: 'mcp__github__create_issue',
+      input: { title: 'bug' },
+      output: { issue: 42 },
+    });
+  });
+
+  test('a pending call serializes its raw payload without an output key', () => {
+    const items = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-pending',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'pend-1',
+          input: { cmd: 'sleep 1' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    const tool = items[0];
+    if (tool?.kind !== 'tool') throw new Error('expected a tool item');
+    const parsed = JSON.parse(toolRawPayloadJson(tool.presentation.rawPayload)) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed).toEqual({ name: 'Bash', input: { cmd: 'sleep 1' } });
+    expect('output' in parsed).toBe(false);
+  });
+
+  test('pairing the result keeps the card id and updates the raw payload output', () => {
+    const callRow = toolRow({
+      id: 'call-evolve',
+      seq: 1,
+      name: 'Bash',
+      toolUseId: 'ev-1',
+      input: { cmd: 'make' },
+      metadata: { tool_phase: 'call' },
+    });
+    const pending = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [callRow],
+    })[0];
+    if (pending?.kind !== 'tool') throw new Error('expected a tool item');
+    const paired = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        callRow,
+        toolRow({
+          id: 'result-evolve',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'ev-1',
+          output: 'done',
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    })[0];
+    if (paired?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(paired.id).toBe(pending.id);
+    expect(toolRawPayloadJson(pending.presentation.rawPayload)).not.toContain('done');
+    const parsed = JSON.parse(toolRawPayloadJson(paired.presentation.rawPayload)) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed).toEqual({ name: 'Bash', input: { cmd: 'make' }, output: 'done' });
   });
 });

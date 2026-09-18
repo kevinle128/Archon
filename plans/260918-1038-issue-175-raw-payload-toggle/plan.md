@@ -1,6 +1,6 @@
 ---
 title: 'Issue 175 raw payload toggle'
-description: 'Implementation-ready plan for Story 1.2: a closed-by-default Raw toggle that is the only place serialized tool JSON appears, on Legacy and Console.'
+description: 'Verified implementation plan for Story 1.2 on Legacy and Console.'
 status: pending
 priority: P1
 effort: '3 phases'
@@ -9,272 +9,181 @@ created: 2026-09-18
 issue: 'https://github.com/kevinle128/Archon/issues/175'
 ---
 
-# Issue 175 raw payload toggle
+# Story 1.2 / Issue #175 — Raw payload toggle
+
+## Status
+
+Ready for implementation. Story 1.1 is merged (`#197`, commit `0fb1fd04`), so the prerequisite tool-row shell exists on both node-room surfaces. Issue #175 is open and the review found no competing open PR. No unresolved product or design decision remains.
 
 ## Goal and user outcome
 
-Story 1.2 gives an operator who needs exact diagnostic data one control per tool row — `Raw` — that reveals the original persisted payload (`name`, `input`, `output`) as pretty-printed JSON. The control is closed by default, lives at the far right of the expanded body bar, and is the **only** place serialized JSON appears in the transcript. The temporary closed Input/Output disclosures that Story 1.1 shipped as a bridge are removed. The existing `canLoadFullOutput` flow (`View full output`, inline error, `Retry`) keeps working, and a failed load never replaces the readable row.
+Replace Story 1.1's temporary nested `Input` and `Output` disclosures with one compact `Raw` disclosure in every expanded tool row, in both the Legacy and Console node rooms. The default row remains a concise presentation. On demand, `Raw` shows a pretty-printed canonical payload with exactly the provider-facing `name`, `input`, and `output` fields. Existing full-output loading, error handling, retry, responsive layout, and accessibility must continue to work.
 
-This is FR7 / CAP-7 and NFR3 from the Agent Node Room epic. It is a presentation-only slice over data already stored: no schema, migration, backend, API, or generated-type change.
+This is a presentation-only story. It must not change persisted messages, API schemas, tool-name normalization, workflow execution, or provider behavior.
 
 ## Evidence and authority
 
-When sources differ, use them in this order:
+The implementation must follow these sources in this order:
 
-1. Story 1.2 acceptance criteria in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:236-259` and CAP-7 in `_bmad-output/specs/spec-agent-node-room/SPEC.md:78-80`, plus the read-half constraint at `SPEC.md:121`.
-2. `_bmad-output/specs/spec-agent-node-room/test-plan.md:80-89` (renderer test: Raw present, closed by default, reveals the payload) and `tool-presentation-contract.md:139` (the untouched Codex name stays available behind Raw).
-3. `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md` — Raw toggle row (`:113`), Output truncated (`:156`), Raw open (`:170`), keyboard (`:196-197`), Flow 3 (`:358-366`), Q&A (`:393`, `:396`).
-4. `.../DESIGN.md` — `raw-toggle` and `body-box` tokens (`:201-226`), Raw toggle and Body box component specs (`:573`, `:587-597`), contrast row (`:471`), target size (`:697`).
-5. Mockup `.../mockups/key-transcript-states.html` §F (`:325-336`) and `.raw` / `.box` CSS (`:67-69`).
-6. Current product code and tests for behavior the story keeps.
+1. Issue `#175` and Epic 1 Story 1.2 in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` define the acceptance criteria.
+2. `_bmad-output/specs/spec-agent-node-room/SPEC.md` (CAP-7/NFR) and `test-plan.md` define the machine and renderer-test contracts.
+3. `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md`, especially AD-1, AD-3, AD-10, and the CAP-7 mapping, requires a total React-free core, payload carried on the item, and shells that own markup/interaction without interpreting provider fields.
+4. `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md` defines the body bar, swap behavior, payload shape, keyboard flow, and canonical `460px` narrow width.
+5. The adjacent `DESIGN.md` defines `raw-toggle` and `body-box`. Its structured binding and component definition specify `text-primary` for Raw JSON and override both its own generic “body text” prose and the mockup's inconsistent inline `text-tertiary` annotation.
+6. The adjacent `mockups/key-transcript-states.html`, section F, is the visual reference where it does not conflict with the preceding sources.
+7. `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md` requires the untouched provider tool name to remain available for Raw.
 
-Verified repository facts:
+Repository inspection also confirmed the real data and UI path:
 
-- Both surfaces render the same temporary bridge: a body bar (`family · facts`) then two closed nested `<details>` (`Input`, `Output`) whose `<pre>` bodies call `formatToolIo()`, then a sibling `View full output` button and inline error/`Retry` — Legacy `packages/web/src/components/workflows/NodeRoom.tsx:430-476`, Console `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx:339-385`.
-- The full-output control is already a **sibling after** the Output disclosure, not inside it, so "the position it has today" is: visible whenever the row is open, independent of any nested disclosure (`NodeRoom.tsx:451-459`, `ConsoleAgentHistoryList.tsx:360-368`).
-- After a successful load both shells rebuild the presentation with `outputState: 'full'` from `fullOutput` (`NodeRoom.tsx:334-343`, `ConsoleAgentHistoryList.tsx:253-262`); the raw box must read the same `hasFullOutput ? fullOutput : item.output` value.
-- `onToggle` ignores bubbled toggle events from nested disclosures (`NodeRoom.tsx:368-376`, `ConsoleAgentHistoryList.tsx:287-295`). A `<button>` never fires `toggle`, so the guard is idle after this story, but later stories put collapsible subtask cards inside the same body (EXPERIENCE `:123`), so the guard stays and only its comment changes to state the invariant.
-- `renderAfterItem` output is a sibling of the row's `<details>`, not a descendant (`NodeRoom.tsx:526-531`, `ConsoleAgentHistoryList.tsx:447-452`), so extension slots cannot bubble into the row today.
-- `formatToolIo()` (`packages/web/src/lib/pair-tool-transcript.ts:75-78`) has four production call sites in two files — `NodeRoom.tsx:440,448` and `ConsoleAgentHistoryList.tsx:349,357`, all inside the bridges above — and one unit `describe` (`pair-tool-transcript.test.ts:95-102`). It returns a **string value verbatim** and JSON-encodes everything else; the new helper always JSON-encodes, so a string output gains an escape pass (see Resolved source conflicts).
-- The full-output detail route returns the stored row with no size cap (`packages/server/src/routes/api.ts:5321-5342`); the bridge today renders every row's payload unconditionally (React mounts `<details>` children even when closed), so the DOM already holds hidden serialized JSON for every row. The new design renders the JSON only while Raw is open.
-- No masking or redaction exists between persisted tool payloads and the browser (grep `mask|redact` in `packages/workflows/src`, `packages/server/src`: only unrelated webhook/condition hits). Raw neither adds nor removes exposure; it concentrates the same bytes behind one labelled control. Recorded as the accepted posture; a future masking pass has its trigger here.
-- CI gap: `.github/workflows/test.yml:5-7` triggers the `e2e-hitl` job on `[main, dev]`, but this fork's remote HEAD is `develop` (`git remote show origin`) and #196/#197 merged into `develop`. A PR into `develop` therefore never runs the HITL Playwright specs in CI; `pr-e2e-verify.yml` triggers on `develop` but does not run the fixed suite. The local HITL run is the real gate for this story (see Open questions).
-- The persisted tool payload is `{ name, id, input?, output? }` (`packages/workflows/src/schemas/node-message.ts:16-22`); the projected item exposes `name` (untouched, wrapper intact), `input`, `output`, `toolUseId`, `messageId` (`packages/web/src/lib/agent-history.ts:30-45`).
-- `ConsoleAgentHistoryList` mounts twice on one page (selected room + inline execution history), so any element id derived only from `toolUseId` can duplicate; use React `useId()`.
-- Tests that encode the bridge and must be rewritten: `NodeRoom.test.tsx:283-285, :383-384, :582-615`; `LegacyNodeRoom.test.tsx:1128-1129, :1281-1308, :1330-1423`; `ConsoleNodeRoom.test.tsx:262-300 (asserts JSON present in closed details), :1063-1068, :1328-1329, :1481-1508, :1620-1701`; E2E `workflow-run-hitl.spec.ts:97-98, :123-124`, `workflow-run-hitl-room.spec.ts:180-182, :249-250, :643-654`, `agent-tool-row-visual.spec.ts:376-378, :519-523`.
-- Issue #175 is open with no PR, no branch, and no worktree; Story 1.1 merged as #197 (`0fb1fd04`). The 1.1 plan directory still reads `status: pending` in its frontmatter although its work shipped — flagged, not edited here.
+`remote_agent_messages` tool-call/tool-result rows → list endpoint (possibly truncated string output) → `projectToolTranscript` inside `buildAgentHistory` → `toolRowPresentation` → `LegacyNodeRoom`/`NodeRoom` or `ConsoleAgentHistoryList` → optional detail endpoint for full output.
 
-## Resolved source conflicts
+The call and result are separate persisted rows. Therefore Raw is **not** a byte-for-byte rendering of one stored row. It is the canonical paired projection required by the UX contract: `{ name, input, output }`, using parsed values and the original provider-facing name. The tool-use id, message id, row id, presentation label, icon, facts, and other UI metadata are intentionally excluded.
 
-- **Raw JSON text colour — owner decision 2026-09-18: text-primary.** For text-primary: the `body-box` token binding `text-legacy`/`text-console` (DESIGN `:226-227`), the Body box component paragraph "text-primary content with secondary annotations" (`:590`), and its per-arm line `Raw: text-primary JSON` (`:597`). For text-secondary: the "Do" list (`:666`), EXPERIENCE `:170`, and the contrast row (`:471`). The mockup's inline tertiary loses to both documents. The owner chose the token binding; `RAW_TEXT_CLASS = 'text-text-primary'` on both surfaces, and Phase 3 measures text-primary on `surface-inset`.
-- **Generic-fallback corpus audit.** `test-plan.md:38` labels the < 2 % audit "Story 1.2", but the epic's FR coverage map assigns FR2/CAP-2 to Story 1.3 (`epics.md:173`) and the 1.1 plan already deferred it. The epic wins: **out of scope** here.
-- **Swap, not append.** EXPERIENCE `:113` and `:396`: opening Raw replaces the presented body; it never renders the same bytes twice. In 1.2 the presented body is empty (family arms arrive in 1.3), so the swap slot is designed now and filled later.
-- **Where the full-output control lives.** EXPERIENCE `:156`/`:393`: "where it is today, under the output block; it does not join Raw in the body bar". Today it is a sibling below the disclosures. Decision: render it **once, after the swap slot, independent of Raw state**, so it is reachable whether Raw is open or closed and `getByRole('button', { name: 'View full output' })` keeps `toHaveCount(1)`.
-- **Raw shape for string outputs — owner decision 2026-09-18: pure JSON object.** Raw is exactly the persisted representation `{ name, input, output }`; a string output appears as an escaped JSON string (newlines as `\n`), which is what the spec, mockup §F, and EXPERIENCE Flow 3 describe. Readable text is Story 1.3's terminal/text body. Known cost, accepted: escaped strings inside Raw (a screen-reader user hears the escapes), and a one-time escape pass when Raw opens on a large loaded string.
-- **Interim expanded body — owner decision 2026-09-18: accept bar-only.** Between 1.2 and 1.3 an expanded row with Raw closed shows the body bar and, when applicable, `View full output`. Family bodies stay in 1.3; revisit signal is 1.2 shipping alone for more than one sprint.
-- **CI HITL gap — owner decision 2026-09-18: local run is the gate.** `test.yml` stays untouched in this story; the recorded local `bun run --cwd e2e test:ui:hitl` run is a required PR item; the `develop` trigger mismatch is logged as a separate follow-up.
+## Verified current behavior
+
+- `NodeMessageToolPayload` contains `name`, `id`, and optional `input`/`output`.
+- Pairing preserves the call name and input, joins the result output, and keeps a stable card id while a result arrives.
+- Paged history truncates long string output and sets `full_output_available`; the detail endpoint returns the complete row.
+- Both renderers have equivalent outer-row state, nested temporary `Input`/`Output` disclosures, and full-output load/error/retry state, but their markup is separate under `components/workflows/` and `experiments/console/`.
+- `ConsoleAgentHistoryList` is also used by `ConsoleExecutionHistory`; more than one list can exist in one document, so generated DOM ids must be instance-safe.
+- `formatToolIo` is only used by the temporary disclosures and can be removed after both renderers migrate.
+- PRs targeting the repository's active `develop` branch run `.github/workflows/pr-e2e-verify.yml`; `.agents/skills/verify-archon/features/hitl-run-room.json` maps the affected Legacy/Console tool-output scenarios. The general `test.yml` branch filters are not the relevant PR gate for this work. `AGENTS.md` still says `dev`, but the remote default branch and executable PR workflow both say `develop`; use the live repository integration target and do not expand this story into branch-policy cleanup.
 
 ## Scope
 
 ### In scope
 
-- One pure, bounded helper in `packages/web/src/lib/tool-presentation.ts` that produces the raw JSON string for a tool item, and its unit tests.
-- Removal of the temporary Input/Output disclosures and of `formatToolIo()` (dead after removal).
-- A `Raw` disclosure button in the body bar of both surfaces, with identical anatomy, wording, semantics, keyboard behaviour, and surface-specific tokens.
-- A conditionally rendered raw body box; the JSON string is not in the DOM until Raw is open.
-- Preserved full-output loading, error, and retry behaviour; the raw box reflects loaded full output in place.
-- Unit, component, E2E, geometry, focus, reduced-motion, contrast, and manual screen-reader evidence.
+- A React-free Raw payload contract and serializer in the shared presentation core.
+- One closed-by-default `Raw` control per expanded tool row on Legacy and Console surfaces.
+- Conditional Raw JSON rendering: no serialized payload node or string exists in the DOM while closed.
+- Preservation of the existing full-output load, loading, failure, and retry flow whether Raw is closed or open.
+- Removal of the temporary nested `Input` and `Output` `<details>` elements and the now-unused formatter.
+- Unit, component, E2E, accessibility, responsive, and visual coverage for the changed states.
+- Story/issue completion through the issue-mandated `ak-feature` workflow after implementation and validation are complete, including its sprint tracker transition.
 
 ### Out of scope
 
-- Story 1.3+ family bodies, generic key-value body, `awaiting output`, diff, todo strip, task cards, occurrence headers, corpus audit, steering.
-- Backend, API, persistence, schema, migration, generated types, provider, workflow-engine, or dependency changes.
-- Chat tool cards, Run Stream `ToolCallItem`, and any other surface than the two node rooms.
-- A shared React component across surfaces, new design tokens, or a new styling system.
+- API, database, OpenAPI, provider, workflow-engine, or persistence changes.
+- Redaction or masking rules. The same payload is already user-visible through the existing disclosures; this story changes presentation and makes closed state less exposed in the DOM.
+- Virtualization, async JSON formatting, a new JSON viewer, syntax highlighting, copy/download controls, or a feature flag.
+- Changes to the outer `<details>` shell, non-tool rows, tool presentation rules, truncation limits, or detail endpoint behavior.
+- General cleanup of branch names or unrelated CI workflows.
 
-## End-to-end design
+## Technical design
 
-```text
-AgentHistoryItem (kind: 'tool')  ── name / input / output / canLoadFullOutput / messageId
-        |
-        |  toolRawPayloadJson({ name, input, output })  ← pure, in lib/tool-presentation.ts
-        v
-<details data-tool-id>                       (Story 1.1, unchanged)
-  <summary>…row…</summary>
-  <div body>
-    <div body-bar>  family · facts        [Raw] / [Raw ▾]   ← <button aria-expanded aria-controls>
-    {rawOpen ? <pre id={rawId} body-box>{json}</pre>         ← swap slot; presented body is empty until 1.3
-             : null}
-    {canLoadFullOutput ? <button>View full output</button>}  ← once, after the slot, any Raw state
-    {loadError ? error + Retry}
-  </div>
-</details>
-```
+### Shared payload contract
 
-Each surface owns its JSX and tokens (Console never imports `@/components/`); the helper is the only shared code. Raw state is per-row local React state keyed by the existing stable item identity, independent of the row's `open` state; it survives polling re-renders and the full-output load, and a new item identity starts closed.
+In `packages/web/src/lib/tool-presentation.ts`:
+
+- Add `ToolRawPayload` with exactly `name`, `input`, and `output`.
+- Add an opaque `rawPayload: ToolRawPayload` field to `ToolRowPresentation` (not the lower-level generic presentation result). `toolRowPresentation` creates it from its existing input, preserving the original `name` and parsed values.
+- Keep the public helper total. If adversarial getters or malformed in-memory values make capture impossible, return `{ name: 'generic', input: undefined, output: undefined }` rather than throwing; normal API data has already passed schema validation.
+- Add `toolRawPayloadJson(payload)` which serializes in fixed key order with `JSON.stringify(..., null, 2)`. Normal JSON behavior is intentional: absent `undefined` properties are omitted, `null` is retained, and strings are escaped as JSON.
+- If an in-memory payload is cyclic or contains a non-JSON value such as `bigint`, return a small valid, pretty-printed `{ name, error }` diagnostic rather than throwing during render; preserve a safely readable string name and otherwise use `generic`. This defensive shape is the documented exception to the normal three-key contract and is unreachable for schema-validated JSON rows. Do not use a replacer that silently changes values.
+
+This keeps provider interpretation in the shared core. Both shells only render `presentation.rawPayload`; after a successful full-output fetch, their existing `toolRowPresentation(...)` re-presentation path produces a replacement `rawPayload` containing the full output.
+
+### Renderer behavior
+
+Make equivalent changes in:
+
+- `packages/web/src/components/workflows/NodeRoom.tsx` (the Legacy transcript shell)
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`
+
+For each mounted tool row:
+
+1. Add local `rawOpen`, initially `false`, and a `useId()`-derived panel id. State belongs to the row component and therefore resets when React receives a new history-item key/id; it remains stable when polling updates the same paired card.
+2. Remove nested `Input` and `Output` disclosure markup.
+3. Render a single body bar when the outer row is expanded: facts remain on the left; the `Raw` button is the final item on the right.
+4. Give the closed button visible text `Raw`; only the open state appends the design's ` ▾` suffix, in an `aria-hidden` span. Use `aria-expanded`. Set `aria-controls` only while the conditional panel exists.
+5. Use the specified `min-height: 24px` and horizontal padding; verify the rendered target clears `24 × 24px`. Retain the Console surface's local `!` overrides where parent prose styles otherwise win.
+6. Use explicit closed, hover, focus-visible, and open classes. Do not depend on an unverified Tailwind `aria-expanded:` variant. Open/focus styling uses the documented bright border and primary text.
+7. Only when `rawOpen` is true, call `toolRawPayloadJson(presentation.rawPayload)` and render it in a `<pre id={rawPanelId}>` after the body bar. Use the design-system inset surface/border/radius/padding, `text-text-primary`, monospace type, approximately `11.5px / 1.5`, and wrapping guards (`min-w-0 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere]`) so long unbroken values do not cause page-level horizontal overflow.
+8. Keep `View full output`, its disabled loading state, load error, and retry after the swapped body slot so it remains available in either Raw state. A successful fetch must be a tool message with defined output; otherwise show `Full output is not available for this call` and do not replace the current presentation.
+9. Preserve the existing nested-toggle propagation guard because later subtasks will add other interactive body controls; update its comment if needed so the invariant is explicit.
+
+No live region is required: Raw is a user-operated disclosure, and the loading/error controls already expose their visible state.
+
+### Privacy, performance, and reliability
+
+- Render Raw only as a React text node; do not use `dangerouslySetInnerHTML`.
+- Do not log payloads or include real credentials/secrets in screenshots or evidence. Use synthetic fixtures.
+- Serialization occurs only while Raw is open. Full outputs can be large, but adding memoization, workers, or virtualization is not justified without measured evidence; record any visibly slow fixture during validation as a follow-up rather than broadening this story.
+- Full-output failure preserves the truncated/original presentation and the existing retry path.
+- No schema migration, backfill, rollout ordering, or compatibility shim is needed. Rollback is a normal revert of the web-only change.
 
 ## Acceptance criteria
 
-### Behaviour and contracts
+### Functional and contract
 
-- [ ] Every tool row's expanded body bar ends with a `Raw` button pushed to the far right; the collapsed summary never contains it.
-- [ ] Raw is closed on first render for every outcome (succeeded, failed, running, interrupted, unknown), including auto-opened failed rows.
-- [ ] Activating Raw renders one body box containing `JSON.stringify({ name, input, output }, null, 2)` for that row and flips the button to `Raw ▾` with `aria-expanded="true"`; activating again removes the box and restores `Raw`.
-- [ ] While every Raw is closed, the room DOM contains no serialized-data text from any payload (`"name":`, `"input":`, `"output":`, quoted keys, braces produced by serialization); opening one Raw adds it for that row only.
-- [ ] The raw JSON uses the untouched sent name (a Codex `/bin/zsh -lc '…'` wrapper stays), omits `input`/`output` when they are `undefined`, keeps `null`, and shows a string output as a JSON string.
-- [ ] `View full output` renders once per loadable row whether Raw is open or closed; a successful load updates the row badges and the open raw box in place; a failed load — including a response that carries no tool output — shows the inline error and `Retry` under the body without changing the summary, the disclosure state, the raw state, or the `truncated` badge.
-- [ ] Loaded output stays hidden while Raw is closed, on both surfaces, proven end-to-end on a real run (load first, assert hidden, then open Raw).
-- [ ] Raw state survives polling re-renders and the full-output load, does not carry across item identities, and a Raw click never marks the outer row touched or flips its `open` state. The row's toggle handler keeps ignoring bubbled `toggle` events from any nested disclosure, so a later story's nested `<details>` cannot mark the row touched.
-- [ ] `Input`, `Output`, and nested `<details>` no longer exist inside a tool row; `formatToolIo` is removed with its test.
+- Every tool row on both Legacy and Console surfaces has exactly one `Raw` button in the expanded body bar; the collapsed summary itself contains no Raw control.
+- Raw is closed for every newly mounted history item. While closed, no serialized Raw payload text or Raw `<pre>` exists in the DOM.
+- Opening Raw replaces the empty/default body slot with valid, two-space-indented JSON whose only normal top-level keys are `name`, `input`, and `output`, in that order when present. The documented `{ name, error }` fallback is allowed only for a malformed non-JSON in-memory value that validated API rows cannot contain.
+- `name` is the untouched provider name, not the normalized display label. The JSON contains parsed input/output values and does not include ids or UI metadata.
+- Closing Raw removes the payload node from the DOM. Toggling Raw does not toggle the outer row.
+- Polling a pending call into a paired result keeps the same row and Raw state, and the open payload updates to include the result. A different history-item id mounts closed.
+- The temporary nested `Input` and `Output` disclosures and `formatToolIo` are gone.
 
-### Safety, performance, and compatibility
+### Full output and failures
 
-- [ ] The helper never throws: schema-parsed JSON always serializes; an unrepresentable value (unreachable today) yields a safe fallback string that still names the tool. The fallback is documented with a comment explaining why it is safe.
-- [ ] The JSON string is computed only while Raw is open (no serialization cost for closed rows, no JSON in the DOM). This is a net reduction: the bridge serialized every row on every render.
-- [ ] React text nodes remain the only rendering path; no HTML injection or sanitizer. No payload text is placed in `title`, `aria-label`, or `id` attributes.
-- [ ] Exposure posture is unchanged and recorded: the same authorized viewer sees the same stored bytes; no masking layer exists today and none is added.
-- [ ] No change to `buildAgentHistory()`, `pair-tool-transcript` projection, server routes, schemas, or generated types.
+- For a truncated string result, `View full output` is visible with Raw closed and open.
+- Loading state disables the action and retains the existing `View full output` label.
+- Success re-renders the presentation and Raw payload with the complete output; the truncated tail is absent before Raw opens and present after it opens.
+- Network, non-OK, wrong-message-kind, or missing-output responses show an inline error, preserve the current payload, and allow retry.
 
-### Visual, responsive, and accessible behaviour
+### Accessibility and visual behavior
 
-- [ ] Raw button: `10.5px` mono, transparent background, 1 px `border` colour border, radius 4 px, padding 1 px/7 px, `min-height: 24px`, text-secondary; hover and focus-visible use `border-bright` + text-primary; open state uses text-primary + `border-bright` + a `▾` suffix that is `aria-hidden` so the accessible name stays `Raw` (SC 2.5.3).
-- [ ] Raw body box: `surface-inset`, 1 px `border`, radius 6 px, padding 8 px/10 px, `11.5px`/1.5 mono, text-primary (`RAW_TEXT_CLASS`, one constant per surface), `white-space: pre-wrap`, `overflow-wrap: anywhere`; it never widens the 460 px room or introduces horizontal page scroll.
-- [ ] Focus outline on the Raw button matches the surface: 2 px `--accent-bright`, offset −2 px Legacy / +2 px Console. Chevron animation and reduced-motion behaviour are unchanged.
-- [ ] Keyboard: `Tab` from an open row's summary lands on its Raw button; `Enter`/`Space` toggle it; `Tab` continues to `View full output` when present, then the next row. No custom key handling.
-- [ ] Accessible name/state: `button` named `Raw` with `aria-expanded` and `aria-controls` pointing at the box's `useId()`-derived id; the box is a plain `<pre>`. No live region is introduced: a button with `aria-expanded` is the WAI-ARIA disclosure pattern and announces its own state change. Tests resolve `aria-controls` with `document.getElementById`, never a concatenated CSS selector — React 19 `useId` ids are not selector-safe.
-- [ ] Contrast of Raw text and JSON text clears 4.5:1 on both surfaces (recorded), target size clears 24 × 24 (measured).
+- The control has accessible name `Raw`, `aria-expanded` accurately tracks state, and open `aria-controls` references the unique existing panel. Two sibling Console history lists produce distinct ids; tests resolve React `useId()` output with `document.getElementById`, not a CSS selector.
+- Keyboard-only users can open a tool row, reach Raw next in the expected flow, toggle it with Enter/Space, and continue to `View full output` when present. Focus remains visible.
+- Automated Chromium accessibility-tree checks expose the expected button name, expanded state, and control relationship on both surfaces. The repository has no axe dependency or general “serious violations” harness, so this story does not invent that claim or add a dependency. A manual VoiceOver/NVDA spot-check is useful when that environment is available but is not a release blocker invented by this story.
+- Raw JSON uses the design-system primary text on inset surface and meets WCAG AA contrast. Closed, hover/focus, open, and long-payload states match the source artifacts; loading and error retain the existing disabled-button and inline-error patterns.
+- At `1440`, `1024`, `768`, `460`, and `390px`, plus `200%` zoom, facts stay left, Raw stays right without an extra breakpoint, JSON wraps, controls remain usable, and the page has no horizontal overflow.
 
-## Phases
+## Files expected to change
 
-| #   | Phase                                                                                  | Depends on | Output                                                                                   |
-| --- | -------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------- |
-| 1   | [Shared raw contract and red outside-in tests](./phase-01-start.md)                    | None       | Pure helper + unit tests, `formatToolIo` removal, red E2E contract                       |
-| 2   | [Legacy and Console renderers](./phase-02-two-surface-renderers.md)                    | Phase 1    | Red component tests then green Raw toggle on both surfaces, bridge removed               |
-| 3   | [End-to-end and visual verification](./phase-03-end-to-end-and-visual-verification.md) | Phases 1–2 | Green E2E, geometry/contrast/keyboard/screen-reader evidence, `bun run validate`, report |
+Production:
 
-## Global file inventory
+- `packages/web/src/lib/tool-presentation.ts`
+- `packages/web/src/components/workflows/NodeRoom.tsx`
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`
 
-| Path                                                                                       | Action                                                     |
-| ------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `packages/web/src/lib/tool-presentation.ts`                                                | Modify: add `toolRawPayloadJson`                           |
-| `packages/web/src/lib/tool-presentation.test.ts`                                           | Modify: add raw helper table                               |
-| `packages/web/src/lib/pair-tool-transcript.ts`                                             | Modify: delete `formatToolIo`                              |
-| `packages/web/src/lib/pair-tool-transcript.test.ts`                                        | Modify: delete the `formatToolIo` describe                 |
-| `packages/web/src/components/workflows/NodeRoom.tsx`                                       | Modify: Legacy Raw toggle, remove bridge                   |
-| `packages/web/src/components/workflows/NodeRoom.test.tsx`                                  | Modify: static anatomy + no-JSON-in-DOM contract           |
-| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                            | Modify: interaction, keyboard, load/error/retry with Raw   |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`      | Modify: Console Raw toggle, remove bridge                  |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`                 | Modify: same contract on the selected room                 |
-| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` | Verify: inline history mount still renders one Raw per row |
-| `packages/web/src/experiments/console/console-isolation.test.ts`                           | Verify only                                                |
-| `e2e/ui/workflow-run-hitl.spec.ts`                                                         | Modify two cases (`:97-98`, `:123-124`)                    |
-| `e2e/ui/workflow-run-hitl-room.spec.ts`                                                    | Modify three sites (`:180-182`, `:249-250`, `:643-654`)    |
-| `e2e/ui/agent-tool-row-visual.spec.ts`                                                     | Modify two sites (`:376-378`, `:519-523`) + Raw evidence   |
-| `plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md`              | Create during implementation                               |
+Tests/evidence:
 
-`agent-history.ts`, `pair-tool-transcript.ts` projection code, `NodeTranscriptPane.tsx`, `ConsoleNodeRoom.tsx`, `ConsoleExecutionHistory.tsx`, server routes/schemas, generated API types, and theme token files are read-only. Stop and revise the plan before expanding into them.
+- `packages/web/src/lib/tool-presentation.test.ts`
+- `packages/web/src/lib/agent-history.test.ts`
+- `packages/web/src/lib/pair-tool-transcript.test.ts`
+- `packages/web/src/components/workflows/NodeRoom.test.tsx`
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx`
+- `e2e/ui/workflow-run-hitl.spec.ts`
+- `e2e/ui/workflow-run-hitl-room.spec.ts`
+- `e2e/ui/agent-tool-row-visual.spec.ts`
+- `plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md` and synthetic evidence created in Phase 03
 
-## Implementation preflight and order
+The exact set may shrink if an assertion is already covered, but production changes outside this list require re-checking the architectural boundary and story scope.
 
-1. Recheck issue #175, open PRs, active runs, `git status`, and worktrees for a competing owner. Branch from `dev`/`develop` per repo convention; never commit to `main`.
-2. Phase 1 (red → green): write the helper's unit table, rewrite the six E2E sites to the Raw contract (they stay red until Phase 2), implement the helper.
-3. Phase 2 (red → green): rewrite the component tests on both surfaces to the Raw contract, implement Legacy, implement Console, rewrite the toggle-guard comment as the invariant, add the load-resolution guard, confirm no `Input`/`Output`/nested `<details>` remain.
-4. Phase 3: run the relevant Playwright specs, add the 460 px/focus/target-size/contrast evidence for the Raw button and box, do the scoped visual and screen-reader reviews, run `bun run validate`, write the report.
+## Implementation sequence
 
-## Validation and proof
+1. [Phase 01 — Shared Raw contract](./phase-01-start.md)
+2. [Phase 02 — Both renderer surfaces](./phase-02-two-surface-renderers.md)
+3. [Phase 03 — End-to-end and visual verification](./phase-03-end-to-end-and-visual-verification.md)
 
-- Unit: `bun test src/lib/tool-presentation.test.ts` (from `packages/web`) proves key order, omission/retention, untouched name, string output, and the never-throws fallback.
-- Component: Web `bun run test` proves default-closed Raw, no JSON in DOM while closed, swap on open, full-output flow under any Raw state, touched/open isolation, identity reset, both Console mounts.
-- E2E: `workflow-run-hitl.spec.ts`, `workflow-run-hitl-room.spec.ts`, `agent-tool-row-visual.spec.ts` prove one real stored call on both surfaces: hidden output when closed, visible after summary → Raw, `View full output` count 1, loaded tail hidden until Raw opens, Tab order summary → Raw, 24 px minimum size, accent focus. These run **locally** (`bun run --cwd e2e test:ui:hitl`) and their pass is recorded in the PR: CI's `e2e-hitl` job does not trigger on `develop`. All Raw-box evidence uses only the synthetic HITL fixture strings (`e2e/lib/playwright/archon-runtime.ts:44`).
-- Full gates: Web tests and type-check, E2E type-check, `bun run validate`. Never run root `bun test`.
+Keep each phase green before proceeding. Do not leave deliberately failing E2E assertions between phases.
 
-## Rollout, failure handling, and rollback
+## Validation and delivery
 
-- Web-only presentation change over existing data; no ordering, migration, flag, or staged rollout.
-- If serialization cannot be produced safely, fail closed to the documented fallback string rather than throwing inside the transcript.
-- If visual or accessibility acceptance fails on one surface, fix both surfaces together; do not ship an asymmetric bridge.
-- Roll back the whole change (helper, both shells, tests, E2E) as one unit. Do not reinstate the Input/Output bridge as a desired contract on a forward branch.
+Run targeted checks during each phase, then from the repository root:
 
-## Definition of done
+```bash
+bun run type-check
+bun run lint
+bun --filter @archon/web test
+bun run --cwd e2e typecheck
+bun run --cwd e2e test:ui:hitl
+bun run validate
+```
 
-- [ ] Every acceptance criterion above has passing automated evidence or a named manual record.
-- [ ] The six E2E sites express and pass the Raw contract; no test opens `Input`/`Output` any more.
-- [ ] Both Console mounts and Legacy pass equivalent Raw tests; `console-isolation.test.ts` stays green.
-- [ ] `reports/visual-acceptance.md` records the §F comparison, 460 px evidence, contrast and target-size results, and two OS screen-reader checks (Windows + macOS pairings).
-- [ ] Focused tests, full Web tests, Web and E2E type checks, relevant HITL specs, and `bun run validate` pass.
-- [ ] The final diff contains no unrelated, schema, API, generated, dependency, or migration change.
-- [ ] Sprint status `1-2-inspect-the-raw-payload-of-a-tool-call` moves to `done` only through its owning BMad workflow after all gates pass; the PR body says `Closes #175`.
+`bun run validate` is mandatory before opening the PR. Recheck issue ownership/open PRs immediately before implementation because `status:processing` is coordination state. The PR must target the repository's active `develop` integration branch, use `.github/pull_request_template.md`, include `Closes #175`, and pass PR E2E Verify's selected HITL scenarios. Save only synthetic-payload visual evidence. Once every acceptance gate passes, let `ak-feature` move `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` entry `1-2-inspect-the-raw-payload-of-a-tool-call` to `done` before the issue closes; do not perform unrelated planning-state edits.
 
-## Open questions
-
-None. The four owner decisions are recorded in the Validation Log and applied above.
-
-Follow-ups outside this story (not blockers): `.github/workflows/test.yml:5-7` should gain `develop` so `e2e-hitl` runs on this fork's PRs; the Story 1.1 plan directory `plans/260917-1011-issue-174-readable-tool-call-row/` still carries `status: pending` although #197 shipped.
-
-## Red Team Review
-
-### Session — 2026-09-18
-
-**Findings:** 12 (12 accepted — 3 deferred to the owner, 2 accepted with modification; 0 rejected)
-**Severity breakdown:** 2 Critical, 5 High, 5 Medium
-**Reviewers:** Assumption Destroyer, Failure Mode Analyst, Security Adversary (Standard tier: Fact Checker + Contract Verifier; 64 claims checked, 58 verified, 2 failed and corrected, 4 unverified line-drift/unread ranges — drifts corrected)
-
-| #   | Finding                                                                                             | Severity | Disposition             | Applied To           |
-| --- | --------------------------------------------------------------------------------------------------- | -------- | ----------------------- | -------------------- |
-| 1   | CI `e2e-hitl` triggers on `[main, dev]`; fork works on `develop`, so HITL specs never run on the PR | Critical | Accept — owner decides  | plan.md, Phases 1, 3 |
-| 2   | Raw JSON colour tally undercounted the token binding and component spec for text-primary            | Critical | Accept — owner decides  | plan.md, Phase 2     |
-| 3   | Helper JSON-escapes string outputs; `formatToolIo` passed them verbatim; risk note claimed parity   | High     | Accept — owner decides  | plan.md, Phase 1     |
-| 4   | Screen-reader impact of escaped `\n` in string outputs was unstated                                 | Medium   | Accept (merged into 3)  | plan.md              |
-| 5   | E2E rewrite dropped the loaded-output-hidden check before Raw opens                                 | High     | Accept                  | Phase 1 step 6       |
-| 6   | Deleting the bubbled-toggle guard leaves a landmine for later nested `<details>` (1.3 / 1.6)        | High     | Accept (modified: keep) | Phase 2              |
-| 7   | A load resolving without a tool output sets `hasFullOutput` and Raw silently omits `output`         | High     | Accept (modified)       | Phase 2, plan.md AC  |
-| 8   | "NFR8 stories" is not a source for deferring a live region                                          | High     | Accept                  | plan.md AC           |
-| 9   | Raw-box screenshot evidence needs a synthetic-fixture-only rule                                     | Medium   | Accept                  | Phase 3, plan.md     |
-| 10  | `aria-controls` verification must use `getElementById`; React 19 `useId` ids are not selector-safe  | Medium   | Accept                  | Phase 3, plan.md AC  |
-| 11  | Record the accepted exposure posture (no masking exists; Raw concentrates the same bytes)           | Medium   | Accept (documented)     | plan.md              |
-| 12  | "two callers" is four call sites in two files; two cited line ranges drifted                        | Medium   | Accept                  | plan.md, Phase 1     |
-
-### Whole-Plan Consistency Sweep
-
-Decision delta: keep the toggle guard (was: delete); wrong-kind load → inline error (was: silent `full`); loaded-output-hidden E2E check restored; `aria-controls` resolved by `getElementById`; synthetic-only Raw evidence; raw colour, string-output shape, and CI trigger moved from "resolved" to owner decisions; call-site count and two line ranges corrected; live-region justification reworded.
-
-Swept `plan.md` and all three phase files for: "remove the guard", "simplify onToggle", "three statements", "Decision: text-secondary", "exactly two", "same bytes were already rendered", "NFR8 stories", the drifted line ranges, and any literal colour class on the raw `<pre>`. Remaining hits are only the history rows in this table. No unresolved contradictions.
-
-## Validation Log
-
-### Session 1 — 2026-09-18
-
-**Trigger:** `--deep` mode validation after the red-team session; the three owner-deferred findings plus the interim-body trade-off.
-**Questions asked:** 4
-
-#### Questions & Answers
-
-1. **[Architecture]** For a tool whose output is a plain string, what should the Raw box show?
-   - Options: A. Pure JSON object (Recommended) | B. JSON header + verbatim string | C. Defer: ship A, revisit if 1.3 slips
-   - **Answer:** A. Pure JSON object
-   - **Rationale:** Raw is the exact persisted representation; readability is Story 1.3's body. Fixes the helper contract (one shape), the unit table, and the accepted screen-reader/escape-pass cost.
-2. **[Tradeoffs]** Which text colour should the raw JSON use inside its body box?
-   - Options: A. text-primary (Recommended) | B. text-secondary
-   - **Answer:** A. text-primary
-   - **Rationale:** Follows the `body-box` token binding and component spec; `RAW_TEXT_CLASS = 'text-text-primary'` on both surfaces; Phase 3 measures it.
-3. **[Risks]** How should the story handle CI not running the HITL suite on `develop`?
-   - Options: A. Local run is the gate (Recommended) | B. Add `develop` to test.yml in this PR | C. Separate trigger PR first
-   - **Answer:** A. Local run is the gate
-   - **Rationale:** Keeps the story's diff web/E2E-only; the recorded local run is a required PR item; the trigger mismatch is a logged follow-up.
-4. **[Scope]** Between Story 1.2 and 1.3, is an expanded row that shows only the body bar and the Raw button acceptable?
-   - Options: A. Accept bar-only body (Recommended) | B. Pull 1.3's generic key-value body forward
-   - **Answer:** A. Accept bar-only body
-   - **Rationale:** Matches the epic's story split; no duplicated presenter work; revisit signal is 1.2 shipping alone for more than one sprint.
-
-#### Confirmed Decisions
-
-- Raw content: `JSON.stringify({ name, input, output }, null, 2)` for every payload shape.
-- Raw colour: text-primary via one `RAW_TEXT_CLASS` constant per surface.
-- CI: `test.yml` untouched; local HITL run recorded in the PR.
-- Interim body: bar + Raw only until Story 1.3.
-
-#### Action Items
-
-- [x] Phase 1: drop the conditional wording on the string-output unit row and in the escape-pass risk.
-- [x] Phase 2: set `RAW_TEXT_CLASS` to `'text-text-primary'`; drop the verbatim-string-arm note.
-- [x] Phase 3: measure text-primary on `surface-inset`; local HITL run is the gate.
-- [x] plan.md: Resolved source conflicts, AC, Open questions, and Validation and proof updated.
-
-#### Impact on Phases
-
-- Phase 1: helper contract fixed to one shape; risk wording final.
-- Phase 2: colour constant fixed; no two-shape rendering branch.
-- Phase 3: contrast row measures text-primary; CI note final.
-
-### Verification Results
-
-- **Tier:** Standard (3 phases)
-- **Claims checked:** 64 across the three red-team reviewers (Fact Checker + Contract Verifier)
-- **Verified:** 58 | **Failed:** 2 (both corrected: `formatToolIo` string passthrough; CI trigger branch) | **Unverified:** 4 (two line drifts corrected; two spec ranges re-read by the lead and confirmed)
-- **Failures remaining:** 0
-
-### Whole-Plan Consistency Sweep
-
-Decision delta from this session: string-output shape = pure JSON; colour = text-primary; CI = local gate; interim body = accepted. Swept `plan.md` and all three phase files for "owner decides", "per the owner's decision", "verbatim string arm", "must confirm", "text-secondary" on the raw `<pre>`, and "pending interview". No unresolved contradictions.
-
-<!-- slug: issue-175-raw-payload-toggle -->
+Review this plan again against product outcome, architecture, contracts, security/data integrity, performance, completeness, tests, operations/rollback, and maintainability before implementation handoff. There are no known blockers; the principal residual risk is synchronous formatting of an unusually large full output, which is bounded by explicit user action and does not justify a speculative subsystem.

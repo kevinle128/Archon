@@ -1,0 +1,76 @@
+{
+  "feature": "Issue #175 / Story 1.2 — Raw payload toggle for tool rows on Legacy and Console node rooms",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Shared Raw payload contract in tool-presentation core",
+      "description": "As a node-room renderer, I want a total, React-free ToolRawPayload contract and serializer in the shared presentation core, so that both surfaces can render an identical canonical { name, input, output } payload without interpreting provider fields.",
+      "acceptanceCriteria": [
+        "packages/web/src/lib/tool-presentation.ts exports a ToolRawPayload type with exactly `name`, `input`, `output` in that declaration order",
+        "ToolRowPresentation (interface at tool-presentation.ts:79) gains an opaque `rawPayload: ToolRawPayload` field; the lower-level ToolPresentation result is unchanged",
+        "toolRowPresentation (tool-presentation.ts:538) captures the original provider-facing input.name/input.input/input.output — not the normalized label or fact text",
+        "toolRowPresentation stays total: adversarial getters or malformed in-memory values cannot throw through it; capture failure yields { name: 'generic', input: undefined, output: undefined }",
+        "toolRawPayloadJson(payload) is exported and serializes { name, input, output } in fixed key order via JSON.stringify(value, null, 2); absent undefined properties are omitted and explicit null is retained",
+        "On cyclic values, bigint, or a throwing name getter, toolRawPayloadJson returns valid pretty-printed { name, error: 'payload is not serializable' } JSON — never throws, never leaks exception stacks or object-inspection output, preserves a safely readable string name else 'generic', and fallback construction itself cannot throw; no replacer that silently changes values",
+        "No React, JSON-viewer dependency, redaction policy, ids, labels, icons, facts, or renderer state added to the module",
+        "tool-presentation.test.ts proves: generic/known/Codex-native tool names keep their exact original name in rawPayload even when the visible label differs; object/array/primitive/null values preserved structurally; absent props omitted while null kept; deterministic key order and 2-space indentation; quotes/backslashes/newlines/<script>-like strings are JSON-escaped text; cyclic/bigint/throwing-getter inputs return the documented fallback; existing adversarial-getter totality tests still pass",
+        "agent-history.test.ts proves the pairing boundary: a paired call/result yields item.presentation.rawPayload with the call name/input and result output; a pending call serializes without an output key; arrival of the result keeps the card id but changes the Raw output",
+        "`bun test packages/web/src/lib/tool-presentation.test.ts`, `bun test packages/web/src/lib/agent-history.test.ts`, and `bun run type-check` all pass; no API, persistence, schema, provider, or component file changed"
+      ],
+      "technicalNotes": "Phase 01 of plan. Edit ONLY packages/web/src/lib/tool-presentation.ts for production code. NodeMessageToolPayload shape (name, id, optional input/output) lives at packages/workflows/src/schemas/node-message.ts:61 — the Raw payload intentionally drops id and all UI metadata. Existing totality/adversarial-getter tests in tool-presentation.test.ts are the precedent to extend. Raw is a canonical paired projection (call row + result row), NOT a byte-for-byte rendering of one persisted row.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: packages/web/src/lib/tool-presentation.ts (+ tests in tool-presentation.test.ts, agent-history.test.ts)."
+    },
+    {
+      "id": "US-002",
+      "title": "Raw toggle on Legacy + Console tool rows; remove formatToolIo",
+      "description": "As a user viewing an expanded tool row on either node-room surface, I want a single closed-by-default Raw control that mounts a pretty-printed payload only while open, so that the default row stays concise and the DOM carries no payload markup until I ask for it.",
+      "acceptanceCriteria": [
+        "Both ToolHistory components — packages/web/src/components/workflows/NodeRoom.tsx:314 and packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx:238 — add `rawOpen` state (initial false) and a useId()-derived panel id",
+        "Nested `Input` and `Output` <details> markup is removed from both renderers (NodeRoom.tsx:435-450, ConsoleAgentHistoryList.tsx:344-359)",
+        "Expanded body bar renders facts left and the Raw button as the final item on the right; facts may wrap without pushing the control off-screen",
+        "Raw control is a native <button> with visible text `Raw`, an aria-hidden ` ▾` suffix only while open, accurate aria-expanded, and aria-controls present only while the conditional panel exists",
+        "Button has min-height 24px, rendered target >= 24x24px, explicit closed/hover/focus-visible/open classes (no reliance on an unverified Tailwind aria-expanded: variant), bright-border/primary-text open and focus states, and retains Console `!` overrides where parent prose styles win",
+        "Raw <pre id={rawPanelId}> renders only when rawOpen, after the body bar, from toolRawPayloadJson(presentation.rawPayload), with inset surface/border/radius, px-2.5 py-2, text-text-primary, monospace ~11.5px/1.5, and wrapping classes min-w-0 max-w-full whitespace-pre-wrap [overflow-wrap:anywhere]",
+        "View full output, its disabled loading state, inline error, and retry remain after the Raw slot and work identically with Raw closed or open",
+        "Detail-endpoint success requires a tool message with defined output and re-runs the existing toolRowPresentation path so facts and rawPayload both update; invalid detail data shows `Full output is not available for this call` and keeps the previous presentation",
+        "The nested-toggle propagation guard (event.target !== event.currentTarget in onToggle, NodeRoom.tsx:367-375 / ConsoleAgentHistoryList.tsx:286-294) is preserved with its invariant clarified in the comment",
+        "No serialized Raw payload text or Raw <pre> exists in the DOM while closed; closing Raw removes the panel without closing the outer row; polling a pending call into a paired result keeps row and Raw state and updates the payload; a different history-item id mounts closed; no live region added; no dangerouslySetInnerHTML",
+        "formatToolIo is removed from packages/web/src/lib/pair-tool-transcript.ts:75 and its suite/imports removed from pair-tool-transcript.test.ts after both renderers migrate; `rg \"formatToolIo|>Input<|>Output<\" packages/web/src` returns no unexplained matches",
+        "Test-first updates land before/with markup: NodeRoom.test.tsx asserts SSR-provable defaults (one Raw button aria-expanded=false, no <pre>/payload, no nested details, facts + full-output affordance present); LegacyNodeRoom.test.tsx covers toggle semantics, a11y attrs, unique panel id resolved via document.getElementById, exact JSON shape, pairing update, new-key closed, long-value wrap classes, full-output load/success/failure/retry in both Raw states; ConsoleNodeRoom.test.tsx mirrors that plus a two-sibling ConsoleAgentHistoryList mount asserting distinct aria-controls each resolving via getElementById; ConsoleExecutionHistory.test.tsx proves the default Raw anatomy through the execution-history caller",
+        "`NODE_ENV=development bun test` passes on all four component test files, and `bun --filter @archon/web test`, `bun run type-check`, and `bun run lint` all pass"
+      ],
+      "technicalNotes": "Phase 02 of plan. Write focused tests BEFORE changing markup; prefer role/name/state queries and row scoping over class-only assertions, keeping a few exact-class checks only for contractual design tokens. Both surfaces are edited in the same story so formatToolIo can be removed cleanly. Closed buttons legitimately omit aria-controls — test id uniqueness only after opening. Console surface: keep local `!` important overrides (e.g. focus-visible:outline-accent-bright!). Reuse the existing loadFull paths; Legacy fetches via getWorkflowNodeMessage (NodeRoom.tsx:351-365), Console via onLoadFullOutput prop (ConsoleAgentHistoryList.tsx:271-284). After a successful full-output fetch, the existing re-presentation path at NodeRoom.tsx:334-344 / ConsoleAgentHistoryList.tsx:254-264 automatically produces the replacement rawPayload.",
+      "dependsOn": ["US-001"],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented in iteration 2 (commit fc90c62c). Files: NodeRoom.tsx, ConsoleAgentHistoryList.tsx, pair-tool-transcript.ts (+ focused tests in NodeRoom.test.tsx, LegacyNodeRoom.test.tsx, ConsoleNodeRoom.test.tsx, ConsoleExecutionHistory.test.tsx, pair-tool-transcript.test.ts). Two chore(unblock) commits fixed pre-existing gate failures: orphaned yaml fixture in no-hitl-clarify-graph.test.ts, unformatted prd.md."
+    },
+    {
+      "id": "US-003",
+      "title": "E2E spec migration, visual/a11y/responsive verification, and delivery",
+      "description": "As a maintainer, I want the HITL browser journeys and visual spec updated to the final Raw contract with synthetic evidence and the full validation gate green, so that the PR can merge and Story 1.2 can close.",
+      "acceptanceCriteria": [
+        "All old Input/Output assertion sites across e2e/ui/workflow-run-hitl.spec.ts, e2e/ui/workflow-run-hitl-room.spec.ts, and e2e/ui/agent-tool-row-visual.spec.ts (7 sites found via `rg -n \"Input|Output|View full output\"` on those files) express the new contract; no stale bridge assertion remains",
+        "workflow-run-hitl.spec.ts asserts the collapsed/default contract: outer row collapsed, Raw control closed, no nested Input/Output disclosures or serialized payload mounted",
+        "workflow-run-hitl-room.spec.ts covers: Legacy expansion with closed-then-open Raw and canonical { name, input, output } JSON; Console/default history closed-Raw contract; the existing long-history journey with its synthetic 20,000-char output proves View full output before Raw, truncated tail absent while closed and present after open, and no horizontal overflow on panel or page — with row-scoped locators throughout",
+        "agent-tool-row-visual.spec.ts runs its surface loop for Legacy AND Console: facts left / Raw right; closed, hover/focus, open appearance; Raw <pre> primary text on inset surface with no overflow; click swaps panel in then out; keyboard Tab reaches Raw after the summary/body entry point, Enter/Space toggles, focus stays visible; Chromium accessibility-tree role/name/expanded/controls verified",
+        "Viewport loop covers 1440, 1024, 768, 460, and 390px plus the existing 200% zoom check, asserting no page-level horizontal scroll with row and Raw open",
+        "Contrast helper checks cover closed Raw label, hover/focus/open label, and Raw JSON primary text against their surfaces (WCAG AA)",
+        "No axe dependency added, no new expensive E2E failure fixture invented (component suites already cover rejected/malformed detail responses), no real credentials or customer payloads in evidence",
+        "plans/260918-1038-issue-175-raw-payload-toggle/reports/visual-acceptance.md records measured states, keyboard/AX evidence, contrast ratios, overflow results, and source-artifact comparison; synthetic captures saved under reports/evidence/; spec header comment updated to cite this Story 1.2 supplement alongside the Story 1.1 report",
+        "`rg -n \"formatToolIo|getByText\\\\('(Input|Output)'|>Input<|>Output<\" packages/web/src e2e/ui` shows no unexplained matches",
+        "`bun run --cwd e2e typecheck`, `bun run --cwd e2e test:ui:hitl`, and `bun run validate` all pass",
+        "PR targets the active `develop` integration branch, uses .github/pull_request_template.md, includes `Closes #175`, and passes PR E2E Verify's mapped Legacy tool-output, Console tool-output, and history-complete scenarios (.agents/skills/verify-archon/features/hitl-run-room.json)",
+        "After all gates pass, the ak-feature workflow moves sprint-status key `1-2-inspect-the-raw-payload-of-a-tool-call` in _bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml to `done` before issue #175 closes"
+      ],
+      "technicalNotes": "Phase 03 of plan. Do NOT invent a generic six-site migration — repo inspection found seven specific old assertion sites; update every occurrence located by the rg command in phase-03. Keep the established Console long-history integration path; component coverage from US-002 proves the equivalent Legacy render classes, so the visual loop does not start another expensive long-history run per surface. VoiceOver/NVDA spot-check is nice-to-have when an environment exists but is not a release blocker. Review screenshots at actual size rather than accepting snapshots mechanically. Do not perform unrelated planning-state or branch-policy edits; AGENTS.md says `dev` but the remote default and pr-e2e-verify.yml both target `develop` — use `develop`.",
+      "dependsOn": ["US-002"],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented in iteration 3 (commit 2bc643e4). Files: agent-tool-row-visual.spec.ts, workflow-run-hitl.spec.ts, workflow-run-hitl-room.spec.ts, theme.css scoped border-state fix, reports/visual-acceptance.md + reports/evidence/*.{png,json}. Gates: e2e typecheck clean, test:ui:hitl 36 pass / 3 env skips, bun run validate fully green. chore(unblock) 8b685c89 regenerated stale bundled-defaults.generated.ts; chore(unblock) a254f69f extracted fixtures for defaults deleted in 16b01a72. PR delivery and sprint-status flip remain parent-workflow-owned per the ralph command contract."
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { formatToolIo, projectToolTranscript } from './pair-tool-transcript';
+import { projectToolTranscript } from './pair-tool-transcript';
 
 const OCC = '11111111-1111-4111-8111-111111111111';
 const ATT = '22222222-2222-4222-8222-222222222222';
@@ -89,15 +89,5 @@ describe('projectToolTranscript', () => {
       call: null,
       pending: false,
     });
-  });
-});
-
-describe('formatToolIo', () => {
-  test('leaves strings unquoted so visible output matches the retained text', () => {
-    expect(formatToolIo('HITL_TOOL_OUTPUT')).toBe('HITL_TOOL_OUTPUT');
-  });
-
-  test('pretty-prints objects', () => {
-    expect(formatToolIo({ path: 'a.ts' })).toContain('"path": "a.ts"');
   });
 });
