@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { createScrollFollow, jumpToLatest, onRoomScroll } from './room-scroll-follow';
+import {
+  createScrollFollow,
+  jumpToLatest,
+  jumpToOccurrence,
+  onRoomScroll,
+} from './room-scroll-follow';
 
 const AT_THRESHOLD = { scrollTop: 176, scrollHeight: 400, clientHeight: 200 };
 const PAST_THRESHOLD = { scrollTop: 175, scrollHeight: 400, clientHeight: 200 };
@@ -75,5 +80,42 @@ describe('jumpToLatest', () => {
       scrollTop: 175,
       pinToBottom: true,
     });
+  });
+});
+
+describe('jumpToOccurrence', () => {
+  test('yields the manual-hold state at the recorded target position', () => {
+    expect(jumpToOccurrence(createScrollFollow('running'), 120)).toEqual({
+      follow: false,
+      scrollTop: 120,
+      pinToBottom: false,
+    });
+  });
+
+  test('produces the same hold a reader scroll produces, from any prior state', () => {
+    const held = onRoomScroll(createScrollFollow('running'), PAST_THRESHOLD);
+    expect(jumpToOccurrence(held, 60)).toEqual({
+      follow: false,
+      scrollTop: 60,
+      pinToBottom: false,
+    });
+    const restored = createScrollFollow('completed', 88);
+    expect(jumpToOccurrence(restored, 300)).toEqual({
+      follow: false,
+      scrollTop: 300,
+      pinToBottom: false,
+    });
+  });
+
+  test('keeps live appends parked: the target position survives later row growth', () => {
+    const navigated = jumpToOccurrence(createScrollFollow('running'), 40);
+    const grown = onRoomScroll(navigated, {
+      scrollTop: 40,
+      scrollHeight: 800,
+      clientHeight: 200,
+    });
+    expect(grown.follow).toBe(false);
+    expect(grown.scrollTop).toBe(40);
+    expect(jumpToLatest(grown).pinToBottom).toBe(true);
   });
 });

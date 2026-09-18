@@ -51,3 +51,7 @@ export function onRoomScroll(
 export function jumpToLatest(state: ScrollFollowState): ScrollFollowState {
   return { ...state, follow: true, pinToBottom: true };
 }
+
+export function jumpToOccurrence(state: ScrollFollowState, scrollTop: number): ScrollFollowState {
+  return { ...state, follow: false, scrollTop, pinToBottom: false };
+}

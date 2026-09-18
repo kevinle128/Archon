@@ -7,6 +7,7 @@ import {
   useId,
   useRef,
   useState,
+  type ChangeEvent,
   type ReactElement,
   type ReactNode,
   type UIEvent,
@@ -21,7 +22,12 @@ import {
   type NodeMessageState,
 } from '@/lib/node-message-pages';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
-import { createScrollFollow, jumpToLatest, onRoomScroll } from '@/lib/room-scroll-follow';
+import {
+  createScrollFollow,
+  jumpToLatest,
+  jumpToOccurrence,
+  onRoomScroll,
+} from '@/lib/room-scroll-follow';
 
 import type { Run } from '../primitives/run';
 import type {
@@ -498,9 +504,13 @@ export function ConsoleNodeRoom({
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
   const [retryNonce, setRetryNonce] = useState(0);
+  const [navTarget, setNavTarget] = useState<string | null>(null);
   const headingIdPrefix = useId();
+  const navigatorSelectId = useId();
   const pageStateRef = useRef(pageState);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const navigatorSelectRef = useRef<HTMLSelectElement>(null);
+  const navigatedHeadingRef = useRef<HTMLElement | null>(null);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
   pageStateRef.current = pageState;
@@ -515,6 +525,7 @@ export function ConsoleNodeRoom({
       prevScopeRef.current = resolvedScopeKey;
       setPageState(createNodeMessageState(resolvedScopeKey));
       setFollow(createScrollFollow(rowStatus, initialScrollTop));
+      setNavTarget(null);
     }
   }, [initialScrollTop, rowStatus, resolvedScopeKey]);
 
@@ -589,6 +600,20 @@ export function ConsoleNodeRoom({
       el.scrollTop = follow.scrollTop;
     }
   }, [follow, pageState.rows.length]);
+
+  useEffect(() => {
+    const heading = navigatedHeadingRef.current;
+    if (heading === null || heading.isConnected) return;
+    navigatedHeadingRef.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== heading) return;
+    const select = navigatorSelectRef.current;
+    if (select !== null) {
+      select.focus();
+    } else {
+      scrollRef.current?.focus();
+    }
+  });
 
   const computedHeader: ExecutionHeaderModel | null =
     headerModel ??
@@ -762,6 +787,25 @@ export function ConsoleNodeRoom({
     }
   };
 
+  const handleJumpToOccurrence = (event: ChangeEvent<HTMLSelectElement>): void => {
+    const targetId = event.currentTarget.value;
+    setNavTarget(targetId);
+    const el = scrollRef.current;
+    const heading = document.getElementById(`${headingIdPrefix}occ-${targetId}`);
+    if (el === null || heading === null) return;
+    const scrollerRect = el.getBoundingClientRect();
+    const headingRect = heading.getBoundingClientRect();
+    const fullyVisible =
+      headingRect.top >= scrollerRect.top && headingRect.bottom <= scrollerRect.bottom;
+    if (!fullyVisible) {
+      const target = Math.max(0, el.scrollTop + headingRect.top - scrollerRect.top);
+      setFollow(jumpToOccurrence(follow, target));
+      onScrollTopChange?.(target);
+    }
+    navigatedHeadingRef.current = heading;
+    heading.focus({ preventScroll: true });
+  };
+
   const waitingForFirstPage =
     agentActive &&
     pageState.rows.length === 0 &&
@@ -900,6 +944,48 @@ export function ConsoleNodeRoom({
       />
     );
 
+  const navSelectValue =
+    navTarget !== null && displayableGroups.some(group => group.key === navTarget) ? navTarget : '';
+  const occurrenceNavigator = occurrenceGrouping.showHeaders ? (
+    <div className="flex min-w-0 items-center gap-1 px-3 py-2">
+      <label htmlFor={navigatorSelectId} className="shrink-0 text-xs text-text-secondary">
+        Jump to
+      </label>
+      <select
+        ref={navigatorSelectRef}
+        id={navigatorSelectId}
+        className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
+        value={navSelectValue}
+        aria-controls={
+          navSelectValue === '' ? undefined : `${headingIdPrefix}occ-${navSelectValue}`
+        }
+        onChange={handleJumpToOccurrence}
+      >
+        <option value="" disabled>
+          {displayableGroups.length} occurrences
+        </option>
+        {displayableGroups.map(group => (
+          <option key={group.key} value={group.key}>
+            {group.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  ) : null;
+  const jumpButton =
+    !follow.follow && (rowStatus === 'running' || rowStatus === 'awaiting') ? (
+      <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
+        Jump to latest
+      </button>
+    ) : null;
+  const controls =
+    occurrenceNavigator !== null || jumpButton !== null ? (
+      <div className="flex items-center justify-between gap-2">
+        {occurrenceNavigator}
+        {jumpButton}
+      </div>
+    ) : null;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-surface">
       {header}
@@ -913,17 +999,14 @@ export function ConsoleNodeRoom({
           <div
             ref={scrollRef}
             data-testid="console-node-room-scroll"
+            tabIndex={-1}
             className="min-h-0 flex-1 overflow-y-auto"
             style={{ overflowWrap: 'anywhere' }}
             onScroll={handleScroll}
           >
             {body}
           </div>
-          {!follow.follow && (rowStatus === 'running' || rowStatus === 'awaiting') ? (
-            <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
-              Jump to latest
-            </button>
-          ) : null}
+          {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock
               key={`steering:${resolvedScopeKey}`}

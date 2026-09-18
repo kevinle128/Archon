@@ -23,7 +23,12 @@ import {
   type NodeMessageState,
 } from '@/lib/node-message-pages';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
-import { createScrollFollow, jumpToLatest, onRoomScroll } from '@/lib/room-scroll-follow';
+import {
+  createScrollFollow,
+  jumpToLatest,
+  jumpToOccurrence,
+  onRoomScroll,
+} from '@/lib/room-scroll-follow';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import { AskCard, InvalidAskCard } from './AskCard';
@@ -134,10 +139,14 @@ export function NodeTranscriptPane({
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [localAskDrafts, setLocalAskDrafts] = useState<AskDraftByRequest>({});
+  const [navTarget, setNavTarget] = useState<string | null>(null);
   const headingIdPrefix = useId();
+  const navigatorSelectId = useId();
 
   const pageStateRef = useRef(pageState);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const navigatorSelectRef = useRef<HTMLSelectElement>(null);
+  const navigatedHeadingRef = useRef<HTMLElement | null>(null);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
   pageStateRef.current = pageState;
@@ -154,6 +163,7 @@ export function NodeTranscriptPane({
       prevScopeRef.current = resolvedScopeKey;
       setPageState(createNodeMessageState(resolvedScopeKey));
       setFollow(createScrollFollow(rowStatus, initialScrollTop));
+      setNavTarget(null);
     }
   }, [initialScrollTop, rowStatus, resolvedScopeKey]);
 
@@ -231,6 +241,20 @@ export function NodeTranscriptPane({
       el.scrollTop = follow.scrollTop;
     }
   }, [follow, pageState.rows.length]);
+
+  useEffect(() => {
+    const heading = navigatedHeadingRef.current;
+    if (heading === null || heading.isConnected) return;
+    navigatedHeadingRef.current = null;
+    const active = document.activeElement;
+    if (active !== null && active !== document.body && active !== heading) return;
+    const select = navigatorSelectRef.current;
+    if (select !== null) {
+      select.focus();
+    } else {
+      scrollRef.current?.focus();
+    }
+  });
 
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
@@ -372,6 +396,25 @@ export function NodeTranscriptPane({
     }
   };
 
+  const handleJumpToOccurrence = (event: React.ChangeEvent<HTMLSelectElement>): void => {
+    const targetId = event.currentTarget.value;
+    setNavTarget(targetId);
+    const el = scrollRef.current;
+    const heading = document.getElementById(`${headingIdPrefix}occ-${targetId}`);
+    if (el === null || heading === null) return;
+    const scrollerRect = el.getBoundingClientRect();
+    const headingRect = heading.getBoundingClientRect();
+    const fullyVisible =
+      headingRect.top >= scrollerRect.top && headingRect.bottom <= scrollerRect.bottom;
+    if (!fullyVisible) {
+      const target = Math.max(0, el.scrollTop + headingRect.top - scrollerRect.top);
+      setFollow(jumpToOccurrence(follow, target));
+      onScrollTopChange?.(target);
+    }
+    navigatedHeadingRef.current = heading;
+    heading.focus({ preventScroll: true });
+  };
+
   const waitingForFirstPage =
     row !== null && pageState.rows.length === 0 && pageState.error === null && !pageState.complete;
 
@@ -379,6 +422,7 @@ export function NodeTranscriptPane({
     <div
       ref={scrollRef}
       data-testid="node-transcript-scroll"
+      tabIndex={-1}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto"
       style={{ overflowWrap: 'anywhere' }}
       onScroll={handleScroll}
@@ -409,18 +453,55 @@ export function NodeTranscriptPane({
       />
     </div>
   );
+  const navSelectValue =
+    navTarget !== null && occurrenceGrouping.groups.some(group => group.key === navTarget)
+      ? navTarget
+      : '';
+  const occurrenceNavigator = occurrenceGrouping.showHeaders ? (
+    <div className="flex min-w-0 items-center gap-1 px-3 py-2">
+      <label htmlFor={navigatorSelectId} className="shrink-0 text-xs text-text-secondary">
+        Jump to
+      </label>
+      <select
+        ref={navigatorSelectRef}
+        id={navigatorSelectId}
+        className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
+        value={navSelectValue}
+        aria-controls={
+          navSelectValue === '' ? undefined : `${headingIdPrefix}occ-${navSelectValue}`
+        }
+        onChange={handleJumpToOccurrence}
+      >
+        <option value="" disabled>
+          {occurrenceGrouping.groups.length} occurrences
+        </option>
+        {occurrenceGrouping.groups.map(group => (
+          <option key={group.key} value={group.key}>
+            {group.label}
+          </option>
+        ))}
+      </select>
+    </div>
+  ) : null;
   const jumpButton =
     !follow.follow && (rowStatus === 'running' || rowStatus === 'awaiting') ? (
       <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
         Jump to latest
       </button>
     ) : null;
+  const controls =
+    occurrenceNavigator !== null || jumpButton !== null ? (
+      <div className="flex items-center justify-between gap-2">
+        {occurrenceNavigator}
+        {jumpButton}
+      </div>
+    ) : null;
 
   if (row === null) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         {scroller}
-        {jumpButton}
+        {controls}
       </div>
     );
   }
@@ -429,7 +510,7 @@ export function NodeTranscriptPane({
     <RoomRegion nodeId={row.nodeId} scrollable={false}>
       {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {scroller}
-      {jumpButton}
+      {controls}
       <ComposerDock
         key={`steering:${resolvedScopeKey}`}
         runId={runId}

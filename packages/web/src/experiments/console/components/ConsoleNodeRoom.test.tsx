@@ -3894,4 +3894,395 @@ describe('ConsoleNodeRoom', () => {
       expect(host.textContent).toContain('visible-b');
     });
   });
+
+  describe('Console occurrence navigator', () => {
+    type Loader = Parameters<typeof consoleNodeRoom.ConsoleNodeRoom>[0]['loadMessages'];
+
+    const OCC_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const OCC_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    function executed(occurrenceId: string, retryEpoch = 0): TranscriptExecution {
+      return {
+        occurrence_id: occurrenceId,
+        attempt_id: `${occurrenceId}-attempt-1`,
+        retry_epoch: retryEpoch,
+      };
+    }
+
+    function textMsg(seq: number, text: string, exec?: TranscriptExecution): WorkflowNodeMessage {
+      return {
+        id: `text-${seq}`,
+        seq,
+        kind: 'text',
+        payload: { text },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function statusMsg(
+      seq: number,
+      state: string,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `status-${seq}`,
+        seq,
+        kind: 'status',
+        payload: { state },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolCall(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `call-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' } },
+        metadata: { tool_phase: 'call', ...(exec === undefined ? {} : { execution: exec }) },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolResult(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `result-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' }, output: 'chunk' },
+        metadata: {
+          tool_phase: 'result',
+          outcome: 'success',
+          ...(exec === undefined ? {} : { execution: exec }),
+        },
+        created_at: CREATED_AT,
+      };
+    }
+
+    const TWO_OCCURRENCES: readonly WorkflowNodeMessage[] = [
+      statusMsg(1, 'started', executed(OCC_A)),
+      textMsg(2, 'run-one', executed(OCC_A)),
+      statusMsg(3, 'completed', executed(OCC_A)),
+      statusMsg(4, 'started', executed(OCC_B, 1)),
+      textMsg(5, 'run-two', executed(OCC_B, 1)),
+      statusMsg(6, 'completed', executed(OCC_B, 1)),
+    ];
+
+    function occHeadings(): HTMLElement[] {
+      return Array.from(host.querySelectorAll<HTMLElement>('h3[id]'));
+    }
+
+    function occurrenceHeading(occurrenceId: string): HTMLElement {
+      const heading = host.querySelector(`h3[id$="occ-${occurrenceId}"]`);
+      if (!(heading instanceof HTMLElement)) throw new Error(`missing heading ${occurrenceId}`);
+      return heading;
+    }
+
+    function navigatorSelect(): HTMLSelectElement | null {
+      const label = Array.from(host.querySelectorAll('label')).find(
+        el => (el.textContent ?? '') === 'Jump to'
+      );
+      const id = label?.getAttribute('for');
+      if (id === null || id === undefined) return null;
+      return host.querySelector(`select[id="${id}"]`);
+    }
+
+    function scrollerEl(): HTMLElement {
+      const el = host.querySelector('[data-testid="console-node-room-scroll"]');
+      if (!(el instanceof HTMLElement)) throw new Error('missing scroller');
+      return el;
+    }
+
+    function stubRect(el: Element, top: number, bottom: number): void {
+      (el as HTMLElement).getBoundingClientRect = (): DOMRect =>
+        ({
+          top,
+          bottom,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: bottom - top,
+          x: 0,
+          y: top,
+          toJSON: (): Record<string, number> => ({}),
+        }) as DOMRect;
+    }
+
+    function stubScroller(el: HTMLElement): void {
+      stubRect(el, 0, 100);
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 600 });
+      Object.defineProperty(el, 'clientHeight', { configurable: true, value: 100 });
+    }
+
+    async function commitSelect(select: HTMLSelectElement, value: string): Promise<void> {
+      await act(async () => {
+        select.value = value;
+        select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event);
+      });
+      await flush();
+    }
+
+    function jumpToLatestButton(): HTMLElement | undefined {
+      return Array.from(host.querySelectorAll('button')).find(button =>
+        (button.textContent ?? '').includes('Jump to latest')
+      ) as HTMLElement | undefined;
+    }
+
+    async function mountTwoOccurrences(
+      onScrollTopChange?: (scrollTop: number) => void
+    ): Promise<[string, string][]> {
+      const calls: [string, string][] = [];
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (runId, nodeId): Promise<WorkflowNodeMessagesResponse> => {
+            calls.push([runId, nodeId]);
+            return { messages: [...TWO_OCCURRENCES] };
+          },
+          onScrollTopChange,
+        });
+      });
+      await flushUntil('occurrences', () => (host.textContent ?? '').includes('run-two'));
+      return calls;
+    }
+
+    test('no navigator for zero or one displayable occurrence group', async () => {
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [...FIXTURE],
+          }),
+        });
+      });
+      await flushUntil('unscoped fixture', () => (host.textContent ?? '').includes('first'));
+      expect(navigatorSelect()).toBeNull();
+      expect(occHeadings()).toHaveLength(0);
+
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [
+              textMsg(1, 'solo', executed(OCC_A)),
+              statusMsg(2, 'completed', executed(OCC_A)),
+            ],
+          }),
+        });
+      });
+      await flushUntil('single occurrence', () => (host.textContent ?? '').includes('solo'));
+      expect(navigatorSelect()).toBeNull();
+      // The header Execution filter select is untouched and still present.
+      expect(host.querySelector('select[aria-label="Execution"]')).not.toBeNull();
+    });
+
+    test('renders a labelled select whose options mirror the headings verbatim', async () => {
+      await mountTwoOccurrences();
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      const options = Array.from(select.querySelectorAll('option'));
+      expect(options.map(option => option.textContent)).toEqual([
+        '2 occurrences',
+        'Run 1',
+        'Run 2 · retry',
+      ]);
+      expect(options[0]?.disabled).toBe(true);
+      expect(options[0]?.getAttribute('value')).toBe('');
+      expect(options[1]?.getAttribute('value')).toBe(OCC_A);
+      expect(options[2]?.getAttribute('value')).toBe(OCC_B);
+      expect(occHeadings().map(heading => heading.textContent)).toEqual(
+        options.slice(1).map(option => option.textContent)
+      );
+      expect(select.value).toBe('');
+      expect(select.getAttribute('aria-controls')).toBeNull();
+      expect(select.getAttribute('tabindex')).toBeNull();
+    });
+
+    test('committed change scrolls, focuses the heading, holds the room, and issues no request', async () => {
+      const positions: number[] = [];
+      const calls = await mountTwoOccurrences((scrollTop: number): void => {
+        positions.push(scrollTop);
+      });
+      const scroller = scrollerEl();
+      const headingB = occurrenceHeading(OCC_B);
+      stubScroller(scroller);
+      stubRect(headingB, 150, 170);
+
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+
+      expect(select.value).toBe(OCC_B);
+      expect(select.getAttribute('aria-controls')).toBe(headingB.getAttribute('id'));
+      expect(win.document.activeElement as unknown as Element | null).toBe(headingB);
+      expect(scroller.scrollTop).toBe(150);
+      expect(positions).toContain(150);
+      expect(calls).toEqual([['run-1', 'review']]);
+      expect(jumpToLatestButton()).not.toBeUndefined();
+    });
+
+    test('an already-visible target moves focus only — no scroll, follow stays pinned', async () => {
+      await mountTwoOccurrences();
+      const scroller = scrollerEl();
+      const headingB = occurrenceHeading(OCC_B);
+      stubScroller(scroller);
+      scroller.scrollTop = 0;
+      stubRect(headingB, 40, 60);
+
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+
+      expect(win.document.activeElement as unknown as Element | null).toBe(headingB);
+      expect(scroller.scrollTop).toBe(0);
+      expect(jumpToLatestButton()).toBeUndefined();
+    });
+
+    test('reader scroll after navigation stays manual; Jump to latest restores follow', async () => {
+      await mountTwoOccurrences();
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(jumpToLatestButton()).not.toBeUndefined();
+
+      await act(async () => {
+        scroller.scrollTop = 300;
+        scroller.dispatchEvent(new win.Event('scroll', { bubbles: true }) as unknown as Event);
+      });
+      expect(scroller.scrollTop).toBe(300);
+      expect(jumpToLatestButton()).not.toBeUndefined();
+
+      const jump = jumpToLatestButton();
+      if (jump === undefined) throw new Error('missing Jump to latest');
+      await act(async () => {
+        jump.click();
+      });
+      expect(scroller.scrollTop).toBe(500);
+      expect(jumpToLatestButton()).toBeUndefined();
+    });
+
+    test('a Console filter removal resets the select and lands focus on it', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          textMsg(1, 'visible-a', executed(OCC_A)),
+          statusMsg(2, 'completed', executed(OCC_A)),
+          toolCall('tool-1', 3, executed(OCC_B, 1)),
+          toolResult('tool-1', 4, executed(OCC_B, 1)),
+          textMsg(5, 'visible-c', executed(OCC_C, 2)),
+          statusMsg(6, 'completed', executed(OCC_C, 2)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages });
+      });
+      await flushUntil('three groups', () => occHeadings().length === 3);
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(win.document.activeElement as unknown as Element | null).toBe(
+        occurrenceHeading(OCC_B)
+      );
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false });
+      });
+      await flushUntil(
+        'tool rows hidden',
+        () => host.querySelector('details[data-tool-id="tool-1"]') === null
+      );
+
+      // Two displayable groups remain — the select stays and resets to placeholder.
+      const after = navigatorSelect();
+      if (after === null) throw new Error('navigator should still render');
+      expect(after.value).toBe('');
+      expect(after.getAttribute('aria-controls')).toBeNull();
+      expect(win.document.activeElement as unknown as Element | null).toBe(after);
+      expect(host.querySelector(`h3[id$="occ-${OCC_B}"]`)).toBeNull();
+      expect(occHeadings()).toHaveLength(2);
+    });
+
+    test('a filter removal down to one group drops the navigator and lands focus on the scroller', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          textMsg(1, 'visible-a', executed(OCC_A)),
+          statusMsg(2, 'completed', executed(OCC_A)),
+          toolCall('tool-1', 3, executed(OCC_B, 1)),
+          toolResult('tool-1', 4, executed(OCC_B, 1)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages });
+      });
+      await flushUntil('two groups', () => occHeadings().length === 2);
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(win.document.activeElement as unknown as Element | null).toBe(
+        occurrenceHeading(OCC_B)
+      );
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false });
+      });
+      await flushUntil(
+        'tool rows hidden',
+        () => host.querySelector('details[data-tool-id="tool-1"]') === null
+      );
+
+      expect(navigatorSelect()).toBeNull();
+      expect(occHeadings()).toHaveLength(0);
+      expect(win.document.activeElement as unknown as Element | null).toBe(scroller);
+    });
+
+    test('a scope change drops the select to placeholder and keeps focus in the room', async () => {
+      await mountTwoOccurrences();
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(win.document.activeElement as unknown as Element | null).toBe(
+        occurrenceHeading(OCC_B)
+      );
+
+      await act(async () => {
+        renderRoom({
+          scopeKey: 'scope-b',
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [
+              statusMsg(1, 'started', executed(OCC_A)),
+              textMsg(2, 'other-one', executed(OCC_A)),
+              statusMsg(3, 'started', executed(OCC_C, 1)),
+              textMsg(4, 'other-three', executed(OCC_C, 1)),
+            ],
+          }),
+        });
+      });
+      await flushUntil('scope b', () => (host.textContent ?? '').includes('other-three'));
+
+      const after = navigatorSelect();
+      if (after === null) throw new Error('missing navigator select');
+      expect(after.value).toBe('');
+      const active: unknown = win.document.activeElement;
+      expect(active === null || active === win.document.body).toBe(false);
+    });
+  });
 });
