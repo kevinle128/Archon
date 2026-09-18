@@ -1,0 +1,26 @@
+{
+  "console": {
+    "card background": "oklch(0.205 0.009 265)",
+    "prompt background": "oklch(0.13 0.006 265)",
+    "agent text resolved": "oklch(0.72 0.17 40)",
+    "agent text ratio": 6.78,
+    "subtask name resolved": "oklch(0.975 0.004 265)",
+    "subtask name ratio": 16.72,
+    "excerpt text resolved": "oklch(0.745 0.014 265)",
+    "excerpt text ratio": 7.9,
+    "prompt text resolved": "oklch(0.975 0.004 265)",
+    "prompt text ratio": 18.77
+  },
+  "legacy": {
+    "card background": "oklch(0.22 0.01 260)",
+    "prompt background": "oklch(0.12 0.005 260)",
+    "agent text resolved": "oklch(0.72 0.17 40)",
+    "agent text ratio": 6.53,
+    "subtask name resolved": "oklch(0.93 0.005 260)",
+    "subtask name ratio": 14.08,
+    "excerpt text resolved": "oklch(0.65 0.01 260)",
+    "excerpt text ratio": 5.33,
+    "prompt text resolved": "oklch(0.93 0.005 260)",
+    "prompt text ratio": 16.52
+  }
+}

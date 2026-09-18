@@ -60,7 +60,7 @@ development_status:
   1-3-read-expanded-details-shaped-for-the-tool-family: backlog
   1-4-view-a-file-edit-as-an-inline-diff: backlog
   1-5-track-the-agents-current-todo-state-in-a-pinned-strip: backlog
-  1-6-inspect-a-subagent-dispatch-and-its-subtasks: in-progress
+  1-6-inspect-a-subagent-dispatch-and-its-subtasks: done
   1-7-navigate-transcript-occurrences-and-loop-iterations: backlog
   epic-1-retrospective: optional
 

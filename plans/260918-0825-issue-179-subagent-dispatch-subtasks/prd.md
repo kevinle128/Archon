@@ -98,11 +98,11 @@ Never run root `bun test` (mock pollution; `bun run test` preserves per-package 
 
 ## Story overview
 
-| ID     | Title                                                        | Phase | Depends on | Deliverable |
-| ------ | ------------------------------------------------------------ | ----- | ---------- | ----------- |
-| US-001 | Shared task-dispatch normalization and presentation contract | 1     | —          | `task-normalize.ts`, extended `tool-presentation.ts`, full unit coverage |
-| US-002 | Legacy and Console task/generic body renderers               | 2     | US-001     | Matching bodies + interaction tests on both surfaces (both Console mounts) |
-| US-003 | Deterministic e2e fixture (fake provider, workflow, runtime) | 3a    | —          | `taskDispatch` scenario, `e2e-task-dispatch.yaml`, `runTaskDispatchWorkflow()` |
+| ID     | Title                                                        | Phase | Depends on     | Deliverable                                                                         |
+| ------ | ------------------------------------------------------------ | ----- | -------------- | ----------------------------------------------------------------------------------- |
+| US-001 | Shared task-dispatch normalization and presentation contract | 1     | —              | `task-normalize.ts`, extended `tool-presentation.ts`, full unit coverage            |
+| US-002 | Legacy and Console task/generic body renderers               | 2     | US-001         | Matching bodies + interaction tests on both surfaces (both Console mounts)          |
+| US-003 | Deterministic e2e fixture (fake provider, workflow, runtime) | 3a    | —              | `taskDispatch` scenario, `e2e-task-dispatch.yaml`, `runTaskDispatchWorkflow()`      |
 | US-004 | Full-stack Playwright proof, visual acceptance, closeout     | 3b    | US-002, US-003 | `task-dispatch-body.spec.ts`, `visual-acceptance.md`, sprint done, PR `Closes #179` |
 
 US-003 is independent of the web work (the fake provider emits stored tool input regardless of the UI); it is ordered third by priority but has no `dependsOn`.
