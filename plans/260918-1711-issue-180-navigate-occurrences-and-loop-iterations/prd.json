@@ -61,8 +61,8 @@
       "technicalNotes": "Phase 2 renderer portion of phase-02-two-shell-headers-and-selector.md ('Mandatory re-scout', 'Renderer contract', 'Tests first — paired heading behavior', 'Implement headings'). Shells render the core label verbatim — they never derive retry/iteration/failure. Keep header JSX local to each shell unless the refreshed code shows an established same-shell boundary. Existing empty/loading/error behavior keys off the original items/extras, not the grouped shape.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3 (commit 771f3890). Files: NodeTranscriptPane.tsx, NodeRoom.tsx, ConsoleAgentHistoryList.tsx, ConsoleNodeRoom.tsx, ConsoleExecutionHistory.tsx, console-isolation.test.ts + tests in NodeRoom.test.tsx, ConsoleNodeRoom.test.tsx, ConsoleExecutionHistory.test.tsx. Legacy: pane computes groupByOccurrence + useId prefix; room renders prefixItems then one h3 per group (flat path when showHeaders=false). Console: shared pure historyItemRowVisible predicate; room keeps groups displayable when a hidden tool carries an anchored Ask; ConsoleExecutionHistory headings-only (visible-row rule), unanchored extras stay after history; h3 styling matches DESIGN.md (10.5px mono uppercase, 0.08em, text-secondary, mt-[10px] mb-[5px], flex label + 1px rule, tabIndex -1, useId+occurrence_id ids). @/lib/occurrence-groups approved in console isolation allowlist. Validation: 106 Legacy + 88 Console focused tests green (194 total), type-check clean, eslint --max-warnings 0 clean, prettier clean."
     },
     {
       "id": "US-004",

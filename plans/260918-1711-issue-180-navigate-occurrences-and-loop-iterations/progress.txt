@@ -42,6 +42,11 @@
 - **Where**: `packages/web/src/lib/agent-history.ts` + `NodeRoom.test.tsx` helpers.
 - **Pattern**: only `NodeRoom.test.tsx` constructs `AgentHistoryItem` literals directly — all other suites go through `buildAgentHistory()` and compile untouched. Update the three literal helpers (`execution: null`) and whole-item `toEqual` assertions; everything else follows the builder.
 
+### Displayable occurrence groups are filtered at the shell, not in the lib
+- **Where**: `ConsoleNodeRoom.tsx` (~line 650), `ConsoleExecutionHistory.tsx` (~line 213), `ConsoleAgentHistoryList.tsx` (`historyItemRowVisible`).
+- **Pattern**: `groupByOccurrence` stays render-neutral — shells post-filter `groups` to *displayable* ones and rebuild `{prefixItems, groups, showHeaders}` before passing `occurrenceGrouping` down. Console rule: a group is displayable iff some row passes `historyItemRowVisible(item, {showToolCalls, showSystem})` OR a hidden tool row owns an anchored Ask (`anchoredAskToolIds`); `ConsoleExecutionHistory` uses the visible-row rule only (extras are unanchored `renderAtEnd`). `showHeaders` recomputes as `displayableGroups.length >= 2`, so filtering to one group removes headings. **US-004 navigator options must derive from this same displayable list, never raw groups.**
+- **Heading target contract**: `h3 id={`${useIdPrefix}occ-${group.key}`}` + `tabIndex={-1}` in both shells — the navigator anchors/focuses these ids.
+
 ---
 
 ## 2026-09-19 — US-001: Close decision gates B1–B4, refresh plan, preflight
@@ -108,5 +113,37 @@
 - Test files are ESLint-ignored in this repo (`--no-warn-ignored`); lint-staged ran eslint+prettier on commit — prettier reformatted `TranscriptExecution` to one line and cleaned test formatting.
 - Only `NodeRoom.test.tsx` builds `AgentHistoryItem` literals; every other suite (Legacy, Console, transcript panes) goes through `buildAgentHistory()` — one required field = one helper edit, not a sweep.
 - `git commit -m "$(cat <<'EOF' … EOF)"` broke on this shell (bad substitution) — `git commit -F -` with a plain heredoc works.
+
+---
+
+## 2026-09-19 — US-003: Occurrence headings on all three history consumers
+
+**Status**: PASSED
+**Commit**: `771f3890` — `feat: Occurrence headings on all three history consumers`
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — computes `groupByOccurrence(items)` + `useId` heading prefix; passes `occurrenceGrouping`/`headingIdPrefix` to `NodeRoom`.
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `renderItem` extracted; grouped path renders `prefixItems` then per-group `h3` + items; flat path unchanged when `showHeaders=false`.
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — exports pure `historyItemRowVisible(item, filters)` + `ConsoleHistoryFilters`; same grouped `h3` render; hidden-row `renderAfterItem` (anchored Ask) preserved.
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — filters groups to displayable (visible row OR hidden tool owning an anchored Ask); `showHeaders = displayableGroups.length >= 2`.
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` — same grouping with visible-row rule only; unanchored Ask/approval extras stay in `renderAtEnd` after history; no navigator.
+- `packages/web/src/experiments/console/console-isolation.test.ts` — `@/lib/occurrence-groups` added to the Console shared-lib allowlist.
+- Tests: `NodeRoom.test.tsx` (+9 paired heading cases), `ConsoleNodeRoom.test.tsx` (+9 paired + Console filter-visibility cases), `ConsoleExecutionHistory.test.tsx` (+5 headings-only/extras cases).
+
+**Acceptance criteria verified**:
+- [x] Post-PR-#202 versions of all five consumers + tests re-read before editing; plan inventory matched (no update needed).
+- [x] `NodeTranscriptPane` computes grouping; `NodeRoom` flat path preserved when `showHeaders=false`; one `h3` per group after `prefixItems`; `renderAfterItem`/notice/retry/`renderAtEnd` positions unchanged.
+- [x] One shared pure predicate `historyItemRowVisible` used by list, room, and inline history; group displayable iff visible row OR hidden tool with attached Ask; `showHeaders` derives from the displayable list; <2 displayable groups → flat.
+- [x] `ConsoleExecutionHistory` headings only, no navigator; unanchored extras remain after history, no synthetic group.
+- [x] Heading styling matches DESIGN.md on both shells: `font-mono text-[10.5px] uppercase tracking-[0.08em] text-text-secondary`, `mt-[10px] mb-[5px]`, flex label + `h-px flex-1 bg-border` rule; `h3` + `tabIndex={-1}`; DOM ids = `useId` prefix + `occ-` + `occurrence_id` (never index).
+- [x] Paired tests share names/intent across Legacy/Console; Console-specific visibility cases (hidden tools, hidden lifecycle, hidden tool + Ask, drop-to-one-group, extras after history) covered.
+- [x] `LegacyNodeRoom.test.tsx` compiles unchanged; `console-isolation.test.ts` green; no Console→`@/components/` imports; no new tokens/components.
+- [x] `NODE_ENV=development bun test` Legacy suite → 106 pass; Console suite + isolation → 88 pass (194 total, 1282 expect calls).
+- [x] `bun run type-check` clean; `bun run lint --max-warnings 0` clean (fixed 2 `prefer-optional-chain`); prettier clean.
+
+**Learnings**:
+- Test fixtures that put a `failed` lifecycle row inside an occurrence produce the `· failed` label suffix — paired expectations must include it (`Run 1 · occurrence 2 · failed`), in BOTH suites.
+- `prefer-optional-chain` fires on `x !== undefined && x.flag` guards — write `x?.flag ? x : null` directly.
+- Prettier runs via lint-staged on commit but the pre-commit `--check` gate still fails on unformatted files — run `bun x prettier --check <files>` before committing, not just eslint.
+- Console heading ids interpolate the real `occurrence_id` (full UUID) — test assertions should build the expected id from the fixture constant, not a hand-typed short id.
 
 ---
