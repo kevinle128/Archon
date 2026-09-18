@@ -47,7 +47,7 @@ export function TopNav(): React.ReactElement {
   });
 
   return (
-    <nav className="flex items-center gap-1 border-b border-border bg-surface px-4">
+    <nav className="flex min-w-0 max-w-full flex-none items-center gap-1 overflow-x-auto border-b border-border bg-surface px-4">
       {/* Brand logo */}
       <Link
         to="/legacy/chat"

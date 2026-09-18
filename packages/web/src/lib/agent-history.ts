@@ -4,15 +4,18 @@
  * this module only maps those results onto assistant, tool, and lifecycle items.
  */
 import type { components } from './api.generated';
+import { ensureUtc } from './format';
 import type { NodeMessageRow } from './node-message-pages';
 import type { ToolTranscriptCard } from './pair-tool-transcript';
 import { projectToolTranscript } from './pair-tool-transcript';
 import { projectTextTranscript } from './project-text-transcript';
+import { toolRowPresentation, type ToolRowPresentation } from './tool-presentation';
 
 export interface AgentHistoryInput {
   rows: readonly NodeMessageRow[];
   events: readonly components['schemas']['WorkflowEvent'][];
   nodeId: string;
+  nowMs: number;
 }
 
 export type AgentHistoryItem =
@@ -30,13 +33,14 @@ export type AgentHistoryItem =
       role: 'tool';
       name: string;
       toolUseId: string;
-      context: { label: string; value: string }[];
       input: unknown;
       output: unknown;
       outcome: 'running' | 'succeeded' | 'failed' | 'interrupted' | 'unknown';
+      exitCode: number | null;
       durationMs: number | null;
       canLoadFullOutput: boolean;
       outputState: 'full' | 'truncated' | 'missing' | 'unknown';
+      presentation: ToolRowPresentation;
       messageId: string;
     }
   | {
@@ -46,8 +50,6 @@ export type AgentHistoryItem =
       state: string;
       detail: string | null;
     };
-
-const TOOL_CONTEXT_KEYS = ['cmd', 'path', 'file_path', 'query', 'url'] as const;
 
 type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
 type ToolCard = ToolTranscriptCard<NodeMessageRow>;
@@ -117,13 +119,22 @@ function extraToolFields(row: ToolRow | null): {
   };
 }
 
-function deriveOutcome(card: ToolCard): ToolOutcome {
+/** Result metadata wins over call metadata, then the paired card — extracted once per card. */
+function toolExitCode(card: ToolCard): number | null {
+  return (
+    extraToolFields(card.result).exitCode ??
+    extraToolFields(card.call).exitCode ??
+    recordedExitCode(card.exitCode) ??
+    null
+  );
+}
+
+function deriveOutcome(card: ToolCard, exitCode: number | null): ToolOutcome {
   if (card.pending) return 'running';
 
   const resultFields = extraToolFields(card.result);
   const callFields = extraToolFields(card.call);
   const recordedOutcome = resultFields.outcome ?? callFields.outcome ?? card.outcome ?? null;
-  const exitCode = resultFields.exitCode ?? callFields.exitCode ?? card.exitCode ?? null;
   const error = resultFields.error ?? callFields.error;
 
   if (exitCode !== null && exitCode !== 0) return 'failed';
@@ -146,9 +157,17 @@ function toolUseIdFrom(card: ToolCard): string {
 function toToolItem(
   card: ToolCard,
   events: readonly components['schemas']['WorkflowEvent'][],
-  nodeId: string
+  nodeId: string,
+  nowMs: number,
+  outcomeOverride?: ToolOutcome
 ): Extract<AgentHistoryItem, { kind: 'tool' }> {
   const toolUseId = toolUseIdFrom(card);
+  const exitCode = toolExitCode(card);
+  const outcome = outcomeOverride ?? deriveOutcome(card, exitCode);
+  const durationMs = toolRuntime(events, nodeId, toolUseId).durationMs;
+  const outputState = deriveOutputState(card);
+  const runningElapsedMs =
+    outcome === 'running' ? runningElapsed(events, nodeId, toolUseId, nowMs) : null;
   return {
     kind: 'tool',
     id: card.id,
@@ -156,30 +175,51 @@ function toToolItem(
     role: 'tool',
     name: card.name,
     toolUseId,
-    context: toolContext(card.input),
     input: card.input,
     output: card.output,
-    outcome: deriveOutcome(card),
-    durationMs: toolRuntime(events, nodeId, toolUseId).durationMs,
+    outcome,
+    exitCode,
+    durationMs,
     canLoadFullOutput:
       fullOutputAvailable(card.call?.metadata) || fullOutputAvailable(card.result?.metadata),
-    outputState: deriveOutputState(card),
+    outputState,
+    presentation: toolRowPresentation(
+      { name: card.name, input: card.input, output: card.output },
+      { outcome, exitCode, durationMs, outputState, runningElapsedMs }
+    ),
     messageId: card.result?.id ?? card.call?.id ?? card.id,
   };
 }
 
-export function toolContext(input: unknown): { label: string; value: string }[] {
-  const record = asRecord(input);
-  if (record === null) return [];
-  const context: { label: string; value: string }[] = [];
-  for (const key of TOOL_CONTEXT_KEYS) {
-    const raw = record[key];
-    if (typeof raw !== 'string') continue;
-    const value = raw.trim();
-    if (value.length === 0) continue;
-    context.push({ label: key, value });
+/** Exactly one matching `tool_called` start, or null — missing, ambiguous, and unparseable starts yield no elapsed badge. */
+function toolStartedAtMs(
+  events: readonly components['schemas']['WorkflowEvent'][],
+  nodeId: string,
+  toolUseId: string
+): number | null {
+  const matches: string[] = [];
+  for (const workflowEvent of events) {
+    if (workflowEvent.event_type !== 'tool_called') continue;
+    if (workflowEvent.step_name !== nodeId) continue;
+    const data = asRecord(workflowEvent.data);
+    if (data === null) continue;
+    if (data.tool_call_id !== toolUseId) continue;
+    matches.push(workflowEvent.created_at);
   }
-  return context;
+  if (matches.length !== 1) return null;
+  const startedAt = new Date(ensureUtc(matches[0] ?? '')).getTime();
+  return Number.isFinite(startedAt) ? startedAt : null;
+}
+
+function runningElapsed(
+  events: readonly components['schemas']['WorkflowEvent'][],
+  nodeId: string,
+  toolUseId: string,
+  nowMs: number
+): number | null {
+  const startedAt = toolStartedAtMs(events, nodeId, toolUseId);
+  if (startedAt === null) return null;
+  return Math.max(0, nowMs - startedAt);
 }
 
 export function toolRuntime(
@@ -207,9 +247,25 @@ export function toolRuntime(
 export function buildAgentHistory(input: AgentHistoryInput): AgentHistoryItem[] {
   const projected = projectToolTranscript(projectTextTranscript(input.rows));
   const items: AgentHistoryItem[] = [];
-  for (const item of projected) {
+  for (let index = 0; index < projected.length; index++) {
+    const item = projected[index];
+    if (item === undefined) continue;
     if (item.kind === 'tool-card') {
-      items.push(toToolItem(item, input.events, input.nodeId));
+      const next = projected[index + 1];
+      const interrupted =
+        next?.kind === 'message' &&
+        next.message.kind === 'status' &&
+        next.message.payload.state === 'interrupted';
+      items.push(
+        toToolItem(
+          item,
+          input.events,
+          input.nodeId,
+          input.nowMs,
+          interrupted ? 'interrupted' : undefined
+        )
+      );
+      if (interrupted) index++;
       continue;
     }
     const message = item.message;

@@ -5,7 +5,13 @@ import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Root } from 'react-dom/client';
 
-import type { DagNode, WorkflowEventResponse, WorkflowNodeMessagesResponse } from '@/lib/api';
+import type { AgentHistoryItem } from '@/lib/agent-history';
+import type {
+  DagNode,
+  WorkflowEventResponse,
+  WorkflowNodeMessageResponse,
+  WorkflowNodeMessagesResponse,
+} from '@/lib/api';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import type { LogRow } from './build-log-rows';
@@ -282,6 +288,8 @@ function installHappyDom(): Window {
 
 const legacyNodeRoomImportWindow = installHappyDom();
 const legacyNodeRoom = await import('./LegacyNodeRoom');
+const nodeRoom = await import('./NodeRoom');
+const agentHistory = await import('@/lib/agent-history');
 // Radix keeps import-time DOM references; restore globals but keep the window alive.
 restoreGlobals();
 void legacyNodeRoomImportWindow;
@@ -710,6 +718,12 @@ describe('LegacyNodeRoom dispatcher', () => {
     }),
   ];
 
+  function requiredToolRow(toolUseId: string): Element & { open: boolean } {
+    const el = host.querySelector(`details[data-tool-id="${toolUseId}"]`);
+    if (el === null) throw new Error(`tool row ${toolUseId} missing: ${host.innerHTML}`);
+    return el as Element & { open: boolean };
+  }
+
   test('mounts NodeTranscriptPane for a command row and requests messages once', async () => {
     const { requests, loadMessages } = createLoadMessages();
     await act(async () => {
@@ -827,5 +841,591 @@ describe('LegacyNodeRoom dispatcher', () => {
     await flushUntil(host, 'command after loading', () => requests.length === 1);
     expect(requests).toEqual([['run-1', 'command']]);
     expect(host.textContent).toContain('agent-text');
+  });
+
+  test('drained tool calls mount as collapsed disclosure rows', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [
+        {
+          id: 'call-tool-use-1',
+          seq: 10,
+          kind: 'tool',
+          payload: { name: 'Read', id: 'tool-use-1', input: { path: 'a.ts' } },
+          metadata: { tool_phase: 'call' },
+          created_at: CREATED_AT,
+        },
+        {
+          id: 'result-tool-use-1',
+          seq: 11,
+          kind: 'tool',
+          payload: {
+            name: 'Read',
+            id: 'tool-use-1',
+            input: { path: 'a.ts' },
+            output: 'chunk',
+          },
+          metadata: { tool_phase: 'result', outcome: 'success' },
+          created_at: CREATED_AT,
+        },
+      ],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages,
+        definitionNodes: [{ id: 'command', command: 'review' }],
+        runStatus: 'completed',
+      });
+    });
+    await flushUntil(
+      host,
+      'tool disclosure row',
+      () => host.querySelector('details[data-tool-id="tool-use-1"]') !== null
+    );
+    const toolRow = requiredToolRow('tool-use-1');
+    expect(toolRow.open).toBe(false);
+    const summary = toolRow.querySelector('summary') as Element;
+    expect(summary.textContent).toContain('Read');
+    expect(summary.textContent).toContain('a.ts');
+    expect(summary.textContent).toContain('succeeded');
+    // Diagnostics stay hidden while the row is collapsed.
+    for (const nested of Array.from(toolRow.querySelectorAll('details'))) {
+      expect((nested as Element & { open: boolean }).open).toBe(false);
+    }
+  });
+
+  test('a poll-updated failure flips an untouched drained row open once', async () => {
+    const firstLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [
+        {
+          id: 'call-tool-use-1',
+          seq: 10,
+          kind: 'tool',
+          payload: { name: 'Bash', id: 'tool-use-1', input: { command: 'npm test' } },
+          metadata: { tool_phase: 'call' },
+          created_at: CREATED_AT,
+        },
+      ],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages: firstLoad,
+        definitionNodes: [{ id: 'command', command: 'review' }],
+        runStatus: 'completed',
+      });
+    });
+    await flushUntil(
+      host,
+      'running tool row',
+      () => host.querySelector('details[data-tool-id="tool-use-1"]') !== null
+    );
+    const running = requiredToolRow('tool-use-1');
+    expect(running.open).toBe(false);
+
+    // A new loader identity re-drains from afterSeq; the merged result completes the card.
+    const secondLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [
+        {
+          id: 'call-tool-use-1',
+          seq: 10,
+          kind: 'tool',
+          payload: { name: 'Bash', id: 'tool-use-1', input: { command: 'npm test' } },
+          metadata: { tool_phase: 'call' },
+          created_at: CREATED_AT,
+        },
+        {
+          id: 'result-tool-use-1',
+          seq: 11,
+          kind: 'tool',
+          payload: {
+            name: 'Bash',
+            id: 'tool-use-1',
+            input: { command: 'npm test' },
+            output: 'boom',
+          },
+          metadata: { tool_phase: 'result', outcome: 'error', exit_code: 2 },
+          created_at: CREATED_AT,
+        },
+      ],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages: secondLoad,
+        definitionNodes: [{ id: 'command', command: 'review' }],
+        runStatus: 'completed',
+      });
+    });
+    await flushUntil(host, 'failed tool row auto-open', () => requiredToolRow('tool-use-1').open);
+    const failed = requiredToolRow('tool-use-1');
+    expect(failed.open).toBe(true);
+    const summary = failed.querySelector('summary') as Element;
+    expect(summary.textContent).toContain('failed');
+    expect(summary.textContent).toContain('exit 2');
+  });
+});
+
+describe('LegacyNodeRoom tool disclosure rows', () => {
+  const NOW_MS = new Date(CREATED_AT).getTime() + 30_000;
+
+  let win: Window;
+  let host: Element;
+  let root: Root;
+
+  beforeEach(() => {
+    win = installHappyDom();
+    const el = win.document.createElement('div');
+    win.document.body.appendChild(el);
+    host = el as unknown as Element;
+    root = createRoot(host as unknown as Parameters<typeof createRoot>[0]);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    win.close();
+    restoreGlobals();
+  });
+
+  function callRow(
+    toolUseId: string,
+    seq: number,
+    name: string,
+    input: unknown,
+    metadata?: Record<string, unknown>
+  ): WorkflowNodeMessageResponse {
+    return {
+      id: `call-${toolUseId}`,
+      seq,
+      kind: 'tool',
+      payload: { name, id: toolUseId, input },
+      metadata: { tool_phase: 'call', ...metadata },
+      created_at: CREATED_AT,
+    };
+  }
+
+  function resultRow(
+    toolUseId: string,
+    seq: number,
+    name: string,
+    input: unknown,
+    output: unknown,
+    metadata?: Record<string, unknown>
+  ): WorkflowNodeMessageResponse {
+    return {
+      id: `result-${toolUseId}`,
+      seq,
+      kind: 'tool',
+      payload: { name, id: toolUseId, input, output },
+      metadata: { tool_phase: 'result', ...metadata },
+      created_at: CREATED_AT,
+    };
+  }
+
+  function historyItems(
+    rows: readonly WorkflowNodeMessageResponse[],
+    events: readonly WorkflowEventResponse[] = []
+  ): AgentHistoryItem[] {
+    return agentHistory.buildAgentHistory({ rows, events, nodeId: 'command', nowMs: NOW_MS });
+  }
+
+  function mountItems(
+    items: readonly AgentHistoryItem[],
+    loadMessage?: (
+      runId: string,
+      nodeId: string,
+      messageId: string
+    ) => Promise<WorkflowNodeMessageResponse>
+  ): void {
+    root.render(
+      createElement(nodeRoom.NodeRoom, {
+        nodeId: 'command',
+        items,
+        unknownScope: false,
+        runId: 'run-1',
+        isPending: false,
+        error: null,
+        onRetry: (): void => undefined,
+        loadMessage,
+      })
+    );
+  }
+
+  function toolRow(toolUseId: string): Element & { open: boolean } {
+    const row = host.querySelector(`details[data-tool-id="${toolUseId}"]`);
+    if (row === null) throw new Error(`row ${toolUseId} missing: ${host.innerHTML}`);
+    return row as Element & { open: boolean };
+  }
+
+  function rowSummary(row: Element): HTMLElement {
+    const summary = row.querySelector('summary');
+    if (summary?.parentElement !== row) {
+      throw new Error(`direct summary missing: ${row.outerHTML}`);
+    }
+    return summary as unknown as HTMLElement;
+  }
+
+  function click(target: Element): void {
+    target.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+  }
+
+  function rowButton(row: Element, label: string): HTMLButtonElement {
+    const button = Array.from(row.querySelectorAll('button')).find(
+      candidate => candidate.textContent === label
+    );
+    if (button === undefined) throw new Error(`button ${label} missing: ${row.innerHTML}`);
+    return button as unknown as HTMLButtonElement;
+  }
+
+  /** Text a screen reader announces: skips aria-hidden, uses chip aria-label. */
+  function summaryAccessibleName(summary: Element): string {
+    const parts: string[] = [];
+    const walk = (node: unknown): void => {
+      const child = node as { nodeType?: number; textContent?: string | null };
+      if (child.nodeType === 3) {
+        parts.push(child.textContent ?? '');
+        return;
+      }
+      const el = node as Element;
+      if (el.getAttribute === undefined) return;
+      if (el.getAttribute('aria-hidden') === 'true') return;
+      const label = el.getAttribute('aria-label');
+      if (label !== null) {
+        parts.push(label);
+        return;
+      }
+      for (const grandchild of Array.from(el.childNodes)) walk(grandchild);
+    };
+    walk(summary);
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  }
+
+  const READ_ROWS: readonly WorkflowNodeMessageResponse[] = [
+    callRow('t-1', 10, 'Read', { path: 'a.ts' }),
+    resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', { outcome: 'success' }),
+  ];
+
+  test('mounts one collapsed disclosure row per projected tool call', async () => {
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    const rows = host.querySelectorAll('details[data-tool-id]');
+    expect(rows).toHaveLength(1);
+    const row = toolRow('t-1');
+    expect(row.open).toBe(false);
+    const summary = rowSummary(row);
+    expect(summary.textContent).toContain('Read');
+    expect(summary.textContent).toContain('a.ts');
+    expect(summaryAccessibleName(summary)).toBe('succeeded file · Read a.ts');
+    // Diagnostics exist in the DOM but stay closed behind the summary.
+    const diagnostics = row.querySelectorAll('details');
+    expect(diagnostics).toHaveLength(2);
+    for (const diagnostic of Array.from(diagnostics)) {
+      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
+    }
+    expect(row.textContent).toContain('Input');
+    expect(row.textContent).toContain('Output');
+  });
+
+  test('pointer toggles the row and the choice survives polling re-renders', async () => {
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    const row = toolRow('t-1');
+    const summary = rowSummary(row);
+    await act(async () => {
+      click(summary);
+    });
+    expect(row.open).toBe(true);
+    // A later render with freshly-projected items (same identities) preserves the choice.
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    expect(toolRow('t-1').open).toBe(true);
+    await act(async () => {
+      click(rowSummary(toolRow('t-1')));
+    });
+    expect(toolRow('t-1').open).toBe(false);
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    expect(toolRow('t-1').open).toBe(false);
+  });
+
+  test('summary is a native control — no role/tabindex shim — and keeps focus through activation', async () => {
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    const row = toolRow('t-1');
+    const summary = rowSummary(row);
+    expect(summary.tagName).toBe('SUMMARY');
+    expect(summary.getAttribute('role')).toBeNull();
+    expect(summary.getAttribute('tabindex')).toBeNull();
+    summary.focus();
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    // happy-dom lacks summary's keydown→click activation default; dispatch the
+    // activation click real browsers synthesize for Enter/Space.
+    await act(async () => {
+      summary.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event
+      );
+      click(summary);
+    });
+    expect(row.open).toBe(true);
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    await act(async () => {
+      summary.dispatchEvent(
+        new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event
+      );
+      click(summary);
+    });
+    expect(row.open).toBe(false);
+  });
+
+  test('an untouched row that turns failed opens once; later nonfailed updates never auto-close', async () => {
+    const runningRows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Bash', { command: 'npm test' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(runningRows));
+    });
+    expect(toolRow('t-1').open).toBe(false);
+
+    const failedRows: readonly WorkflowNodeMessageResponse[] = [
+      ...runningRows,
+      resultRow('t-1', 11, 'Bash', { command: 'npm test' }, 'boom', {
+        outcome: 'error',
+        exit_code: 2,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedRows));
+    });
+    expect(toolRow('t-1').open).toBe(true);
+
+    // Still untouched: a later succeeded projection must not close the auto-opened row.
+    const succeededRows: readonly WorkflowNodeMessageResponse[] = [
+      runningRows[0],
+      resultRow('t-1', 11, 'Bash', { command: 'npm test' }, 'ok', { outcome: 'success' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(succeededRows));
+    });
+    expect(toolRow('t-1').open).toBe(true);
+  });
+
+  test('a touched row never auto-opens and never re-opens after the user closes it', async () => {
+    const failedRows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Bash', { command: 'npm test' }),
+      resultRow('t-1', 11, 'Bash', { command: 'npm test' }, 'boom', {
+        outcome: 'error',
+        exit_code: 2,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedRows));
+    });
+    const row = toolRow('t-1');
+    expect(row.open).toBe(true);
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    expect(row.open).toBe(false);
+    // Same failed data re-projected — the touched row stays closed.
+    await act(async () => {
+      mountItems(historyItems(failedRows));
+    });
+    expect(toolRow('t-1').open).toBe(false);
+  });
+
+  test('a new tool identity resets disclosure to its own initial policy', async () => {
+    const failedA: readonly WorkflowNodeMessageResponse[] = [
+      callRow('a', 10, 'Bash', { command: 'false' }),
+      resultRow('a', 11, 'Bash', { command: 'false' }, 'nope', { outcome: 'error' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedA));
+    });
+    expect(toolRow('a').open).toBe(true);
+
+    // A different tool_use id replaces the row: fresh mount, fresh initial state.
+    const succeededB: readonly WorkflowNodeMessageResponse[] = [
+      callRow('b', 12, 'Read', { path: 'b.ts' }),
+      resultRow('b', 13, 'Read', { path: 'b.ts' }, 'done', { outcome: 'success' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(succeededB));
+    });
+    expect(host.querySelector('details[data-tool-id="a"]')).toBeNull();
+    const bRow = toolRow('b');
+    expect(bRow.open).toBe(false);
+
+    // Open 'b', then replace with a fresh 'a' instance — 'a' starts open (failed)
+    // and 'b' has no carried-over state when it returns.
+    await act(async () => {
+      click(rowSummary(bRow));
+    });
+    expect(bRow.open).toBe(true);
+    await act(async () => {
+      mountItems(historyItems(failedA));
+    });
+    expect(toolRow('a').open).toBe(true);
+    await act(async () => {
+      mountItems(historyItems(succeededB));
+    });
+    expect(toolRow('b').open).toBe(false);
+  });
+
+  test('nested Input/Output toggles do not mark the outer row touched', async () => {
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    const row = toolRow('t-1');
+    const inputDiagnostic = row.querySelectorAll('details')[0] as Element & { open: boolean };
+    await act(async () => {
+      click(inputDiagnostic.querySelector('summary') as Element);
+    });
+    expect(inputDiagnostic.open).toBe(true);
+    expect(row.open).toBe(false);
+
+    // Still untouched: the failed transition auto-opens the outer row; the nested
+    // diagnostic keeps its own state.
+    const failedRows: readonly WorkflowNodeMessageResponse[] = [
+      READ_ROWS[0],
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'boom', {
+        outcome: 'error',
+        exit_code: 2,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedRows));
+    });
+    const updated = toolRow('t-1');
+    expect(updated.open).toBe(true);
+    const updatedInput = updated.querySelectorAll('details')[0] as Element & { open: boolean };
+    expect(updatedInput.open).toBe(true);
+  });
+
+  test('focus stays on the summary when later items append to the list', async () => {
+    await act(async () => {
+      mountItems(historyItems(READ_ROWS));
+    });
+    const summary = rowSummary(toolRow('t-1'));
+    summary.focus();
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    const appended: readonly WorkflowNodeMessageResponse[] = [
+      ...READ_ROWS,
+      callRow('t-2', 12, 'Bash', { command: 'ls' }),
+      resultRow('t-2', 13, 'Bash', { command: 'ls' }, 'out', { outcome: 'success' }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(appended));
+    });
+    expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+    expect(toolRow('t-2').open).toBe(false);
+  });
+
+  test('full-output load disables the button, swaps the output, and refreshes the row badges', async () => {
+    let resolveLoad: ((message: WorkflowNodeMessageResponse) => void) | null = null;
+    const loadMessage = (): Promise<WorkflowNodeMessageResponse> =>
+      new Promise<WorkflowNodeMessageResponse>(resolve => {
+        resolveLoad = resolve;
+      });
+    const rows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'success',
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(rows), loadMessage);
+    });
+    const row = toolRow('t-1');
+    expect(rowSummary(row).textContent).toContain('truncated');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    expect(row.open).toBe(true);
+    const button = rowButton(row, 'View full output');
+    await act(async () => {
+      click(button);
+    });
+    expect(button.disabled).toBe(true);
+    await act(async () => {
+      resolveLoad?.({
+        id: 'result-t-1',
+        seq: 11,
+        kind: 'tool',
+        payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' }, output: 'FULL OUTPUT' },
+        created_at: CREATED_AT,
+      });
+    });
+    expect(row.textContent).toContain('FULL OUTPUT');
+    // The row re-presented with output_state 'full': the truncated badge is gone.
+    expect(rowSummary(row).textContent).not.toContain('truncated');
+    expect(row.open).toBe(true);
+
+    // A later poll must refresh outcome facts without discarding the fetched output.
+    const failedRows: readonly WorkflowNodeMessageResponse[] = [
+      rows[0],
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'error',
+        exit_code: 2,
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(failedRows), loadMessage);
+    });
+    expect(rowSummary(toolRow('t-1')).textContent).toContain('failed');
+    expect(rowSummary(toolRow('t-1')).textContent).toContain('exit 2');
+    expect(toolRow('t-1').textContent).toContain('FULL OUTPUT');
+  });
+
+  test('a failed full-output load shows the error and Retry reloads', async () => {
+    let attempts = 0;
+    const loadMessage = async (): Promise<WorkflowNodeMessageResponse> => {
+      attempts++;
+      if (attempts === 1) throw new Error('network down');
+      return {
+        id: 'result-t-1',
+        seq: 11,
+        kind: 'tool',
+        payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' }, output: 'FULL' },
+        created_at: CREATED_AT,
+      };
+    };
+    const rows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'success',
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    await act(async () => {
+      mountItems(historyItems(rows), loadMessage);
+    });
+    const row = toolRow('t-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    const button = rowButton(row, 'View full output');
+    await act(async () => {
+      click(button);
+    });
+    expect(row.textContent).toContain('network down');
+    const retry = rowButton(row, 'Retry');
+    await act(async () => {
+      click(retry);
+    });
+    expect(row.textContent).toContain('FULL');
+    expect(row.textContent).not.toContain('network down');
+    expect(attempts).toBe(2);
   });
 });

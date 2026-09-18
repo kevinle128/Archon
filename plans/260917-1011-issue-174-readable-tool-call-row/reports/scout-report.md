@@ -1,37 +1,25 @@
 # Scout report
 
-## Phase 1 scout
+## Shared seam
 
-The shared seam is `packages/web/src/lib/agent-history.ts`.
-It is the only caller of the tool and text transcript projectors.
-The phase can stay inside two shared source files and two shared test files.
+`packages/web/src/lib/agent-history.ts` is the correct integration owner. It consumes paired transcript cards and workflow events, then feeds all three mounted transcript paths. The required shared changes are exit-code propagation, one presentation value per tool item, exact adjacent-interruption look-ahead, and deterministic running elapsed time from the existing `tool_called` event plus caller clock. `pair-tool-transcript.ts` already preserves the necessary data and is not a planned edit.
 
-The main contracts are the existing `AgentHistoryItem`, stored tool metadata, and the render-neutral tool presentation rules.
-The main risks are exit-code loss, unbounded generic scans, substring alias collisions, and over-broad interruption folding.
+The pure presenter belongs in `packages/web/src/lib/tool-presentation.ts`, as specified by the canonical contract. Main correctness risks are alias substring collisions, Codex's command-as-name shape, Claude/OMP glob inversion, wide/deep JSON, unsupported count output, and allowing status/badge decisions to drift into renderers.
 
-## Phase 2 scout
+## Renderer seams
 
-The two renderers are `ToolHistory` in Legacy `NodeRoom.tsx` and Console `ConsoleAgentHistoryList.tsx`.
-The Console renderer already serves both selected-room and inline-history views.
-No caller change is required if `buildAgentHistory()` keeps its array return type.
+Legacy owns tool markup in `NodeRoom.tsx`. Console owns it in `ConsoleAgentHistoryList.tsx`, which is reused by both `ConsoleNodeRoom.tsx` and `ConsoleExecutionHistory.tsx`. The inline history test is therefore an indirect regression gate even though no caller source change is expected.
 
-The Console isolation rule allows shared `@/lib/*` logic and forbids Legacy component imports.
-Existing surface, family, status, border, and focus tokens are sufficient.
-The main risk is native disclosure state under polling, because `defaultOpen` does not update when a stable running row becomes failed.
+Both current shells render an inset card and open diagnostic disclosures. Native `<details>` remains the right primitive, but controlled untouched/touched state is needed because `defaultOpen` alone cannot open a stable running row when polling changes it to failed.
 
-## Phase 3 scout
+The Console boundary allows shared library data but no Legacy component import. Two markup shells remain the simplest compliant design.
 
-The current HITL E2E specs already open both target surfaces against one real stored tool call.
-Their visible-output assertions explicitly require the old presentation, which provides a direct red-to-green change.
+## E2E and visual seams
 
-The current visual spec belongs to an older HITL plan and writes into that plan's capture directory.
-Its tool-card readiness locator can pass from hidden payload text, so issue #174 must update that locator.
-Issue #174 should also use a stable new spec with Playwright output attachments and must not write new captures into the old plan-bound path.
-The main risk is confusing hidden diagnostic DOM text with visible collapsed-row text.
+The existing HITL fixture navigates both target surfaces against one stored successful call. Three cases—not two—assert obsolete visible output. The old visual readiness locator can match hidden descendant output and needs a direct-summary locator.
+
+The required responsive width is the measured node room at 460 px, not merely a viewport or splitter ratio. Geometry/computed styles are deterministic gates; screenshots are human evidence. Other status states stay in component tests because the real fixture does not emit them.
 
 ## Dependency conclusion
 
-Phase 1 produces the row view model.
-Phase 2 consumes it in both shells.
-Phase 3 exercises the mounted surfaces and does not need fixture-provider expansion.
-There is no cross-plan dependency and no API, database, provider, workflow, server, or generated-file dependency.
+No backend, provider, workflow, API, generated type, schema, migration, dependency, or theme-token work is needed. No active alternate plan or open implementation PR was found; PR #194 is closed/unmerged and the issue-comment run is completed. Recheck mutable ownership state before implementation.

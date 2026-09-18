@@ -601,6 +601,7 @@ export function ConsoleNodeRoom({
 
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
+  const nowMs = Date.now();
   const items: AgentHistoryItem[] =
     row === null
       ? []
@@ -608,6 +609,7 @@ export function ConsoleNodeRoom({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
+          nowMs,
         });
   const visibleAsks =
     row !== null && resolution?.kind === 'agent'
@@ -649,7 +651,6 @@ export function ConsoleNodeRoom({
       }).viewState === 'pending'
     );
   })?.id;
-  const nowMs = Date.now();
   const agentDisplayName = row?.label ?? '';
   const roomNodeId = row?.nodeId ?? '';
 

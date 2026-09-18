@@ -1,0 +1,207 @@
+## Codebase Patterns
+
+### Room width: drive the persisted ratio, never the separator drag
+- **Where**: `e2e/ui/agent-tool-row-visual.spec.ts` `setRoomWidth`; `packages/web/src/lib/room-split-layout.ts`
+- **Pattern**: To assert a measured room width (e.g. 460 ± 2 px), measure the resizable GROUP width via `#console-run-room` / `#legacy-run-room` parent, write the exact ratio into `localStorage['archon.run-room.ratio.<surface>']` (fractional percent allowed, clamped 24–60), and remount — `readRoomRatio` applies it on open. Do NOT drag the separator: the Console separator (`data-slot="console-panel-separator"`) is unstyled and zero-width (keyboard-only), and mouse steps can't reliably land inside a ±2 px window anyway.
+- **Example**: `await page.evaluate(([k, v]) => localStorage.setItem(k, v), ['archon.run-room.ratio.console', String(ratio)])` then re-navigate.
+
+### Closed `<details>` hides content from getByRole, not getByText
+- **Where**: `e2e/ui/workflow-run-hitl-room.spec.ts` fixes in US-005
+- **Pattern**: Playwright `getByRole` resolves through the accessibility tree — content inside a closed `<details>` is absent from it (`toHaveCount` → 0 even though the DOM node exists). `getByText` still matches (DOM-based) but `toBeVisible` fails. Tests asserting controls/payload inside a row must click the row `summary` (and the nested `Output` summary) first.
+
+### Tailwind layered utilities vs unlayered theme rules
+- **Where**: `packages/web/src/experiments/console/theme.css` `.console-root :focus-visible`
+- **Pattern**: Tailwind v4 emits utilities inside `@layer utilities`; unlayered author CSS (theme.css) beats layered utilities regardless of source order or equal specificity. The console-global focus rule overrode `focus-visible:outline-accent-bright` with 30 %-alpha `--accent-ring`. Fix locally with the v4 trailing-bang important modifier: `focus-visible:outline-accent-bright!`.
+- **Pattern**: `motion-reduce:transition-none` computes `transition-property: none`, NOT `transition-duration: 0s` — assert on `transitionProperty` when checking reduced-motion suppression.
+
+### Chromium AX-tree assertions via CDP
+- **Where**: `e2e/ui/agent-tool-row-visual.spec.ts` `summaryAxEvidence`
+- **Pattern**: `DOM.getDocument` → `DOM.querySelector` → `Accessibility.queryAXTree` returns the accessible name/role/properties a real AT consumes. Correlate state via `backendDOMNodeId` (from `DOM.describeNode`) — nested disclosures can carry their own `expanded` prop, and the AX tree updates lazily after DOM toggles, so poll.
+
+### E2E serves prebuilt web dist — rebuild after renderer changes
+- **Where**: `e2e/lib/playwright/archon-runtime.ts` (`WEB_DIST_INDEX` = `packages/web/dist/index.html`)
+- **Pattern**: Each worker's isolated Archon server serves the built SPA bundle, not a dev server. UI source changes are invisible to Playwright until `bun run build:web` regenerates `packages/web/dist` (gitignored — never commit). Symptom of a stale bundle: E2E page snapshot shows the OLD UI on every surface.
+- **Example**: `bun run build:web && cd e2e && env -i HOME="$HOME" PATH="..." npx playwright test -c playwright.config.ts …`
+
+### e2e deps + Playwright in this worktree
+- **Where**: `e2e/`
+- **Pattern**: The dev shell inherits poisoned `npm_config_local_prefix` / `npm_package_json` env vars from a parent npm lifecycle pointing at a DIFFERENT checkout (`/Volumes/WD_BLACK/workspace/opensource/Archon`). Plain `npm ci` in `e2e/` then reports "up to date" and installs nothing. Run npm/npx under a clean env: `env -i HOME="$HOME" PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/Users/agent/.bun/bin" <cmd>`.
+- **Pattern**: Playwright browser build is pinned by `e2e/package-lock.json` (`@playwright/test@1.60.0` → `chromium_headless_shell-1223`). A browser installed for another checkout's version will NOT be found — run `npx playwright install chromium` inside this worktree's `e2e/` once.
+- **Example**: `cd e2e && env -i HOME="$HOME" PATH="..." npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts --grep "HITL.*readable tool row"`
+
+### Tool row presentation contract
+- **Where**: `packages/web/src/lib/tool-presentation.ts`
+- **Pattern**: All provider-name/policy decisions live in the pure module; renderers must stay markup-only. Family resolution order is fixed: bounded `mcp__server__tool` → exact normalized alias (case-fold + strip `_`/`-`, name ≤128 code units) → known input-key inference → Codex name-only shell (absent/empty input + command-like/overlong name) → generic.
+- **Pattern**: "Command-like" was pinned to: whitespace within the first `MAX_HEADLINE_SOURCE_CODE_UNITS` code units, or name longer than that cap entirely.
+- **Example**: `search_replace` → `file` (exact match beats substring); `mcp__github__create_issue` → `generic` with label `github · create_issue` regardless of input keys.
+
+### Controlled `<details>` + React + happy-dom contract (reuse for US-004 console row)
+- **Where**: `packages/web/src/components/workflows/NodeRoom.tsx` `ToolHistory`
+- **Pattern**: Control `<details open={open}>` via state; in `onToggle`, ignore bubbled nested toggles with `event.target !== event.currentTarget`, and treat `event.currentTarget.open === open` (state) as a programmatic echo — real user activation flips DOM `open` away from rendered state before the event reaches React. Auto-open = `useEffect(() => { if (!open && !touched && initialOpen) setOpen(true) })` — no path ever calls `setOpen(false)` itself.
+- **Pattern**: happy-dom fires React `onToggle` on summary `click` (MouseEvent, bubbles) but does NOT implement summary's keydown→activation default — tests dispatch keydown + the synthesized `click` a real browser emits. `summary.focus()` sets `document.activeElement`. Programmatic `open` writes do NOT produce a React-visible toggle echo in happy-dom (real browsers DO — hence the guard).
+- **Pattern**: happy-dom types don't overlap lib.dom (`activeElement: HTMLElement|SVGElement` is their own type) — cast `as unknown as Event` for `win.MouseEvent`/`win.KeyboardEvent` in `dispatchEvent`, and `as unknown as Element`/`HTMLElement` for queried nodes.
+
+---
+
+## 2026-09-17 — US-001: E2E contract rewrite + pure tool-presentation policy
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/workflow-run-hitl.spec.ts` — rewrote `[V:hitl.console-tool-output]` and `[V:hitl.legacy-tool-output]` to the `details[data-tool-id] > summary` collapsed-row contract; titles keep `HITL` and add `readable tool row`
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — rewrote `[V:hitl.agent-history]` the same way; still asserts recorded `duration_ms` appears as the duration badge
+- `packages/web/src/lib/tool-presentation.ts` — new React-free module: nine-family alias table, bounded MCP/alias/key-inference/name-only resolution, family headlines, chip rule, content badges (language/count/operation), `toolRowPresentation` composing outcome glyph + `initialOpen` + ordered typed badges
+- `packages/web/src/lib/tool-presentation.test.ts` — new, 141 tests covering aliases, normalization, MCP, inference priority, Codex wrappers/multiline, all bounds at limit and limit+1, generic safety, outcome table, badge ordering, failure containment
+- `plans/260917-1011-issue-174-readable-tool-call-row/prd.json` — US-001 `passes: true` + notes
+- `plans/260917-1011-issue-174-readable-tool-call-row/progress.txt` — this file
+
+**Acceptance criteria verified**:
+- [x] E2E cases rewritten FIRST and confirmed failing on old `.ptool` UI for the intended reason — all 3 fail on `details[data-tool-id]` resolving to 0 elements / summary not found (run output recorded this iteration)
+- [x] Cases target `details[data-tool-id] > summary`, assert success row closed (`open === false`), verify chip/headline (`Read`, `HITL_TOOL_INPUT.txt`, `succeeded`), assert `Input`/`Output`/`HITL_TOOL_OUTPUT_VISIBLE` not visible; `--grep "HITL.*readable tool row"` selects exactly the 3
+- [x] `tool-presentation.ts` is React-free, no `any`, exports `toolPresentation` + `toolRowPresentation`; `ToolPresentationInput` is exactly `{name, input, output}` and has no `AgentHistoryItem` dependency
+- [x] Nine families via exact normalized aliases; `search_replace` → `file`; substring matching absent (`searchers`, `mygrep`, `editorial` → `generic`)
+- [x] Precedence: bounded MCP → alias → key inference (code+language > command/cmd/script > path keys > pattern keys > url keys > before/after pairs) → Codex name-only shell → generic
+- [x] Headlines per family incl. complete `/bin/zsh -lc`/`/bin/bash -lc` wrapper strip, `…` for later lines, glob pattern/path inversion, `todo updated` + bounded `op:` badge, task description/name/context order, generic ≤3 scalar facts with no `{…}`/`[n]` markers
+- [x] Chip = sent name only for one whitespace-free token ≤24 code points (tested at 24/25 incl. Unicode); rejected names never appear in label/headline
+- [x] All eight named bounds tested at limit and limit+1; over-cap headline sources produce the label fallback, never a partial path
+- [x] Badge order state → content → exit → output-state → duration; `running · <elapsed>` suppresses premature `missing`; `interrupted`; `output unknown`; settled rows keep recorded markers; `—` placeholder; count only from bounded scalar/`count` field, omitted otherwise
+- [x] `toolPresentation` catch boundary → safe generic row; `toolRowPresentation` preserves outcome glyph/label/initialOpen and runtime badges on failure
+- [x] Adversarial: null/array/primitive/nested-100-deep inputs, 100k–200k strings, 33+ keys, non-string name — none throw, all bounded
+- [x] `bun test src/lib/tool-presentation.test.ts` → 141 pass; `bun test src/lib/` → 469 pass; `bun run type-check` clean; eslint/prettier clean; 3 E2E cases remain red (renderers untouched)
+
+**Learnings**:
+- `bun test` accepts the test file path directly from `packages/web`; `bun run type-check` is `tsc --noEmit` and DOES cover `*.test.ts` files (badge union types in test tables need the literal types, e.g. `ReturnType<typeof fn>['glyph']`).
+- ESLint ignores `*.test.ts` in this config (warning shown), so test files are covered by tsc + prettier only.
+- The e2e fixture resolves a real `toolUseId` (`e2e-fake-tool-…`) — the room spec can assert the row by exact `data-tool-id`.
+- Deferred to US-002+: `buildAgentHistory()` exit-code propagation, `presentation` attach, `nowMs`, interruption fold; renderers (US-003/004); visual spec locator fix (US-005).
+
+---
+
+## 2026-09-17 — US-002: History projection: exit code, presentation, interruption fold, render clock
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/agent-history.ts` — `AgentHistoryInput.nowMs` (required); tool arm gains `exitCode` + `presentation: ToolRowPresentation`; `toolExitCode()` extracts once (result → call → card, `Number.isFinite` guard); `deriveOutcome(card, exitCode)`; `toolStartedAtMs()` requires exactly one matching `tool_called` (created_at via `ensureUtc`); `runningElapsed()` = `max(0, nowMs - start)`; `toToolItem(card, events, nodeId, nowMs, outcomeOverride?)` attaches `toolRowPresentation`; `buildAgentHistory` indexed loop folds an immediately-following `state === 'interrupted'` status into the tool and consumes it
+- `packages/web/src/lib/agent-history.test.ts` — `nowMs` on all calls, `NOW_MS = CREATED_AT + 30s`, `event()` gains `createdAt`; new tests: presentation attach + duration/exit badge order, result-over-call exit precedence, deterministic elapsed (`running · 30.0s`), missing/ambiguous/invalid/wrong-node starts → bare `running`, future start → `running · 0ms`, direct + adjacent interruption incl. failed-plus-interrupted keeps `exit 2` badge, pending-card fold, non-fold across intervening items/detail text/non-exact states
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — `nowMs` hoisted above `buildAgentHistory` (was :284); shared with Ask cards
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — same hoist (was :652)
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` — same hoist (was :217)
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — `toolItem` fixture gains `exitCode`/`presentation` (computed via real `toolRowPresentation` over merged overrides)
+
+**Acceptance criteria verified**:
+- [x] `nowMs` required on input; tool arm has `exitCode`/`presentation`; `context` retained (NodeRoom.tsx:246 still reads it)
+- [x] Exit code extracted once with result → call → card precedence, shared by outcome + presenter (tested: result 2 beats call 9; call 4 used when result silent; both drive `failed` + `exit N` badge)
+- [x] `toolRuntime` untouched (single exact `tool_completed`); elapsed only from exactly-one `tool_called` for this node+toolUseId; missing/ambiguous/invalid → no elapsed; `max(0,…)` clamps future starts
+- [x] Single ordered look-ahead fold: exact `interrupted` only, consumes the status row (no lifecycle emitted), recomputes presentation, beats failed/exit for display while `exit 2` stays a fact; direct-result `interrupted` unaffected; no fold on detail text, `interrupted_by_user`, or intervening items
+- [x] Three callers hoist existing `Date.now()` above the call — no new timer/lifecycle
+- [x] Return type unchanged; `bun run type-check` clean (fixture updated to keep it so)
+- [x] `bun test src/lib/agent-history.test.ts src/lib/pair-tool-transcript.test.ts` → 19 pass; plus tool-presentation 141 + affected component suites 60 all green; eslint/prettier clean
+- [x] `--grep "HITL.*readable tool row"` → all 3 still red on `details[data-tool-id]` resolving to 0 elements (renderers untouched)
+
+**Learnings**:
+- `AgentHistoryItem` literals live in `NodeRoom.test.tsx`'s `toolItem()` helper — building `presentation` via real `toolRowPresentation` over merged overrides keeps it truthful when tests override outcome.
+- ESLint `prefer-optional-chain` fires on `x !== undefined && x.kind === …` — write `x?.kind === '…'`.
+- Fold runs on the PROJECTED stream (post-pairing): a result row sitting after the interrupted status in raw rows is already folded into the card, so `call, status, result` still folds correctly.
+- `git commit` runs lint-staged (eslint --fix + prettier --write) — keep staged files clean before committing or the hook rewrites them mid-commit.
+
+---
+
+## 2026-09-17 — US-003: Legacy NodeRoom native disclosure row
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `.ptool` card replaced by one `<details data-tool-id>` row per tool item: summary = aria-hidden ▶ chevron (9px, rotate-90/120ms, motion-reduce), `sr-only` status word, aria-hidden glyph (12px bold), family-toned chip (`title`/`aria-label` = `family · label`), `ToolHeadline` (path split `/`+`\`-only with trailing sep kept on tail; text = one end-ellipsis span), ordered `ToolBadge` group (state/placeholder badges aria-hidden; duration `flex-[0_1_auto]` drop-first). Disclosure state: `useState(initialOpen)` + `touched`; effect auto-opens untouched rows that turn failed; nothing auto-closes; `onToggle` filters nested toggles (`target !== currentTarget`) and programmatic echoes (`el.open === open`). Body = family+facts bar (10.5px secondary), closed Input/Output diagnostic details, preserved full-output load/error/Retry that re-runs `toolRowPresentation` with `outputState:'full'` into `loadedPresentation`. Transcript container `gap-3 p-3` → `px-3 py-2.5`; tools flush, assistant/lifecycle `my-1.5`, extension slot wrapped `mt-1.5`; `item.context`/`formatDurationMs`/`toolOutcomeLabel` removed from render.
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — static anatomy rewritten + new `describe('NodeRoom tool rows')`: five-outcome open/glyph/word matrix, accessible-name order helper, chip title/fallback, path/URL/text split anatomy, badge width-priority + aria-hidden, family chip tones + row geometry/rest-transparency, body bar facts + closed diagnostics, adjacent-row rhythm, extension anchoring.
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — new `describe('LegacyNodeRoom tool disclosure rows')` mounting NodeRoom over real `buildAgentHistory` projections: pointer toggle survives polling, native-summary/keyboard/focus, untouched→failed opens once then never auto-closes, touched never overridden, identity reset via `key=item.id`, nested-toggle isolation, focus stability on append, full-output load/disable/retry + badge refresh; plus two through-LegacyNodeRoom tests (drain → collapsed row; loader-identity re-drain flips running→failed open).
+- `plans/…/prd.json` — US-003 `passes: true` + notes. `plans/…/progress.txt` — this file.
+
+**Acceptance criteria verified**:
+- [x] Tests updated FIRST and confirmed red (12 fail each on `details[data-tool-id]` absent / old `.ptool` card), then implemented; matrix green: 44 pass across both files
+- [x] One `<details data-tool-id>` per tool keyed by stable item id; summary accessible-name order = hidden word → `family · label` chip → headline → ordered facts (verified: `succeeded file · Read a.ts truncated 1.5s`); state badges + `—` placeholder aria-hidden; chevron/glyph decorative
+- [x] Disclosure algorithm: mount/identity `initialOpen`; pointer + synthesized-Enter/Space mark touched; untouched→failed opens once; no auto-close anywhere; programmatic `open` writes not mistaken for user action; nested toggles ignored; new identity resets
+- [x] Body bar = family + every non-placeholder fact incl. duration (`file · exit 2 · truncated · 1.5s`); Input/Output closed real controls (24px target, text-secondary, accent focus-visible); failed auto-opened row exposes no payload
+- [x] Full-output button stays below diagnostics; successful load re-presents with `outputState:'full'` (truncated badge removed) without resetting disclosure or item key; error + Retry preserved
+- [x] Visual contract: details transparent at rest (no ptool/inset/border/shadow), `hover:bg-surface-hover`, `focus-visible:outline-2 outline-accent-bright -outline-offset-2`, transcript `px-3 py-2.5`, no inherited gap between collapsed rows
+- [x] Geometry: 12px mono 400 summary, 4/6 padding, 8 gap, 6 radius, ≥24px, single-line; chevron 10px in 9px col, 90°/120ms + motion-reduce; glyph 12px bold in 12px col, sole bold element; chip 11px/1·7 padding/4 radius/≤24ch surface-elevated with family mixes; badges 11px nowrap
+- [x] Path split `/`,`\` only + URLs; trailing sep kept with tail (`crates/`+`tests/`); no-separator → one tail; tail `max-w-full` ellipsis; text end-ellipsis; full string in DOM
+- [x] `NODE_ENV=development bun test` NodeRoom+LegacyNodeRoom → 44 pass; `bun test src/lib/agent-history.test.ts` → 19 pass; `bun run type-check` clean; eslint 0 errors; prettier clean; full package suite 436 components + 881 console + lib/stores/hooks all green; 3 HITL E2E intentionally still red (console renderer is US-004)
+
+**Learnings**:
+- eslint `non-nullable-type-assertion-style` auto-fix inserts `!` which `no-non-null-assertion` then rejects — resolve with a `requiredX()` query helper that throws on null instead of letting --fix churn.
+- `rowMarkup`/`summaryMarkup` regex helpers on `renderToStaticMarkup` output work well for DOM-anatomy assertions; scope all queries to the direct `> summary` so closed-diagnostic text can't masquerade as visible.
+- `key={item.id}` remount gives the identity-reset behavior for free — no manual state reset needed; the "poll flips outcome" case works because `drainNodeMessages` merges by seq into the same card id.
+
+---
+## 2026-09-17 — US-004: Console history row + context cleanup + HITL E2E green
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — `.ptool` card replaced by one `<details data-tool-id>` disclosure row per tool consuming `item.presentation`: identical anatomy + disclosure matrix to Legacy (aria-hidden ▶ chevron, `sr-only` status word, aria-hidden glyph, family-toned chip with `title`/`aria-label` = `family · label`, `ToolHeadline` path split, ordered `ToolBadge` group, family+facts body bar, closed Input/Output diagnostics, full-output load/error/Retry re-presenting via `toolRowPresentation` with `outputState:'full'`). Console deltas: running glyph/badge = `text-[color:var(--running)]`, summary `focus-visible:outline-offset-2` (+2 px), plain string composition (no `cn`). Transcript container `gap-3 p-3` → `p-3`; collapsed tool rows flush, assistant/lifecycle wrappers `my-1.5`, unknownScope notice `mb-1.5`.
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — existing tool assertions rewritten to the collapsed-row contract; new `describe('Console tool disclosure rows')` mirroring the Legacy matrix (12 tests: mount anatomy + accessible name, toggle persistence across re-projection, native summary semantics + focus retention, untouched→failed opens once then no auto-close, touched override, identity reset via `key=item.id`, nested-toggle isolation, focus on append, `--running` token on glyph + badge, flush spacing, full-output lifecycle + Retry) plus two through-ConsoleNodeRoom tests (drain → collapsed row; loader re-drain flips running→failed open).
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — inline-history contract test: same collapsed row, direct summary, closed diagnostics, +2 px offset, pointer toggle.
+- `packages/web/src/experiments/console/console-isolation.test.ts` — added `'@/lib/tool-presentation'` to the approved shared-lib set (required for the post-load `toolRowPresentation` re-presentation).
+- `packages/web/src/lib/agent-history.ts` — removed `context` from the tool arm, `TOOL_CONTEXT_KEYS`, and `toolContext()`.
+- `packages/web/src/lib/agent-history.test.ts` — removed the `describe('toolContext')` block and the `context` expectation.
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — dropped `context` from the `toolItem()` fixture.
+
+**Acceptance criteria verified**:
+- [x] Component tests updated FIRST and confirmed red: 17 failures against the old `.ptool` UI (no `details[data-tool-id]`), then green — 39 pass across the two files
+- [x] Identical semantic anatomy + disclosure matrix without importing any Legacy component (isolation test enforces; maps/JSX intentionally duplicated)
+- [x] Console deltas applied: `focus-visible:outline-offset-2` (+2 px, asserted vs `-outline-offset-2`), running glyph/badge `text-[color:var(--running)]`; all other rules identical to US-003
+- [x] Both mounts verified — `ConsoleNodeRoom` selected-room (mount + drain + poll-flip tests) and `ConsoleExecutionHistory` inline (contract test) share `ConsoleAgentHistoryList`
+- [x] Full-output load/error/Retry identical: button disables while loading, output swaps, `toolRowPresentation` re-present drops the stale `truncated` badge, disclosure state preserved; error + Retry reloads
+- [x] `console-isolation.test.ts` passes; modified only to allowlist `@/lib/tool-presentation`
+- [x] `context`/`TOOL_CONTEXT_KEYS`/`toolContext()` removed after both renderers consume `presentation`; only their tests removed
+- [x] All three HITL cases pass end to end: `npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts ui/workflow-run-hitl-room.spec.ts --grep "HITL.*readable tool row"` → 3 passed (after `bun run build:web`)
+- [x] Verification: focused bun tests green, `bun run type-check` clean, eslint 0 errors/warnings on changed files, prettier clean; regression sweep 436 components + 896 console + 474 lib all green; no renderer contains resolver/headline/outcome/badge-ordering policy
+
+**Learnings**:
+- E2E serves `packages/web/dist` — renderer changes are invisible to Playwright until `bun run build:web`; the first red run showed the pre-US-003 card on BOTH surfaces for exactly this reason.
+- `find(span => span.textContent === badge)` also matches the badge-GROUP wrapper (its textContent equals a single badge's) — filter on `aria-hidden` or another structural trait to hit the badge itself.
+- The happy-dom disclosure-test pattern transferred 1:1; only the tone maps and the offset class differ between surfaces.
+
+---
+## 2026-09-17 — US-005: E2E visual verification, acceptance report, and full gates
+
+**Status**: BLOCKED
+**Files changed**:
+- `e2e/ui/agent-tool-row-visual.spec.ts` — new, 6 HITL-tagged cases: per-surface geometry/keyboard/computed-style spec (closed row + hidden output, AX name order state→family→target→facts via CDP queryAXTree, measured 460±2px room, transcript 10/12 padding, rest transparent + hover surface-hover, summary/chevron/glyph/chip metrics, 120ms chevron + motion-reduce transitionProperty:none, Enter/Space with focus retained + no roving tabindex + Tab→Input, focus outline 2px opaque accent-bright with +2/−2 offsets, row/room/context captures); per-surface viewport sweep (1440/1024/768/390) + 200% deviceMetricsOverride zoom with room and page-level no-overflow assertions; cross-surface contrast case asserting resolved token/color-mix ratios ≥4.5 (focus ≥3) and attaching tool-row-contrast.json; mockup anatomy parity case forcing each mock panel to a measured 460px and asserting chev→gl→fam→hl→bd order.
+- `e2e/ui/workflow-run-hitl-visual.spec.ts` — readiness locator → `details[data-tool-id] > summary` (visible direct summary, no hidden-payload dependence); `HITL_TOOL_OUTPUT` import dropped.
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — `legacy-room-layout` and `history-complete` now open the row + nested Output disclosure before output/full-output assertions (getByRole/getByText-visible both fail inside closed details — see Codebase Patterns).
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — two Story-1.1-owned defects found BY this verification and fixed: transcript container `p-3` → `px-3 py-2.5` (canonical 10/12, matches Legacy + both mockups) including the two empty-history wrappers; summary `focus-visible:outline-accent-bright` → `outline-accent-bright!` because the unlayered `.console-root :focus-visible` theme rule (30%-alpha --accent-ring) beats layered Tailwind utilities.
+- `plans/…/reports/visual-acceptance.md` + `reports/evidence/` — full measurement matrix, real contrast numbers, five-status evidence map, mockup comparison with later-story deltas, AT blocker record.
+- `plans/…/prd.md` — prettier-only reflow (format:check gate).
+- `plans/260907-1454-…/reports/captures/*.png` — regenerated by the older suite's own capture ownership during the required run (now show the readable row).
+
+**Acceptance criteria verified**:
+- [x] Readiness locator = visible `details[data-tool-id] > summary`; capture ownership/viewport/zoom paths of the older suite untouched
+- [x] New spec: uppercase HITL titles, both surfaces, shared helpers + stored fixture only
+- [x] Direct summary + chip/headline + closed row + hidden output; Enter/Space toggle with focus retained; room measured 460±2px before narrow assertions; one-line + badge no-wrap via DOM boxes
+- [x] 1440/1024/768/390 sweep + 200% zoom retained; row operable, no transcript breakpoint, and no page-level overflow after bounding the Legacy TopNav scroll container
+- [x] Computed styles: focus 2px opaque accent-bright, +2px console / −2px legacy offset, chevron 120ms → transition-property:none under reduce, rest transparent, hover surface-hover; captures via testInfo.attach/outputPath with stable names
+- [x] Mockup comparison at measured 460px incl. test-only override of the 520px console mock; later-story deltas recorded in report §9
+- [x] reports/visual-acceptance.md records the full matrix (fonts, padding, gaps, chip, body rail, offsets, sweep, elision anatomy, motion, contrast)
+- [x] Contrast evidence: search/glob chip + nonzero-exit digits ≥4.5:1 on both surfaces' rest+hover backgrounds (5.35–8.02 measured); focus ≥3:1 (4.35–7.85); component-vs-real fixture evidence distinguished — the real fixture only renders a file/Read row
+- [x] Five statuses mapped to evidence: succeeded = real E2E; failed/running/interrupted/unknown = production-markup component + history-fold tests
+- [x] Manual accessibility gate RECORDED as blocked per AC: no Windows VM (Parallels absent) and no TCC assistive access on this host; Chromium AX-tree automated evidence documented as interim — see report §10
+- [x] Automated gates green after final repairs: Web tests and type-check, E2E type-check, `bun run validate`, focused visual 6/6, and full HITL selector 36 pass / 3 environment-skip / 0 fail. Manual AT completion remains separately blocked.
+
+**Final Codex review repairs**:
+- Full-output loads now preserve the fetched payload while recomputing presentation from the latest polled outcome, exit code, and duration instead of freezing a stale presentation snapshot.
+- Folded todo headlines use the specified secondary hierarchy on both renderers.
+- Console nested Input/Output summaries force the opaque accent-bright focus color against the unlayered Console theme rule.
+- Console and Legacy extension content has explicit per-item/end spacing; regression assertions cover both surfaces.
+- The visual test again enforces page-level horizontal overflow instead of silently narrowing the unchanged acceptance criterion.
+- Legacy TopNav is a bounded horizontal scroll container on narrow viewports, eliminating the 300 px page overflow while preserving every navigation control.
+
+**Learnings**:
+- The room-ratio localStorage path beats separator dragging for deterministic widths — Console's separator is deliberately zero-width (keyboard-only); see Codebase Patterns.
+- Two stale tests surfaced only under the FULL `test:ui:hitl` grep, not the focused readable-row filter — worth running the full HITL suite before claiming green.
+- `bun run validate` does not run Playwright; e2e gates are separate.
+
+---
+## Blocker Ledger
+
+BLOCKER US-005 | gate=`bun run check:bundled` | cause=`bundled-defaults.generated.ts` stale — generated `ak-implement` entry drifted from shipped source (fails identically on clean base; proven via stash+re-run) | action=regenerated generated file, committed alone as `chore(unblock):` b5390954 | 2026-09-17
+BLOCKER US-005 | gate=`bun run test` (bundled-defaults.test.ts) | cause=regen unmasked stale test expectations: `ak-implement` source declares `model: swe-2-max` (commit 0f802c34) and no `effort`; test still expected `swe-2` + effort. Fails on clean base post-regen | action=aligned assertions to shipped source (`swe-2-max`, `effort` undefined), committed alone as `chore(unblock):` 7bf21fcf | 2026-09-17
+RESOLVED US-005 | gate=viewport-sweep no-overflow assertion | cause=Legacy TopNav anchors produced 300px page overflow at 390×844 | action=final Codex review restored the page-level assertion and bounded TopNav with `max-w-full overflow-x-auto`; fresh visual spec passes 6/6 | 2026-09-17
+BLOCKER US-005 | gate=manual accessibility pairings (Windows+NVDA / macOS+VoiceOver) | cause=environment cannot produce them: no Parallels/Windows VM on host; macOS TCC denies assistive access (osascript + AX APIs blocked) | action=recorded as blocker in reports/visual-acceptance.md §10 per AC; Chromium AX-tree evidence (role/name/expanded via CDP) attached as interim proof. Needs a human AT session for final sign-off | 2026-09-17

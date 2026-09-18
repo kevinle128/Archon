@@ -1,105 +1,139 @@
 ---
-title: 'Phase 1: Shared tool-row presentation'
+title: 'Phase 1: Shared presentation and history projection'
 status: todo
 depends_on: []
 ---
 
-# Phase 1: Shared tool-row presentation
+# Phase 1: Shared presentation and history projection
 
 ## Objective
 
-Create the pure row presentation contract and integrate it at the single shared history projection point.
-This phase must preserve stored data and existing caller contracts while exposing the complete row model that both renderers need.
+Create the pure Story 1.1 row model and attach it at the shared history seam. Preserve current stored data, tool identity, full-output fields, caller return type, and non-tool ordering while adding exit-code facts and the required adjacent-interruption fold.
 
-## Requirements
+## Files
 
-- [ ] Resolve the nine tool families with exact normalized aliases before bounded structural checks.
-- [ ] Never use substring matching, because `search_replace` is an edit and not a search.
-- [ ] Keep the provider-sent tool name for the chip only when it is one token and at most 24 characters.
-- [ ] Produce a one-line headline, path or text elision kind, status glyph and label, and ordered badge data.
-- [ ] Strip only the fixed Codex shell wrapper for the headline and preserve the stored name.
-- [ ] Cap generic field scanning, generic scalar count, scalar length, headline source length, and count-badge extraction with named constants.
-- [ ] Catch unexpected presentation failures at the public boundary and return a safe generic row.
-- [ ] Treat presenter input as valid JSON values from schema-parsed tool rows; keep corrupt persisted-row handling in the existing API error path.
-- [ ] Preserve exit code instead of discarding it after outcome derivation.
-- [ ] Fold only an immediately following status row whose state is exactly `interrupted` into the preceding tool call.
-- [ ] Keep `buildAgentHistory()` returning `AgentHistoryItem[]` for Story 1.1.
-- [ ] Do not add the later todo aggregate, body union, diff, Raw, or occurrence contracts.
+| Path                                                                                  | Action                  | Purpose                                                                                      |
+| ------------------------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------- |
+| `packages/web/src/lib/tool-presentation.test.ts`                                      | Create first            | Resolver, headline, row-state, badge, and bounds tests                                       |
+| `packages/web/src/lib/tool-presentation.ts`                                           | Create after red tests  | React-free row presentation policy                                                           |
+| `packages/web/src/lib/agent-history.test.ts`                                          | Modify first            | Exit-code propagation, presentation integration, interruption fold, ordering                 |
+| `packages/web/src/lib/agent-history.ts`                                               | Modify after red tests  | Shared projection integration                                                                |
+| `packages/web/src/components/workflows/NodeTranscriptPane.tsx`                        | Modify after projection | Pass its existing per-render clock snapshot                                                  |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`                 | Modify after projection | Pass its existing per-render clock snapshot                                                  |
+| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` | Modify after projection | Pass its existing per-render clock snapshot                                                  |
+| `e2e/ui/workflow-run-hitl.spec.ts`                                                    | Modify first            | Replace two obsolete visible-output cases with desired Console/Legacy row behavior           |
+| `e2e/ui/workflow-run-hitl-room.spec.ts`                                               | Modify first            | Replace `[V:hitl.agent-history]` obsolete assertions with the desired detailed-room behavior |
 
-## File inventory
+Read `pair-tool-transcript.ts` and its tests, but do not modify them unless a new failing contract test proves that pairing loses required data.
 
-| Path                                             | Action                 | Purpose                                                                           |
-| ------------------------------------------------ | ---------------------- | --------------------------------------------------------------------------------- |
-| `packages/web/src/lib/tool-presentation.test.ts` | Create first           | Pure presenter and state-policy tests.                                            |
-| `packages/web/src/lib/tool-presentation.ts`      | Create after red tests | Row-only presentation policy.                                                     |
-| `packages/web/src/lib/agent-history.test.ts`     | Modify first           | Exit-code, presentation integration, and interruption-fold tests.                 |
-| `packages/web/src/lib/agent-history.ts`          | Modify after red tests | Shared integration owner.                                                         |
-| `e2e/ui/workflow-run-hitl.spec.ts`               | Modify first           | Replace the old visible-output contract with a red collapsed-row acceptance test. |
-| `e2e/ui/workflow-run-hitl-room.spec.ts`          | Modify first           | Add the same red acceptance contract through the detailed room workflow.          |
+## Row model
 
-Read `packages/web/src/lib/pair-tool-transcript.ts`, but do not modify it unless a failing contract test proves that the current pairing lost required data.
+Define fully typed, render-neutral types in `tool-presentation.ts`:
 
-## Tests before implementation
+- `ToolFamily`: `shell | file | search | glob | code | todo | task | web | generic`.
+- Keep canonical `ToolPresentationInput` structural and exact: `name`, `input`, and `output`; it must not import React or depend on `AgentHistoryItem`.
+- Implement the Story 1.1 row subset of canonical `ToolPresentation`: family, chip label, headline, `headlineKind`, and content-derived badge facts. Later stories extend it with bodies rather than adding provider decisions to renderers.
+- `ToolRowFacts`: already-derived outcome, exit code, duration, and output state.
+- `ToolRowBadge`: stable `kind`, human text, and semantic tone. Required kinds for this story are `state` (visible `running`/`interrupted` facts), `duration`, `exit`, `count`, `language`, `operation`, `output-state`, and `placeholder`; render order and drop priority are data, not renderer guesses.
+- `ToolRowPresentation`: the content presentation plus glyph, status label, initial-open policy, and final ordered typed badges.
+- Export canonical `toolPresentation(input)` plus `toolRowPresentation(input, facts)`, which composes the content with runtime facts. This second concrete caller is needed by shared history and by local full-output refresh; neither renderer rebuilds policy.
+- Catch at the public content-presentation boundary and return a safe generic family/label/headline if content presentation unexpectedly fails. Row composition must still preserve the already-derived outcome glyph and operational facts.
+- Reuse the shared `lib/format.ts` duration formatter so Legacy and Console stop formatting this badge through separate helpers.
 
-Add failing tests before production code.
+Final badge order is deterministic: visible running/interrupted state; content fact (language/count/operation); exit code; non-full output state; duration last. Apply the canonical state rules before generic output-state composition: a running call says `running · <elapsed>` and suppresses its not-yet-produced `missing` state; interrupted says `interrupted`; unknown says `output unknown`. Those three state rules replace inferred missing/unknown markers; settled succeeded/failed calls retain their recorded `truncated`, `output missing`, or `output unknown` marker. If no fact remains, render one `—` placeholder so badge alignment does not shift. Duration is last visually and the only first-drop fact; the body bar repeats real facts in the same order after its family word but does not repeat the placeholder.
 
-| Scenario                                                                                     | Test level             | Expected result                                                                                                         |
-| -------------------------------------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Exact alias table for all nine families                                                      | Unit table             | Each alias selects the documented family.                                                                               |
-| Representative Claude and OMP rows in the family table                                       | Unit table             | Both provider shapes reach the same row contract.                                                                       |
-| `search_replace` alias collision                                                             | Unit                   | Resolves to file and never search.                                                                                      |
-| Claude and OMP glob shapes                                                                   | Unit table             | Claude `{ pattern, path }` headlines the pattern with path as scope; OMP `{ path }` headlines the path with null scope. |
-| Chip boundary                                                                                | Unit table             | 24-character one-token names pass unchanged; whitespace, line breaks, and 25 characters use the family.                 |
-| MCP name                                                                                     | Unit                   | Resolves to generic with the compact `server · tool` label.                                                             |
-| Codex shell name and multi-line command                                                      | Unit                   | Fixed wrapper is absent from the headline and only the first non-empty line appears.                                    |
-| Generic scalar fallback                                                                      | Unit                   | At most three `key: value` facts appear, values stop at 80 characters, and objects and arrays become bounded summaries. |
-| Null, arrays, deep objects, wide objects, long strings, missing fields, and unknown metadata | Unit                   | The presenter terminates, does not throw, and returns a generic row within all caps.                                    |
-| Five outcome states                                                                          | One focused unit table | Glyph, accessible label, and initial open policy match the required table.                                              |
-| Exit code and output-state facts                                                             | Unit                   | Exit and truncation or missing facts reach the ordered badges.                                                          |
-| `output_mode: count` with small and huge JSON outputs                                        | Unit                   | Count badges are bounded and do not scan a full unloaded or oversized output.                                           |
-| Call plus direct interrupted result                                                          | Shared projection      | Existing interrupted behavior remains correct.                                                                          |
-| Call plus immediate interrupted status                                                       | Shared projection      | The tool changes to interrupted and the status row disappears.                                                          |
-| Call plus intervening text or lifecycle row                                                  | Shared projection      | No interruption fold crosses the intervening row.                                                                       |
-| Multiple malformed rows                                                                      | Shared projection      | Each row remains isolated and ordering stays stable.                                                                    |
+For completed tools, keep the current exact matching `tool_completed.data.duration_ms`. For a running tool with no completion, use one exact matching `tool_called` event's `created_at` (parsed with the existing UTC helper) and `max(0, nowMs - startedAt)`; invalid, missing, or ambiguous starts produce no elapsed badge rather than a guess. Hoist each production caller's existing `Date.now()` snapshot before `buildAgentHistory()` and pass it through so Ask cards and tool rows share one render clock. Existing one-second live history refreshes drive updates; add no interval or lifecycle mutation.
 
-## Interface and function checklist
+The current `AgentHistoryItem` tool arm gains `exitCode` and `presentation`. Keep `name`, `input`, `output`, `outcome`, `durationMs`, `canLoadFullOutput`, `outputState`, `messageId`, and identity fields. Remove `context` only in Phase 2 after both renderers stop reading it. `buildAgentHistory()` continues returning `AgentHistoryItem[]`, but `AgentHistoryInput` gains required `nowMs` for deterministic running elapsed time.
 
-- [ ] Define a render-neutral `ToolFamily` union for the nine families.
-- [ ] Define a structural presenter input that accepts the stored name, input, output, outcome, exit code, duration, and output state without importing React.
-- [ ] Define the Story 1.1 row presentation fields: family, label, headline, headline kind, glyph, accessible status label, initial-open policy, and typed badge descriptors.
-- [ ] Give badges a stable kind so CSS can drop duration before critical exit or count facts.
-- [ ] Export one pure presenter entry point and one shared initial-open policy.
-- [ ] Keep family resolution helpers private unless an existing caller requires them.
-- [ ] For glob, use `pattern` as the headline when present and use `path` only as scope; otherwise use `path` as the headline and set scope to null.
-- [ ] Keep grep body-arm selection out of Story 1.1, except for the bounded `output_mode: count` row badge.
-- [ ] Replace `toolContext()` only after its two renderer consumers move in Phase 2.
-- [ ] Keep `input`, `output`, `messageId`, and `canLoadFullOutput` on the history item for later stories and current diagnostics.
-- [ ] Preserve `data-tool-id` inputs and stable tool-card identity.
+## Resolver and headline rules
 
-## Implementation steps
+Resolution order is fixed and exact:
 
-1. Recheck issue #174, related pull requests, and the reported Archon Loop run before editing production files.
-2. Replace the two stale visible-output E2E assertions with collapsed readable-row assertions and record that they fail against the current UI for the intended reason.
-3. Add the presenter red tests and confirm that they fail because the module does not exist.
-4. Add the history projection red tests and confirm the missing exit-code and interruption-fold behavior.
-5. Implement the smallest React-free presenter that satisfies the Story 1.1 row fields.
-6. Read only a fixed key list for known family signals and stop generic enumeration after the named scan cap.
-7. Stop output-derived count work at the declared cap and never fetch full output only to build a collapsed badge.
-8. Integrate the presenter in `toToolItem()` after deriving outcome, exit code, duration, and output state once.
-9. Fold the adjacent interruption during the single ordered `buildAgentHistory()` pass without scanning backward across another item.
-10. Keep direct result metadata as the higher-precedence outcome source.
-11. Keep superseded context helpers until both renderers move in Phase 2.
+1. Recognize the bounded exact `mcp__server__tool` shape and force the contract's generic `server · tool` presentation; its input keys must not reclassify it.
+2. Case-fold the bounded candidate name and remove `_`/`-` for exact alias lookup. Never use substring matching.
+3. For an unmatched bounded name, infer from known input keys in contract priority: code+language; command/cmd/script; file path keys; pattern/query keys; URL keys; before/after pairs.
+4. An absent/empty input with a command-like or overlong multiline name is the Codex name-only shell path.
+5. Otherwise use generic.
 
-## Refactor
+Use the complete contract aliases:
 
-- [ ] Remove duplicate outcome, label, or badge decisions found in shared code.
-- [ ] Keep the alias tables and bounds local to the presenter.
-- [ ] Do not extract a factory, provider normalizer layer, or future body abstraction.
-- [ ] Keep all functions fully typed and avoid `any`.
+| Family | Normalized exact aliases                                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| shell  | `bash`, `shell`, `run`, `command`, `execute`, `runterminalcommand`                                                                          |
+| file   | `edit`, `write`, `create`, `strreplace`, `applypatch`, `notebookedit`, `searchreplace`, `delete`, `read`, `view`, `cat`, `open`, `readfile` |
+| search | `grep`, `search`, `rg`, `searchtool`                                                                                                        |
+| glob   | `glob`, `find`, `ls`, `list`, `listdir`                                                                                                     |
+| code   | `eval`, `runcode`, `execute code`                                                                                                           |
+| todo   | `todo`, `todowrite`, `plan`                                                                                                                 |
+| task   | `task`, `agent`, `subagent`, `dispatch`                                                                                                     |
+| web    | `webfetch`, `websearch`, `fetch`, `browse`                                                                                                  |
 
-## Tests after implementation
+Headline behavior:
 
-Run from `packages/web`.
+- Shell: direct `command`/`cmd`/`script`, or the bounded first non-empty line of the name-only command. Strip only a complete matching `/bin/zsh -lc '…'` or `/bin/bash -lc '…'` wrapper; add `…` when later non-empty lines exist. Never mutate the stored name/input.
+- File: first string in `file_path`, `path`, `target_file`, `file`, `filename`, `notebook_path`; path kind.
+- Search: pattern/query/regex/search, optionally followed by a bounded scope; text kind.
+- Glob: if `pattern` exists, it is the headline and `path` is scope; otherwise `path` is the headline and scope is null. Use path kind in both cases.
+- Code: first non-empty line of `code`, with language as a badge; text kind.
+- Todo: the documented folded-call headline `todo updated`, with a bounded scalar `op: <op>` badge when present; no cross-call fold, phase names, or progress computation.
+- Task: bounded `description`, first task name, or context first line in that order; no subtask normalization/body.
+- Web: `url`/`uri`; path kind so the final URL segment survives.
+- Generic/MCP: up to three scalar top-level `key: value` facts in encounter order. Skip objects/arrays in the collapsed summary. If no scalar exists, use the compact label/tool name. MCP `mcp__server__tool` resolves generic and displays `server · tool`.
+
+The chip displays the exact provider-sent name only when a bounded code-point scan proves it is one whitespace-free token of at most 24 code points. Otherwise use the family label. Do not normalize or CSS-truncate a valid displayed name.
+
+## Explicit bounds
+
+Use named constants and test the limit and limit+1 cases. These values bound work without changing the visible CSS elision contract:
+
+- `MAX_ALIAS_NAME_CODE_UNITS = 128`: names beyond it skip normalization/alias lookup and use structural or name-only resolution.
+- `MAX_CHIP_CODE_POINTS = 24`: stop scanning as soon as point 25 or whitespace is found.
+- `MAX_HEADLINE_SOURCE_CODE_UNITS = 4096`: inspect at most this much before searching for lines or wrappers. An accepted ordinary headline remains complete in the DOM and is visually elided only by CSS; if the required end/line cannot be established inside the cap, use the safe family/tool fallback instead of fabricating a truncated path.
+- `MAX_GENERIC_KEYS_SCANNED = 32`: bounded own enumerable property iteration; stop without materializing all keys.
+- `MAX_GENERIC_FACTS = 3` and `MAX_GENERIC_SCALAR_CODE_POINTS = 80`.
+- `MAX_COUNT_OUTPUT_CODE_UNITS = 4096` and `MAX_COUNT_KEYS_SCANNED = 32`: reject longer strings before optional JSON parsing; inspect only finite nonnegative integer scalar output or shallow exact count fields. Never regex arbitrary provider prose, recurse, or fetch full output.
+
+Known-family keys are direct reads before generic enumeration. Inputs are schema-parsed JSON values, not Proxies or accessor-bearing objects; tests should model that real boundary.
+
+## Outcome, exit code, and interruption
+
+- Extract exit code once with current precedence: result metadata, call metadata, paired card. Reuse it in `deriveOutcome()` and carry it to the presenter.
+- Keep current normal outcome precedence for rows without an adjacent override.
+- Implement the cross-provider interruption fold as a single ordered look-ahead in `buildAgentHistory()`: when a tool card is immediately followed by a status message whose state is exactly `interrupted`, project the tool with outcome `interrupted`, recompute its status presentation, consume that one status, and advance. This final override wins over failed metadata/exit code for display; the exit badge may remain as a fact if recorded.
+- Do not fold on detail text, substring matches, other states, or across any intervening item. Direct-result `interrupted` continues to work without an adjacent status row.
+
+## Tests before production code
+
+Add these failing tests first:
+
+| Area                 | Required cases                                                                                                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Alias/classification | Every alias; case/underscore/hyphen normalization; `search_replace` collision; unknown; MCP label; name over normalization bound                                                          |
+| Provider shapes      | Claude and OMP glob inversion; Codex absent input and complete wrapper; incomplete wrapper unchanged; web URL; code+language; todo op                                                     |
+| Chip/headline        | 24 vs 25 code points, Unicode, whitespace/newline, first non-empty command/code line, long/multiline input, all family fallbacks; rejected names do not leak into chip accessibility text |
+| Generic safety       | null, arrays, object-only input, three scalar facts, fourth fact omitted, 32/33 keys, deep object, huge string; no brace/bracket marker in headline                                       |
+| Outcomes             | One table for succeeded/failed/running/interrupted/unknown glyph, label, initial-open state, and documented state badge/placeholder (`running`, `interrupted`, `output unknown`, or `—`)  |
+| Badges               | Ordered state/content/exit/output-state/duration; running suppresses premature missing; output-state wording and `—` placeholder preserved; bounded count; unsupported count omitted      |
+| Projection           | Exit precedence; completed duration; deterministic running elapsed from exact `tool_called`; missing/ambiguous/invalid start; direct/adjacent interruption; stable order and IDs          |
+
+Change all three obsolete E2E cases before implementation. Their new assertions must target `details[data-tool-id] > summary`, assert the success row is closed, verify chip/headline text, and assert Input/Output/payload output are not visible. Keep uppercase `HITL` in titles so CI still selects them. Record the expected red result against the old card UI.
+
+## Implementation order
+
+1. Run the ownership/worktree preflight from `plan.md`.
+2. Rewrite the three stale E2E cases and confirm they fail for the intended old-UI reason.
+3. Add and run presenter red tests.
+4. Add and run history projection red tests.
+5. Implement types, bounds, exact aliases, direct-key headline rules, generic fallback, and row-state/badge composition.
+6. Factor exit-code derivation so outcome and presentation consume the same value.
+7. Add presentation in `toToolItem()`, derive deterministic running elapsed, and implement exact adjacent look-ahead folding.
+8. Hoist/pass the existing per-render `nowMs` in all three callers without adding a timer.
+9. Refactor only duplication introduced or superseded in shared code; retain `context` until Phase 2.
+
+## Verification
+
+Run from `packages/web`:
 
 ```bash
 bun test src/lib/tool-presentation.test.ts
@@ -107,40 +141,22 @@ bun test src/lib/agent-history.test.ts src/lib/pair-tool-transcript.test.ts
 bun run type-check
 ```
 
-From `e2e`, run the two new acceptance cases and confirm that they remain red until Phase 2.
+Run from `e2e` and expect only the three outside-in cases to remain red until Phase 2:
 
 ```bash
-npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts ui/workflow-run-hitl-room.spec.ts --grep "readable tool row"
+npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts ui/workflow-run-hitl-room.spec.ts --grep "HITL.*readable tool row"
 ```
 
-## Regression gate
+## Exit criteria
 
-- [ ] All new presenter tests pass.
-- [ ] All shared history and call/result pairing tests pass.
-- [ ] Existing text projection, event duration, output-state, and direct interrupted-result behavior stays green.
-- [ ] TypeScript reports no widened or unsafe type.
-- [ ] Both outside-in E2E cases fail only because the current cards do not yet implement the readable collapsed row.
+- [ ] Pure presentation and all boundary tests pass with no `any` and no React import.
+- [ ] Exit code reaches the history item and renderer-ready presentation.
+- [ ] Adjacent interrupted status overrides and disappears; every nonmatching status remains.
+- [ ] No presenter path performs unbounded normalization, key enumeration, line search, recursion, or output parsing.
+- [ ] `buildAgentHistory()` and all existing consumers still type-check with its array return.
+- [ ] No later-story body, Raw, diff, todo state, task normalization, or occurrence abstraction is added.
+- [ ] Exactly three rewritten HITL cases are red only because renderers have not moved yet.
 
-## Dependencies
+## Rollback
 
-This phase depends only on current stored transcript and workflow event contracts.
-Phase 2 consumes the new tool-row presentation on `AgentHistoryItem`.
-Phase 3 relies on the stable row identity and state policy from this phase.
-
-## Risks and rollback
-
-- A broad resolver can misclassify stored tools, so exact aliases must win and generic must remain safe.
-- A scan bound can hide a useful late field, so known headline keys must use fixed direct lookup before bounded generic enumeration.
-- Count extraction can traverse a large output, so it needs a separate cap and must not load full output for a summary badge.
-- The interruption fold can consume a real lifecycle event, so it must match only the exact adjacent `interrupted` state.
-- Rollback is a direct revert of the two new files and the two shared-history edits because persistence is unchanged.
-
-## Success criteria
-
-- [ ] The presenter is pure, React-free, deterministic, and safe for schema-valid unusual JSON input.
-- [ ] The presenter handles all schema-valid unusual JSON values and does not claim to repair corrupt persisted rows.
-- [ ] The five outcome states pass one table-driven test.
-- [ ] Exit code and all current output-state facts reach the row model.
-- [ ] Immediate interruption folding works without changing other lifecycle rows.
-- [ ] No later-story body, Raw, todo, diff, task, or occurrence behavior exists.
-- [ ] The outside-in E2E acceptance tests are red for the intended pre-implementation reason.
+Revert the new presenter, shared-history additions, and the three E2E expectation edits together. Persistence and pairing are unchanged, so there is no data rollback.

@@ -2,7 +2,7 @@
  * Inspect-only node transcript room: render projected agent history for the
  * selected execution. Cursor paging and Ask placement stay in NodeTranscriptPane.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
@@ -10,8 +10,15 @@ import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
-import { formatDurationMs } from '@/lib/format';
 import { formatToolIo } from '@/lib/pair-tool-transcript';
+import {
+  toolRowPresentation,
+  type ToolFamily,
+  type ToolOutcome,
+  type ToolRowBadge,
+  type ToolRowBadgeTone,
+  type ToolRowPresentation,
+} from '@/lib/tool-presentation';
 import { cn } from '@/lib/utils';
 
 import type { LogRowSelection } from './build-log-rows';
@@ -183,10 +190,125 @@ function LifecycleHistory({
   );
 }
 
-function toolOutcomeLabel(item: Extract<AgentHistoryItem, { kind: 'tool' }>): string {
-  if (item.outcome === 'running') return 'pending';
-  if (item.outcome === 'unknown') return 'missing-call';
-  return item.outcome;
+const CHIP_TONE: Record<ToolFamily, { className?: string; style?: React.CSSProperties }> = {
+  shell: {
+    className: 'text-node-bash',
+    style: { borderColor: 'color-mix(in oklch, var(--node-bash) 40%, transparent)' },
+  },
+  file: {
+    className: 'text-node-command',
+    style: { borderColor: 'color-mix(in oklch, var(--node-command) 40%, transparent)' },
+  },
+  search: {
+    style: {
+      color: 'color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))',
+      borderColor: 'color-mix(in oklch, var(--node-prompt) 45%, transparent)',
+    },
+  },
+  glob: {
+    style: {
+      color: 'color-mix(in oklch, var(--node-prompt) 70%, var(--text-primary))',
+      borderColor: 'color-mix(in oklch, var(--node-prompt) 45%, transparent)',
+    },
+  },
+  code: {
+    className: 'text-node-bash',
+    style: { borderColor: 'color-mix(in oklch, var(--node-bash) 40%, transparent)' },
+  },
+  todo: {
+    className: 'text-node-approval',
+    style: { borderColor: 'color-mix(in oklch, var(--node-approval) 40%, transparent)' },
+  },
+  task: {
+    className: 'text-node-approval',
+    style: { borderColor: 'color-mix(in oklch, var(--node-approval) 40%, transparent)' },
+  },
+  web: {
+    className: 'text-node-command',
+    style: { borderColor: 'color-mix(in oklch, var(--node-command) 40%, transparent)' },
+  },
+  generic: { className: 'text-text-secondary' },
+};
+
+const GLYPH_TONE: Record<ToolOutcome, string> = {
+  succeeded: 'text-success',
+  failed: 'text-error',
+  running: 'text-accent-bright',
+  interrupted: 'text-warning',
+  unknown: 'text-text-secondary',
+};
+
+const BADGE_TONE: Record<ToolRowBadgeTone, { className?: string; style?: React.CSSProperties }> = {
+  neutral: { className: 'text-text-secondary' },
+  warning: { className: 'text-warning' },
+  running: { className: 'text-accent-bright' },
+  muted: { className: 'text-text-tertiary' },
+  danger: {
+    style: { color: 'color-mix(in oklch, var(--error) 75%, var(--text-primary))' },
+  },
+};
+
+/**
+ * Splits a `path` headline into a shrinkable head and the fixed final segment.
+ * `/` and `\` are the only separators; a trailing separator stays with the
+ * tail. No usable separator/segment yields null — the caller renders one tail.
+ */
+function splitHeadline(headline: string): { head: string; tail: string } | null {
+  for (let index = headline.length - 1; index > 0; index--) {
+    const char = headline[index];
+    if (char !== '/' && char !== '\\') continue;
+    const next = headline[index + 1];
+    if (next !== undefined && next !== '/' && next !== '\\') {
+      return { head: headline.slice(0, index + 1), tail: headline.slice(index + 1) };
+    }
+  }
+  return null;
+}
+
+function ToolHeadline({ presentation }: { presentation: ToolRowPresentation }): React.ReactElement {
+  const split = presentation.headlineKind === 'path' ? splitHeadline(presentation.headline) : null;
+  if (split === null) {
+    return (
+      <span
+        className={cn(
+          'min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap',
+          presentation.family === 'todo' ? 'text-text-secondary' : 'text-text-primary'
+        )}
+      >
+        {presentation.headline}
+      </span>
+    );
+  }
+  return (
+    <span className="flex min-w-0 flex-1 items-baseline overflow-hidden whitespace-nowrap">
+      <span className="min-w-0 flex-[0_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-text-secondary">
+        {split.head}
+      </span>
+      <span className="max-w-full flex-none overflow-hidden text-ellipsis whitespace-nowrap text-text-primary">
+        {split.tail}
+      </span>
+    </span>
+  );
+}
+
+function ToolBadge({ badge }: { badge: ToolRowBadge }): React.ReactElement {
+  const tone = BADGE_TONE[badge.tone];
+  // State badges duplicate the hidden status word, and the placeholder only
+  // holds badge alignment; both stay decorative for assistive technology.
+  const decorative = badge.kind === 'state' || badge.kind === 'placeholder';
+  const shrinkable = badge.kind === 'duration';
+  return (
+    <span
+      aria-hidden={decorative ? true : undefined}
+      className={cn(
+        shrinkable ? 'min-w-0 flex-[0_1_auto] overflow-hidden text-ellipsis' : 'flex-none',
+        tone.className
+      )}
+      style={tone.style}
+    >
+      {badge.text}
+    </span>
+  );
 }
 
 function ToolHistory({
@@ -200,11 +322,31 @@ function ToolHistory({
   nodeId: string;
   loadMessage: typeof getWorkflowNodeMessage;
 }): React.ReactElement {
+  const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
+  const [touched, setTouched] = useState<boolean>(false);
   const [fullOutput, setFullOutput] = useState<unknown>(undefined);
+  const [hasFullOutput, setHasFullOutput] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const displayedOutput = fullOutput === undefined ? item.output : fullOutput;
-  const displayedOutputState = fullOutput === undefined ? item.outputState : 'full';
+
+  // Rebuild from the latest polled item facts after a full-output fetch. Storing
+  // a presentation snapshot here would freeze outcome/exit/duration updates.
+  const presentation = hasFullOutput
+    ? toolRowPresentation(
+        { name: item.name, input: item.input, output: fullOutput },
+        {
+          outcome: item.outcome,
+          exitCode: item.exitCode,
+          durationMs: item.durationMs,
+          outputState: 'full',
+        }
+      )
+    : item.presentation;
+
+  // An untouched row that turns failed opens once; nothing ever auto-closes.
+  useEffect(() => {
+    if (!open && !touched && presentation.initialOpen) setOpen(true);
+  }, [open, touched, presentation.initialOpen]);
 
   const loadFull = (): void => {
     setLoading(true);
@@ -213,6 +355,7 @@ function ToolHistory({
       .then((message): void => {
         const output = message.kind === 'tool' ? message.payload.output : undefined;
         setFullOutput(output);
+        setHasFullOutput(true);
         setLoading(false);
       })
       .catch((error: unknown): void => {
@@ -221,72 +364,114 @@ function ToolHistory({
       });
   };
 
+  const onToggle = (event: React.SyntheticEvent<HTMLDetailsElement>): void => {
+    // Nested Input/Output disclosures bubble toggle events; only the outer
+    // row's own toggle counts.
+    if (event.target !== event.currentTarget) return;
+    // React's controlled `open` write echoes back as a toggle event; a genuine
+    // user activation flips the DOM state away from the rendered state first.
+    if (event.currentTarget.open !== open) setTouched(true);
+    setOpen(event.currentTarget.open);
+  };
+
+  const chip = CHIP_TONE[presentation.family];
+  const chipTitle =
+    presentation.label === presentation.family
+      ? presentation.family
+      : `${presentation.family} · ${presentation.label}`;
+  const facts = presentation.badges.filter(badge => badge.kind !== 'placeholder');
+
   return (
-    <div
-      data-tool-id={item.toolUseId}
-      className="ptool rounded-[var(--radius)] bg-surface-inset px-2.5 py-2"
-      style={{ border: 'var(--rv-tool-card-border)', overflowWrap: 'anywhere' }}
-    >
-      <div className="flex flex-wrap items-baseline gap-2">
-        <span className="text-[11.5px] font-bold text-accent-bright">{item.name}</span>
-        <span className="text-[11px] text-text-secondary">{toolOutcomeLabel(item)}</span>
-        {displayedOutputState === 'truncated' ? (
-          <span className="text-[11px] text-status-warning">truncated</span>
-        ) : displayedOutputState === 'missing' ? (
-          <span className="text-[11px] text-text-muted">output missing</span>
-        ) : displayedOutputState === 'unknown' ? (
-          <span className="text-[11px] text-text-muted">output unknown</span>
-        ) : null}
-        {item.durationMs !== null ? (
-          <span className="text-[11px] text-text-secondary">
-            {formatDurationMs(item.durationMs)}
-          </span>
-        ) : null}
-      </div>
-      {item.context.map(entry => (
-        <div key={entry.label} className="mt-0.5 text-[11px] text-text-secondary">
-          {entry.label}: {entry.value}
-        </div>
-      ))}
-      <details open className="mt-1.5">
-        <summary className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
-          Input
-        </summary>
-        <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-          {formatToolIo(item.input)}
-        </pre>
-      </details>
-      <details open className="mt-1.5">
-        <summary className="mb-0.5 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
-          Output
-        </summary>
-        <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
-          {formatToolIo(displayedOutput)}
-        </pre>
-      </details>
-      {item.canLoadFullOutput ? (
-        <button
-          type="button"
-          className="mt-1.5 text-xs text-primary hover:text-accent-bright"
-          disabled={loading}
-          onClick={loadFull}
+    <details data-tool-id={item.toolUseId} open={open} onToggle={onToggle}>
+      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden rounded-[6px] px-1.5 py-1 font-mono text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
+        <span
+          aria-hidden="true"
+          className={cn(
+            'w-[9px] flex-none text-center text-[10px] leading-none text-text-tertiary transition-transform duration-[120ms] motion-reduce:transition-none',
+            open && 'rotate-90'
+          )}
         >
-          View full output
-        </button>
-      ) : null}
-      {loadError !== null ? (
-        <div className="mt-1.5 text-[11px] text-error">
-          <span>{loadError}</span>
+          ▶
+        </span>{' '}
+        <span className="sr-only">{presentation.statusLabel}</span>{' '}
+        <span
+          aria-hidden="true"
+          className={cn(
+            'w-[12px] flex-none text-center text-[12px] font-bold leading-none',
+            GLYPH_TONE[presentation.statusLabel]
+          )}
+        >
+          {presentation.glyph}
+        </span>{' '}
+        <span
+          className={cn(
+            'max-w-[24ch] flex-none overflow-hidden text-ellipsis whitespace-nowrap rounded-[4px] border border-border bg-surface-elevated px-[7px] py-px text-[11px]',
+            chip.className
+          )}
+          style={chip.style}
+          title={chipTitle}
+          aria-label={chipTitle}
+        >
+          {presentation.label}
+        </span>{' '}
+        <ToolHeadline presentation={presentation} />{' '}
+        <span className="flex min-w-0 items-baseline whitespace-nowrap text-[11px]">
+          {presentation.badges.map((badge, index) => (
+            <span key={`${badge.kind}-${index}`} className="contents">
+              {index > 0 ? (
+                <span aria-hidden="true" className="flex-none text-text-tertiary">
+                  ·
+                </span>
+              ) : null}
+              <ToolBadge badge={badge} />
+            </span>
+          ))}
+        </span>
+      </summary>
+      <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
+        <div className="mb-1.5 flex items-baseline gap-2 font-mono text-[10.5px] text-text-secondary">
+          {[presentation.family, ...facts.map(badge => badge.text)].join(' · ')}
+        </div>
+        <details className="mt-1">
+          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright">
+            Input
+          </summary>
+          <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
+            {formatToolIo(item.input)}
+          </pre>
+        </details>
+        <details className="mt-1">
+          <summary className="flex min-h-[24px] w-fit cursor-pointer items-center rounded-[4px] px-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-text-secondary hover:text-text-primary focus-visible:outline-2 focus-visible:outline-accent-bright">
+            Output
+          </summary>
+          <pre className="m-0 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] text-text-secondary">
+            {formatToolIo(hasFullOutput ? fullOutput : item.output)}
+          </pre>
+        </details>
+        {item.canLoadFullOutput ? (
           <button
             type="button"
-            className="ml-2 text-xs text-primary hover:text-accent-bright"
+            className="mt-1.5 text-xs text-primary hover:text-accent-bright"
+            disabled={loading}
             onClick={loadFull}
           >
-            Retry
+            View full output
           </button>
-        </div>
-      ) : null}
-    </div>
+        ) : null}
+        {loadError !== null ? (
+          <div className="mt-1.5 text-[11px] text-error">
+            <span>{loadError}</span>
+            <button
+              type="button"
+              className="ml-2 text-xs text-primary hover:text-accent-bright"
+              onClick={loadFull}
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -313,21 +498,28 @@ export function NodeRoom({
     body = (
       <div className="flex min-h-0 flex-1 flex-col">
         <RoomIncompleteNotice error={error} onRetry={onRetry} />
-        {renderAtEnd}
+        {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
+          <div className="mt-1.5">{renderAtEnd}</div>
+        )}
       </div>
     );
   } else if (items.length === 0) {
     body = renderAtEnd ?? <RoomPlaceholder>Node hasn't produced output</RoomPlaceholder>;
   } else {
     body = (
-      <div className="flex min-h-0 flex-1 flex-col gap-3 p-3" style={{ overflowWrap: 'anywhere' }}>
-        {unknownScope ? <p className="text-xs text-warning">{UNKNOWN_SCOPE_NOTICE}</p> : null}
+      <div
+        className="flex min-h-0 flex-1 flex-col px-3 py-2.5"
+        style={{ overflowWrap: 'anywhere' }}
+      >
+        {unknownScope ? (
+          <p className="mb-1.5 text-xs text-warning">{UNKNOWN_SCOPE_NOTICE}</p>
+        ) : null}
         {items.map(item => {
           if (item.kind === 'assistant') {
             return (
-              <div key={item.id}>
+              <div key={item.id} className="my-1.5">
                 <AssistantHistory item={item} />
-                {renderAfterItem?.(item)}
+                {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
               </div>
             );
           }
@@ -335,19 +527,21 @@ export function NodeRoom({
             return (
               <div key={item.id}>
                 <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
-                {renderAfterItem?.(item)}
+                {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
               </div>
             );
           }
           return (
-            <div key={item.id}>
+            <div key={item.id} className="my-1.5">
               <LifecycleHistory item={item} />
-              {renderAfterItem?.(item)}
+              {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
             </div>
           );
         })}
         {error !== null ? <RoomIncompleteNotice error={error} onRetry={onRetry} /> : null}
-        {renderAtEnd}
+        {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
+          <div className="mt-1.5">{renderAtEnd}</div>
+        )}
       </div>
     );
   }

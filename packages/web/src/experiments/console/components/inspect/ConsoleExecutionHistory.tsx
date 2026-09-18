@@ -201,10 +201,12 @@ export function ConsoleExecutionHistory({
   }, [isLive, ownsHistory, resolvedScopeKey, retryNonce, row.nodeId, run.id, suspended]);
 
   const visibleRows = ownsHistory ? selectNodeRoomMessages(pageState.rows, row.selection) : [];
+  const nowMs = Date.now();
   const items: AgentHistoryItem[] = buildAgentHistory({
     rows: visibleRows,
     events,
     nodeId: row.nodeId,
+    nowMs,
   });
   const approvalNodeId = readApprovalContext(approval)?.nodeId ?? null;
   const assignment = interactionsForExecution(
@@ -214,7 +216,6 @@ export function ConsoleExecutionHistory({
     approvalNodeId
   );
   const nodeState = nodeStates.find(state => state.nodeId === row.nodeId);
-  const nowMs = Date.now();
 
   const renderAskCard = (interaction: PendingInteraction): ReactElement => {
     const questions = parseAskEnvelope(interaction.envelope);

@@ -1,150 +1,160 @@
 ---
-title: 'Phase 3: End-to-end visual verification'
+title: 'Phase 3: End-to-end and visual verification'
 status: todo
 depends_on: [phase-01, phase-02]
 ---
 
-# Phase 3: End-to-end visual verification
+# Phase 3: End-to-end and visual verification
 
 ## Objective
 
-Prove the issue through the closest end-user workflow and compare both product surfaces with the final Agent Node Room mockups.
-This phase must validate behavior, responsive geometry, visual fidelity, accessibility, and repository quality without extending the fake provider for unit-test-only states.
+Prove Story 1.1 through real Legacy and Console navigation, measure the canonical 460 px panel behavior, compare only the row slice owned by this story with final design artifacts, close the native-disclosure accessibility risk, and run repository gates.
 
-## Requirements
+## Files
 
-- [ ] Use the existing fake-provider HITL workflow that already renders the same successful tool call in both surfaces.
-- [ ] Keep the two updated HITL behavior specs green with one readable collapsed row.
-- [ ] Use component tests for failed, malformed, interrupted, and live-transition states because the fake provider does not emit those variants.
-- [ ] Verify the product row at a 460 px node-panel width.
-- [ ] Compare Legacy and Console against their final mockups and the surface-independent transcript states sheet.
-- [ ] Check row order, height, padding, gap, radius, font size, chip shape, glyph hierarchy, color, focus, elision, badge priority, and chevron motion.
-- [ ] Use Playwright output attachments for captures and do not embed a plan ID in stable test code.
-- [ ] Record the visual verdict and any accepted difference in this plan's report directory.
-- [ ] Run the complete Web and repository gates after focused tests pass.
+| Path                                                                              | Action                       | Purpose                                                                                                                                          |
+| --------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `e2e/ui/workflow-run-hitl-visual.spec.ts`                                         | Modify narrowly              | Replace the `.ptool`/hidden-output readiness locator with a visible direct-summary locator; retain this older suite's existing capture ownership |
+| `e2e/ui/agent-tool-row-visual.spec.ts`                                            | Create                       | Stable Story 1.1 geometry, focus, keyboard, motion, and screenshots                                                                              |
+| `plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md` | Create during implementation | Human comparison, contrast, viewport, and assistive-technology record                                                                            |
 
-## File inventory
+Do not move or rewrite the older whole-view visual suite and do not write new issue captures into its old plan directory. New screenshots use `testInfo.attach()` or `testInfo.outputPath()`.
 
-| Path                                                                              | Action                  | Purpose                                                                                          |
-| --------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| `e2e/ui/workflow-run-hitl-visual.spec.ts`                                         | Modify                  | Replace its hidden-output false-positive locator and document the Agent Node Room row authority. |
-| `e2e/ui/agent-tool-row-visual.spec.ts`                                            | Create                  | Stable visual, width, focus, keyboard, and motion evidence.                                      |
-| `plans/260917-1011-issue-174-readable-tool-call-row/reports/visual-acceptance.md` | Create during execution | Human mockup comparison and capture references.                                                  |
+## Automated E2E contract
 
-Do not write new issue #174 captures into the old HITL plan capture directory.
-Keep the old whole-view visual spec, but update its tool-row readiness locator so hidden payload text cannot make it pass.
-Do not add fake-provider switches only to manufacture failed or malformed rows.
+Reuse `runHitlWorkflow()`, `openRunDetail()`, `openLegacyRunDetail()`, the existing inspect-node constant, and the stored successful tool fixture. Do not add provider switches solely to manufacture other visual states.
 
-## Tests before implementation
+The new spec title must contain uppercase `HITL` so `.github/workflows/test.yml` includes it. Required checks:
 
-Add the real-user E2E assertion before the renderer reaches green.
+| Scenario                  | Console                                                                                                                       | Legacy                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Real stored tool          | Direct `details[data-tool-id] > summary` is visible, chip/headline readable, row closed, output not visible                   | Same after Logs → node selection                                |
+| Keyboard                  | Focus summary, Enter/Space toggles native state, visible focus remains                                                        | Same                                                            |
+| 460 px room               | Helper measures room width `460 ± 2` before assertions; summary parts share one line and badges do not wrap                   | Same                                                            |
+| Existing responsive sweep | At 1440, 1024, 768, and 390 px viewports, a visible room keeps the summary on one line with no transcript-specific breakpoint | Same                                                            |
+| 200% zoom                 | Existing zoom path keeps the visible row operable, one-line, and free of horizontal page overflow                             | Same                                                            |
+| Focus                     | Computed outline is 2 px opaque accent-bright with +2 px offset                                                               | Computed outline is 2 px opaque accent-bright with −2 px offset |
+| Motion                    | Normal chevron transition is 120 ms; reduced-motion emulation reports no transition                                           | Same                                                            |
+| Rest/hover                | Rest row has no inset card fill/border; hover uses surface-hover                                                              | Same                                                            |
+| Capture                   | Attach desktop context and 460 px row crop with stable names                                                                  | Same                                                            |
 
-| Scenario                                   | Surface | Expected result                                                                                                           |
-| ------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------- |
-| Open the inspect node in the run view      | Console | One visible tool row contains the chip and headline, starts collapsed, and does not visibly show serialized payload text. |
-| Open Logs and select the same inspect node | Legacy  | The same tool call has the same row semantics and starts collapsed.                                                       |
-| Activate the row with keyboard             | Both    | Native disclosure state changes and focus remains visible.                                                                |
-| Set the panel to 460 px                    | Both    | The row remains one line, the headline shrinks, and the badge group does not wrap.                                        |
-| Emulate reduced motion                     | Both    | Chevron transition duration is zero.                                                                                      |
-| Compare product and mockup captures        | Both    | No unexplained high-salience difference remains.                                                                          |
+The room-width helper may drive the existing splitter, but must assert the measured content width before every narrow check; a viewport ratio alone is not proof. Use DOM bounding boxes/tops to prove one-line layout rather than a screenshot-only judgment.
 
-## Visual verification matrix
+## Required-state visual acceptance
 
-| Property            | Expected value or behavior          | Evidence                                |
-| ------------------- | ----------------------------------- | --------------------------------------- |
-| Row font            | 12 px monospace                     | Computed style and capture.             |
-| Chip and badge font | 11 px monospace                     | Computed style and capture.             |
-| Row padding         | 4 px vertical and 6 px horizontal   | Bounding boxes and computed style.      |
-| Row gap             | 8 px                                | Bounding boxes.                         |
-| Row radius          | 6 px                                | Computed style.                         |
-| Row target          | At least 24 px high                 | Bounding box assertion.                 |
-| Chevron             | 9 px column, 120 ms rotation        | Computed style and interaction capture. |
-| Glyph               | 12 px fixed column                  | Bounding box and capture.               |
-| Focus               | 2 px `--accent-bright` outline      | Keyboard capture and computed style.    |
-| Layout              | No wrapping at 460 px               | One-line bounding-box assertion.        |
-| Path                | Middle elision with filename tail   | DOM and capture.                        |
-| Badges              | Right aligned; duration drops first | Width-pressure assertion and capture.   |
-| Motion              | No transition under reduce          | Media emulation and computed style.     |
+The fake-provider fixture proves the successful state end to end. Phase 2 component tests must provide the remaining production-markup evidence; the report links each assertion rather than creating fake E2E provider behavior.
 
-## Interface and helper checklist
+| State       | Initial/open evidence                        | Required visible treatment                                                                      |
+| ----------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| succeeded   | E2E + both component suites; closed          | `✓`, success tone, readable chip/headline                                                       |
+| failed      | Both component suites; open                  | `✕`, failure tone, nonzero exit digits contrast, body rail/family bar, diagnostics still closed |
+| running     | Both component suites; closed                | `◐` plus visible `running` badge; Legacy accent-bright and Console `--running`                  |
+| interrupted | History fold + both component suites; closed | `⚠`, warning tone, visible `interrupted` badge, word `interrupted` in accessible name           |
+| unknown     | Both component suites; closed                | `–`, secondary tone, visible `output unknown`, word `unknown` in accessible name                |
 
-- [ ] Reuse `runHitlWorkflow()`, `openRunDetail()`, and `openLegacyRunDetail()`.
-- [ ] Reuse the existing tool fixture constants.
-- [ ] Use stable role, region, and `data-tool-id` locators instead of visual text alone.
-- [ ] Add a deterministic helper that measures and sets the room to `460 ± 2` px before narrow-layout assertions.
-- [ ] Use `testInfo.outputPath()` or attachments for all new screenshots.
-- [ ] Keep mockup file paths stable and independent of the current plan directory.
-- [ ] Keep visual assertions deterministic and free of network access.
-- [ ] Do not add snapshot approval that can bless a wrong image without human comparison.
+For all five, component assertions must check the exact production class/style/token selection, not only text. The successful E2E capture then validates those shared geometry rules in both real surfaces.
 
-## Implementation steps
+For tones absent from the success fixture (search/glob text and failed exit digits), combine a component assertion of the exact production style value with a browser calculation that resolves the same token/`color-mix` against each surface's rest/hover background. Record the numeric ratios; do not claim a screenshot contains a state it does not.
 
-1. Update the existing whole-view visual spec so it locates the visible row summary instead of a visible outer card that merely contains hidden output text.
-2. Add the stable visual spec with an uppercase `HITL` test title so the current CI grep includes it.
-3. Add and assert a deterministic room-width helper that reaches `460 ± 2` px before row geometry checks.
-4. Check long-path DOM anatomy in the Phase 2 component tests and use Phase 3 only for the real fixture's layout.
-5. Add keyboard focus, reduced motion, and product screenshots to the stable visual spec.
-6. Open and capture the final Console, Legacy, and transcript-state mockups through the existing Playwright local-file precedent.
-7. Compare the product row with the mockups at matching panel width and record each matrix result in `reports/visual-acceptance.md`.
-8. Fix every visible or measurable unexplained mismatch in the owning phase.
-9. Run focused tests again after visual fixes.
-10. Run the full Web package, E2E type check, Web type check, relevant E2E specs, and repository validation.
-11. Update the sprint status only through its owning BMad workflow after every gate passes.
+## Visual measurement matrix
 
-## Refactor
+Record actual values for each surface in `visual-acceptance.md`:
 
-- [ ] Remove obsolete E2E expectations for visible Input and Output JSON.
-- [ ] Consolidate repeated E2E navigation only when an existing helper already owns it.
-- [ ] Keep product assertions separate from human visual comparison notes.
-- [ ] Keep prior HITL captures in their old plan and write new row evidence only through Playwright output attachments.
+| Property                      | Canonical result                                                                                                                |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Row / chip / body-bar fonts   | 12 px mono / 11 px mono / 10.5 px mono                                                                                          |
+| Transcript / summary geometry | 10 px/12 px transcript padding; no adjacent card gap; 4 px/6 px summary padding; 8 px gap; 6 px radius; ≥24 px height           |
+| Columns                       | Chevron 10 px text/9 px fixed column; glyph 12 px text/12 px fixed column                                                       |
+| Rest/hover                    | Room surface with no card border/fill; surface-hover only on hover                                                              |
+| Chip                          | 1 px family border, 1 px/7 px padding, 4 px radius, ≤24ch                                                                       |
+| Expanded body                 | 2 px top/8 px bottom/29 px left margin, 2 px rail, 10 px left padding, family first in bar                                      |
+| Focus                         | 2 px accent-bright; Legacy −2 px offset, Console +2 px                                                                          |
+| Layout at 460 px              | One line; headline shrinks; badges do not wrap; duration is first optional fact hidden                                          |
+| Other required viewports      | Existing 1440/1024/768/390 sweep and 200% zoom remain one-line and usable; no row breakpoint is added                           |
+| Path/URL                      | Shrinkable head and preserved final segment                                                                                     |
+| Text                          | End ellipsis                                                                                                                    |
+| Chevron                       | 90° open, 120 ms; zero transition under reduced motion                                                                          |
+| Contrast                      | Search/glob chip text and nonzero exit digits ≥4.5:1 on both surfaces and applicable rest/hover backgrounds; focus outline ≥3:1 |
 
-## Tests after implementation
+Long-path, width-priority, failed, and multi-badge cases are synthetic component fixtures because the real E2E row does not contain those data. The report must distinguish component evidence from real-fixture evidence.
 
-Run the focused E2E tests from `e2e`.
+## Mockup comparison rules
+
+Open the final mockups using the repository's existing Playwright local-file precedent and compare at the same 460 px panel width. The Console mock is authored at 520 px; override only its panel width in the review page to 460 px, assert the measured width, and leave the artifact file unchanged. Review row order, baseline, spacing, typography, chip/glyph hierarchy, token color, rest/hover/focus, elision, and open-body rail.
+
+Record these as expected, out-of-scope differences rather than mismatches:
+
+- No final Raw button (Story 1.2); temporary Input/Output disclosures are closed.
+- No family-specific terminal/search/path/code/web body (Story 1.3).
+- No inline diff (Story 1.4), folded todo strip (1.5), task cards (1.6), or occurrence navigation (1.7).
+- Count/diff/body richness shown by the complete mockup may exceed the conservative Story 1.1 badges.
+
+Any other high-salience difference owned by Story 1.1 must be fixed or explicitly treated as a blocker; do not bless it as an unexplained screenshot delta.
+
+## Accessibility verification
+
+Automated checks:
+
+- Summary accessible name reads state → family/tool → target → facts without chevron/glyph noise.
+- Enter and Space toggle, Tab follows DOM order, and no arrow-key handler/roving tab index exists.
+- Focus remains on summary through toggle and polling updates.
+- Reduced-motion emulation disables the only row animation.
+
+Manual completion gate required by `EXPERIENCE.md`:
+
+- Test one Windows pairing (for example current Chromium + NVDA) and one macOS pairing (current Safari or Chromium + VoiceOver).
+- Record OS/browser/AT versions, closed/open announcement, whether expanded state is spoken, status/family/target/facts order, Enter/Space behavior, and pass/fail.
+- A failed or unavailable pairing is not silently waived. Record the issue and keep implementation status blocked until the design owner accepts an alternative pairing or the markup is fixed.
+
+## Implementation order
+
+1. Update only the old visual suite's readiness locator to a visible direct summary and remove its dependence on `HITL_TOOL_OUTPUT` for readiness if no other use remains.
+2. Add the uppercase-HITL Story 1.1 visual spec with stable locators and Playwright-output attachments.
+3. Implement and assert the `460 ± 2` room-width helper.
+4. Add geometry, one-line, keyboard/focus, rest/hover, and reduced-motion assertions on both surfaces; retain the existing 1440/1024/768/390 and 200% paths and assert row layout wherever the room is visible.
+5. Capture both product surfaces and canonical mockup row sections at a measured 460 px; apply a test-only width override to the 520 px Console mock and assert it before capture.
+6. Create `visual-acceptance.md`; record automated values, scoped human comparison, expected later-story differences, contrast calculations, and both AT pairings.
+7. Fix any Story 1.1 mismatch in its owning phase and rerun focused tests.
+8. Run package, E2E type, HITL, and repository gates.
+
+## Verification commands
+
+From `e2e`:
 
 ```bash
-npx playwright test -c playwright.config.ts ui/workflow-run-hitl-room.spec.ts --grep "readable tool row"
-npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts --grep "readable tool row"
+npx playwright test -c playwright.config.ts ui/workflow-run-hitl.spec.ts ui/workflow-run-hitl-room.spec.ts --grep "HITL.*readable tool row"
 npx playwright test -c playwright.config.ts ui/workflow-run-hitl-visual.spec.ts --grep "HITL"
-npx playwright test -c playwright.config.ts ui/agent-tool-row-visual.spec.ts
-npm run typecheck
+npx playwright test -c playwright.config.ts ui/agent-tool-row-visual.spec.ts --grep "HITL"
+bun run typecheck
 ```
 
-Run the broader gates from the repository root.
+From repository root:
 
 ```bash
 bun --filter @archon/web test
 bun --filter @archon/web type-check
+bun run --cwd e2e typecheck
 bun run validate
 ```
 
-## Regression gate
+Also run the exact CI selector once from root because Playwright is outside the Bun workspace:
 
-- [ ] Focused shared and component tests from Phases 1 and 2 still pass.
-- [ ] Both E2E surfaces pass in one run against the same stored tool call.
-- [ ] The new visual test title matches the CI `--grep 'HITL'` filter.
-- [ ] Visual evidence covers product and mockup at the 460 px contract.
-- [ ] Web tests and Web type check pass.
-- [ ] `bun run validate` passes with zero warnings.
-- [ ] No unrelated pre-existing worktree file is modified.
+```bash
+bun run --cwd e2e test:ui:hitl
+```
 
-## Dependencies
+## Exit criteria
 
-This phase depends on the shared row model and both completed renderer shells.
-It does not require a provider, backend, schema, or generated-type change.
-The existing fake-provider success case is the end-to-end behavior source, while Phase 1 and Phase 2 tests cover the other deterministic states.
+- [ ] All three behavior cases pass against the same stored call in both surfaces.
+- [ ] The old visual readiness locator cannot pass because payload text merely exists hidden in the DOM.
+- [ ] Actual room width is measured at `460 ± 2` and both summaries remain one line.
+- [ ] The existing four-viewport sweep and 200% zoom keep the row operable and one-line without a transcript breakpoint or page-level horizontal overflow.
+- [ ] Geometry, focus offsets/contrast, rest/hover, path/text elision anatomy, and motion match the final design.
+- [ ] All five status treatments have production-markup evidence; screenshots do not claim to cover states the fixture lacks.
+- [ ] Visual report separates Story 1.1 parity from accepted later-story differences and contains no unexplained owned mismatch.
+- [ ] Windows and macOS native-disclosure announcements pass and are recorded.
+- [ ] Full Web tests/type-check, E2E type-check, CI HITL selector, and `bun run validate` pass with no unrelated diff.
 
-## Risks and rollback
+## Rollback
 
-- Local-file mockup rendering can be blocked by browser security outside Playwright, so the test must use the repository's established Playwright local-file precedent.
-- Font and antialiasing can make pixel snapshots unstable, so geometry and computed-style assertions carry the deterministic gate and screenshots carry human review.
-- A broad E2E locator can match hidden diagnostic text, so visible row assertions must use the row summary and visibility checks.
-- Split-pane drag math can miss the contract width, so every narrow assertion must first confirm the measured `460 ± 2` px room width.
-- Rollback removes the issue-specific visual spec and restores the old E2E expectations without touching production data.
-
-## Success criteria
-
-- [ ] One real stored tool call renders as the required readable row in Legacy and Console.
-- [ ] The 460 px, keyboard, focus, motion, elision, and badge-priority gates pass.
-- [ ] The visual report records no unexplained mismatch against the final mockups.
-- [ ] All focused, package, type, E2E, and repository checks pass.
+The issue-specific visual spec and report can be removed without product/data impact. If product code is rolled back, revert the entire feature and its tests together; do not leave forward-facing E2E tests asserting the obsolete visible-JSON design.

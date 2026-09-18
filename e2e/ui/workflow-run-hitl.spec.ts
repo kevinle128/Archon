@@ -76,7 +76,7 @@ test('[P1] [V:hitl.loop-occurrences] inspect-twice occurrences stay distinct in 
   expect(occurrenceIds.size).toBeGreaterThanOrEqual(2);
 });
 
-test('[P1] [V:hitl.console-tool-output] inspect-file room shows visible tool output matching the mockup card', async ({
+test('[P1] [V:hitl.console-tool-output] HITL Console room collapses the call to a readable tool row', async ({
   page,
   archon,
 }) => {
@@ -86,12 +86,20 @@ test('[P1] [V:hitl.console-tool-output] inspect-file room shows visible tool out
   await expect(room).toBeVisible({
     timeout: T.medium,
   });
-  await expect(room.getByText(HITL_TOOL_OUTPUT).first()).toBeVisible({ timeout: T.medium });
-  await expect(room.locator('.ptool', { hasText: HITL_TOOL_OUTPUT }).first()).toBeVisible();
-  await expect(page.locator('.rounded-full', { hasText: 'Read' })).toHaveCount(0);
+  const rows = room.locator('details[data-tool-id]');
+  await expect(rows).toHaveCount(1);
+  const summary = room.locator('details[data-tool-id] > summary');
+  await expect(summary).toBeVisible({ timeout: T.medium });
+  await expect(rows.first()).toHaveJSProperty('open', false);
+  await expect(summary).toContainText('Read');
+  await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
+  await expect(summary).toContainText('succeeded');
+  await expect(rows.getByText('Input', { exact: true })).toBeHidden();
+  await expect(rows.getByText('Output', { exact: true })).toBeHidden();
+  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
 });
 
-test('[P1] [V:hitl.legacy-tool-output] Legacy inspect-file room also shows the mockup tool card', async ({
+test('[P1] [V:hitl.legacy-tool-output] HITL Legacy room collapses the call to a readable tool row', async ({
   page,
   archon,
 }) => {
@@ -104,9 +112,17 @@ test('[P1] [V:hitl.legacy-tool-output] Legacy inspect-file room also shows the m
     .first()
     .click();
   const room = page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` });
-  await expect(room.getByText(HITL_TOOL_OUTPUT).first()).toBeVisible({ timeout: T.medium });
-  await expect(room.locator('.ptool', { hasText: HITL_TOOL_OUTPUT }).first()).toBeVisible();
-  await expect(page.locator('.rounded-full', { hasText: 'Read' })).toHaveCount(0);
+  const rows = room.locator('details[data-tool-id]');
+  await expect(rows).toHaveCount(1);
+  const summary = room.locator('details[data-tool-id] > summary');
+  await expect(summary).toBeVisible({ timeout: T.medium });
+  await expect(rows.first()).toHaveJSProperty('open', false);
+  await expect(summary).toContainText('Read');
+  await expect(summary).toContainText('HITL_TOOL_INPUT.txt');
+  await expect(summary).toContainText('succeeded');
+  await expect(rows.getByText('Input', { exact: true })).toBeHidden();
+  await expect(rows.getByText('Output', { exact: true })).toBeHidden();
+  await expect(rows.getByText(HITL_TOOL_OUTPUT)).toBeHidden();
 });
 
 test('[P1] [V:hitl.ask-authorization] starter can answer Ask; teammate is forbidden; missing identity is 401', async ({

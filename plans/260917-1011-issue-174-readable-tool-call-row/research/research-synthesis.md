@@ -1,59 +1,42 @@
 # Research synthesis
 
-## Issue and scope
+## Product and design evidence
 
-Issue #174 implements Story 1.1 of Epic 1 and applies to the Legacy and Console agent node rooms together.
-It is a presentation-only change over stored historical data.
-Raw disclosure, family-specific bodies, diffs, todo and task presentation, occurrence navigation, live steering, Chat, and Run Stream cards belong to later stories.
+Issue #174 is Story 1.1 of Epic 1: make each stored tool call scannable as one readable row in Legacy and Console. The story's direct references are CAP-1, NFR1–3, UX-DR1–2, `tool-presentation-contract.md`, and `test-plan.md`; later stories own Raw, family bodies, diff, todo, task, and occurrence behavior.
 
-## Mockup findings
+The canonical row is native `<details>/<summary>` with chevron, glyph, chip, flexible headline, and right facts. Final measurements are 12 px row text, 11 px chip/badge text, 4 px/6 px padding, 8 px gaps, 6 px radius, and at least 24 px height. Verify at 460 px. Path/URL headlines preserve the final segment, text headlines end-elide, and duration drops before critical facts. Focus is a 2 px opaque accent outline (Legacy offset −2 px, Console +2 px); chevron motion is 120 ms and disabled for reduced motion.
 
-The final HTML mockups and their handoff README were read in full for the tool-row states.
-The final `DESIGN.md` and `EXPERIENCE.md` take precedence over stale mockup details.
+The final documents override stale artifact details such as a 22 px target or 520 px as the contract width. The complete mockups also include later-story bodies and Raw controls, so Story 1.1 comparison must not demand those.
 
-The row is a native disclosure with this fixed order: chevron, glyph, family chip, flexible headline, and right badges.
-The final measurements are 12 px row text, 11 px chip and badge text, 4 px by 6 px padding, 8 px gaps, 6 px radius, and at least 24 px height.
-The 460 px panel is the required responsive verification width.
-Path headlines use two spans for middle elision, text headlines end-elide, and duration disappears before critical badges.
-Focus uses a 2 px `--accent-bright` outline, chevron rotation is 120 ms, and reduced motion disables it.
+One contract tension was resolved using the higher-priority Story 1.1 criterion and the mockup itself: generic `{…}` and `[n]` markers belong in the expanded generic body. The collapsed generic example contains scalar `key: value` facts only. A collapsed row must not show presenter-generated object/array syntax or a JSON dump; legitimate shell/code/pattern characters are not stripped.
 
-Stale mockup details were excluded.
-These include the old 22 px target, inline todo checklist, Claude-only interruption assumption, 520 px Console width as a contract, and later-story Raw and body treatments.
+## Code-path evidence
 
-## Repository findings
+- `pair-tool-transcript.ts` pairs calls/results and retains exit code and identity.
+- `agent-history.ts` is the shared projection seam. It currently drops exit code after outcome derivation and emits status rows as lifecycle rows.
+- Persisted `tool_called` events carry the tool ID and `created_at`; all three callers already take a `Date.now()` snapshot later in the same render and live paths refresh every second. Running elapsed time therefore needs deterministic clock plumbing, not a backend field or new timer.
+- The production consumers are Legacy through `NodeTranscriptPane.tsx`, Console selected-room through `ConsoleNodeRoom.tsx`, and Console inline history through `ConsoleExecutionHistory.tsx`.
+- Legacy renders tools in `NodeRoom.tsx`; both Console mounts share `ConsoleAgentHistoryList.tsx`.
+- The current renderers use filled `.ptool` cards and open Input/Output disclosures. Full-output load/error/retry behavior is already present and must survive behind closed diagnostics.
+- Server-side Zod parsing rejects corrupt persisted node-message rows before Web presentation. The presenter still must handle every schema-valid JSON value safely.
+- Console isolation permits approved shared `@/lib` logic but prohibits importing Legacy components. A shared pure presenter and two small shells fit the boundary.
 
-`projectToolTranscript()` already pairs tool call and result rows and preserves input, output, exit code, and message identity.
-`buildAgentHistory()` is the only production caller and feeds exactly three mounted transcript paths.
-It currently discards exit code after outcome derivation and renders every status row as a lifecycle item.
+No provider, workflow, server, route, OpenAPI, generated type, database, schema, migration, dependency, or new token is required.
 
-Legacy owns its tool renderer in `NodeRoom.tsx`.
-Console owns its renderer in `ConsoleAgentHistoryList.tsx`, which is reused by both the selected node room and inline execution history.
-The current renderers both show two always-open JSON blocks.
+## Test and CI evidence
 
-The existing provider, persistence, database, API, generated types, paging, and full-output endpoints already carry all Story 1.1 data.
-No backend or schema change is required.
+Three E2E cases encode the obsolete visible-output behavior: two in `workflow-run-hitl.spec.ts` and `[V:hitl.agent-history]` in `workflow-run-hitl-room.spec.ts`. All three must be rewritten; the draft's “two cases” count was incomplete.
 
-## Chosen design
+`workflow-run-hitl-visual.spec.ts` uses `.ptool` plus descendant output text as readiness, which can pass while that text is hidden. Its locator needs a narrow direct-summary correction. The new Story 1.1 visual test must keep uppercase `HITL` in its title because CI runs `test:ui:hitl` with that grep. Playwright is outside the Bun workspace and is not included by `bun run validate`.
 
-Add one React-free row presenter in `packages/web/src/lib` and attach its result in `buildAgentHistory()`.
-Keep two thin renderer shells so Console does not import Legacy components.
-Use native disclosures and only the small local state required to preserve an operator toggle while allowing an untouched running row to open on failure.
+The real fake-provider fixture supplies a successful call only. Failed, interrupted, unknown, adversarial, and live-transition behavior belongs in deterministic shared/component tests; do not expand provider behavior just for screenshots.
 
-Keep the public presenter bounded and fail safe.
-Use exact alias matching, fixed direct-key lookup, a capped generic scan, bounded badge extraction, maximum scalar counts and lengths, and a generic fallback boundary.
-The presenter receives schema-valid JSON values from parsed tool rows.
-Corrupt stored-row JSON continues to fail through the existing API path before rendering.
+## Current ownership evidence
 
-## Test findings
+GitHub PR #194, `feat(web): render tool calls as readable rows (ANR 1.1)`, exists but is closed and unmerged. Its diff is useful negative evidence (for example, it left raw failed-body content exposed and retained card styling) but must not be cherry-picked wholesale.
 
-`e2e/ui/workflow-run-hitl.spec.ts` and `e2e/ui/workflow-run-hitl-room.spec.ts` are the closest outside-in paths.
-They already create the fake-provider HITL run and open the same tool call in Legacy and Console.
-Their current visible-output expectations become the first red acceptance tests.
-The fake provider emits a successful call only, so deterministic unit and component tests should cover failed, malformed, interrupted, and live-transition cases.
+Issue #174 remains labeled `status:processing`, while the run ID in its latest comment is completed. The alternate active plan/path claimed by the original draft was not present. There is no evidenced current ownership blocker, but implementation must recheck the mutable issue/PR/run/worktree state immediately before editing.
 
-## Process risk
+## Chosen solution
 
-The GitHub issue is marked `status:processing`, and a comment reports an Archon Loop implementation run.
-No matching pull request was found, and local sprint status still says backlog.
-The local plan registry also reports active matching plan `Archon/260917-0323` in `/Users/dale/orca/workspaces/Archon/develop`.
-Implementation must resolve this ownership state before editing to avoid duplicate work.
+Add one bounded React-free row presenter under `packages/web/src/lib`, attach its result and exit code in `buildAgentHistory()`, and fold only an exact immediately adjacent interrupted status. Render native disclosures in the two existing shells. Preserve operator choice with explicit untouched/touched state, retain closed diagnostic disclosures temporarily, and prove real success plus deterministic edge states at the appropriate layers.

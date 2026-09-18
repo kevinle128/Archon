@@ -452,6 +452,59 @@ describe('ConsoleExecutionHistory', () => {
     );
   });
 
+  test('renders the same collapsed tool row contract as the selected room', async () => {
+    renderHistory({
+      loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-t-1',
+            seq: 1,
+            kind: 'tool',
+            payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' } },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+          {
+            id: 'result-t-1',
+            seq: 2,
+            kind: 'tool',
+            payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' }, output: 'chunk' },
+            metadata: { tool_phase: 'result', outcome: 'success' },
+            created_at: CREATED_AT,
+          },
+        ],
+      }),
+    });
+    await flushUntil('tool row', () => host.querySelector('details[data-tool-id="t-1"]') !== null);
+    const rowEl = host.querySelector('details[data-tool-id="t-1"]');
+    if (rowEl === null) throw new Error('tool row missing');
+    const row = rowEl as Element & { open: boolean };
+    expect(row.open).toBe(false);
+    const summaryEl = row.querySelector('summary');
+    if (summaryEl === null) throw new Error('summary missing');
+    const summary = summaryEl as unknown as HTMLElement;
+    expect(summary.parentElement as unknown as Element | null).toBe(row);
+    expect(summary.textContent).toContain('Read');
+    expect(summary.textContent).toContain('a.ts');
+    expect(summary.textContent).toContain('succeeded');
+    // Same Console delta: +2 px focus outline offset.
+    expect(summary.className).toContain('focus-visible:outline-offset-2');
+    expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
+    // Nested diagnostics stay closed and the payload is not shown by default.
+    for (const nested of Array.from(row.querySelectorAll('details'))) {
+      expect((nested as Element & { open: boolean }).open).toBe(false);
+    }
+
+    // Pointer toggle opens the row; diagnostics keep their own closed state.
+    await act(async () => {
+      summary.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(row.open).toBe(true);
+    for (const nested of Array.from(row.querySelectorAll('details'))) {
+      expect((nested as Element & { open: boolean }).open).toBe(false);
+    }
+  });
+
   test('polls only active execution rows in a live run', () => {
     expect(historyModule.shouldPollExecutionHistory(true, 'running')).toBe(true);
     expect(historyModule.shouldPollExecutionHistory(true, 'awaiting')).toBe(true);

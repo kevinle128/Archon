@@ -3,6 +3,9 @@ process.env.NODE_ENV = 'development';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
+import type { AgentHistoryItem } from '@/lib/agent-history';
+
+import type { ConsoleAgentHistoryListProps } from './inspect/ConsoleAgentHistoryList';
 import type { LogRow } from './inspect/build-log-rows';
 import type { Run } from '../primitives/run';
 import type {
@@ -20,6 +23,8 @@ import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');
 const consoleNodeRoom = await import('./ConsoleNodeRoom');
+const consoleHistoryList = await import('./inspect/ConsoleAgentHistoryList');
+const agentHistory = await import('@/lib/agent-history');
 
 const act = react.act;
 const createElement = react.createElement;
@@ -277,9 +282,18 @@ describe('ConsoleNodeRoom', () => {
 
     expect(calls).toEqual([['run-agent', 'review']]);
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
-    expect(host.textContent).toContain('Read');
-    expect(host.textContent).toContain('"path": "a.ts"');
-    expect(host.textContent).toContain('"ok": true');
+    const toolRowEl = host.querySelector('details[data-tool-id="tool-1"]');
+    expect(toolRowEl).not.toBeNull();
+    expect((toolRowEl as Element & { open: boolean }).open).toBe(false);
+    const toolSummary = toolRowEl?.querySelector('summary');
+    expect(toolSummary?.textContent).toContain('Read');
+    expect(toolSummary?.textContent).toContain('a.ts');
+    // Serialized payloads stay recorded inside the row's closed diagnostics.
+    for (const diagnostic of Array.from(toolRowEl?.querySelectorAll('details') ?? [])) {
+      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
+    }
+    expect(toolRowEl?.textContent).toContain('"path": "a.ts"');
+    expect(toolRowEl?.textContent).toContain('"ok": true');
     expect(host.textContent).toContain('iteration_started');
     expect(host.textContent).toContain('iteration_failed');
     expect(host.textContent).toContain('waiting on you');
@@ -998,7 +1012,7 @@ describe('ConsoleNodeRoom', () => {
     expect(host.querySelector('form')).toBeNull();
   });
 
-  test('renders assistant, tool, and lifecycle history with tool ids and expanded details', async () => {
+  test('renders assistant, tool, and lifecycle history with a collapsed tool row', async () => {
     const longCmd = `bun test ${'x'.repeat(120)} src/lib/agent-history.test.ts`;
     await act(async () => {
       renderRoom({
@@ -1039,11 +1053,19 @@ describe('ConsoleNodeRoom', () => {
     await flushUntil('history', () => (host.textContent ?? '').includes('hello-md'));
     expect(host.textContent).toContain('ASSISTANT');
     expect(host.textContent).toContain('hello-md');
-    expect(host.textContent).toContain('Bash');
-    expect(host.textContent).toContain(longCmd);
     expect(host.textContent).toContain('completed');
-    expect(host.querySelector('[data-tool-id="tool-bash"]')).not.toBeNull();
-    expect(host.querySelector('details')?.hasAttribute('open')).toBe(true);
+    const bashRow = host.querySelector('details[data-tool-id="tool-bash"]');
+    expect(bashRow).not.toBeNull();
+    expect((bashRow as Element & { open: boolean }).open).toBe(false);
+    const bashSummary = bashRow?.querySelector('summary');
+    expect(bashSummary?.textContent).toContain('Bash');
+    expect(bashSummary?.textContent).toContain(longCmd);
+    // Nested Input/Output diagnostics exist in the DOM but stay closed.
+    const diagnostics = Array.from(bashRow?.querySelectorAll('details') ?? []);
+    expect(diagnostics).toHaveLength(2);
+    for (const diagnostic of diagnostics) {
+      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
+    }
   });
 
   test('Tool toggle hides only tool cards and System toggle hides only lifecycle rows', async () => {
@@ -1141,5 +1163,660 @@ describe('ConsoleNodeRoom', () => {
       close?.click();
     });
     expect(closed).toBe(1);
+  });
+
+  describe('Console tool disclosure rows', () => {
+    const NOW_MS = new Date(CREATED_AT).getTime() + 30_000;
+
+    function callRow(
+      toolUseId: string,
+      seq: number,
+      name: string,
+      input: unknown,
+      metadata?: Record<string, unknown>
+    ): WorkflowNodeMessage {
+      return {
+        id: `call-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name, id: toolUseId, input },
+        metadata: { tool_phase: 'call', ...metadata },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function resultRow(
+      toolUseId: string,
+      seq: number,
+      name: string,
+      input: unknown,
+      output: unknown,
+      metadata?: Record<string, unknown>
+    ): WorkflowNodeMessage {
+      return {
+        id: `result-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name, id: toolUseId, input, output },
+        metadata: { tool_phase: 'result', ...metadata },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function historyItems(
+      rows: readonly WorkflowNodeMessage[],
+      events: readonly WorkflowEvent[] = []
+    ): AgentHistoryItem[] {
+      return agentHistory.buildAgentHistory({ rows, events, nodeId: 'review', nowMs: NOW_MS });
+    }
+
+    function mountList(
+      items: readonly AgentHistoryItem[],
+      onLoadFullOutput?: (item: Extract<AgentHistoryItem, { kind: 'tool' }>) => Promise<unknown>,
+      extensions: Pick<ConsoleAgentHistoryListProps, 'renderAfterItem' | 'renderAtEnd'> = {}
+    ): void {
+      root.render(
+        createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+          items,
+          showToolCalls: true,
+          showSystem: true,
+          onLoadFullOutput: onLoadFullOutput ?? (async (): Promise<unknown> => undefined),
+          ...extensions,
+        })
+      );
+    }
+
+    function toolRow(toolUseId: string): Element & { open: boolean } {
+      const el = host.querySelector(`details[data-tool-id="${toolUseId}"]`);
+      if (el === null) throw new Error(`row ${toolUseId} missing: ${host.innerHTML}`);
+      return el as Element & { open: boolean };
+    }
+
+    function rowSummary(row: Element): HTMLElement {
+      const summary = row.querySelector('summary');
+      if (summary === null) throw new Error(`summary missing: ${row.innerHTML}`);
+      if (summary.parentElement !== row) {
+        throw new Error(`summary is not a direct child: ${row.innerHTML}`);
+      }
+      return summary as unknown as HTMLElement;
+    }
+
+    function click(target: Element): void {
+      target.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    }
+
+    function rowButton(row: Element, label: string): HTMLButtonElement {
+      const button = Array.from(row.querySelectorAll('button')).find(
+        candidate => candidate.textContent === label
+      );
+      if (button === undefined) throw new Error(`button ${label} missing: ${row.innerHTML}`);
+      return button as unknown as HTMLButtonElement;
+    }
+
+    /** Text a screen reader announces: skips aria-hidden, uses chip aria-label. */
+    function summaryAccessibleName(summary: Element): string {
+      const parts: string[] = [];
+      const walk = (node: unknown): void => {
+        const child = node as { nodeType?: number; textContent?: string | null };
+        if (child.nodeType === 3) {
+          parts.push(child.textContent ?? '');
+          return;
+        }
+        const el = node as Element;
+        if (el.getAttribute === undefined) return;
+        if (el.getAttribute('aria-hidden') === 'true') return;
+        const label = el.getAttribute('aria-label');
+        if (label !== null) {
+          parts.push(label);
+          return;
+        }
+        for (const grandchild of Array.from(el.childNodes)) walk(grandchild);
+      };
+      walk(summary);
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    }
+
+    const READ_ROWS: readonly WorkflowNodeMessage[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', { outcome: 'success' }),
+    ];
+
+    test('mounts one collapsed disclosure row per projected tool call with the shared anatomy', async () => {
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const rows = host.querySelectorAll('details[data-tool-id]');
+      expect(rows).toHaveLength(1);
+      const row = toolRow('t-1');
+      expect(row.open).toBe(false);
+      // The row is transparent at rest — no inset card fill/border/shadow.
+      expect(row.className).not.toContain('ptool');
+      expect(row.className).not.toContain('bg-surface-inset');
+      expect(row.className).not.toContain('border');
+      expect(row.className).not.toContain('shadow');
+      const summary = rowSummary(row);
+      expect(summary.textContent).toContain('Read');
+      expect(summary.textContent).toContain('a.ts');
+      expect(summaryAccessibleName(summary)).toBe('succeeded file · Read a.ts');
+      // Chevron and glyph are decorative; the hidden word carries the state.
+      const chevron = Array.from(summary.querySelectorAll('span')).find(
+        span => span.textContent === '▶'
+      );
+      expect(chevron?.getAttribute('aria-hidden')).toBe('true');
+      const glyph = Array.from(summary.querySelectorAll('span')).find(
+        span => span.textContent === '✓'
+      );
+      expect(glyph?.getAttribute('aria-hidden')).toBe('true');
+      // Chip exposes the family · label title and accessible name.
+      const chip = Array.from(summary.querySelectorAll('span')).find(
+        span => span.getAttribute('title') === 'file · Read'
+      );
+      expect(chip?.getAttribute('aria-label')).toBe('file · Read');
+      // Console focus delta: the outline offset is +2 px, not Legacy's −2 px.
+      expect(summary.className).toContain('focus-visible:outline-offset-2');
+      expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
+      expect(summary.className).toContain('focus-visible:outline-accent-bright');
+      // Diagnostics exist in the DOM but stay closed behind the summary.
+      const diagnostics = row.querySelectorAll('details');
+      expect(diagnostics).toHaveLength(2);
+      for (const diagnostic of Array.from(diagnostics)) {
+        expect((diagnostic as Element & { open: boolean }).open).toBe(false);
+        expect(diagnostic.querySelector('summary')?.className).toContain(
+          'focus-visible:outline-accent-bright!'
+        );
+      }
+      expect(row.textContent).toContain('Input');
+      expect(row.textContent).toContain('Output');
+    });
+
+    test('pointer toggles the row and the choice survives polling re-renders', async () => {
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const row = toolRow('t-1');
+      const summary = rowSummary(row);
+      await act(async () => {
+        click(summary);
+      });
+      expect(row.open).toBe(true);
+      // A later render with freshly-projected items (same identities) preserves the choice.
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      expect(toolRow('t-1').open).toBe(true);
+      await act(async () => {
+        click(rowSummary(toolRow('t-1')));
+      });
+      expect(toolRow('t-1').open).toBe(false);
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      expect(toolRow('t-1').open).toBe(false);
+    });
+
+    test('summary is a native control — no role/tabindex shim — and keeps focus through activation', async () => {
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const row = toolRow('t-1');
+      const summary = rowSummary(row);
+      expect(summary.tagName).toBe('SUMMARY');
+      expect(summary.getAttribute('role')).toBeNull();
+      expect(summary.getAttribute('tabindex')).toBeNull();
+      summary.focus();
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      // happy-dom lacks summary's keydown→click activation default; dispatch the
+      // activation click real browsers synthesize for Enter/Space.
+      await act(async () => {
+        summary.dispatchEvent(
+          new win.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }) as unknown as Event
+        );
+        click(summary);
+      });
+      expect(row.open).toBe(true);
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      await act(async () => {
+        summary.dispatchEvent(
+          new win.KeyboardEvent('keydown', { key: ' ', bubbles: true }) as unknown as Event
+        );
+        click(summary);
+      });
+      expect(row.open).toBe(false);
+    });
+
+    test('an untouched row that turns failed opens once; later nonfailed updates never auto-close', async () => {
+      const runningRows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Bash', { command: 'npm test' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(runningRows));
+      });
+      expect(toolRow('t-1').open).toBe(false);
+
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        ...runningRows,
+        resultRow('t-1', 11, 'Bash', { command: 'npm test' }, 'boom', {
+          outcome: 'error',
+          exit_code: 2,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows));
+      });
+      expect(toolRow('t-1').open).toBe(true);
+
+      // Still untouched: a later succeeded projection must not close the auto-opened row.
+      const succeededRows: readonly WorkflowNodeMessage[] = [
+        ...(runningRows[0] === undefined ? [] : [runningRows[0]]),
+        resultRow('t-1', 11, 'Bash', { command: 'npm test' }, 'ok', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(succeededRows));
+      });
+      expect(toolRow('t-1').open).toBe(true);
+    });
+
+    test('a touched row never auto-opens and never re-opens after the user closes it', async () => {
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Bash', { command: 'npm test' }),
+        resultRow('t-1', 11, 'Bash', { command: 'npm test' }, 'boom', {
+          outcome: 'error',
+          exit_code: 2,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows));
+      });
+      const row = toolRow('t-1');
+      expect(row.open).toBe(true);
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(false);
+      // Same failed data re-projected — the touched row stays closed.
+      await act(async () => {
+        mountList(historyItems(failedRows));
+      });
+      expect(toolRow('t-1').open).toBe(false);
+    });
+
+    test('a new tool identity resets disclosure to its own initial policy', async () => {
+      const failedA: readonly WorkflowNodeMessage[] = [
+        callRow('a', 10, 'Bash', { command: 'false' }),
+        resultRow('a', 11, 'Bash', { command: 'false' }, 'nope', { outcome: 'error' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedA));
+      });
+      expect(toolRow('a').open).toBe(true);
+
+      // A different tool_use id replaces the row: fresh mount, fresh initial state.
+      const succeededB: readonly WorkflowNodeMessage[] = [
+        callRow('b', 12, 'Read', { path: 'b.ts' }),
+        resultRow('b', 13, 'Read', { path: 'b.ts' }, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(succeededB));
+      });
+      expect(host.querySelector('details[data-tool-id="a"]')).toBeNull();
+      const bRow = toolRow('b');
+      expect(bRow.open).toBe(false);
+
+      // Open 'b', then replace with a fresh 'a' instance — 'a' starts open (failed)
+      // and 'b' has no carried-over state when it returns.
+      await act(async () => {
+        click(rowSummary(bRow));
+      });
+      expect(bRow.open).toBe(true);
+      await act(async () => {
+        mountList(historyItems(failedA));
+      });
+      expect(toolRow('a').open).toBe(true);
+      await act(async () => {
+        mountList(historyItems(succeededB));
+      });
+      expect(toolRow('b').open).toBe(false);
+    });
+
+    test('nested Input/Output toggles do not mark the outer row touched', async () => {
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const row = toolRow('t-1');
+      const inputDiagnostic = row.querySelectorAll('details')[0] as Element & { open: boolean };
+      await act(async () => {
+        click(inputDiagnostic.querySelector('summary') as Element);
+      });
+      expect(inputDiagnostic.open).toBe(true);
+      expect(row.open).toBe(false);
+
+      // Still untouched: the failed transition auto-opens the outer row; the nested
+      // diagnostic keeps its own state.
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        ...(READ_ROWS[0] === undefined ? [] : [READ_ROWS[0]]),
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'boom', {
+          outcome: 'error',
+          exit_code: 2,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows));
+      });
+      const updated = toolRow('t-1');
+      expect(updated.open).toBe(true);
+      const updatedInput = updated.querySelectorAll('details')[0] as Element & { open: boolean };
+      expect(updatedInput.open).toBe(true);
+    });
+
+    test('focus stays on the summary when later items append to the list', async () => {
+      await act(async () => {
+        mountList(historyItems(READ_ROWS));
+      });
+      const summary = rowSummary(toolRow('t-1'));
+      summary.focus();
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      const appended: readonly WorkflowNodeMessage[] = [
+        ...READ_ROWS,
+        callRow('t-2', 12, 'Bash', { command: 'ls' }),
+        resultRow('t-2', 13, 'Bash', { command: 'ls' }, 'out', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountList(historyItems(appended));
+      });
+      expect(win.document.activeElement as unknown as Element | null).toBe(summary);
+      expect(toolRow('t-2').open).toBe(false);
+    });
+
+    test('running badge and glyph use the console --running token', async () => {
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-run', 10, 'Bash', { command: 'npm test' }),
+      ];
+      const events: WorkflowEvent[] = [
+        workflowEvent({
+          id: 'e-called',
+          event_type: 'tool_called',
+          step_name: 'review',
+          data: { tool_call_id: 't-run' },
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows, events));
+      });
+      const summary = rowSummary(toolRow('t-run'));
+      const badge = Array.from(summary.querySelectorAll('span')).find(
+        span =>
+          span.textContent === 'running · 30.0s' && span.getAttribute('aria-hidden') === 'true'
+      );
+      expect(badge?.className).toContain('var(--running)');
+      const glyph = Array.from(summary.querySelectorAll('span')).find(
+        span => span.textContent === '◐'
+      );
+      expect(glyph?.className).toContain('var(--running)');
+    });
+
+    test('todo headline is secondary and extension content keeps explicit spacing', async () => {
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-todo', 10, 'TodoWrite', { todos: [{ content: 'x' }] }),
+        resultRow('t-todo', 11, 'TodoWrite', { todos: [{ content: 'x' }] }, 'updated', {
+          outcome: 'success',
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows), undefined, {
+          renderAfterItem: item => `after-${item.id}`,
+          renderAtEnd: 'at-end',
+        });
+      });
+      const summary = rowSummary(toolRow('t-todo'));
+      const headline = Array.from(summary.querySelectorAll('span')).find(
+        span => span.textContent === 'todo updated'
+      );
+      expect(headline?.className).toContain('text-text-secondary');
+      expect(headline?.className).not.toContain('text-text-primary');
+      const spaced = Array.from(host.querySelectorAll('div')).filter(
+        div => div.className === 'mt-1.5'
+      );
+      expect(spaced.map(div => div.textContent)).toContain('after-call-t-todo');
+      expect(spaced.map(div => div.textContent)).toContain('at-end');
+    });
+
+    test('collapsed tool rows sit flush while assistant and lifecycle items keep margins', async () => {
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Read', { path: 'a.ts' }),
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', { outcome: 'success' }),
+        callRow('t-2', 12, 'Bash', { command: 'ls' }),
+        resultRow('t-2', 13, 'Bash', { command: 'ls' }, 'out', { outcome: 'success' }),
+        { id: 'txt', seq: 14, kind: 'text', payload: { text: 'notes' }, created_at: CREATED_AT },
+        {
+          id: 'st',
+          seq: 15,
+          kind: 'status',
+          payload: { state: 'completed' },
+          created_at: CREATED_AT,
+        },
+      ];
+      await act(async () => {
+        mountList(historyItems(rows));
+      });
+      // Collapsed tool rows sit flush: the wrapper carries no margin class.
+      for (const id of ['t-1', 't-2']) {
+        const wrapper = toolRow(id).parentElement;
+        expect(wrapper?.className ?? '').toBe('');
+      }
+      const first = toolRow('t-1');
+      const second = toolRow('t-2');
+      expect(
+        (first.parentElement as Element).compareDocumentPosition(second.parentElement as Element) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).not.toBe(0);
+      expect(first.parentElement?.nextElementSibling).toBe(second.parentElement);
+      // Assistant and lifecycle wrappers keep explicit separation.
+      const assistant = Array.from(host.querySelectorAll('div')).find(
+        div => div.textContent === 'notes' || div.className === 'my-1.5'
+      );
+      expect(assistant?.className).toContain('my-1.5');
+    });
+
+    test('full-output load disables the button, swaps the output, and refreshes the row badges', async () => {
+      let resolveLoad: ((output: unknown) => void) | null = null;
+      const onLoadFullOutput = (): Promise<unknown> =>
+        new Promise<unknown>(resolve => {
+          resolveLoad = resolve;
+        });
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+          outcome: 'success',
+          output_state: 'truncated',
+          full_output_available: true,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows), onLoadFullOutput);
+      });
+      const row = toolRow('t-1');
+      expect(rowSummary(row).textContent).toContain('truncated');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(true);
+      const button = rowButton(row, 'View full output');
+      await act(async () => {
+        click(button);
+      });
+      expect(button.disabled).toBe(true);
+      await act(async () => {
+        resolveLoad?.('FULL OUTPUT');
+      });
+      expect(row.textContent).toContain('FULL OUTPUT');
+      // The row re-presented with output_state 'full': the truncated badge is gone.
+      expect(rowSummary(row).textContent).not.toContain('truncated');
+      expect(row.open).toBe(true);
+
+      // A later poll must refresh outcome facts without discarding the fetched output.
+      const failedRows: readonly WorkflowNodeMessage[] = [
+        rows[0],
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+          outcome: 'error',
+          exit_code: 2,
+          output_state: 'truncated',
+          full_output_available: true,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(failedRows), onLoadFullOutput);
+      });
+      expect(rowSummary(toolRow('t-1')).textContent).toContain('failed');
+      expect(rowSummary(toolRow('t-1')).textContent).toContain('exit 2');
+      expect(toolRow('t-1').textContent).toContain('FULL OUTPUT');
+    });
+
+    test('a failed full-output load shows the error and Retry reloads', async () => {
+      let attempts = 0;
+      const onLoadFullOutput = async (): Promise<unknown> => {
+        attempts++;
+        if (attempts === 1) throw new Error('network down');
+        return 'FULL';
+      };
+      const rows: readonly WorkflowNodeMessage[] = [
+        callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+        resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+          outcome: 'success',
+          output_state: 'truncated',
+          full_output_available: true,
+        }),
+      ];
+      await act(async () => {
+        mountList(historyItems(rows), onLoadFullOutput);
+      });
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const button = rowButton(row, 'View full output');
+      await act(async () => {
+        click(button);
+      });
+      expect(row.textContent).toContain('network down');
+      const retry = rowButton(row, 'Retry');
+      await act(async () => {
+        click(retry);
+      });
+      expect(row.textContent).toContain('FULL');
+      expect(row.textContent).not.toContain('network down');
+      expect(attempts).toBe(2);
+    });
+
+    test('drained tool calls mount as collapsed disclosure rows in the selected room', async () => {
+      const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-tool-use-1',
+            seq: 10,
+            kind: 'tool',
+            payload: { name: 'Read', id: 'tool-use-1', input: { path: 'a.ts' } },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+          {
+            id: 'result-tool-use-1',
+            seq: 11,
+            kind: 'tool',
+            payload: {
+              name: 'Read',
+              id: 'tool-use-1',
+              input: { path: 'a.ts' },
+              output: 'chunk',
+            },
+            metadata: { tool_phase: 'result', outcome: 'success' },
+            created_at: CREATED_AT,
+          },
+        ],
+      });
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-drain' }),
+          loadMessages,
+        });
+      });
+      await flushUntil(
+        'tool disclosure row',
+        () => host.querySelector('details[data-tool-id="tool-use-1"]') !== null
+      );
+      const drained = toolRow('tool-use-1');
+      expect(drained.open).toBe(false);
+      const summary = rowSummary(drained);
+      expect(summary.textContent).toContain('Read');
+      expect(summary.textContent).toContain('a.ts');
+      expect(summary.textContent).toContain('succeeded');
+      for (const nested of Array.from(drained.querySelectorAll('details'))) {
+        expect((nested as Element & { open: boolean }).open).toBe(false);
+      }
+    });
+
+    test('a poll-updated failure flips an untouched drained row open once', async () => {
+      const firstLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-tool-use-1',
+            seq: 10,
+            kind: 'tool',
+            payload: { name: 'Bash', id: 'tool-use-1', input: { command: 'npm test' } },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+        ],
+      });
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-poll-flip' }),
+          loadMessages: firstLoad,
+        });
+      });
+      await flushUntil(
+        'running tool row',
+        () => host.querySelector('details[data-tool-id="tool-use-1"]') !== null
+      );
+      expect(toolRow('tool-use-1').open).toBe(false);
+
+      // A new loader identity re-drains from afterSeq; the merged result completes the card.
+      const secondLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-tool-use-1',
+            seq: 10,
+            kind: 'tool',
+            payload: { name: 'Bash', id: 'tool-use-1', input: { command: 'npm test' } },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+          {
+            id: 'result-tool-use-1',
+            seq: 11,
+            kind: 'tool',
+            payload: {
+              name: 'Bash',
+              id: 'tool-use-1',
+              input: { command: 'npm test' },
+              output: 'boom',
+            },
+            metadata: { tool_phase: 'result', outcome: 'error', exit_code: 2 },
+            created_at: CREATED_AT,
+          },
+        ],
+      });
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-poll-flip' }),
+          loadMessages: secondLoad,
+        });
+      });
+      await flushUntil('failed tool row auto-open', () => toolRow('tool-use-1').open);
+      const failed = toolRow('tool-use-1');
+      expect(failed.open).toBe(true);
+      const summary = rowSummary(failed);
+      expect(summary.textContent).toContain('failed');
+      expect(summary.textContent).toContain('exit 2');
+    });
   });
 });
