@@ -102,7 +102,10 @@ export function ConsoleTodoStrip({ phases }: ConsoleTodoStripProps): React.React
   const currentItem = items.find(item => item.status === 'in_progress') ?? null;
 
   return (
-    <section aria-label="Todo" className="flex-none border-b border-border bg-surface-elevated">
+    <section
+      aria-label="Todo"
+      className="flex-none border-b border-border bg-surface-elevated p-[4px]"
+    >
       <button
         type="button"
         aria-expanded={open}

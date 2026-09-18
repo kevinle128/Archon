@@ -149,7 +149,7 @@ function RoomRegion({ nodeId, children }: { nodeId: string; children: ReactNode 
     <section
       role="region"
       aria-label={nodeId + ' room'}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      className="flex min-h-0 flex-1 flex-col overflow-clip [overflow-clip-margin:4px]"
     >
       {children}
     </section>
