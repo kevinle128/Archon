@@ -1028,7 +1028,7 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     rows: readonly WorkflowNodeMessageResponse[],
     events: readonly WorkflowEventResponse[] = []
   ): AgentHistoryItem[] {
-    return agentHistory.buildAgentHistory({ rows, events, nodeId: 'command', nowMs: NOW_MS });
+    return agentHistory.buildAgentHistory({ rows, events, nodeId: 'command', nowMs: NOW_MS }).items;
   }
 
   function mountItems(

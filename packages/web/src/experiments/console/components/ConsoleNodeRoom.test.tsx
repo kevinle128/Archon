@@ -1209,7 +1209,8 @@ describe('ConsoleNodeRoom', () => {
       rows: readonly WorkflowNodeMessage[],
       events: readonly WorkflowEvent[] = []
     ): AgentHistoryItem[] {
-      return agentHistory.buildAgentHistory({ rows, events, nodeId: 'review', nowMs: NOW_MS });
+      return agentHistory.buildAgentHistory({ rows, events, nodeId: 'review', nowMs: NOW_MS })
+        .items;
     }
 
     function mountList(

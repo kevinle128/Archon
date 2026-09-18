@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type UIEvent,
 } from 'react';
-import { buildAgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import { buildExecutionHeader, type ExecutionHeaderModel } from '@/lib/execution-room-model';
 import {
   beginNodeMessageRefresh,
@@ -602,15 +602,16 @@ export function ConsoleNodeRoom({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
-  const items: AgentHistoryItem[] =
+  const agentHistory: AgentHistory =
     row === null
-      ? []
+      ? { items: [], todos: [] }
       : buildAgentHistory({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
           nowMs,
         });
+  const items = agentHistory.items;
   const visibleAsks =
     row !== null && resolution?.kind === 'agent'
       ? selectVisibleNodeAskInteractions({

@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { buildAgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
   getWorkflowNodeMessage,
   type AskAnswerBody,
@@ -231,15 +231,16 @@ export function NodeTranscriptPane({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
-  const items: AgentHistoryItem[] =
+  const agentHistory: AgentHistory =
     row === null
-      ? []
+      ? { items: [], todos: [] }
       : buildAgentHistory({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
           nowMs,
         });
+  const items = agentHistory.items;
   const visibleAsks =
     row === null
       ? []
