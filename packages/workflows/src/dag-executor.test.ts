@@ -104,6 +104,7 @@ import {
   buildSubprocessDockerArgs,
 } from './dag-executor';
 import type { WorkflowModelScope } from './node-model-resolution';
+import { getSteeringRegistry, type NodeSteeringHandle } from './steering-registry';
 import { writeNodeArtifact } from './artifacts-index';
 import { getWorkflowEventEmitter, type WorkflowEmitterEvent } from './event-emitter';
 import { loadMcpConfig } from '@archon/providers/mcp/config';
@@ -26261,5 +26262,505 @@ describe('executeDagWorkflow -- AskHuman resume re-entry', () => {
         declined: false,
       },
     ]);
+  });
+});
+
+describe('executeDagWorkflow -- queued guidance (#181)', () => {
+  const RUN_ID = 'steering-run-1';
+  const askQuestions = [
+    {
+      id: 'q1',
+      prompt: 'Ship it?',
+      selection: 'single' as const,
+      options: ['yes', 'no'],
+      allowOther: false,
+    },
+  ];
+
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `dag-steer-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    getSteeringRegistry().clearForTests();
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    getSteeringRegistry().clearForTests();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  function liveHandle(runId: string, stepName: string): NodeSteeringHandle {
+    const handle = getSteeringRegistry().get(runId, stepName);
+    if (!handle) throw new Error(`expected live steering handle for ${runId}/${stepName}`);
+    return handle;
+  }
+
+  function enqueue(runId: string, stepName: string, messageId: string, message: string): void {
+    const result = liveHandle(runId, stepName).enqueue({
+      messageId,
+      message,
+      operatorUserId: 'op-1',
+      receivedAt: new Date().toISOString(),
+    });
+    if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+  }
+
+  function storedEventTypes(store: IWorkflowStore): string[] {
+    return (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+      call => (call[0] as { event_type: string }).event_type
+    );
+  }
+
+  function nodeFailedError(store: IWorkflowStore, stepName: string): string {
+    const failed = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+      call =>
+        (call[0] as { event_type: string }).event_type === 'node_failed' &&
+        (call[0] as { step_name: string }).step_name === stepName
+    );
+    if (!failed) throw new Error(`expected node_failed for ${stepName}`);
+    return ((failed[0] as { data: { error: string } }).data.error ?? '') as string;
+  }
+
+  async function invokeDag(
+    store: IWorkflowStore,
+    nodes: DagNode[],
+    opts?: { runId?: string; assistant?: 'claude' | 'pi' }
+  ): Promise<IWorkflowPlatform> {
+    const assistant = opts?.assistant ?? 'claude';
+    const config =
+      assistant === 'pi'
+        ? {
+            ...minimalConfig,
+            assistant: 'pi' as const,
+            assistants: { ...minimalConfig.assistants, pi: {} },
+          }
+        : minimalConfig;
+    const platform = createMockPlatform();
+    await executeDagWorkflow(
+      createMockDeps(store),
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'steering-test', nodes },
+      makeWorkflowRun(opts?.runId ?? RUN_ID),
+      assistant,
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      config
+    );
+    return platform;
+  }
+
+  function sendQueryArg<T>(callIndex: number, argIndex: number): T {
+    return mockSendQueryDag.mock.calls[callIndex][argIndex] as T;
+  }
+
+  it('drains queued guidance as one follow-up turn resuming the settled session', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'first note');
+        enqueue(RUN_ID, 'review', 'm-2', 'second note');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('first note\n\nsecond note');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-turn-1');
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.forkSession).toBe(false);
+    expect(options.resumeInteractions).toBeUndefined();
+    // Exactly one node_started — guidance turns emit no extra lifecycle events.
+    const started = storedEventTypes(store).filter(t => t === 'node_started');
+    expect(started.length).toBe(1);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    // Lifecycle teardown: the handle is gone once the node finishes.
+    expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+  });
+
+  it('flushes batch output once per settled turn and folds usage across turns', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'more work');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 's-1', tokens: { input: 10, output: 5 }, cost: 0.01 };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 's-2', tokens: { input: 20, output: 7 }, cost: 0.02 };
+    });
+    const store = createMockStore();
+    const platform = await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    // Batch mode flushes each turn's output as its own message — never merged.
+    const texts = (platform.sendMessage as ReturnType<typeof mock>).mock.calls.map(
+      call => call[1] as string
+    );
+    expect(texts.filter(t => t === 'turn one').length).toBe(1);
+    expect(texts.filter(t => t === 'turn two').length).toBe(1);
+
+    const completedCall = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+      call => (call[0] as { event_type: string }).event_type === 'node_completed'
+    );
+    const data = (completedCall![0] as { data: Record<string, unknown> }).data;
+    expect(data.tokens).toEqual({ input: 30, output: 12 });
+    expect(data.cost_usd).toBeCloseTo(0.03, 5);
+  });
+
+  it('exposes no handle when the provider cannot resume sessions', async () => {
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: () => ({ ...mockClaudeCapabilities(), sessionResume: false }),
+    }));
+    let observed: NodeSteeringHandle | undefined | 'unset' = 'unset';
+    mockSendQueryDag.mockImplementation(function* () {
+      observed = getSteeringRegistry().get(RUN_ID, 'review');
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 's' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(observed).toBeUndefined();
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('fails before draining when the settled turn returns no session id', async () => {
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'stranded guidance');
+      yield { type: 'assistant', content: 'output' };
+      yield { type: 'result' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toContain('no session id');
+    // The queue was left intact — never drained into a dead end.
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('never drains on empty output', async () => {
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      yield { type: 'result', sessionId: 's-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toContain('produced no assistant output');
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('never drains on a provider error', async () => {
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      yield { type: 'assistant', content: 'partial' };
+      throw new Error('provider exploded');
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toBe('provider exploded');
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('never drains on cancel', async () => {
+    let streaming = false;
+    let handleRef: NodeSteeringHandle | undefined;
+    const store = createMockStore();
+    store.getWorkflowRunStatus = mock(async () => (streaming ? 'cancelled' : 'running'));
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      streaming = true;
+      yield { type: 'assistant', content: 'partial' };
+      yield { type: 'result', sessionId: 's-1' };
+    });
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toBe('Cancelled by user');
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('never drains on credit exhaustion', async () => {
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      yield { type: 'assistant', content: 'credit balance exhausted' };
+      yield { type: 'result', sessionId: 's-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toContain('Credit exhaustion');
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('never drains on idle timeout', async () => {
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      yield { type: 'assistant', content: 'partial work' };
+      await new Promise(() => {}); // hang — the idle watchdog owns the exit
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work', idle_timeout: 50 }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('parks on AskHuman, refuses sends while parked, and the resumed execution inherits the queue', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls === 1) {
+        // Guidance queued mid-turn survives the park on the same handle.
+        enqueue(RUN_ID, 'review', 'm-1', 'pre-park guidance');
+        const ask = options?.nativeTools?.find(tool => tool.name === 'AskHuman');
+        if (!ask) throw new Error('AskHuman was not injected');
+        await ask.handler(
+          { questions: askQuestions },
+          { toolUseId: 'toolu_1', sessionId: 'sess-park' }
+        );
+        return;
+      }
+      yield { type: 'assistant', content: 'resumed turn' };
+      yield { type: 'result', sessionId: 'sess-resumed' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'ask something' }]);
+
+    // Paused pending: the handle is parked and refuses new sends.
+    const parked = getSteeringRegistry().get(RUN_ID, 'review');
+    expect(parked).toBeDefined();
+    expect(parked!.snapshot().phase).toBe('parked');
+    const refused = parked!.enqueue({
+      messageId: 'm-2',
+      message: 'too late',
+      operatorUserId: 'op-1',
+      receivedAt: new Date().toISOString(),
+    });
+    expect(refused).toEqual({ ok: false, reason: 'not_live' });
+
+    // Resume: the same run re-enters the node; register() revives the parked
+    // handle with its retained queue, and the boundary drains it into a
+    // follow-up turn on the resumed session.
+    await invokeDag(store, [{ id: 'review', prompt: 'ask something' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    expect(sendQueryArg<string>(2, 0)).toBe('pre-park guidance');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('sess-resumed');
+  });
+
+  it('includes the guidance text when a guidance turn is re-asked', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'classify', 'm-1', 'steer the verdict');
+        yield { type: 'result', sessionId: 's-1', structuredOutput: { verdict: 'ok' } };
+        return;
+      }
+      if (calls === 2) {
+        // Guidance turn returns schema-invalid output → re-ask fires.
+        yield { type: 'result', sessionId: 's-2', structuredOutput: { wrong: true } };
+        return;
+      }
+      yield { type: 'result', sessionId: 's-3', structuredOutput: { verdict: 'fixed' } };
+    });
+    const store = createMockStore();
+    await invokeDag(
+      store,
+      [
+        {
+          id: 'classify',
+          prompt: 'decide',
+          provider: 'pi',
+          output_format: {
+            type: 'object',
+            properties: { verdict: { type: 'string' } },
+            required: ['verdict'],
+          },
+        },
+      ],
+      { assistant: 'pi' }
+    );
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    const reaskPrompt = sendQueryArg<string>(2, 0);
+    expect(reaskPrompt).toContain('steer the verdict');
+    expect(reaskPrompt).toContain('did not satisfy the required JSON schema');
+  });
+
+  it('delivers loop guidance inside the current iteration', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'my-loop', 'm-1', 'adjust course');
+        yield { type: 'assistant', content: 'iteration one work' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'adjusted. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('adjust course');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+    expect(sendQueryArg<SendQueryOptions>(1, 3).forkSession).toBe(false);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+  });
+
+  it('lets pending guidance win a completion boundary in a loop', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'my-loop', 'm-1', 'one more thing');
+        yield { type: 'assistant', content: 'done <promise>COMPLETE</promise>' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'extra done <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    // Completion did not short-circuit the queued guidance turn.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('one more thing');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+  });
+
+  it('lets pending guidance win a max-iterations boundary in a loop', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'my-loop', 'm-1', 'last word');
+        yield { type: 'assistant', content: 'work without signal' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'still no signal' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 1 },
+      },
+    ]);
+
+    // The guidance turn ran inside iteration 1 even though the loop then fails
+    // on max_iterations — guidance is never silently dropped.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('last word');
+    expect(nodeFailedError(store, 'my-loop')).toContain('exceeded max iterations');
+  });
+
+  it('registers loop-group body prompt nodes under the namespaced step name', async () => {
+    let calls = 0;
+    let sawNamespaced: NodeSteeringHandle | undefined;
+    let sawBare: NodeSteeringHandle | undefined | 'unset' = 'unset';
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        sawNamespaced = getSteeringRegistry().get(RUN_ID, 'grp.body');
+        sawBare = getSteeringRegistry().get(RUN_ID, 'body');
+        enqueue(RUN_ID, 'grp.body', 'm-1', 'guided');
+        yield { type: 'assistant', content: 'body output COMPLETE' };
+        yield { type: 'result', sessionId: 'sess-body-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'guided output COMPLETE' };
+      yield { type: 'result', sessionId: 'sess-body-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'grp',
+        loop_group: {
+          until: 'COMPLETE',
+          max_iterations: 1,
+          nodes: [{ id: 'body', prompt: 'emit COMPLETE' }],
+        },
+      },
+    ]);
+
+    expect(sawNamespaced).toBeDefined();
+    expect(sawBare).toBeUndefined();
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('guided');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-body-1');
   });
 });

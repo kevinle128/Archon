@@ -29,6 +29,7 @@ import {
   envOverlaySnapshotSchema,
   type EnvOverlaySnapshot,
 } from '@archon/workflows/schemas/env-overlay';
+import { getSteeringRegistry } from '@archon/workflows/steering-registry';
 
 import type {
   DashboardWorkflowRun,
@@ -1438,6 +1439,31 @@ export async function failWorkflowRun(id: string, error: string): Promise<void> 
   }
 }
 
+/**
+ * Post-commit in-process steering cleanup (#181): seal + drop a cancelled
+ * run's node handles so queued operator guidance can never drain into a
+ * cancelled run. Runs on the idempotent already-terminal path too — a stale
+ * same-process handle is stale either way. Counts only, never message
+ * content. Best-effort: a cleanup failure cannot roll back or falsely fail
+ * a committed cancellation, and it never runs when the transaction threw.
+ */
+function discardRunSteeringHandles(runId: string): void {
+  try {
+    const discarded = getSteeringRegistry().discardRun(runId);
+    if (discarded.handles > 0) {
+      getLog().info(
+        { workflowRunId: runId, handles: discarded.handles, queued: discarded.queued },
+        'db.workflow_run_cancel_steering_discarded'
+      );
+    }
+  } catch (cleanupError) {
+    getLog().warn(
+      { err: cleanupError as Error, workflowRunId: runId },
+      'db.workflow_run_cancel_steering_cleanup_failed'
+    );
+  }
+}
+
 export async function cancelWorkflowRun(id: string): Promise<{ cancelled: boolean }> {
   const dialect = getDialect();
   try {
@@ -1448,7 +1474,7 @@ export async function cancelWorkflowRun(id: string): Promise<{ cancelled: boolea
     // to discard it), and a 'running' run stays cancellable — that is
     // cooperative cancellation, which the executor honors via its between-layer
     // status check (dag-executor).
-    return await getDatabase().withTransaction(async query => {
+    const outcome = await getDatabase().withTransaction(async query => {
       const result = await query(
         `UPDATE remote_agent_workflow_runs
          SET status = 'cancelled', completed_at = ${dialect.now()}
@@ -1466,6 +1492,8 @@ export async function cancelWorkflowRun(id: string): Promise<{ cancelled: boolea
       await purgePendingInteractionsInTransaction(query, id, 'cancelled');
       return { cancelled: true };
     });
+    discardRunSteeringHandles(id);
+    return outcome;
   } catch (error) {
     const err = error as Error;
     getLog().error({ err }, 'db.workflow_run_cancel_failed');
@@ -1483,7 +1511,7 @@ export async function cancelWorkflowRun(id: string): Promise<{ cancelled: boolea
  */
 export async function cancelRecoveryWorkflowRun(id: string): Promise<{ cancelled: boolean }> {
   try {
-    return await getDatabase().withTransaction(async query => {
+    const outcome = await getDatabase().withTransaction(async query => {
       const result = await query(
         `UPDATE remote_agent_workflow_runs
          SET status = 'cancelled', completed_at = ${getDialect().now()}
@@ -1495,6 +1523,8 @@ export async function cancelRecoveryWorkflowRun(id: string): Promise<{ cancelled
       await purgePendingInteractionsInTransaction(query, id, 'cancelled');
       return { cancelled: true };
     });
+    discardRunSteeringHandles(id);
+    return outcome;
   } catch (error) {
     const err = error as Error;
     getLog().error({ err }, 'db.workflow_run_recovery_cancel_failed');
