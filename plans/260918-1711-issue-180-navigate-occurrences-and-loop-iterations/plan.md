@@ -1,295 +1,345 @@
 ---
 title: 'Issue 180 navigate transcript occurrences and loop iterations'
-description: 'Implementation-ready plan for Story 1.7 / CAP-6: group a node transcript by occurrence_id with one header per occurrence, add a loop-iteration selector that navigates to those headers, and make the multi-occurrence view reachable for loop nodes on both node rooms.'
-status: pending
+description: 'Verified implementation plan for Story 1.7 / CAP-6: preserve occurrence identity through transcript projection, group multi-occurrence transcripts, and add an approved navigator on both node-room shells.'
+status: blocked
 priority: P1
-effort: '3 phases / about 15h'
+effort: 'Decision gate plus 3 implementation phases; estimate after the blockers are resolved'
 issue: 'https://github.com/kevinle128/Archon/issues/180'
 branch: archon/thread-499eb44c
 tags: [issue-180, agent-node-room, web, tdd, epic-1, frontend]
-blockedBy: []
+blockedBy:
+  - 'Product/architecture decision: whether and how a current occurrence-scoped loop exposes an aggregate multi-occurrence transcript'
+  - 'UX decision: occurrence navigator layout, relationship to Execution, and keyboard/focus behavior'
+  - 'Product/UX decision: disambiguation when distinct route or nested-loop occurrences derive the same documented label'
+  - 'Maintainer decision before PR: AGENTS.md names dev, while origin HEAD, the active base, CI, and open PRs use develop'
 blocks: []
 created: 2026-09-18
+updated: 2026-09-19
 mode: deep
 tdd: true
 ---
 
-# Issue 180 navigate transcript occurrences and loop iterations
+# Issue 180: navigate transcript occurrences and loop iterations
 
-## Goal and user outcome
+## Goal and interpretation
 
-An operator reviewing a node that ran more than once — a retried node, or a `loop:` node with several iterations — sees the transcript as one labelled group per occurrence instead of one undifferentiated stream. Each group starts with a section heading (`Run 1 · failed`, `Run 2 · retry`, `Iteration 3`). A loop-iteration selector pinned above the transcript jumps straight to the matching heading and moves keyboard focus there. A node with a single occurrence renders neither headings nor a selector.
+When the **messages actually loaded in a node transcript** span more than one `occurrence_id`, an operator should be able to distinguish the occurrences without reading an undifferentiated stream:
 
-This is Story 1.7 / CAP-6 of `SPEC-agent-node-room`. It is a Web presentation feature over data already persisted on every node-message row (`metadata.execution`). It needs no schema, migration, API, generated-type, or provider change, so it improves every historical run the moment it ships.
+- one labelled section per occurrence, keyed by `occurrence_id`, never `attempt_id`;
+- `Run N` for retry-driven occurrences and `Iteration N` for loop ancestry;
+- a navigator that moves directly to a matching section on both Legacy and Console;
+- neither headings nor navigator when zero or one occurrence is displayed.
 
-## Verified evidence and authority
+That is the literal Story 1.7 / CAP-6 contract. The broader product phrase “loop iterations” currently has an unresolved reachability problem: modern loop rows are occurrence-scoped, while the adopted read architecture intentionally fetches only the selected occurrence. This plan does not silently change that contract.
 
-Authority order for the implementation, highest first:
+## Review conclusion
 
-1. `_bmad-output/specs/spec-agent-node-room/SPEC.md` CAP-6 and Story 1.7 in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` (lines 371–394): one header per `occurrence_id`, never `attempt_id`; the selector navigates to the matching header; keyboard and focus behaviour equivalent on both surfaces; a single occurrence renders neither.
-2. Read-spine AD-7 and AD-12 item 7 in `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md`: grouping is a separate pure function in `packages/web/src/lib/occurrence-groups.ts`; every item (assistant, tool, lifecycle) carries `metadata.execution`; metadata-less rows attach to the nearest preceding group; the label is composed by the core (`Run N` from `retry_epoch`, `Iteration N` from `loop_ancestry`) and shells only render it; the selector is shell-owned behaviour #7, written twice, asserted identically in `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`.
-3. `EXPERIENCE.md` "Occurrence grouping" (line 288) and Component Patterns line 125: `Run N` with `· retry` / `· failed` suffixes only when known, `Iteration N` with no suffix, `Attempt` and `Pass` forbidden; the header carries a heading role so a screen-reader user can jump between executions.
-4. `DESIGN.md` `components.occurrence-header`: 10.5 px mono, uppercase, 0.08em tracking, `text-secondary`, a 1 px `border` rule filling the width after the label, margin `10px 0 5px`; `text-tertiary` is never used for a transcript fact.
-5. `test-plan.md` "Renderer tests — CAP-1, CAP-6, CAP-7": a multi-occurrence node renders occurrence headers and a single-occurrence node renders none, on both surfaces.
-6. Current code and tests own every existing public behaviour this story must preserve.
+The original draft was not safe to implement. Its central `loopParent` / `All iterations` proposal contradicted the final architecture and UX documents, changed the meaning of an occurrence selection into a node-wide fetch, introduced unapproved copy and Ask state, and relied on selector interactions that no approved design artifact specifies. Those changes have been removed.
 
-Repository inspection established:
+The repository does support a well-bounded shared core and header implementation. Production work remains blocked until B1/B2/B4 under [Blocking decisions](#blocking-decisions) are recorded in the owning product, architecture, and UX artifacts; B3 must be resolved before branch mutation or PR handoff.
 
-- `packages/web/src/lib/agent-history.ts` builds `AgentHistoryItem[]` from `projectToolTranscript(projectTextTranscript(rows))`. No item variant carries `metadata.execution` today; `projectTextTranscript` returns the row type, so the merged text row keeps its first row's metadata.
-- Every node-message row written by the executor carries `metadata.execution = { occurrence_id, attempt_id, retry_epoch?, loop_ancestry?, route_activation_seq? }` (`packages/workflows/src/schemas/node-execution.ts`); the generated type is `components['schemas']['WorkflowNodeMessage']['metadata']['execution']`.
-- The four transcript fetch sites resolve a `LogRow` to a `NodeMessageSelection` with four identical local helpers: `NodeTranscriptPane.tsx:57`, `WorkflowExecution.tsx:355`, `ConsoleNodeRoom.tsx:431`, `ConsoleExecutionHistory.tsx:97`. An `occurrence` row is server-filtered by exact `occurrence_id` (`packages/core/src/db/workflow-node-messages.ts:149-165`); a `node` row is unfiltered.
-- **Live database evidence (read-only query, 2026-09-18):** a `loop:` node mints one outer occurrence for the node itself plus one occurrence per iteration. Run `448373788ab9e98c1cfde4e871beb891`, node `ralph-loop-run`: outer occurrence `182c057b…` holds exactly two lifecycle rows at `seq` 1 and `seq` 3465; iterations 1–6 each hold a contiguous block with `loop_ancestry: [{ node_id: 'ralph-loop-run', iteration: N }]`. The outer `node_started` event data carries `type: 'loop'`, which `projectWorkflowExecutionHistory` surfaces as `NodeExecution.node_type`. A retried prompt node (`73aff14c…`, node `resolve`) has two occurrences with `retry_epoch` 0 and 1 and no `loop_ancestry`.
-- Consequence: on current data every execution row of a loop node is `occurrence`-kind, `resolveGraphRoomRow` never finds a `node` row, and every selectable execution is server-filtered to one occurrence. The outer row shows two lifecycle rows and nothing else. The multi-occurrence transcript that CAP-6 targets is unreachable for new runs; it appears only for pre-occurrence data and the event-based fallback. Story 2.10 ("a live loop node and a finished iteration selected through Story 1.7", `Go to iteration N`) cannot be satisfied on that basis.
-- The Legacy mockup `mockups/key-legacy-node-room.html` renders the `implement` node with `run 2` selected in the Logs list while the transcript shows both `Run 1 · failed` and `Run 2 · retry` groups — the design intends the room to show the whole node.
-- Both rooms already have an `Execution` `<select>` (`ConsoleRoomHeader.tsx`, `NodeRoomHeader.tsx`) that **filters** by refetching a different row; E2E `workflow-run-hitl-room.spec.ts` locates it with `getByLabel('Execution')` and asserts `Iteration 1` / `Iteration 2` text plus distinct `occurrenceId` requests. That contract stays.
-- Status message states observed in data: `started`, `completed`, `failed`, `awaiting`, `iteration_started`, `iteration_completed`, `iteration_failed`, `interrupted`. A group's `· failed` suffix is derivable from its own lifecycle items.
-- Scroll follow is a DOM-free reducer (`lib/room-scroll-follow.ts`); the pin-to-bottom effect in both rooms re-runs on `pageState.rows.length`, so a live poll after a programmatic scroll would snap the reader back to the bottom unless follow is disengaged explicitly.
-- Console's `ConsoleAgentHistoryList` applies `showToolCalls` / `showSystem` inside its render loop; the pinned todo strip (Story 1.5) is mounted outside that list so the toggles cannot hide it.
-- `e2e/fixtures/workflows/e2e-hitl-run.yaml` already runs a two-iteration `loop:` node (`inspect-twice`) on the env-gated `e2e-fake` provider — real multi-occurrence data for E2E without a new fixture.
-- Story 1.5's plan (`plans/260918-0826-issue-178-pinned-todo-strip/`) is the structural precedent: a pure `lib/` module, a widened `buildAgentHistory` return, one renderer per shell written twice, parity tests, and stale-doc correction.
+## Evidence inspected
 
-## Resolved conflicts and decisions
+### Product and planning authority
 
-1. **AD-7 amendment — the loop node's outer execution fetches node-scoped.** The outer execution of a **top-level** `loop:` node (`NodeExecution.node_type === 'loop'` with `loop_ancestry` absent or empty) is marked `loopParent: true` on its `occurrence` selection, and the shared fetch-scope helper maps that one row type to an unfiltered `{ kind: 'node' }` request. Its transcript then spans the outer occurrence plus every iteration, which is exactly the state CAP-6 and Story 2.10 need. Every other row keeps Story 1.5's rule that scope follows the selected slice. A `loop:` node nested inside a `loop_group:` body is excluded on purpose: body step names are namespaced by the group chain only (`dag-executor.ts` `bodyStepNamePrefix`), so its `node_id` is identical across outer iterations and an unfiltered fetch would merge them; that row keeps the scoped fetch and is a documented limitation. A top-level `loop:` node re-run through `workflow retry-node` mints a second outer occurrence with a higher `retry_epoch`, and its iterations carry that same epoch (`dag-executor.ts` `loopRetryEpoch`); both outer rows are `loopParent`, so the unfiltered fetch is sliced client-side in both `select-node-room-messages.ts` copies to rows whose `execution.retry_epoch` (default 0) equals the row's `retryEpoch`, keeping `Run 1 · failed` and `Run 2` as two distinct whole-loop views. Authorization is unchanged by the widening: the node-messages route checks only run existence, with no per-user scoping on either the filtered or unfiltered path (`packages/server/src/routes/api.ts`, `listNodeMessages`), so no access boundary moves; if per-resource user scoping is ever added to that route, this amendment must be revisited. This is client-only and stays inside the read half's no-backend constraint. It is recorded as an amendment to AD-7's last paragraph, not a silent change, because the spine's claim that the node-entry path "is the default selection" is false on current data (evidence above).
-2. **One header per occurrence, groups ordered by first `seq`.** The outer occurrence's rows are non-contiguous (`seq` 1 and 3465). Grouping keys on `occurrence_id`; a later item whose occurrence was already seen rejoins its group. The trailing `completed` lifecycle row therefore renders inside the first group, above the iterations. A contiguous-runs approach would render `Run 1` twice and give the selector an ambiguous target, so it is rejected.
-3. **Label composer lives in `occurrence-groups.ts`.** `loop_ancestry` present → `Iteration N` (N = last entry's iteration, matching `labelForExecution` in `build-log-rows.ts`), no suffix. Otherwise `Run (retry_epoch + 1)` with `· retry` when `retry_epoch > 0` and `· failed` when the group contains a lifecycle item whose state is `failed` or `iteration_failed`; both suffixes may apply, joined by ` · `. The existing `executionLabel` (`Attempt N`) is a chip label, not a header, and is left alone except for one addition (decision 5).
-4. **The selector is a new control, not the `Execution` select.** The `Execution` select filters and refetches; the new control navigates within the loaded transcript. It is a native `<select>` with accessible name `Occurrence`, a placeholder option `Go to…`, and one option per rendered header, labelled exactly like the header. Native `<select>` gives both shells identical keyboard semantics for free. On change the shell scrolls the target heading into view, disengages scroll follow, and records the navigated key so a later story can read "which iteration is selected". Focus moves to the heading (`tabIndex={-1}`) only for a pointer change or a change confirmed with Enter/Space; an arrow-key change (native `<select>` fires `change` per arrow press while closed) scrolls and holds but keeps focus on the select, so a keyboard user can step `Iteration 1 → 2 → 3` without re-tabbing. The programmatic `scrollTop` write fires a native `scroll` event; the shell marks it with a ref so `handleScroll` does not re-derive `follow` from it (a heading within 24 px of the bottom would otherwise re-arm pin-to-bottom and the next poll would snap the reader down). Heading DOM ids are keyed on the occurrence id (a server-minted UUID validated at the read boundary), not on group index, so a live poll that changes group membership cannot desync the select from the focused heading. When the navigated key's group disappears from the visible options (Console filter toggles), the navigated key resets to the placeholder. It is mounted pinned above the transcript scroller, below the todo strip when both exist, so it stays reachable while the transcript scrolls.
-5. **Discoverability of the whole-loop view.** `executionLabel` returns `All iterations` for a `loopParent` selection so the `Execution` select names the view honestly. Nothing else in the chip vocabulary changes.
-6. **Console filters cannot leave an empty header.** A header renders only when its group still has at least one visible item after `showToolCalls` / `showSystem`; headers render only when two or more groups are visible; the selector lists only rendered headers. The header and selector sit outside the filtered list, like the todo strip. `ConsoleExecutionHistory` applies the same `visibleGroups` rule through the exported `isTranscriptItemVisible`. Named consequence: a loop that ran exactly one iteration has two keys (outer lifecycle rows + `Iteration 1`), so Legacy shows both headings and the selector while Console with `showSystem=false` shows neither — correct under decisions 2 and 6 and the same asymmetry AD-12 already accepts for `showToolCalls`.
-7. **Metadata-less rows attach, never lead.** An item without `execution` joins the currently open group. Items that precede any keyed group are buffered and prepended to the first keyed group. A transcript with no keyed rows at all is one unkeyed group with no header and no selector (this is the pre-occurrence data path and it must render byte-for-byte as today).
-8. **Ask cards keep their iteration-scoped rows, and a blocked iteration is flagged on its heading.** `selectVisibleNodeAskInteractions` matches scoped Asks against the selected occurrence, so the whole-loop view shows only Asks scoped to the outer occurrence (none in practice) and `chooseExecutionForInteraction` still routes an Ask to its iteration row. Default entry already lands on an `awaiting` row (`chooseExecutionForNode` priority), but an operator who switches to `All iterations` by hand must not see an idle-looking transcript while an iteration is blocked: each shell passes `pendingInteractions` alongside the groups and the heading of a group whose `occurrence_id` owns a `pending` Ask renders a `· awaiting input` suffix (non-interactive; answering still happens on the iteration row). The whole-loop view is a reading view; steering and answering stay on the live iteration row.
-9. **`ConsoleExecutionHistory` renders headers but no selector.** It is an inline log section inside another scroller (Story 1.5 decision 5); headers are part of the transcript body and belong there, but a pinned selector cannot exist without its own scroller.
-10. **No new tokens.** Both headers use `text-secondary`, `border`, the mono ramp at 10.5 px, and existing Tailwind utilities; the Console copy uses its own token names.
+- GitHub issue `#180` (open, `status:processing`) delegates acceptance to Story 1.7 and requires focused characterization evidence plus the owning sprint workflow's final `done` transition.
+- `_bmad-output/specs/spec-agent-node-room/SPEC.md`, CAP-6: group displayed rows by `occurrence_id`; omit the feature for one occurrence; navigate between group headers.
+- `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`, Story 1.7: the same three measurable acceptance cases on both rooms.
+- `_bmad-output/specs/spec-agent-node-room/test-plan.md`: renderer coverage on `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`.
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`: Story 1.1 is `done`; Story 1.7 remains `backlog`. Status is workflow-owned and is not changed by planning.
 
-The implementation also corrects two stale narrative passages in `EXPERIENCE.md` (lines 59 and 391, "nothing anywhere scrolls to a selection") and appends the amendment note to AD-7. `sprint-status.yaml` is workflow-owned and is not hand-edited.
+### Architecture, UX, and design authority
+
+- `ARCHITECTURE-SPINE.md` AD-7: `buildAgentHistory()` carries execution metadata on assistant/tool/lifecycle items; a separate pure `lib/occurrence-groups.ts` owns grouping and labels; occurrence entry remains server-filtered to one group **by design**; all three history call sites apply grouping.
+- `ARCHITECTURE-SPINE.md` AD-12 item 7: both shells own equivalent navigator behavior, rendered from core occurrence groups.
+- `EXPERIENCE.md` Information Architecture and Occurrence grouping: Execution controls filter; occurrence headers appear only for messages actually displayed; occurrence selection and loop-iteration chips display one occurrence and therefore no header; exact heading vocabulary and suffix rules.
+- `DESIGN.md`: heading typography and geometry—10.5px mono, uppercase, `0.08em` tracking, `text-secondary`, `10px 0 5px` margin, and a 1px `border` rule to the right edge; 460px is the authoritative room width for visual verification; the transcript owns no breakpoint.
+- `claude-design/design_handoff_node_room_transcript_steering/README.md`, the `.dc.html` files, and the co-located HTML mockups: they show occurrence headings and the existing filtering `Execution` select. They do **not** show or specify a separate occurrence-navigation control. The README says the canonical spec/design/experience files win.
+
+### Runtime, Web, tests, and configuration
+
+- `packages/workflows/src/dag-executor.ts` mints one outer occurrence for a `loop:` node and another occurrence for every iteration; every transcript row records the active scope.
+- A read-only SQLite check of run `448373788ab9e98c1cfde4e871beb891`, node `ralph-loop-run`, confirmed 3,465 rows and seven occurrences: two non-contiguous outer lifecycle rows plus six contiguous iteration groups.
+- `packages/server/src/routes/workflow-execution-history.ts` reconstructs and orders those executions; both `build-log-rows.ts` copies turn every occurrence-bearing execution into an `occurrence` selection.
+- `resolve-graph-room-row.ts` prefers a `node` row but falls back to the last occurrence row when no node row exists; `chooseExecutionForNode()` similarly chooses an awaiting/running/latest execution.
+- `node-message-pages.ts`, the API route, and `workflow-node-messages.ts` pass `occurrenceId` / `attemptId` to the database, which performs the exact metadata filter. Persisted and response rows are schema-validated; the browser does not need a second UUID parser.
+- Execution scope also carries `route_activation_seq`, and nested loops carry the full `loop_ancestry`. The adopted occurrence-label table uses only `retry_epoch` or the final ancestry entry; distinct route/nested occurrences can therefore derive identical visible labels even though their keys differ.
+- `agent-history.ts` currently drops `metadata.execution`. `pair-tool-transcript.ts` already includes occurrence and attempt in tool correlation. `project-text-transcript.ts` does not include execution identity in keyed text streams, so two occurrences reusing the same stream/message/block identifiers could merge before grouping.
+- The three grouping consumers required by AD-7 are `NodeTranscriptPane` → `NodeRoom`, `ConsoleNodeRoom` → `ConsoleAgentHistoryList`, and `ConsoleExecutionHistory` → `ConsoleAgentHistoryList`.
+- Console hides tool and lifecycle rows inside `ConsoleAgentHistoryList`; hidden rows, and tool rows whose attached Ask card remains visible, affect whether a group has renderable content.
+- `selectVisibleNodeAskInteractions()` deliberately excludes occurrence-scoped Asks from a `node` selection; Console inline history assigns scoped Asks to exact occurrence rows. An aggregate B1 choice therefore needs an explicit Ask contract, not reuse-by-accident.
+- Both rooms use `room-scroll-follow.ts`; append polling re-applies the follow state. Any approved in-transcript navigator must explicitly define how navigation interacts with follow, restored `scrollTop`, “Jump to latest”, and focus.
+- Open PR `#202` targets `develop` and overlaps `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`, and their tests. Implementation must refresh from `develop` after that PR is resolved and re-scout the final shapes.
+- Branch policy is internally inconsistent: `AGENTS.md` names `dev`, but local `dev` is 68 commits behind `develop`, origin has no tracked `dev`, origin HEAD is `develop`, CI watches both, and current PRs target `develop`. A maintainer must choose the authoritative target before branch refresh or PR creation.
+- Root scripts confirm package-isolated Bun tests and `bun run validate`; Playwright is a standalone `e2e/` package.
+
+## Verified end-to-end behavior today
+
+```text
+executor
+  mints execution scope per occurrence/attempt
+  writes metadata.execution on each node-message row
+      │
+      ▼
+workflow execution history
+  produces one execution row per occurrence
+      │
+      ▼
+Legacy / Console LogRow selection
+  occurrence-bearing row -> { kind: 'occurrence', occurrenceId, attemptId }
+  compatibility/fallback row -> { kind: 'node' }
+      │
+      ▼
+node-message paging
+  occurrence -> server/database exact filter -> normally one group
+  node       -> unfiltered node transcript     -> may contain many groups
+      │
+      ▼
+text/tool projectors -> buildAgentHistory -> shell renderer
+```
+
+| Entry/data shape                                                           | Loaded messages                    | Story 1.7 output under the adopted contract        |
+| -------------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------- |
+| Current prompt/loop execution with an occurrence                           | One occurrence                     | No headings or navigator                           |
+| Current loop opened from Graph when all rows are occurrence-scoped         | Latest/awaiting/running occurrence | No headings or navigator                           |
+| Historical/fallback node row with scoped messages from several occurrences | Whole node                         | Group headings and navigator                       |
+| Historical transcript with no execution metadata                           | Whole node, unkeyed                | Original flat transcript; no headings or navigator |
+
+This table is why the grouping contract is implementable but current-loop navigation is not yet a reachable product flow.
+
+## Blocking decisions
+
+### B1 — Modern loop reachability
+
+The final AD-7 and `EXPERIENCE.md` explicitly say occurrence entry remains scoped and that this is intended. Current runtime evidence shows that a modern loop exposes only occurrence rows, so the multi-occurrence view is not its default or an existing selectable state. Story 2.10 nevertheless speaks of a finished loop iteration “selected through Story 1.7.” Repository evidence does not reconcile those statements.
+
+The product/architecture owner must choose and record one of these outcomes before production work:
+
+1. **Compatibility-only scope:** Story 1.7 applies only when a node-scoped transcript already contains multiple occurrences. This preserves AD-7 and current network behavior, but it does not provide a navigator for modern loops and cannot be described as unblocking Story 2.10.
+2. **First-class aggregate loop view:** add an explicit aggregate selection/view whose user-visible entry, retry boundary, nested-loop boundary, Ask ownership, authorization/visibility boundary, default-selection behavior, paging, and performance contract are defined. Update AD-7, `EXPERIENCE.md`, tests, and this plan before implementation.
+
+The rejected draft alternative was to mark a top-level loop's outer **occurrence** row `loopParent`, silently fetch the whole node, call it `All iterations`, and slice retries on the client. It changes the selected row's scope without a first-class model, is not specified by the product artifacts, drains all node pages, and is unsafe to generalize to nested loops or route activations.
+
+### B2 — Navigator design and interaction
+
+The canonical spec requires navigation, but the final visual artifacts show only the existing `Execution` filter. `DESIGN.md` gives heading styling but no navigator anatomy or placement. `EXPERIENCE.md` says the existing chips/select filters and currently says nothing scrolls. It does not define whether navigation retains focus on the control, moves focus to the heading, updates on reader scroll, or how a native select commits keyboard choices.
+
+UX/product must provide or approve a design artifact that fixes all of the following:
+
+- whether this is a second control or a deliberate change to the existing `Execution` control;
+- exact label, option copy, placement relative to the room header, todo strip, transcript scroller, and “Jump to latest”;
+- occurrence-heading semantic level and whether a navigation target becomes programmatically focusable;
+- absent, default, active, focus-visible, disabled/loading, and Console-filtered states;
+- pointer and keyboard activation semantics, focus destination, and screen-reader announcement;
+- live polling behavior after navigation and behavior when the target group disappears;
+- appearance at the authoritative 460px room width and under the host room's small-viewport layout.
+
+Do not infer these decisions from generic native-select behavior. The original draft's `keydown`/`change` heuristic (arrows browse, Enter/Space commits) is not an approved contract and is not consistent across native select implementations.
+
+### B3 — Working branch and PR target
+
+Repository instructions say feature work branches from and merges to `dev`; live Git state uses `develop`. The implementer must not guess between them. Before rebasing or opening a PR, a maintainer must confirm the target and correct the stale authority (branch guidance or repository configuration) so the plan, Git history, CI, and PR base agree. This does not block the read-only/core design review, but it blocks branch mutation and PR handoff.
+
+### B4 — Duplicate occurrence labels
+
+The documented composer maps retry epoch to `Run N` and the final loop-ancestry entry to `Iteration N`. That is sufficient for a simple retry or one top-level loop, but not for repeated route activations with the same retry epoch or nested-loop scopes whose final entry repeats. Distinct `occurrence_id` groups can then expose indistinguishable headings/options such as two `Run 1` values. Existing execution-row labels already understand `route_activation_seq` (`name #N`), but no authority defines how it composes in an occurrence heading.
+
+Product/UX must define a unique, human-readable label rule for colliding derived labels, including route and nested-loop examples, or explicitly narrow the supported multi-occurrence view so collisions cannot enter it. Update the occurrence-label table and test fixtures before implementing labels; do not expose raw UUIDs or invent a suffix in code.
+
+## Evidence-resolved technical decisions
+
+These decisions can be implemented after B1/B2/B4 are closed without further product interpretation.
+
+1. **Preserve typed scope on every history item.** Add a required `execution: TranscriptExecution | null` field to assistant, tool, and lifecycle variants. Source it from the projected message; for a tool card, use call then result. Tool pairing already prevents cross-occurrence/attempt pairing.
+2. **Keep text projection occurrence-safe.** Extend `ProjectableTextMetadata` with the execution identity used only for correlation. Include occurrence and attempt in keyed stream identity, and reset anonymous delta accumulation when execution identity changes. The rendered text is unchanged; this prevents a later occurrence merging into the first before grouping.
+3. **Group only by `occurrence_id`.** `attempt_id` may distinguish projector correlation but is never a group key or visible label.
+4. **Preserve leading unscoped content honestly.** Metadata-less items after a keyed item attach to the nearest preceding keyed group. Metadata-less items before the first keyed item render once as an unheaded prefix; assigning them to the following occurrence would contradict “nearest preceding.” With fewer than two keyed occurrences, render the original flat item sequence.
+5. **One group object per occurrence, ordered by first appearance.** A repeated non-contiguous key rejoins its original group so a heading/selector target is unique. Items remain in sequence order inside that group. This necessarily groups the outer loop's trailing lifecycle row with its opening row; the test must make that reordering explicit.
+6. **Labels come only from typed execution and lifecycle state.** For non-colliding cases, last loop ancestry entry → `Iteration N` with no suffix. Otherwise treat an absent `retry_epoch` as zero and use `retry_epoch + 1` → `Run N`; add `· retry` when epoch is greater than zero and `· failed` only when that occurrence contains a `failed` lifecycle state. B4 owns collision disambiguation. No agent-authored text, `attempt_id`, raw UUID, or provider name enters the label.
+7. **Headers use the approved visual contract.** Each rendered occurrence section is a semantic heading at the level approved in B2, with the exact core label, 10.5px mono uppercase text, `0.08em` tracking, `text-secondary`, `10px 0 5px` margin, and a 1px `border` rule filling the remaining width. The label itself must remain in the accessibility tree.
+8. **All three history surfaces group.** Legacy Node Room, Console Node Room, and Console inline execution history render headings. Only the two node rooms receive the Story 1.7 navigator; inline execution history has no independent scroller to navigate.
+9. **Console groups reflect rendered content.** A Console group is displayable when it contains an item allowed by `showToolCalls` / `showSystem`, or a hidden tool item whose attached Ask card remains visible. Headings and navigator options use the same displayable group list. Unanchored Ask/approval blocks remain after the transcript and do not create a group.
+10. **No unapproved product copy or state.** Do not add `All iterations`, `awaiting input` heading suffixes, new Ask routing, or changes to the existing `Execution` labels unless B1/B2/B4 explicitly adopt them.
+11. **No duplicated wire validation.** API/database schemas already validate execution UUIDs and numeric fields. The Web core consumes the generated type, degrades absent historical execution to `null`, and does not add regex-based UUID validation.
+
+## Shared grouping contract
+
+The exact names may adapt to the final merged code, but the render-neutral shape must express the leading-prefix case rather than mislabelling it:
+
+```ts
+type TranscriptExecution = NonNullable<NonNullable<NodeMessageRow['metadata']>['execution']>;
+
+interface OccurrenceGroup {
+  key: string;
+  label: string;
+  items: readonly AgentHistoryItem[];
+  iteration: number | null;
+  retryEpoch: number;
+  failed: boolean;
+}
+
+interface OccurrenceGrouping {
+  prefixItems: readonly AgentHistoryItem[];
+  groups: readonly OccurrenceGroup[];
+  showHeaders: boolean; // groups.length >= 2
+}
+```
+
+`groupByOccurrence(items)` is pure, does not mutate its input, makes one pass over items already in transcript sequence order, and returns every item exactly once. The shells use the original flat `items` path when `showHeaders` is false so historical and single-occurrence rendering stays byte-for-byte equivalent apart from the new required internal field.
 
 ## Scope
 
-### In scope
+### In scope after B1/B2/B4
 
-- `execution` carried on every `AgentHistoryItem` variant.
-- Pure `groupByOccurrence()` and label composition in `packages/web/src/lib/occurrence-groups.ts`, fully tested.
-- `loopParent` on `LogRowSelection` (both `build-log-rows.ts` copies) and `ExecutionRowSelection`; one shared `selectionForNodeMessages()` replacing four duplicated helpers; `All iterations` chip label.
-- `holdScrollAt()` in `room-scroll-follow.ts` so navigation disengages follow deterministically.
-- Legacy `OccurrenceHeader` + `OccurrenceSelector` and Console `ConsoleOccurrenceHeader` + `ConsoleOccurrenceSelector`, identical semantics, mounted in both node rooms; headers in `ConsoleExecutionHistory`.
-- Parity component tests, a focused Playwright spec on the existing two-iteration HITL fixture across both routes, doc synchronization, and an evidence report.
+- Execution identity propagation and occurrence-safe text projection.
+- Pure grouping/label logic and focused tests.
+- Occurrence headings on Legacy Node Room, Console Node Room, and Console inline execution history.
+- Console visible-group parity with its existing filters and attached Ask behavior.
+- The approved navigator on both node rooms, with identical behavioral assertions.
+- Minimal canonical doc correction for the approved navigator, plus any B1 architecture change explicitly accepted.
+- Focused component/integration evidence, visual evidence at required widths/states, and a real-path E2E only if B1 makes a current path reachable.
 
-### Out of scope
+### Out of scope unless B1 explicitly expands it
 
-- Any backend, schema, migration, API, generated-type, or provider change.
-- Changing how iteration or retry chips filter (the `Execution` select contract stays).
-- Scroll-spy (updating the selector as the reader scrolls), persisting the navigated key across navigation or reload.
-- Story 2.10's read-only dock, `Go to iteration N` control, or any steering behaviour.
-- Renaming the existing `Attempt N` chip label beyond the `All iterations` addition.
-- Grouping in chat cards, Run Stream, or any non-room surface.
+- Backend/API/schema/migration/generated-type/provider changes.
+- Changing `Execution` filtering, graph-entry selection, Ask ownership, retry semantics, or loop execution semantics.
+- Client-side “all pages for all iterations” fetching, virtualization, scroll-spy, persisted navigator state, or Story 2.10's read-only steering dock.
+- Chat cards, Run Stream, and non-room transcript surfaces.
+- New design tokens or a shared JSX renderer across Legacy and Console.
 
-## End-to-end design
+## File inventory
 
-```text
-LogRow (occurrence, loopParent?)      LogRow (occurrence)         LogRow (node)
-        │ selectionForNodeMessages()          │                          │
-        ▼                                     ▼                          ▼
-  { kind: 'node' } unfiltered         { kind: 'occurrence' }      { kind: 'node' }
-        │                                     │ server-filtered          │
-        ▼                                     ▼                          ▼
-  selectNodeRoomMessages()  ──►  buildAgentHistory()  ──►  { items (each with execution), todos }
-                                                                  │
-                                                     groupByOccurrence(items)
-                                                                  │
-                                            { groups: [{ key, label, iteration, failed, items }], headers: boolean }
-                                                                  │
-                    ┌─────────────────────────────────────────────┴──────────────────────────────┐
-                    ▼                                                                            ▼
-   Legacy NodeTranscriptPane                                                   Console ConsoleNodeRoom
-     RoomRegion                                                                  RoomRegion
-       TodoStrip (when todos)                                                      ConsoleTodoStrip (when todos)
-       OccurrenceSelector (when headers)      ◄── shell behaviour #7 ──►           ConsoleOccurrenceSelector (when headers)
-       node-transcript-scroll                                                      console-node-room-scroll
-         NodeRoom: [OccurrenceHeader, items…] per group                              ConsoleAgentHistoryList: [ConsoleOccurrenceHeader, items…] per visible group
-       Jump to latest (conditional)                                                Jump to latest (conditional)
-```
+### Verified common-core and heading work
 
-### Shared core contract (`occurrence-groups.ts`)
+| Path                                                                                       | Change                                                                                           |
+| ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `packages/web/src/lib/agent-history.ts`                                                    | Add `TranscriptExecution`; preserve required `execution` on every item variant                   |
+| `packages/web/src/lib/agent-history.test.ts`                                               | Cover assistant/tool/lifecycle propagation, absent historical scope, and paired/standalone tools |
+| `packages/web/src/lib/project-text-transcript.ts`                                          | Include execution identity in text correlation and anonymous-delta boundaries                    |
+| `packages/web/src/lib/project-text-transcript.test.ts`                                     | Prove identical stream ids in different occurrences/attempts never merge                         |
+| `packages/web/src/lib/occurrence-groups.ts`                                                | New pure grouping and label composer                                                             |
+| `packages/web/src/lib/occurrence-groups.test.ts`                                           | Full grouping, label, order, prefix, immutability, and total-coverage table                      |
+| `packages/web/src/components/workflows/NodeRoom.tsx`                                       | Render Legacy flat or grouped history without rewriting row anatomy                              |
+| `packages/web/src/components/workflows/NodeRoom.test.tsx`                                  | CAP-6 renderer and semantic/visual-class assertions                                              |
+| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                            | Keep direct-render compatibility and add a grouped regression if still applicable after PR #202  |
+| `packages/web/src/components/workflows/NodeTranscriptPane.tsx`                             | Compute grouping and, after B2, own Legacy navigation against its scroller                       |
+| `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`                        | Group wiring and approved navigator/follow behavior                                              |
+| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`      | Render Console flat/grouped history and expose one renderability predicate                       |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`                      | Compute displayable groups and, after B2, own Console navigation                                 |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`                 | Paired CAP-6, filter, attached-Ask, and approved navigation tests                                |
+| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx`      | Apply grouping/headings without a navigator                                                      |
+| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` | Multi/single/filter cases and absence of a navigator                                             |
+| `packages/web/src/experiments/console/console-isolation.test.ts`                           | Preserve Console isolation                                                                       |
 
-```ts
-export interface OccurrenceGroup {
-  key: string | null;          // occurrence_id, or null for the unkeyed fallback group
-  label: string;               // 'Run 1 · failed' | 'Run 2 · retry' | 'Iteration 3' | '' for unkeyed
-  iteration: number | null;    // last loop_ancestry entry's iteration
-  retryEpoch: number | null;
-  failed: boolean;             // group holds a failed / iteration_failed lifecycle item
-  items: AgentHistoryItem[];   // seq order within the group
-}
-export interface OccurrenceGrouping { groups: OccurrenceGroup[]; headers: boolean }
-export function groupByOccurrence(items: readonly AgentHistoryItem[]): OccurrenceGrouping;
-export function occurrenceLabel(input: { retryEpoch: number | null; iteration: number | null; failed: boolean }): string;
-```
+Keep a tiny shell-specific heading function in each existing renderer unless the merged code demonstrates a real boundary; do not create four one-use component files by default.
 
-`headers` is true only when two or more distinct keys exist. `attempt_id` is never read. Inputs are never mutated; output objects are fresh; the function never throws on malformed metadata (it treats it as absent).
+### Conditional on the accepted decisions
 
-### Shell contract (both surfaces, identical)
+- B1 aggregate view may require `build-log-rows.ts` in both shells, `execution-room-model.ts`, `node-message-pages.ts`, selection helpers/call sites (including `WorkflowExecution.tsx` and `RunDetailPage.tsx`), server/API work, and their tests. None is authorized by the current plan until the first-class contract is written.
+- B2 determines whether selector components are separate files and whether `room-scroll-follow.ts` needs a navigation transition. Add exact files and tests to this inventory when the design artifact is approved.
+- E2E fixture/spec paths depend on B1. A current loop fixture cannot prove a multi-group view under strict occurrence filtering.
+- `EXPERIENCE.md` must distinguish the filtering `Execution` control from the approved occurrence navigator. Amend AD-7 only if B1 changes its adopted fetch contract.
 
-```text
-select aria-label="Occurrence"            — pinned, after the todo strip, before the scroller; absent unless headers
-  option value=""  Go to…                  — placeholder, selected until the reader navigates
-  option value=<key> <label>               — one per rendered header, in group order
-h3 id=<useId()>-<occurrence uuid> tabIndex=-1 — one per group when headers; text = label; rule after the label
-```
+## Implementation phases
 
-On change: `ignoreNextScrollRef.current = true`; `scroller.scrollTop = heading.offsetTop - scroller.offsetTop`; `setFollow(holdScrollAt(follow, scroller.scrollTop))`; `setNavigatedKey(key)`; then `heading.focus({ preventScroll: true })` only when the change was pointer- or Enter/Space-originated (a `keydown` listener on the select records the last key; ArrowUp/Down/Home/End/PageUp/PageDown mark the change as a browse step). `handleScroll` consumes the ignore flag once and skips `onRoomScroll` for that event while still reporting `scrollTop` upward. The heading is a `<h3>` so assistive technology can list and jump between executions; its text is core-composed and contains no agent-authored string. DOM ids come from `useId()` plus the UUID-validated occurrence id; `executionFrom` accepts only UUID-shaped ids, so no free-form string reaches an id.
+| Phase                                                                                          | Depends on | Deliverable                                                                                         |
+| ---------------------------------------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
+| [1. Decision gate and shared-core correctness](./phase-01-start.md)                            | None       | B1/B2/B4 recorded; refreshed plan; execution-safe projection and pure grouping tests/implementation |
+| [2. Grouped renderers and approved navigator](./phase-02-two-shell-headers-and-selector.md)    | Phase 1    | Headings on all three consumers; approved navigator on both rooms; Console filter/Ask parity        |
+| [3. Integration, visual/a11y evidence, docs, and gates](./phase-03-end-to-end-and-doc-sync.md) | Phases 1–2 | Reachability-appropriate integration evidence, canonical doc sync, full validation, PR handoff      |
+
+No production edit begins until B1, B2, and B4 are closed and this plan's conditional inventory and acceptance criteria are updated with those decisions.
 
 ## Acceptance criteria
 
-### Core contracts
+### Product and data correctness
 
-- [ ] Every `AgentHistoryItem` variant exposes `execution` (tool: call row first, result row fallback; assistant: merged text row; lifecycle: its row); `null` when absent. Existing item fixtures gain the field and every other field is unchanged.
-- [ ] `groupByOccurrence` keys on `occurrence_id` only, orders groups by first `seq`, rejoins non-contiguous occurrences into one group, attaches metadata-less items per decision 7, and sets `headers` only for two or more distinct keys.
-- [ ] Labels: `Run 1`; `Run 2 · retry`; `Run 1 · failed`; `Run 2 · retry · failed`; `Iteration 3` (no suffix even when `retry_epoch > 0` or the iteration failed); the strings `Attempt` and `Pass` never appear.
-- [ ] A transcript where every row lacks `execution` yields one unkeyed group, `headers: false`, and items identical to the input order.
-- [ ] `selectionForNodeMessages` returns `{ kind: 'node', rowId }` for a `loopParent` occurrence row and byte-for-byte the previous result for every other row; all four call sites use it and the local helpers are deleted.
-- [ ] `occurrenceSelection` in both `build-log-rows.ts` copies sets `loopParent: true` only for `node_type === 'loop'` executions whose `loop_ancestry` is absent or empty; iteration rows of the same node and a `loop:` node nested in a `loop_group` body do not get it; `executionLabel` returns `All iterations` for it.
-- [ ] `holdScrollAt(state, top)` returns `{ follow: false, pinToBottom: false, scrollTop: top }`.
+- [ ] A displayed transcript with at least two distinct `occurrence_id` values renders exactly one labelled section for each key; every history item and attached Ask card renders exactly once.
+- [ ] A transcript with zero or one distinct occurrence preserves the current flat rendering and shows neither occurrence headings nor navigator.
+- [ ] Grouping never reads `attempt_id` as a key or label; distinct attempts inside one occurrence remain one group.
+- [ ] Text deltas/snapshots with identical provider stream identifiers but different occurrence or attempt identities remain separate history items.
+- [ ] Leading metadata-less items stay unheaded; later metadata-less items attach to the nearest preceding group; an entirely unscoped historical transcript stays flat.
+- [ ] Labels match the canonical vocabulary and contain no agent-authored text.
+- [ ] Distinct rendered groups have labels/options that are distinguishable under the B4 rule, including accepted route-activation and nested-loop cases.
+- [ ] Modern loop behavior matches the accepted B1 contract and has a real test for its public entry path; no claim is made that Story 2.10 is unblocked under compatibility-only scope.
 
-### Room behaviour (asserted identically on both surfaces)
+### UI, interaction, and accessibility
 
-- [ ] Rows from two or more occurrences render one `<h3>` per group in group order, each with the core label; a single-occurrence transcript renders no heading and no `Occurrence` select.
-- [ ] The `Occurrence` select is a flex sibling immediately before the transcript scroller (after the todo strip when present) and is absent unless headers render.
-- [ ] A pointer change (or Enter/Space-confirmed change) scrolls the scroller to that heading, moves `document.activeElement` to the heading, and leaves the select showing that key; a subsequent `rows.length` increase on a live node does not move `scrollTop` to the bottom, including when the heading sits within 24 px of the bottom and the programmatic write dispatches a real `scroll` event.
-- [ ] Keyboard: with the select focused, ArrowDown three times scrolls to three successive headings while focus stays on the select; Enter then moves focus to the current heading. Both surfaces assert the identical sequence.
-- [ ] A heading whose occurrence owns a `pending` Ask (`execution_scope.occurrence_id === group.key`) carries a visible `· awaiting input` suffix with an `sr-only` equivalent, so the whole-loop view cannot look idle while an iteration is blocked.
-- [ ] Console `showSystem=false` never leaves an empty heading; a group reduced to zero visible items disappears from both the transcript and the select; `showToolCalls=false` behaves the same way.
-- [ ] `ConsoleExecutionHistory` renders headings for a multi-occurrence slice, applies the same visibility rule (no empty heading under `showSystem=false`), and never mounts a select.
-- [ ] The whole-loop view carries no unknown-scope notice, and iteration/retry chip rows still fetch their filtered scope (the E2E `[V:hitl.execution-scope]` assertion stays green).
-- [ ] Group headings and options contain only core-composed text; no agent-authored value enters an `id`, `aria-label`, `title`, or class.
+- [ ] Legacy and Console render the same labels, group ordering, absent/single/multiple states, and approved navigation outcomes.
+- [ ] Each occurrence label is an accessible heading at the B2-approved level; the DOM order and accessibility tree match visual order.
+- [ ] Heading visuals match `DESIGN.md` at a 460px room width on both shells: 10.5px mono, uppercase, `0.08em`, `text-secondary`, `10px 0 5px`, 1px rule to the right edge, no horizontal overflow, and no transcript-specific breakpoint.
+- [ ] At the host room's existing small-viewport layout, labels/rules remain within the room and the approved navigator remains operable without changing transcript row wrapping.
+- [ ] B2's default, active, keyboard, pointer, focus-visible, live-poll, vanished-target, and screen-reader states have identical tests on both node rooms.
+- [ ] Console `showToolCalls` / `showSystem` never leaves an empty heading or stale navigator option, and hiding a tool row does not hide its attached Ask card.
+- [ ] Console inline execution history renders headings when warranted but no node-room navigator.
 
-### End to end, visual, accessible
+### Contracts, reliability, and operations
 
-- [ ] On `e2e-hitl-run`'s `inspect-twice` node, choosing `All iterations` in the `Execution` select renders headings `Iteration 1` and `Iteration 2` plus the `Occurrence` select; selecting `Iteration 2` focuses that heading and brings it into the scroller's viewport; choosing an iteration chip removes both headings and the select. Proven on the Console route and the Legacy route.
-- [ ] Header anatomy at the canonical 460 px room width on both surfaces: 10.5 px mono uppercase, 0.08em tracking, `text-secondary`, a 1 px `border` rule filling the remaining width, margin 10/0/5; the select uses each surface's existing control styling and clears a 24 px target.
-- [ ] Chromium accessibility-tree evidence shows one combobox named `Occurrence`, one heading per group with the exact label, and focus on the heading after navigation.
-- [ ] Manual macOS/VoiceOver and Windows/NVDA checks are attempted and recorded; an unavailable pairing is recorded as blocked, never claimed.
+- [ ] Under compatibility-only B1, occurrence selection continues to send exact `occurrenceId`/`attemptId` filters and no selection helper/model is changed.
+- [ ] Any aggregate B1 choice has explicit retry/nesting/route/Ask/paging/performance tests and an updated file inventory before code starts.
+- [ ] Any aggregate API/selection cannot expose another run or node, broaden the installation's existing authorization policy, or log transcript/Ask payloads; its access checks and failure responses have focused tests.
+- [ ] Existing pagination, abort-on-scope-change, error/retry, restored scroll, live follow, “Jump to latest”, todos, Ask placement, and execution filtering remain green.
+- [ ] Common-core grouping is linear in displayed history size and adds no network requests; any aggregate view records page count and render timing on the 3,465-row local sample and meets an owner-approved budget.
+- [ ] No database migration or rollout step is introduced unless B1 explicitly requires one. Normal rollout is the Web bundle; rollback is a focused revert with no data cleanup.
+- [ ] No Console module imports from `@/components/`; no Web module imports `@archon/workflows`; no generated type is edited by hand.
 
-### Safety, compatibility, operations
+## Test strategy
 
-- [ ] No backend/API/schema/migration/generated/dependency change; no new design token; no `@/components/` import from Console; no `@archon/workflows` import.
-- [ ] Existing selection, pagination, interruption folding, todo strip, stick-to-bottom, Jump to latest, error/retry, and HITL suites stay green.
-- [ ] Rollout is the normal Web bundle; rollback is a focused revert with no data or cleanup step.
+1. Write pure projection/grouping tests first.
+2. Add identical named renderer assertions to Legacy and Console suites.
+3. Exercise Console visibility and attached Ask cards separately.
+4. Add approved navigation/follow tests only after B2 fixes the contract; do not encode browser-specific native-select guesses.
+5. Use real-path Playwright for modern loops only if B1 makes that path real. If B1 is compatibility-only, any intercepted/seeded browser fixture must be labelled renderer-integration evidence, not server reachability evidence.
+6. Run the narrow Web tests, package type-check, lint, Console isolation, relevant Playwright checks, then `bun run validate` before PR.
 
-## Phases
-
-| #   | Phase                                                                                   | Depends on | Deliverable                                                                                                                              |
-| --- | --------------------------------------------------------------------------------------- | ---------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | [Core grouping, fetch-scope amendment, red E2E](./phase-01-start.md)                    | None       | `execution` on items, `occurrence-groups.ts` + tests, `loopParent` + shared selection helper, `holdScrollAt`, compiling red E2E spec     |
-| 2   | [Two-shell headers and selector](./phase-02-two-shell-headers-and-selector.md)          | Phase 1    | Legacy and Console headers + selectors, room mounts, Console filter rule, parity tests                                                   |
-| 3   | [End-to-end and doc sync](./phase-03-end-to-end-and-doc-sync.md)                        | Phases 1–2 | Green E2E on both routes, visual/a11y evidence, EXPERIENCE/AD-7 corrections, full gates, PR                                              |
-
-Deep mode: Phase 1 is planned in full; Phases 2 and 3 are outlined with the scout pass each must run before editing. The cook step performs that scout before executing each later phase.
-
-## Global file inventory
-
-| Path                                                                                                                | Action                                                                                                  | Test impact                                   |
-| ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `packages/web/src/lib/agent-history.ts`                                                                             | Add `execution` to all three item variants; export `TranscriptExecution` type                           | `agent-history.test.ts` fixtures gain a field |
-| `packages/web/src/lib/agent-history.test.ts`                                                                        | Assert `execution` sourcing per variant; adapt existing deep-equal fixtures                             | modify                                        |
-| `packages/web/src/lib/occurrence-groups.ts`                                                                         | Create pure grouping + label composer                                                                   | new                                           |
-| `packages/web/src/lib/occurrence-groups.test.ts`                                                                    | Create full grouping/label/robustness table                                                             | new                                           |
-| `packages/web/src/lib/execution-room-model.ts`                                                                      | `loopParent?: true` on `ExecutionRowSelection`; `All iterations` label                                  | `execution-room-model.test.ts`                |
-| `packages/web/src/lib/node-message-pages.ts`                                                                        | Add `selectionForNodeMessages()`                                                                        | `node-message-pages.test.ts`                  |
-| `packages/web/src/lib/room-scroll-follow.ts`                                                                        | Add `holdScrollAt()`                                                                                    | `room-scroll-follow.test.ts` (create if absent)|
-| `packages/web/src/components/workflows/build-log-rows.ts`                                                           | `loopParent` on `LogRowSelection` + `occurrenceSelection`                                               | `build-log-rows.test.ts`                      |
-| `packages/web/src/experiments/console/components/inspect/build-log-rows.ts`                                         | Same change, Console copy                                                                               | Console `build-log-rows.test.ts`              |
-| `packages/web/src/components/workflows/NodeTranscriptPane.tsx`                                                      | Use shared selection helper; compute groups; mount `OccurrenceSelector`; navigation handler             | `NodeTranscriptPane.test.tsx`                 |
-| `packages/web/src/components/workflows/WorkflowExecution.tsx`                                                       | Use shared selection helper (delete local copy)                                                         | existing suites                               |
-| `packages/web/src/components/workflows/NodeRoom.tsx`                                                                | Accept optional `groups` + `headers` + `headingIdFor`; render `OccurrenceHeader` between groups; flat path when absent | `NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx` |
-| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                                                     | `mountItems()` renders `NodeRoom` directly; stays compiling because the new props are optional; add one grouped-render case | modify                          |
-| `packages/web/src/components/workflows/NodeRoom.tsx`, both `select-node-room-messages.ts` copies (`components/workflows/NodeRoom.tsx` `selectNodeRoomMessages`, `experiments/console/components/inspect/select-node-room-messages.ts`) | Slice a `loopParent` selection to rows whose `execution.retry_epoch` matches the row's `retryEpoch` | `NodeRoom.test.tsx`, Console `select-node-room-messages.test.ts` |
-| `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` (+ `.test.tsx`)                            | No planned edit; `executionOptionsForNode` consumes `executionLabel`, so its option-label assertions must be re-run and adapted for `All iterations` | `ConsoleInspectPane.test.tsx`   |
-| `packages/web/src/components/workflows/OccurrenceHeader.tsx`                                                        | Create Legacy heading                                                                                   | `NodeRoom.test.tsx`                           |
-| `packages/web/src/components/workflows/OccurrenceSelector.tsx`                                                      | Create Legacy pinned select                                                                             | `NodeTranscriptPane.test.tsx`                 |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`                                               | Use shared selection helper; compute groups + visibility; mount `ConsoleOccurrenceSelector`; navigation | `ConsoleNodeRoom.test.tsx`                    |
-| `packages/web/src/experiments/console/components/ConsoleOccurrenceHeader.tsx`                                       | Create Console heading                                                                                  | `ConsoleNodeRoom.test.tsx`                    |
-| `packages/web/src/experiments/console/components/ConsoleOccurrenceSelector.tsx`                                     | Create Console pinned select                                                                            | `ConsoleNodeRoom.test.tsx`                    |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`                               | Accept optional `groups` + `headers` + `headingIdFor`; render headings between visible groups; export `isTranscriptItemVisible(item, { showToolCalls, showSystem })` and use it in the render loop | `ConsoleNodeRoom.test.tsx`, `ConsoleExecutionHistory.test.tsx` |
-| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx`                               | Use shared selection helper; pass groups (headings only)                                                | `ConsoleExecutionHistory.test.tsx`            |
-| `e2e/ui/agent-occurrence-navigation.spec.ts`                                                                        | Create both-route behaviour, geometry, AX evidence on `e2e-hitl-run`                                    | new                                           |
-| `e2e/fixtures/workflows/e2e-occurrence-live-loop.yaml` + `e2e/lib/playwright/archon-runtime.ts`                     | Create a delayed two-iteration loop fixture (`delayMs`) and its run helper for the live-hold case        | new / modify                                  |
-| `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md`                     | Correct lines 59 and 391; note the selector scrolls                                                     | docs                                          |
-| `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md` | Append the AD-7 amendment (loop parent fetches node-scoped) with evidence                     | docs                                          |
-| `plans/260918-1711-issue-180-navigate-occurrences-and-loop-iterations/reports/acceptance.md`                        | Create evidence and gate report during implementation                                                   | report                                        |
-
-Files deliberately untouched: `packages/core/**`, `packages/server/**`, `packages/workflows/**`, `migrations/**`, `api.generated.d.ts`, `index.css`, `ConsoleRoomHeader.tsx`, `NodeRoomHeader.tsx`, `merge-agent-room-items.ts`, `select-visible-node-ask-interactions.ts`.
-
-## Implementation order and preflight
-
-1. Recheck issue #180, open PRs, active worktrees/runs, and `git status`. Stories 1.3, 1.4, 1.6 may be in flight and touch `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`, and their tests; rebase onto the accepted baseline before editing and repeat the scout at the start of Phases 2 and 3.
-2. Phase 1: write red core tests, add `execution` to items, implement `occurrence-groups.ts`, land `loopParent` + the shared selection helper + `All iterations` + `holdScrollAt`, write the E2E spec so it compiles and fails.
-3. Phase 2: write red parity tests in both shell suites; implement Legacy first, then Console; keep `ConsoleExecutionHistory` selector-free.
-4. Phase 3: turn the E2E spec green on both routes, gather evidence, sync docs, run all gates, open the PR from the template with `Closes #180`.
-
-## Validation commands
-
-Package-isolated only; never run root `bun test`.
+Planned commands after the decisions fix the exact spec files:
 
 ```bash
-(cd packages/web && bun test src/lib/occurrence-groups.test.ts src/lib/agent-history.test.ts src/lib/execution-room-model.test.ts src/lib/node-message-pages.test.ts src/lib/room-scroll-follow.test.ts)
-(cd packages/web && NODE_ENV=development bun test src/components/workflows/build-log-rows.test.ts src/components/workflows/NodeRoom.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx src/components/workflows/LegacyNodeRoom.test.tsx)
-(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/inspect/build-log-rows.test.ts src/experiments/console/components/inspect/select-node-room-messages.test.ts src/experiments/console/components/ConsoleInspectPane.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx src/experiments/console/console-isolation.test.ts)
-(cd packages/web && bun run type-check && bun run lint)
-(cd e2e && npm run typecheck)
-bun run --cwd e2e test:ui -- --grep 'occurrence'
-bun run --cwd e2e test:ui:hitl
+(cd packages/web && bun test src/lib/project-text-transcript.test.ts src/lib/agent-history.test.ts src/lib/occurrence-groups.test.ts)
+(cd packages/web && NODE_ENV=development bun test src/components/workflows/NodeRoom.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx src/components/workflows/LegacyNodeRoom.test.tsx)
+(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx src/experiments/console/console-isolation.test.ts)
+(cd packages/web && bun run type-check)
+bun run lint --max-warnings 0
+(cd e2e && bun run typecheck)
+# Run the B1-specific Playwright command recorded in Phase 3.
 bun run validate
 ```
 
-## Risks, compatibility, and rollback
+Never run root `bun test`.
 
-- **Execution ordering (verified):** `projectWorkflowExecutionHistory` sorts executions by `started_at` (`packages/server/src/routes/workflow-execution-history.ts:285`), so the loop node's outer execution is the FIRST Logs row and the FIRST `Execution` option; `chooseExecutionForNode` (`latestByOrder`) and `resolveGraphRoomRow` still land on the latest iteration, so the default room view is unchanged and `All iterations` is opt-in. Consequence for E2E: `[V:hitl.execution-scope]` in `e2e/ui/workflow-run-hitl-room.spec.ts` selects options 0 and 1 and polls for two distinct `occurrenceId`s; option 0 becomes the unfiltered view, so that case must select the two `Iteration N` options by label instead (Phase 3 Tests-before). The report must also show the whole-loop page renders within the 1 000 ms poll budget for a six-iteration node (grouping is O(n) over items already built).
-- **Scale ceiling of the unfiltered fetch (documented, not solved):** the `loopParent` view drains every row of the node at `limit: 100` per page (`node-message-pages.ts:196`) and regroups after each merge, so first open of a loop with dozens of verbose iterations is materially heavier than any scoped view. This is the same code path the pre-occurrence node-scoped view already takes. The acceptance report records the measured open time for the largest local fixture available (the six-iteration `ralph-loop-run` with ~3 500 rows) as the tested ceiling; virtualization or lazy group loading is out of scope and becomes its own story if the measurement exceeds the poll budget.
-- **Concurrent epic stories** edit the same renderer files. Preflight and conflict-aware test adaptation are mandatory; this plan does not restructure row markup.
-- **Programmatic scroll in happy-dom** has no layout. Component tests stub `offsetTop`/`scrollHeight`/`clientHeight` with `Object.defineProperty`, as the existing scroll tests already do; the real geometry claim is proven only by the Playwright spec.
-- **Non-contiguous outer occurrence** reorders one lifecycle row visually. Recorded as decision 2 and pinned by a fixture; the transcript never drops or duplicates a row.
-- **Manual AT availability** is an explicit acceptance blocker, not an excuse to fabricate evidence.
-- **Rollback:** revert the focused PR. No stored data, server contract, flag, or cleanup job is involved.
+## Compatibility, rollout, and rollback
 
-## Definition of done
+- Historical rows with missing `metadata.execution` remain supported and flat.
+- No stored data is rewritten. Adding an internal `execution: null` field changes only the Web presentation model.
+- The common-core path is provider-neutral and uses generated response types.
+- A focused Web revert restores the current presentation. If B1 introduces a public/API contract, its separate compatibility and rollback plan must be added before implementation.
+- The owning BMad workflow—not an ad hoc edit during planning—moves Story 1.7 to `done` after accepted behavior and gates pass.
 
-- [ ] Every acceptance criterion has automated evidence or an honestly recorded manual blocker.
-- [ ] Focused Web suites, the new and existing HITL E2E suites, package type-check/lint, and `bun run validate` pass.
-- [ ] The diff stays within the inventory except cause-aligned fixes discovered by tests and recorded in the report.
-- [ ] `reports/acceptance.md` distinguishes fixture, component, AX, screenshot, and manual-AT evidence.
-- [ ] `EXPERIENCE.md` no longer claims nothing scrolls to a selection; AD-7 carries the amendment.
-- [ ] The owning BMad workflow moves `1-7-navigate-transcript-occurrences-and-loop-iterations` to `done` only after the gates pass.
-- [ ] PR uses the repository template, targets `develop`, and includes `Closes #180`.
+## Risks and mitigations
+
+| Risk                                                                            | Mitigation                                                                                                                       |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| PR #202 changes the same renderers/tests                                        | Refresh from `develop` after it resolves, re-run the scout, and adapt rather than overwriting its row anatomy                    |
+| Projected text crosses occurrence boundaries before grouping                    | Scope text correlation by occurrence and attempt; pin with focused tests                                                         |
+| Metadata-less leading rows are falsely labelled                                 | Keep an explicit unheaded prefix; do not attach them forward                                                                     |
+| Non-contiguous occurrence rows reorder globally when collected into one section | Test the behavior explicitly; one unique anchor per occurrence takes precedence over global inter-group chronology               |
+| Distinct route/nested scopes derive the same base label                         | Block on B4; update the canonical composer and test collisions rather than showing raw ids or guessing                           |
+| Console filters produce empty groups or hide Ask cards                          | Share one item renderability predicate and count attached Ask content when deriving displayable groups                           |
+| Navigator re-arms live follow or loses focus                                    | B2 must define the behavior; model it as an explicit scroll-follow transition rather than an event-suppression heuristic         |
+| Aggregate loop view drains thousands of rows                                    | No aggregate implementation without an explicit B1 paging/performance contract and measurement against the verified large sample |
+
+## Final nine-perspective review
+
+1. **Product outcome:** grouping is clear; modern-loop reachability is honestly blocked instead of assumed.
+2. **Architecture:** the common core follows AD-7/AD-12; no adopted decision is silently reversed.
+3. **Contracts:** occurrence/attempt/filter semantics and generated wire types are preserved.
+4. **Security/reliability/data integrity:** labels use validated metadata only; no scope broadening or persistence mutation is authorized.
+5. **Performance/scalability:** common work is linear and request-neutral; aggregate cost is gated.
+6. **Implementation completeness:** all three history consumers, projection, filters, Asks, scrolling, and overlapping PR risk are covered.
+7. **Testing:** pure, paired renderer, filter, integration, visual, accessibility, and full repository gates map to criteria.
+8. **Operations/compatibility/rollback:** historical null scope remains flat; rollout/rollback need no data step on the common path.
+9. **Simplicity/maintainability:** one render-neutral grouper, two shell renderers, no speculative selection abstraction or one-use component proliferation.
 
 ## Unresolved questions
 
-None blocking. Decision 1 (loop parent fetches node-scoped) is the one product-visible choice; it is recorded with its evidence so a reviewer can reverse it before Phase 2 if the owner prefers the strict AD-7 reading, in which case Phases 1–2 still ship the grouping and selector for the pre-occurrence and fallback paths and Story 2.10 needs its own reachability decision.
-
-## Red Team Review
-
-### Session — 2026-09-19
-**Findings:** 16 (15 accepted, 1 rejected) across Security Adversary, Assumption Destroyer, and Failure Mode Analyst lenses.
-**Severity breakdown:** 5 Critical, 5 High, 6 Medium
-
-| # | Finding | Severity | Disposition | Applied To |
-|---|---------|----------|-------------|------------|
-| 1 | `loopParent` widening merges a `loop:` node nested in a `loop_group` across outer iterations | Critical | Accept | Decision 1, Phase 1 refactor step 4 + tests |
-| 2 | Widened view surfaces unscoped Asks via `ownsUnscopedInteractions` | High | Reject — rests on the outer row being latest-ordered; `workflow-execution-history.ts:285` sorts by `started_at`, so the outer row is first and the last iteration owns unscoped Asks | — |
-| 3 | No record that node- and occurrence-scoped requests share the same (absent) authorization | Medium | Accept | Decision 1 |
-| 4 | `executionFrom` accepts non-UUID `occurrence_id` as a group key | Medium | Accept | Phase 1 refactor step 1 + tests |
-| 5 | Index-based heading ids desync after a poll changes group membership | Medium | Accept | Phase 2 shell behaviour 3, 5 |
-| 6 | Console filter can remove the navigated group without resetting the select | Medium | Accept | Decision 4, Phase 2 shell behaviour 4 + tests |
-| 7 | Default-view claim inverted: executions sort by `started_at`, outer row is first | Critical | Accept (already corrected by the planner's own verification before the report) | Risks, Phase 3 tests |
-| 8 | `LegacyNodeRoom.test.tsx` mounts `NodeRoom` directly and was missing from the inventory | Critical | Accept — new `NodeRoom` props are optional; file added to inventory and Phase 2 | Inventory, Phase 2 |
-| 9 | `workflow retry-node` on a `loop:` node yields two `loopParent` rows sharing one unfiltered fetch | Critical | Accept — client slice by `retry_epoch` in both `selectNodeRoomMessages` copies | Decision 1, Phase 1 |
-| 10 | `ConsoleInspectPane.tsx` `executionOptionsForNode` is an unlisted `executionLabel` consumer | High | Accept | Inventory, Phase 1 tests, validation commands |
-| 11 | Console visibility predicate is inline, not shared | High | Accept — export `isTranscriptItemVisible` | Phase 2 |
-| 12 | Programmatic `scrollTop` write fires `scroll`, re-arming pin-to-bottom within 24 px of the end | Critical | Accept — ignore-next-scroll ref + synthetic-scroll unit test | Decision 4, Phase 2 |
-| 13 | Arrow-key `change` moves focus off the select: keyboard focus trap | High | Accept — arrow changes browse (scroll + hold), pointer/Enter changes focus the heading | Decision 4, Phase 2 tests |
-| 14 | Live-hold race untested in unit and conditionally skipped in E2E | High | Accept — synthetic scroll-event unit test; E2E uses the existing `e2e-fake` `delayMs` scenario field in a dedicated fixture instead of `test.skip` | Phase 2, Phase 3 |
-| 15 | No scale safeguard for the unfiltered loop-parent drain | Medium | Accept as documented ceiling with measured evidence; virtualization out of scope | Risks |
-| 16 | `All iterations` can hide a pending Ask with no cue | Medium | Accept — `· awaiting input` heading suffix | Decision 8, Phase 2 |
-
-## Validation Log
-
-Interview not run (non-interactive finish requested). Decisions 1–10 were adopted with their recommended defaults and are reviewer-overridable; the only product-visible one is decision 1. Verification pass: the Security Adversary checked 20 cited claims, all VERIFIED; the planner separately corrected the execution-ordering claim (see Risks) against `workflow-execution-history.ts:285`.
+B1, B2, and B4 block production implementation; B3 blocks branch refresh and PR handoff. Their required decision fields are explicit above. Do not begin implementation, amend AD-7, or claim Story 2.10 is unblocked until B1/B2/B4 are resolved and this plan is updated; do not rebase/open the PR until B3 is resolved.
