@@ -21,7 +21,7 @@ below are additional manual exploration, not extra guarantees from this recipe.
 - Run `archon workflow runs --json` after a `workflow run`.
 - Run `archon workflow get <run-id> --verbose --json`.
 - Run `archon workflow status --json` for active runs.
-- Open `/console` or `/console/p/<projectId>/r/<runId>` (the console reads the same HTTP APIs).
+- Open `/console` or `/console/p/<projectId>/r/<runId>`. Console run **detail** reads `GET /api/workflows/runs/:id` (same as this recipe). Console run **list** reads `GET /api/dashboard/runs`, not `GET /api/workflows/runs`.
 
 ## Driving it with verify-archon
 
@@ -42,5 +42,5 @@ Preconditions:
 - Read `result.state` and `result.terminal` from `workflow get --json`, not from log prose.
 - `approve` / `reject` / `resume` with `--json` do not continue execution inline. After a gate, resume only when `resumable` is true.
 - Never mark a running or paused run abandoned because it looks stale. That is a cross-process lifecycle mutation.
-- HTTP run list is install-wide; CLI `workflow runs` defaults to this project cwd. Compare ids, not list length.
+- HTTP `GET /api/workflows/runs` is install-wide; CLI `workflow runs` defaults to this project cwd. Compare ids, not list length. Console's visible list is `GET /api/dashboard/runs` and can differ in shape and pagination.
 - `--all` on `workflow runs` ignores cwd scope. Do not use it unless you intend a cross-project view.
