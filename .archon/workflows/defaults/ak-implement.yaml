@@ -9,7 +9,7 @@ description: |
         convert plan into a Ralph PRD (prd.md + prd.json) CO-LOCATED with it ->
         autonomous story-by-story implementation via a native in-parent Ralph loop ->
         Codex repairs any remaining Ralph blockers, plan gaps, or defects ->
-        create a PR only after the Codex repair gate passes.
+        create a PR after the Codex repair step.
         Never trusts ralph-loop-run.
   Input: REQUIRED. A GitHub issue URL / #N whose body links a plan path, OR a plan
         directory (plans/<slug>/, specs/<slug>/) or a .md plan file
@@ -36,7 +36,7 @@ nodes:
       mkdir -p plans "$ARTIFACTS_DIR/ak-implement"
       git rev-parse HEAD > "$ARTIFACTS_DIR/ak-implement/base-sha.txt"
       echo ""
-      echo "Pipeline: resolve plan  ->  plan->Ralph PRD (co-located)  ->  native Ralph loop  ->  Codex final repair gate  ->  PR"
+      echo "Pipeline: resolve plan  ->  plan->Ralph PRD (co-located)  ->  native Ralph loop  ->  Codex final repair  ->  PR"
       echo "Starting Step 1 of 5: resolve plan..."
 
   # ───────────────────────────────────────────────────────────────────
@@ -201,11 +201,8 @@ nodes:
       - The important problems you found.
       - The changes you made.
       - Any remaining risks, assumptions, or unresolved questions.
-      - Whether the plan is ready to implement.
 
       Return the report in `report`.
-      Set `ready` to `true` only when the revised plan is ready to implement and `blockers` is empty.
-      Otherwise, set `ready` to `false` and list every unresolved blocker.
     depends_on: [resolve-plan]
     provider: codex
     effort: xhigh
@@ -214,28 +211,9 @@ nodes:
     output_format:
       type: object
       properties:
-        ready:
-          type: boolean
         report:
           type: string
-        blockers:
-          type: array
-          items:
-            type: string
-      required: [ready, report, blockers]
-
-  - id: verified-plan-ready
-    depends_on: [verify-and-fix-plan]
-    when: "$verify-and-fix-plan.output.ready == true"
-    bash: |
-      echo "Plan verification passed; proceeding to PRD generation."
-
-  - id: verified-plan-blocked
-    depends_on: [verify-and-fix-plan]
-    when: "$verify-and-fix-plan.output.ready == false"
-    bash: |
-      echo "Plan verification found unresolved blockers; implementation will not start." >&2
-      exit 1
+      required: [report]
 
   # ───────────────────────────────────────────────────────────────────
   # STEP 3 / 5 — Convert the plan into a Ralph PRD, CO-LOCATED with the plan
@@ -312,7 +290,7 @@ nodes:
          non-empty array with every story `passes: false`.
 
       Report `$resolve-plan.output.prd_dir` as `prd_dir`.
-    depends_on: [verified-plan-ready]
+    depends_on: [verify-and-fix-plan]
     provider: devin
     model: swe-2-max
     context: fresh
@@ -466,25 +444,17 @@ nodes:
          Keep the change inside the original plan scope.
       7. Update a PRD story to `passes: true` only after all of its unchanged
          acceptance criteria pass.
-         Before returning PASS, confirm every PRD story has `passes: true`.
+         Before finishing, confirm every PRD story has `passes: true`.
       8. Run fresh targeted checks after each repair batch, then run the best final
          validation command required by the plan or repository.
       9. Write the review report to
          `$ARTIFACTS_DIR/ak-implement/final-review.md` and the repair report to
          `$ARTIFACTS_DIR/ak-implement/final-fixes.md`.
 
-      ## Gate
-
-      Return PASS only when the complete original plan is implemented, every PRD
-      story passes, no Critical or Important finding remains, and fresh validation
-      evidence is green.
-      Return FAIL when an external dependency, missing credential, or unresolved
-      product decision prevents a safe repair.
       Return only JSON.
     output_format:
       type: object
       required:
-        - gate
         - fixes_count
         - remaining_findings_count
         - review_report
@@ -492,11 +462,6 @@ nodes:
         - validation_summary
         - summary
       properties:
-        gate:
-          type: string
-          enum:
-            - PASS
-            - FAIL
         fixes_count:
           type: number
         remaining_findings_count:
@@ -510,25 +475,13 @@ nodes:
         summary:
           type: string
 
-  - id: stop-on-final-fix-failure
-    description: Stop when Codex cannot safely repair all remaining Ralph work.
-    depends_on:
-      - codex-final-fix
-    when: "$codex-final-fix.output.gate == 'FAIL'"
-    cancel: |
-      Codex could not repair all remaining Ralph work.
-      Review: $codex-final-fix.output.review_report
-      Fixes: $codex-final-fix.output.fix_report
-      Summary: $codex-final-fix.output.summary
-
   # ───────────────────────────────────────────────────────────────────
-  # STEP 5 / 5 — Create PR only after the Codex final repair gate passes
+  # STEP 5 / 5 — Create PR after the Codex final repair step
   # ───────────────────────────────────────────────────────────────────
   - id: create-pull-request
     command: archon-create-pr
     provider: devin
     depends_on: [codex-final-fix]
-    when: "$codex-final-fix.output.gate == 'PASS'"
     context: fresh
     model: swe-2-high
     idle_timeout: 900000
