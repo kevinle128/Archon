@@ -56,22 +56,22 @@ Today `buildAgentHistory()` drops `metadata.execution`, so the Web UI cannot tel
 
 ### Files to change (verified inventory)
 
-| Path | Change |
-| --- | --- |
-| `packages/web/src/lib/agent-history.ts` | Add `TranscriptExecution`; required `execution` on every `AgentHistoryItem` variant |
-| `packages/web/src/lib/agent-history.test.ts` | Propagation + `execution: null` for historical rows |
-| `packages/web/src/lib/project-text-transcript.ts` | Execution identity in keyed stream correlation + anonymous-delta boundary |
-| `packages/web/src/lib/project-text-transcript.test.ts` | Same stream ids across occurrences/attempts never merge |
-| `packages/web/src/lib/occurrence-groups.ts` | NEW — pure grouping + label composer |
-| `packages/web/src/lib/occurrence-groups.test.ts` | NEW — full grouping/label/prefix/immutability table |
-| `packages/web/src/components/workflows/NodeTranscriptPane.tsx` | Compute grouping; own Legacy navigation (post-B2) |
-| `packages/web/src/components/workflows/NodeRoom.tsx` (+`.test.tsx`) | Flat or grouped render; CAP-6 assertions |
-| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` | Keep direct-mount compatibility |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` | Flat/grouped render + one shared renderability predicate |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` (+`.test.tsx`) | Displayable groups + Console navigation (post-B2) |
-| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` (+`.test.tsx`) | Headings only, no navigator |
-| `packages/web/src/experiments/console/console-isolation.test.ts` | Must stay green — no `@/components/` imports into Console |
-| `packages/web/src/lib/room-scroll-follow.ts` | Only if B2 requires an explicit new transition |
+| Path                                                                                                 | Change                                                                              |
+| ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `packages/web/src/lib/agent-history.ts`                                                              | Add `TranscriptExecution`; required `execution` on every `AgentHistoryItem` variant |
+| `packages/web/src/lib/agent-history.test.ts`                                                         | Propagation + `execution: null` for historical rows                                 |
+| `packages/web/src/lib/project-text-transcript.ts`                                                    | Execution identity in keyed stream correlation + anonymous-delta boundary           |
+| `packages/web/src/lib/project-text-transcript.test.ts`                                               | Same stream ids across occurrences/attempts never merge                             |
+| `packages/web/src/lib/occurrence-groups.ts`                                                          | NEW — pure grouping + label composer                                                |
+| `packages/web/src/lib/occurrence-groups.test.ts`                                                     | NEW — full grouping/label/prefix/immutability table                                 |
+| `packages/web/src/components/workflows/NodeTranscriptPane.tsx`                                       | Compute grouping; own Legacy navigation (post-B2)                                   |
+| `packages/web/src/components/workflows/NodeRoom.tsx` (+`.test.tsx`)                                  | Flat or grouped render; CAP-6 assertions                                            |
+| `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                                      | Keep direct-mount compatibility                                                     |
+| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`                | Flat/grouped render + one shared renderability predicate                            |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` (+`.test.tsx`)                 | Displayable groups + Console navigation (post-B2)                                   |
+| `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` (+`.test.tsx`) | Headings only, no navigator                                                         |
+| `packages/web/src/experiments/console/console-isolation.test.ts`                                     | Must stay green — no `@/components/` imports into Console                           |
+| `packages/web/src/lib/room-scroll-follow.ts`                                                         | Only if B2 requires an explicit new transition                                      |
 
 Shared grouping contract (plan.md "Shared grouping contract"): `OccurrenceGroup { key, label, items, iteration, retryEpoch, failed }`, `OccurrenceGrouping { prefixItems, groups, showHeaders /* groups.length >= 2 */ }`; `groupByOccurrence(items)` pure, one pass, input unmutated, every item returned exactly once; `TranscriptExecution` derived from `NodeMessageRow['metadata']['execution']` — never a hand-copied interface.
 
@@ -92,13 +92,13 @@ Shared grouping contract (plan.md "Shared grouping contract"): `OccurrenceGroup 
 
 ## Story overview
 
-| # | Story | Phase | Depends on |
-| --- | --- | --- | --- |
-| US-001 | Close decision gates B1–B4, refresh plan, preflight | 1 (gates A–D + preflight) | — |
-| US-002 | Occurrence-safe projection + pure grouping core (TDD) | 1 (impl) | US-001 |
-| US-003 | Occurrence headings on all three history consumers | 2 (renderers) | US-002 |
-| US-004 | B2-approved navigator on both node rooms + scroll-follow | 2 (navigator) | US-003 |
-| US-005 | Integration/visual/a11y evidence, doc sync, gates, PR | 3 | US-004 |
+| #      | Story                                                    | Phase                     | Depends on |
+| ------ | -------------------------------------------------------- | ------------------------- | ---------- |
+| US-001 | Close decision gates B1–B4, refresh plan, preflight      | 1 (gates A–D + preflight) | —          |
+| US-002 | Occurrence-safe projection + pure grouping core (TDD)    | 1 (impl)                  | US-001     |
+| US-003 | Occurrence headings on all three history consumers       | 2 (renderers)             | US-002     |
+| US-004 | B2-approved navigator on both node rooms + scroll-follow | 2 (navigator)             | US-003     |
+| US-005 | Integration/visual/a11y evidence, doc sync, gates, PR    | 3                         | US-004     |
 
 ## Validation commands
 
