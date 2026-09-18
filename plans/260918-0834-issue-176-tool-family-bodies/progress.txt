@@ -1,5 +1,21 @@
 ## Codebase Patterns
 
+### Read-only DB access without @archon/core adapters
+- Where: `scripts/audit-generic-fallback.ts`
+- Pattern: DB adapters are unsafe for read-only tooling — `SqliteAdapter`'s constructor enables WAL + applies schema (writes). SQLite: `new Database(path, { readonly: true })` + `PRAGMA query_only = ON` inside one deferred txn. PostgreSQL: direct `Bun.sql` client + `sql.begin` + `SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY`; never PostgresAdapter or `pg`. Pass the PG URL via an env-var NAME flag (`--postgres-env VAR`) so credentials stay off argv.
+- Gotcha: `readonly: true` cannot open a *cleanly checkpointed* WAL db (no `-shm` to attach); live WAL (`-shm`/`-wal` present) and rollback-mode dbs open fine. Catch the open error and guide — never fall back to `immutable=1` (ignores WAL sidecars) or a write-capable handle.
+
+### SQLite `->`/`jsonb ->` JSON projection asymmetry
+- Where: `scripts/audit-generic-fallback.ts` (`SQLITE_PAGE_SELECT`, `PG_PAGE_SELECT`)
+- Pattern: SQLite `payload -> '$.k'` returns JSON text only for composites — scalars come back as SQL values (string/number), which makes "is this JSON text" unverifiable. Re-wrap by type: `CASE json_type(payload,'$.k') WHEN 'object'|'array' THEN payload->'$.k' WHEN 'text' THEN json_quote(payload->>'$.k') WHEN 'integer'|'real' THEN CAST(... AS TEXT) WHEN 'true'|'false'|'null' THEN literal END`. PostgreSQL `(payload -> 'k')::text` renders every jsonb type as JSON text natively. Key presence = `json_type(...) IS NOT NULL` / `jsonb_exists(...)`.
+
+### Streaming tally over keyset pages
+- Where: `scripts/audit-generic-fallback.ts` (`ToolCardTally`)
+- Pattern: when correlated rows (call/result) must be grouped before processing, page by `(run, node, seq, id)` keyset and buffer only the current group — flush on the group boundary, fail closed if the stream revisits a completed group (out-of-order = broken pager) or exceeds a per-group ceiling. Both sync (sqlite) and async (pg) drivers push rows into the same accumulator; never materialize the corpus.
+
+### Import-safe CLI scripts
+- Pattern: all parsing/connection/output/writes inside `main()`, gated by `if (import.meta.main) { process.exit(await main(process.argv.slice(2))) }`. Prove it with a child-process test: `bun -e "await import('...')"` in a scrubbed-env empty cwd must emit nothing and create nothing.
+
 ### Porting markup-regex tests to happy-dom
 - Where: `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`
 - Pattern: happy-dom `innerHTML` does NOT escape `"`/`'` inside text nodes — Legacy assertions like `not.toContain('" onload="')` or `toContain('onload=&quot;')` fail under DOM mounting. Assert DOM facts instead: `el.getAttribute('onload')` null-sweeps over `querySelectorAll('*')`, `querySelector('a'/'img'/'script'/'b')` null checks, and `code[class*="language-"]` absence for hostile language values.
@@ -155,5 +171,32 @@ BLOCKER US-001 | gate=`bun run format:check` | cause=`plans/260918-0834-issue-17
 - happy-dom `innerHTML` doesn't escape quotes in text nodes — port markup-regex attack assertions to DOM attribute sweeps (see Codebase Patterns).
 - The generic-arm `{…}`/`[n]` markers and `2 matches` count text come from content badges/normalizer, not the row — reuse `toolItem`/`openToolItem` helpers (direct `AgentHistoryItem` + `initialOpen`) rather than driving `buildAgentHistory` for body-matrix tests.
 - `formatToolIo` takes the whole `{name, input, output}` payload object for the Raw slot.
+
+---
+## 2026-09-18 — US-005: Read-only generic-fallback audit CLI
+
+**Status**: PASSED
+**Files changed**:
+- `scripts/audit-generic-fallback.ts` — import-safe read-only audit: `--sqlite <path>` / `--postgres-env <VAR>` corpus selection (no implicit ~/.archon/DATABASE_URL target), `--record <path>` (requires `--source`, atomic temp+rename), `--check <path>` (record-only, never opens a database). SQLite: `{readonly:true}` + `PRAGMA query_only` in one deferred txn; PostgreSQL: direct `Bun.sql` + `sql.begin` + `SET TRANSACTION ... REPEATABLE READ, READ ONLY` — never adapters/`pg`. Projection selects id/run/node/seq, payload id/name/input (dialect JSON projection renders every input type as JSON text), output-key-present boolean (inert `Symbol` sentinel in-process), tool_phase/occurrence/attempt — output bodies never leave the DB. `ToolCardTally` streams keyset pages `(run,node,seq,id)`, buffers only the current (run,node) group, pairs via `projectToolTranscript()`, classifies via `toolPresentation({name,input,output:undefined})`; 10k-row per-node ceiling + out-of-order stream both fail closed. Integer threshold `generic*100 >= logical*2`; exits 0/1 policy/2 usage/3 data-access. Record: schemaVersion, generatedAt, source, dialect, denominator, auditSourceSha256 (tool-presentation + tool-output + pair-tool-transcript), counts, recomputed-fraction check, capped privacy-filtered genericNames.
+- `scripts/audit-generic-fallback.test.ts` — 45 tests: pairing/denominator matrix, page-boundary pairing, cross-group isolation, exactly/below/above 2%, import-safety child process, print-only default, atomic record + recompute, every record failure (missing/stale/future/hash/malformed/zero/fraction-lie/threshold), malformed-row identity-without-payload, 8MB output projection, 200-group bounded-memory fixture, node ceiling, no-fallback access failure, live-WAL read, PG dialect gated on `ARCHON_AUDIT_TEST_PG_URL` (creates/drops an isolated DB).
+- `_bmad-output/specs/spec-agent-node-room/test-plan.md` — denominator decision recorded: adopted `logical-tool-cards-v1` per the PRD headless clause.
+- `plans/…/reports/us-005-audit-decision.md` — full decision + evidence record.
+
+**Acceptance criteria verified**:
+- [x] Denominator decision recorded in test-plan.md + reports/ — `logical-tool-cards-v1` adopted; no owner-ratified alternative in repo; single metric implemented
+- [x] Import performs no arg parsing/connection/output/write; `main()` only under `import.meta.main`; no implicit DB target; default prints only; `--record` explicit + atomic; `--check` never opens a database
+- [x] Read-only handles enforced both dialects; consistent snapshot; minimal projection (output bodies never leave DB); PairableMessage validation with inert sentinel; per-(run,node) grouping ordered by seq; `projectToolTranscript()` + `toolPresentation({name,input,output:undefined})`; pending/legacy-result count, text/status excluded
+- [x] Keyset paging inside snapshot; only current group + aggregates held; per-node ceiling documented + fail-closed actionable error; corpus never materialized
+- [x] Integer threshold — exactly 2% fails; malformed rows + zero-card corpus fail closed; distinct exits 1/2/3 for policy/usage/data-access
+- [x] Record schema per phase-03 incl. auditSourceSha256; checker recomputes fraction and rejects disagreement; no credentials/payloads/paths/URLs in stdout or record; genericNames deterministic (count desc, name asc), capped, token-only privacy rule
+- [x] Test matrix covers every listed case (45 tests; PG pair verified against live container)
+- [x] Fixtures in temp dirs passed explicitly, removed in finally; subprocess envs scrubbed of ARCHON_HOME/DATABASE_URL
+- [x] `bun test ./scripts/audit-generic-fallback.test.ts` 45 pass (43 + 2 PG-gated); `bun run type-check`, `bun run lint --max-warnings 0`, `bun run format:check` all clean
+
+**Learnings**:
+- Family resolution inspects input keys — a generic *name* with `input.command` classifies `shell`; whitespace-bearing names classify `shell` via `isCommandLikeName`, so generic-card names are single tokens in practice (the record's token-only rule is belt-and-braces against future resolver changes).
+- `eslint quotes` with `avoidEscape:true` allows `"WHERE kind = 'tool'"` double-quoted SQL fragments; `no-non-null-assertion` forbids `!` — restructure with `else if` narrowing instead.
+- `bun test` default 5s budget bites a 15k-row fixture — keep corpus-scale tests ~1-2k rows; the structural bound (page size + group ceiling) is what needs demonstrating.
+- Local PG for dialect testing: `docker run postgres:17-alpine` on a spare port; test creates/drops an isolated database via `ARCHON_AUDIT_TEST_PG_URL`.
 
 ---

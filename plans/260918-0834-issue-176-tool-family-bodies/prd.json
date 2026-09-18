@@ -103,8 +103,8 @@
       "technicalNotes": "Phase 3 audit half (phase-03 \u00a7Blocking decision, \u00a7Proposed audit semantics, \u00a7Command safety contract, \u00a7Audit tests). NEVER import @archon/core DB connection \u2014 adapters apply schema on construction. If PostgreSQL selected, test against repo's existing PostgreSQL CI service or isolated local test DB with default_transaction_read_only \u2014 SQLite fixture is not proof of both dialects.",
       "dependsOn": ["US-004"],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: scripts/audit-generic-fallback.ts, scripts/audit-generic-fallback.test.ts, _bmad-output/specs/spec-agent-node-room/test-plan.md (denominator decision), reports/us-005-audit-decision.md. Denominator adopted: logical-tool-cards-v1 (PRD headless clause; no owner-ratified alternative found). Gates: 45 tests pass (43 + 2 PG gated on ARCHON_AUDIT_TEST_PG_URL, verified against live container), type-check, lint --max-warnings 0, format:check clean."
     },
     {
       "id": "US-006",
