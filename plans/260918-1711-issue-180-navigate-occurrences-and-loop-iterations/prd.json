@@ -103,8 +103,8 @@
       "technicalNotes": "Phase 3 of phase-03-end-to-end-and-doc-sync.md in full: integration strategy per B1, visual acceptance matrix, accessibility evidence, existing regressions, documentation sync, validation commands, evidence report, PR and workflow handoff. Follow repository evidence conventions for screenshots (do not commit unless convention requires). The owning BMad workflow \u2014 not this story \u2014 flips Story 1.7 to done.",
       "dependsOn": ["US-004"],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: e2e/ui/occurrence-navigation.spec.ts (real SQLite-seeded renderer-integration spec, 6 tests, both shells), reports/acceptance.md + reports/evidence/*.png (14 screenshots, measured 460px rooms), UX docs synced (DESIGN.md delta-5 reconciled, EXPERIENCE.md residual-tie wording corrected, both key mocks gained navigator row). All gates pass incl. bun run validate. Pre-existing prettier drift in prd.md + plan journal fixed via separate chore(unblock) commit 0f844ea8."
     }
   ]
 }

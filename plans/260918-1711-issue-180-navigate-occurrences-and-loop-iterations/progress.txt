@@ -186,3 +186,35 @@
 - Scope change resets `navTarget` explicitly AND the derived select value already collapses to placeholder when the group is gone — belt and suspenders, both cheap.
 
 ---
+
+## 2026-09-19 — US-005: Integration evidence, visual/a11y matrix, doc sync, and PR handoff
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/occurrence-navigation.spec.ts` — NEW. Real SQLite-seeded renderer-integration spec (6 tests): lifecycle events + node messages inserted via the worker's real DB, exercising the true request path (`json_extract` occurrence filter, run-detail execution projection, pagination drain) on both shells. Explicitly compatibility/B1 evidence — not modern-loop executor reachability.
+- `plans/.../reports/acceptance.md` — NEW. Maps every US-005 AC to named tests, commands, evidence type, artifacts, measured room width, B1 limitation.
+- `plans/.../reports/evidence/*.png` — 14 screenshots (see below).
+- UX docs: `DESIGN.md` (delta-5 navigator paragraph reconciled to shipped anatomy), `EXPERIENCE.md` (residual-tie `· occurrence K` wording corrected to global 1-based order), `key-legacy-node-room.html` + `key-console-node-room.html` (added the delta-5 `Jump to` control row + `.exec-select` style).
+
+**Acceptance criteria verified**:
+- [x] B1 integration evidence: e2e asserts node-scoped request with `occurrenceId=null` (no filter) and scoped selection sending exact `occurrenceId`+`attemptId` → one group, no headings/navigator. Component suites remain the primary multi-occurrence proof. No aggregate entry point; 2.10 stays blocked.
+- [x] Regression evidence: distinct filtered requests, Execution select filter/refetch, pagination (high-watermark/refresh/500-partial-failure), live follow/manual hold/`Jump to latest`, Console tool+system toggles, console-isolation suite — all green.
+- [x] Visual matrix, 9 states, both shells: flat unscoped (`occ-none` metadata-less node), single-occurrence flat, retry pair (`Run 1 · failed`, `Run 2 · retry · failed`), loop occurrences (`Iteration N`), nested-collision disambiguation (`Iteration 1 › Iteration 1 · loopX/loopY`), Console filtered to one displayable group → flat, 500 partial-error with loaded groups, live append under manual hold, target-removed→placeholder+focus-on-toggle.
+- [x] 460px authoritative width: measured exactly 460px both shells (Console @1430×560, Legacy @1150×560), asserted 452–468 + tokens via computed styles; narrow 390×844 host breakpoint covered; focus-visible screenshots for select + heading.
+- [x] Automated a11y: h3-per-group exact names, no heading on prefix, `Jump to` label/placeholder/options/`aria-controls`, DOM==visual order, keyboard traversal+commit on both shells, zero live-regions in scroller. Manual AT recorded as unavailable.
+- [x] Doc sync: EXPERIENCE/DESIGN/mocks now match shipped; ARCHITECTURE-SPINE AD-7/AD-12.7 verified already aligned — no edits needed there.
+- [x] reports/acceptance.md written.
+- [x] Gates: 51 + 113 + 96 focused tests, web type-check, lint --max-warnings 0, e2e typecheck, 6/6 e2e, `bun run validate` — ALL PASS.
+- [x] PR handoff recorded as parent-owned (branch `archon/thread-499eb44c`, base `develop`, template `.github/pull_request_template.md`, title `feat(web): navigate transcript occurrences`, `Closes #180` warranted). No PR created here; no sprint-status mutation.
+
+**Learnings**:
+- Console `System` toggle defaults OFF → status-only groups are hidden; a seeded status-only occurrence is invisible until System is enabled. Use this to exercise the displayable-groups filter contract rather than fighting it.
+- `jumpToOccurrence` only clears `follow` when the target isn't fully visible; to prove manual hold, leave enough content below the fold (> FOLLOW_THRESHOLD_PX=24) or the scroll handler re-pins.
+- Legacy `Close` lives in NodeRoomHeader outside the transcript region — same as Console; scope focus assertions to `page`, not the room region.
+- Room opener button ids embed the encoded rowId (`exec:occ-multi:unscoped:...`) — `button[id*="unscoped"]` can match OTHER nodes' rows; scope with the node id too.
+- Seeding order matters: latest execution row wins the default `?node=` selection — seed the unscoped execution LAST for a node-scoped multi-occurrence room.
+- `bun run validate` parallel test phase can hit transient `SQLITE_BUSY_RECOVERY` in `packages/cli` e2e tests on this external drive — deterministic on isolated re-run, flake under parallel load.
+
+BLOCKER US-005 | gate=`bun run validate` (prettier --check) | cause=pre-existing prettier drift in plans/260918-1711-.../prd.md + plans/journals/2026-09-18-plan-issue-180-...md — same fingerprint on clean base with story stashed | action=chore(unblock) commit 0f844ea8 running prettier --write on exactly those two files; gate then green | 2026-09-19
+
+---
