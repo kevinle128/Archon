@@ -33,6 +33,7 @@ import type {
 import { getNodeMessage, submitRunReviewFeedback } from '../skills/runs';
 import type { DagNode } from '../skills/workflows';
 import { ApprovalPanel } from './ApprovalPanel';
+import { ConsoleTodoStrip } from './ConsoleTodoStrip';
 import { ConsoleAskCard, ConsoleInvalidAskCard } from './ask/ConsoleAskCard';
 import type { AskActionStateByRequest } from './ask/ask-answer-controller';
 import { resolveAskCardPresentation } from './ask/ask-card-presentation';
@@ -871,6 +872,9 @@ export function ConsoleNodeRoom({
         body
       ) : (
         <RoomRegion nodeId={nodeId}>
+          {agentActive && agentHistory.todos.length > 0 ? (
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+          ) : null}
           <div
             ref={scrollRef}
             data-testid="console-node-room-scroll"

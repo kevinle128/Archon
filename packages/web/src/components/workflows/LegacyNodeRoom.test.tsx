@@ -964,6 +964,117 @@ describe('LegacyNodeRoom dispatcher', () => {
     expect(summary.textContent).toContain('failed');
     expect(summary.textContent).toContain('exit 2');
   });
+
+  const TODO_INIT_MESSAGES: readonly WorkflowNodeMessageResponse[] = [
+    {
+      id: 'todo-call-1',
+      seq: 1,
+      kind: 'tool',
+      payload: {
+        name: 'todo',
+        id: 'todo-1',
+        input: {
+          op: 'init',
+          list: [
+            { phase: 'Research', items: ['Read the spec', 'Map the message path'] },
+            { phase: 'Implement', items: ['Add the fold', 'Wire the strip'] },
+          ],
+        },
+      },
+      metadata: { tool_phase: 'call' },
+      created_at: CREATED_AT,
+    },
+    {
+      id: 'todo-result-1',
+      seq: 2,
+      kind: 'tool',
+      payload: {
+        name: 'todo',
+        id: 'todo-1',
+        input: {
+          op: 'init',
+          list: [
+            { phase: 'Research', items: ['Read the spec', 'Map the message path'] },
+            { phase: 'Implement', items: ['Add the fold', 'Wire the strip'] },
+          ],
+        },
+        output: 'todo updated',
+      },
+      metadata: { tool_phase: 'result', outcome: 'success' },
+      created_at: CREATED_AT,
+    },
+  ];
+
+  test('agent rooms wrap the strip and the transcript scroller in one non-scrolling region', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...TODO_INIT_MESSAGES],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages,
+        definitionNodes: [{ id: 'command', command: 'review' }],
+      });
+    });
+    await flushUntil(
+      host,
+      'todo strip',
+      () => host.querySelector('section[aria-label="Todo"]') !== null
+    );
+
+    const regions = host.querySelectorAll('[role="region"]');
+    expect(regions).toHaveLength(1);
+    const region = regions[0];
+    if (region === undefined) throw new Error('missing command room region');
+    expect(region.getAttribute('aria-label')).toBe('command room');
+    expect(region.getAttribute('class')).toContain('overflow-hidden');
+
+    const strip = host.querySelector('section[aria-label="Todo"]');
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    if (scroller === null) throw new Error('missing transcript scroller');
+    expect(region.firstElementChild).toBe(strip);
+    expect(strip?.nextElementSibling).toBe(scroller);
+    expect(scroller.getAttribute('class')).toContain('overflow-y-auto');
+    expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
+    expect(strip?.textContent).toContain('0/4');
+    expect(strip?.textContent).toContain('Read the spec');
+  });
+
+  test('non-agent rooms keep their own scrollable region', () => {
+    const { requests, loadMessages } = createLoadMessages();
+    const stdoutMarkup = renderStatic({
+      row: SETUP_ROW,
+      loadMessages,
+      definitionNodes: [{ id: 'setup', bash: 'echo ready' }],
+      events: bashEvents,
+    });
+    const gateMarkup = renderStatic({
+      row: GATE_ROW,
+      loadMessages,
+      definitionNodes: [{ id: 'review', approval: { message: 'Ship?' } }],
+      runStatus: 'running',
+    });
+    const groupMarkup = renderStatic({
+      row: GROUP_ROW,
+      loadMessages,
+      definitionNodes: [GROUP_NODE],
+      runStatus: 'failed',
+      events: [
+        workflowEvent({
+          id: 'group-start',
+          step_name: 'group.body',
+          event_type: 'node_started',
+          data: { iteration: 1 },
+        }),
+      ],
+    });
+    for (const markup of [stdoutMarkup, gateMarkup, groupMarkup]) {
+      const regionClass = /role="region" aria-label="[^"]+ room" class="([^"]*)"/.exec(markup)?.[1];
+      expect(regionClass).toContain('overflow-y-auto');
+      expect(markup).not.toContain('aria-label="Todo"');
+    }
+    expect(requests).toHaveLength(0);
+  });
 });
 
 describe('LegacyNodeRoom tool disclosure rows', () => {
