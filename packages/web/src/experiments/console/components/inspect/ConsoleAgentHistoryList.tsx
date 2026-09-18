@@ -2,13 +2,14 @@
  * Console-owned agent history renderer. Uses AgentHistoryItem only as data and
  * never imports Legacy React components.
  */
-import { useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
+import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   toolBodyPresentation,
   toolRawPayloadJson,
@@ -26,6 +27,25 @@ import {
 export const UNKNOWN_SCOPE_NOTICE =
   'Execution scope was not recorded; this history may include other executions of the same node.';
 
+export interface ConsoleHistoryFilters {
+  showToolCalls: boolean;
+  showSystem: boolean;
+}
+
+/**
+ * Whether the item's own row renders under the Console visibility toggles.
+ * Extension content (an Ask card anchored to a hidden tool row) still renders
+ * even when the row itself is hidden — callers account for it separately.
+ */
+export function historyItemRowVisible(
+  item: AgentHistoryItem,
+  filters: ConsoleHistoryFilters
+): boolean {
+  if (item.kind === 'tool') return filters.showToolCalls;
+  if (item.kind === 'lifecycle') return filters.showSystem;
+  return true;
+}
+
 export interface ConsoleAgentHistoryListProps {
   items: readonly AgentHistoryItem[];
   showToolCalls: boolean;
@@ -34,6 +54,14 @@ export interface ConsoleAgentHistoryListProps {
   renderAfterItem?: (item: AgentHistoryItem) => ReactNode;
   renderAtEnd?: ReactNode;
   unknownScope?: boolean;
+  /**
+   * Occurrence grouping filtered by the caller down to displayable groups.
+   * When it reports showHeaders the body renders one h3 section heading per
+   * group; otherwise the flat item render is unchanged.
+   */
+  occurrenceGrouping?: OccurrenceGrouping;
+  /** useId-owned namespace for occurrence heading DOM ids (navigator targets). */
+  headingIdPrefix?: string;
 }
 
 const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
@@ -834,7 +862,10 @@ export function ConsoleAgentHistoryList({
   renderAfterItem,
   renderAtEnd,
   unknownScope = false,
+  occurrenceGrouping,
+  headingIdPrefix,
 }: ConsoleAgentHistoryListProps): ReactElement {
+  const generatedHeadingPrefix = useId();
   if (items.length === 0) {
     const emptyHistory =
       renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? (
@@ -851,48 +882,68 @@ export function ConsoleAgentHistoryList({
     );
   }
 
+  const headingPrefix = headingIdPrefix ?? generatedHeadingPrefix;
+  const filters: ConsoleHistoryFilters = { showToolCalls, showSystem };
+  const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
+
+  const renderItem = (item: AgentHistoryItem): ReactElement | null => {
+    const after = renderAfterItem?.(item);
+    if (!historyItemRowVisible(item, filters)) {
+      return after === undefined || after === null ? null : (
+        <div key={item.id} className="my-1.5">
+          {after}
+        </div>
+      );
+    }
+    if (item.kind === 'assistant') {
+      return (
+        <div key={item.id} className="my-1.5">
+          <AssistantHistory item={item} />
+          {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
+        </div>
+      );
+    }
+    if (item.kind === 'tool') {
+      return (
+        <div key={item.id}>
+          <ToolHistory item={item} onLoadFullOutput={onLoadFullOutput} />
+          {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
+        </div>
+      );
+    }
+    return (
+      <div key={item.id} className="my-1.5">
+        <LifecycleHistory item={item} />
+        {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
+      </div>
+    );
+  };
+
   return (
     <div className="flex min-h-0 flex-1 flex-col px-3 py-2.5" style={{ overflowWrap: 'anywhere' }}>
       {unknownScope ? <p className="mb-1.5 text-xs text-warning">{UNKNOWN_SCOPE_NOTICE}</p> : null}
-      {items.map(item => {
-        const after = renderAfterItem?.(item);
-        if (item.kind === 'tool' && !showToolCalls) {
-          return after === undefined || after === null ? null : (
-            <div key={item.id} className="my-1.5">
-              {after}
-            </div>
-          );
-        }
-        if (item.kind === 'lifecycle' && !showSystem) {
-          return after === undefined || after === null ? null : (
-            <div key={item.id} className="my-1.5">
-              {after}
-            </div>
-          );
-        }
-        if (item.kind === 'assistant') {
-          return (
-            <div key={item.id} className="my-1.5">
-              <AssistantHistory item={item} />
-              {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
-            </div>
-          );
-        }
-        if (item.kind === 'tool') {
-          return (
-            <div key={item.id}>
-              <ToolHistory item={item} onLoadFullOutput={onLoadFullOutput} />
-              {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
-            </div>
-          );
-        }
-        return (
-          <div key={item.id} className="my-1.5">
-            <LifecycleHistory item={item} />
-            {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
-          </div>
-        );
-      })}
+      {grouping === null ? (
+        items.map(renderItem)
+      ) : (
+        <>
+          {grouping.prefixItems.map(renderItem)}
+          {grouping.groups.map(group => (
+            <Fragment key={group.key}>
+              <h3
+                id={`${headingPrefix}occ-${group.key}`}
+                tabIndex={-1}
+                className="mb-[5px] mt-[10px] flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-text-secondary"
+              >
+                <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {group.label}
+                </span>
+                <span aria-hidden="true" className="h-px flex-1 bg-border" />
+              </h3>
+              {group.items.map(renderItem)}
+            </Fragment>
+          ))}
+        </>
+      )}
       {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
         <div className="mt-1.5">{renderAtEnd}</div>
       )}

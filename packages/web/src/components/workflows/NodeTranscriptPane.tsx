@@ -2,7 +2,7 @@
  * Query boundary for a selected node transcript: drain cursor pages, poll live
  * runs, abort on scope change, and restore container scroll.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
@@ -22,6 +22,7 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { groupByOccurrence } from '@/lib/occurrence-groups';
 import { createScrollFollow, jumpToLatest, onRoomScroll } from '@/lib/room-scroll-follow';
 import type { WorkflowRunStatus } from '@/lib/types';
 
@@ -133,6 +134,7 @@ export function NodeTranscriptPane({
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [localAskDrafts, setLocalAskDrafts] = useState<AskDraftByRequest>({});
+  const headingIdPrefix = useId();
 
   const pageStateRef = useRef(pageState);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -243,6 +245,7 @@ export function NodeTranscriptPane({
           nowMs,
         });
   const items = agentHistory.items;
+  const occurrenceGrouping = groupByOccurrence(items);
   const todos = agentHistory.todos;
   const visibleAsks =
     row === null
@@ -384,6 +387,8 @@ export function NodeTranscriptPane({
         embedded
         nodeId={row?.nodeId ?? null}
         items={items}
+        occurrenceGrouping={occurrenceGrouping}
+        headingIdPrefix={headingIdPrefix}
         unknownScope={row?.unknownScope ?? false}
         runId={runId}
         isPending={waitingForFirstPage}

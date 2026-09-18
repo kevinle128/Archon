@@ -626,4 +626,134 @@ describe('ConsoleExecutionHistory', () => {
     expect(historyModule.shouldPollExecutionHistory(true, 'failed')).toBe(false);
     expect(historyModule.shouldPollExecutionHistory(false, 'running')).toBe(false);
   });
+
+  describe('Console occurrence headings', () => {
+    function headings(): Element[] {
+      return Array.from(host.querySelectorAll('h3[id]'));
+    }
+
+    function headingTexts(): string[] {
+      return headings().map(el => el.textContent ?? '');
+    }
+
+    test('renders one h3 heading per occurrence group and never a navigator', async () => {
+      renderHistory({
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [
+            {
+              id: 't-a',
+              seq: 1,
+              kind: 'text',
+              payload: { text: 'alpha' },
+              metadata: {
+                execution: { occurrence_id: OCC_A, attempt_id: ATTEMPT_A, retry_epoch: 0 },
+              },
+              created_at: CREATED_AT,
+            },
+            {
+              id: 't-b',
+              seq: 2,
+              kind: 'text',
+              payload: { text: 'beta' },
+              metadata: {
+                execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B, retry_epoch: 1 },
+              },
+              created_at: CREATED_AT,
+            },
+          ],
+        }),
+      });
+      await flushUntil('beta', () => (host.textContent ?? '').includes('beta'));
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+      const first = headings()[0];
+      expect(first?.getAttribute('tabindex')).toBe('-1');
+      expect(first?.getAttribute('id')).toContain(OCC_A);
+      expect(host.querySelectorAll('select')).toHaveLength(0);
+      expect(host.textContent).not.toContain('Jump to');
+    });
+
+    test('follows the same visibility rule — filtering to one displayable group removes headings', async () => {
+      renderHistory({
+        showToolCalls: false,
+        showSystem: false,
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [
+            {
+              id: 'call-t-1',
+              seq: 1,
+              kind: 'tool',
+              payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' } },
+              metadata: {
+                tool_phase: 'call',
+                execution: { occurrence_id: OCC_A, attempt_id: ATTEMPT_A },
+              },
+              created_at: CREATED_AT,
+            },
+            {
+              id: 'result-t-1',
+              seq: 2,
+              kind: 'tool',
+              payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' }, output: 'chunk' },
+              metadata: {
+                tool_phase: 'result',
+                outcome: 'success',
+                execution: { occurrence_id: OCC_A, attempt_id: ATTEMPT_A },
+              },
+              created_at: CREATED_AT,
+            },
+            {
+              id: 'st-a',
+              seq: 3,
+              kind: 'status',
+              payload: { state: 'completed' },
+              metadata: { execution: { occurrence_id: OCC_A, attempt_id: ATTEMPT_A } },
+              created_at: CREATED_AT,
+            },
+            {
+              id: 't-b',
+              seq: 4,
+              kind: 'text',
+              payload: { text: 'beta' },
+              metadata: { execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B } },
+              created_at: CREATED_AT,
+            },
+          ],
+        }),
+      });
+      await flushUntil('beta', () => (host.textContent ?? '').includes('beta'));
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelector('details[data-tool-id="t-1"]')).toBeNull();
+    });
+
+    test('keeps unanchored Ask extras after grouped history without a synthetic heading', async () => {
+      renderHistory({
+        pendingInteractions: [ask()],
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [
+            {
+              id: 't-a',
+              seq: 1,
+              kind: 'text',
+              payload: { text: 'alpha' },
+              metadata: { execution: { occurrence_id: OCC_A, attempt_id: ATTEMPT_A } },
+              created_at: CREATED_AT,
+            },
+            {
+              id: 't-b',
+              seq: 2,
+              kind: 'text',
+              payload: { text: 'beta' },
+              metadata: { execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B } },
+              created_at: CREATED_AT,
+            },
+          ],
+        }),
+      });
+      await flushUntil('ask', () => (host.textContent ?? '').includes('Ship it?'));
+      expect(headings()).toHaveLength(2);
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Ship it?')).toBeGreaterThan(text.indexOf('Run 1 · occurrence 2'));
+      expect(host.querySelector('form')).not.toBeNull();
+    });
+  });
 });

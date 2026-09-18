@@ -4,6 +4,7 @@
  */
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type ReactElement,
@@ -19,6 +20,7 @@ import {
   nodeMessageScopeKey,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { groupByOccurrence } from '@/lib/occurrence-groups';
 import { createScrollFollow, jumpToLatest, onRoomScroll } from '@/lib/room-scroll-follow';
 
 import type { Run } from '../primitives/run';
@@ -42,7 +44,7 @@ import { parseAskEnvelope, type AskDraft, type AskDraftByRequest } from './ask/p
 import { selectVisibleNodeAskInteractions } from './ask/select-visible-node-ask-interactions';
 import { UNSCOPED_INTERACTION_LIMITATION } from './inspect/execution-interactions';
 import type { LogRow } from './inspect/build-log-rows';
-import { ConsoleAgentHistoryList } from './inspect/ConsoleAgentHistoryList';
+import { ConsoleAgentHistoryList, historyItemRowVisible } from './inspect/ConsoleAgentHistoryList';
 import { ConsoleRoomHeader, type ConsoleExecutionHeaderOption } from './inspect/ConsoleRoomHeader';
 import { inspectStatusLabel } from './inspect/inspect-status';
 import { resolveRoomKind, type RoomKind, type RoomResolution } from './inspect/resolve-room-kind';
@@ -496,6 +498,7 @@ export function ConsoleNodeRoom({
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
   const [retryNonce, setRetryNonce] = useState(0);
+  const headingIdPrefix = useId();
   const pageStateRef = useRef(pageState);
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadMessagesRef = useRef(loadMessages);
@@ -645,6 +648,22 @@ export function ConsoleNodeRoom({
   const unanchoredAsks = visibleAsks.filter(
     interaction => !visibleToolIds.has(interaction.tool_use_id)
   );
+  // A group stays in the display when a row is visible under the Console
+  // filters OR a hidden tool row still carries an anchored Ask card.
+  const anchoredAskToolIds = new Set(anchoredAsks.map(interaction => interaction.tool_use_id));
+  const occurrenceBase = groupByOccurrence(items);
+  const displayableGroups = occurrenceBase.groups.filter(group =>
+    group.items.some(
+      item =>
+        historyItemRowVisible(item, { showToolCalls, showSystem }) ||
+        (item.kind === 'tool' && anchoredAskToolIds.has(item.toolUseId))
+    )
+  );
+  const occurrenceGrouping = {
+    prefixItems: occurrenceBase.prefixItems,
+    groups: displayableGroups,
+    showHeaders: displayableGroups.length >= 2,
+  };
   const orderedAsks = [
     ...visibleMessages.flatMap(message =>
       message.kind === 'tool'
@@ -758,6 +777,8 @@ export function ConsoleNodeRoom({
     const history = (
       <ConsoleAgentHistoryList
         items={items}
+        occurrenceGrouping={occurrenceGrouping}
+        headingIdPrefix={headingIdPrefix}
         showToolCalls={showToolCalls}
         showSystem={showSystem}
         unknownScope={row.unknownScope === true}

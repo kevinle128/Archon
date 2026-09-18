@@ -2,7 +2,7 @@
  * One log-section body: drain the exact execution, render Console agent history,
  * and place scoped Ask cards plus the approval gate when assigned here.
  */
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react';
 
 import { buildAgentHistory } from '@/lib/agent-history';
 import {
@@ -13,6 +13,7 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { groupByOccurrence } from '@/lib/occurrence-groups';
 
 import type { Run } from '../../primitives/run';
 import type {
@@ -29,7 +30,7 @@ import type { AskActionStateByRequest } from '../ask/ask-answer-controller';
 import { resolveAskCardPresentation } from '../ask/ask-card-presentation';
 import { ConsoleAskCard, ConsoleInvalidAskCard } from '../ask/ConsoleAskCard';
 import { parseAskEnvelope, type AskDraft, type AskDraftByRequest } from '../ask/parse-ask-envelope';
-import { ConsoleAgentHistoryList } from './ConsoleAgentHistoryList';
+import { ConsoleAgentHistoryList, historyItemRowVisible } from './ConsoleAgentHistoryList';
 import type { ConsoleLogEntry } from './build-console-log-entries';
 import type { LogRow } from './build-log-rows';
 import { interactionsForExecution } from './execution-interactions';
@@ -137,6 +138,7 @@ export function ConsoleExecutionHistory({
     createNodeMessageState(resolvedScopeKey)
   );
   const [retryNonce, setRetryNonce] = useState(0);
+  const headingIdPrefix = useId();
   const pageStateRef = useRef(pageState);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
@@ -208,6 +210,18 @@ export function ConsoleExecutionHistory({
     nodeId: row.nodeId,
     nowMs,
   });
+  // A group stays in the display only when a row is visible under the Console
+  // filters — Ask/approval extras are unanchored renderAtEnd content and never
+  // keep a group alive here.
+  const occurrenceBase = groupByOccurrence(items);
+  const displayableGroups = occurrenceBase.groups.filter(group =>
+    group.items.some(item => historyItemRowVisible(item, { showToolCalls, showSystem }))
+  );
+  const occurrenceGrouping = {
+    prefixItems: occurrenceBase.prefixItems,
+    groups: displayableGroups,
+    showHeaders: displayableGroups.length >= 2,
+  };
   const approvalNodeId = readApprovalContext(approval)?.nodeId ?? null;
   const assignment = interactionsForExecution(
     pendingInteractions,
@@ -297,6 +311,8 @@ export function ConsoleExecutionHistory({
   const history = (
     <ConsoleAgentHistoryList
       items={items}
+      occurrenceGrouping={occurrenceGrouping}
+      headingIdPrefix={headingIdPrefix}
       showToolCalls={showToolCalls}
       showSystem={showSystem}
       unknownScope={row.unknownScope === true}

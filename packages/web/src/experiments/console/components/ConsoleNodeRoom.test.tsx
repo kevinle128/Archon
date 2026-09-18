@@ -3,7 +3,8 @@ process.env.NODE_ENV = 'development';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
-import type { AgentHistoryItem } from '@/lib/agent-history';
+import type { AgentHistoryItem, TranscriptExecution } from '@/lib/agent-history';
+import { groupByOccurrence } from '@/lib/occurrence-groups';
 
 import type { ConsoleAgentHistoryListProps } from './inspect/ConsoleAgentHistoryList';
 import type { LogRow } from './inspect/build-log-rows';
@@ -3478,6 +3479,419 @@ describe('ConsoleNodeRoom', () => {
         expect(rawButton(row).getAttribute('aria-expanded')).toBe('false');
         expect(rawButton(row).textContent).toContain('Raw');
       }
+    });
+  });
+
+  describe('Console occurrence headings', () => {
+    type Loader = Parameters<typeof consoleNodeRoom.ConsoleNodeRoom>[0]['loadMessages'];
+
+    const NOW_MS = new Date(CREATED_AT).getTime() + 30_000;
+    const OCC_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    function executed(
+      occurrenceId: string,
+      overrides: Partial<TranscriptExecution> = {}
+    ): TranscriptExecution {
+      return {
+        occurrence_id: occurrenceId,
+        attempt_id: `${occurrenceId}-attempt-1`,
+        ...overrides,
+      };
+    }
+
+    function textMsg(seq: number, text: string, exec?: TranscriptExecution): WorkflowNodeMessage {
+      return {
+        id: `text-${seq}`,
+        seq,
+        kind: 'text',
+        payload: { text },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function statusMsg(
+      seq: number,
+      state: string,
+      detail: string | null = null,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `status-${seq}`,
+        seq,
+        kind: 'status',
+        payload: detail === null ? { state } : { state, detail },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolCall(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `call-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' } },
+        metadata: { tool_phase: 'call', ...(exec === undefined ? {} : { execution: exec }) },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolResult(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `result-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' }, output: 'chunk' },
+        metadata: {
+          tool_phase: 'result',
+          outcome: 'success',
+          ...(exec === undefined ? {} : { execution: exec }),
+        },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function historyItems(rows: readonly WorkflowNodeMessage[]): AgentHistoryItem[] {
+      return agentHistory.buildAgentHistory({ rows, events: [], nodeId: 'review', nowMs: NOW_MS })
+        .items;
+    }
+
+    function mountGroupedList(
+      items: readonly AgentHistoryItem[],
+      options: {
+        showToolCalls?: boolean;
+        showSystem?: boolean;
+        unknownScope?: boolean;
+        renderAfterItem?: ConsoleAgentHistoryListProps['renderAfterItem'];
+        renderAtEnd?: ConsoleAgentHistoryListProps['renderAtEnd'];
+      } = {}
+    ): void {
+      root.render(
+        createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+          items,
+          showToolCalls: options.showToolCalls ?? true,
+          showSystem: options.showSystem ?? true,
+          onLoadFullOutput: async (): Promise<unknown> => undefined,
+          occurrenceGrouping: groupByOccurrence(items),
+          headingIdPrefix: 'test-room-',
+          unknownScope: options.unknownScope ?? false,
+          renderAfterItem: options.renderAfterItem,
+          renderAtEnd: options.renderAtEnd,
+        })
+      );
+    }
+
+    function headings(): Element[] {
+      return Array.from(host.querySelectorAll('h3[id]'));
+    }
+
+    function headingTexts(): string[] {
+      return headings().map(el => el.textContent ?? '');
+    }
+
+    test('renders no occurrence headings and no navigator for zero or one occurrence', async () => {
+      const unscoped = historyItems([textMsg(1, 'solo'), statusMsg(2, 'completed')]);
+      await act(async () => {
+        mountGroupedList(unscoped);
+      });
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelectorAll('select')).toHaveLength(0);
+
+      const single = historyItems([
+        textMsg(1, 'solo', executed(OCC_A)),
+        statusMsg(2, 'completed', null, executed(OCC_A)),
+      ]);
+      await act(async () => {
+        mountGroupedList(single);
+      });
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelectorAll('select')).toHaveLength(0);
+    });
+
+    test('renders one h3 heading per occurrence in group order with the exact core labels', async () => {
+      const items = historyItems([
+        statusMsg(1, 'started', null, executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(2, 'first-run', executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(3, 'second-run', executed(OCC_B, { retry_epoch: 1 })),
+        statusMsg(4, 'failed', null, executed(OCC_B, { retry_epoch: 1 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry · failed']);
+      const first = headings()[0];
+      const second = headings()[1];
+      expect(first?.getAttribute('tabindex')).toBe('-1');
+      expect(first?.getAttribute('id')).toBe(`test-room-occ-${OCC_A}`);
+      expect(second?.getAttribute('id')).toBe(`test-room-occ-${OCC_B}`);
+      const className = first?.getAttribute('class') ?? '';
+      expect(className).toContain('font-mono');
+      expect(className).toContain('text-[10.5px]');
+      expect(className).toContain('uppercase');
+      expect(className).toContain('tracking-[0.08em]');
+      expect(className).toContain('text-text-secondary');
+      expect(className).toContain('mt-[10px]');
+      expect(className).toContain('mb-[5px]');
+      expect(first?.querySelector('span.bg-border')).not.toBeNull();
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Run 1')).toBeLessThan(text.indexOf('first-run'));
+      expect(text.indexOf('first-run')).toBeLessThan(text.indexOf('Run 2'));
+      expect(text.indexOf('Run 2')).toBeLessThan(text.indexOf('second-run'));
+    });
+
+    test('disambiguates colliding base labels into distinct B4-qualified headings', async () => {
+      const routed = historyItems([
+        textMsg(1, 'route one', executed(OCC_A, { retry_epoch: 0, route_activation_seq: 1 })),
+        textMsg(2, 'route two', executed(OCC_B, { retry_epoch: 0, route_activation_seq: 2 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(routed);
+      });
+      expect(headingTexts()).toEqual(['Run 1 #1', 'Run 1 #2']);
+
+      const nested = historyItems([
+        textMsg(
+          1,
+          'x',
+          executed(OCC_A, {
+            loop_ancestry: [
+              { node_id: 'outer', iteration: 1 },
+              { node_id: 'inner', iteration: 3 },
+            ],
+          })
+        ),
+        textMsg(
+          2,
+          'y',
+          executed(OCC_B, {
+            loop_ancestry: [
+              { node_id: 'outer', iteration: 2 },
+              { node_id: 'inner', iteration: 3 },
+            ],
+          })
+        ),
+      ]);
+      await act(async () => {
+        mountGroupedList(nested);
+      });
+      expect(headingTexts()).toEqual(['Iteration 1 › Iteration 3', 'Iteration 2 › Iteration 3']);
+    });
+
+    test('renders no extra heading for multiple attempts inside one occurrence', async () => {
+      const items = historyItems([
+        textMsg(1, 'attempt one', executed(OCC_A, { attempt_id: 'att-1', retry_epoch: 0 })),
+        textMsg(2, 'attempt two', executed(OCC_A, { attempt_id: 'att-2', retry_epoch: 0 })),
+        textMsg(3, 'other', executed(OCC_B, { retry_epoch: 1 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+      const text = host.textContent ?? '';
+      expect(text.indexOf('attempt one')).toBeLessThan(text.indexOf('attempt two'));
+      expect(text.indexOf('attempt two')).toBeLessThan(text.indexOf('Run 2'));
+    });
+
+    test('renders a leading unscoped prefix once before the first heading', async () => {
+      const items = historyItems([
+        textMsg(1, 'before-scope'),
+        textMsg(2, 'scoped-a', executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(3, 'scoped-b', executed(OCC_B, { retry_epoch: 1 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      const text = host.textContent ?? '';
+      expect(text.match(/before-scope/g)?.length).toBe(1);
+      expect(text.indexOf('before-scope')).toBeLessThan(text.indexOf('Run 1'));
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+    });
+
+    test('renders non-contiguous occurrence rows once under one unique heading', async () => {
+      const items = historyItems([
+        textMsg(1, 'a-first', executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(2, 'b-first', executed(OCC_B, { retry_epoch: 1 })),
+        textMsg(3, 'a-second', executed(OCC_A, { retry_epoch: 0 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+      const text = host.textContent ?? '';
+      expect(text.match(/a-second/g)?.length).toBe(1);
+      expect(text.indexOf('a-first')).toBeLessThan(text.indexOf('a-second'));
+      expect(text.indexOf('a-second')).toBeLessThan(text.indexOf('Run 2'));
+      expect(text.indexOf('Run 2')).toBeLessThan(text.indexOf('b-first'));
+    });
+
+    test('keeps assistant, tool, and lifecycle order stable inside each group', async () => {
+      const items = historyItems([
+        textMsg(1, 'notes-a', executed(OCC_A)),
+        toolCall('t1', 2, executed(OCC_A)),
+        toolResult('t1', 3, executed(OCC_A)),
+        statusMsg(4, 'completed', null, executed(OCC_A)),
+        textMsg(5, 'notes-b', executed(OCC_B)),
+        toolCall('t2', 6, executed(OCC_B)),
+        toolResult('t2', 7, executed(OCC_B)),
+        statusMsg(8, 'failed', null, executed(OCC_B)),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2 · failed']);
+      const text = host.textContent ?? '';
+      const firstRead = text.indexOf('Read');
+      const secondRead = text.lastIndexOf('Read');
+      const secondHeading = text.indexOf('Run 1 · occurrence 2');
+      expect(text.indexOf('notes-a')).toBeLessThan(firstRead);
+      expect(firstRead).toBeLessThan(text.indexOf('completed'));
+      expect(text.indexOf('completed')).toBeLessThan(secondHeading);
+      expect(secondHeading).toBeLessThan(text.indexOf('notes-b'));
+      expect(text.indexOf('notes-b')).toBeLessThan(secondRead);
+      expect(secondRead).toBeLessThan(text.lastIndexOf('failed'));
+    });
+
+    test('keeps renderAfterItem attached to its item and renderAtEnd after all groups', async () => {
+      const items = historyItems([
+        textMsg(1, 'alpha', executed(OCC_A)),
+        toolCall('t1', 2, executed(OCC_B)),
+        toolResult('t1', 3, executed(OCC_B)),
+      ]);
+      await act(async () => {
+        mountGroupedList(items, {
+          renderAfterItem: (item): string => `after-${item.id}`,
+          renderAtEnd: 'end-extension',
+        });
+      });
+      const text = host.textContent ?? '';
+      const secondHeading = text.indexOf('Run 1 · occurrence 2');
+      expect(text.indexOf('after-text-1')).toBeGreaterThan(text.indexOf('alpha'));
+      expect(text.indexOf('after-text-1')).toBeLessThan(secondHeading);
+      expect(text.indexOf('after-call-t1')).toBeGreaterThan(secondHeading);
+      expect(text.indexOf('end-extension')).toBeGreaterThan(text.indexOf('after-call-t1'));
+    });
+
+    test('keeps the partial-page error, retry, and unknown-scope warning visible', async () => {
+      const loadMessages: Loader = async (_runId, _nodeId, options) => {
+        if ((options?.afterSeq ?? 0) === 0) {
+          return {
+            messages: [textMsg(1, 'alpha', executed(OCC_A)), textMsg(2, 'beta', executed(OCC_B))],
+            hasMore: true,
+            nextCursor: '2',
+            highWatermark: 3,
+          };
+        }
+        throw new Error('page-two-failed');
+      };
+      await act(async () => {
+        renderRoom({
+          loadMessages,
+          selectedRow: row({
+            nodeId: 'review',
+            label: 'Review',
+            status: 'running',
+            unknownScope: true,
+          }),
+        });
+      });
+      await flushUntil('partial error', () =>
+        (host.textContent ?? '').includes('Failed to load node transcript')
+      );
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+      expect(host.textContent).toContain('Execution scope was not recorded');
+      expect(host.textContent).toContain('Retry');
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Failed to load node transcript')).toBeGreaterThan(text.indexOf('beta'));
+    });
+
+    test('never lets item content text alter the headings', async () => {
+      const items = historyItems([
+        textMsg(1, 'Run 99', executed(OCC_A)),
+        textMsg(2, 'Iteration 99', executed(OCC_B)),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+    });
+
+    test('hides a group only when no row or attached Ask remains renderable', async () => {
+      // Occ A holds only a tool row and a lifecycle row — both hidden by the
+      // Console filters and carrying no Ask — so the group leaves the display.
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          toolCall('tool-1', 1, executed(OCC_A)),
+          toolResult('tool-1', 2, executed(OCC_A)),
+          statusMsg(3, 'completed', null, executed(OCC_A)),
+          textMsg(4, 'visible-b', executed(OCC_B)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false, showSystem: false });
+      });
+      await flushUntil('visible b', () => (host.textContent ?? '').includes('visible-b'));
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelector('details[data-tool-id="tool-1"]')).toBeNull();
+      expect(host.querySelectorAll('select')).toHaveLength(1);
+    });
+
+    test('keeps a hidden tool group visible through its attached Ask card', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          toolCall('tool-1', 1, executed(OCC_A)),
+          toolResult('tool-1', 2, executed(OCC_A)),
+          textMsg(3, 'visible-b', executed(OCC_B)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({
+          loadMessages,
+          showToolCalls: false,
+          showSystem: false,
+          pendingInteractions: [ask({ tool_use_id: 'tool-1' })],
+        });
+      });
+      await flushUntil('ask', () => (host.textContent ?? '').includes('Ship it?'));
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+      expect(host.querySelector('details[data-tool-id="tool-1"]')).toBeNull();
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Run 1 · occurrence 2')).toBeLessThan(text.indexOf('visible-b'));
+    });
+
+    test('drops all occurrence headings when filters leave one displayable group', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          toolCall('tool-1', 1, executed(OCC_A)),
+          toolResult('tool-1', 2, executed(OCC_A)),
+          statusMsg(3, 'completed', null, executed(OCC_A)),
+          textMsg(4, 'visible-b', executed(OCC_B)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages });
+      });
+      await flushUntil('both occurrences', () => headings().length === 2);
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false, showSystem: false });
+      });
+      await flushUntil(
+        'filtered',
+        () => host.querySelector('details[data-tool-id="tool-1"]') === null
+      );
+      expect(headings()).toHaveLength(0);
+      expect(host.textContent).toContain('visible-b');
     });
   });
 });
