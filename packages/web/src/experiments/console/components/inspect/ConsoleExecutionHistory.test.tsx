@@ -490,19 +490,25 @@ describe('ConsoleExecutionHistory', () => {
     // Same Console delta: +2 px focus outline offset.
     expect(summary.className).toContain('focus-visible:outline-offset-2');
     expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
-    // Nested diagnostics stay closed and the payload is not shown by default.
-    for (const nested of Array.from(row.querySelectorAll('details'))) {
-      expect((nested as Element & { open: boolean }).open).toBe(false);
-    }
+    // A collapsed row mounts no expanded region: no family body, no Raw
+    // toggle, and never the serialized payload.
+    expect(row.querySelector('.tool-family-body')).toBeNull();
+    expect(row.querySelector('button[aria-expanded]')).toBeNull();
+    expect(row.textContent).not.toContain('chunk');
 
-    // Pointer toggle opens the row; diagnostics keep their own closed state.
+    // Pointer toggle opens the row into the family body + Raw swap slot.
     await act(async () => {
       summary.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
     });
     expect(row.open).toBe(true);
-    for (const nested of Array.from(row.querySelectorAll('details'))) {
-      expect((nested as Element & { open: boolean }).open).toBe(false);
-    }
+    const rawEl = row.querySelector('button[aria-expanded]');
+    if (rawEl === null) throw new Error('Raw toggle missing');
+    expect(rawEl.getAttribute('aria-expanded')).toBe('false');
+    const body = row.querySelector('.tool-family-body');
+    if (body === null) throw new Error('family body missing');
+    expect(body.textContent).toContain('a.ts');
+    expect(body.textContent).toContain('chunk');
+    expect(row.querySelectorAll('details')).toHaveLength(0);
   });
 
   test('polls only active execution rows in a live run', () => {

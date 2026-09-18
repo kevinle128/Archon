@@ -121,6 +121,10 @@ describe('console NFR4 isolation', () => {
       '@/lib/pair-tool-transcript',
       '@/lib/project-text-transcript',
       '@/lib/tool-presentation',
+      // Concrete need (issue #176): the body bar's sent-name fallback must run
+      // the same bounded ANSI/control sanitization as the Legacy renderer;
+      // tool-presentation does not re-export it.
+      '@/lib/tool-output',
       '@/lib/run-graph',
       '@/lib/run-graph/constants',
       '@/lib/api.generated',

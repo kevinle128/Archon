@@ -25,6 +25,7 @@ const reactDomClient = await import('react-dom/client');
 const consoleNodeRoom = await import('./ConsoleNodeRoom');
 const consoleHistoryList = await import('./inspect/ConsoleAgentHistoryList');
 const agentHistory = await import('@/lib/agent-history');
+const toolPresentation = await import('@/lib/tool-presentation');
 
 const act = react.act;
 const createElement = react.createElement;
@@ -288,12 +289,13 @@ describe('ConsoleNodeRoom', () => {
     const toolSummary = toolRowEl?.querySelector('summary');
     expect(toolSummary?.textContent).toContain('Read');
     expect(toolSummary?.textContent).toContain('a.ts');
-    // Serialized payloads stay recorded inside the row's closed diagnostics.
-    for (const diagnostic of Array.from(toolRowEl?.querySelectorAll('details') ?? [])) {
-      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-    }
-    expect(toolRowEl?.textContent).toContain('"path": "a.ts"');
-    expect(toolRowEl?.textContent).toContain('"ok": true');
+    // A closed row mounts nothing: no nested diagnostics, no Raw toggle, no
+    // family body, and never the serialized payload.
+    expect(toolRowEl?.querySelectorAll('details')).toHaveLength(0);
+    expect(toolRowEl?.querySelector('button[aria-expanded]')).toBeNull();
+    expect(toolRowEl?.querySelector('.tool-family-body')).toBeNull();
+    expect(toolRowEl?.textContent).not.toContain('"path"');
+    expect(toolRowEl?.textContent).not.toContain('"ok"');
     expect(host.textContent).toContain('iteration_started');
     expect(host.textContent).toContain('iteration_failed');
     expect(host.textContent).toContain('waiting on you');
@@ -1060,12 +1062,11 @@ describe('ConsoleNodeRoom', () => {
     const bashSummary = bashRow?.querySelector('summary');
     expect(bashSummary?.textContent).toContain('Bash');
     expect(bashSummary?.textContent).toContain(longCmd);
-    // Nested Input/Output diagnostics exist in the DOM but stay closed.
-    const diagnostics = Array.from(bashRow?.querySelectorAll('details') ?? []);
-    expect(diagnostics).toHaveLength(2);
-    for (const diagnostic of diagnostics) {
-      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-    }
+    // A collapsed row mounts no expanded region at all — no nested
+    // diagnostics, no Raw toggle, no family body.
+    expect(bashRow?.querySelectorAll('details')).toHaveLength(0);
+    expect(bashRow?.querySelector('button[aria-expanded]')).toBeNull();
+    expect(bashRow?.querySelector('.tool-family-body')).toBeNull();
   });
 
   test('Tool toggle hides only tool cards and System toggle hides only lifecycle rows', async () => {
@@ -1253,6 +1254,12 @@ describe('ConsoleNodeRoom', () => {
       return button as unknown as HTMLButtonElement;
     }
 
+    function rawButton(row: Element): HTMLButtonElement {
+      const button = row.querySelector('button[aria-expanded]');
+      if (button === null) throw new Error(`Raw toggle missing: ${row.innerHTML}`);
+      return button as unknown as HTMLButtonElement;
+    }
+
     /** Text a screen reader announces: skips aria-hidden, uses chip aria-label. */
     function summaryAccessibleName(summary: Element): string {
       const parts: string[] = [];
@@ -1316,17 +1323,12 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.className).toContain('focus-visible:outline-offset-2');
       expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
       expect(summary.className).toContain('focus-visible:outline-accent-bright');
-      // Diagnostics exist in the DOM but stay closed behind the summary.
-      const diagnostics = row.querySelectorAll('details');
-      expect(diagnostics).toHaveLength(2);
-      for (const diagnostic of Array.from(diagnostics)) {
-        expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-        expect(diagnostic.querySelector('summary')?.className).toContain(
-          'focus-visible:outline-accent-bright!'
-        );
-      }
-      expect(row.textContent).toContain('Input');
-      expect(row.textContent).toContain('Output');
+      // The expanded region is unmounted while collapsed — no Raw toggle, no
+      // family body, no serialized payload anywhere in the DOM.
+      expect(row.querySelectorAll('details')).toHaveLength(0);
+      expect(row.querySelector('button[aria-expanded]')).toBeNull();
+      expect(row.querySelector('.tool-family-body')).toBeNull();
+      expect(row.textContent).not.toContain('chunk');
     });
 
     test('pointer toggles the row and the choice survives polling re-renders', async () => {
@@ -1478,20 +1480,25 @@ describe('ConsoleNodeRoom', () => {
       expect(toolRow('b').open).toBe(false);
     });
 
-    test('nested Input/Output toggles do not mark the outer row touched', async () => {
+    test('toggling Raw inside an open row does not mark the outer row touched or close it', async () => {
       await act(async () => {
         mountList(historyItems(READ_ROWS));
       });
       const row = toolRow('t-1');
-      const inputDiagnostic = row.querySelectorAll('details')[0] as Element & { open: boolean };
       await act(async () => {
-        click(inputDiagnostic.querySelector('summary') as Element);
+        click(rowSummary(row));
       });
-      expect(inputDiagnostic.open).toBe(true);
-      expect(row.open).toBe(false);
+      expect(row.open).toBe(true);
+      const raw = rawButton(row);
+      await act(async () => {
+        click(raw);
+      });
+      expect(raw.getAttribute('aria-expanded')).toBe('true');
+      expect(row.open).toBe(true);
+      expect(row.querySelector('.tool-family-body')?.textContent).toContain('"name": "Read"');
 
-      // Still untouched: the failed transition auto-opens the outer row; the nested
-      // diagnostic keeps its own state.
+      // The Raw choice persists across re-renders; a later failed transition
+      // still auto-opens an untouched outer row only when it was closed.
       const failedRows: readonly WorkflowNodeMessage[] = [
         ...(READ_ROWS[0] === undefined ? [] : [READ_ROWS[0]]),
         resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'boom', {
@@ -1504,8 +1511,7 @@ describe('ConsoleNodeRoom', () => {
       });
       const updated = toolRow('t-1');
       expect(updated.open).toBe(true);
-      const updatedInput = updated.querySelectorAll('details')[0] as Element & { open: boolean };
-      expect(updatedInput.open).toBe(true);
+      expect(rawButton(updated).getAttribute('aria-expanded')).toBe('true');
     });
 
     test('focus stays on the summary when later items append to the list', async () => {
@@ -1749,9 +1755,9 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.textContent).toContain('Read');
       expect(summary.textContent).toContain('a.ts');
       expect(summary.textContent).toContain('succeeded');
-      for (const nested of Array.from(drained.querySelectorAll('details'))) {
-        expect((nested as Element & { open: boolean }).open).toBe(false);
-      }
+      // Collapsed rows mount no expanded region: no body, no Raw toggle.
+      expect(drained.querySelector('.tool-family-body')).toBeNull();
+      expect(drained.querySelector('button[aria-expanded]')).toBeNull();
     });
 
     test('a poll-updated failure flips an untouched drained row open once', async () => {
@@ -1817,6 +1823,534 @@ describe('ConsoleNodeRoom', () => {
       const summary = rowSummary(failed);
       expect(summary.textContent).toContain('failed');
       expect(summary.textContent).toContain('exit 2');
+    });
+  });
+
+  describe('Console tool family bodies', () => {
+    function toolItem(
+      overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
+    ): Extract<AgentHistoryItem, { kind: 'tool' }> {
+      const toolUseId = overrides.toolUseId ?? 'tool-use-1';
+      const base = {
+        kind: 'tool' as const,
+        id: `tool-${toolUseId}`,
+        seq: 2,
+        role: 'tool' as const,
+        name: 'Read',
+        toolUseId,
+        input: { path: 'a.ts' },
+        output: 'truncated-output',
+        outcome: 'succeeded' as const,
+        exitCode: null,
+        durationMs: 1500,
+        canLoadFullOutput: true,
+        outputState: 'truncated' as const,
+        messageId: 'msg-tool-1',
+        ...overrides,
+      };
+      return {
+        ...base,
+        presentation:
+          overrides.presentation ??
+          toolPresentation.toolRowPresentation(
+            { name: base.name, input: base.input, output: base.output },
+            {
+              outcome: base.outcome,
+              exitCode: base.exitCode,
+              durationMs: base.durationMs,
+              outputState: base.outputState,
+            }
+          ),
+      };
+    }
+
+    /** A settled row that mounts open so the expanded body renders immediately. */
+    function openToolItem(
+      overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
+    ): Extract<AgentHistoryItem, { kind: 'tool' }> {
+      const item = toolItem(overrides);
+      return { ...item, presentation: { ...item.presentation, initialOpen: true } };
+    }
+
+    function toolRow(toolUseId: string): Element & { open: boolean } {
+      const el = host.querySelector(`details[data-tool-id="${toolUseId}"]`);
+      if (el === null) throw new Error(`row ${toolUseId} missing: ${host.innerHTML}`);
+      return el as Element & { open: boolean };
+    }
+
+    function rowSummary(row: Element): HTMLElement {
+      const summary = row.querySelector('summary');
+      if (summary === null) throw new Error(`summary missing: ${row.innerHTML}`);
+      return summary as unknown as HTMLElement;
+    }
+
+    function rawButton(row: Element): HTMLButtonElement {
+      const button = row.querySelector('button[aria-expanded]');
+      if (button === null) throw new Error(`Raw toggle missing: ${row.innerHTML}`);
+      return button as unknown as HTMLButtonElement;
+    }
+
+    function bodyBox(row: Element): Element {
+      const body = row.querySelector('.tool-family-body');
+      if (body === null) throw new Error(`body missing: ${row.innerHTML}`);
+      return body;
+    }
+
+    function rowButton(row: Element, label: string): HTMLButtonElement {
+      const button = Array.from(row.querySelectorAll('button')).find(
+        candidate => candidate.textContent === label
+      );
+      if (button === undefined) throw new Error(`button ${label} missing: ${row.innerHTML}`);
+      return button as unknown as HTMLButtonElement;
+    }
+
+    function click(target: Element): void {
+      target.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    }
+
+    async function mountRows(items: readonly AgentHistoryItem[]): Promise<void> {
+      await act(async () => {
+        root.render(
+          createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+            items,
+            showToolCalls: true,
+            showSystem: true,
+            onLoadFullOutput: async (): Promise<unknown> => undefined,
+          })
+        );
+      });
+    }
+
+    test('open rows show the family bar with facts and one Raw toggle at the far right', async () => {
+      await mountRows([openToolItem({ toolUseId: 't-bar', outcome: 'failed', exitCode: 2 })]);
+      const row = toolRow('t-bar');
+      const region = row.querySelector('summary + div');
+      if (region === null) throw new Error('expanded region missing');
+      const bar = region.querySelector('div');
+      if (bar === null) throw new Error('family bar missing');
+      const barText = bar.querySelector('span');
+      expect(barText?.className).toContain('whitespace-nowrap');
+      expect(barText?.className).toContain('text-ellipsis');
+      expect(barText?.className).toContain('min-w-0');
+      expect(barText?.textContent).toBe('file · exit 2 · truncated · 1.5s');
+      const raw = rawButton(row);
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
+      expect(raw.textContent).toContain('Raw');
+      expect(raw.className).toContain('flex-none');
+      expect(raw.className).toContain('min-h-[24px]');
+      expect(raw.className).toContain('focus-visible:outline-accent-bright');
+      expect(bar.lastElementChild).toBe(raw);
+      expect(row.querySelectorAll('button[aria-expanded]')).toHaveLength(1);
+      // Keyboard order: the Raw toggle is the next tabbable control after the
+      // row summary — Raw stays far right without leaving the row's tab flow.
+      const tabbables = Array.from(row.querySelectorAll('summary, button'));
+      expect(tabbables[0]).toBe(rowSummary(row));
+      expect(tabbables[1]).toBe(raw);
+      // The body precedes the full-output control in reading and tab order.
+      expect(region.textContent).toContain('truncated-output');
+    });
+
+    test('toolBodyPresentation resolves lazily: never for closed or Raw-open rows, once for the body, once for full output', async () => {
+      const spy = spyOn(toolPresentation, 'toolBodyPresentation');
+      try {
+        const onLoadFullOutput = async (): Promise<unknown> => 'FULL TEXT';
+        await act(async () => {
+          root.render(
+            createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+              items: [toolItem({ toolUseId: 't-lazy' })],
+              showToolCalls: true,
+              showSystem: true,
+              onLoadFullOutput,
+            })
+          );
+        });
+        const row = toolRow('t-lazy');
+        // Collapsed rows never resolve a body.
+        expect(row.open).toBe(false);
+        expect(spy.mock.calls).toHaveLength(0);
+
+        await act(async () => {
+          click(rowSummary(row));
+        });
+        expect(row.open).toBe(true);
+        expect(spy.mock.calls).toHaveLength(1);
+        const firstInput = spy.mock.calls[0]?.[0];
+        expect(firstInput?.name).toBe('Read');
+        expect(firstInput?.output).toBe('truncated-output');
+        expect(spy.mock.calls[0]?.[1]).toBe('file');
+
+        // Raw open unmounts the body without a resolve; loading full output
+        // while Raw is open still does not resolve.
+        await act(async () => {
+          click(rawButton(row));
+        });
+        expect(rawButton(row).getAttribute('aria-expanded')).toBe('true');
+        expect(spy.mock.calls).toHaveLength(1);
+        await act(async () => {
+          click(rowButton(row, 'View full output'));
+        });
+        expect(spy.mock.calls).toHaveLength(1);
+        expect(bodyBox(row).textContent).toContain('FULL TEXT');
+
+        // Closing Raw remounts the body and resolves exactly once with the
+        // fetched output — the swap kept the fresh payload.
+        await act(async () => {
+          click(rawButton(row));
+        });
+        expect(spy.mock.calls).toHaveLength(2);
+        expect(spy.mock.calls[1]?.[0].output).toBe('FULL TEXT');
+        expect(bodyBox(row).textContent).toContain('FULL TEXT');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('Raw swaps the family body for the exact sent payload and back', async () => {
+      await mountRows([openToolItem({ toolUseId: 't-raw' })]);
+      const row = toolRow('t-raw');
+      const raw = rawButton(row);
+      // Body first: the file arm shows path + preview, not serialized JSON.
+      expect(bodyBox(row).textContent).toContain('truncated-output');
+      expect(bodyBox(row).textContent).not.toContain('"name"');
+
+      await act(async () => {
+        click(raw);
+      });
+      expect(raw.getAttribute('aria-expanded')).toBe('true');
+      expect(raw.textContent).toContain('▾');
+      const payload = bodyBox(row).textContent ?? '';
+      expect(payload).toContain('"name": "Read"');
+      expect(payload).toContain('"input"');
+      expect(payload).toContain('"output"');
+      expect(payload).toContain('"path": "a.ts"');
+
+      await act(async () => {
+        click(raw);
+      });
+      expect(raw.getAttribute('aria-expanded')).toBe('false');
+      expect(bodyBox(row).textContent).toContain('truncated-output');
+      expect(bodyBox(row).textContent).not.toContain('"name"');
+    });
+
+    test('terminal body: $ prompt, command, output; failed rows append a bold FAILED word', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-sh',
+          name: 'Bash',
+          input: { command: 'npm test' },
+          output: 'boom',
+          outcome: 'failed',
+          exitCode: 1,
+        }),
+        openToolItem({
+          toolUseId: 't-run',
+          name: 'Bash',
+          input: { command: 'npm test' },
+          output: undefined,
+          outcome: 'running',
+          outputState: 'missing',
+          canLoadFullOutput: false,
+          durationMs: null,
+        }),
+        openToolItem({
+          toolUseId: 't-quiet',
+          name: 'Bash',
+          input: { command: 'true' },
+          output: undefined,
+          outputState: 'full',
+          canLoadFullOutput: false,
+          durationMs: null,
+        }),
+        openToolItem({
+          toolUseId: 't-corrupt',
+          name: 'Bash',
+          input: { command: 'x' },
+          output: '{"unterminated',
+          canLoadFullOutput: false,
+        }),
+      ]);
+      const failed = bodyBox(toolRow('t-sh'));
+      expect(failed.textContent).toContain('$');
+      expect(failed.textContent).toContain('npm test');
+      expect(failed.textContent).toContain('boom');
+      expect(failed.textContent).toContain('FAILED');
+      const failedWord = Array.from(failed.querySelectorAll('span')).find(
+        span => span.textContent?.trim() === 'FAILED'
+      );
+      expect(failedWord?.className).toContain('font-bold');
+      expect(bodyBox(toolRow('t-run')).textContent).toContain('running — no output yet');
+      expect(bodyBox(toolRow('t-quiet')).textContent).toContain('no output');
+      expect(bodyBox(toolRow('t-corrupt')).textContent).toContain('output unreadable — open Raw');
+    });
+
+    test('file body: node-command path then preview; no-preview and unreadable states', async () => {
+      await mountRows([
+        openToolItem({ toolUseId: 't-file', input: { path: 'a.ts' }, output: 'chunk' }),
+        openToolItem({
+          toolUseId: 't-nopreview',
+          input: { path: 'b.ts' },
+          output: undefined,
+          outputState: 'missing',
+          canLoadFullOutput: false,
+        }),
+        openToolItem({
+          toolUseId: 't-unread',
+          input: { path: 'c.ts' },
+          output: '{"unterminated',
+          canLoadFullOutput: false,
+        }),
+      ]);
+      const file = bodyBox(toolRow('t-file'));
+      const pathEl = file.querySelector('.text-node-command');
+      expect(pathEl?.textContent).toBe('a.ts');
+      expect(file.textContent).toContain('chunk');
+      const none = bodyBox(toolRow('t-nopreview'));
+      expect(none.querySelector('.text-node-command')?.textContent).toBe('b.ts');
+      expect(none.textContent).toContain('no preview');
+      expect(bodyBox(toolRow('t-unread')).textContent).toContain('output unreadable — open Raw');
+    });
+
+    test('matches body: pattern + scope header, path:line rows, and text-only lines', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-grep',
+          name: 'Grep',
+          input: { pattern: 'fn x', path: 'crates/', output_mode: 'content' },
+          output: 'src/a.ts:12: hit\nplain tail',
+        }),
+      ]);
+      const body = bodyBox(toolRow('t-grep'));
+      expect(body.textContent).toContain('fn x');
+      expect(body.textContent).toContain(' in crates/');
+      expect(body.querySelector('.text-node-command')?.textContent).toBe('src/a.ts');
+      expect(body.textContent).toContain(':12');
+      expect(body.textContent).toContain('hit');
+      expect(body.textContent).toContain('plain tail');
+    });
+
+    test('paths body: one node-command path per line for grep files_with_matches and glob', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-paths',
+          name: 'Grep',
+          input: { pattern: 'x', output_mode: 'files_with_matches' },
+          output: { filenames: ['src/a.ts', 'src/b.ts'] },
+        }),
+        openToolItem({
+          toolUseId: 't-glob',
+          name: 'glob',
+          input: { pattern: '**/*.rs' },
+          output: 'src/a.rs\nsrc/b.rs',
+        }),
+      ]);
+      const paths = bodyBox(toolRow('t-paths'));
+      expect(paths.textContent).toContain('src/a.ts');
+      expect(paths.textContent).toContain('src/b.ts');
+      // No line-number parsing on a files_with_matches body.
+      expect(paths.textContent).not.toContain(':');
+      const glob = bodyBox(toolRow('t-glob'));
+      expect(glob.textContent).toContain('src/a.rs');
+      expect(glob.textContent).toContain('src/b.rs');
+    });
+
+    test('list tails: exact remainder is "+n more", an unknowable tail is "more results omitted"', async () => {
+      const longList = Array.from({ length: 502 }, (_, i) => `f${i}.rs`).join('\n');
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-more',
+          name: 'glob',
+          input: { pattern: '**/*.rs' },
+          output: longList,
+        }),
+        openToolItem({
+          toolUseId: 't-omitted',
+          name: 'glob',
+          input: { pattern: '**/*.rs' },
+          output: 'x'.repeat(70_000),
+        }),
+      ]);
+      expect(bodyBox(toolRow('t-more')).textContent).toContain('+2 more');
+      const omitted = bodyBox(toolRow('t-omitted'));
+      expect(omitted.textContent).toContain('more results omitted');
+      expect(omitted.textContent).not.toContain('more\n');
+    });
+
+    test('code body: fenced source highlights with the language, result in a second box', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-code',
+          name: 'eval',
+          input: { code: 'const answer = 42;', language: 'rust' },
+          output: 'ok',
+        }),
+      ]);
+      const row = toolRow('t-code');
+      const boxes = row.querySelectorAll('.tool-family-body');
+      expect(boxes).toHaveLength(2);
+      const source = boxes[0];
+      const result = boxes[1];
+      if (source === undefined || result === undefined) throw new Error('body boxes missing');
+      expect(source.querySelector('code')?.className).toContain('language-rust');
+      expect(source.innerHTML).toContain('hljs-keyword');
+      expect(result.className).toContain('mt-1.5');
+      expect(result.textContent).toBe('ok');
+    });
+
+    test('code body: unknown language renders plain source and a hostile language stays inert', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-unknown',
+          name: 'eval',
+          input: { code: 'select 1', language: 'madeuplang' },
+          output: undefined,
+          outputState: 'missing',
+          canLoadFullOutput: false,
+        }),
+        openToolItem({
+          toolUseId: 't-hostile',
+          name: 'eval',
+          input: { code: 'x', language: 'rust" onload="alert(1)' },
+          output: undefined,
+          outputState: 'missing',
+          canLoadFullOutput: false,
+        }),
+      ]);
+      const unknown = bodyBox(toolRow('t-unknown'));
+      expect(unknown.textContent).toContain('select 1');
+      expect(unknown.innerHTML).not.toContain('hljs-keyword');
+      const hostile = toolRow('t-hostile');
+      expect(bodyBox(hostile).textContent).toContain('x');
+      // The hostile value can appear only as inert text — never a language
+      // class or an element attribute.
+      for (const el of Array.from(hostile.querySelectorAll('*'))) {
+        expect(el.getAttribute('onload')).toBeNull();
+      }
+      expect(hostile.querySelector('code[class*="language-"]')).toBeNull();
+    });
+
+    test('code body: a fence inside the source can never close the fence early', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-fence',
+          name: 'eval',
+          input: { code: 'const doc = "```";', language: 'js' },
+          output: undefined,
+          outputState: 'missing',
+          canLoadFullOutput: false,
+        }),
+      ]);
+      const body = bodyBox(toolRow('t-fence'));
+      // The inner run survives as literal text inside the highlighted block.
+      expect(body.textContent).toContain('```');
+      expect(body.textContent).toContain('doc');
+    });
+
+    test('web body: inert url header, title, and stored markdown — no anchors, no fetches', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-web',
+          name: 'WebFetch',
+          input: { url: 'https://doc.io/x' },
+          output: { result: 'Read **the** docs', url: 'https://doc.io/x', title: 'Doc Page' },
+        }),
+        openToolItem({
+          toolUseId: 't-search',
+          name: 'WebSearch',
+          input: { query: 'x' },
+          output: { results: [{ title: 'Hit', url: 'https://hit.io' }] },
+        }),
+      ]);
+      const web = bodyBox(toolRow('t-web'));
+      expect(web.querySelector('.text-node-command')?.textContent).toBe('https://doc.io/x');
+      expect(web.textContent).toContain('Doc Page');
+      expect(web.querySelector('strong')?.textContent).toBe('the');
+      expect(web.querySelector('a')).toBeNull();
+      const search = bodyBox(toolRow('t-search'));
+      // Result markdown renders the title plus a parenthesized destination, inert.
+      expect(search.textContent).toContain('Hit');
+      expect(search.textContent).toContain('(https://hit.io)');
+      expect(search.querySelector('a')).toBeNull();
+    });
+
+    test('stored markdown attacks render inert: no anchors, images, raw HTML, or scripts', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-attack',
+          name: 'WebFetch',
+          input: { url: 'https://x.io' },
+          output: {
+            result:
+              '[click](https://e.io) ![pic](https://e.io/p.png) https://auto.io ' +
+              '[x](javascript:alert(1)) <script>alert(1)</script> <b onmouseover="hack()">hi</b>',
+            url: 'https://x.io',
+          },
+        }),
+      ]);
+      const body = bodyBox(toolRow('t-attack'));
+      expect(body.querySelector('a')).toBeNull();
+      expect(body.querySelector('img')).toBeNull();
+      expect(body.querySelector('script')).toBeNull();
+      // The hostile markup survives only as text — no element carries it.
+      expect(body.querySelector('b')).toBeNull();
+      for (const el of Array.from(body.querySelectorAll('*'))) {
+        expect(el.getAttribute('onmouseover')).toBeNull();
+      }
+      expect(body.textContent).not.toContain('javascript:');
+      // Link label plus parenthesized destination; bare autolinks dedupe.
+      expect(body.textContent).toContain('click');
+      expect(body.textContent).toContain('(https://e.io)');
+      expect(body.textContent).toContain('pic');
+      expect(body.textContent).toContain('[image omitted]');
+      expect(body.textContent?.match(/https:\/\/auto\.io/g)?.length).toBe(1);
+      // Raw HTML survives only as escaped text — never as live markup.
+      expect(body.textContent).toContain('<script>alert(1)</script>');
+      expect(body.textContent).toContain('<b onmouseover="hack()">hi</b>');
+    });
+
+    test('generic body: at most three key:value rows, {…}/[n] markers, sent name in the bar', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-gen',
+          name: 'get_command_or_subagent_output',
+          input: { command_id: 'cmd_7f3a', tags: ['a', 'b'], filters: { x: 1 }, extra: 'dropped' },
+          output: 'plain note',
+        }),
+      ]);
+      const row = toolRow('t-gen');
+      // The 30-char name cannot ride the chip, so the body bar carries it whole.
+      expect(row.textContent).toContain('generic · get_command_or_subagent_output');
+      const body = bodyBox(row);
+      expect(body.querySelectorAll('.w-\\[11ch\\]')).toHaveLength(3);
+      expect(body.textContent).toContain('cmd_7f3a');
+      expect(body.textContent).toContain('[2]');
+      expect(body.textContent).toContain('{…}');
+      expect(body.textContent).not.toContain('dropped');
+      // No serialized-object syntax survives into the generic body.
+      expect(body.innerHTML).not.toContain('&quot;');
+      expect(body.textContent).toContain('plain note');
+    });
+
+    test('todo and task rows open to the bar and Raw toggle with no body box', async () => {
+      await mountRows([
+        openToolItem({
+          toolUseId: 't-todo',
+          name: 'todo',
+          input: { todos: [{ content: 'x' }] },
+          canLoadFullOutput: false,
+        }),
+        openToolItem({
+          toolUseId: 't-task',
+          name: 'Task',
+          input: { description: 'd', prompt: 'p' },
+          canLoadFullOutput: false,
+        }),
+      ]);
+      for (const id of ['t-todo', 't-task']) {
+        const row = toolRow(id);
+        expect(row.querySelector('.tool-family-body')).toBeNull();
+        expect(rawButton(row).getAttribute('aria-expanded')).toBe('false');
+        expect(rawButton(row).textContent).toContain('Raw');
+      }
     });
   });
 });
