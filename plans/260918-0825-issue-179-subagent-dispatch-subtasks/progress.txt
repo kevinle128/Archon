@@ -1,0 +1,181 @@
+## Codebase Patterns
+
+### CDP AX/DOM queries must stay room-scoped on console
+- **Where**: `e2e/ui/task-dispatch-body.spec.ts` (`cardAxEvidence`)
+- **Pattern**: The console run-detail page renders the same `details[data-tool-id]` row twice — once in the execution-history pane, once inside the node room. A global `DOM.querySelector` (or unscoped AX-tree query) can hit the history copy whose subtree is ignored. Always anchor the selector at the room region: `[aria-label="<nodeId> room"] details[data-tool-id="…"]`. Legacy renders tool rows only inside the room, so scoping is a no-op there — do it anyway for symmetric evidence.
+- **Example**: `` `[aria-label="${nodeId} room"] details[data-tool-id="${id}"] details[data-subtask-index="0"]` ``
+
+### Measured evidence attachments for visual reports
+- **Where**: `e2e/ui/task-dispatch-body.spec.ts` (`testInfo.attach('…-task-card-geometry.json')`)
+- **Pattern**: Accumulate every asserted computed style / AX name / bar text into one object and attach it as JSON — the acceptance report then quotes real measured values instead of hand-transcribed ones. `testInfo.attach({body})` inlines base64 into `e2e/ui/reports/results.json`; extract with a tiny script into `reports/evidence/` for committed artifacts.
+
+### npm commands in e2e/ need a clean env
+- **Where**: `e2e/` (standalone npm package)
+- **Pattern**: the shell inherits `npm_config_local_prefix`, `npm_package_json`, `npm_execpath`, etc. from the parent Archon server process — they point at ANOTHER checkout (`/Volumes/WD_BLACK/workspace/opensource/Archon`), so `npm ci`/`npm run` silently operate on that prefix ("up to date" while node_modules is empty). Prefix npm commands with `env -i HOME="$HOME" PATH="$PATH"`.
+- **Example**: `cd e2e && env -i HOME="$HOME" PATH="$PATH" npm ci && env -i HOME="$HOME" PATH="$PATH" npm run typecheck`
+
+### Validating an e2e workflow fixture by hand
+- **Where**: `e2e/fixtures/workflows/*.yaml`
+- **Pattern**: `parseWorkflow` (packages/workflows/src/loader.ts) checks the provider registry — bare `bun -e` has an EMPTY registry so even existing fixtures fail 'unknown provider e2e-fake'. Register first: `registerCommunityProviders()` from `@archon/providers` registry under `ARCHON_E2E_FAKE_PROVIDER=1`.
+- **Example**: `ARCHON_E2E_FAKE_PROVIDER=1 bun -e "import {registerCommunityProviders} from './packages/providers/src/registry.ts'; registerCommunityProviders(); const {parseWorkflow}=await import('./packages/workflows/src/loader.ts'); ..."`
+
+
+### Card chevron bound to its own details[open] (no React state)
+- **Where**: `NodeRoom.tsx` `SubtaskCard`, `ConsoleAgentHistoryList.tsx` `SubtaskCard`
+- **Pattern**: subtask cards are UNCONTROLLED `<details class="group/subtask">`; the chevron uses `group-open/subtask:rotate-90` so rotation follows the card's own `[open]` attribute — the outer row's React `open` state never rotates a closed card, and happy-dom/class assertions can verify binding by checking `group-open/subtask:rotate-90` present + no bare `rotate-90` class.
+- **Example**: `<details data-subtask-index={i} className="group/subtask ...">` + `<span aria-hidden className="... group-open/subtask:rotate-90">▶</span>`
+
+### Scope sanitization assertions to the readable body
+- **Where**: task-dispatch body tests in `NodeRoom.test.tsx`, `ConsoleNodeRoom.test.tsx`
+- **Pattern**: the temporary Input diagnostic dumps the raw payload verbatim via `formatToolIo` — a hostile `javascript:`/`onclick=` fixture legitimately appears inside the closed Input `<pre>`. Security assertions (`no javascript:`, `no <img`) must slice the row before `>Input<`, not cover the whole row.
+- **Example**: `const body = row.slice(row.indexOf('</summary>'), row.indexOf('>Input<'))`
+
+### react-markdown leaks `node="[object Object]"` through prop spread
+- **Where**: `MARKDOWN_COMPONENTS` / `TASK_CONTEXT_COMPONENTS` in both renderers
+- **Pattern**: component props include `node`; the established `{...props}` spread writes `node="[object Object]"` into DOM markup. Harmless noise, matches existing convention — do not add `node` to test assertions.
+
+### Task-dispatch normalization contract (Story 1.6 / CAP-4)
+- **Where**: `packages/web/src/lib/task-normalize.ts`, `packages/web/src/lib/tool-presentation.ts`
+- **Pattern**: `normalizeTaskDispatch(input)` maps OMP `{context?, tasks:[{name,agent,task}]}` -> `mode:'batch'` and Claude `{description, prompt, subagent_type?}` -> `mode:'single'` into `NormalizedTaskDispatch`; null on any malformed/over-budget input (all-or-nothing, never partial/truncated). An own `tasks` key is the discriminator — malformed `tasks` never falls through to Claude. `context`/`subagent_type`: `undefined` = absent (ok), any other non-string = reject. Identifier bound applies to the TRIMMED name/agent; cumulative 256KiB budget sums UNTRIMMED lengths before allocating.
+- **Example**: `body = { kind:'task', context, subtasks: TaskSubtaskCard[] }` where each card is `TaskSubtask + {excerpt: taskPromptExcerpt(prompt)}`
+
+### tool-presentation body model
+- **Where**: `packages/web/src/lib/tool-presentation.ts`
+- **Pattern**: `ToolPresentation.body: ToolBody|null` + `bodyFacts: string[]`; `ToolRowPresentation.bodyBarText` = `[family, ...facts].join(' · ')` composed once in the core. Normalized task -> bodyFacts `['batch','N subtasks']`/`['single dispatch']` + `count` badge `'N subagent(s)'`; the bar skips the task `count` badge only (non-task count badges like `14 matches` stay). Malformed task -> `{kind:'generic', fields: genericBodyFields(record)}` (<= MAX_GENERIC_FACTS rows, `[n]`/`{…}` markers, never stringify, hostile enumeration -> `[]`). `taskHeadline()` is wrapped in try/catch INSIDE the task branch so a throwing getter falls back to the label while keeping the body.
+- **Example**: `bodyBarText` for a batch row with duration: `task · batch · 2 subtasks · 1.5s`
+
+### Renderer body contract (done in US-002)
+- **Where**: `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`
+- **Pattern**: both renderers print `presentation.bodyBarText` verbatim (no local recomposition), then render `presentation.body` via local `TaskBody`/`GenericBody`/`SubtaskCard` copies per shell (Console isolation forbids shared components). Readable body sits between the bar and the temporary Input/Output disclosures (Story 1.2 Raw toggle NOT landed — `fc90c62c` not an ancestor; if it lands later, the body belongs in the non-Raw branch). Outer `<details>` keeps `event.target !== event.currentTarget` onToggle guard.
+- **Example**: `{presentation.bodyBarText}` → `{body?.kind === 'task' ? <TaskBody …/> : null}` → `{body?.kind === 'generic' ? <GenericBody …/> : null}` → Input/Output `<details>`
+
+### Repo conventions
+- **Where**: `packages/web/package.json`, root `package.json`
+- **Pattern**: tests use `bun:test` (`describe/expect/test`); `bun test src/lib/` is the lib gate; `bun run type-check` = `tsc --noEmit`; eslint ignores `*.test.ts`; prettier formats on commit via lint-staged (`eslint --fix --max-warnings 0` + `prettier --write`). Commit via `git commit -F file` — zsh chokes on `$(cat <<'EOF')` heredoc-in-substitution.
+- **Example**: `cd packages/web && bun test src/lib/task-normalize.test.ts`
+
+---
+
+## 2026-09-18 — US-001: Shared task-dispatch normalization and presentation contract
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/task-normalize.ts` — new React-free/dependency-free module: MAX_TASK_* constants, TaskSubtask, NormalizedTaskDispatch, normalizeTaskDispatch (try/catch wrapper, own-`tasks` discriminator, batch+single branches, cumulative budget pass before trim/allocate, bounded identifiers), taskPromptExcerpt (whitespace collapse, 160 code points, surrogate-safe, ellipsis only when omitted, 256KiB scan bound)
+- `packages/web/src/lib/task-normalize.test.ts` — new, 27 tests: full phase-01 case table + 3 individually named CAP-4 cases + boundaries + getter hostility + excerpt edge cases + determinism/freshness
+- `packages/web/src/lib/tool-presentation.ts` — GenericField/TaskSubtaskCard/ToolBody types; `body`/`bodyFacts` on ToolPresentation; `bodyBarText` on ToolRowPresentation; genericBodyFields/genericBodyValue helpers; task branch normalize+enrich+facts+badge; taskHeadline try/catch containment; bodyBarText composition skipping task count badge only
+- `packages/web/src/lib/tool-presentation.test.ts` — +21 tests: task/generic body mapping, badges/facts, generic projection bounds/hostility, non-task body:null incl. MCP + safePresentation, bodyBarText composition incl. 'task · single dispatch · 800ms' exactly-once and non-task byte-for-byte
+- `packages/web/src/lib/agent-history.test.ts` — +1 plumbing test proving body/bodyFacts/bodyBarText reach AgentHistoryItem.presentation
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — 1-6 backlog -> in-progress
+
+**Acceptance criteria verified**:
+- [x] task-normalize.ts exists with all required exports; zero imports (React-free, dependency-free)
+- [x] OMP->batch (context absent/blank->'', non-string->null), Claude->single (absent/blank subagent_type->null), own-`tasks` discriminator, malformed tasks never falls through
+- [x] All bounds + hostile inputs -> null, no throw, no truncation, no partial batch; fresh + deterministic results
+- [x] taskPromptExcerpt one-line, <=160 code points, surrogate-safe, ellipsis only when omitted, bounded scan
+- [x] tool-presentation types added; all families + both safe fallbacks init body:null/bodyFacts:[]
+- [x] Task branch normalizes once, enriches excerpts; batch/single/generic mapping with correct facts+badges
+- [x] bodyBarText: task facts first, count badge skipped only for task bodies, runtime facts in existing order, family prefix; non-task byte-for-byte
+- [x] Generic body only on malformed task input; taskHeadline contained (throwing getter -> label fallback + generic body retained)
+- [x] Tests written first, confirmed failing before implementation
+- [x] `bun test src/lib/task-normalize.test.ts` (27), `bun test src/lib/tool-presentation.test.ts src/lib/agent-history.test.ts` (175), `bun test src/lib/` (523), `bun run type-check` all pass
+- [x] No renderer, real provider, or agent-history.ts production change; sprint key -> in-progress
+
+**Learnings**:
+- Commit message `$(cat <<'EOF')` heredoc-in-substitution fails under this shell (zsh-flavored parse of `bad substitution`) — write message to a temp file and `git commit -F`.
+- Prettier reformats on commit via lint-staged — run `bun x prettier --write <files>` before committing to avoid hook-time surprises.
+- `for...in` on a hostile record throws during enumeration — genericBodyFields wraps the whole loop in try/catch -> [].
+- Spreading an object with a throwing getter invokes the getter — hostile-getter tests must use Object.defineProperty on a real object, not `{...hostile}`.
+
+---
+
+## 2026-09-18 — US-002: Legacy and Console task/generic body renderers
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — bodyBarText verbatim (local `[family,...facts].join` removed); TASK_CONTEXT_COMPONENTS (compact 11.5px p/h1-h6/list overrides, img->nothing, a reuses MARKDOWN_COMPONENTS.a); SubtaskCard (group/subtask chevron bound to card's own [open], agent · name — excerpt one-line summary, full prompt in surface-inset pre-wrap box); TaskBody (context markdown then cards); GenericBody (bounded key/value rows)
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — same body markup duplicated locally (isolation), Console deltas: `focus-visible:outline-accent-bright! focus-visible:outline-offset-2` (+2px)
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — +9 static anatomy tests (OMP collapsed badge + exact bar + context-before-cards ordering, card anatomy classes + excerpt/prompt split, Claude single/no-agent, singular wording, 64-card boundary, malformed->generic, markdown sanitization)
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — +6 interaction tests (opened-row anatomy + DOM order, nested-toggle guard, chevron binding, Enter/Space + focus, poll/identity, tab order)
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — +10 tests (same matrix through selected room via renderRoom + list-level, hidden-tool-calls, malformed, markdown safety, +2px focus delta, per-row index scoping)
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — +1 inline-history parity test
+
+**Acceptance criteria verified**:
+- [x] Story 1.2 check: `git merge-base --is-ancestor fc90c62c HEAD` -> not present; both renderers still carry Input/Output disclosures -> readable body placed after body bar, before disclosures (recorded in patterns)
+- [x] `presentation.bodyBarText` verbatim in both shells; 'task · batch · 2 subtasks' / 'task · single dispatch' exact; count badge never repeated in bar; non-task bar test 'file · exit 2 · truncated · 1.5s' stays green byte-for-byte
+- [x] Context markdown only when non-empty; compact overrides; img override -> nothing; unsafe href blanked by defaultUrlTransform; raw HTML escaped; multi-block wraps
+- [x] `<details data-subtask-index=N>` per card, index key, chevron aria-hidden 9px/10px/120ms via group-open/subtask, motion-reduce off; agent only when non-null + no orphan '·'; name bold; excerpt secondary; >=24px single-line shrink; payload strings are text not attributes
+- [x] Open card = full prompt React text in mono pre-wrap break-words surface-inset box; no status/output/controls/provider label
+- [x] Card: surface-elevated, 1px border, 6px radius, 6/9px padding, 5px top margin; focus 2px accent-bright, -2px Legacy / +2px Console
+- [x] Generic body: <=3 rows, secondary key / primary value, literal `[n]`/`{…}` markers, empty fields -> no invented message
+- [x] Outer onToggle guard kept; cards uncontrolled, initially closed; poll retains open card; new identity resets; nested toggles never mark/flip outer; full-output load/error/retry + Input/Output unchanged
+- [x] Console parity on ConsoleNodeRoom (selected room) + ConsoleExecutionHistory (inline); showToolCalls:false hides task bodies; no shared component; console-isolation test green
+- [x] Tests written first, confirmed failing (9 fail -> all pass)
+- [x] Gates: `NODE_ENV=development bun test NodeRoom.test.tsx LegacyNodeRoom.test.tsx` (59), `bun test src/experiments/console/` (909), `bun run test` (all web suites incl. 451 components), `bun run type-check`, root `bun run lint` — all green; no provider parsing in JSX
+
+**Learnings**:
+- `group-open/subtask:rotate-90` binds the chevron to the card's own `[open]` — no React state needed for card disclosure, and outer-row open can never rotate a closed card's chevron.
+- Security assertions must be scoped to the readable body: the temporary Input diagnostic legitimately dumps raw payload (a hostile `javascript:` fixture appears there verbatim) — slice before `>Input<`.
+- react-markdown spreads a `node` prop into component props; the established `{...props}` convention writes `node="[object Object]"` into markup — harmless, don't assert on it.
+- Pre-existing blocker handled per protocol: see ledger.
+
+BLOCKER US-002 | gate=cd packages/web && bun run test | cause=no-hitl-clarify-graph.test.ts:56 ENOENT .archon/workflows/defaults/speckit-ralph-native-no-hitl-feature.yaml (file tracked on dev, absent on this branch; identical fingerprint reproduced on clean base with story stashed) | action=materialized dev's tracked copy; chore(unblock) fad8b2b8; test passes | 2026-09-18
+
+---
+
+## 2026-09-18 — US-003: Deterministic e2e fixture: fake-provider taskDispatch scenario, workflow, runtime helper
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts` — taskDispatch enum on scenarioSchema; superRefine rejects emitTool/repeatTool/largeLastToolOutput when taskDispatch set; exported E2E_FAKE_TASK_TOOL_NAME ('Task'), E2E_FAKE_AGENT_TOOL_NAME ('Agent'), E2E_FAKE_TASK_OMP_IMAGE_URL, E2E_FAKE_TASK_OMP_INPUT (markdown context: emphasis/list/img/javascript: link + 2 distinct multiline subtasks), E2E_FAKE_AGENT_INPUT (description+prompt, no subagent_type); emission branch yields assistant pass text + tool + tool_result success with structuredClone'd input
+- `packages/providers/src/e2e-fake/provider.test.ts` — +4 tests: exact omp tool/input/pairing, content shape (context markers + 2 distinct tasks w/ multiline prompts), exact claude payload + absent subagent_type key, mutual-exclusion + invalid-enum rejection
+- `e2e/fixtures/workflows/e2e-task-dispatch.yaml` — omp-dispatch -> claude-dispatch, e2e-fake provider/model, mutates_checkout: false, no gate
+- `e2e/lib/playwright/archon-runtime.ts` — TASK_DISPATCH_WORKFLOW_FIXTURE seeded into home/workflows; exported E2E_TASK_DISPATCH_WORKFLOW_NAME, TASK_DISPATCH_OMP_NODE, TASK_DISPATCH_CLAUDE_NODE; runTaskDispatchWorkflow() via existing runCli
+
+**Acceptance criteria verified**:
+- [x] taskDispatch: z.enum(['omp','claude']).optional() on scenarioSchema; taskDispatch+emitTool (and emitTool-modifier keys repeatTool/largeLastToolOutput) fail scenario validation — proven by test
+- [x] 'omp' -> exactly one 'Task' call: context has emphasis/list/blocked image URL/unsafe-scheme link; 2 tasks distinct names+agents, multiline prompts. 'claude' -> exactly one 'Agent' call with description+prompt and NO subagent_type
+- [x] Existing deterministic result/outcome sequence reused (E2E_FAKE_TOOL_OUTPUT + 'success'); stable exported constants; no network/delay/randomness; all 16 pre-existing tests still green (byte-for-byte compat); env-gate untouched; no real provider touched
+- [x] provider.test.ts asserts exact toolName/toolInput/pairing/mutual-exclusion — 20 pass via cd packages/providers && bun test src/e2e-fake/provider.test.ts
+- [x] e2e-task-dispatch.yaml created per spec; verified loading via parseWorkflow with registerCommunityProviders + ARCHON_E2E_FAKE_PROVIDER=1 -> 'OK e2e-task-dispatch nodes: omp-dispatch,claude-dispatch'
+- [x] archon-runtime.ts seeds fixture, exports constants, runTaskDispatchWorkflow(): Promise<CliRunResult> reusing runCli + owned-process cleanup
+- [x] cd e2e && npm run typecheck passes (after env-clean npm ci)
+
+**Learnings**:
+- The agent shell inherits npm_config_local_prefix et al. pointing at a DIFFERENT checkout — npm ci in e2e/ reports "up to date" while installing nothing here. Fix: `env -i HOME="$HOME" PATH="$PATH" npm ci`.
+- parseWorkflow validates providers against a registry that's EMPTY in bare bun -e; must registerCommunityProviders() with ARCHON_E2E_FAKE_PROVIDER=1 first.
+- structuredClone for nested fixture input (existing emitTool spread is shallow; nested const payload needs a deep copy to survive consumers).
+- eslint ignores e2e/ entirely (standalone package) — lint gate for e2e is just its own typecheck.
+
+---
+
+## 2026-09-18 — US-004: Full-stack Playwright proof, visual acceptance report, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/task-dispatch-body.spec.ts` — 5 cases on the shared suite fixture: per-surface behavior+geometry (omp-dispatch + claude-dispatch through one run per surface), per-surface responsive (460/520 reference width, 390x844, 200% CDP zoom), and a cross-surface contrast case; request observation registered before navigation; measured-evidence JSON attachments feed the report
+- `plans/260918-0825-issue-179-subagent-dispatch-subtasks/reports/visual-acceptance.md` — measured acceptance report (mapping, geometry, contrast, focus/AX, reduced-motion, request-observation, responsive, mockup-delta dispositions)
+- `plans/260918-0825-issue-179-subagent-dispatch-subtasks/reports/evidence/` — extracted attachments: legacy-task-body-460.png, console-task-body-520.png, legacy-claude-task-460.png, console-claude-task-520.png, room PNGs, task-card-contrast.json, per-surface task-card-geometry.json
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — 1-6 -> done
+
+**Acceptance criteria verified**:
+- [x] Spec created at e2e/ui/task-dispatch-body.spec.ts, shared suite fixture, parameterized console+legacy, one run per surface visits both nodes
+- [x] Per-surface behavior proof — request listener before navigation; closed row single-line 'Task' + '2 subagents'; Enter -> bar 'task · batch · 2 subtasks · Nms' (runtime fact once); context precedes 2 row-scoped cards; zero img; javascript: link has href=""; e2e.invalid never requested; AX DisclosureTriangle named 'agent · subtask — excerpt' without chevron; DOM-order Tab (5 focusables incl. context link; no Raw — 1.2 absent); Enter opens card with complete multiline prompt + focus preserved + outer row open; Space closes
+- [x] claude-dispatch: '1 subagent', 'task · single dispatch · 0ms', 1 card, no context, no orphan '·' before name, complete prompt
+- [x] Computed-style assertions at 460px/520px: elevated bg, 1px border, 6px radius, 6/9px pad, 5px margin, 24px min-height, 11.5px font, agent 600/node-approval, name 700, excerpt text-secondary, chevron 9px/10px/0.12s/none-under-reduce, inset prompt + pre-wrap, focus solid 2px accent-bright at -2px/+2px
+- [x] Contrast all >= 4.5:1 (console 6.78/16.72/7.90/18.77; legacy 6.53/14.08/5.33/16.52); required PNGs + task-card-contrast.json attached
+- [x] Responsive: reference width @1440x1000, 390x844 production layout, 200% CDP zoom — one-line summaries, usable prompt, zero task-body overflow, no new breakpoint
+- [x] reports/visual-acceptance.md written with measured tables + mockup delta dispositions
+- [x] Gates: providers 20/20; web 909/909; web type-check; build:web; e2e typecheck; playwright 5/5; bun run validate green
+- [x] Nine-perspective audit clean; sprint-status 1-6 -> done; no PR created (parent workflow owns it)
+
+**Learnings**:
+- Console renders each tool row twice (execution history + room) — scope every DOM/AX query to the room region (pattern recorded above).
+- locator 'span' + hasText matches the WRAPPER span containing 'agent ·'; use getByText(..., {exact:true}) for the inner agent/name spans.
+- chore(unblock) commits must regenerate derived artifacts: fad8b2b8 restored a bundled workflow YAML; check:bundled went stale until bun run generate:bundled (69f40cf5).
+- details[open] card AX subtree exposes role 'DisclosureTriangle' on the summary; the details node's own expanded prop is not always in the subtree — DOM `open` JSProperty is the reliable state channel.
+- bun run validate >280s wall — run it backgrounded, not under a short exec timeout (SIGINT kills the parallel test fan-out).
+
+BLOCKER US-004 | gate=bun run validate | cause=check:bundled stale — fad8b2b8 restored .archon/workflows/defaults/speckit-ralph-native-no-hitl-feature.yaml without regenerating bundled-defaults.generated.ts | action=bun run generate:bundled (diff adds only that entry); chore(unblock) 69f40cf5; validate passes | 2026-09-18
+BLOCKER US-004 | gate=bun run validate | cause=@archon/workflows 7 fail ENOENT — dag-executor.test.ts reads .archon/workflows/defaults/speckit-ralph-native-feature.yaml (5 loop tests) + speckit-feature.yaml (2 Plannotator tests); both deleted on-branch in 16b01a72, absent at HEAD; dev copies drifted (codex) so restored 16b01a72~1 (branch's last-carried grok variant matching the test contract) | action=git checkout 16b01a72~1 -- both files + bun run generate:bundled; chore(unblock) 80268f5c; workflows 613 pass 0 fail, validate EXIT=0 | 2026-09-18
+
+---

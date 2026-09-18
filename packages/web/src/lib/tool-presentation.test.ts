@@ -15,6 +15,7 @@ import {
   type ToolFamily,
   type ToolRowFacts,
 } from './tool-presentation';
+import { MAX_TASK_SUBTASKS, MAX_TASK_TOTAL_TEXT_CODE_UNITS } from './task-normalize';
 
 function call(
   name: string,
@@ -778,6 +779,313 @@ describe('badge ordering', () => {
       durationMs: 1500,
     });
     expect(presentation.badges).toEqual([{ kind: 'duration', text: '1.5s', tone: 'muted' }]);
+  });
+});
+
+describe('task body', () => {
+  const ompInput = {
+    context: 'Investigate **auth** drift',
+    tasks: [
+      { name: 'scan middleware', agent: 'explore', task: 'read src/auth/**\nand report' },
+      { name: 'audit tokens', agent: 'reviewer', task: 'diff token issuance' },
+    ],
+  };
+
+  test('OMP batch produces a task body, subagent count badge, and batch facts', () => {
+    const presentation = call('Task', ompInput);
+    expect(presentation.family).toBe('task');
+    expect(presentation.body).toEqual({
+      kind: 'task',
+      context: 'Investigate **auth** drift',
+      subtasks: [
+        {
+          name: 'scan middleware',
+          agent: 'explore',
+          prompt: 'read src/auth/**\nand report',
+          excerpt: 'read src/auth/** and report',
+        },
+        {
+          name: 'audit tokens',
+          agent: 'reviewer',
+          prompt: 'diff token issuance',
+          excerpt: 'diff token issuance',
+        },
+      ],
+    });
+    expect(presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
+    expect(presentation.contentBadges).toEqual([
+      { kind: 'count', text: '2 subagents', tone: 'neutral' },
+    ]);
+  });
+
+  test('a one-task OMP dispatch uses singular wording', () => {
+    const presentation = call('task', {
+      tasks: [{ name: 'only', agent: 'a', task: 'do it' }],
+    });
+    expect(presentation.bodyFacts).toEqual(['batch', '1 subtask']);
+    expect(presentation.contentBadges).toEqual([
+      { kind: 'count', text: '1 subagent', tone: 'neutral' },
+    ]);
+  });
+
+  test('Claude single produces one card, no context, and single-dispatch facts', () => {
+    const presentation = call('Agent', {
+      description: 'review the diff',
+      prompt: 'list risks',
+      subagent_type: 'reviewer',
+    });
+    expect(presentation.body).toEqual({
+      kind: 'task',
+      context: '',
+      subtasks: [
+        {
+          name: 'review the diff',
+          agent: 'reviewer',
+          prompt: 'list risks',
+          excerpt: 'list risks',
+        },
+      ],
+    });
+    expect(presentation.bodyFacts).toEqual(['single dispatch']);
+    expect(presentation.contentBadges).toEqual([
+      { kind: 'count', text: '1 subagent', tone: 'neutral' },
+    ]);
+  });
+
+  test('Claude without subagent_type keeps a null agent on the card', () => {
+    const presentation = call('Agent', { description: 'scan', prompt: 'do it' });
+    expect(presentation.body).toMatchObject({
+      kind: 'task',
+      subtasks: [{ name: 'scan', agent: null, prompt: 'do it' }],
+    });
+    expect(presentation.bodyFacts).toEqual(['single dispatch']);
+  });
+
+  test('the card excerpt is computed by the core while the prompt stays whole', () => {
+    const prompt = `intro\n\n${'x'.repeat(300)}`;
+    const presentation = call('task', {
+      tasks: [{ name: 'a', agent: 'b', task: prompt }],
+    });
+    if (presentation.body?.kind !== 'task') throw new Error('expected task body');
+    const card = presentation.body.subtasks[0];
+    expect(card?.prompt).toBe(prompt);
+    expect(card?.excerpt).not.toContain('\n');
+    expect(card?.excerpt.endsWith('…')).toBe(true);
+  });
+
+  test('malformed task input produces a bounded generic body and no count badge', () => {
+    const presentation = call('Task', { tasks: 'not-an-array', other: 1 });
+    expect(presentation.body).toEqual({
+      kind: 'generic',
+      fields: [
+        { key: 'tasks', value: 'not-an-array' },
+        { key: 'other', value: '1' },
+      ],
+    });
+    expect(presentation.bodyFacts).toEqual([]);
+    expect(presentation.contentBadges).toEqual([]);
+  });
+
+  test('over-budget and over-count task input degrades to the generic body', () => {
+    const over = Array.from({ length: MAX_TASK_SUBTASKS + 1 }, (_, i) => ({
+      name: `n${String(i)}`,
+      agent: 'a',
+      task: 'p',
+    }));
+    const byCount = call('task', { tasks: over });
+    expect(byCount.body?.kind).toBe('generic');
+    expect(byCount.contentBadges).toEqual([]);
+
+    const huge = 'p'.repeat(MAX_TASK_TOTAL_TEXT_CODE_UNITS + 1);
+    const byBudget = call('task', { tasks: [{ name: 'a', agent: 'b', task: huge }] });
+    expect(byBudget.body?.kind).toBe('generic');
+    expect(byBudget.contentBadges).toEqual([]);
+  });
+
+  test('the generic body projects markers, never stringified data', () => {
+    const presentation = call('task', {
+      nothing: 'valid',
+      list: [1, 2, 3],
+      nested: { deep: { deeper: true } },
+      flag: false,
+    });
+    expect(presentation.body).toEqual({
+      kind: 'generic',
+      fields: [
+        { key: 'nothing', value: 'valid' },
+        { key: 'list', value: '[3]' },
+        { key: 'nested', value: '{…}' },
+      ],
+    });
+    // The fourth key is past the fact bound and never appears.
+    expect(JSON.stringify(presentation.body)).not.toContain('flag');
+    expect(JSON.stringify(presentation.body)).not.toContain('deeper');
+  });
+
+  test('the generic body bounds hostile keys and scalar values', () => {
+    const longKey = 'k'.repeat(MAX_GENERIC_SCALAR_CODE_POINTS + 50);
+    const longValue = 'v'.repeat(MAX_GENERIC_SCALAR_CODE_POINTS + 50);
+    const presentation = call('task', { [longKey]: longValue });
+    if (presentation.body?.kind !== 'generic') throw new Error('expected generic body');
+    const field = presentation.body.fields[0];
+    expect([...(field?.key ?? '')].length).toBeLessThanOrEqual(MAX_GENERIC_SCALAR_CODE_POINTS + 1);
+    expect([...(field?.value ?? '')].length).toBeLessThanOrEqual(
+      MAX_GENERIC_SCALAR_CODE_POINTS + 1
+    );
+  });
+
+  test('the generic body stops at the scan and fact bounds', () => {
+    const input: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_GENERIC_KEYS_SCANNED + 10; i++) {
+      input[`k${String(i)}`] = i;
+    }
+    const presentation = call('task', input);
+    if (presentation.body?.kind !== 'generic') throw new Error('expected generic body');
+    expect(presentation.body.fields).toHaveLength(MAX_GENERIC_FACTS);
+    expect(presentation.body.fields.map(field => field.key)).toEqual(['k0', 'k1', 'k2']);
+  });
+
+  test('hostile enumeration reduces to an empty generic field list', () => {
+    const hostile = {
+      get tasks(): unknown {
+        throw new Error('boom');
+      },
+      get alsoThrows(): unknown {
+        throw new Error('boom2');
+      },
+    };
+    const presentation = call('task', hostile);
+    expect(presentation.body).toEqual({ kind: 'generic', fields: [] });
+    expect(presentation.contentBadges).toEqual([]);
+  });
+
+  test('a malformed task headline getter falls back to the label and keeps the generic body', () => {
+    const hostile = {
+      get description(): unknown {
+        throw new Error('boom');
+      },
+    };
+    const presentation = call('Task', hostile);
+    expect(presentation.family).toBe('task');
+    expect(presentation.headline).toBe('Task');
+    expect(presentation.body).toEqual({ kind: 'generic', fields: [] });
+  });
+});
+
+describe('body invariants', () => {
+  test('every non-task family keeps body null and empty bodyFacts', () => {
+    const cases: [string, unknown][] = [
+      ['bash', { command: 'ls' }],
+      ['Read', { path: 'a.txt' }],
+      ['grep', { pattern: 'x' }],
+      ['Glob', { pattern: '**/*.ts' }],
+      ['eval', { code: 'x=1', language: 'ts' }],
+      ['TodoWrite', { todos: [] }],
+      ['WebFetch', { url: 'https://example.com' }],
+      ['custom_tool', { a: 1 }],
+      ['mcp__github__create_issue', { title: 'bug' }],
+    ];
+    for (const [name, input] of cases) {
+      const presentation = call(name, input);
+      expect(presentation.body).toBeNull();
+      expect(presentation.bodyFacts).toEqual([]);
+    }
+  });
+
+  test('safePresentation returns body null and empty bodyFacts', () => {
+    const poisoned = {
+      get name(): string {
+        throw new Error('boom');
+      },
+      input: {},
+      output: null,
+    };
+    const presentation = toolPresentation(poisoned);
+    expect(presentation.body).toBeNull();
+    expect(presentation.bodyFacts).toEqual([]);
+  });
+});
+
+describe('bodyBarText', () => {
+  test('a non-task row maps badges byte-for-byte after the family prefix', () => {
+    const presentation = row('bash', { command: 'bun test' }, 'oops', {
+      outcome: 'interrupted',
+      exitCode: 1,
+      outputState: 'truncated',
+      durationMs: 2400,
+    });
+    expect(presentation.bodyBarText).toBe('shell · interrupted · exit 1 · truncated · 2.4s');
+  });
+
+  test('a bare non-task row is the family alone', () => {
+    const presentation = row('Read', { path: 'a' }, 'x', SUCCEEDED);
+    expect(presentation.bodyBarText).toBe('file');
+  });
+
+  test('a non-task count badge stays in the bar', () => {
+    const presentation = row('grep', { pattern: 'x' }, 14, {
+      outcome: 'succeeded',
+      outputState: 'full',
+      durationMs: 120,
+    });
+    expect(presentation.bodyBarText).toBe('search · 14 matches · 120ms');
+  });
+
+  test('a batch task row leads with the task facts and never repeats the count', () => {
+    const presentation = row(
+      'Task',
+      {
+        context: 'ctx',
+        tasks: [
+          { name: 'a', agent: 'x', task: 'p1' },
+          { name: 'b', agent: 'y', task: 'p2' },
+        ],
+      },
+      'done',
+      { outcome: 'succeeded', outputState: 'full', durationMs: 1500 }
+    );
+    expect(presentation.bodyBarText).toBe('task · batch · 2 subtasks · 1.5s');
+    expect(presentation.bodyBarText).not.toContain('subagent');
+    // The collapsed row still carries the subagent count badge.
+    expect(presentation.badges).toContainEqual({
+      kind: 'count',
+      text: '2 subagents',
+      tone: 'neutral',
+    });
+  });
+
+  test('a single task row produces "task · single dispatch · <duration>" exactly once', () => {
+    const presentation = row('Agent', { description: 'scan', prompt: 'do it' }, 'done', {
+      outcome: 'succeeded',
+      outputState: 'full',
+      durationMs: 800,
+    });
+    expect(presentation.bodyBarText).toBe('task · single dispatch · 800ms');
+    expect(presentation.bodyBarText.split('single dispatch')).toHaveLength(2);
+    expect(presentation.bodyBarText).not.toContain('subagent');
+  });
+
+  test('runtime facts follow a task row once, in existing order', () => {
+    const presentation = row('task', { tasks: [{ name: 'a', agent: 'b', task: 'p' }] }, 'partial', {
+      outcome: 'interrupted',
+      exitCode: 2,
+      outputState: 'truncated',
+      durationMs: 100,
+    });
+    expect(presentation.bodyBarText).toBe(
+      'task · batch · 1 subtask · interrupted · exit 2 · truncated · 100ms'
+    );
+  });
+
+  test('a malformed task row carries no explicit task facts in the bar', () => {
+    const presentation = row('task', { tasks: 'nope' }, 'x', {
+      outcome: 'failed',
+      exitCode: 1,
+      outputState: 'full',
+    });
+    expect(presentation.bodyBarText).toBe('task · exit 1');
+    expect(presentation.bodyBarText).not.toContain('batch');
+    expect(presentation.bodyBarText).not.toContain('subtask');
   });
 });
 

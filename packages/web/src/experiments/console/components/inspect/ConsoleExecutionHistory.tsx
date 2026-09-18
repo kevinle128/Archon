@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react';
 
-import { buildAgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
+import { buildAgentHistory } from '@/lib/agent-history';
 import {
   beginNodeMessageRefresh,
   createNodeMessageState,
@@ -202,7 +202,7 @@ export function ConsoleExecutionHistory({
 
   const visibleRows = ownsHistory ? selectNodeRoomMessages(pageState.rows, row.selection) : [];
   const nowMs = Date.now();
-  const items: AgentHistoryItem[] = buildAgentHistory({
+  const { items } = buildAgentHistory({
     rows: visibleRows,
     events,
     nodeId: row.nodeId,

@@ -540,6 +540,7 @@ describe('bundled-defaults', () => {
             properties?: {
               report?: { type?: string };
               terminal?: { type?: string };
+              plan_path?: { type?: string };
             };
           };
           loop?: {
@@ -564,22 +565,23 @@ describe('bundled-defaults', () => {
       expect(plan?.depends_on).toEqual(['setup']);
       expect(plan?.prompt).toContain('/ak:plan --deep --tdd');
       expect(plan?.provider).toBe('claude');
+      expect(plan?.output_format?.required).toEqual(['plan_path']);
+      expect(plan?.output_format?.properties?.plan_path?.type).toBe('string');
+      expect(plan?.prompt).not.toContain('PLAN_DIR=');
 
-      const resolve = workflow.nodes.find(node => node.id === 'resolve-plan');
-      expect(resolve?.depends_on).toEqual(['plan']);
-      expect(resolve?.bash).toContain('plans/*/');
-      expect(resolve?.bash).toContain('{"plan_path":"%s","prd_dir":"%s"}');
-      expect(resolve?.bash).not.toContain('.archon/ralph');
+      expect(workflow.nodes.some(node => node.id === 'resolve-plan')).toBe(false);
 
       const review = workflow.nodes.find(node => node.id === 'verify-and-fix-plan');
-      expect(review?.depends_on).toEqual(['resolve-plan']);
+      expect(review?.depends_on).toEqual(['plan']);
       expect(review?.provider).toBe('codex');
+      expect(review?.prompt).toContain('$plan.output.plan_path');
       expect(review?.output_format?.properties?.report?.type).toBe('string');
       expect(review?.when).toBeUndefined();
 
       const build = workflow.nodes.find(node => node.id === 'build-ralph-prd');
       expect(build?.depends_on).toEqual(['verify-and-fix-plan']);
-      expect(build?.prompt).toContain('$resolve-plan.output.prd_dir');
+      expect(build?.prompt).toContain('$plan.output.plan_path');
+      expect(build?.prompt).not.toContain('$resolve-plan');
       expect(build?.prompt).toContain('never `.archon/ralph/`');
 
       const setup = workflow.nodes.find(node => node.id === 'setup');
@@ -600,6 +602,8 @@ describe('bundled-defaults', () => {
       const finalFix = workflow.nodes.find(node => node.id === 'codex-final-fix');
       expect(finalFix?.depends_on).toEqual(['ralph-loop-run']);
       expect(finalFix?.trigger_rule).toBe('all_done');
+      expect(finalFix?.prompt).toContain('$plan.output.plan_path');
+      expect(finalFix?.prompt).not.toContain('$resolve-plan');
       expect(finalFix?.prompt).toContain('$ARTIFACTS_DIR/ak-feature/base-sha.txt');
       expect(finalFix?.when).toBeUndefined();
       expect(finalFix?.output_format?.required).not.toContain('gate');

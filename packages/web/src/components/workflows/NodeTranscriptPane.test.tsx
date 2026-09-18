@@ -1029,4 +1029,396 @@ describe('NodeTranscriptPane', () => {
     });
     expect(signal?.aborted).toBe(true);
   });
+
+  function todoPair(toolUseId: string, seq: number, input: unknown): WorkflowNodeMessageResponse[] {
+    return [
+      {
+        id: `call-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'todo', id: toolUseId, input },
+        metadata: { tool_phase: 'call' },
+        created_at: CREATED_AT,
+      },
+      {
+        id: `result-${toolUseId}`,
+        seq: seq + 1,
+        kind: 'tool',
+        payload: { name: 'todo', id: toolUseId, input, output: 'todo updated' },
+        metadata: { tool_phase: 'result', outcome: 'success' },
+        created_at: CREATED_AT,
+      },
+    ];
+  }
+
+  const TODO_INIT = {
+    op: 'init',
+    list: [
+      {
+        phase: 'Research',
+        items: [
+          'Read the spec',
+          'Map the message path',
+          'Check contract conflicts',
+          'Inspect the mockups',
+          'Confirm the tokens',
+          'Define acceptance cases',
+        ],
+      },
+      {
+        phase: 'Implement',
+        items: [
+          'Add the fold',
+          'Wire Legacy',
+          'Wire Console',
+          'Add the tests',
+          'Run the suite',
+          'Review output',
+        ],
+      },
+    ],
+  };
+
+  const TODO_MESSAGES: WorkflowNodeMessageResponse[] = [
+    ...todoPair('todo-1', 1, TODO_INIT),
+    ...todoPair('todo-2', 3, { op: 'done', task: 'Read the spec' }),
+    ...todoPair('todo-3', 5, {
+      op: 'block',
+      task: 'Run the suite',
+      reason: 'CI has one build job',
+    }),
+    ...todoPair('todo-4', 7, { op: 'drop', task: 'Review output' }),
+  ];
+
+  function stripSection(): Element | null {
+    return host.querySelector('section[aria-label="Todo"]');
+  }
+
+  function stripButton(): Element {
+    const button = stripSection()?.querySelector('button');
+    if (button === null || button === undefined) throw new Error('missing strip button');
+    return button;
+  }
+
+  test('mounts the folded todo strip ahead of the scroller inside one room region', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...TODO_MESSAGES],
+        }),
+      });
+    });
+    await flushUntil(host, 'todo strip', () => stripSection() !== null);
+
+    const regions = host.querySelectorAll('[role="region"]');
+    expect(regions).toHaveLength(1);
+    const region = regions[0];
+    if (region === undefined) throw new Error('missing room region');
+    expect(region.getAttribute('aria-label')).toBe('review room');
+    const strip = stripSection();
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    if (scroller === null) throw new Error('missing scroller');
+    // The strip and the scroller are siblings inside the single region.
+    expect(region.firstElementChild).toBe(strip);
+    expect(strip?.nextElementSibling).toBe(scroller);
+    expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
+    // The scroller owns scrolling; the region does not scroll.
+    const scrollerClass = scroller.getAttribute('class') ?? '';
+    expect(scrollerClass).toContain('overflow-y-auto');
+    expect(scrollerClass).toContain('flex');
+    expect(scrollerClass).toContain('flex-col');
+    expect(region.getAttribute('class')).toContain('overflow-hidden');
+
+    // Collapsed header contract.
+    const button = stripButton();
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    const body = strip?.querySelector('[data-testid="todo-list"]');
+    if (body === null || body === undefined) throw new Error('missing strip body');
+    expect(body.hasAttribute('hidden')).toBe(true);
+    expect(button.getAttribute('aria-controls')).toBe(body.id);
+    expect(body.id).not.toBe('');
+    expect(strip?.textContent).toContain('TODO');
+    expect(strip?.textContent).toContain('1/12');
+    expect(strip?.textContent).toContain('Map the message path');
+    expect(strip?.querySelectorAll('[data-testid="todo-meter"] > span')).toHaveLength(12);
+    const headings = Array.from(strip?.querySelectorAll('h3') ?? []).map(h => h.textContent);
+    expect(headings).toEqual(['Research', 'Implement']);
+    expect(strip?.textContent).toContain('· blocked: CI has one build job');
+    expect(strip?.textContent).toContain('· dropped');
+    // The strip opens on click.
+    await act(async () => {
+      (button as HTMLElement).click();
+    });
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+    expect(body.hasAttribute('hidden')).toBe(false);
+    // Todo calls stay one-line tool rows; no checklist markup inside them.
+    const todoRows = host.querySelectorAll('details[data-tool-id]');
+    expect(todoRows).toHaveLength(4);
+    for (const rowEl of Array.from(todoRows)) {
+      expect(rowEl.textContent).toContain('todo updated');
+      expect(
+        rowEl.querySelector('[data-testid="todo-list"], [data-testid="todo-meter"], ul')
+      ).toBeNull();
+    }
+  });
+
+  test('renders no strip when the transcript has no foldable todo state', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'fixture rows', () => (host.textContent ?? '').includes('first'));
+    expect(stripSection()).toBeNull();
+    expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
+  });
+
+  test('merges an initial page and later mutation pages into the final strip state', async () => {
+    const loadMessages: NodeMessageLoader = async (_runId, _nodeId, options) => {
+      if (options.afterSeq === 0) {
+        return {
+          messages: todoPair('todo-1', 1, TODO_INIT),
+          hasMore: true,
+          nextCursor: '2',
+          highWatermark: 8,
+        };
+      }
+      return {
+        messages: [
+          ...todoPair('todo-2', 3, { op: 'done', task: 'Read the spec' }),
+          ...todoPair('todo-3', 5, {
+            op: 'block',
+            task: 'Run the suite',
+            reason: 'CI has one build job',
+          }),
+          ...todoPair('todo-4', 7, { op: 'drop', task: 'Review output' }),
+        ],
+        hasMore: false,
+        nextCursor: '8',
+        highWatermark: 8,
+      };
+    };
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages });
+    });
+    await flushUntil(host, 'merged strip', () =>
+      (stripSection()?.textContent ?? '').includes('1/12')
+    );
+    const strip = stripSection();
+    expect(strip?.textContent).toContain('Map the message path');
+    expect(strip?.textContent).toContain('· blocked: CI has one build job');
+    expect(strip?.textContent).toContain('· dropped');
+  });
+
+  test('keeps strip identity, open state, and focus across same-scope polls', async () => {
+    const firstLoad: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: todoPair('todo-1', 1, TODO_INIT),
+      nextCursor: '2',
+      highWatermark: 2,
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages: firstLoad });
+    });
+    await flushUntil(host, 'initial strip', () =>
+      (stripSection()?.textContent ?? '').includes('0/12')
+    );
+    const strip = stripSection();
+    const button = stripButton() as HTMLElement;
+    await act(async () => {
+      button.focus();
+      button.click();
+    });
+    expect(button.getAttribute('aria-expanded')).toBe('true');
+
+    const secondLoad: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: todoPair('todo-2', 3, { op: 'done', task: 'Read the spec' }),
+      nextCursor: '4',
+      highWatermark: 4,
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages: secondLoad });
+    });
+    await flushUntil(host, 'polled strip', () =>
+      (stripSection()?.textContent ?? '').includes('1/12')
+    );
+    expect(stripSection()).toBe(strip);
+    expect(stripButton().getAttribute('aria-expanded')).toBe('true');
+    expect((win.document.activeElement as unknown) === button).toBe(true);
+    expect(strip?.textContent).toContain('Map the message path');
+  });
+
+  test('unmounts the strip when every todo is removed and remounts collapsed for a new list', async () => {
+    const firstLoad: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: todoPair('todo-1', 1, TODO_INIT),
+      nextCursor: '2',
+      highWatermark: 2,
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages: firstLoad });
+    });
+    await flushUntil(host, 'initial strip', () => stripSection() !== null);
+    const strip = stripSection();
+    const button = stripButton() as HTMLElement;
+    await act(async () => {
+      button.click();
+    });
+    expect(stripButton().getAttribute('aria-expanded')).toBe('true');
+
+    const clearLoad: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: todoPair('todo-2', 3, { op: 'rm' }),
+      nextCursor: '4',
+      highWatermark: 4,
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages: clearLoad });
+    });
+    await flushUntil(host, 'cleared strip', () => stripSection() === null);
+
+    const freshLoad: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: todoPair('todo-3', 5, {
+        op: 'init',
+        list: [{ phase: 'Solo', items: ['Only task'] }],
+      }),
+      nextCursor: '6',
+      highWatermark: 6,
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages: freshLoad });
+    });
+    await flushUntil(host, 'fresh strip', () => stripSection() !== null);
+    const freshStrip = stripSection();
+    expect(freshStrip).not.toBe(strip);
+    expect(stripButton().getAttribute('aria-expanded')).toBe('false');
+    expect(freshStrip?.textContent).toContain('0/1');
+    expect(freshStrip?.textContent).toContain('Only task');
+  });
+
+  test('remounts the strip collapsed when the scope changes', async () => {
+    const loadMessages: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: todoPair('todo-1', 1, TODO_INIT),
+      nextCursor: '2',
+      highWatermark: 2,
+    });
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages,
+        scopeKey: 'scope-a',
+      });
+    });
+    await flushUntil(host, 'scope a strip', () => stripSection() !== null);
+    const stripA = stripSection();
+    await act(async () => {
+      (stripButton() as HTMLElement).click();
+    });
+    expect(stripButton().getAttribute('aria-expanded')).toBe('true');
+
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages,
+        scopeKey: 'scope-b',
+      });
+    });
+    await flushUntil(
+      host,
+      'scope b strip',
+      () => stripSection() !== null && stripSection()?.textContent?.includes('0/12') === true
+    );
+    const stripB = stripSection();
+    expect(stripB).not.toBe(stripA);
+    expect(stripButton().getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('a later-page failure keeps the last good strip next to the error notice', async () => {
+    let calls = 0;
+    const loadMessages: NodeMessageLoader = async (_runId, _nodeId, options) => {
+      calls += 1;
+      if (options.afterSeq === 0) {
+        return {
+          messages: todoPair('todo-1', 1, TODO_INIT),
+          hasMore: true,
+          nextCursor: '2',
+          highWatermark: 4,
+        };
+      }
+      throw new Error('page-two-failed');
+    };
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages });
+    });
+    await flushUntil(host, 'page error', () =>
+      (host.textContent ?? '').includes('Failed to load node transcript')
+    );
+    expect(calls).toBe(2);
+    const strip = stripSection();
+    expect(strip).not.toBeNull();
+    expect(strip?.textContent).toContain('0/12');
+    expect(strip?.textContent).toContain('Read the spec');
+    expect(host.textContent).toContain('Retry');
+  });
+
+  test('a first-page failure renders the error placeholder and no strip', async () => {
+    const loadMessages: NodeMessageLoader = async (): Promise<WorkflowNodeMessagesResponse> => {
+      throw new Error('boom');
+    };
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, runStatus: 'completed', loadMessages });
+    });
+    await flushUntil(host, 'first-page error', () =>
+      (host.textContent ?? '').includes('Failed to load node transcript')
+    );
+    expect(stripSection()).toBeNull();
+    expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
+  });
+
+  test('loading and empty placeholders keep fill and centring inside the scroller', async () => {
+    const pending = deferred<WorkflowNodeMessagesResponse>();
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: (): Promise<WorkflowNodeMessagesResponse> => pending.promise,
+      });
+    });
+    await flushUntil(host, 'loading placeholder', () =>
+      (host.textContent ?? '').includes('Loading node transcript')
+    );
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    if (scroller === null) throw new Error('missing scroller');
+    const scrollerClass = scroller.getAttribute('class') ?? '';
+    expect(scrollerClass).toContain('flex');
+    expect(scrollerClass).toContain('flex-col');
+    expect(scrollerClass).toContain('overflow-y-auto');
+    const placeholder = Array.from(scroller.querySelectorAll('div')).find(el =>
+      (el.textContent ?? '').includes('Loading node transcript')
+    );
+    const placeholderClass = placeholder?.getAttribute('class') ?? '';
+    expect(placeholderClass).toContain('flex-1');
+    expect(placeholderClass).toContain('items-center');
+    expect(placeholderClass).toContain('justify-center');
+    expect(stripSection()).toBeNull();
+
+    await act(async () => {
+      pending.resolve({ messages: [] });
+    });
+    await flushUntil(host, 'empty placeholder', () =>
+      (host.textContent ?? '').includes("Node hasn't produced output")
+    );
+    const emptyPlaceholder = Array.from(scroller.querySelectorAll('div')).find(el =>
+      (el.textContent ?? '').includes("Node hasn't produced output")
+    );
+    const emptyClass = emptyPlaceholder?.getAttribute('class') ?? '';
+    expect(emptyClass).toContain('flex-1');
+    expect(emptyClass).toContain('items-center');
+    expect(emptyClass).toContain('justify-center');
+  });
 });

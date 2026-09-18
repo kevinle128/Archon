@@ -4,7 +4,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
-import { buildAgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
   getWorkflowNodeMessage,
   type AskAnswerBody,
@@ -33,7 +33,8 @@ import {
   selectVisibleNodeAskInteractions,
   UNSCOPED_INTERACTION_LIMITATION,
 } from './merge-agent-room-items';
-import { NodeRoom, selectNodeRoomMessages } from './NodeRoom';
+import { NodeRoom, RoomRegion, selectNodeRoomMessages } from './NodeRoom';
+import { TodoStrip } from './TodoStrip';
 import { parseAskEnvelope, type AskDraft, type AskDraftByRequest } from './parse-ask-envelope';
 
 export function transcriptRefetchInterval(status: WorkflowRunStatus): 1000 | false {
@@ -231,15 +232,17 @@ export function NodeTranscriptPane({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
-  const items: AgentHistoryItem[] =
+  const agentHistory: AgentHistory =
     row === null
-      ? []
+      ? { items: [], todos: [] }
       : buildAgentHistory({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
           nowMs,
         });
+  const items = agentHistory.items;
+  const todos = agentHistory.todos;
   const visibleAsks =
     row === null
       ? []
@@ -368,42 +371,59 @@ export function NodeTranscriptPane({
   const waitingForFirstPage =
     row !== null && pageState.rows.length === 0 && pageState.error === null && !pageState.complete;
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        ref={scrollRef}
-        data-testid="node-transcript-scroll"
-        className="min-h-0 flex-1 overflow-y-auto"
-        style={{ overflowWrap: 'anywhere' }}
-        onScroll={handleScroll}
-      >
-        <NodeRoom
-          nodeId={row?.nodeId ?? null}
-          items={items}
-          unknownScope={row?.unknownScope ?? false}
-          runId={runId}
-          isPending={waitingForFirstPage}
-          error={pageState.error}
-          onRetry={(): void => {
-            setRetryNonce(value => value + 1);
-          }}
-          loadMessage={loadMessage}
-          renderAfterItem={(item): React.ReactNode => {
-            if (item.kind !== 'tool') return null;
-            const matching = anchoredAsks.filter(
-              interaction => interaction.tool_use_id === item.toolUseId
-            );
-            if (matching.length === 0) return null;
-            return matching.map(renderAskCard);
-          }}
-          renderAtEnd={unanchoredAsks.length === 0 ? undefined : unanchoredAsks.map(renderAskCard)}
-        />
-      </div>
-      {!follow.follow && (rowStatus === 'running' || rowStatus === 'awaiting') ? (
-        <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
-          Jump to latest
-        </button>
-      ) : null}
+  const scroller = (
+    <div
+      ref={scrollRef}
+      data-testid="node-transcript-scroll"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      style={{ overflowWrap: 'anywhere' }}
+      onScroll={handleScroll}
+    >
+      <NodeRoom
+        embedded
+        nodeId={row?.nodeId ?? null}
+        items={items}
+        unknownScope={row?.unknownScope ?? false}
+        runId={runId}
+        isPending={waitingForFirstPage}
+        error={pageState.error}
+        onRetry={(): void => {
+          setRetryNonce(value => value + 1);
+        }}
+        loadMessage={loadMessage}
+        renderAfterItem={(item): React.ReactNode => {
+          if (item.kind !== 'tool') return null;
+          const matching = anchoredAsks.filter(
+            interaction => interaction.tool_use_id === item.toolUseId
+          );
+          if (matching.length === 0) return null;
+          return matching.map(renderAskCard);
+        }}
+        renderAtEnd={unanchoredAsks.length === 0 ? undefined : unanchoredAsks.map(renderAskCard)}
+      />
     </div>
+  );
+  const jumpButton =
+    !follow.follow && (rowStatus === 'running' || rowStatus === 'awaiting') ? (
+      <button type="button" className="px-3 py-2 text-xs text-primary" onClick={handleJump}>
+        Jump to latest
+      </button>
+    ) : null;
+
+  if (row === null) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        {scroller}
+        {jumpButton}
+      </div>
+    );
+  }
+
+  return (
+    <RoomRegion nodeId={row.nodeId} scrollable={false}>
+      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
+      {scroller}
+      {jumpButton}
+    </RoomRegion>
   );
 }

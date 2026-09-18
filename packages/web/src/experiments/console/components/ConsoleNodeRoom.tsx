@@ -10,7 +10,7 @@ import {
   type ReactNode,
   type UIEvent,
 } from 'react';
-import { buildAgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import { buildExecutionHeader, type ExecutionHeaderModel } from '@/lib/execution-room-model';
 import {
   beginNodeMessageRefresh,
@@ -33,6 +33,7 @@ import type {
 import { getNodeMessage, submitRunReviewFeedback } from '../skills/runs';
 import type { DagNode } from '../skills/workflows';
 import { ApprovalPanel } from './ApprovalPanel';
+import { ConsoleTodoStrip } from './ConsoleTodoStrip';
 import { ConsoleAskCard, ConsoleInvalidAskCard } from './ask/ConsoleAskCard';
 import type { AskActionStateByRequest } from './ask/ask-answer-controller';
 import { resolveAskCardPresentation } from './ask/ask-card-presentation';
@@ -143,12 +144,24 @@ function RoomPlaceholder({ children }: { children: string }): ReactElement {
   );
 }
 
-function RoomRegion({ nodeId, children }: { nodeId: string; children: ReactNode }): ReactElement {
+function RoomRegion({
+  nodeId,
+  children,
+  allowOutsetFocus = false,
+}: {
+  nodeId: string;
+  children: ReactNode;
+  allowOutsetFocus?: boolean;
+}): ReactElement {
   return (
     <section
       role="region"
       aria-label={nodeId + ' room'}
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      className={
+        allowOutsetFocus
+          ? 'm-[4px] flex min-h-0 flex-1 flex-col overflow-clip [overflow-clip-margin:4px]'
+          : 'flex min-h-0 flex-1 flex-col overflow-clip [overflow-clip-margin:4px]'
+      }
     >
       {children}
     </section>
@@ -602,15 +615,17 @@ export function ConsoleNodeRoom({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
-  const items: AgentHistoryItem[] =
+  const agentHistory: AgentHistory =
     row === null
-      ? []
+      ? { items: [], todos: [] }
       : buildAgentHistory({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
           nowMs,
         });
+  const items = agentHistory.items;
+  const showTodoStrip = agentActive && agentHistory.todos.length > 0;
   const visibleAsks =
     row !== null && resolution?.kind === 'agent'
       ? selectVisibleNodeAskInteractions({
@@ -869,7 +884,10 @@ export function ConsoleNodeRoom({
       {nodeId === null ? (
         body
       ) : (
-        <RoomRegion nodeId={nodeId}>
+        <RoomRegion nodeId={nodeId} allowOutsetFocus={showTodoStrip}>
+          {showTodoStrip ? (
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+          ) : null}
           <div
             ref={scrollRef}
             data-testid="console-node-room-scroll"
