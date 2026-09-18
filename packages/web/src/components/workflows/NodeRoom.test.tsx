@@ -118,6 +118,14 @@ function toolItem(
   };
 }
 
+/** A settled row that mounts open so the expanded body renders in static markup. */
+function openToolItem(
+  overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
+): Extract<AgentHistoryItem, { kind: 'tool' }> {
+  const item = toolItem(overrides);
+  return { ...item, presentation: { ...item.presentation, initialOpen: true } };
+}
+
 function rowMarkup(markup: string, toolUseId: string): string {
   const start = markup.indexOf(`<details data-tool-id="${toolUseId}"`);
   if (start < 0) throw new Error(`tool row ${toolUseId} not found`);
@@ -280,9 +288,6 @@ describe('NodeRoom', () => {
     expect(loaded).toContain('succeeded');
     expect(loaded).toContain('1.5s');
     expect(loaded).toContain('<details');
-    expect(loaded).toContain('Input');
-    expect(loaded).toContain('Output');
-    expect(loaded).toContain('View full output');
     expect(loaded).toContain('truncated');
     expect(loaded).toContain('started');
     expect(loaded).toContain('failed');
@@ -295,7 +300,13 @@ describe('NodeRoom', () => {
     const summary = summaryMarkup(row);
     expect(summary).toContain('>Read<');
     expect(summary).toContain('a.ts');
-    // Serialized payload stays behind the closed diagnostic disclosures.
+    // A closed row mounts no body at all: no family body, no Raw toggle, no
+    // full-output control, and never the serialized payload.
+    expect(row).not.toContain('tool-family-body');
+    expect(row).not.toContain('aria-expanded');
+    expect(row).not.toContain('>Raw<');
+    expect(row).not.toContain('View full output');
+    expect(row).not.toContain('truncated-output');
     expect(row.match(/<details[^>]*\sopen(\s|=|>)/g)).toBeNull();
   });
 
@@ -579,7 +590,7 @@ describe('NodeRoom tool rows', () => {
     expect(openTag).not.toContain('shadow');
   });
 
-  test('opened body starts with the family then every summary fact, diagnostics stay closed controls', () => {
+  test('opened body bar carries family then facts and the Raw toggle; the file body renders below', () => {
     const items: AgentHistoryItem[] = [
       toolItem({ outcome: 'failed', exitCode: 2, toolUseId: 't-fail' }),
     ];
@@ -589,30 +600,35 @@ describe('NodeRoom tool rows', () => {
 
     const bodyStart = row.indexOf('</summary>') + '</summary>'.length;
     const body = row.slice(bodyStart);
-    const bar = /<div class="([^"]*)"[^>]*>([^<]*)<\/div>/.exec(body);
-    expect(bar?.[2]).toBe('file · exit 2 · truncated · 1.5s');
-    expect(bar?.[1]).toContain('text-[10.5px]');
-    expect(bar?.[1]).toContain('font-mono');
-    expect(bar?.[1]).toContain('text-text-secondary');
     expect(body).toContain('ml-[29px]');
     expect(body).toContain('border-l-2');
     expect(body).toContain('pl-2.5');
 
-    // A failed auto-opened row still exposes no serialized payload: both diagnostics closed.
-    const diagnostics = [
-      ...body.matchAll(/<details([^>]*)>\s*<summary([^>]*)>(Input|Output)<\/summary>/g),
-    ];
-    expect(diagnostics).toHaveLength(2);
-    for (const match of diagnostics) {
-      expect(match[1]).not.toMatch(/\sopen(\s|=|>)/);
-      expect(match[2]).toContain('text-text-secondary');
-      expect(match[2]).toContain('min-h-[24px]');
-      expect(match[2]).toContain('focus-visible:outline-accent-bright');
-      expect(match[2]).not.toContain('aria-hidden');
-    }
-    // Input precedes Output and the full-output control stays below both.
-    expect(body.indexOf('>Input<')).toBeLessThan(body.indexOf('>Output<'));
-    expect(body.indexOf('>Output<')).toBeLessThan(body.indexOf('View full output'));
+    // The bar opens with the family, then the facts, then the Raw toggle.
+    const bar =
+      /<div class="([^"]*)"[^>]*><span class="([^"]*)"[^>]*>([^<]*)<\/span><button([^>]*)>/.exec(
+        body
+      );
+    expect(bar?.[3]).toBe('file · exit 2 · truncated · 1.5s');
+    expect(bar?.[1]).toContain('text-[10.5px]');
+    expect(bar?.[1]).toContain('font-mono');
+    expect(bar?.[1]).toContain('text-text-secondary');
+    expect(bar?.[2]).toContain('whitespace-nowrap');
+    expect(bar?.[2]).toContain('overflow-hidden');
+    expect(bar?.[4]).toContain('aria-expanded="false"');
+    expect(bar?.[4]).toContain('type="button"');
+
+    // The file body arm: node-command path, then the preview, in the inset box.
+    expect(body).toContain('tool-family-body');
+    expect(body).toContain('bg-surface-inset');
+    expect(body).toContain('text-node-command">a.ts<');
+    expect(body).toContain('truncated-output');
+    // No nested disclosures survive; Raw is the only body toggle.
+    expect(/<details/.exec(body)).toBeNull();
+    expect(body).not.toContain('>Input<');
+    expect(body).not.toContain('>Output<');
+    // Body precedes the full-output control.
+    expect(body.indexOf('tool-family-body')).toBeLessThan(body.indexOf('View full output'));
   });
 
   test('collapsed tool rows sit flush while mixed content keeps per-item separation', () => {
@@ -647,5 +663,339 @@ describe('NodeRoom tool rows', () => {
     expect(afterIndex).toBeGreaterThan(toolIndex);
     expect(markup).toContain('<div class="mt-1.5">after-tool-1</div>');
     expect(markup).toContain('<div class="mt-1.5">at-end</div>');
+  });
+});
+
+describe('NodeRoom tool bodies', () => {
+  /** The expanded region markup: everything after the row summary. */
+  function bodyOf(markup: string, toolUseId: string): string {
+    const row = rowMarkup(markup, toolUseId);
+    const start = row.indexOf('</summary>');
+    if (start < 0) throw new Error('summary missing');
+    return row.slice(start + '</summary>'.length);
+  }
+
+  test('terminal body: $ prompt in node-bash, bounded command, output, FAILED word + error color', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-sh',
+        name: 'Bash',
+        input: { command: 'npm test' },
+        output: 'boom',
+        outcome: 'failed',
+        exitCode: 1,
+      }),
+    ];
+    const body = bodyOf(renderRoom({ items }), 't-sh');
+    expect(body).toContain('tool-family-body');
+    expect(body).toContain('text-node-bash">$</span>');
+    expect(body).toContain('npm test');
+    expect(body).toContain('boom');
+    // Failure is a word, not colour alone — and the word carries the error mix.
+    expect(body).toContain('FAILED');
+    expect(body).toContain('var(--error)');
+    expect(body).toContain('font-bold');
+  });
+
+  test('terminal body states: running copy, empty output copy, unreadable copy', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-run',
+        name: 'Bash',
+        input: { command: 'npm test' },
+        output: undefined,
+        outcome: 'running',
+        outputState: 'missing',
+        canLoadFullOutput: false,
+        durationMs: null,
+      }),
+      openToolItem({
+        toolUseId: 't-quiet',
+        name: 'Bash',
+        input: { command: 'true' },
+        output: undefined,
+        outputState: 'full',
+        canLoadFullOutput: false,
+        durationMs: null,
+      }),
+      openToolItem({
+        toolUseId: 't-corrupt',
+        name: 'Bash',
+        input: { command: 'x' },
+        output: '{"unterminated',
+        canLoadFullOutput: false,
+        durationMs: null,
+      }),
+    ];
+    const markup = renderRoom({ items });
+    expect(bodyOf(markup, 't-run')).toContain('running — no output yet');
+    expect(bodyOf(markup, 't-quiet')).toContain('>no output<');
+    expect(bodyOf(markup, 't-corrupt')).toContain('output unreadable — open Raw');
+  });
+
+  test('file body: node-command path then preview; no-preview and unreadable states', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({ toolUseId: 't-file', input: { path: 'a.ts' }, output: 'chunk' }),
+      openToolItem({
+        toolUseId: 't-nopreview',
+        input: { path: 'b.ts' },
+        output: undefined,
+        outputState: 'missing',
+        canLoadFullOutput: false,
+      }),
+      openToolItem({
+        toolUseId: 't-unread',
+        input: { path: 'c.ts' },
+        output: '{"unterminated',
+        canLoadFullOutput: false,
+      }),
+    ];
+    const markup = renderRoom({ items });
+    const file = bodyOf(markup, 't-file');
+    expect(file).toContain('text-node-command">a.ts<');
+    expect(file).toContain('chunk');
+    expect(file.indexOf('a.ts')).toBeLessThan(file.indexOf('chunk'));
+    const none = bodyOf(markup, 't-nopreview');
+    expect(none).toContain('text-node-command">b.ts<');
+    expect(none).toContain('>no preview<');
+    const unreadable = bodyOf(markup, 't-unread');
+    expect(unreadable).toContain('output unreadable — open Raw');
+  });
+
+  test('matches body: pattern + scope header, path:line rows, and text-only lines', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-grep',
+        name: 'Grep',
+        input: { pattern: 'fn x', path: 'crates/', output_mode: 'content' },
+        output: 'src/a.ts:12: hit\nplain tail',
+      }),
+    ];
+    const body = bodyOf(renderRoom({ items }), 't-grep');
+    expect(body).toContain('>fn x<');
+    expect(body).toContain(' in crates/');
+    expect(body).toContain('text-node-command">src/a.ts<');
+    expect(body).toContain('text-text-secondary">:12<');
+    expect(body).toContain('hit');
+    // A line that is not path:line: stays as plain text.
+    expect(body).toContain('plain tail');
+  });
+
+  test('paths body: one node-command path per line for grep files_with_matches and glob', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-paths',
+        name: 'Grep',
+        input: { pattern: 'x', output_mode: 'files_with_matches' },
+        output: { filenames: ['src/a.ts', 'src/b.ts'] },
+      }),
+      openToolItem({
+        toolUseId: 't-glob',
+        name: 'glob',
+        input: { pattern: '**/*.rs' },
+        output: 'src/a.rs\nsrc/b.rs',
+      }),
+    ];
+    const markup = renderRoom({ items });
+    const paths = bodyOf(markup, 't-paths');
+    expect(paths).toContain('text-node-command">src/a.ts<');
+    expect(paths).toContain('text-node-command">src/b.ts<');
+    // No line-number parsing on a files_with_matches body.
+    expect(paths.match(/text-text-secondary">:\d+</g)).toBeNull();
+    const glob = bodyOf(markup, 't-glob');
+    expect(glob).toContain('text-node-command">src/a.rs<');
+    expect(glob).toContain('text-node-command">src/b.rs<');
+  });
+
+  test('list tails: exact remainder is "+n more", an unknowable tail is "more results omitted"', () => {
+    const longList = Array.from({ length: 502 }, (_, i) => `f${i}.rs`).join('\n');
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-more',
+        name: 'glob',
+        input: { pattern: '**/*.rs' },
+        output: longList,
+      }),
+      openToolItem({
+        toolUseId: 't-omitted',
+        name: 'glob',
+        input: { pattern: '**/*.rs' },
+        output: 'x'.repeat(70_000),
+      }),
+    ];
+    const markup = renderRoom({ items });
+    expect(bodyOf(markup, 't-more')).toContain('+2 more');
+    expect(bodyOf(markup, 't-omitted')).toContain('more results omitted');
+  });
+
+  test('code body: fenced source highlights with the language, result in a second box', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-code',
+        name: 'eval',
+        input: { code: 'const answer = 42;', language: 'rust' },
+        output: 'ok',
+      }),
+    ];
+    const body = bodyOf(renderRoom({ items }), 't-code');
+    expect(body).toContain('language-rust');
+    expect(body).toContain('hljs-keyword');
+    expect(body.match(/tool-family-body/g)?.length).toBe(2);
+    expect(body).toContain('mt-1.5');
+    expect(body.indexOf('language-rust')).toBeLessThan(body.indexOf('>ok</div>'));
+  });
+
+  test('code body: unknown language renders plain source and a hostile language stays inert', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-unknown',
+        name: 'eval',
+        input: { code: 'select 1', language: 'madeuplang' },
+        output: undefined,
+        outputState: 'missing',
+        canLoadFullOutput: false,
+      }),
+      openToolItem({
+        toolUseId: 't-hostile',
+        name: 'eval',
+        input: { code: 'x', language: 'rust" onload="alert(1)' },
+        output: undefined,
+        outputState: 'missing',
+        canLoadFullOutput: false,
+      }),
+    ];
+    const markup = renderRoom({ items });
+    const unknown = bodyOf(markup, 't-unknown');
+    expect(unknown).toContain('select 1');
+    expect(unknown).not.toContain('hljs-keyword');
+    const hostile = bodyOf(markup, 't-hostile');
+    expect(hostile).toContain('x');
+    // The value can appear only as escaped bar text — never a language class
+    // or an unescaped attribute.
+    expect(hostile).toContain('onload=&quot;');
+    expect(hostile).not.toContain('" onload="');
+    expect(hostile).not.toContain('language-rust');
+  });
+
+  test('code body: a fence inside the source can never close the fence early', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-fence',
+        name: 'eval',
+        input: { code: 'const doc = "```";', language: 'js' },
+        output: undefined,
+        outputState: 'missing',
+        canLoadFullOutput: false,
+      }),
+    ];
+    const body = bodyOf(renderRoom({ items }), 't-fence');
+    // The inner run survives as literal text inside the highlighted block.
+    expect(body).toContain('```');
+    expect(body).toContain('doc');
+  });
+
+  test('web body: inert url header, title, and stored markdown — no anchors, no fetches', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-web',
+        name: 'WebFetch',
+        input: { url: 'https://doc.io/x' },
+        output: { result: 'Read **the** docs', url: 'https://doc.io/x', title: 'Doc Page' },
+      }),
+      openToolItem({
+        toolUseId: 't-search',
+        name: 'WebSearch',
+        input: { query: 'x' },
+        output: { results: [{ title: 'Hit', url: 'https://hit.io' }] },
+      }),
+    ];
+    const markup = renderRoom({ items });
+    const web = bodyOf(markup, 't-web');
+    expect(web).toContain('text-node-command">https://doc.io/x<');
+    expect(web).toContain('font-bold">Doc Page<');
+    expect(web).toContain('<strong>the</strong>');
+    expect(web).not.toContain('<a ');
+    const search = bodyOf(markup, 't-search');
+    // Result markdown renders the title plus a parenthesized destination, inert.
+    expect(search).toContain('Hit');
+    expect(search).toContain('(https://hit.io)');
+    expect(search).not.toContain('<a ');
+  });
+
+  test('stored markdown attacks render inert: no anchors, images, raw HTML, or scripts', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-attack',
+        name: 'WebFetch',
+        input: { url: 'https://x.io' },
+        output: {
+          result:
+            '[click](https://e.io) ![pic](https://e.io/p.png) https://auto.io ' +
+            '[x](javascript:alert(1)) <script>alert(1)</script> <b onmouseover="hack()">hi</b>',
+          url: 'https://x.io',
+        },
+      }),
+    ];
+    const body = bodyOf(renderRoom({ items }), 't-attack');
+    expect(body).not.toContain('<a ');
+    expect(body).not.toContain('<img');
+    expect(body).not.toContain('<script');
+    expect(body).not.toContain('onmouseover="');
+    expect(body).not.toContain('javascript:');
+    // Link label plus parenthesized destination; bare autolinks dedupe.
+    expect(body).toContain('click');
+    expect(body).toContain('(https://e.io)');
+    expect(body).toContain('pic');
+    expect(body).toContain('[image omitted]');
+    expect(body.match(/https:\/\/auto\.io/g)?.length).toBe(1);
+    // Raw HTML survives only as escaped text — never as live markup.
+    expect(body).toContain('&lt;script&gt;');
+    expect(body).toContain('&lt;b onmouseover=&quot;hack()&quot;&gt;hi&lt;/b&gt;');
+  });
+
+  test('generic body: at most three key:value rows, {…}/[n] markers, sent name in the bar', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-gen',
+        name: 'get_command_or_subagent_output',
+        input: { command_id: 'cmd_7f3a', tags: ['a', 'b'], filters: { x: 1 }, extra: 'dropped' },
+        output: 'plain note',
+      }),
+    ];
+    const body = bodyOf(renderRoom({ items }), 't-gen');
+    // The 30-char name cannot ride the chip, so the body bar carries it whole.
+    expect(body).toContain('generic · get_command_or_subagent_output');
+    expect(body.match(/w-\[11ch\]/g)?.length).toBe(3);
+    expect(body).toContain('cmd_7f3a');
+    expect(body).toContain('[2]');
+    expect(body).toContain('{…}');
+    expect(body).not.toContain('dropped');
+    // No serialized-object syntax survives into the generic body.
+    expect(body).not.toContain('&quot;');
+    expect(body).toContain('plain note');
+  });
+
+  test('todo and task rows open to the bar and Raw toggle with no body box', () => {
+    const items: AgentHistoryItem[] = [
+      openToolItem({
+        toolUseId: 't-todo',
+        name: 'todo',
+        input: { todos: [{ content: 'x' }] },
+        canLoadFullOutput: false,
+      }),
+      openToolItem({
+        toolUseId: 't-task',
+        name: 'Task',
+        input: { description: 'd', prompt: 'p' },
+        canLoadFullOutput: false,
+      }),
+    ];
+    const markup = renderRoom({ items });
+    for (const id of ['t-todo', 't-task']) {
+      const body = bodyOf(markup, id);
+      expect(body).not.toContain('tool-family-body');
+      expect(body).toContain('aria-expanded="false"');
+      expect(body).toContain('>Raw');
+    }
   });
 });

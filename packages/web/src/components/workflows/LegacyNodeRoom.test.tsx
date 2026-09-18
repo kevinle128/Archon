@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'development';
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Root } from 'react-dom/client';
@@ -12,6 +12,7 @@ import type {
   WorkflowNodeMessageResponse,
   WorkflowNodeMessagesResponse,
 } from '@/lib/api';
+import * as toolPresentation from '@/lib/tool-presentation';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import type { LogRow } from './build-log-rows';
@@ -888,10 +889,11 @@ describe('LegacyNodeRoom dispatcher', () => {
     expect(summary.textContent).toContain('Read');
     expect(summary.textContent).toContain('a.ts');
     expect(summary.textContent).toContain('succeeded');
-    // Diagnostics stay hidden while the row is collapsed.
-    for (const nested of Array.from(toolRow.querySelectorAll('details'))) {
-      expect((nested as Element & { open: boolean }).open).toBe(false);
-    }
+    // No body content mounts behind a closed row.
+    expect(toolRow.querySelectorAll('details')).toHaveLength(0);
+    expect(toolRow.querySelector('button[aria-expanded]')).toBeNull();
+    expect(toolRow.querySelector('.tool-family-body')).toBeNull();
+    expect(toolRow.textContent).not.toContain('chunk');
   });
 
   test('a poll-updated failure flips an untouched drained row open once', async () => {
@@ -1079,6 +1081,12 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     return button as unknown as HTMLButtonElement;
   }
 
+  function rawButton(row: Element): HTMLButtonElement {
+    const button = row.querySelector('button[aria-expanded]');
+    if (button === null) throw new Error(`Raw toggle missing: ${row.innerHTML}`);
+    return button as unknown as HTMLButtonElement;
+  }
+
   /** Text a screen reader announces: skips aria-hidden, uses chip aria-label. */
   function summaryAccessibleName(summary: Element): string {
     const parts: string[] = [];
@@ -1119,14 +1127,12 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(summary.textContent).toContain('Read');
     expect(summary.textContent).toContain('a.ts');
     expect(summaryAccessibleName(summary)).toBe('succeeded file · Read a.ts');
-    // Diagnostics exist in the DOM but stay closed behind the summary.
-    const diagnostics = row.querySelectorAll('details');
-    expect(diagnostics).toHaveLength(2);
-    for (const diagnostic of Array.from(diagnostics)) {
-      expect((diagnostic as Element & { open: boolean }).open).toBe(false);
-    }
-    expect(row.textContent).toContain('Input');
-    expect(row.textContent).toContain('Output');
+    // The expanded region is unmounted while collapsed — no Raw toggle, no
+    // family body, no serialized payload anywhere in the DOM.
+    expect(row.querySelectorAll('details')).toHaveLength(0);
+    expect(row.querySelector('button[aria-expanded]')).toBeNull();
+    expect(row.querySelector('.tool-family-body')).toBeNull();
+    expect(row.textContent).not.toContain('chunk');
   });
 
   test('pointer toggles the row and the choice survives polling re-renders', async () => {
@@ -1278,34 +1284,141 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(toolRow('b').open).toBe(false);
   });
 
-  test('nested Input/Output toggles do not mark the outer row touched', async () => {
+  test('the Raw toggle swaps the family body for the raw payload and back', async () => {
     await act(async () => {
       mountItems(historyItems(READ_ROWS));
     });
     const row = toolRow('t-1');
-    const inputDiagnostic = row.querySelectorAll('details')[0] as Element & { open: boolean };
     await act(async () => {
-      click(inputDiagnostic.querySelector('summary') as Element);
+      click(rowSummary(row));
     });
-    expect(inputDiagnostic.open).toBe(true);
-    expect(row.open).toBe(false);
+    expect(row.open).toBe(true);
+    // The file body arm renders; the serialized payload does not.
+    const body = row.querySelector('.tool-family-body');
+    expect(body?.textContent).toContain('a.ts');
+    expect(body?.textContent).toContain('chunk');
+    expect(body?.textContent).not.toContain('"name"');
 
-    // Still untouched: the failed transition auto-opens the outer row; the nested
-    // diagnostic keeps its own state.
-    const failedRows: readonly WorkflowNodeMessageResponse[] = [
-      READ_ROWS[0],
-      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'boom', {
-        outcome: 'error',
-        exit_code: 2,
+    const raw = rawButton(row);
+    expect(raw.getAttribute('aria-expanded')).toBe('false');
+    expect(raw.textContent).toBe('Raw');
+    await act(async () => {
+      click(raw);
+    });
+    expect(raw.getAttribute('aria-expanded')).toBe('true');
+    // One box swaps in place: the provider JSON replaces the file arm.
+    const rawBox = row.querySelector('.tool-family-body');
+    expect(rawBox?.textContent).toContain('"name": "Read"');
+    expect(rawBox?.textContent).toContain('"input"');
+    expect(rawBox?.textContent).toContain('"output"');
+    expect(rawBox?.textContent).toContain('"path": "a.ts"');
+    expect(row.open).toBe(true);
+    await act(async () => {
+      click(raw);
+    });
+    expect(row.querySelector('.tool-family-body')?.textContent).toContain('chunk');
+    expect(row.querySelector('.tool-family-body')?.textContent).not.toContain('"name"');
+  });
+
+  test('the body resolver runs only while open and Raw-closed, and recomputes on full output', async () => {
+    let resolveLoad: ((message: WorkflowNodeMessageResponse) => void) | null = null;
+    const loadMessage = (): Promise<WorkflowNodeMessageResponse> =>
+      new Promise<WorkflowNodeMessageResponse>(resolve => {
+        resolveLoad = resolve;
+      });
+    const rows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'success',
+        output_state: 'truncated',
+        full_output_available: true,
+      }),
+    ];
+    const spy = spyOn(toolPresentation, 'toolBodyPresentation');
+    try {
+      await act(async () => {
+        mountItems(historyItems(rows), loadMessage);
+      });
+      // Collapsed row: the resolver never runs and no body mounts.
+      expect(spy).toHaveBeenCalledTimes(0);
+      const row = toolRow('t-1');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      const callsAfterOpen = spy.mock.calls.length;
+      expect(callsAfterOpen).toBeGreaterThan(0);
+
+      // Raw open swaps the body out — the resolver does not run for it.
+      const raw = rawButton(row);
+      await act(async () => {
+        click(raw);
+      });
+      expect(spy.mock.calls.length).toBe(callsAfterOpen);
+      await act(async () => {
+        click(raw);
+      });
+      const callsAfterSwapBack = spy.mock.calls.length;
+      expect(callsAfterSwapBack).toBeGreaterThan(callsAfterOpen);
+
+      // The full-output fetch recomputes the body once against the new output.
+      await act(async () => {
+        click(rowButton(row, 'View full output'));
+      });
+      await act(async () => {
+        resolveLoad?.({
+          id: 'result-t-1',
+          seq: 11,
+          kind: 'tool',
+          payload: { name: 'Read', id: 't-1', input: { path: 'a.ts' }, output: 'FULL OUTPUT' },
+          created_at: CREATED_AT,
+        });
+      });
+      expect(spy.mock.calls.length).toBe(callsAfterSwapBack + 1);
+      const last = spy.mock.calls.at(-1);
+      expect(last?.[0]).toEqual({
+        name: 'Read',
+        input: { path: 'a.ts' },
+        output: 'FULL OUTPUT',
+      });
+      expect(last?.[1]).toBe('file');
+      expect(row.querySelector('.tool-family-body')?.textContent).toContain('FULL OUTPUT');
+
+      // Closing the row unmounts the body entirely.
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(false);
+      expect(row.querySelector('.tool-family-body')).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('inside an open body the Raw button is the next tab stop after the summary', async () => {
+    const rows: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-1', 10, 'Read', { path: 'a.ts' }, { full_output_available: true }),
+      resultRow('t-1', 11, 'Read', { path: 'a.ts' }, 'chunk', {
+        outcome: 'success',
+        output_state: 'truncated',
+        full_output_available: true,
       }),
     ];
     await act(async () => {
-      mountItems(historyItems(failedRows));
+      mountItems(historyItems(rows));
     });
-    const updated = toolRow('t-1');
-    expect(updated.open).toBe(true);
-    const updatedInput = updated.querySelectorAll('details')[0] as Element & { open: boolean };
-    expect(updatedInput.open).toBe(true);
+    const row = toolRow('t-1');
+    await act(async () => {
+      click(rowSummary(row));
+    });
+    const html = row.innerHTML;
+    const summaryEnd = html.indexOf('</summary>');
+    const rawAt = html.indexOf('aria-expanded');
+    const fullAt = html.indexOf('View full output');
+    expect(rawAt).toBeGreaterThan(summaryEnd);
+    expect(rawAt).toBeLessThan(fullAt);
+    // The Raw button is the only control inside the body besides the loader.
+    const buttons = row.querySelectorAll('button');
+    expect(buttons[0]?.getAttribute('aria-expanded')).not.toBeNull();
   });
 
   test('focus stays on the summary when later items append to the list', async () => {
@@ -1365,6 +1478,9 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       });
     });
     expect(row.textContent).toContain('FULL OUTPUT');
+    // The presented body recomputed against the fetched output.
+    expect(row.querySelector('.tool-family-body')?.textContent).toContain('FULL OUTPUT');
+    expect(row.querySelector('.tool-family-body')?.textContent).not.toContain('chunk');
     // The row re-presented with output_state 'full': the truncated badge is gone.
     expect(rowSummary(row).textContent).not.toContain('truncated');
     expect(row.open).toBe(true);
