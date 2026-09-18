@@ -2327,6 +2327,21 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.className).toContain('focus-visible:outline-offset-2');
       expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
       expect(summary.className).toContain('focus-visible:outline-accent-bright!');
+      const agentGroup = summary.querySelector('.text-node-approval')?.parentElement;
+      const name = Array.from(summary.querySelectorAll('span')).find(element =>
+        element.className.includes('font-bold')
+      );
+      for (const [label, element] of [
+        ['agent', agentGroup],
+        ['name', name],
+      ] as const) {
+        expect(element, `${label} identifier span`).not.toBeNull();
+        expect(element?.className).toContain('min-w-0');
+        expect(element?.className).toContain('shrink');
+        expect(element?.className).toContain('overflow-hidden');
+        expect(element?.className).toContain('text-ellipsis');
+        expect(element?.className).not.toContain('flex-none');
+      }
       const chevron = summary.querySelector('span[aria-hidden="true"]');
       const classes = (chevron?.getAttribute('class') ?? '').split(' ');
       expect(classes).toContain('group-open/subtask:rotate-90');

@@ -48,28 +48,38 @@ function boundedIdentifier(value: string): string | null {
 
 function normalizeBatch(record: Record<string, unknown>): NormalizedTaskDispatch | null {
   const rawTasks = record.tasks;
-  if (!Array.isArray(rawTasks) || rawTasks.length === 0 || rawTasks.length > MAX_TASK_SUBTASKS) {
+  if (!Array.isArray(rawTasks)) {
     return null;
   }
 
+  // Enforce the cumulative bound before trimming/scanning context content.
+  // `rawTasks.length` is captured so a caller-controlled array iterator (or a
+  // later length mutation) cannot make this walk exceed MAX_TASK_SUBTASKS.
+  const taskCount = rawTasks.length;
+  if (!Number.isInteger(taskCount) || taskCount < 1 || taskCount > MAX_TASK_SUBTASKS) {
+    return null;
+  }
   // Optional batch context: absent/blank becomes '', a present non-string
   // rejects the dispatch, and a non-blank string is preserved verbatim.
   const rawContext = record.context;
+  let total = 0;
   let context = '';
   if (rawContext === undefined) {
     context = '';
   } else if (typeof rawContext !== 'string') {
     return null;
-  } else if (rawContext.trim() !== '') {
-    context = rawContext;
+  } else {
+    total = rawContext.length;
+    if (total > MAX_TASK_TOTAL_TEXT_CODE_UNITS) return null;
+    if (rawContext.trim() !== '') context = rawContext;
   }
 
   // Sum original UTF-16 lengths before trimming or allocating the result,
   // walking at most MAX_TASK_SUBTASKS entries and rejecting as soon as the
   // cumulative budget is exceeded.
-  let total = typeof rawContext === 'string' ? rawContext.length : 0;
   const raws: { name: string; agent: string; prompt: string }[] = [];
-  for (const element of rawTasks) {
+  for (let index = 0; index < taskCount; index++) {
+    const element = rawTasks[index];
     const task = asRecord(element);
     if (task === null) return null;
     const name = task.name;

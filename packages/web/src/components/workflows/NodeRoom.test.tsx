@@ -754,8 +754,17 @@ describe('NodeRoom task dispatch bodies', () => {
     expect(summary).toContain('-outline-offset-2');
     const agent = /<span class="[^"]*text-node-approval[^"]*">([^<]*)<\/span>/.exec(summary);
     expect(agent?.[1]).toBe('scout');
-    const name = /<span class="[^"]*font-bold[^"]*"[^>]*>([^<]*)<\/span>/.exec(summary);
-    expect(name?.[1]).toBe('ScoutBackoff');
+    const agentGroup = /<span class="([^"]*)"><span class="[^"]*text-node-approval/.exec(summary);
+    expect(agentGroup?.[1]).toContain('min-w-0');
+    expect(agentGroup?.[1]).toContain('shrink');
+    expect(agentGroup?.[1]).toContain('overflow-hidden');
+    expect(agentGroup?.[1]).toContain('text-ellipsis');
+    const name = /<span class="([^"]*font-bold[^"]*)"[^>]*>([^<]*)<\/span>/.exec(summary);
+    expect(name?.[2]).toBe('ScoutBackoff');
+    expect(name?.[1]).toContain('min-w-0');
+    expect(name?.[1]).toContain('shrink');
+    expect(name?.[1]).toContain('overflow-hidden');
+    expect(name?.[1]).toContain('text-ellipsis');
     expect(summary).toContain('text-text-secondary');
     // Excerpt is the collapsed-whitespace prefix — the tail stays in the nested body.
     expect(summary).toContain('Map every call site');

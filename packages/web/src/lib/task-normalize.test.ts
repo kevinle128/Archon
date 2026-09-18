@@ -281,6 +281,36 @@ describe('cumulative text budget', () => {
     tasks[MAX_TASK_SUBTASKS - 1] = ompTask('n', 'a', 'p'.repeat(MAX_TASK_TOTAL_TEXT_CODE_UNITS));
     expect(normalizeTaskDispatch({ tasks })).toBeNull();
   });
+
+  test('the bounded walk uses captured array indexes, not a caller-controlled iterator', () => {
+    const tasks = [ompTask('indexed', 'agent', 'prompt')];
+    tasks[Symbol.iterator] = function* (): ArrayIterator<Record<string, unknown>> {
+      yield ompTask('iterator-only', 'agent', 'must not be visited');
+      throw new Error('unbounded iterator path');
+    };
+    expect(normalizeTaskDispatch({ tasks })).toEqual({
+      mode: 'batch',
+      context: '',
+      subtasks: [{ name: 'indexed', agent: 'agent', prompt: 'prompt' }],
+    });
+  });
+
+  test('the bounded walk captures a proxied array length once', () => {
+    let lengthReads = 0;
+    const tasks = new Proxy([ompTask('indexed', 'agent', 'prompt')], {
+      get(target, property, receiver): unknown {
+        if (property === 'length') {
+          lengthReads++;
+          return lengthReads === 1 ? 1 : MAX_TASK_SUBTASKS + 1;
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    expect(normalizeTaskDispatch({ tasks })?.subtasks).toEqual([
+      { name: 'indexed', agent: 'agent', prompt: 'prompt' },
+    ]);
+    expect(lengthReads).toBe(1);
+  });
 });
 
 describe('result integrity', () => {

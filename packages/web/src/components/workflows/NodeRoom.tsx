@@ -399,12 +399,14 @@ function SubtaskCard({
           ▶
         </span>
         {subtask.agent !== null ? (
-          <span className="flex-none whitespace-nowrap">
+          <span className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap">
             <span className="font-semibold text-node-approval">{subtask.agent}</span>
             <span className="text-text-secondary"> · </span>
           </span>
         ) : null}
-        <span className="flex-none font-bold text-text-primary">{subtask.name}</span>
+        <span className="min-w-0 shrink overflow-hidden text-ellipsis whitespace-nowrap font-bold text-text-primary">
+          {subtask.name}
+        </span>
         <span className="min-w-0 flex-1 overflow-hidden text-ellipsis text-text-secondary">
           — {subtask.excerpt}
         </span>

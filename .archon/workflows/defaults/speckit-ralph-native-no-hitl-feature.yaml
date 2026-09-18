@@ -34,13 +34,13 @@ nodes:
       echo ""
       echo "Artifacts will be saved to: $ARTIFACTS_DIR"
       echo "Starting Step 1 of 7: Generating feature specification..."
-  
+
   - id: specify
     prompt: |
-      /speckit-specify create detail spec for $ARGUMENTS, 
-      read related documents for understand the origin context and purpose, 
-      save references document to let the next phases know the origin purpose, 
-      read deeply to understand before writing, 
+      /speckit-specify create detail spec for $ARGUMENTS,
+      read related documents for understand the origin context and purpose,
+      save references document to let the next phases know the origin purpose,
+      read deeply to understand before writing,
       don't guess, spawn sub-agents for help
     depends_on:
       - setup
@@ -99,7 +99,7 @@ nodes:
       first instinct on any question is "is this a real problem?" — most
       aren't, and you skip those without ceremony. When the problem IS real,
       you pick the SIMPLEST durable answer that matches the feature intent and
-      local project constraints — never the most elaborate architecture you can imagine. 
+      local project constraints — never the most elaborate architecture you can imagine.
       You think in invariants and contracts because they keep things simple long-term,
       not because complexity impresses anyone. You push back on weak
       questions, reject band-aids, and reject over-engineering with equal
@@ -657,7 +657,7 @@ nodes:
   - id: create-pull-request
     command: archon-create-pr
     provider: omp
-    model: cursor/gemini-3.8-flash  
+    model: cursor/gemini-3.8-flash
     effort: hight
     depends_on: [update-bmad-sprint-status]
     context: fresh
