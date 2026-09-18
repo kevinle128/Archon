@@ -87,12 +87,12 @@ bun run validate
 
 ## Story overview
 
-| ID | Title | Depends on | Phase |
-|---|---|---|---|
-| US-001 | Shared todo-state fold library + tests | — | 1 |
-| US-002 | `buildAgentHistory()` → `{items, todos}` + caller adaptation | US-001 | 1 |
-| US-003 | Contract docs sync + `emitTodo` fixture + red Playwright spec | US-001, US-002 | 1 |
-| US-004 | Legacy + Console strip renderers and Legacy landmark refactor | US-003 | 2 |
-| US-005 | Real-run visual/a11y evidence, gates, report, PR | US-004 | 3 |
+| ID     | Title                                                         | Depends on     | Phase |
+| ------ | ------------------------------------------------------------- | -------------- | ----- |
+| US-001 | Shared todo-state fold library + tests                        | —              | 1     |
+| US-002 | `buildAgentHistory()` → `{items, todos}` + caller adaptation  | US-001         | 1     |
+| US-003 | Contract docs sync + `emitTodo` fixture + red Playwright spec | US-001, US-002 | 1     |
+| US-004 | Legacy + Console strip renderers and Legacy landmark refactor | US-003         | 2     |
+| US-005 | Real-run visual/a11y evidence, gates, report, PR              | US-004         | 3     |
 
 Each story is TDD-structured per the plan: write/extend the named test file first (red), implement (green), then run the listed gates. Do not implement ahead of a story's scope.
