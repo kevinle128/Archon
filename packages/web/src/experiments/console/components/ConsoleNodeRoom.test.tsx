@@ -85,6 +85,58 @@ const PLAN_MESSAGES: readonly WorkflowNodeMessage[] = [
   { id: 'p1', seq: 1, kind: 'text', payload: { text: 'second' }, created_at: CREATED_AT },
 ];
 
+const REPORT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { report: { type: 'string' } },
+  required: ['report'],
+  additionalProperties: false,
+};
+const REPORT_TEXT = 'Readable report body';
+const REPORT_MESSAGES: readonly WorkflowNodeMessage[] = [
+  {
+    id: 'r1',
+    seq: 1,
+    kind: 'text',
+    payload: { text: '{"report":"Readable ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r2',
+    seq: 2,
+    kind: 'text',
+    payload: { text: 'report ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r3',
+    seq: 3,
+    kind: 'text',
+    payload: { text: 'body"}' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+];
+
 function nodeState(
   overrides: Pick<WorkflowNodeState, 'nodeId' | 'name' | 'status'>
 ): WorkflowNodeState {
@@ -304,6 +356,39 @@ describe('ConsoleNodeRoom', () => {
     expect(host.textContent).toContain('Iteration 2');
     expect(host.textContent).not.toContain('first');
     assertNoConversationComposer(host);
+  });
+
+  test('unwraps the structured envelope with the selected definition output_format', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-structured' }),
+        definitionNodes: [{ id: 'review', prompt: 'Write', output_format: REPORT_SCHEMA }],
+        loadMessages,
+      });
+    });
+    await flushUntil('structured transcript', () => (host.textContent ?? '').includes(REPORT_TEXT));
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
+  });
+
+  test('keeps the serialized envelope when the selected definition has no output_format', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-plain' }),
+        definitionNodes: [{ id: 'review', prompt: 'Write' }],
+        loadMessages,
+      });
+    });
+    await flushUntil('raw transcript', () => (host.textContent ?? '').includes('{"report"'));
+    expect(host.textContent).toContain('{"report"');
   });
 
   test('rekeys loadMessages when the selected agent node changes', async () => {

@@ -28,6 +28,49 @@ const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ATTEMPT_A = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_B = '22222222-2222-4222-8222-222222222222';
 
+const REPORT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { report: { type: 'string' } },
+  required: ['report'],
+  additionalProperties: false,
+};
+const REPORT_TEXT = 'Readable report body';
+const REPORT_MESSAGES: readonly WorkflowNodeMessage[] = [
+  {
+    id: 'r1',
+    seq: 1,
+    kind: 'text',
+    payload: { text: '{"report":"Readable ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r2',
+    seq: 2,
+    kind: 'text',
+    payload: { text: 'report ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r3',
+    seq: 3,
+    kind: 'text',
+    payload: { text: 'body"}' },
+    metadata: {
+      text_mode: 'delta',
+      execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B },
+    },
+    created_at: CREATED_AT,
+  },
+];
+
 function occurrenceEntry(
   id: string,
   occurrenceId: string,
@@ -229,6 +272,20 @@ describe('ConsoleExecutionHistory', () => {
     expect(host.textContent).toContain('ASSISTANT');
     expect(host.textContent).toContain('Bash');
     expect(host.textContent).not.toContain('occ-a-assistant');
+  });
+
+  test('unwraps the structured envelope once outputFormat arrives', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+    renderHistory({ loadMessages });
+    await flushUntil('raw history', () => (host.textContent ?? '').includes('{"report"'));
+    expect(host.textContent).toContain('{"report"');
+
+    renderHistory({ loadMessages, outputFormat: REPORT_SCHEMA });
+    await flushUntil('unwrapped history', () => (host.textContent ?? '').includes(REPORT_TEXT));
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
   });
 
   test('an OMP task dispatch renders context and one card per subtask inside the owning row', async () => {

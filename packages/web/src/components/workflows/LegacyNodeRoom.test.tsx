@@ -126,6 +126,58 @@ const ROUTER_NODE: DagNode = {
   },
 };
 
+const REPORT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { report: { type: 'string' } },
+  required: ['report'],
+  additionalProperties: false,
+};
+const REPORT_TEXT = 'Readable report body';
+const REPORT_MESSAGES: readonly WorkflowNodeMessageResponse[] = [
+  {
+    id: 'r1',
+    seq: 1,
+    kind: 'text',
+    payload: { text: '{"report":"Readable ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r2',
+    seq: 2,
+    kind: 'text',
+    payload: { text: 'report ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r3',
+    seq: 3,
+    kind: 'text',
+    payload: { text: 'body"}' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+];
+
 function visibleText(markup: string): string {
   return markup
     .replace(/<[^>]+>/g, ' ')
@@ -744,6 +796,69 @@ describe('LegacyNodeRoom dispatcher', () => {
     expect(host.textContent).toContain('running');
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
     expect(host.querySelector('[aria-label="command room"]')).not.toBeNull();
+  });
+
+  test('forwards the matched definition output_format into the transcript', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages,
+        definitionNodes: [{ id: 'command', command: 'review', output_format: REPORT_SCHEMA }],
+      });
+    });
+    await flushUntil(host, 'structured transcript', () =>
+      (host.textContent ?? '').includes(REPORT_TEXT)
+    );
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
+  });
+
+  test('keeps the serialized envelope when the definition carries no output_format', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages,
+        definitionNodes: [{ id: 'command', command: 'review' }],
+      });
+    });
+    await flushUntil(host, 'raw transcript', () => (host.textContent ?? '').includes('{"report"'));
+    expect(host.textContent).toContain('{"report"');
+  });
+
+  test('renders the original history when the definition is missing, then unwraps once resolved', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages,
+        definitionNodes: [],
+      });
+    });
+    await flushUntil(host, 'missing-definition transcript', () =>
+      (host.textContent ?? '').includes('{"report"')
+    );
+    expect(host.textContent).toContain('{"report"');
+
+    await act(async () => {
+      renderRoom({
+        row: COMMAND_ROW,
+        loadMessages,
+        definitionNodes: [{ id: 'command', command: 'review', output_format: REPORT_SCHEMA }],
+      });
+    });
+    await flushUntil(host, 'resolved transcript', () =>
+      (host.textContent ?? '').includes(REPORT_TEXT)
+    );
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
   });
 
   test('requests messages only after rerendering from bash to command', async () => {

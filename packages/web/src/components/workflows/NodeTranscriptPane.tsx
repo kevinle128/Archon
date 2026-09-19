@@ -86,6 +86,8 @@ export interface NodeTranscriptPaneProps {
   starterDisplayName: string | null;
   actionStates: AskActionStateByRequest;
   nodeState: WorkflowNodeStateResponse | undefined;
+  /** Matched definition node's `output_format`; absent or ineligible schemas leave text untouched. */
+  outputFormat?: Record<string, unknown> | null;
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
   events?: readonly WorkflowEventResponse[];
   scopeKey?: string;
@@ -117,6 +119,7 @@ export function NodeTranscriptPane({
   starterDisplayName,
   actionStates,
   nodeState,
+  outputFormat,
   onSubmitAsk,
   events = [],
   scopeKey,
@@ -266,6 +269,7 @@ export function NodeTranscriptPane({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
+          outputFormat: outputFormat ?? undefined,
           nowMs,
         });
   const items = agentHistory.items;
