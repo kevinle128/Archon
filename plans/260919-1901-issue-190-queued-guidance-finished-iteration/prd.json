@@ -16,8 +16,8 @@
       "technicalNotes": "Docs-only gate from phase-01-start.md 'Required decisions and documentation gate'. Headless mode: adopt the plan's recommended resolutions verbatim rather than waiting for an owner. Update all authorities together; grep each doc for the old wording to confirm no residual contradiction.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Docs-only. Files: ARCHITECTURE-SPINE.md (AD-16 + AD-7 back-ref), epics.md Story 2.10, SPEC.md CAP-6, control-states.md finished-iteration state, EXPERIENCE.md, DESIGN.md Finished-iteration dock, plan.md Validation Log, phase-01-start.md unblocked. Commit cc726487."
     },
     {
       "id": "US-002",
@@ -46,11 +46,11 @@
       "description": "As an operator on the Legacy shell, I want the finished-iteration descriptor computed once at the pane and rendered as a read-only dock with a working Go control, so that I can see queued guidance and return to the live iteration without any mutation path.",
       "acceptanceCriteria": [
         "`LegacyGraphLogsPane.tsx` calls `resolveFinishedIterationView()` once with `rows`, `selectedRow`, the selected node's visible state, and run liveness; the `{liveRowId, liveIteration}` descriptor plus the existing row-selection callback are threaded through `LegacyNodeRoom.tsx` -> `NodeTranscriptPane.tsx` -> `ComposerDock.tsx` as the only new props (never the whole row list)",
-        "A host with no usable row-selection callback passes no descriptor and renders no finished dock — no enabled Go control with no action",
-        "The `finished-iteration` branch in `ComposerDock.tsx` renders in DOM order: exact disclosure; native `Go to iteration N` button; 422 detached alert when present; the full-width queue band only when `sent.length > 0` — reusing `queueBandHeader()`, `queueListLabel()`, server order, message text, `sent` label, and `max-h-[33vh] overflow-y-auto` with no delete controls",
+        "A host with no usable row-selection callback passes no descriptor and renders no finished dock \u2014 no enabled Go control with no action",
+        "The `finished-iteration` branch in `ComposerDock.tsx` renders in DOM order: exact disclosure; native `Go to iteration N` button; 422 detached alert when present; the full-width queue band only when `sent.length > 0` \u2014 reusing `queueBandHeader()`, `queueListLabel()`, server order, message text, `sent` label, and `max-h-[33vh] overflow-y-auto` with no delete controls",
         "The branch contains no textarea, send hint, Queue/Send control, delete button, or bound send/withdraw/interrupt handler; polling enablement includes `finished-iteration` so only `readQueue` (GET) runs; spies observe zero mutations after pointer and keyboard interaction",
         "Poll errors in this branch: 422 `not_steerable_here` shows `STEERING_DETACHED_DISCLOSURE` as an alert below the disclosure and clears the displayed snapshot while polling continues; the next 200 clears the alert and restores the authoritative snapshot; network/5xx retry silently with last snapshot retained; 409 clears the snapshot and stops polling and is never labeled detached; send/withdraw refusal state and draft persistence are untouched",
-        "Go activation stores `liveRowId` and invokes the existing selection callback only; `NodeTranscriptPane.tsx` owns a consume-once focus target cleared before focusing — live/blocked target focuses the composer textarea, a target that became finished focuses the new Go button, a disappeared dock focuses the transcript scroller; focus never lands on `<body>` and unrelated refetches/remounts never steal focus",
+        "Go activation stores `liveRowId` and invokes the existing selection callback only; `NodeTranscriptPane.tsx` owns a consume-once focus target cleared before focusing \u2014 live/blocked target focuses the composer textarea, a target that became finished focuses the new Go button, a disappeared dock focuses the transcript scroller; focus never lands on `<body>` and unrelated refetches/remounts never steal focus",
         "The `(runId, nodeId)` draft is hidden in finished mode and restored unchanged on return; queue order is preserved across the round trip",
         "Approved visual contract holds at 460px and wide widths: one structural control row, complete disclosure wraps in its flexible cell, Go fully visible >=32px with surface focus ring, no horizontal overflow, band below capped at 33vh",
         "Tests per phase-02 matrix pass: `ComposerDock.test.tsx` (copy, ordered band, no mutation surface, Go callback, draft hide/restore, 422/200/network/5xx/409 semantics, existing modes unchanged) plus parent/room integration coverage in `LegacyGraphLogsPane.test.tsx`/`NodeTranscriptPane.test.tsx` for descriptor production, fail-closed mismatches, selection transition, and all three focus outcomes",
@@ -69,7 +69,7 @@
       "acceptanceCriteria": [
         "`ConsoleInspectPane.tsx` calls `resolveFinishedIterationView()` once with `logEntries.map(entry => entry.row)`, `selectedRow`, the selected node state, and `isInspectRunLive(run.status)` (`experiments/console/components/inspect/inspect-status.ts:21`); the descriptor plus the existing selection callback are threaded to `ConsoleNodeRoom.tsx` -> `ConsoleComposerDock.tsx`",
         "A host with no usable row-selection callback passes no descriptor and renders no finished dock",
-        "`ConsoleComposerDock.tsx` renders the identical DOM order and content as Legacy — disclosure, Go button, 422 alert, conditional read-only band with `queueBandHeader`/`queueListLabel`/server order/`sent`/`max-h-[33vh]` — using Console surface-specific classes; Console imports no Legacy component (HITL AD-4)",
+        "`ConsoleComposerDock.tsx` renders the identical DOM order and content as Legacy \u2014 disclosure, Go button, 422 alert, conditional read-only band with `queueBandHeader`/`queueListLabel`/server order/`sent`/`max-h-[33vh]` \u2014 using Console surface-specific classes; Console imports no Legacy component (HITL AD-4)",
         "No textarea, send hint, Queue/Send control, delete button, or bound mutation handler is reachable; polling in this mode performs only `readQueue`; zero send/withdraw/interrupt calls under pointer and keyboard interaction",
         "Identical poll-error semantics: 422 -> detached alert + cleared snapshot, keep polling; 200 -> clears alert, restores snapshot; network/5xx -> silent retry with last snapshot; 409 -> cleared snapshot + stop, never labeled detached",
         "`ConsoleNodeRoom.tsx` owns the consume-once focus ref with the same three outcomes (live composer textarea / new Go button / transcript scroller), cleared before focusing, never `<body>`, never stolen by unrelated refetches",
@@ -78,7 +78,7 @@
         "Tests per phase-02 matrix pass: `ConsoleComposerDock.test.tsx` renderer coverage mirroring the Legacy list plus parent/room integration coverage in `ConsoleInspectPane.test.tsx`/`ConsoleNodeRoom.test.tsx`; existing composer/blocked/detached/hidden renderer behavior stays green",
         "Web package type-check, lint, and test scripts pass"
       ],
-      "technicalNotes": "Phase 2 Console half — mirror of US-003, deliberately a parallel thin renderer rather than a shared component. Reuse `isInspectRunLive` rather than inventing a second liveness list.",
+      "technicalNotes": "Phase 2 Console half \u2014 mirror of US-003, deliberately a parallel thin renderer rather than a shared component. Reuse `isInspectRunLive` rather than inventing a second liveness list.",
       "dependsOn": ["US-002"],
       "priority": 4,
       "passes": false,
@@ -90,8 +90,8 @@
       "description": "As a maintainer, I want an event-driven Playwright journey through the real executor on both shells, so that Story 2.10's read-only, GET-only, focus, and visual contracts are proven against live loop behavior rather than mocks.",
       "acceptanceCriteria": [
         "`e2e/ui/agent-finished-iteration.spec.ts` exists, parameterized over `legacy` and `console` projects with stable verification ids `steer.finished-iteration-legacy` and `steer.finished-iteration-console` in test names and evidence mapping",
-        "The spec reuses `e2e/fixtures/workflows/e2e-queue-guidance-loop.yaml` via `E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME` / `QUEUE_GUIDANCE_LOOP_NODE` from the archon runtime helpers — no duplicate fixture, constant, or registration path — with event polling on `loop_iteration_completed`/`loop_iteration_started` (no fixed sleeps) and a budget >= `T.xlong * 2`; each surface runs in its own run",
-        "Journey per shell: start the loop, wait for iteration 1 complete + iteration 2 start; queue a unique message on live iteration 2 and assert `queued · 1`; record requests from before selecting iteration 1 via the existing `Execution` control; while iteration 1 is selected assert exact disclosure naming iteration 2, the native Go control, the ordered read-only band containing the unique message with `sent`, no textarea/hint/Queue/Send/delete controls, at least one successful node-scoped queue GET, and zero send/queue-delete/interrupt mutations",
+        "The spec reuses `e2e/fixtures/workflows/e2e-queue-guidance-loop.yaml` via `E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME` / `QUEUE_GUIDANCE_LOOP_NODE` from the archon runtime helpers \u2014 no duplicate fixture, constant, or registration path \u2014 with event polling on `loop_iteration_completed`/`loop_iteration_started` (no fixed sleeps) and a budget >= `T.xlong * 2`; each surface runs in its own run",
+        "Journey per shell: start the loop, wait for iteration 1 complete + iteration 2 start; queue a unique message on live iteration 2 and assert `queued \u00b7 1`; record requests from before selecting iteration 1 via the existing `Execution` control; while iteration 1 is selected assert exact disclosure naming iteration 2, the native Go control, the ordered read-only band containing the unique message with `sent`, no textarea/hint/Queue/Send/delete controls, at least one successful node-scoped queue GET, and zero send/queue-delete/interrupt mutations",
         "At 460x900 and 1440x900 assert by DOM measurement: no horizontal overflow, Go fully visible >=32px, approved disclosure treatment, band width, and 33vh cap; capture screenshots for both shells as review evidence",
         "Activate Go by keyboard: assert `Execution` shows iteration 2, the textarea owns focus, and the same message order plus stored draft are present",
         "Finish the run via the fake provider's `doneWhenPromptIncludes` directive on the latest iteration, wait for completion, re-select a completed iteration on the now non-live run, and assert the dock is absent",
@@ -100,7 +100,7 @@
         "`_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` gains the two Story 2.10 verification ids mapped to the journeys and their unit/renderer support",
         "The new spec passes on both projects, and the affected specs `agent-queue-guidance.spec.ts`, `agent-withdraw-guidance.spec.ts`, `agent-queue-convergence.spec.ts`, and `occurrence-navigation.spec.ts` still pass, invoked per `e2e/package.json` scripts (Bun-managed, not `npx`)"
       ],
-      "technicalNotes": "Phase 3 E2E implementation, minus the #188-gated closure steps. Precedents: agent-queue-guidance.spec.ts and agent-queue-convergence.spec.ts for request recording/room opening/viewports/fake provider; occurrence-navigation.spec.ts for execution-select helpers (lift to shared helper only if this becomes their third stable caller). Recorded request count corroborates no overlap/mutation — never assert a brittle exact poll count.",
+      "technicalNotes": "Phase 3 E2E implementation, minus the #188-gated closure steps. Precedents: agent-queue-guidance.spec.ts and agent-queue-convergence.spec.ts for request recording/room opening/viewports/fake provider; occurrence-navigation.spec.ts for execution-select helpers (lift to shared helper only if this becomes their third stable caller). Recorded request count corroborates no overlap/mutation \u2014 never assert a brittle exact poll count.",
       "dependsOn": ["US-003", "US-004"],
       "priority": 5,
       "passes": false,
@@ -109,18 +109,18 @@
     {
       "id": "US-006",
       "title": "Closure: #188-gated AC 4 evidence, acceptance report, doc sync, sprint status",
-      "description": "As a maintainer, I want Story 2.10 closed only when every criterion — including the Story 2.8-backed AC 4 — has passing evidence, so that #190 is never closed on a waived criterion and the sprint tracker reflects reality.",
+      "description": "As a maintainer, I want Story 2.10 closed only when every criterion \u2014 including the Story 2.8-backed AC 4 \u2014 has passing evidence, so that #190 is never closed on a waived criterion and the sprint tracker reflects reality.",
       "acceptanceCriteria": [
-        "Precondition verified first: issue #188 is merged (`gh issue view 188`) AND operator-row support exists in code (operator kind in `packages/web/src/lib/agent-history.ts`, operator metadata in `nodeTranscriptMetadataSchema`, executor drains writing receipts in `packages/workflows/src/dag-executor.ts`); if absent, leave this story unpassed — do not reimplement Story 2.8 and do not waive AC 4",
+        "Precondition verified first: issue #188 is merged (`gh issue view 188`) AND operator-row support exists in code (operator kind in `packages/web/src/lib/agent-history.ts`, operator metadata in `nodeTranscriptMetadataSchema`, executor drains writing receipts in `packages/workflows/src/dag-executor.ts`); if absent, leave this story unpassed \u2014 do not reimplement Story 2.8 and do not waive AC 4",
         "With #188 present, the AC 4 E2E assertions (in or added to `agent-finished-iteration.spec.ts`) pass on both shells: delivered guidance appears exactly once as an operator transcript row inside the selected occurrence and is absent from the pending queue band; disclosure/Go name the new live iteration",
         "`plans/reports/acceptance-<date>-issue-190-finished-iteration.md` maps every issue/Story 2.10 criterion (AC 1-5 plus the B1/B2 ratification and fail-closed identity criteria) to a named test or captured observation; none is marked deferred",
-        "Screenshots and concise network/measurement artifacts are stored under `plans/reports/evidence/issue-190/` containing fixture-only text — no credentials, tokens, personal data, or full CI logs",
+        "Screenshots and concise network/measurement artifacts are stored under `plans/reports/evidence/issue-190/` containing fixture-only text \u2014 no credentials, tokens, personal data, or full CI logs",
         "`epics.md`, `SPEC.md`, `control-states.md`, `EXPERIENCE.md`, `DESIGN.md`, and the new AD are re-read against shipped behavior and any drift is corrected without duplicating implementation detail into evergreen docs",
         "`bun run validate` passes from the repo root; `git diff --check` is clean; the new spec is re-run at normal CI worker/retry configuration and duration compared against the recorded baseline; no failure is replaced with a skip, timeout increase, or weakened assertion",
         "Only after all criteria pass: `2-10-see-queued-guidance-while-viewing-a-finished-iteration` in `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` is set to `done`, with no unrelated stale entries touched",
         "PR hygiene per plan: repository PR template, target `develop`, link the evidence report, `Closes #190` only on the completion PR; if Phase 1/2 UI merged earlier it used `Refs #190` with the sprint item left open"
       ],
-      "technicalNotes": "Phase 3 closure. B3 is a hard gate: #188 is the existing owner of operator transcript rows. This story may legitimately remain unpassed if #188 has not merged — that is the plan's sequencing, not a failure to retry around.",
+      "technicalNotes": "Phase 3 closure. B3 is a hard gate: #188 is the existing owner of operator transcript rows. This story may legitimately remain unpassed if #188 has not merged \u2014 that is the plan's sequencing, not a failure to retry around.",
       "dependsOn": ["US-005"],
       "priority": 6,
       "passes": false,

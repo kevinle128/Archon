@@ -1,0 +1,35 @@
+## Codebase Patterns
+
+### Authority docs for Story 2.10
+- **Where**: readable-transcript `ARCHITECTURE-SPINE.md` AD-16; UX `DESIGN.md` Finished-iteration dock; `EXPERIENCE.md` Execution vs Jump-to + dock state row
+- **Pattern**: B1 = Execution selection entry + mutation-only ban + shared GET queue band; B2 = one flex row, disclosure wraps, Go ≥32px, band below. Headless adoption recorded in plan Validation Log.
+- **Example**: AD-16 rule + DESIGN finished-iteration dock anatomy
+
+---
+
+## 2026-09-20 — US-001: Ratify B1/B2 decisions in canonical authority docs
+
+**Status**: PASSED
+**Files changed**:
+- `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md` — AD-16 added; AD-7 back-references AD-16
+- `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` — Story 2.10 AC entry point + mutation wording
+- `_bmad-output/specs/spec-agent-node-room/SPEC.md` — CAP-6 finished-iteration clause
+- `_bmad-output/specs/spec-agent-node-room/control-states.md` — Viewing a finished iteration state
+- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md` — Execution entry, 460px wrap, shared band
+- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md` — Finished-iteration dock B2 layout
+- `plans/.../plan.md` — Validation Log B1/B2 APPROVED
+- `plans/.../phase-01-start.md` — status ready / gate cleared
+
+**Acceptance criteria verified**:
+- [x] New ### AD-16 records Execution entry, mutation-only ban, GET queue allowed, shared band
+- [x] AD-7 back-references AD-16
+- [x] epics/SPEC/control-states/EXPERIENCE no longer retain Story-1.7-selector or absolute no-steering-route wording
+- [x] DESIGN.md + EXPERIENCE.md record 460px wrap arrangement (Go ≥32px, band below)
+- [x] plan.md Validation Log records approval date, headless approver, final B1/B2 wording
+- [x] No implementation code or implementation test files changed
+
+**Learnings**:
+- Highest existing AD heading was AD-15; AD-16 is next free
+- Prettier rewrote long table rows on commit via lint-staged — expected for md
+
+---
