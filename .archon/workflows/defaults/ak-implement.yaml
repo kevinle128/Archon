@@ -357,8 +357,9 @@ nodes:
     description: Run project-aware Ralph iterations in the parent workflow.
     depends_on: [ralph-native-preflight]
     idle_timeout: 3600000
-    provider: devin
-    model: swe-2-max
+    provider: omp
+    model: xai-oauth/grok-4.5  
+    effort: high
     output_format:
       type: object
       properties:
