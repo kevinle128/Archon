@@ -81,8 +81,8 @@
       "technicalNotes": "Phase 3 fix half (phase-03-legacy-run-viewport-regression-coverage.md, Proven cause and repair order + Browser scenario matrix). Exactly three local CSS fixes plus one minimap deletion; native CSS only — no wheel listeners. Add stable verification tags only after each browser test has deterministic setup/assertions (tag→scenario mapping lands in US-005). Do not start duplicate dev servers; reuse the runtime harness and stop owned processes.",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4 (commit 0a6c562f; unblock fix 2a5ea1cb). Files: NodeRoom.tsx + ConsoleAgentHistoryList.tsx (relative summary containing blocks), LegacyGraphLogsPane.tsx (min-h-0/min-w-0 overflow-hidden right room panel), NodeTranscriptPane.tsx (overscroll-y-contain), WorkflowDagViewer.tsx (MiniMap + dead imports/constants removed), component tests, e2e long-history desktop/narrow specs + runtime-graph spec. Layout.tsx untouched (post-fix metrics clean); builder minimaps intact. Verified: web 258/258 (6-file gate), build:web, e2e typecheck, playwright 3/3; eslint/prettier clean."
     },
     {
       "id": "US-005",
