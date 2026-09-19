@@ -1,10 +1,10 @@
 ---
 title: 'Phase 1: Ratify authority and build the shared execution and dock core'
-status: blocked
+status: ready
 priority: P1
 effort: '4h after the decision gates clear'
 dependencies: []
-gate: 'B1 and B2 approved and recorded in plan.md'
+gate: 'B1 and B2 approved and recorded in plan.md (cleared 2026-09-20)'
 ---
 
 # Phase 1: Ratify authority and build the shared execution and dock core

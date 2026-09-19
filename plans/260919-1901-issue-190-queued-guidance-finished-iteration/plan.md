@@ -123,7 +123,7 @@ Story 2.8 writes and renders operator rows.
 
 ## Blocking decisions and dependencies
 
-### B1 — Reachability contract (owner decision required before code)
+### B1 — Reachability contract (APPROVED 2026-09-20 — headless adoption of recommended resolution)
 
 There is a normative conflict:
 
@@ -137,8 +137,7 @@ There is a normative conflict:
 Recommended resolution: make the **Execution selection** the Story 2.10 entry point
 while retaining `Jump to` as scroll-only. Record this as a new readable-transcript
 decision (the next free number is currently AD-16, but recheck immediately before
-editing) and back-reference it from AD-7. Do not write tests or production code for
-this interpretation before the owner records approval in the Validation Log below.
+editing) and back-reference it from AD-7. Approval is recorded in the Validation Log below; implementation may proceed against this wording.
 
 The decision must also define “no steering request” precisely: the finished view
 performs the existing node-scoped `GET …/queue` read, but exposes and invokes no
@@ -146,7 +145,7 @@ send, withdraw, or interrupt mutation. Update all conflicting authority together
 `epics.md`, `SPEC.md`, `control-states.md`, `EXPERIENCE.md`, and the architecture
 spine.
 
-### B2 — Narrow visual arrangement (design decision required before markup)
+### B2 — Narrow visual arrangement (APPROVED 2026-09-20 — headless adoption of recommended wrap arrangement)
 
 The canonical disclosure is too long to remain fully visible beside the Go button
 on one visual line at the authoritative 460px room width. `EXPERIENCE.md` says the
@@ -313,52 +312,52 @@ nodeExecutions (retry + full loop ancestry + route activation)
 
 ## Phases
 
-| # | Phase | Status | Gate |
-|---|-------|--------|------|
-| 1 | [Ratify authority and build the shared execution/dock core](./phase-01-start.md) | Blocked | B1 and B2 recorded |
-| 2 | [Render and wire both shells](./phase-02-both-shells-render-the-finished-iteration-dock.md) | Pending | Phase 1 |
-| 3 | [Prove the real flow and close only after Story 2.8](./phase-03-end-to-end-evidence-and-doc-sync.md) | Pending | Phase 2 and #188 for closure |
+| #   | Phase                                                                                                | Status    | Gate                          |
+| --- | ---------------------------------------------------------------------------------------------------- | --------- | ----------------------------- |
+| 1   | [Ratify authority and build the shared execution/dock core](./phase-01-start.md)                     | Unblocked | B1 and B2 recorded 2026-09-20 |
+| 2   | [Render and wire both shells](./phase-02-both-shells-render-the-finished-iteration-dock.md)          | Pending   | Phase 1                       |
+| 3   | [Prove the real flow and close only after Story 2.8](./phase-03-end-to-end-evidence-and-doc-sync.md) | Pending   | Phase 2 and #188 for closure  |
 
 ## File inventory
 
-| File | Planned action |
-|------|----------------|
-| `packages/web/src/lib/execution-room-model.ts` + test | Add full-lineage resolver and matrix |
-| Both `components/.../build-log-rows.ts` copies + tests | Preserve full camel-case loop ancestry |
-| `packages/web/src/lib/steering-dock.ts` + test | Add mode/copy and optional polling-error callback |
-| `ComposerDock.tsx` + test | Legacy read-only mode, poll, error, focus target |
-| `ConsoleComposerDock.tsx` + test | Console-equivalent markup/behavior |
-| `LegacyGraphLogsPane.tsx`, `LegacyNodeRoom.tsx`, `NodeTranscriptPane.tsx` + focused tests | Resolve, pass through, select, consume focus |
-| `ConsoleInspectPane.tsx`, `ConsoleNodeRoom.tsx` + focused tests | Resolve, pass through, select, consume focus |
-| `epics.md`, `SPEC.md`, `control-states.md`, `EXPERIENCE.md`, `DESIGN.md`, readable-transcript spine | Reconcile ratified entry/read/layout contract |
-| `steering-test-plan.md` | Add Story 2.10 verification IDs |
-| `e2e/ui/agent-finished-iteration.spec.ts` | Real loop journey on both shells; reuse existing loop fixture/runtime constants |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | Set Story 2.10 to done only after all ACs, including #188-backed AC 4, pass |
+| File                                                                                                | Planned action                                                                  |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `packages/web/src/lib/execution-room-model.ts` + test                                               | Add full-lineage resolver and matrix                                            |
+| Both `components/.../build-log-rows.ts` copies + tests                                              | Preserve full camel-case loop ancestry                                          |
+| `packages/web/src/lib/steering-dock.ts` + test                                                      | Add mode/copy and optional polling-error callback                               |
+| `ComposerDock.tsx` + test                                                                           | Legacy read-only mode, poll, error, focus target                                |
+| `ConsoleComposerDock.tsx` + test                                                                    | Console-equivalent markup/behavior                                              |
+| `LegacyGraphLogsPane.tsx`, `LegacyNodeRoom.tsx`, `NodeTranscriptPane.tsx` + focused tests           | Resolve, pass through, select, consume focus                                    |
+| `ConsoleInspectPane.tsx`, `ConsoleNodeRoom.tsx` + focused tests                                     | Resolve, pass through, select, consume focus                                    |
+| `epics.md`, `SPEC.md`, `control-states.md`, `EXPERIENCE.md`, `DESIGN.md`, readable-transcript spine | Reconcile ratified entry/read/layout contract                                   |
+| `steering-test-plan.md`                                                                             | Add Story 2.10 verification IDs                                                 |
+| `e2e/ui/agent-finished-iteration.spec.ts`                                                           | Real loop journey on both shells; reuse existing loop fixture/runtime constants |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`                          | Set Story 2.10 to done only after all ACs, including #188-backed AC 4, pass     |
 
 ## Test matrix
 
-| Priority | Scenario | Evidence |
-|----------|----------|----------|
-| Critical | Completed iteration and later live iteration in the same lineage resolve to the new mode | execution-model unit + shell renderer |
-| Critical | Different retry epoch, route activation, or outer ancestry prefix fails closed | execution-model unit |
-| Critical | Node/event-fallback/outer occurrence/route-only row and non-live run fail closed | execution-model unit |
-| Critical | Full ancestry survives both `buildLogRows` implementations | both build-log-row unit suites |
-| Critical | Read-only band preserves server order and contains no mutation controls | both dock renderer suites |
-| Critical | Finished view performs GET reads and zero send/withdraw/interrupt mutations | renderer spies + E2E network recorder |
-| Critical | Go selects the resolved live row; queue order and tab-local draft survive | parent integration + E2E |
-| Critical | Delivered operator row is inline in the selected occurrence and absent from pending band | Story 2.8-backed E2E; closure gate |
-| High | Awaiting live iteration is a valid target and returns to the blocked composer | unit + renderer |
-| High | 422 read shows existing detached disclosure; later 200 clears it; 409 is not called detached | polling unit + renderer |
-| High | Target advances before click: no composer flash; focus moves to the new Go button | room renderer |
-| High | Run ends during click: dock disappears and focus moves to transcript scroller | room renderer |
-| High | Empty queue shows disclosure + Go only, with no empty band | both dock renderers |
-| High | Normal composer, blocked, detached, and hidden visibility rows stay unchanged | shared dock regression table |
-| Visual | Approved layout at 460×900 and 1440×900 has no horizontal overflow; band caps at 33vh | E2E measurements/screenshots on both shells |
-| Accessibility | DOM order is disclosure → Go → band; exact accessible names; visible focus; activation by keyboard; never `<body>` | renderer + E2E |
+| Priority      | Scenario                                                                                                           | Evidence                                    |
+| ------------- | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------- |
+| Critical      | Completed iteration and later live iteration in the same lineage resolve to the new mode                           | execution-model unit + shell renderer       |
+| Critical      | Different retry epoch, route activation, or outer ancestry prefix fails closed                                     | execution-model unit                        |
+| Critical      | Node/event-fallback/outer occurrence/route-only row and non-live run fail closed                                   | execution-model unit                        |
+| Critical      | Full ancestry survives both `buildLogRows` implementations                                                         | both build-log-row unit suites              |
+| Critical      | Read-only band preserves server order and contains no mutation controls                                            | both dock renderer suites                   |
+| Critical      | Finished view performs GET reads and zero send/withdraw/interrupt mutations                                        | renderer spies + E2E network recorder       |
+| Critical      | Go selects the resolved live row; queue order and tab-local draft survive                                          | parent integration + E2E                    |
+| Critical      | Delivered operator row is inline in the selected occurrence and absent from pending band                           | Story 2.8-backed E2E; closure gate          |
+| High          | Awaiting live iteration is a valid target and returns to the blocked composer                                      | unit + renderer                             |
+| High          | 422 read shows existing detached disclosure; later 200 clears it; 409 is not called detached                       | polling unit + renderer                     |
+| High          | Target advances before click: no composer flash; focus moves to the new Go button                                  | room renderer                               |
+| High          | Run ends during click: dock disappears and focus moves to transcript scroller                                      | room renderer                               |
+| High          | Empty queue shows disclosure + Go only, with no empty band                                                         | both dock renderers                         |
+| High          | Normal composer, blocked, detached, and hidden visibility rows stay unchanged                                      | shared dock regression table                |
+| Visual        | Approved layout at 460×900 and 1440×900 has no horizontal overflow; band caps at 33vh                              | E2E measurements/screenshots on both shells |
+| Accessibility | DOM order is disclosure → Go → band; exact accessible names; visible focus; activation by keyboard; never `<body>` | renderer + E2E                              |
 
 ## Acceptance criteria
 
-- [ ] B1 and B2 are explicitly approved and recorded in the Validation Log and
+- [x] B1 and B2 are explicitly approved and recorded in the Validation Log and
       canonical authorities before implementation begins.
 - [ ] A finished iteration is recognized only with proven same-execution lineage;
       uncertain or different execution identities hide the dock.
@@ -396,16 +395,31 @@ nodeExecutions (retry + full loop ancestry + route activation)
   **134 passed, 0 failed** on 2026-09-20.
 - All named existing source/test/doc paths were checked; the agent-node-room sprint
   tracker path was corrected to its actual package-specific location.
-- B1: **unresolved** — owner has not ratified the Execution-selection reinterpretation.
-- B2: **unresolved** — no artifact chooses wrap versus elision at 460px.
+- B1: **APPROVED 2026-09-20** — headless adoption of this plan's recommended
+  resolution (no human owner present). Final wording: the `Execution` selection
+  controls (header select, Logs row, graph occurrence) are the Story 2.10
+  occurrence-switching entry point; Story 1.7 `Jump to` stays scroll-only; "no
+  steering request" means no send/withdraw/interrupt **mutation** while the
+  existing authenticated node-scoped `GET …/queue` read is allowed; the band is
+  the node's shared pending queue across operators/tabs (Story 2.9). Recorded as
+  AD-16 in the readable-transcript spine with a back-reference from AD-7; same
+  rule written into `epics.md` Story 2.10, CAP-6, `control-states.md`, and
+  `EXPERIENCE.md`.
+- B2: **APPROVED 2026-09-20** — headless adoption of this plan's recommended
+  resolution. Final wording: one flex/control row; the complete disclosure may
+  wrap inside its flexible cell; the Go button stays fully visible and ≥32px
+  high; no horizontal overflow; queue band below the control row (only when
+  non-empty; 33vh cap). Recorded in `DESIGN.md` (Finished-iteration dock) and
+  `EXPERIENCE.md`.
 - B3: **verified blocker for closure** — issue #188 is open and operator rows are
-  absent from current code.
+  absent from current code. #190 may implement the read-only dock before #188,
+  but must not claim AC 4, flip sprint `done`, or close #190 until #188 lands.
 
 ## Unresolved questions
 
-1. Approve B1: should the header/Logs/graph **Execution selection** be the entry point
-   while Story 1.7 `Jump to` remains scroll-only?
-2. Approve B2: at 460px, may the full disclosure wrap (recommended), or must the
-   design define a one-row elision treatment?
+1. ~~Approve B1~~ — **resolved 2026-09-20** (Execution selection entry point;
+   Jump to scroll-only; mutations banned; GET queue allowed; shared band).
+2. ~~Approve B2~~ — **resolved 2026-09-20** (wrap disclosure in flex cell at
+   460px; Go ≥32px; band below).
 
 <!-- slug: issue-190-queued-guidance-finished-iteration -->

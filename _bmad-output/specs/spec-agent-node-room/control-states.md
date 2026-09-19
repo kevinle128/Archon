@@ -49,12 +49,12 @@ stateDiagram-v2
 
 ## Viewing a finished iteration of a live loop node
 
-The loop-iteration selector (CAP-6) defaults to the running iteration. When the operator selects a **finished** iteration while the node is still `running`, the dock does **not** steer that iteration — steering only ever acts on the live one.
+The operator reaches a finished iteration through the **`Execution` selection controls** (header select, Logs row, or graph occurrence) while the node is still `running`/`awaiting`. Story 1.7 `Jump to` stays scroll-only and is not this entry point. The dock does **not** steer that finished iteration — send, withdraw, and interrupt **mutations** only ever act on the live one.
 
-- The dock collapses to one line — `reading a finished iteration · the agent is working in iteration N` — plus a `Go to iteration N` control that returns to the live dock.
-- Below it, a **read-only** band mirrors the **node's** registry queue — the operator's still-pending messages — inert here (no `Send now`, no delete, no next-out mark). They are not lost: they deliver when the operator returns to the live iteration.
-- The composer is absent and the client makes **no** steering route call for a finished iteration. There is nothing for the server to refuse: the Send route is keyed `(runId, nodeId)` and is not iteration-aware, and the only server refusals are node-finished (409) and detached ("not steerable here").
-- That finished iteration's **already-delivered** operator messages are read back from the transcript itself (its occurrence group, FR6/FR11), not from this band.
+- The dock collapses to one line — `reading a finished iteration · the agent is working in iteration N` — plus a `Go to iteration N` control that returns to the live dock via the existing execution-selection callback.
+- Below it, a **read-only** band mirrors the **node's shared** registry queue across operators/tabs (Story 2.9) — still-pending messages, inert here (no `Send now`, no delete, no next-out mark, no interrupt). They are not lost: they deliver when the operator returns to the live iteration. The band appears only when `sent.length > 0` (no empty shell) and caps at `33vh`.
+- The composer is absent and the client issues **no** send, withdraw, or interrupt mutation for a finished iteration. The existing authenticated node-scoped `GET …/queue` poll **is** allowed so the band stays current. Mutation routes stay keyed `(runId, nodeId)` and are not iteration-aware; the only server refusals on those routes remain node-finished (409) and detached ("not steerable here").
+- That finished iteration's **already-delivered** operator messages are read back from the transcript itself (its occurrence group, FR6/FR11 / Story 2.8), not from this band.
 
 This is distinct from viewing a non-live **execution** (a different run), where the dock is fully absent.
 
