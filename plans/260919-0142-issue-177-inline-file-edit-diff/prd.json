@@ -39,8 +39,8 @@
       "technicalNotes": "Follow phase-01-start.md exactly (contracts, test list, implementation order 2-8). Key anchors: tool-presentation.ts inferFamily :460, BEFORE_AFTER_PAIRS :142, hasOwn :232, toolRowPresentation :748; sanitizeBounded at tool-output.ts:191; adapter currently at packages/web/src/components/workflows/source-control/git-hunk-adapter.ts. CRLF is raw-compared so LF/CRLF rewrites may show changed rows with equal visible text — cover and document it. No provider-name branches or prose parsing. Export FileDiff from tool-presentation so Phase 2 renderers never import the differ.",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: package.json + bun.lock (exact diff@9.0.0, lock diff confined to re-hoist), src/lib/diff-hunks.ts + .test.ts (only structuredPatch caller: deterministic byte/line/edit-length bounds, dual-bounded LRU, no-newline markers, display escaping), git-hunk-adapter moved to src/lib with api.generated types, tool-presentation.ts + .test.ts (fileEditPair/WeakMap fileDiffFor, FileDiff, diff badges +n/−m, hunk/no-changes + replace_all facts, file body diff field), both renderer tone maps (success), four owning docs. 255 focused + 77 source-control tests, type-check, lint, format:check green. Two pre-existing gate blockers fixed as separate chore(unblock) commits."
     },
     {
       "id": "US-003",

@@ -1,5 +1,19 @@
 ## Codebase Patterns
 
+### Injecting control characters into test fixtures safely
+- **Where**: `packages/web/src/lib/diff-hunks.test.ts` display-safety block, `packages/web/src/lib/diff-hunks.ts:33`
+- **Pattern**: never type literal U+2028/U+2029/C0 chars into source — editors/tools mangle or double-escape them, and JS regex `.` never matches U+2028/U+2029 so `replace()` silently no-ops on lines containing them. Write `'\u{XXXX}'` escape syntax in the file, and edit by line index or `[\s\S]` patterns.
+- **Example**: `const hostile = ['bad', '\u{2028}', '\u{001B}[31m'].join('')` — real chars at runtime, pure ASCII in the file.
+
+### Adding a dep without lockfile drift
+- **Where**: `bun.lock`
+- **Pattern**: `bun install` opportunistically re-resolves floating ranges (it unified `@tanstack/react-virtual` 3.13.22→3.14.10 here). For a minimal story diff, hand-revert the unrelated hunks back to HEAD content — nested-package entries restore at their sorted key positions — then verify with `bun install --frozen-lockfile` (exits clean = self-consistent graph).
+- **Example**: adding `"diff": "9.0.0"` only needs the workspace dep line plus re-hoisting `diff` top-level and the `astro/diff`/`shadcn/diff` nested entries — everything else reverts.
+
+### Row-level cache over a shared bounded cache
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `fileDiffCache`/`fileDiffFor`
+- **Pattern**: a module `WeakMap` keyed by the input record object makes "compute once per row" work when summary and body paths each call `asRecord(input)` (same reference); equal strings on fresh objects fall through to the inner dual-bounded LRU and return the identical result object. Verify "once" in tests with a counting getter on an own key.
+
 ### Gate/scope-resolution doc style
 - **Where**: `_bmad-output/specs/spec-agent-node-room/SPEC.md` CAP-5, `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` Story 1.4 `_Scope:_` note
 - **Pattern**: record scope resolutions as plain prose inside the owning section, citing `file:line` anchors (`codex/provider.ts:709`, `dag-executor.ts` `dag.system_message_unhandled`). No phase numbers, audit labels, or plan finding IDs in spec docs.
@@ -33,5 +47,47 @@
 - EXPERIENCE.md is adopted by SPEC.md as authoritative for behavior and carried the same Codex overclaim in three places; fixing it was required by the story intent ("no document claims Codex coverage the code does not provide") even though the AC list named only four docs.
 - US-002 will add the detailed behavior invariants (caps, memoization, numbering, escaping, identical/refusal semantics, later-hunk separator) to the same four docs — keep the same prose-in-section style, no phase numbers.
 - Validation for docs-only stories: `bun x prettier --check` on the edited files (repo `format:check` covers md); lint-staged re-runs prettier on commit.
+
+---
+
+## 2026-09-19 — US-002: Bounded differ, adapter move, presentation contract
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/package.json` + `bun.lock` — exact `"diff": "9.0.0"` direct dependency; lock diff confined to the diff re-hoist (top-level 9.0.0, `astro/diff`/`shadcn/diff` nested 8.0.3)
+- `packages/web/src/lib/diff-hunks.ts` (new) — the only `structuredPatch` caller: byte/line/edit-length bounds, no-newline marker handling, display sanitisation + `\u{HEX}` escaping inside 1,024 units, dual-bounded LRU, `createDiffHunks` factory + `diffHunks` singleton
+- `packages/web/src/lib/diff-hunks.test.ts` (new) — 25 tests covering every bound edge, conversion, safety, and memoization case
+- `packages/web/src/lib/git-hunk-adapter.ts` + `.test.ts` — moved unchanged from `components/workflows/source-control/`; types re-aliased from `api.generated`
+- `packages/web/src/components/workflows/source-control/virtualized-diff.tsx` — import path only
+- `packages/web/src/lib/tool-presentation.ts` — `fileEditPair`/`replaceAllFact`/`fileDiffFor` (WeakMap), `FileDiff` export, `diff` badge kind + `success` tone, file body `diff` field, bodyFacts for all families, diff badges excluded from body bar
+- `packages/web/src/lib/tool-presentation.test.ts` — `file edit diff` suite (qualification, badges, facts, no-changes, fallback, WeakMap once, pair-LRU identity, Raw untouched); existing file-body expectations gained `diff: null`
+- `packages/web/src/components/workflows/NodeRoom.tsx`, `.../ConsoleAgentHistoryList.tsx` — exhaustive `success: text-success` tone entries only
+- `_bmad-output/specs/spec-agent-node-room/{SPEC.md,tool-presentation-contract.md,test-plan.md}`, `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` — shipped invariants recorded in the owning sections
+
+**Acceptance criteria verified**:
+- [x] `diff@9.0.0` exact direct dep; `grep structuredPatch` hits only `diff-hunks.ts` (plus one unrelated field-name fixture in tool-output.test.ts)
+- [x] All exported constants/types/factory with positive-integer fail-fast validation
+- [x] Uncached `.length` precheck, injected `byteLength`, no-`split` line counting, fixed `context:4`/`maxEditLength:2000`, cached `undefined`/thrown results, LRU refresh + dual-budget eviction
+- [x] Hunk counters from `oldStart`/`newStart`, `\\` markers skipped mid-array/doubled, jsdiff order preserved, deterministic `@@` header
+- [x] `sanitizeBounded(...,1024)` + `Cf`/`U+2028`/`U+2029` `\u{HEX}` escapes inside the ceiling; raw strings diffed; Raw payload untouched
+- [x] Adapter moved to `src/lib/` with generated types; `virtualized-diff.tsx` import-only change; 77/77 source-control tests pass
+- [x] `fileEditPair` own-property/try-catch qualification after family resolves `file`; WeakMap + `fileDiffFor` shared by summary and body; `FileDiff`, `diff` kind, `success` tone, body `diff` field
+- [x] `+n` success / `−m` danger badges gated on positive counts; `N hunk(s)` + own-boolean `replace_all` facts; `no changes` for identical; fallback preserved for refusal/no pair; diff badges excluded from body bar
+- [x] Both tone maps gained `success: { className: 'text-success' }`; no other JSX changes
+- [x] All tests green: 255 focused + 77 source-control
+- [x] Owning docs updated (gate, qualification, caps, dual memoization, snippet-relative numbering, no-newline, escaping, identical/refusal, failed-output, later-hunk separator)
+- [x] `bun run type-check`, `bun run lint`, `bun run format:check` all clean
+
+**Learnings**:
+- Empirically verified jsdiff 9 before implementing: `\\ No newline` markers appear mid-array and twice per hunk; `maxEditLength` boundary is inclusive (2000 ok, 2001 → `undefined`); `structuredPatch` emits `' '`,`'-'`,`'+'`,`'\\'` prefixes only.
+- `git stash pop` can leave files STAGED — an unblock `git commit` then sweeps them in. Verify `git diff --cached --stat` shows only the named unblock files before committing; reset and restage by name if not.
+- lint-staged hooks run eslint+prettier on every commit — a `chore(unblock)` md-only commit still triggers the `*.{ts,tsx}` task on any strays left staged.
+
+---
+
+## Blocker Ledger
+
+BLOCKER US-002 | gate=bun run type-check | cause=pre-existing `ConsoleNodeRoom.test.tsx:2966` TS2322 — `toolItem()` base fixture never set required `AgentHistoryItem.execution` (same fingerprint on clean base via stash protocol) | action=fixed on base: `execution: null as TranscriptExecution | null` in base before `...overrides`, committed `chore(unblock)` 3a64b1b1; gate green on base then with story | 2026-09-19
+BLOCKER US-002 | gate=bun run format:check | cause=pre-existing prettier drift in 5 tracked plan artifacts (`plans/260919-0142-issue-177-inline-file-edit-diff/prd.md` + 4 `reports/*.md`) committed via archon checkpoints (same fingerprint on clean base) | action=`prettier --write` on exactly those 5 files, committed `chore(unblock)` 36235bcf; gate green after | 2026-09-19
 
 ---
