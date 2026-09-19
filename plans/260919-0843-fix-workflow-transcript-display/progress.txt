@@ -1,5 +1,11 @@
 ## Codebase Patterns
 
+### Deterministic real-server transcript E2E via `prepareTranscriptDisplayRun`
+- Where: `e2e/lib/playwright/archon-runtime.ts` (`TRANSCRIPT_*` exports + `prepareTranscriptDisplayRun()`); spec `e2e/ui/workflow-transcript-display.spec.ts`; fixture `e2e/fixtures/workflows/e2e-transcript-display.yaml`.
+- Pattern: The e2e-fake provider cannot emit structured output, so the fixture's `output_format` node (`group.structured`, a `loop_group` child to exercise nested resolution) and `plain` sibling skip via an unsatisfiable `when: $seed.output == '...'` guard on a `bash:` producer (whole-output compare is allowed on bash; AI producers are rejected by the loader). After `workflow run` completes, the helper reads each node's minted `occurrence_id`/`attempt_id` back from its `node_skipped` event row and seeds matching `metadata.execution` + `text_mode: 'delta'` fragments plus ineligible rows into `remote_agent_workflow_node_messages` — the durable shape, while request/API/storage stay real. `ghost` (started/completed events, no definition row) covers the deleted-definition fallback.
+- Gotcha: assert unwrap by polling `not.toContainText(<exact canonical envelope>)` — the raw envelope contains the inner text as a substring, so `toContainText(inner)` alone passes prematurely before the async definition resolves.
+- Note: `loop_group` requires a completion channel (`until_bash: exit 0` here); e2e deps install with `bun install` in `e2e/` (npm leaves a stub tree — lockfile has no resolved URLs); CI uses `npm ci --prefix e2e`.
+
 ### One-string output_format → unwrapped assistant text
 - Where: `packages/web/src/lib/agent-history.ts` — `singleStringSchemaKey()` + `presentedText()`; applied per projected assistant item inside `buildAgentHistory()` after `projectTextTranscript()`.
 - Pattern: The matched definition node's `output_format` arrives as optional `outputFormat` on `AgentHistoryInput`. Unwrap only when the schema is an object with exactly one `type:'string'` property AND the whole text is the canonical `JSON.stringify` of that one-key object; every other shape returns the original bytes (fail closed). Never mutates rows; per-item, so tool rows stay block boundaries.
@@ -97,3 +103,41 @@
 ## Blocker Ledger
 
 BLOCKER US-002 | gate=`cd packages/web && bun x tsc --noEmit` | cause=pre-existing TS2322 at `ConsoleNodeRoom.test.tsx:2966` — `toolItem()` base omitted required `execution` field since 81ba296f; identical fingerprint with story stashed; file outside story diff | action=added `execution: null` to base, committed separately as 08d78de9 `chore(unblock):` | 2026-09-19
+
+## 2026-09-19 — US-003: Wire outputFormat through three transcript mounts with deterministic real-server E2E
+
+**Status**: PASSED
+**Commit**: 96324021 `feat: wire outputFormat through three transcript mounts with real-server E2E`
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — new `outputFormat?: Record<string, unknown> | null` prop forwarded to `buildAgentHistory()`
+- `packages/web/src/components/workflows/LegacyNodeRoom.tsx` — `resolution.definitionNode?.output_format` forwarded
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — selected definition schema forwarded
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` — `outputFormat` prop → `buildAgentHistory()`
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` — `resolveRoomKind(entry.row.nodeId, definitionNodes, rawEvents, approval).definitionNode?.output_format` per log entry (reuses the existing nested resolver — no second walker)
+- Five component test files — forwarding, fallback, definition-resolve rerender, inline history, nested loop_group
+- `e2e/fixtures/workflows/e2e-transcript-display.yaml` — `seed` (bash) completes; `group.structured` (output_format inside loop_group) + `plain` skip via unsatisfiable `when:` on bash output; `until_bash: exit 0` completion channel
+- `e2e/lib/playwright/archon-runtime.ts` — `TRANSCRIPT_*` constants + `prepareTranscriptDisplayRun()`; module-private `seedTranscriptDisplayRows` reads minted occurrence/attempt ids from each `node_skipped` event and seeds 2 delta fragments + 6 ineligible rows (malformed, extra-key, multi-field, duplicate-key, noncanonical-escape, whitespace) + `ghost` node events/row
+- `e2e/lib/playwright/run-detail.ts` — `listNodeMessages` return type widened with `metadata.execution`
+- `e2e/ui/workflow-transcript-display.spec.ts` — 3 specs: Console inline+room unwrap + API/stored-row integrity; Legacy room unwrap; no-schema/deleted-definition raw fallback on both surfaces
+
+**RED evidence** (before wiring): 7 component failures — `outputFormat` prop ignored in NodeTranscriptPane, LegacyNodeRoom (3), ConsoleNodeRoom, ConsoleExecutionHistory, ConsoleInspectPane (nested + pending→resolve rerender)
+
+**Acceptance criteria verified**:
+- [x] LegacyNodeRoom forwards definitionNode?.output_format → NodeTranscriptPane → buildAgentHistory (component test: unwrap + fallback)
+- [x] ConsoleNodeRoom supplies selected definition schema (parity test)
+- [x] ConsoleInspectPane resolves nested definition nodes into ConsoleExecutionHistory via the existing resolver (nested loop_group test)
+- [x] Missing/deleted definition → original history renders; rerenders on resolve (pending→resolved test)
+- [x] e2e-transcript-display.yaml deterministic, no AI call (unsatisfiable `when:` on bash producer)
+- [x] ONE `prepareTranscriptDisplayRun()` helper; no generic seeding API; e2e-fake provider unchanged
+- [x] Spec proves all 3 mounts unwrap on the real server; ineligible rows byte-for-byte; API rows keep exact fragments/order/execution metadata; stored rows unchanged
+- [x] Persisted rows/API/engine unchanged; no JSON-specific React component
+- [x] Verification: web 208/208 (5 files), workflows 630/630, build:web, e2e typecheck, playwright 3/3; eslint/prettier clean
+
+**Learnings**:
+- `when:` may compare a `bash:` node's whole output to a literal (loader only rejects free-form AI producers); a `loop_group` body's `when:` may reference outer producers. Skipped nodes emit `node_skipped` with minted `occurrence_id`/`attempt_id` — read them back from the events table so seeded `metadata.execution` matches the real scope.
+- Console skipped rows select `kind:'node'` (all node messages), so scoping metadata is belt-and-suspenders but matches the executor's durable shape.
+- `section[data-execution-row-id]` wraps divider + inline `ConsoleExecutionHistory`; the body suspends only when that row is selected — assert inline BEFORE selecting the row.
+- `not.toContainText(<exact envelope>)` is the reliable unwrap wait: the raw envelope contains the inner text as a substring, so presence checks pass prematurely before the async definition resolves.
+- `npm ci`/`npm install` in `e2e/` leaves a stub `node_modules` here (lockfile lacks resolved URLs); `bun install` works and writes a gitignored `e2e/bun.lock`. `build:web` (includes `tsc --noEmit`) is required before Playwright.
+
+---

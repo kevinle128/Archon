@@ -59,8 +59,8 @@
       "technicalNotes": "Phase 2 wiring/E2E half (phase-02-structured-transcript-presentation.md, Architecture + Files + Tests Before 4-6 + Implementation steps 5-8). Files: LegacyNodeRoom.tsx, NodeTranscriptPane.tsx, ConsoleNodeRoom.tsx, ConsoleInspectPane.tsx, inspect/ConsoleExecutionHistory.tsx, e2e fixture/spec/archon-runtime.ts. Run bun install first — DOM suites need the locked happy-dom dev dependency. The browser spec must accurately label seeded boundaries (seeded data does not prove provider streaming). Keep the exhaustive malformed matrix in unit tests; browser fallback proof uses the prepared ineligible rows.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3 (commit 96324021). Files: NodeTranscriptPane.tsx (outputFormat prop → buildAgentHistory), LegacyNodeRoom.tsx (definitionNode?.output_format), ConsoleNodeRoom.tsx, ConsoleInspectPane.tsx + inspect/ConsoleExecutionHistory.tsx (nested loop_group resolution per log entry), their test files, e2e/fixtures/workflows/e2e-transcript-display.yaml, e2e/lib/playwright/archon-runtime.ts (prepareTranscriptDisplayRun), e2e/lib/playwright/run-detail.ts, e2e/ui/workflow-transcript-display.spec.ts. RED→GREEN recorded (7 failing mount tests → green); web 208/208, workflows 630/630; build:web, e2e typecheck, playwright 3/3; eslint/prettier clean."
     },
     {
       "id": "US-004",
