@@ -15,28 +15,39 @@ revised: 2026-09-19
 
 # Fix workflow transcript display and Legacy run viewport
 
-## Outcome
+## Goal and user outcome
 
-Workflow rooms show a schema-declared single string result as readable Markdown instead of a raw JSON wrapper.
-New Devin and DeepSeek ACP text fragments form one assistant message without changing stored audit rows or structured node output.
-The Legacy run page keeps document scroll at zero when the pointer is inside or outside the transcript region, and the pictured Legacy runtime graph no longer shows a minimap.
+Issue 208 describes four connected defects in workflow run rooms:
 
-## Scope boundary
+1. Devin and DeepSeek ACP text notifications are persisted as complete messages, so one streamed answer renders as many assistant rows.
+2. A node whose `output_format` is one top-level string renders the serialized JSON envelope instead of the string's Markdown content.
+3. A long Legacy transcript can enlarge and scroll the document, exposing a blank region outside the fixed run shell.
+4. The Legacy runtime graph shows a minimap that the run-room design does not require.
 
-- Preserve immutable transcript rows, structured node output, downstream `$node.output.<field>` references, and provider-neutral projection.
-- Apply the structured display rule to Legacy, the Console selected room, and Console inline execution history because all three call the shared projection.
-- Fix the shared hidden-label geometry in both renderer copies, but limit panel scroll work and minimap removal to the Legacy runtime run view shown in the screenshots.
-- Keep workflow-builder minimaps, complex multi-field structured objects, historical rows without reliable `text_mode`, and non-Web platform batch formatting out of scope.
-- Do not add a database migration, API transform, generated type, provider buffer, fabricated stream identifier, wheel handler, or new dependency.
+The repaired experience groups new ACP fragments into one answer per execution attempt, presents the narrow one-string structured result readably in every Web transcript mount, keeps the Legacy run shell fixed to the viewport, and removes only its runtime minimap. Audit rows, API text, structured node output, downstream references, builders, and unrelated providers remain unchanged.
 
-## Evidence checked
+## Verified scope and non-goals
 
-- [Structured-output presentation research](./research/researcher-01-structured-output-presentation.md)
-- [Provider stream contract research](./research/researcher-02-provider-stream-contract.md)
-- [Runtime-flow and E2E research](./research/researcher-03-e2e-tdd-runtime-flow.md)
-- [Live Legacy scroll reproduction](./research/live-legacy-scroll-reproduction.md)
-- [Scout synthesis](./reports/scout-report.md)
-- [GitHub issue #208](https://github.com/kevinle128/Archon/issues/208), including the Codex reproduction of the raw structured envelope.
+- Apply the presentation rule to all three callers of `buildAgentHistory()`: Legacy room, Console selected room, and Console inline execution history.
+- Mark only Devin and DeepSeek ACP `agent_message_chunk` text as `textMode: 'delta'`; do not infer or rewrite historical rows without `text_mode`.
+- Rotate the loop attempt identifier before the existing missing-structured-output re-ask. Direct re-asks and loop invalid-output re-asks already rotate correctly.
+- Fix the duplicated hidden-label geometry in both Legacy and Console renderers, but limit panel containment and minimap removal to the Legacy runtime view.
+- Keep workflow-builder minimaps, multi-field structured rendering, non-Web batch formatting, database migrations, API transforms, generated types, provider buffering, fabricated stream IDs, JavaScript wheel handlers, and new dependencies out of scope.
+
+## Evidence inspected
+
+- Issue 208 and the plan's co-located research and reports.
+- Provider contracts, Devin and DeepSeek event bridges and ACP client tests, executor persistence/re-ask paths, and text projection tests.
+- Every `buildAgentHistory()` production caller, both Markdown renderers, definition-node lookup, generated DAG types, and the Legacy layout/DAG components.
+- Browser fixtures, isolated runtime helpers, fake-provider capabilities, verification-skill catalog/configuration, and current visual capture tests.
+- Canonical node-room specification, its adopted final `DESIGN.md` and `EXPERIENCE.md` companions under `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/`, its absorbed source specs, and the HITL mockup under `_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/`.
+- Existing focused tests: provider bridge tests and projector/history tests pass on the baseline. Two DOM suites could not start in this checkout because the declared `happy-dom` development dependency is not installed; this is an environment prerequisite, not evidence that the product behavior passes or fails.
+
+## Design authority and resolved conflict
+
+The final node-room specification and its adopted companions are the authority for transcript presentation and accessibility; the HITL mockup supplies the runtime graph/layout reference where they are silent. The specification currently says raw serialized JSON is never a default transcript presentation, while issue 208's accepted lossless requirement says malformed, complex, or noncanonical assistant text remains byte-for-byte visible. The issue is narrower and concerns assistant prose rather than tool payload rendering, but the words still conflict. Phase 2 must update the owning specification before the code change to state the resolved rule: tool payloads keep their explicit Raw affordance, exact one-string envelopes show their string value, and assistant text that cannot be losslessly classified fails closed to its original text. If maintainers do not accept that specification change, Phase 2 is blocked and must not invent a different fallback.
+
+The historical issue-83 delivery plan says to retain the Legacy runtime minimap, while the current issue and final HITL mockup omit it. Repository rules classify completed plans as stateful records rather than evergreen product authority, so this plan intentionally changes only the runtime viewer and preserves both builder minimaps. Do not edit historical plan records to make them appear current.
 
 ## Delivery phases
 
@@ -46,67 +57,81 @@ The Legacy run page keeps document scroll at zero when the pointer is inside or 
 | 2   | [Structured transcript presentation](./phase-02-structured-transcript-presentation.md)               | Phase 1    |
 | 3   | [Legacy run viewport and regression coverage](./phase-03-legacy-run-viewport-regression-coverage.md) | Phases 1–2 |
 
-## Design decisions
+## Selected design
 
-1. Mark Devin and DeepSeek ACP `agent_message_chunk` values as `textMode: 'delta'` at the provider boundary.
-2. Run schema-aware presentation after `projectTextTranscript()` in `buildAgentHistory()`.
-3. Unwrap only an exact canonical JSON object whose selected node schema declares exactly one top-level string property, whose payload contains exactly that key with a string value, and whose raw text equals `JSON.stringify(parsed)`.
-4. Return the original text byte-for-byte for every absent, malformed, noncanonical, duplicate-key, complex, or mismatched schema and payload.
-5. Keep historical untagged ACP rows unchanged because the stored data cannot distinguish fragments from valid complete messages.
-6. Fix the approximately 18,000-pixel root overflow by positioning the direct `sr-only` summary labels locally, then enforce Legacy panel and overscroll containment with native CSS.
-7. Remove only `WorkflowDagViewer`'s runtime minimap and preserve controls, pan, zoom, fit, layout, and node selection.
+1. Add `textMode: 'delta'` at each ACP event bridge. Existing executor metadata and `projectTextTranscript()` then carry and group the provider-known semantics without new state.
+2. Fix the one proven missing attempt boundary in the loop missing-output branch so separate model responses cannot merge.
+3. Add optional `outputFormat` presentation context to `buildAgentHistory()`. After text projection, unwrap a block only when:
+   - the schema is a non-array record with `type === 'object'` and exactly one own property declaration;
+   - that property's schema is an object with `type === 'string'` (annotations and constraints may coexist);
+   - the entire assistant block parses to a non-array object with exactly the same own key and a string value; and
+   - the original bytes equal `JSON.stringify(parsed)`.
+4. Return the original string for every failed guard. Preserve item identity, sequence, execution metadata, input objects, stored rows, server output, and engine output.
+5. Use a deterministic workflow definition and isolated SQLite row seeding for browser presentation/layout proof. Unit and executor tests prove provider/executor semantics; the browser test proves the real server/API/definition/Web boundary without changing the fake provider's global capability contract.
+6. Repair the measured Legacy overflow locally: position each direct hidden label relative to its summary, contain the right run panel, and contain transcript overscroll. Escalate to the shared layout only if post-fix browser metrics still prove an ancestor defect.
+7. Remove `MiniMap` only from `WorkflowDagViewer`, retaining React Flow controls, zoom, pan, fit, layout, focus, and selection.
 
-## Runtime Flow Proof
+## End-to-end proof plan
 
-| Feature                        | Actor                   | Runtime trigger                                                    | Entry point                                     | Internal path                                                                                | Observable result                                                         | End-to-end test                                                                                                                                                                             | External mocks              | Prepared data                                                                                | Status |
-| ------------------------------ | ----------------------- | ------------------------------------------------------------------ | ----------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------- | ------ |
-| ACP chunk grouping             | Devin or DeepSeek agent | Two ACP `agent_message_chunk` notifications                        | Real ACP client update handler                  | ACP bridge → `MessageChunk.textMode` → executor metadata → attempt boundary → text projector | One assistant block for one streamed response, with re-asks kept separate | Deterministic fake ACP process sends two chunks and asserts ordered deltas; executor tests prove direct and loop persistence and re-ask boundaries; layered Web projection asserts one item | Fake ACP process only       | Two text chunks in one execution identity plus invalid and missing structured-output re-asks | PASSED |
-| Readable structured report     | Workflow operator       | Open a report node transcript                                      | Legacy or Console run route                     | Definition schema → room owner → `buildAgentHistory()` → Markdown renderer                   | Report prose without JSON wrapper in all three mounts                     | Isolated real server, SQLite, fake provider, and browser run a one-string `output_format` workflow and verify API text remains raw                                                          | Env-gated AI provider only  | Fragmented report JSON plus structured result and downstream field consumer                  | PASSED |
-| Lossless structured fallback   | Workflow operator       | Open malformed or complex structured text                          | Same run routes                                 | Same projection with exact schema, payload, and canonical raw-text guards                    | Original assistant text remains visible                                   | Browser and unit matrix cover absent schema, malformed JSON, duplicate keys, noncanonical escapes, extra keys, and multi-field schema                                                       | Same provider boundary      | Invalid and complex payload rows prepared by the fixture                                     | PASSED |
-| Legacy scroll containment      | Workflow operator       | Scroll a long transcript, leave its scroll region, and wheel again | `/legacy/workflows/runs/:runId` Graph node room | Positioned status label → bounded resizable panel → contained transcript scroller            | Document stays fixed and no blank region appears                          | Split `T.xlong` Playwright cases measure inner scroll, root height, root scroll, label boxes, keyboard reachability, and stable headers before and after pointer exit                       | Existing fake provider only | More than 100 tool rows                                                                      | PASSED |
-| Legacy runtime minimap removal | Workflow operator       | Open the Legacy Graph tab                                          | `WorkflowDagViewer`                             | Existing DAG view model → React Flow without `MiniMap`                                       | No minimap; controls and graph interactions remain                        | Browser test asserts minimap absence, viewport transform, pan, fit, and room-opening node selection                                                                                         | None                        | Deterministic workflow DAG                                                                   | PASSED |
+| Behavior                     | Boundary under test                                                                                         | Proof                                                                                                                                                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New ACP chunk grouping       | Real ACP SDK/child-process notification → bridge → executor metadata → projector                            | Provider bridge/client tests plus direct/loop executor and projector tests; tool, occurrence, and attempt boundaries stay separate.                                                                  |
+| One-string display           | Real workflow definition/API rows → definition lookup → `buildAgentHistory()` → existing Markdown renderers | Unit decision matrix, three caller component tests, and isolated real-server browser assertions. API rows remain the exact seeded fragments and metadata; only the projected Web block is unwrapped. |
+| Engine structured contract   | Provider chunks → executor structured result → downstream `$producer.output.report`                         | Executor test proves the durable output and downstream reference independently of browser row seeding.                                                                                               |
+| Legacy fixed viewport        | Long real-server history → Legacy run shell and room                                                        | Browser geometry and wheel assertions at `1440x1000` and `390x844`; inner tail remains reachable while root height/scroll remain fixed.                                                              |
+| Runtime graph simplification | Definition DAG → `WorkflowDagViewer`                                                                        | Component/browser checks prove no runtime minimap and retained controls, transform changes, fit, focus, and node selection; builder canvases remain unchanged.                                       |
 
-- **Gate status:** PASSED
+All proof above is planned, not yet executed against an implementation.
 
-## Cross-plan dependencies
+## Visual acceptance criteria
 
-Issue 174 readable rows, Issue 175 Raw payloads, Issue 180 occurrence navigation, and Issue 181 queue guidance are already merged prerequisites even though their plan front matter is stale.
-This plan preserves those behaviors and does not update the historical plan records.
+At both `1440x1000` and `390x844`:
 
-## Red-team review
+- A matching report block shows only the string value, using the existing assistant role label, typography, Markdown, link handling, wrapping, spacing, and focus behavior; the JSON key, braces, quotes, and escapes are absent.
+- Malformed or ineligible assistant blocks remain fully visible without clipping or invented formatting; no page-level horizontal overflow is introduced.
+- Legacy and both Console mounts agree on content. Inline Console history is checked before selecting a room because selection intentionally replaces that surface.
+- The Legacy app header, run header, tabs, room header, graph, resize boundary, and transcript remain within the viewport. The root scroll height is at most two pixels over its client height and root scroll position stays zero after transcript-boundary and pointer-exit wheel input.
+- The transcript itself reaches its final row with pointer and keyboard scrolling. Ask controls or the composer, occurrence controls, jump control, todo strip, resize handle, visible focus, and focus restoration remain usable where present.
+- Direct hidden status labels have bounding boxes within their tool summaries and remain available to assistive technology.
+- The Legacy runtime graph has no minimap. Controls remain visible; pan, zoom, fit, focus, layout, and node selection still work. Workflow builders are visually and functionally unchanged.
 
-The detailed adjudication is in [reports/red-team-review.md](./reports/red-team-review.md).
-The review accepted 11 evidence-backed changes and rejected 4 scope expansions that did not add new evidence against the selected design.
-The accepted changes are reconciled across all three phases with no unresolved contradiction.
+## Compatibility, rollout, and rollback
 
-## Validation log
-
-- Session: 1
-- Date: 2026-09-19
-- Trigger: `$kk:plan --deep --tdd`
-- Questions required: 0
-- Runtime Flow Proof: 5 of 5 rows VERIFIED for actor, trigger, complete path, observable result, E2E plan, external boundary, and prepared data.
-- Phase claims: 12 Phase 1 claims, 12 Phase 2 claims, and 11 Phase 3 claims VERIFIED against current source and tests.
-- TDD structure: Tests Before, Refactor, Tests After, and Regression Gate VERIFIED in every phase.
-- Red-team reconciliation: 11 accepted findings VERIFIED in the phase requirements with no contradiction against the 4 rejected findings.
-- Plan schema: `ak plan validate` PASSED after reconciliation.
-- Product behavior: UNVERIFIED until implementation runs the unchecked phase commands and governed UI proof.
-- Residual implementation note: the E2E fake provider must change its current `structuredOutput: false` capability and stale comment only when the opt-in scenario implements the terminal structured-output contract.
+- No schema or stored-data migration is needed. Historical untagged ACP rows remain as recorded.
+- A current workflow definition can reinterpret an old exact-matching assistant row because definitions are not snapshotted. Exact canonical guards and fail-closed definition loading bound this known residual risk.
+- Definition lookup may initially be unavailable while a Console view loads; render original text, then rerender when the definition arrives rather than hiding history.
+- The canonical node-room specification is the smallest owning documentation surface. No CLI, configuration, API, setup, or docs-site contract changes, so no public documentation update is required.
+- Each phase is independently reversible. Revert provider labels/attempt rotation, Web presentation plumbing, or Legacy CSS/minimap code with its tests. Seeded E2E data and verification metadata have no runtime rollout effect.
 
 ## Acceptance criteria
 
-- [ ] New Devin and DeepSeek ACP text chunks persist as deltas and render as one assistant message within each occurrence and attempt.
-- [ ] Direct and loop structured-output re-asks cannot concatenate failed and valid responses into one projected assistant block.
-- [ ] The exact one-string structured envelope renders as its string value in Legacy, Console selected room, and Console inline history.
-- [ ] Complex, malformed, duplicate-key, noncanonical, unmatched, and schema-less assistant text remains unchanged and auditable.
-- [ ] Legacy root document height stays within two pixels of the viewport and `document.scrollingElement.scrollTop` remains zero through the pointer-exit wheel case.
-- [ ] Keyboard traversal, visible focus, transcript keyboard scrolling, Ask or composer reachability, and focus restoration pass at desktop and narrow sizes.
-- [ ] The Legacy runtime graph has no minimap, while zoom, pan, fit, controls, layout, and node selection still work.
-- [ ] Focused tests, package-isolated suites, the focused Playwright proofs, and `bun run validate` pass without weakened assertions.
+- [ ] New Devin and DeepSeek ACP text chunks persist with `text_mode: 'delta'` and render as one assistant block within one occurrence and attempt.
+- [ ] Direct, loop-invalid, and loop-missing structured-output re-asks keep each response in a distinct transcript attempt.
+- [ ] An exact one-string envelope renders as its string value in Legacy, Console selected room, and Console inline history.
+- [ ] Absent/ineligible schemas and malformed, duplicate-key, noncanonical, extra-key, or non-string payloads remain byte-for-byte unchanged.
+- [ ] Stored/API assistant text, item metadata, structured node output, and a downstream `$producer.output.report` consumer remain unchanged.
+- [ ] Legacy root height stays within two pixels of the viewport and root scroll position stays zero through inner-boundary and pointer-exit wheel cases at both required viewports.
+- [ ] Transcript tail, applicable controls, keyboard traversal, visible focus, keyboard scrolling, and focus restoration remain reachable and usable.
+- [ ] The Legacy runtime graph has no minimap while controls, pan, zoom, fit, layout, focus, and node selection pass; builder minimaps remain.
+- [ ] The canonical node-room specification and governed functional/visual verification contracts describe and prove the delivered states.
+- [ ] Focused suites, package-isolated tests, build/type/lint/format checks, browser proofs, and `bun run validate` pass without weakened assertions.
 
-## Rollback
+## Implementation readiness review
 
-Each phase is independently reversible and has no data migration.
-Revert provider labels, Web presentation wiring, or Legacy CSS/minimap changes separately if their phase-specific regression signals appear.
+- **Product:** the four changes map directly to the reported user-visible failures; unrelated transcript redesign is excluded.
+- **Architecture/contracts:** provider-known semantics enter at provider boundaries; shared presentation stays in the render-neutral history projector; durable/API/engine contracts do not change.
+- **Security/data integrity:** exact parsing is fail-closed, does not evaluate input or enable raw HTML, and never rewrites stored audit data.
+- **Performance/scalability:** projection performs one bounded schema inspection and JSON parse per assistant block; no buffer or additional request is introduced.
+- **Completeness/testing:** direct, loop, all three Web mounts, long-history geometry, keyboard access, graph interactions, and verification governance have named proof.
+- **Operations/compatibility:** no migration, feature flag, dependency, or coordinated rollout is required; rollback is phase-local.
+- **Maintainability:** existing owners and helpers are reused; no generic renderer, shared ACP abstraction, or speculative stream identity is added.
+
+## Remaining assumptions and risks
+
+- The plan treats issue 208's accepted lossless fallback as authority for a narrow canonical-spec clarification. If maintainers reject that documentation change, Phase 2 is blocked pending a product/design decision.
+- The saved live-reproduction measurements are prior evidence; implementation must recapture the RED browser metrics before changing CSS.
+- Component tests that use the DOM require dependencies installed from the lockfile, including `happy-dom`.
+- The canonical serialization guard intentionally rejects semantically equivalent but differently formatted JSON. This favors lossless audit presentation over aggressive cleanup.
+- The current-definition/historical-row mismatch cannot be eliminated without definition snapshots, which is outside this bug's proportional scope.
 
 <!-- slug: fix-workflow-transcript-display -->
