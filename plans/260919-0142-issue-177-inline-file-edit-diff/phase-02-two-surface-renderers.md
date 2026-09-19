@@ -11,221 +11,140 @@ dependencies: [1]
 
 ## Goal
 
-Render the file body's `diff` as a unified inline diff through `react-diff-view` on both node-room surfaces, with the same anatomy on each: path line, then a `.tool-diff` table with one `3ch` line-number column, `+`/`−` markers, tinted insert/delete lines, a `@@` separator only between hunks, an explicit `no changes` note for an empty diff, and the output text beneath the diff when the row did not succeed. Rows without a diff render exactly as before. Add the new `success` badge tone to both tone maps and prove the module boundaries with source-scan tests.
+Render Phase 1's safe hunk data through `react-diff-view` on both node-room surfaces. Both must show the same content and states while retaining separate thin JSX implementations as required by UX-DR3 and Console isolation.
 
-## Pre-edit integration check (scout pass at execution time)
+## Pre-edit integration check
 
-Before editing, confirm against the current tree:
-
-- Phase 1 landed: `FileDiff` and the `diff` field exist on the `file` body arm; `@/lib/git-hunk-adapter` exists; both `BADGE_TONE` maps already carry `success` (added in Phase 1 step 5).
-- `ToolBodySwitch` in both renderers still keys its `useMemo` on `[input.name, input.input, input.output, presentation.family]` and still receives `presentation.statusLabel` — the failed-edit rule needs the outcome.
-- `console-isolation.test.ts` approved set still lists `@/lib/tool-presentation` and `@/lib/tool-output`; add `@/lib/git-hunk-adapter` with a concrete-need comment in the same style as the `#176` entry.
-- `virtualized-diff.tsx` still imports `Diff` from `react-diff-view/esm/index.js` and the style side effect — mirror those exact specifiers.
-- `index.css` still hosts the `.tool-family-body` block; append the `.tool-diff` block right after it.
+- Confirm Phase 1's body type, adapter path, and success tone compile and its tests are green.
+- Re-check both `ToolBodySwitch` call sites and memo dependencies. They must still receive the row outcome needed for failed-output handling.
+- Re-check the exact runtime/type/style import pattern in `virtualized-diff.tsx`.
+- Re-check `console-isolation.test.ts`'s approved `@/lib/*` imports and add only the pure adapter.
+- Re-read the file-diff sections in `EXPERIENCE.md`, `DESIGN.md`, the HTML mockup, and the accessibility review. The spines win over the mockup discrepancies recorded in `plan.md`.
 
 ## Files
 
-| Path                                                                                                                                                     | Action                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `packages/web/src/components/workflows/NodeRoom.tsx`                                                                                                     | `file` arm renders the diff; local `InlineDiff`; imports                  |
-| `packages/web/src/components/workflows/NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx`                                                                     | static anatomy and interaction tests                                      |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`                                                                    | same, Console-local                                                       |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`, `components/inspect/ConsoleExecutionHistory.test.tsx`                        | Console tests                                                             |
-| `packages/web/src/experiments/console/console-isolation.test.ts`                                                                                         | approve `@/lib/git-hunk-adapter`; add the diff boundary assertions        |
-| `packages/web/src/index.css`                                                                                                                             | `.tool-diff` scoped block                                                 |
+| Path                                                                                                                                                                   | Change                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `packages/web/src/components/workflows/NodeRoom.tsx`                                                                                                                   | Legacy-local inline renderer and file arm  |
+| `packages/web/src/components/workflows/NodeRoom.test.tsx`, `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx`                                             | static anatomy and interaction             |
+| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`                                                                                  | Console-local inline renderer and file arm |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`, `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` | Console anatomy/interaction in both hosts  |
+| `packages/web/src/experiments/console/console-isolation.test.ts`                                                                                                       | allow pure adapter only                    |
+| `packages/web/src/lib/diff-boundary.test.ts`                                                                                                                           | source ownership/import boundaries         |
+| `packages/web/src/index.css`                                                                                                                                           | shared scoped diff visuals                 |
 
-No shared React component: each surface owns its `InlineDiff` and `renderGutter`, mirroring how Story 1.3 kept `ToolBodySwitch` per surface.
+Do not create a shared React component. Share only Phase 1's pure data and adapter.
 
-## Markup contract (identical on both surfaces)
+## Renderer contract
 
-### Imports (each renderer)
+Each renderer imports values from `react-diff-view/esm/index.js`, types from `react-diff-view`, the package stylesheet, `toHunkData` from `@/lib/git-hunk-adapter`, and the file-diff type from `@/lib/tool-presentation`. Neither renderer imports `diff` or `@/lib/diff-hunks`.
 
-```ts
-import { Decoration, Diff, Hunk } from 'react-diff-view/esm/index.js';
-import type { HunkData, RenderGutter } from 'react-diff-view';
-import 'react-diff-view/style/index.css';
-import { toHunkData } from '@/lib/git-hunk-adapter';
-import { type FileDiff, /* existing names */ } from '@/lib/tool-presentation';
-```
+### File body states
 
-Neither renderer imports `diff` or `@/lib/diff-hunks`.
+Use block children inside the existing inset body box so the table is not embedded in a preformatted text node:
 
-### File arm
+1. Always render the path first with `text-node-command` and `overflow-wrap: anywhere`.
+2. `diff !== null && hunks.length > 0`: render `InlineDiff`.
+3. `diff !== null && hunks.length === 0`: render the secondary text `no changes`.
+4. `diff === null`: render exactly the current semantic fallback—unreadable message, `no preview`, or preview.
+5. When a valid diff exists, outcome is not `succeeded`, and either a preview or unreadable state exists, render a second inset box below it with the normalized output/unreadable message. Do not add an empty `no preview` box. On success, keep provider success prose behind Raw.
 
-```tsx
-case 'file':
-  return (
-    <>
-      <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
-        <span className="text-node-command">{body.path}</span>
-        {'\n'}
-        {body.diff !== null ? (
-          body.diff.hunks.length === 0
-            ? <span className="text-text-secondary">no changes</span>
-            : <InlineDiff diff={body.diff} />
-        ) : body.unreadable ? (
-          <span className="text-text-secondary">output unreadable — open Raw</span>
-        ) : body.preview === null ? (
-          <span className="text-text-secondary">no preview</span>
-        ) : (
-          body.preview
-        )}
-      </div>
-      {body.diff !== null && presentation.statusLabel !== 'succeeded' && body.preview !== null ? (
-        <div className={cn(TOOL_BODY_BOX, 'mt-1.5')} style={{ overflowWrap: 'anywhere' }}>
-          {body.unreadable ? 'output unreadable — open Raw' : body.preview}
-        </div>
-      ) : null}
-    </>
-  );
-```
-
-(Console uses its own class-joining idiom instead of `cn` where that file already does.)
+The fallback may gain block wrappers needed for valid table layout, but its text, order, tones, and behavior must remain unchanged.
 
 ### `InlineDiff`
 
-```tsx
-function InlineDiff({ diff }: { diff: FileDiff }): React.ReactElement {
-  const hunks = diff.hunks.map(toHunkData);
-  return (
-    <Diff diffType="modify" viewType="unified" hunks={hunks} renderGutter={renderInlineGutter} className="tool-diff">
-      {rendered =>
-        rendered.flatMap((hunk, index) =>
-          index === 0
-            ? [<Hunk key={`h${index}`} hunk={hunk} />]
-            : [
-                <Decoration key={`d${index}`}>
-                  <span className="text-text-secondary">{hunk.content}</span>
-                </Decoration>,
-                <Hunk key={`h${index}`} hunk={hunk} />,
-              ]
-        )
-      }
-    </Diff>
-  );
-}
+- Convert each hunk through `toHunkData`.
+- Render `<Diff diffType="modify" viewType="unified" ... className="tool-diff">`.
+- Render the first hunk directly. Before every later hunk, render a text-only `Decoration` containing that hunk's synthesized `@@ ... @@` header, then the `Hunk`.
+- Supply a local `renderGutter`. In the old gutter cell, show a one-character marker and a right-aligned number: `+` and the inserted line number, `−` (U+2212) and the deleted line number, or a blank marker and the old context number. Return `null` for the new gutter and hide its cell/column with scoped CSS.
+- Keep the `+`/`−` text exposed to assistive technology because it is the required non-color cue.
+- Do not add anchors, tokens, syntax highlighting, virtualization, split view, or focusable controls.
 
-const renderInlineGutter: RenderGutter = ({ change, side, renderDefault }) => {
-  if (side !== 'old') return null; // the second gutter cell is hidden by CSS
-  const marker = change.type === 'insert' ? '+' : change.type === 'delete' ? '−' : ' ';
-  const number = change.type === 'insert' ? change.lineNumber : renderDefault();
-  return (
-    <>
-      <span className="tool-diff-marker">{marker}</span>
-      <span className="tool-diff-line-number">{number}</span>
-    </>
-  );
-};
-```
+The fixture's v9 order is context, both deletes, both inserts, context. Tests must assert that library order rather than the mockup's alternating illustration.
 
-- The marker is **not** `aria-hidden`: it is the non-color cue and the sign is information for assistive technology (the chevron precedent hides a redundant glyph; this one is not redundant). Use U+2212 for delete to match the `−m` badge.
-- `hunk.content` is the synthesized `@@ -a,b +c,d @@` header from Phase 1, rendered only for `index > 0`.
-- No `tokens`, no `renderToken`, no virtualization, no `gutterType='anchor'`.
+## Visual contract
 
-### Scoped CSS (`index.css`, after the `.tool-family-body` block)
+Add one `.tool-diff` block beside the existing tool-family body styles in `index.css`:
 
-```css
-/* Inline file-edit diff inside a tool body box (both surfaces). Colors map
-   the react-diff-view variables onto tokens both themes define. */
-.tool-diff {
-  --diff-background-color: transparent;
-  --diff-text-color: var(--text-primary);
-  --diff-font-family: inherit;
-  --diff-selection-background-color: color-mix(in oklch, var(--ring) 35%, transparent);
-  --diff-gutter-insert-background-color: color-mix(in oklch, var(--success) 14%, var(--surface-inset));
-  --diff-gutter-delete-background-color: color-mix(in oklch, var(--error) 14%, var(--surface-inset));
-  --diff-code-insert-background-color: color-mix(in oklch, var(--success) 14%, var(--surface-inset));
-  --diff-code-delete-background-color: color-mix(in oklch, var(--error) 14%, var(--surface-inset));
-  --diff-gutter-insert-text-color: var(--text-secondary);
-  --diff-gutter-delete-text-color: var(--text-secondary);
-  --diff-code-insert-text-color: var(--text-primary);
-  --diff-code-delete-text-color: var(--text-primary);
-  font-size: inherit;
-  line-height: inherit;
-}
-.tool-diff .diff-gutter { color: var(--text-secondary); text-align: right; white-space: pre; padding-right: 0.5ch; }
-.tool-diff col.diff-gutter-col:first-child { width: 4.5ch; } /* marker + 3ch number */
-.tool-diff col.diff-gutter-col:nth-child(2),
-.tool-diff .diff-line > .diff-gutter:nth-child(2) { display: none; }
-.tool-diff .diff-code { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; }
-.tool-diff .diff-gutter-insert .tool-diff-marker { color: var(--success); }
-.tool-diff .diff-gutter-delete .tool-diff-marker { color: var(--error); }
-.tool-diff .diff-decoration { color: var(--text-secondary); }
-```
+- map background and selection variables to existing surface/ring tokens;
+- use the inset surface mixed with success/error at a restrained tint for insert/delete backgrounds;
+- use success-colored inserted code and markers, error-colored deleted code and markers, and primary-colored context code;
+- keep line numbers in `--text-secondary` (never `--text-tertiary`) and right-align them in the 3ch number area; allocate one additional marker character without allowing the gutter to grow with content;
+- hide the unused second gutter column/cells using selectors verified against the rendered v3.3.3 DOM;
+- keep `width: 100%`, fixed table layout, `white-space: pre-wrap`, and `overflow-wrap: anywhere`; do not add room-level horizontal scrolling;
+- keep decoration text secondary and noninteractive.
 
-Measure before finalizing the two marker colors (see "Contrast check" below). Line numbers use `--text-secondary`, never `--text-tertiary` (2.71:1 on inset per `review-accessibility.md`).
-
-### Badge tone
-
-Both `BADGE_TONE` maps: `success: { className: 'text-success' }` — the same utility both surfaces' `GLYPH_TONE.succeeded` already uses for the `✓` glyph, so the badge and the glyph share the tone the visual e2e already measures.
+Define local foreground custom properties for the inserted/deleted states so contrast correction is one scoped change. Start from `var(--success)` and `var(--error)`. Phase 3 measures the actual computed foreground/background pair in both themes and surfaces. If either is below 4.5:1, mix only that affected foreground toward `var(--text-primary)` until it passes, then re-run all measurements. The same state foreground applies to code and marker; the line number remains secondary and is measured separately.
 
 ## Tests first
 
-Follow the existing test style in each file: `renderToStaticMarkup` + string assertions in `NodeRoom.test.tsx`, happy-dom interaction in `LegacyNodeRoom.test.tsx` and the Console room tests. Use the Phase 1 fixture (`backoff` example) so the expected counts are known: 2 inserts, 2 deletes, 2 normal lines, 1 hunk.
+Use the four-line backoff fixture for one hunk and a 20-line fixture for two hunks. Keep no more than three diff rows in a single test.
 
-### Legacy static anatomy — `NodeRoom.test.tsx`
+### Legacy static — `NodeRoom.test.tsx`
 
-- Both-sides row (`Edit`, `old_string`/`new_string`, `replace_all: false`, output `'The file a.rs has been updated successfully.'`, outcome succeeded): the body contains `text-node-command">crates/…/auto_retry.rs<`, a `class="tool-diff` table, exactly two `diff-code-insert`, two `diff-code-delete`, two `diff-code-normal` cells, markers `+` and `−` (U+2212) inside `tool-diff-marker`, line numbers `1`…`4` in `tool-diff-line-number`, **no** `diff-decoration` (single hunk), and the output prose (`has been updated`) is **absent** from the body (it is behind Raw).
-- Same row with outcome `failed` and output `'String to replace not found in file.'`: the diff table is present **and** a second body box contains the error text below it.
-- Multi-hunk row (the 20-line fixture): exactly one `diff-decoration` row whose text is the second hunk's `@@ -…` header.
-- Identical sides: no table; `>no changes<` present; no `+`/`−` badge in the summary; body bar text contains `file · no changes`.
-- Collapsed summary: `+2` with the success tone class and `−2` with the danger style; body bar reads `file · 1 hunk · replace_all: false` and does not repeat `+2`.
-- One-sided `Write` (`content` only) and a no-input `edit` row: markup is byte-identical to the pre-change expectations already in the file (path then preview / `no preview`), and contains no `tool-diff`.
-- No serialized JSON anywhere in the presented body (`'"old_string"'` absent).
+- Succeeded both-sides row: path first; `.tool-diff`; two delete, two insert, and two context code cells in jsdiff order; `−`/`+`; snippet numbers 1–4; no decoration for one hunk; no success prose; no serialized `old_string` JSON.
+- Summary/body bar: `+2` success badge, `−2` danger badge, `file · 1 hunk · replace_all: false`, with counts not duplicated in the bar.
+- Failed row: the same table plus the normalized error in a second body box.
+- Multi-hunk row: one decoration before the second hunk with the expected header.
+- Identical row: no table/badge; `file · no changes`; explicit `no changes`.
+- One-sided Write, generic no-input edit, and over-limit refused pair: no table/badge and unchanged path-plus-preview fallback.
+- A malicious-control fixture produces the expected visible escapes and exactly one DOM row per converted change.
 
 ### Legacy interaction — `LegacyNodeRoom.test.tsx`
 
-- Opening the row mounts the diff table; toggling Raw swaps it for the `<pre>` payload (the table is unmounted, not hidden) and closing Raw restores it.
-- Keyboard order unchanged: summary → Raw → full-output/retry controls; the table adds no tab stops (no anchors in the gutter).
+- Opening mounts the table.
+- Raw replaces it with the original payload, including unsanitized source where applicable; toggling back restores the safe table.
+- Keyboard order remains summary → Raw → existing full-output/retry controls; the diff contributes no tab stop.
 
-### Console — `ConsoleNodeRoom.test.tsx` and `ConsoleExecutionHistory.test.tsx`
+### Console — room and execution-history tests
 
-- The same anatomy assertions as Legacy static, using the Console helpers (`textContent`/`querySelectorAll` on happy-dom), for the both-sides, failed, identical, one-sided, and no-input rows.
-- Raw swap and restore.
-- The inline execution-history variant renders the diff the same way (the Console mounts the history list in more than one place).
+Repeat the same anatomy/state/Raw assertions in `ConsoleNodeRoom.test.tsx`; verify the inline history host in `ConsoleExecutionHistory.test.tsx` uses the same content and class hooks. This catches divergence between Console mounting paths.
 
-### Boundary — `console-isolation.test.ts`
+### Boundary tests
 
-- Add `'@/lib/git-hunk-adapter'` to the approved set with a comment: "Concrete need (issue #177): the inline file-edit diff converts `GitDiffHunk` to react-diff-view `HunkData` with the same adapter Legacy source-control uses; it is a pure `lib/` module."
-- Add a test `diff computation stays in one module`: scan `packages/web/src/**/*.{ts,tsx}` (production sources) and assert `structuredPatch` appears only in `lib/diff-hunks.ts`; assert `NodeRoom.tsx` and `ConsoleAgentHistoryList.tsx` import neither `'diff'` nor `'@/lib/diff-hunks'`; assert `lib/git-hunk-adapter.ts` imports its types from `@/lib/api.generated` and not `@/lib/api`; and assert `ConsoleAgentHistoryList.tsx`'s only `react-diff-view` imports are the named `Decoration`/`Diff`/`Hunk` values from `react-diff-view/esm/index.js`, types from `react-diff-view`, and the `style/index.css` side effect — the first third-party UI dependency inside Console, so the boundary test names it explicitly (security finding 7). Place it beside the existing isolation tests (same file or a sibling `diff-boundary.test.ts` in `src/lib/` — pick one; the console leg of the test script is a separate process either way).
+- Add `@/lib/git-hunk-adapter` to Console's approved set with a concrete comment that it is the pure conversion shared with source control.
+- Scan production `src/**/*.{ts,tsx}` excluding tests: only `lib/diff-hunks.ts` may contain a `structuredPatch` call/import.
+- Assert both renderers import neither `diff` nor `@/lib/diff-hunks`.
+- Assert the moved adapter imports generated types from `@/lib/api.generated`, not runtime `@/lib/api`.
+- Assert Console's third-party diff imports are limited to the v3.3.3 runtime/type/style specifiers already proven by source control.
 
-### Contrast rule (measured in Phase 3, not here)
-
-`color-mix(in oklch, …)` resolution and the `resolveColorIn`/`contrastRatio` helpers need a real browser CSS engine and a `<canvas>` 2D context; under `bun test` + happy-dom they cannot measure anything (red-team failure finding 2), so no component test asserts contrast. Phase 3's Playwright spec measures the `+`/`−` markers over their tinted cells, the line text, and the line numbers on both themes. The fallback rule is fixed now so Phase 3 can apply it without a design decision: if `var(--error)` over the delete tint measures below 4.5:1 on either theme, the `−` marker uses `color-mix(in oklch, var(--error) 75%, var(--text-primary))` (the existing danger mix) and the badge keeps the danger tone.
+Do not attempt contrast assertions in happy-dom; it does not resolve the required browser CSS/color APIs.
 
 ## Implementation order
 
-1. Write the Legacy static tests (red). Add imports, `InlineDiff`, `renderInlineGutter`, the `file` arm, the tone entry; add the `.tool-diff` CSS. Green.
-2. Write the Legacy interaction tests (red → green).
-3. Repeat for Console: tests first, then the local `InlineDiff`, the arm, the tone entry.
-4. Isolation allowlist and boundary test.
-5. `bun run type-check`, `bun run lint`, `bun run format:check`.
+1. Add failing Legacy static tests; implement its file states, local renderer, and shared scoped CSS.
+2. Add failing Legacy Raw/focus tests; make them green.
+3. Add failing Console room/history tests; implement its local renderer with the same contract.
+4. Add isolation and source-boundary tests.
+5. Run the focused component legs, full web package, type-check, lint, and format.
 
 ## Commands
 
 ```bash
 cd packages/web && NODE_ENV=development bun test src/components/workflows/NodeRoom.test.tsx src/components/workflows/LegacyNodeRoom.test.tsx
 cd packages/web && NODE_ENV=development bun test src/experiments/console/
+cd packages/web && bun test src/lib/diff-boundary.test.ts
 bun --filter @archon/web test
-bun run type-check && bun run lint && bun run format:check
+bun run type-check
+bun run lint
+bun run format:check
 ```
 
 ## Exit criteria
 
-- [ ] Both surfaces render the both-sides, failed, multi-hunk, identical, one-sided, and no-input rows per the markup contract, with tests asserting counts, markers, numbers, separator presence/absence, and the absence of output prose on success.
-- [ ] Raw swap/restore works on both surfaces with the diff mounted; keyboard order unchanged.
-- [ ] `console-isolation.test.ts` passes with the new allowlist entry; the boundary test proves one `structuredPatch` site and no `diff` import in either renderer.
-- [ ] Both `BADGE_TONE` maps carry `success`; `bun run type-check` and lint are green.
-- [ ] The contrast fallback rule above is in the CSS comment so Phase 3 can apply it mechanically.
+- [ ] Both surfaces pass all changed, failed, multi-hunk, identical, one-sided, no-input, refused, and malicious-control state assertions.
+- [ ] Insert/delete code and markers use their required success/error treatments; context, number column, inset box, hunk separator, and wrapping match the design spines.
+- [ ] Raw swap/restore and focus order are unchanged.
+- [ ] Console isolation, single-owner, generated-type, and renderer-import boundaries pass.
+- [ ] Existing source-control diff tests and the complete web package remain green.
+- [ ] No component test timeout is widened.
 
 ## Risks and safeguards
 
-- `NodeRoom.test.tsx`, `LegacyNodeRoom.test.tsx`, and `ConsoleNodeRoom.test.tsx` are already large, and this is the first time they mount a real `react-diff-view` table (red-team failure finding 4). `file-viewer.test.tsx` proves the table renders under bun, so the risk is duration, not feasibility: keep every diff fixture to the 4-line `backoff` example or the 20-line two-hunk one, mount at most three diff rows per test, and if any file approaches Bun's 5,000 ms per-test default, run it with `--reporter=junit` to read real durations before touching timeouts (AGENTS.md's bimodal-vs-gradient rule).
-
-- `react-diff-view`'s `.diff` table is `width: 100%; table-layout: fixed`; inside the `pre-wrap` body box that is what keeps long lines wrapping instead of forcing a panel-level scrollbar. Phase 3 verifies at 390px.
-- The `style/index.css` side-effect import is already loaded by Legacy source-control; importing it again from the node rooms is idempotent. Do not copy its rules into `index.css`.
-- `Decoration` renders a full-width row; keep it text-only so it never introduces a focusable element.
+- `react-diff-view` adds two gutter cells even in unified mode; verify selectors against rendered DOM and assert only one visible gutter rather than relying on an undocumented guess.
+- Large component files already approach costly test setup. If duration becomes suspicious, use `--reporter=junit` and compare healthy durations before changing any timeout.
+- The package stylesheet is already used by Legacy source control; import it by the existing specifier rather than copying upstream CSS. All node-room overrides stay under `.tool-diff`.
 
 ## Handoff to Phase 3
 
-Phase 3 needs the DOM hooks used here: `.tool-diff`, `.tool-diff-marker`, `.tool-diff-line-number`, `.diff-code-insert`/`-delete`/`-normal`, `.diff-decoration`, and the summary badge texts `+2` / `−2`. Keep those class names stable.
+Keep these stable browser hooks: `.tool-diff`, `.tool-diff-marker`, `.tool-diff-line-number`, `.diff-code-insert`, `.diff-code-delete`, `.diff-code-normal`, and `.diff-decoration`. Phase 3 also locates summary badges by exact `+2` and `−2` text.
