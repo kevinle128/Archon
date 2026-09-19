@@ -317,7 +317,7 @@ describe('NodeRoom', () => {
     expect(visibleText(empty)).toBe("Node hasn't produced output");
 
     const loaded = renderRoom();
-    expect(loaded).toContain('ASSISTANT');
+    expect(loaded).toContain('assistant');
     expect(loaded).toContain('first');
     expect(loaded).toContain('Read');
     expect(loaded).toContain('data-tool-id="tool-use-1"');
@@ -721,7 +721,8 @@ describe('NodeRoom tool rows', () => {
     expect(markup).toContain('py-2.5');
     // Non-tool content keeps its own vertical margins; the last item's
     // wrapper additionally carries the dock focus-target marker.
-    expect(markup).toContain('<div class="my-1.5"><div class="chat-markdown');
+    expect(markup).toContain('class="my-1.5"');
+    expect(markup).toContain('chat-markdown max-w-none font-sans text-[12.5px]');
     expect(markup).toContain('<p class="text-xs text-text-secondary">completed');
   });
 

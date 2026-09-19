@@ -59,7 +59,7 @@ Per `steering-api-contract.md`.
 - the executor is the sole writer; the row is a `text` row with `metadata` `{ origin='operator', operator_user_id, message_id }`; no new table, no widened `kind`; placed by `seq` between the turn it redirected and the turn it caused
 - the message stays `sent` on every provider (v1 floor); nothing advances past `sent`
 - terminal reconciliation runs **only** on the node's terminal event: each `sent` id matches a written `message_id`; an unmatched id returns as `NEVER SENT`; assert it never runs on a live refetch (a Cancel mid-flight must not mis-mark a delivered message)
-- display-name projection (AD-12): the served operator row carries `operator_display_name` from the read-time join; a join miss yields `null` and the core renders the short id
+- display-name projection (AD-12 / Story 2.8): the served operator row carries `operator_display_name` from the read-time join; a non-null sender always gets a trimmed name or the 8-char short id (server-owned fallback); `null` is reserved for identity-less rows; the web does not fetch users
 
 ## Concurrent operators
 

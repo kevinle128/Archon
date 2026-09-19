@@ -1,7 +1,7 @@
 /**
  * Project recorded node-message rows and workflow events into render-neutral
  * agent history items. Text and tool pairing stay in the existing projectors;
- * this module only maps those results onto assistant, tool, and lifecycle items.
+ * this module maps those results onto assistant, operator, tool, and lifecycle items.
  */
 import type { components } from './api.generated';
 import { ensureUtc } from './format';
@@ -31,6 +31,18 @@ export type AgentHistoryItem =
       seq: number;
       role: 'assistant';
       text: string;
+      execution: TranscriptExecution | null;
+    }
+  | {
+      kind: 'operator';
+      id: string;
+      seq: number;
+      role: 'operator';
+      text: string;
+      operatorUserId: string | null;
+      operatorDisplayName: string | null;
+      messageId: string | null;
+      delivery: 'sent';
       execution: TranscriptExecution | null;
     }
   | {
@@ -327,6 +339,30 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
       continue;
     }
     const message = item.message;
+    if (message.kind === 'text' && message.metadata?.origin === 'operator') {
+      const operatorUserId = message.metadata.operator_user_id ?? null;
+      const responseName = message.operator_display_name;
+      const trimmedResponseName = typeof responseName === 'string' ? responseName.trim() : '';
+      const operatorDisplayName =
+        trimmedResponseName.length > 0
+          ? trimmedResponseName
+          : operatorUserId !== null
+            ? operatorUserId.slice(0, 8)
+            : null;
+      items.push({
+        kind: 'operator',
+        id: message.id,
+        seq: message.seq,
+        role: 'operator',
+        text: message.payload.text,
+        operatorUserId,
+        operatorDisplayName,
+        messageId: message.metadata.message_id ?? null,
+        delivery: 'sent',
+        execution: message.metadata.execution ?? null,
+      });
+      continue;
+    }
     if (message.kind === 'text') {
       items.push({
         kind: 'assistant',

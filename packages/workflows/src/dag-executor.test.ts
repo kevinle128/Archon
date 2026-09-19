@@ -26553,14 +26553,34 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     return handle;
   }
 
-  function enqueue(runId: string, stepName: string, messageId: string, message: string): void {
+  function enqueue(
+    runId: string,
+    stepName: string,
+    messageId: string,
+    message: string,
+    operatorUserId: string | null = 'op-1'
+  ): void {
     const result = liveHandle(runId, stepName).enqueue({
       messageId,
       message,
-      operatorUserId: 'op-1',
+      operatorUserId,
       receivedAt: new Date().toISOString(),
     });
     if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+  }
+
+  type SteeringNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
+  function isOperatorTextRow(row: SteeringNodeMsg): row is SteeringNodeMsg & {
+    kind: 'text';
+    payload: { text: string };
+    metadata: {
+      origin: 'operator';
+      operator_user_id: string | null;
+      message_id?: string;
+      execution?: { attempt_id: string; occurrence_id: string; loop_ancestry?: unknown };
+    };
+  } {
+    return row.kind === 'text' && row.metadata?.origin === 'operator';
   }
 
   function storedEventTypes(store: IWorkflowStore): string[] {
@@ -26622,8 +26642,8 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'first note');
-        enqueue(RUN_ID, 'review', 'm-2', 'second note');
+        enqueue(RUN_ID, 'review', 'm-1', 'first note', 'op-a');
+        enqueue(RUN_ID, 'review', 'm-2', 'second note', 'op-b');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 'sess-turn-1' };
         return;
@@ -26646,6 +26666,23 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(storedEventTypes(store)).toContain('node_completed');
     // Lifecycle teardown: the handle is gone once the node finishes.
     expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+
+    const rows = await store.listNodeMessages(RUN_ID, 'review');
+    const operatorRows = rows.filter(isOperatorTextRow);
+    expect(operatorRows.map(r => r.payload.text)).toEqual(['first note', 'second note']);
+    expect(operatorRows.map(r => r.metadata.operator_user_id)).toEqual(['op-a', 'op-b']);
+    expect(operatorRows.map(r => r.metadata.message_id)).toEqual(['m-1', 'm-2']);
+    const firstTurnText = rows.find(r => r.kind === 'text' && r.payload.text === 'turn one');
+    const secondTurnText = rows.find(r => r.kind === 'text' && r.payload.text === 'turn two');
+    expect(firstTurnText).toBeDefined();
+    expect(secondTurnText).toBeDefined();
+    expect(firstTurnText!.seq).toBeLessThan(operatorRows[0]!.seq);
+    expect(operatorRows[1]!.seq).toBeLessThan(secondTurnText!.seq);
+    const causedAttempt = secondTurnText!.metadata?.execution?.attempt_id;
+    expect(causedAttempt).toBeDefined();
+    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(causedAttempt);
+    expect(operatorRows[1]!.metadata.execution?.attempt_id).toBe(causedAttempt);
+    expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
   });
 
   it('flushes batch output once per settled turn and folds usage across turns', async () => {
@@ -26906,6 +26943,12 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     const reaskPrompt = sendQueryArg<string>(2, 0);
     expect(reaskPrompt).toContain('steer the verdict');
     expect(reaskPrompt).toContain('did not satisfy the required JSON schema');
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'classify')).filter(
+      isOperatorTextRow
+    );
+    expect(operatorRows).toHaveLength(1);
+    expect(operatorRows[0]!.payload.text).toBe('steer the verdict');
+    expect(operatorRows[0]!.metadata.message_id).toBe('m-1');
   });
 
   it('delivers loop guidance inside the current iteration', async () => {
@@ -26935,6 +26978,20 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(sendQueryArg<SendQueryOptions>(1, 3).forkSession).toBe(false);
     expect(storedEventTypes(store)).toContain('node_completed');
     expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+
+    const rows = await store.listNodeMessages(RUN_ID, 'my-loop');
+    const operatorRows = rows.filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(1);
+    expect(operatorRows[0]!.payload.text).toBe('adjust course');
+    const caused = rows.find(r => r.kind === 'text' && r.payload.text.includes('adjusted'));
+    expect(caused).toBeDefined();
+    expect(operatorRows[0]!.seq).toBeLessThan(caused!.seq);
+    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
+      caused!.metadata?.execution?.attempt_id
+    );
+    expect(operatorRows[0]!.metadata.execution?.loop_ancestry).toEqual([
+      { node_id: 'my-loop', iteration: 1 },
+    ]);
   });
 
   it('fails without draining when the latest loop guidance turn omits a session id', async () => {
@@ -27062,6 +27119,141 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
     expect(sendQueryArg<string>(1, 0)).toBe('guided');
     expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-body-1');
+
+    const bodyRows = await store.listNodeMessages(RUN_ID, 'grp.body');
+    const operatorRows = bodyRows.filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(1);
+    expect(operatorRows[0]!.node_id).toBe('grp.body');
+    expect(operatorRows[0]!.payload.text).toBe('guided');
+  });
+
+  it('operator natural drain writes null identity explicitly', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-null', 'anonymous steer', null);
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'after' };
+      yield { type: 'result', sessionId: 's-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(1);
+    expect(
+      Object.prototype.hasOwnProperty.call(operatorRows[0]!.metadata, 'operator_user_id')
+    ).toBe(true);
+    expect(operatorRows[0]!.metadata.operator_user_id).toBeNull();
+  });
+
+  it('operator append failure still completes the node and keeps other rows', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'one');
+        enqueue(RUN_ID, 'review', 'm-2', 'two');
+        enqueue(RUN_ID, 'review', 'm-3', 'three');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'guided' };
+      yield { type: 'result', sessionId: 's-2' };
+    });
+    const store = createMockStore();
+    const originalAppend = store.appendNodeMessage.bind(store);
+    let operatorAppends = 0;
+    store.appendNodeMessage = async input => {
+      if (input.kind === 'text' && input.metadata?.origin === 'operator') {
+        operatorAppends += 1;
+        if (operatorAppends === 2) {
+          throw new Error('operator append boom');
+        }
+      }
+      return originalAppend(input);
+    };
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(sendQueryArg<string>(1, 0)).toBe('one\n\ntwo\n\nthree');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows.map(r => r.payload.text)).toEqual(['one', 'three']);
+  });
+
+  it('operator startup throw before first yield writes no operator row', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'never written');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      throw new Error('provider startup boom');
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    expect(nodeFailedError(store, 'review')).toBe('provider startup boom');
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(0);
+  });
+
+  it('operator first-yield seam records rows before the caused assistant chunk', async () => {
+    let calls = 0;
+    let releaseFirst: (() => void) | undefined;
+    const holdFirst = new Promise<void>(resolve => {
+      releaseFirst = resolve;
+    });
+    let resolveEntered: (() => void) | undefined;
+    const enteredGuidance = new Promise<void>(resolve => {
+      resolveEntered = resolve;
+    });
+    let beginTurnSeen = false;
+    const appendOrder: string[] = [];
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'held note');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      // beginTurn already registered before sendQuery runs.
+      beginTurnSeen = liveHandle(RUN_ID, 'review').steeringSubState() === 'generating';
+      resolveEntered!();
+      await holdFirst;
+      yield { type: 'assistant', content: 'caused' };
+      yield { type: 'result', sessionId: 's-2' };
+    });
+    const store = createMockStore();
+    const originalAppend = store.appendNodeMessage.bind(store);
+    store.appendNodeMessage = async input => {
+      if (input.kind === 'text' && input.metadata?.origin === 'operator') {
+        appendOrder.push('operator');
+      } else if (input.kind === 'text' && input.payload.text === 'caused') {
+        appendOrder.push('caused');
+      }
+      return originalAppend(input);
+    };
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    await enteredGuidance;
+    expect(beginTurnSeen).toBe(true);
+    // Held before first yield: no operator receipt yet.
+    expect((await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow)).toHaveLength(
+      0
+    );
+    releaseFirst!();
+    await run;
+    expect(appendOrder).toEqual(['operator', 'caused']);
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(1);
+    expect(operatorRows[0]!.payload.text).toBe('held note');
   });
 });
 
@@ -27115,6 +27307,20 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   function enqueue(runId: string, stepName: string, messageId: string, message: string): void {
     const result = liveHandle(runId, stepName).enqueue(steeringMessage(messageId, message));
     if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+  }
+
+  type InterruptNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
+  function isOperatorTextRow(row: InterruptNodeMsg): row is InterruptNodeMsg & {
+    kind: 'text';
+    payload: { text: string };
+    metadata: {
+      origin: 'operator';
+      operator_user_id: string | null;
+      message_id?: string;
+      execution?: { attempt_id: string; occurrence_id: string };
+    };
+  } {
+    return row.kind === 'text' && row.metadata?.origin === 'operator';
   }
 
   function sendNow(runId: string, stepName: string, messageId: string, message: string): void {
@@ -27264,6 +27470,25 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(storedEventTypes(store)).toContain('node_completed');
     expect(storedEventTypes(store)).not.toContain('node_failed');
     expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+
+    const rows = await store.listNodeMessages(RUN_ID, 'review');
+    const operatorRows = rows.filter(isOperatorTextRow);
+    expect(operatorRows.map(r => r.payload.text)).toEqual([
+      'old note one',
+      'old note two',
+      'new instruction',
+    ]);
+    expect(operatorRows.map(r => r.metadata.message_id)).toEqual(['m-old-1', 'm-old-2', 'm-new']);
+    const interrupted = rows.find(r => r.kind === 'status' && r.payload.state === 'interrupted');
+    const resumed = rows.find(r => r.kind === 'text' && r.payload.text === 'redirected output');
+    expect(interrupted).toBeDefined();
+    expect(resumed).toBeDefined();
+    expect(interrupted!.seq).toBeLessThan(operatorRows[0]!.seq);
+    expect(operatorRows[2]!.seq).toBeLessThan(resumed!.seq);
+    const resumedAttempt = resumed!.metadata?.execution?.attempt_id;
+    expect(resumedAttempt).toBeDefined();
+    expect(operatorRows.every(r => r.metadata.execution?.attempt_id === resumedAttempt)).toBe(true);
+    expect(interrupted!.metadata?.execution?.attempt_id).not.toBe(resumedAttempt);
   });
 
   it('interrupt marker wins over an isError/errorSubtype result — idles instead of failing', async () => {
@@ -27737,6 +27962,23 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(storedEventTypes(store)).toContain('node_completed');
     expect(storedEventTypes(store)).not.toContain('node_failed');
     expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+
+    const rows = await store.listNodeMessages(RUN_ID, 'my-loop');
+    const operatorRows = rows.filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(1);
+    expect(operatorRows[0]!.payload.text).toBe('redirect the loop');
+    const interrupted = rows.find(r => r.kind === 'status' && r.payload.state === 'interrupted');
+    const resumed = rows.find(r => r.kind === 'text' && r.payload.text.includes('redirected'));
+    expect(interrupted).toBeDefined();
+    expect(resumed).toBeDefined();
+    expect(interrupted!.seq).toBeLessThan(operatorRows[0]!.seq);
+    expect(operatorRows[0]!.seq).toBeLessThan(resumed!.seq);
+    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
+      resumed!.metadata?.execution?.attempt_id
+    );
+    expect(operatorRows[0]!.metadata.execution?.attempt_id).not.toBe(
+      interrupted!.metadata?.execution?.attempt_id
+    );
   });
 
   it('interrupt throw in an AI loop resumes the threaded session, not the dead pass', async () => {

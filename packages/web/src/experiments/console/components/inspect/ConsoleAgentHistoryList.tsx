@@ -198,20 +198,57 @@ function AssistantHistory({
   item: Extract<AgentHistoryItem, { kind: 'assistant' }>;
 }): ReactElement {
   return (
-    <div
-      className="chat-markdown max-w-none text-sm text-text-primary"
-      style={{ overflowWrap: 'anywhere' }}
-    >
-      <div className="mb-1 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
-        ASSISTANT
+    <div style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        assistant
       </div>
-      <ReactMarkdown
-        remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={REHYPE_PLUGINS}
-        components={MARKDOWN_COMPONENTS}
+      <div
+        className="chat-markdown max-w-none font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary"
+        style={{ margin: '0 2px 6px' }}
+      >
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+          components={MARKDOWN_COMPONENTS}
+        >
+          {item.text}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function OperatorHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'operator' }>;
+}): ReactElement {
+  const label =
+    item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
+  return (
+    <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="flex w-full items-center text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        <span data-operator-label="">{label}</span>
+        <span
+          data-operator-delivery=""
+          className="ml-auto shrink-0 text-[11px] normal-case tracking-normal text-text-secondary"
+        >
+          sent
+        </span>
+      </div>
+      <div
+        data-operator-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
+        style={{ margin: '0 2px 6px' }}
       >
         {item.text}
-      </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -1012,6 +1049,14 @@ export function ConsoleAgentHistoryList({
       return (
         <div key={item.id} className={`my-1.5${ring}`} {...marker}>
           <AssistantHistory item={item} />
+          {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
+        </div>
+      );
+    }
+    if (item.kind === 'operator') {
+      return (
+        <div key={item.id} className={`my-1.5${ring}`} {...marker}>
+          <OperatorHistory item={item} />
           {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
         </div>
       );

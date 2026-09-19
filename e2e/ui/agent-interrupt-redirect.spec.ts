@@ -9,6 +9,7 @@ import { test, expect } from '../lib/playwright/suite';
 import {
   E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME,
   E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+  E2E_STARTER_WEB_USER,
   QUEUE_GUIDANCE_LOOP_NODE,
   QUEUE_GUIDANCE_NODE,
 } from '../lib/playwright/archon-runtime';
@@ -51,6 +52,13 @@ const EVIDENCE_DIR = join(
   'reports',
   'evidence'
 );
+const OPERATOR_EVIDENCE_DIR = join(
+  REPO_ROOT,
+  'plans',
+  '260919-1929-issue-188-operator-messages-in-transcript',
+  'reports',
+  'evidence'
+);
 const MEASUREMENTS_FILE = join(EVIDENCE_DIR, 'us-005-measurements.json');
 
 const SCROLLER_TESTID: Record<Surface, string> = {
@@ -71,6 +79,8 @@ const DETACHED_DISCLOSURE =
 const REDIRECT_SCENARIO = '{"echoPrompt":true,"delayMs":1500}';
 const REDIRECT_TEXT = `<<E2E_SCENARIO>>${REDIRECT_SCENARIO}<</E2E_SCENARIO>>third`;
 const REDIRECT_ECHO = '[e2e-fake] resumed echo: first\n\nsecond\n\nthird';
+const MULTILINE_FIRST =
+  'line one of operator guidance\n\nline two keeps the breaks\nline three wraps in the narrow room';
 const LOOP_REDIRECT_SCENARIO =
   '{"echoPrompt":true,"doneWhenPromptIncludes":"finish","delayMs":1500}';
 const LOOP_REDIRECT_TEXT = `<<E2E_SCENARIO>>${LOOP_REDIRECT_SCENARIO}<</E2E_SCENARIO>>finish now`;
@@ -165,10 +175,15 @@ function dockStatus(room: Locator): Locator {
   return room.locator('[role="status"]');
 }
 
-/** Writes a durable capture to the plan's evidence dir and attaches it. */
-async function captureEvidence(target: Locator, name: string, testInfo: TestInfo): Promise<void> {
-  mkdirSync(EVIDENCE_DIR, { recursive: true });
-  const shot = await target.screenshot({ path: join(EVIDENCE_DIR, name) });
+/** Writes a durable capture to an evidence dir and attaches it. */
+async function captureEvidence(
+  target: Locator,
+  name: string,
+  testInfo: TestInfo,
+  dir: string = EVIDENCE_DIR
+): Promise<void> {
+  mkdirSync(dir, { recursive: true });
+  const shot = await target.screenshot({ path: join(dir, name) });
   await testInfo.attach(name, { body: shot, contentType: 'image/png' });
 }
 
@@ -412,18 +427,160 @@ async function holdInterruptResponse(
 /** Waits until `fn` reports the transcript's last row inside the scroller band. */
 async function lastRowVisibility(room: Locator, surface: Surface): Promise<string> {
   return room.evaluate((roomEl, scrollerTestid) => {
-    const scrollerEl = roomEl.querySelector(`[data-testid="${scrollerTestid}"]`);
-    if (scrollerEl === null) return 'no-scroller';
-    scrollerEl.scrollTop = scrollerEl.scrollHeight;
     const last = roomEl.querySelector('[data-last-row]');
-    const target = last ?? scrollerEl.lastElementChild;
-    if (target === null) return 'no-target';
-    const band = scrollerEl.getBoundingClientRect();
-    const rect = target.getBoundingClientRect();
+    if (!(last instanceof HTMLElement)) return 'missing-last-row';
+    const scroller = roomEl.querySelector(`[data-testid="${scrollerTestid}"]`);
+    if (!(scroller instanceof HTMLElement)) return 'missing-scroller';
+    const rect = last.getBoundingClientRect();
+    const band = scroller.getBoundingClientRect();
     return rect.bottom > band.top && rect.top < band.bottom
       ? 'ok'
       : `offscreen ${String(rect.top)}..${String(rect.bottom)} vs ${String(band.top)}..${String(band.bottom)}`;
   }, SCROLLER_TESTID[surface]);
+}
+
+/** Exact operator-row visual contract at the current viewport. */
+async function expectOperatorVisualContract(
+  room: Locator,
+  surface: Surface,
+  expectedBody: string
+): Promise<void> {
+  const row = room.locator('[data-operator-row]').first();
+  await expect(row).toBeVisible({ timeout: T.medium });
+  await expect(row.locator('[data-operator-label]')).toHaveText('operator · e2e-starter');
+  await expect(row.locator('[data-operator-delivery]')).toHaveText('sent');
+  await expect(row.locator('[data-operator-body]')).toHaveText(expectedBody);
+
+  const metrics = await row.evaluate(el => {
+    const role = el.firstElementChild;
+    const label = el.querySelector('[data-operator-label]');
+    const delivery = el.querySelector('[data-operator-delivery]');
+    const body = el.querySelector('[data-operator-body]');
+    const view = el.ownerDocument.defaultView;
+    if (
+      !(role instanceof HTMLElement) ||
+      !(label instanceof HTMLElement) ||
+      !(delivery instanceof HTMLElement) ||
+      !(body instanceof HTMLElement) ||
+      view === null
+    ) {
+      return null;
+    }
+    const roleStyle = view.getComputedStyle(role);
+    const deliveryStyle = view.getComputedStyle(delivery);
+    const bodyStyle = view.getComputedStyle(body);
+    const roleRect = role.getBoundingClientRect();
+    const deliveryRect = delivery.getBoundingClientRect();
+    return {
+      roleFontSize: roleStyle.fontSize,
+      roleLetterSpacing: roleStyle.letterSpacing,
+      roleTransform: roleStyle.textTransform,
+      roleColor: roleStyle.color,
+      deliveryFontSize: deliveryStyle.fontSize,
+      deliveryTransform: deliveryStyle.textTransform,
+      deliveryColor: deliveryStyle.color,
+      deliveryVisible:
+        deliveryStyle.visibility !== 'hidden' &&
+        deliveryStyle.display !== 'none' &&
+        deliveryRect.width > 0,
+      deliveryRightAligned: deliveryRect.right >= roleRect.right - 1,
+      bodyText: body.textContent ?? '',
+      bodyChildElementCount: body.childElementCount,
+      bodyFontSize: bodyStyle.fontSize,
+      bodyLineHeight: bodyStyle.lineHeight,
+      bodyFontWeight: bodyStyle.fontWeight,
+      bodyFontFamily: bodyStyle.fontFamily,
+      bodyColor: bodyStyle.color,
+      bodyWhiteSpace: bodyStyle.whiteSpace,
+    };
+  });
+  expect(metrics, 'operator row metrics available').not.toBeNull();
+  if (metrics === null) return;
+
+  expect(metrics.roleFontSize).toBe('10px');
+  expect(metrics.roleTransform).toBe('uppercase');
+  const trackingPx = parseFloat(metrics.roleLetterSpacing);
+  expect(
+    Math.abs(trackingPx - 0.7),
+    `role tracking ${metrics.roleLetterSpacing} ≈ 0.07em`
+  ).toBeLessThanOrEqual(0.15);
+  expect(metrics.deliveryFontSize).toBe('11px');
+  expect(metrics.deliveryTransform).toBe('none');
+  expect(metrics.deliveryVisible).toBe(true);
+  expect(metrics.deliveryRightAligned).toBe(true);
+  expect(metrics.bodyText).toBe(expectedBody);
+  expect(metrics.bodyChildElementCount, 'body is plain text, no Markdown children').toBe(0);
+  expect(metrics.bodyFontSize).toBe('12.5px');
+  expect(metrics.bodyLineHeight).toBe('19.375px');
+  expect(['400', 'normal']).toContain(metrics.bodyFontWeight);
+  expect(metrics.bodyFontFamily.toLowerCase()).toMatch(/sans|inter|system|ui-sans/);
+  expect(metrics.bodyWhiteSpace).toMatch(/pre-wrap/);
+
+  const secondary = await resolveColorIn(row, 'var(--text-secondary)');
+  const primary = await resolveColorIn(row, 'var(--text-primary)');
+  expect(metrics.roleColor).toBe(secondary.resolved);
+  expect(metrics.deliveryColor).toBe(secondary.resolved);
+  expect(metrics.bodyColor).toBe(primary.resolved);
+
+  const assistantMetrics = await room.evaluate(roomEl => {
+    const ops = Array.from(roomEl.querySelectorAll('[data-operator-row]'));
+    if (ops.length === 0) return null;
+    const lastOp = ops[ops.length - 1]!;
+    let cursor: Element | null = lastOp.parentElement;
+    while (cursor !== null && roomEl.contains(cursor)) {
+      let sibling = cursor.nextElementSibling;
+      while (sibling !== null) {
+        const body = sibling.querySelector('.chat-markdown');
+        if (body instanceof HTMLElement) {
+          const style = body.ownerDocument.defaultView?.getComputedStyle(body);
+          return {
+            fontSize: style?.fontSize ?? '',
+            lineHeight: style?.lineHeight ?? '',
+            color: style?.color ?? '',
+          };
+        }
+        sibling = sibling.nextElementSibling;
+      }
+      cursor = cursor.parentElement;
+    }
+    const bodies = Array.from(roomEl.querySelectorAll('.chat-markdown'));
+    const lastBody = bodies.at(-1);
+    if (!(lastBody instanceof HTMLElement)) return null;
+    const style = lastBody.ownerDocument.defaultView?.getComputedStyle(lastBody);
+    return {
+      fontSize: style?.fontSize ?? '',
+      lineHeight: style?.lineHeight ?? '',
+      color: style?.color ?? '',
+    };
+  });
+  expect(assistantMetrics, 'adjacent assistant body after operator rows').not.toBeNull();
+  if (assistantMetrics !== null) {
+    expect(assistantMetrics.fontSize).toBe('12.5px');
+    expect(assistantMetrics.lineHeight).toBe('19.375px');
+    expect(assistantMetrics.color).toBe(secondary.resolved);
+  }
+
+  const order = await room.evaluate(roomEl => {
+    const tool = roomEl.querySelector('[data-tool-id]');
+    const ops = Array.from(roomEl.querySelectorAll('[data-operator-row]'));
+    if (ops.length === 0) return 'missing-ops';
+    const following = Node.DOCUMENT_POSITION_FOLLOWING;
+    const echoLeaf = Array.from(
+      roomEl.querySelectorAll('.chat-markdown, [class*="chat-markdown"]')
+    ).find(el => (el.textContent ?? '').includes('resumed echo'));
+    if (echoLeaf === undefined) return 'missing-echo';
+    if (tool !== null && (tool.compareDocumentPosition(ops[0]!) & following) === 0) {
+      return 'tool-after';
+    }
+    if ((ops[ops.length - 1]!.compareDocumentPosition(echoLeaf) & following) === 0) {
+      return 'echo-before';
+    }
+    return tool === null ? 'ok-without-tool' : 'ok';
+  });
+  expect(['ok', 'ok-without-tool']).toContain(order);
+
+  const after = await lastRowVisibility(room, surface);
+  expect(after, 'last transcript row reachable with operator rows').toBe('ok');
 }
 
 for (const surface of ['console', 'legacy'] as const) {
@@ -432,6 +589,7 @@ for (const surface of ['console', 'legacy'] as const) {
     archon,
   }, testInfo: TestInfo) => {
     test.setTimeout(T.xlong * 2);
+    await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });
     const run = await archon.startWorkflowViaWeb(
       E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
       'e2e interrupt redirect'
@@ -571,11 +729,87 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(dockStatus(room)).toContainText(AGENT_GENERATING);
     });
 
-    await test.step('same-session redirect completes the run without failure events', async () => {
+    await test.step('same-session redirect completes with three operator rows before the echo', async () => {
+      // Attempt-scoped rooms drop the interrupted attempt's tool card as soon as
+      // the redirect turn starts, so interrupted->operator DOM adjacency is
+      // proven via API seq (below). Live DOM proves operators precede the echo.
+      await expect(room.locator('[data-operator-row]')).toHaveCount(3, { timeout: T.xlong });
+      await expect(room.getByText(/resumed echo: first/).first()).toBeVisible({
+        timeout: T.xlong,
+      });
+      const liveOrder = await room.evaluate(roomEl => {
+        const ops = Array.from(roomEl.querySelectorAll('[data-operator-row]'));
+        if (ops.length !== 3) return `ops=${ops.length}`;
+        const echoLeaf = Array.from(roomEl.querySelectorAll('*')).find(
+          el => el.childElementCount === 0 && (el.textContent ?? '').includes('resumed echo: first')
+        );
+        if (echoLeaf === undefined) return 'missing-echo';
+        const following = Node.DOCUMENT_POSITION_FOLLOWING;
+        if ((ops[0]!.compareDocumentPosition(ops[1]!) & following) === 0) return 'ops-order-1';
+        if ((ops[1]!.compareDocumentPosition(ops[2]!) & following) === 0) return 'ops-order-2';
+        if ((ops[2]!.compareDocumentPosition(echoLeaf) & following) === 0) {
+          return 'echo-before-ops';
+        }
+        return 'ok';
+      });
+      expect(liveOrder, 'operator rows precede resumed echo in DOM order').toBe('ok');
+
       await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
       const texts = await transcriptTexts(page, run.runId, QUEUE_GUIDANCE_NODE);
       const echo = texts.filter(text => text === REDIRECT_ECHO);
       expect(echo, 'one resumed echo carries the drained batch verbatim').toHaveLength(1);
+
+      const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_NODE);
+      const operatorRows = messages.filter(
+        message => message.kind === 'text' && message.metadata?.origin === 'operator'
+      );
+      expect(operatorRows, 'three drained operator rows').toHaveLength(3);
+      expect(operatorRows.map(row => row.payload.text)).toEqual(['first', 'second', REDIRECT_TEXT]);
+      expect(operatorRows[0]!.seq).toBeLessThan(operatorRows[1]!.seq);
+      expect(operatorRows[1]!.seq).toBeLessThan(operatorRows[2]!.seq);
+
+      const callerIds = sends.bodies().map(body => {
+        if (body !== null && typeof body === 'object' && 'message_id' in body) {
+          const messageId = body.message_id;
+          return typeof messageId === 'string' ? messageId : null;
+        }
+        return null;
+      });
+      expect(callerIds).toEqual([
+        operatorRows[0]!.metadata?.message_id,
+        operatorRows[1]!.metadata?.message_id,
+        operatorRows[2]!.metadata?.message_id,
+      ]);
+
+      const senderId = operatorRows[0]!.metadata?.operator_user_id;
+      expect(typeof senderId).toBe('string');
+      expect(senderId && senderId.length > 0).toBe(true);
+      for (const row of operatorRows) {
+        expect(row.metadata?.origin).toBe('operator');
+        expect(row.metadata?.operator_user_id).toBe(senderId);
+        expect(typeof row.metadata?.message_id).toBe('string');
+        expect(row.operator_display_name).toBe('e2e-starter');
+      }
+
+      const interrupted = messages.find(
+        message => message.kind === 'status' && message.payload.state === 'interrupted'
+      );
+      const resumed = messages.find(
+        message => message.kind === 'text' && message.payload.text === REDIRECT_ECHO
+      );
+      expect(interrupted).toBeTruthy();
+      expect(resumed).toBeTruthy();
+      expect(interrupted!.seq).toBeLessThan(operatorRows[0]!.seq);
+      expect(operatorRows[2]!.seq).toBeLessThan(resumed!.seq);
+
+      const resumedAttempt = resumed!.metadata?.execution?.attempt_id;
+      const interruptedAttempt = interrupted!.metadata?.execution?.attempt_id;
+      expect(typeof resumedAttempt).toBe('string');
+      expect(resumedAttempt).not.toBe(interruptedAttempt);
+      for (const row of operatorRows) {
+        expect(row.metadata?.execution?.attempt_id).toBe(resumedAttempt);
+      }
+
       const detail = await getRunDetail(page, run.runId);
       expect(detail.status).toBe('completed');
       expect(
@@ -588,10 +822,45 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(detail.nodeExecutions.filter(row => row.node_id === QUEUE_GUIDANCE_NODE)).toHaveLength(
         1
       );
+
       const freshRoom = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
       await expect(freshRoom.getByText(/resumed echo: first/).first()).toBeVisible({
         timeout: T.medium,
       });
+      const operatorDom = freshRoom.locator('[data-operator-row]');
+      await expect(operatorDom).toHaveCount(3);
+      for (let index = 0; index < 3; index += 1) {
+        await expect(operatorDom.nth(index).locator('[data-operator-label]')).toHaveText(
+          'operator · e2e-starter'
+        );
+        await expect(operatorDom.nth(index).locator('[data-operator-delivery]')).toHaveText('sent');
+      }
+      await expect(operatorDom.nth(0).locator('[data-operator-body]')).toHaveText('first');
+      await expect(operatorDom.nth(1).locator('[data-operator-body]')).toHaveText('second');
+      await expect(operatorDom.nth(2).locator('[data-operator-body]')).toHaveText(REDIRECT_TEXT);
+
+      const coldOrder = await freshRoom.evaluate(roomEl => {
+        const ops = Array.from(roomEl.querySelectorAll('[data-operator-row]'));
+        if (ops.length !== 3) return `ops=${ops.length}`;
+        const echoLeaf = Array.from(roomEl.querySelectorAll('*')).find(
+          el => el.childElementCount === 0 && (el.textContent ?? '').includes('resumed echo: first')
+        );
+        if (echoLeaf === undefined) return 'missing-echo';
+        const following = Node.DOCUMENT_POSITION_FOLLOWING;
+        if ((ops[0]!.compareDocumentPosition(ops[1]!) & following) === 0) return 'ops-order-1';
+        if ((ops[1]!.compareDocumentPosition(ops[2]!) & following) === 0) return 'ops-order-2';
+        if ((ops[2]!.compareDocumentPosition(echoLeaf) & following) === 0) {
+          return 'echo-before-ops';
+        }
+        return 'ok';
+      });
+      expect(coldOrder, 'fresh room keeps operator rows before the caused echo').toBe('ok');
+
+      const deliveryText = await operatorDom.evaluateAll(rows =>
+        rows.map(row => row.querySelector('[data-operator-delivery]')?.textContent ?? '')
+      );
+      expect(deliveryText).toEqual(['sent', 'sent', 'sent']);
+      await expect(freshRoom.getByText('delivered')).toHaveCount(0);
       await expect(guidanceField(freshRoom)).toHaveCount(0);
     });
   });
@@ -881,6 +1150,7 @@ for (const surface of ['console', 'legacy'] as const) {
     archon,
   }, testInfo: TestInfo) => {
     test.setTimeout(T.xlong * 2);
+    await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });
     const run = await archon.startWorkflowViaWeb(
       E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
       'e2e interrupt visual'
@@ -890,11 +1160,11 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(room.locator('[data-tool-id]').first()).toBeVisible({ timeout: T.medium });
     await expect(stopButton(room)).toBeVisible({ timeout: T.medium });
 
-    await field.fill('first');
+    await field.fill(MULTILINE_FIRST);
     await queueButton(room).click();
     await expect(room.getByText('queued · 1')).toBeVisible();
 
-    await test.step('460px states: generating+queue, interrupting, idle, generating-again', async () => {
+    await test.step('460px states: generating+queue, interrupting, idle, operator rows', async () => {
       await page.setViewportSize({ width: 460, height: 900 });
       await expect(queueList(room).getByRole('listitem')).toHaveCount(1);
       // Wait for the room panel to reflow into the 460px viewport before the
@@ -1003,9 +1273,21 @@ for (const surface of ['console', 'legacy'] as const) {
       await captureEvidence(room, `us-005-${surface}-460-generating-again.png`, testInfo);
       const afterGrow = await lastRowVisibility(room, surface);
       expect(afterGrow, 'last transcript row reachable after dock shrink').toBe('ok');
+
+      await expect(room.locator('[data-operator-row]').first()).toBeVisible({ timeout: T.xlong });
+      await expect(room.getByText(/resumed echo/).first()).toBeVisible({ timeout: T.xlong });
+      await expectNoRoomDrivenOverflow(room, `${surface}@460-operator`);
+      await expectOperatorVisualContract(room, surface, MULTILINE_FIRST);
+      await captureEvidence(
+        room,
+        `us-004-${surface}-460-operator-rows.png`,
+        testInfo,
+        OPERATOR_EVIDENCE_DIR
+      );
+      await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
     });
 
-    await test.step('1440×900 idle dock in full room context', async () => {
+    await test.step('1440×900 idle dock and operator-row capture', async () => {
       // The run may already be complete — reopen a fresh room on a new run for
       // a deterministic live-idle wide capture.
       const wideRun = await archon.startWorkflowViaWeb(
@@ -1018,7 +1300,7 @@ for (const surface of ['console', 'legacy'] as const) {
         timeout: T.medium,
       });
       await expect(stopButton(wideRoom)).toBeVisible({ timeout: T.medium });
-      await wideField.fill('wide one');
+      await wideField.fill(MULTILINE_FIRST);
       await queueButton(wideRoom).click();
       await expect(wideRoom.getByText('queued · 1')).toBeVisible();
       const interruptResponse = page.waitForResponse(
@@ -1041,6 +1323,18 @@ for (const surface of ['console', 'legacy'] as const) {
       );
       await sendNowButton(wideRoom).click();
       expect((await wideSend).status()).toBe(200);
+      await expect(wideRoom.locator('[data-operator-row]').first()).toBeVisible({
+        timeout: T.xlong,
+      });
+      await expect(wideRoom.getByText(/resumed echo/).first()).toBeVisible({ timeout: T.xlong });
+      await expectNoRoomDrivenOverflow(wideRoom, `${surface}@1440-operator`);
+      await expectOperatorVisualContract(wideRoom, surface, MULTILINE_FIRST);
+      await captureEvidence(
+        wideRoom,
+        `us-004-${surface}-1440-operator-rows.png`,
+        testInfo,
+        OPERATOR_EVIDENCE_DIR
+      );
       await archon.waitForRunStatus(wideRun.runId, 'completed', T.xlong);
     });
   });
