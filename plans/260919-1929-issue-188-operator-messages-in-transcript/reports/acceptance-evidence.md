@@ -1,7 +1,7 @@
 # Acceptance evidence — Issue 188 / Story 2.8
 
-Plan: `plans/260919-1929-issue-188-operator-messages-in-transcript/`  
-Date: 2026-09-19T21:16:06Z  
+Plan: `plans/260919-1929-issue-188-operator-messages-in-transcript/`
+Date: 2026-09-19T21:16:06Z
 Branch: `archon/thread-74969958`
 
 ## Parent-plan acceptance criteria → proving tests
