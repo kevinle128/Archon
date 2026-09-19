@@ -6,26 +6,35 @@ import { createHash } from 'node:crypto';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../lib/playwright/suite';
 import { openRunDetail, openLegacyRunDetail } from '../lib/playwright/run-detail';
-import { HITL_INSPECT_NODE, HITL_ASK_NODE } from '../lib/playwright/archon-runtime';
+import {
+  HITL_INSPECT_NODE,
+  HITL_ASK_NODE,
+  TRANSCRIPT_STRUCTURED_NODE,
+  TRANSCRIPT_STRUCTURED_TEXT,
+  transcriptReportEnvelope,
+} from '../lib/playwright/archon-runtime';
 
 const tooling = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const target = env.ARCHON_E2E_REPO_ROOT ?? tooling;
 const designRoot =
   '_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups';
 const mockRoot = '_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup';
+// States captured from the prepared transcript-display run rather than the HITL run.
+const transcriptStates = new Set(['assistant-report', 'runtime-graph']);
 
 async function openRoom(
   page: Page,
   surface: string,
   runId: string,
-  nodeId: string
+  nodeId: string,
+  rowName = nodeId
 ): Promise<Locator> {
   if (surface === 'console') await openRunDetail(page, runId, nodeId);
   else {
     await openLegacyRunDetail(page, runId);
     await page.getByRole('tab', { name: 'Logs', exact: true }).click();
     await page
-      .getByRole('button', { name: new RegExp(nodeId) })
+      .getByRole('button', { name: new RegExp(rowName) })
       .first()
       .click();
   }
@@ -42,7 +51,7 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
   archon,
   context,
 }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(300_000);
   const output = env.ARCHON_VERIFY_EVIDENCE ?? testInfo.outputPath('visual');
   await mkdir(output, { recursive: true });
   const reference = await context.newPage();
@@ -58,6 +67,7 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
   for (const source of config.sources)
     expect(hash(await readFile(join(target, source.path)))).toBe(source.sha256);
   const started = await archon.runHitlWorkflow();
+  const transcriptRun = await archon.prepareTranscriptDisplayRun();
   const cases: unknown[] = [];
   try {
     for (const surface of config.surfaces) {
@@ -65,42 +75,78 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
         for (const state of config.states) {
           const id = `${surface}-${viewport.width}-${state}`;
           await page.setViewportSize(viewport);
-          const node = state === 'ask-pending' ? HITL_ASK_NODE : HITL_INSPECT_NODE;
-          let room = await openRoom(page, surface, started.runId, node);
-          if (viewport.width === 1440) {
-            const panel = page.locator(`#${surface}-run-room`);
-            const metrics = await panel.evaluate(el => ({
-              width: el.getBoundingClientRect().width,
-              group: el.parentElement!.getBoundingClientRect().width,
-            }));
-            const width = (await room.boundingBox())!.width;
-            const ratio = ((460 + metrics.width - width) / metrics.group) * 100;
-            await page.evaluate(
-              ({ key, ratio }): void => {
-                localStorage.setItem(key, String(ratio));
-              },
-              { key: `archon.run-room.ratio.${surface}`, ratio }
-            );
-            room = await openRoom(page, surface, started.runId, node);
-            expect(Math.abs((await room.boundingBox())!.width - 460)).toBeLessThanOrEqual(2);
-          }
-          // Enter keyboard modality before setting the capture's focus target.
-          // Legacy reaches the room by pointer, which suppresses :focus-visible.
-          await page.keyboard.press('Tab');
+          const runId = transcriptStates.has(state) ? transcriptRun.runId : started.runId;
           let actual: Locator;
-          if (state === 'ask-pending') {
-            actual = room.locator('form').first();
-            await room.getByRole('radio').first().focus();
+          let room: Locator | null = null;
+          if (state === 'runtime-graph') {
+            if (surface === 'console') {
+              await openRunDetail(page, runId);
+              await page.getByRole('button', { name: 'Graph', exact: true }).click();
+              await expect(page.getByTestId('console-run-graph-canvas')).toBeVisible({
+                timeout: 30_000,
+              });
+            } else {
+              await openLegacyRunDetail(page, runId);
+              const graphTab = page.getByRole('tab', { name: 'Graph', exact: true });
+              if ((await graphTab.count()) > 0) await graphTab.click();
+              await expect(page.locator('.react-flow__node').first()).toBeVisible({
+                timeout: 30_000,
+              });
+            }
+            actual = page.locator(`#${surface}-run-view`);
           } else {
-            actual = room.locator('details[data-tool-id]').first();
-            const summary = actual.locator('summary').first();
-            await summary.focus();
-            if (state === 'raw-open') {
-              await summary.press('Enter');
-              const raw = actual.getByRole('button', { name: 'Raw', exact: true });
-              await raw.focus();
-              await raw.press('Enter');
-              await expect(actual.locator('pre')).toBeVisible();
+            const node =
+              state === 'ask-pending'
+                ? HITL_ASK_NODE
+                : state === 'assistant-report'
+                  ? TRANSCRIPT_STRUCTURED_NODE
+                  : HITL_INSPECT_NODE;
+            room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
+            if (viewport.width === 1440) {
+              const panel = page.locator(`#${surface}-run-room`);
+              const metrics = await panel.evaluate(el => ({
+                width: el.getBoundingClientRect().width,
+                group: el.parentElement!.getBoundingClientRect().width,
+              }));
+              const width = (await room.boundingBox())!.width;
+              const ratio = ((460 + metrics.width - width) / metrics.group) * 100;
+              await page.evaluate(
+                ({ key, ratio }): void => {
+                  localStorage.setItem(key, String(ratio));
+                },
+                { key: `archon.run-room.ratio.${surface}`, ratio }
+              );
+              room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
+              expect(Math.abs((await room.boundingBox())!.width - 460)).toBeLessThanOrEqual(2);
+            }
+            // Enter keyboard modality before setting the capture's focus target.
+            // Legacy reaches the room by pointer, which suppresses :focus-visible.
+            await page.keyboard.press('Tab');
+            if (state === 'ask-pending') {
+              actual = room.locator('form').first();
+              await room.getByRole('radio').first().focus();
+            } else if (state === 'assistant-report') {
+              // The definition resolves asynchronously; the canonical envelope
+              // disappearing is the moment output_format unwrapped the row.
+              await expect(room).not.toContainText(
+                transcriptReportEnvelope(TRANSCRIPT_STRUCTURED_TEXT),
+                { timeout: 30_000 }
+              );
+              actual = room
+                .locator('.chat-markdown')
+                .filter({ hasText: TRANSCRIPT_STRUCTURED_TEXT })
+                .first();
+            } else {
+              actual = room.locator('details[data-tool-id]').first();
+              const summary = actual.locator('summary').first();
+              await summary.focus();
+              if (state === 'raw-open') {
+                await summary.press('Enter');
+                const raw = actual.getByRole('button', { name: 'Raw', exact: true });
+                await raw.focus();
+                await raw.press('Enter');
+                await expect(actual.locator('pre')).toBeVisible();
+              }
             }
           }
           await expect(actual).toBeVisible();
@@ -122,6 +168,12 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
               await reference.getByRole('button', { name: 'Chat', exact: true }).click();
             expected = reference.locator('#ask-clarify');
             await expect(expected).toBeVisible({ timeout: 30_000 });
+          } else if (state === 'runtime-graph') {
+            source = `${mockRoot}/${surface === 'console' ? 'console' : 'index'}.html`;
+            await reference.goto(pathToFileURL(join(target, source)).href);
+            if (surface === 'console') await reference.locator('button[data-view="graph"]').click();
+            expected = reference.locator(surface === 'console' ? '#cc-graph' : '#tab-graph');
+            await expect(reference.locator('.gnode').first()).toBeVisible({ timeout: 30_000 });
           } else {
             source =
               state === 'raw-open'
@@ -133,7 +185,9 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
                 ? reference
                     .locator('details')
                     .filter({ has: reference.getByRole('button', { name: 'Raw ▾', exact: true }) })
-                : reference.locator('.tcall').first();
+                : state === 'assistant-report'
+                  ? reference.locator('.asst').last()
+                  : reference.locator('.tcall').first();
           }
           await expect(expected).toBeVisible();
           await expected.evaluate((element, width): void => {
@@ -157,11 +211,12 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             id,
             surface,
             state,
+            runId,
             viewport,
             reference_viewport: { width: 1440, height: 1000 },
             source,
             actual_geometry: actualGeometry,
-            room_geometry: await room.boundingBox(),
+            room_geometry: room ? await room.boundingBox() : undefined,
             reference_geometry: await expected.boundingBox(),
             images,
           });

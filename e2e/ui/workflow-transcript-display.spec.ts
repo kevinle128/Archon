@@ -170,7 +170,7 @@ function expectStoredRowsSerialized(archon: ArchonRuntime, runId: string): void 
   }
 }
 
-test('[P1] [V:transcript.console] Console inline + room unwrap the envelope; API and stored rows stay serialized', async ({
+test('[P1] [V:transcript-display.structured] Exact one-string report unwraps in all three mounts; ineligible and stored rows stay serialized', async ({
   page,
   archon,
 }) => {
@@ -189,31 +189,9 @@ test('[P1] [V:transcript.console] Console inline + room unwrap the envelope; API
   // Selecting the row suspends its inline body and opens the node room — the
   // second mount must apply the same unwrapping.
   await openConsoleLogRow(page, TRANSCRIPT_STRUCTURED_NODE);
-  const room = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
-  await expectUnwrapped(room, 'Console selected node room');
-  await expectIneligibleRows(room, 'Console selected node room');
-});
-
-test('[P1] [V:transcript.legacy] Legacy node room unwraps the envelope', async ({
-  page,
-  archon,
-}) => {
-  const started = await archon.prepareTranscriptDisplayRun();
-  await openLegacyRunDetail(page, started.runId);
-  await waitForRunTitle(page);
-  await openLegacyLogRow(page, 'structured');
-  const room = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
-  await expectUnwrapped(room, 'Legacy node room');
-  await expectIneligibleRows(room, 'Legacy node room');
-});
-
-test('[P1] [V:transcript.fallback] No-schema and deleted-definition nodes keep the raw envelope', async ({
-  page,
-  archon,
-}) => {
-  const started = await archon.prepareTranscriptDisplayRun();
-  await openRunDetail(page, started.runId);
-  await waitForRunTitle(page);
+  const structuredRoom = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
+  await expectUnwrapped(structuredRoom, 'Console selected node room');
+  await expectIneligibleRows(structuredRoom, 'Console selected node room');
 
   // `plain` resolves a definition node with no output_format; `ghost` resolves
   // no definition node at all. Both must render the serialized bytes.
@@ -236,6 +214,11 @@ test('[P1] [V:transcript.fallback] No-schema and deleted-definition nodes keep t
 
   await openLegacyRunDetail(page, started.runId);
   await waitForRunTitle(page);
+  await openLegacyLogRow(page, 'structured');
+  const legacyRoom = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
+  await expectUnwrapped(legacyRoom, 'Legacy node room');
+  await expectIneligibleRows(legacyRoom, 'Legacy node room');
+
   await openLegacyLogRow(page, TRANSCRIPT_PLAIN_NODE);
   await expectRawEnvelope(
     await waitForRoom(page, TRANSCRIPT_PLAIN_NODE),
