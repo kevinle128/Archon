@@ -1,5 +1,16 @@
 ## Codebase Patterns
 
+### Console wildcard border pin defeats Tailwind border-* utilities
+- Where: `packages/web/src/experiments/console/theme.css` (`.console-root * { border-color: var(--border) }`)
+- Pattern: Unlayered wildcard border pin beats layered Tailwind `border-warning` / `border-border-bright`. Restore intended colors with a more-specific unlayered rule (Raw toggle already did this; Ask card uses `[data-ask-card] { border-color: var(--warning) }`).
+- Example: `.console-root [data-ask-card] { border-color: var(--warning); }`
+- Gotcha: changing theme.css requires re-pinning its sha256 in visual-config.json AND regenerating the `ui.visual` runner digest in run-ui.json; pin AFTER prettier rewrites the file.
+
+### Raw focus/hover/open all flip to primary text + bright border
+- Where: `NodeRoom.tsx` + `ConsoleAgentHistoryList.tsx` Raw toggle closed-state classes
+- Pattern: closed = secondary + quiet border; `hover:` AND `focus-visible:` must both promote to primary text + bright border (open state already primary). Missing `focus-visible:text-text-primary` fails the tool-row visual gate even when hover works.
+- Example: `... hover:text-text-primary focus-visible:border-border-bright focus-visible:text-text-primary`
+
 ### Deterministic real-server transcript E2E via `prepareTranscriptDisplayRun`
 - Where: `e2e/lib/playwright/archon-runtime.ts` (`TRANSCRIPT_*` exports + `prepareTranscriptDisplayRun()`); spec `e2e/ui/workflow-transcript-display.spec.ts`; fixture `e2e/fixtures/workflows/e2e-transcript-display.yaml`.
 - Pattern: The e2e-fake provider cannot emit structured output, so the fixture's `output_format` node (`group.structured`, a `loop_group` child to exercise nested resolution) and `plain` sibling skip via an unsatisfiable `when: $seed.output == '...'` guard on a `bash:` producer (whole-output compare is allowed on bash; AI producers are rejected by the loader). After `workflow run` completes, the helper reads each node's minted `occurrence_id`/`attempt_id` back from its `node_skipped` event row and seeds matching `metadata.execution` + `text_mode: 'delta'` fragments plus ineligible rows into `remote_agent_workflow_node_messages` — the durable shape, while request/API/storage stay real. `ghost` (started/completed events, no definition row) covers the deleted-definition fallback.
@@ -183,5 +194,54 @@ BLOCKER US-002 | gate=`cd packages/web && bun x tsc --noEmit` | cause=pre-existi
 ## Blocker Ledger
 
 BLOCKER US-004 | gate=`cd packages/web && NODE_ENV=development bun test <6 story files>` | cause=pre-existing `defineProperty(win.HTMLElement.prototype,'getBoundingClientRect',{configurable:true,value})` missing `writable:true` at WorkflowExecution.test.tsx:371 (since 56c61f72 #155) → `TypeError: Attempted to assign to readonly property` at ConsoleNodeRoom.test.tsx:4097 `stubRect`; identical 6-failure fingerprint reproduced on clean pre-story base; culprit outside story diff lines | action=added `writable: true`, committed separately as 2a5ea1cb `chore(unblock):` | 2026-09-19
+
+---
+
+## 2026-09-19 — US-005: Governed verification registration, fresh verification attempt, and full regression gate
+
+**Status**: PASSED
+**Commits**:
+- 73e6a8f8 `feat: register governed verification for transcript display and run graph`
+- b976dc4f `chore(unblock): raise governed web-build timeout blocking US-005 verification attempt`
+- b029fdbf `fix(web): restore Raw focus primary and Console ask warning tone` (product gaps surfaced by proof)
+- 0f56b911 `chore(verify): re-pin theme.css hash after prettier rewrite`
+
+**Files changed**:
+- `.agents/skills/verify-archon/lib/browser-scenarios.ts` — `ui.transcript-display` → four V-tags
+- `.agents/skills/verify-archon/features/run-ui.json` — behavior + scenario + regenerated `ui.visual` runner digest
+- `.agents/skills/verify-archon/visual-config.json` — `assistant-report` + `runtime-graph` states/criteria; SPEC.md + theme.css source hashes
+- `.agents/skills/verify-archon/lib/visual-review.ts` — per-case `runId` in manifest schema
+- `e2e/ui/verifier-visual.spec.ts` — HITL vs prepared-transcript runs; drive new states; record runId per case
+- `e2e/ui/workflow-transcript-display.spec.ts` — structured specs merged under `[V:transcript-display.structured]`
+- `.agents/skills/verify-archon/lib/runner.ts` — web-build timeout 180s → 900s (unblock only)
+- `packages/web/src/components/workflows/NodeRoom.tsx` + `ConsoleAgentHistoryList.tsx` — Raw `focus-visible` primary/bright
+- `packages/web/src/experiments/console/components/ask/ConsoleAskCard.tsx` + `theme.css` — warning heading + `[data-ask-card]` border restore
+
+**Governed attempt**: `.plans/verifications/fix-workflow-transcript-display/us-005-20260919T174638Z-a2c6e8cc`
+- head `0f56b911`; evidence `.../evidence/c48a1b9d-236e-4a07-b11c-1e0ce095eb4b`
+- PASS: ui.ask, ui.rooms, ui.tools, ui.transcript-display, ui.visual, workflow.execution, workflow.governance
+- visual 32/32 including assistant-report + runtime-graph at 1440 and 390 on console + legacy; desktop/narrow artifacts retained
+- First attempt failed on pre-existing Raw focus secondary text + Console ask neutral border (wildcard pin); fixed minimally then re-proved
+
+**Acceptance criteria verified**:
+- [x] browser-scenarios maps ui.transcript-display → structured, legacy-scroll-desktop, legacy-scroll-narrow, graph
+- [x] run-ui.json registers behavior/scenario; ui.visual digest regenerated after visual-config changes
+- [x] visual-config assistant-report + runtime-graph both surfaces/viewports; SPEC.md hash current
+- [x] visual-review + verifier-visual record actual runId per case; new states driven/captured (not tag-only)
+- [x] Fresh governed functional+visual attempt PASS on clean committed target; artifacts retained
+- [x] `bun x tsc --noEmit -p .agents/skills/verify-archon/tsconfig.json` + `bun run test:verification-skills` pass
+- [x] `bun run validate` full PASS (exit 0)
+
+**Learnings**:
+- Console `.console-root * { border-color: var(--border) }` silently defeats every Tailwind `border-*` utility; fix with a more-specific unlayered rule, not by removing the pin.
+- Pin visual-config source hashes AFTER prettier/lint-staged rewrites the source file — pre-prettier bytes fail `checkVisualSources`.
+- Governed selection broadens to all run-ui behaviors matched by the feature diff; product gaps outside the story (Raw focus, Ask warning tone) still block PASS and must be fixed minimally per the story technical notes.
+- `ui.visual` runner id is `visual-` + digest(visual-config.json); any config/source-hash edit must update run-ui.json in the same commit.
+
+## Blocker Ledger
+
+BLOCKER US-005 | gate=`bun .agents/skills/verify-archon/bin/verify.ts prove --selection` | cause=ui.tools focused Raw stayed secondary text (missing focus-visible utilities on closed Raw); ui.visual console ask-pending lacked warning border because theme wildcard pin defeated border-warning, heading was text-primary | action=b029fdbf added focus-visible primary/bright on Raw; data-ask-card + text-warning heading + theme override; 0f56b911 re-pinned theme hash; re-prove PASS | 2026-09-19
+
+BLOCKER US-005 | gate=`prove preflight build:web` | cause=governed web build SIGTERM at 180s; vite alone ~4m, full build:web ~9.5m on this hardware | action=b976dc4f raised only the build call site to 900s; assertions unchanged | 2026-09-19
 
 ---
