@@ -1,121 +1,116 @@
 ---
 phase: 1
-title: 'DeepSeek ACP interrupt seam and real-DSH gate'
+title: 'DeepSeek ACP interrupt seam and pinned-runtime gate'
 status: pending
 priority: P1
 effort: '1d'
 dependencies: []
 ---
 
-# Phase 1: DeepSeek ACP interrupt seam and real-DSH gate
+# Phase 1: DeepSeek ACP interrupt seam and pinned-runtime gate
 
 ## Goal
 
-Give the DeepSeek provider a turn-scoped `interruptSignal` that issues ACP `session/cancel` exactly once, ends the turn with an abort-marked result that carries a provider-native `terminalReason`, and leaves the ACP session id resumable. Prove cancel → resume → continuation against real DSH before Phase 2 relies on the marker. Calls without `interruptSignal` keep the existing prompt/abort path.
+Teach the DeepSeek provider to receive the executor's turn-scoped `interruptSignal`, cancel the active ACP prompt exactly once, preserve the existing abort-result contract and session id, and cleanly close/reap the per-turn DSH child. Prove cancel -> close -> resume -> continuation against the pinned DSH runtime before advertising the capability.
 
-## Context links
+## Preconditions and invariants
 
-- Story 2.7: `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:614–638`
-- Spec: `_bmad-output/specs/spec-agent-node-room/engine-integration.md:33`, `steering-test-plan.md:41`, `provider-steering-matrix.md:59–63`
-- Claude precedent: `packages/providers/src/claude/provider.ts:1681–1961`, `packages/providers/src/claude/interrupt-resume-spike.ts`, `reports/claude-interrupt-resume-spike.md`
-- Scout: `plans/reports/scout-260920-0223-deepseek-bridge-and-tests.md`
-
-## Key insights
-
-- `acp-client.ts:312–319` has one `onAbort` listener for `abortSignal`; `:340–351` swallows the prompt rejection once `aborted`; `:356–366` `finally` awaits the cancel notify and then always sends `session/close`; `:368–371` pushes `abortedResult(sessionId)`.
-- `abortedResult()` (`:105–113`) has `stopReason:'aborted'`, `isError:true`, `errorSubtype:'deepseek_aborted'` and **no** `terminalReason` — so today the executor's `isInterruptTerminalReason()` cannot recognise it.
-- The executor breaks out of the stream on `interruptMarked` **before** the `isError` guard (`dag-executor.ts:2764–2775`), so keeping `isError:true` on the abort result is safe (proved for Claude's shape at `dag-executor.test.ts:27269`).
-- Every turn is its own DSH child (`runDeepseekAcpTurn`); "same session" is `session/resume` with the retained id (`:290–300`). Resume after cancel + close is unproven for DSH — the spike gate below.
-- `provider.ts:145–223` forwards only `abortSignal`; `DeepseekProvider.sendQuery` pre-aborted check is for `abortSignal` only. The executor mints a fresh interrupt controller per pass (`dag-executor.ts:2431–2435`), so `interruptSignal` is never pre-aborted in practice; mirror the check anyway for symmetry only if it costs one line (KISS).
+- Read `packages/providers/src/community/deepseek/acp-client.ts`, `provider.ts`, `event-bridge.ts`, their tests, and the Devin ACP cancellation pattern before editing.
+- Keep `abortedResult()` unchanged. The executor phase will classify its existing exact shape.
+- `abortSignal` remains node Cancel; `interruptSignal` is operator Stop. Both use ACP `session/cancel`, but the first cause is retained for tool-outcome semantics.
+- No capability flip occurs in this phase. Production cannot expose Stop until Phase 2's classifier and conformance tests land.
+- Do not log prompts, model output, raw tool payloads, environment values, base URLs, or credentials.
 
 ## File inventory
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/providers/src/community/deepseek/acp-client.ts` | modify | ~25 lines | `acp-client.test.ts` abort test `:502` expectation gains `terminalReason` |
-| `packages/providers/src/community/deepseek/provider.ts` | modify | ~3 lines | `provider.test.ts` forwarding assertion |
-| `packages/providers/src/types.ts` | modify | docstring at `:838–847` — add DeepSeek ACP `session/cancel` as a second `'native'` example | — |
-| `packages/providers/src/community/deepseek/capabilities.ts` | modify | 1 line | `config.test.ts:124–146` (`toEqual` literal with `interrupt:false`) and `registry.test.ts:197–204` (`'only Claude advertises native interrupt'` → `['claude','deepseek']`) must be updated; `observability.test.ts`/`loader.test.ts` pin nothing |
-| `packages/providers/src/community/deepseek/event-bridge.ts` | modify only if the spike shows a `failed` tool update after cancel | ~10 lines (`cancelRequested` on event state; `failed` while set → `toolOutcome:'interrupted'`) | `event-bridge.test.ts` |
-| `packages/providers/src/community/deepseek/acp-client.test.ts` | modify | +5 tests, `closeHold` option on `createFakeDsh` | — |
-| `packages/providers/src/community/deepseek/provider.test.ts` | modify | +2 tests | — |
-| `packages/providers/src/community/deepseek/interrupt-resume-spike.ts` | create | ~150 lines | diagnostic only, not in the `test` script |
-| `packages/providers/package.json` | modify | 1 script `spike:interrupt:deepseek` | — |
-| `reports/deepseek-interrupt-resume-spike.md` | create | sanitized evidence | — |
+| File | Action | Purpose |
+| --- | --- | --- |
+| `packages/providers/src/community/deepseek/acp-client.ts` | modify | Add the signal, cause-aware exactly-once cancel, listener cleanup, natural-result race protection, and bounded local cancellation drain. |
+| `packages/providers/src/community/deepseek/provider.ts` | modify | Forward `requestOptions.interruptSignal`. |
+| `packages/providers/src/community/deepseek/acp-client.test.ts` | modify | Deterministic ACP protocol, race, cleanup, and ignored-cancel tests. |
+| `packages/providers/src/community/deepseek/provider.test.ts` | modify | Verify signal forwarding without changing existing pre-aborted node-Cancel behavior. |
+| `packages/providers/src/community/deepseek/interrupt-resume-spike.ts` | create | Bounded, sanitized pinned-runtime diagnostic; never exported or run by CI. |
+| `packages/providers/package.json` | modify | Add `spike:interrupt:deepseek`. |
+| `plans/reports/deepseek-interrupt-resume-spike.md` | create during execution | Sanitized operator evidence in the configured reports tree. |
+| `packages/providers/src/community/deepseek/event-bridge.ts`, `packages/providers/src/community/deepseek/event-bridge.test.ts` | conditional modify | Only if the live evidence proves cancelled in-flight tools arrive as `status:'failed'`. |
 
-## Tests before (regression, written first)
+## Tests first
 
-Run: `cd packages/providers && bun test src/community/deepseek/acp-client.test.ts src/community/deepseek/provider.test.ts`
+Run from `packages/providers`:
 
-1. `acp-client.test.ts` — extend `'aborting during prompt sends cancel, closes the session, and emits local aborted result'` (`:502`) to assert the abort result **also** carries `terminalReason` (fails until step 3). Keep every existing assertion (cancel called, close called, `errorSubtype:'deepseek_aborted'`, `isError:true`).
-2. `acp-client.test.ts` — new: `'interruptSignal abort sends one session/cancel, closes the session, and emits the abort-marked result with the session id'` using the fake ACP agent harness (`FakeAgent`/`methodsCalled()` pattern from `:496–580`).
-3. `acp-client.test.ts` — new: `'both signals aborting sends session/cancel exactly once'`.
-4. `acp-client.test.ts` — new: `'consumer early return still sends cancel for a live session when interruptSignal was never aborted'` (guards the existing `finally` at `:388–398`).
-5. `provider.test.ts` — new: `'forwards interruptSignal into DeepseekProcessInput alongside abortSignal'` via `DeepseekProviderDependencies.runTurn` injection (pattern at `:74–110`).
-6. `provider.test.ts` — new: `'getCapabilities reports interrupt native'`.
-7. `acp-client.test.ts` — new: `'interruptSignal aborting after the prompt resolved yields the natural result, not the abort-marked one'` — hold `session/close` open with the fake harness's `closeHold` deferred (add it to `createFakeDsh` options like `promptHold`), abort the interrupt signal while close is pending, and assert the result is the natural `successResult` (real `stopReason`, structured output kept) and that **no** `session/cancel` was sent. This is the provider-side half of the executor's case 1 ("a result without an abort marker is a natural end even when Stop raced it") — Claude gets it from the SDK; DeepSeek must enforce it.
+```bash
+bun test src/community/deepseek/acp-client.test.ts src/community/deepseek/provider.test.ts src/community/deepseek/event-bridge.test.ts
+```
+
+Add or extend these cases before implementation:
+
+1. `provider.test.ts`: `interruptSignal` is forwarded into `DeepseekProcessInput` alongside, not instead of, `abortSignal`.
+2. `acp-client.test.ts`: aborting `interruptSignal` while `session/prompt` is live produces one `session/cancel`, one `session/close`, and the exact existing abort result with the created session id.
+3. Existing `abortSignal` test remains byte-for-byte compatible and still takes the same ACP path.
+4. When both signals abort, only one `session/cancel` is sent; the first cause is stable.
+5. A signal already aborted when the ACP session becomes available sends cancel once, skips `session/prompt`, closes, and returns an abort result carrying that new/resumed session id.
+6. An interrupt during `session/set_config_option` cancels once, skips the prompt, closes, and yields the abort result.
+7. Hold `session/close` after a natural prompt response, then abort `interruptSignal`: the natural result and structured output survive and no `session/cancel` is sent.
+8. Success, prompt failure, setup failure, and early consumer return remove both listeners. Early return still cancels a live session and releases the connection.
+9. A fake DSH whose `session/prompt` never settles after `session/cancel` cannot hold the prompt wait forever: after a local `CANCEL_DRAIN_GRACE_MS = 500`, matching Devin, the fake must allow `session/close` to complete, cleanup/reap proceeds, and the abort result is emitted. Use fake timers; do not add product configuration or a test-only production seam solely for the duration.
+10. If the conditional bridge change applies, `failed` after first cause `operator-interrupt` maps to `interrupted`, while normal `failed` and first cause `node-cancel` remain `error`.
 
 ## Implementation steps
 
-1. `acp-client.ts`: add `interruptSignal?: AbortSignal` to `DeepseekAcpTurnInput`. In `driveDeepseekAcpTurn`, register a shared `requestCancel()` on both signals; guard so `session/cancel` is notified once (`if (aborted) return; aborted = true; cancelSent = …`). Compute the initial `aborted` from either signal.
-2. `acp-client.ts`: freeze the abort decision the moment the `session/prompt` request settles — remove both listeners immediately after `promptResponse` resolves/rejects (before the `finally` awaits cancel and `session/close`), so a signal that fires during teardown cannot stamp the abort marker on a naturally finished turn or send a cancel for a closed prompt (test 7).
-3. `acp-client.ts`: `abortedResult(sessionId, stopReason)` — forward `promptResponse?.stopReason` verbatim when DSH resolved the cancelled request (ACP mandates `'cancelled'`), and use `'cancelled'` only as the fallback when it rejected; emit it as `terminalReason`. Keep `stopReason:'aborted'`, `isError:true`, `errorSubtype:'deepseek_aborted'`. This makes the result chunk itself the spike's evidence of what DSH returned. Add a short comment naming `terminalReason` as the executor's classification marker (#183 five-case rule).
-4. `provider.ts`: forward `requestOptions?.interruptSignal` into `DeepseekProcessInput`.
-5. `capabilities.ts`: `interrupt: 'native', // ACP session/cancel + session/resume on the same id (cancel-and-continue)`.
-6. Update the two pinned fixtures: `config.test.ts:144` expected literal → `'native'`; `registry.test.ts:197–204` expected native list → `['claude', 'deepseek']`.
-7. Create `interrupt-resume-spike.ts` (see gate). Add `spike:interrupt:deepseek` to `packages/providers/package.json` next to `spike:deepseek:acp`; do not export from the barrel.
-8. Run the spike with operator credentials; write `reports/deepseek-interrupt-resume-spike.md` (command, DSH pin `@deepseek-ai/dsh@0.1.2-rc.1`, ACP SDK pin `1.4.0`, event ordering, prompt-response outcome, session-id equality, continuation result; no prompts, credentials, or model content).
-9. If the spike shows a `tool_call_update` with `status:'failed'` after cancel (ACP has no `cancelled` tool status), add `cancelRequested` to `createDeepseekEventState()`, set it in `requestCancel()`, and map `failed`-while-cancelRequested to `toolOutcome: 'interrupted'` in `event-bridge.ts` (D4), with a bridge test proving `failed` without the flag still maps to `'error'`.
+1. Add `interruptSignal?: AbortSignal` to `DeepseekAcpTurnInput`; it flows into `DeepseekProcessInput` by extension. Forward `requestOptions?.interruptSignal` in `DeepseekProvider.sendQuery()`.
+2. In the ACP driver, keep shared turn state outside individual listeners: first cancellation cause (`node-cancel`, `operator-interrupt`, or cleanup), a local cancellation deferred, a `cancelSent` guard/promise, and the active client/session references.
+3. Implement `requestCancel(cause)` so the first call records the cause and releases the local cancellation deferred exactly once. Implement `flushCancel()` separately: it is a no-op until both `clientCtx` and `activeSessionId` exist, then sends and memoizes one `session/cancel`. A cancellation requested before session creation therefore remains pending instead of being lost; later causes cannot overwrite it.
+4. Once the session is live, register one listener per supplied signal, check both signals for an already-aborted state, and call `flushCancel()` after those checks. If either is already aborted, call `requestCancel()` with the correct cause; if both are already aborted, check node Cancel first so the executor's existing Cancel dominance remains intuitive. All later listener calls run `requestCancel()` followed by `flushCancel()`.
+5. Honor cancellation at setup boundaries: check the recorded cause before each configuration request, after each awaited configuration response, and before `session/prompt`. ACP cancel does not cancel an already-pending config request, so do not claim otherwise; the invariant is that no later setup or prompt request starts after the boundary observes cancellation.
+6. Await `session/prompt` against a local 500ms cancellation drain grace, following the existing Devin ACP pattern. This preserves a short window for ordered late updates but prevents an unresponsive cancelled prompt from holding the generator indefinitely.
+7. At prompt settlement, remove both listeners before awaiting cancel completion or `session/close`. Capture whether the prompt ended naturally at that boundary. A later signal during teardown must not change the result.
+8. Await the cancel notification best-effort as today, then call `session/close`; surface a close failure through the existing `deepseek_protocol_error` path. Keep `runDeepseekAcpTurn()`'s `finally` reaper unchanged unless a deterministic ignored-cancel test proves it cannot complete cleanup.
+9. Leave `abortedResult(sessionId)` exactly as it is. Do not add `terminalReason`, expose raw ACP `cancelled`, or change `toDeepseekErrorResult()`.
+10. Preserve consumer-return cleanup by routing the outer `finally` through `requestCancel('cleanup')` plus `flushCancel()` rather than a second independent notify.
 
-## Refactor (protected changes)
+## Pinned-runtime diagnostic
 
-- The single `onAbort` closure becomes a shared `requestCancel()` invoked by both listeners; no other control flow in `driveDeepseekAcpTurn` moves. The `finally` ordering (await cancel → `session/close` → `sessionLive=false`) is unchanged.
+Create `interrupt-resume-spike.ts` using `acp-handshake-spike.ts` for DeepSeek env setup and the Claude interrupt spike for evidence hygiene and timeout structure.
 
-## Tests after (new behaviour)
+The script must:
 
-- Tests 2–7 above pass; test 1 passes with the new field.
-- `event-bridge.test.ts` case for the post-cancel `failed` status only if step 9 applies.
-
-## Real-DSH gate (diagnostic, operator-run)
-
-Script `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`, gated on `DEEPSEEK_LIVE_TEST=1` plus `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, `DEEPSEEK_LIVE_MODEL` exactly like `acp-handshake-spike.ts` (`:43–53`, `:93–99`), in a disposable temp cwd, emitting a sanitized JSON evidence document like the Claude spike (session ids and chunk-type names only):
-
-1. Fresh session: send a prompt that produces a multi-step tool-using turn; on the first `assistant` or tool chunk, abort an `interruptSignal`. Record: chunk types after the abort, whether a `tool_call_update` with `completed`/`failed` arrived for the in-flight tool, whether `session/prompt` resolved or rejected — observable directly from the abort result's `terminalReason` (step 3 forwards the resolved `stopReason` and falls back to `'cancelled'` on rejection; the spike additionally logs which branch fired via the provider's existing structured logger at debug level), the abort result's `sessionId`, `terminalReason`, and timing.
-2. Resumed session: `resumeSessionId = <that id>`, send a short redirect prompt; record `resumed === true`, that the turn completes with a non-error result, and (best effort) whether the reply references the cut-off work ("partial retained").
-3. Interrupt the resumed session again and resume a third time to prove repeatability.
+- require `DEEPSEEK_LIVE_TEST=1`, `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL`, and `DEEPSEEK_LIVE_MODEL`;
+- run only in a disposable temporary directory and always remove it;
+- enforce a total timeout and return non-zero for timeout, authentication, model, protocol, missing-session, resume, or continuation failure;
+- read and report the installed `@deepseek-ai/dsh` and ACP SDK versions, failing if they differ from the package pins;
+- start one tool-using turn, trigger `interruptSignal` only after an observable assistant/tool event, and record `interruptAckMs` from signal abort through the local abort result plus post-interrupt chunk-type/tool-status names;
+- assert the final result has a non-empty session id and the exact local abort triple;
+- start one redirect turn with that id, assert `resumed === true`, a non-error terminal result, and session-id continuity;
+- emit one sanitized JSON document. Record equality booleans rather than raw session ids; record no prompt or response text.
 
 Gate outcomes:
 
-- **Proceed:** abort result carries the session id; resume after cancel + close succeeds and the continuation completes.
-- **Block:** `session/resume` fails after a cancelled turn (`deepseek_resume_failed`), or the session id is not retained. Record evidence, stop, and report the blocker on issue #187; do not fall back to a fresh session or to node Cancel.
+- **Proceed:** `interruptAckMs < 1000`, the local abort result carries the session id, close completes, resume reports `true`, and the redirect completes without error on the same id.
+- **Block:** `interruptAckMs >= 1000`, cancellation/close times out, session id is absent, `session/resume` yields `deepseek_resume_failed`, `resumed` is not `true`, or continuation fails. Record sanitized evidence and stop; do not flip the capability or fall back to a new session/node Cancel.
+- **Tool mapping decision:** if an in-flight cancelled tool arrives as terminal ACP `failed` before the result, apply the first-cause-safe bridge mapping and its three-way tests. If it remains open, the executor owns `interrupted`; if DSH emits no tool start, adjust and rerun the diagnostic before declaring the tool evidence complete.
+
+Write the operator command, dependency pins, sanitized JSON, outcome, and tool-mapping decision to `plans/reports/deepseek-interrupt-resume-spike.md`.
 
 ## Regression gate
 
 ```bash
-cd packages/providers && bun test src/community/deepseek/acp-client.test.ts src/community/deepseek/provider.test.ts src/community/deepseek/event-bridge.test.ts src/registry.test.ts src/observability.test.ts
+cd packages/providers
+bun test src/community/deepseek/acp-client.test.ts src/community/deepseek/provider.test.ts src/community/deepseek/event-bridge.test.ts
 bun run type-check
 ```
 
-## Todo
+## Completion checklist
 
-- [ ] Tests before (1–6) written and failing for the right reason
-- [ ] Steps 1–5 implemented; tests green
-- [ ] Spike script + package script added
-- [ ] Spike run; sanitized report written; marker string confirmed or adjusted
-- [ ] Event-bridge mapping decided from spike evidence
-- [ ] Regression gate green
+- [ ] Tests 1-9 fail for the expected missing behavior, then pass.
+- [ ] Existing node-Cancel and consumer-return tests remain green.
+- [ ] Abort result has no new field and unchanged values.
+- [ ] Diagnostic is bounded, sanitized, version-checked, and not exported/CI-wired.
+- [ ] Pinned-runtime outcome is `Proceed` and report exists under `plans/reports/`.
+- [ ] Conditional tool mapping is either implemented with evidence or explicitly recorded as unnecessary.
 
-## Success criteria
+## Risks and rollback
 
-- A DeepSeek turn with an aborted `interruptSignal` ends with one `session/cancel`, one `session/close`, and an abort-marked result carrying the session id and `terminalReason`; the same turn without any signal is unchanged.
-- The spike report exists and records a "proceed" outcome.
-
-## Risk assessment
-
-- **Resume after cancel unsupported by DSH** — blocker by design (see gate); Devin's ACP cancel-then-reload precedent makes it plausible but not proven.
-- **Tool card closes before the result** — handled by D4/step 8.
-- **Double cancel on Cancel+Stop race** — the once-guard in step 1; test 3.
-
-## Security considerations
-
-No new credentials or env vars; the spike reuses the existing DeepSeek env contract and its report is sanitized like the Claude one.
+- DSH may not resume after cancel+close at the pinned version. That blocks the story; no fallback is acceptable.
+- A late ACP `failed` tool update is ambiguous without local cause. Never map it from text or from a generic `cancelRequested` boolean that would also change node Cancel.
+- Incorrect listener lifetime could turn a natural end into an interrupt during close. Test 7 is the release guard.
+- Rollback removes the optional signal and diagnostic changes. Because the capability is still false in this phase, no user-visible Stop path is exposed.

@@ -1,88 +1,117 @@
 ---
 phase: 2
-title: 'Executor marker and DeepSeek conformance fixture'
+title: 'Executor discriminator, capability, and DeepSeek conformance fixture'
 status: pending
 priority: P1
 effort: '0.5d'
 dependencies: [1]
 ---
 
-# Phase 2: Executor marker and DeepSeek conformance fixture
+# Phase 2: Executor discriminator, capability, and DeepSeek conformance fixture
 
 ## Goal
 
-Make the executor's five-case classifier recognise DeepSeek's abort-marked result on both the direct and AI-loop paths, and prove it with a DeepSeek-shaped conformance fixture in the existing interrupt matrix — without touching the registry, idle-await, route, or docks.
+Recognize the provider's existing normalized DeepSeek abort result on both direct and AI-loop execution paths, advertise DeepSeek's ACP cancel as native turn interruption, and prove same-session redirect without changing registry, route, idle-await, or web behavior.
 
-Deep mode: outline only; run a scout pass on `dag-executor.ts:2683–2700`, `:6406–6420` and the test block at `dag-executor.test.ts:27068+` before executing, and read the Phase 1 spike report first — its recorded `terminalReason` value is the string used here.
-
-## Context links
-
-- `packages/workflows/src/dag-executor.ts:452–465` (`INTERRUPT_TERMINAL_REASONS`, `isInterruptTerminalReason`), `:2683–2775` (direct path), `:6406–6420` (loop path), `:3477–3510` / `:7060–7100` (idle entry)
-- `packages/workflows/src/dag-executor.test.ts:27068–27800` (Story 2.3 matrix; `mockClaudeCapabilities`, `mockGetAgentProviderDag`, `liveHandle`, `awaitIdle`, `sendNow`)
-- Scout: `plans/reports/scout-260920-0223-steering-gating-and-executor.md`
+Do not begin until Phase 1's pinned-runtime report says `Proceed` and records the tool-update outcome.
 
 ## File inventory
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/workflows/src/dag-executor.ts` | modify | ~6 lines (set entry + comment) | none beyond the new fixture |
-| `packages/workflows/src/dag-executor.test.ts` | modify | +5 tests in the `#183` block | — |
+| File | Action | Purpose |
+| --- | --- | --- |
+| `packages/workflows/src/dag-executor.ts` | modify | Replace terminal-reason-only classification with one exact provider-normalized result predicate used by both paths. |
+| `packages/workflows/src/dag-executor.test.ts` | modify | Register DeepSeek and add its exact direct/loop conformance fixture and false-positive guards. |
+| `packages/providers/src/community/deepseek/capabilities.ts` | modify | Change `interrupt` from `false` to `'native'`. |
+| `packages/providers/src/community/deepseek/config.test.ts` | modify | Update exact capability literal. |
+| `packages/providers/src/registry.test.ts` | modify | Expect Claude and DeepSeek as native interrupt providers. |
+| `packages/providers/src/types.ts` | modify | Clarify that ACP `session/cancel` + same-id resume is a native interrupt example; do not change the union or result shape. |
 
-## Tests before (written first, failing)
+## Executor contract
 
-Run: `cd packages/workflows && bun test src/dag-executor.test.ts -t 'deepseek'`
+Keep `INTERRUPT_TERMINAL_REASONS` as the exact allowlist for providers that supply a native terminal reason. Add a small local predicate accepting the complete result chunk:
 
-Harness prerequisites (scout report §3): `dag-executor.test.ts:71–90` bootstraps the registry with `registerBuiltinProviders()` + OMP/OpenCode/Pi/Devin/Qoder, but never `registerDeepseekProvider()` — `getProviderCapabilities('deepseek')` (`dag-executor.ts:3196`, a real registry lookup, not the mocked `getCapabilities`) throws `UnknownProviderError` today. Add `registerDeepseekProvider` to that import/bootstrap block. `invokeDag` (`:27176–27207`) accepts `assistant?: 'claude' | 'pi'` and builds `minimalConfig` per assistant; extend it with `'deepseek'` → `{ ...minimalConfig, assistant: 'deepseek', assistants: { ...minimalConfig.assistants, deepseek: {} } }`.
+```text
+isInterruptMarkedResult(result) =
+  isInterruptTerminalReason(result.terminalReason)
+  OR (
+    result.stopReason === 'aborted'
+    AND result.isError === true
+    AND result.errorSubtype === 'deepseek_aborted'
+  )
+```
 
-Add a `deepseekFixture` next to the existing Claude mocks: `getType: () => 'deepseek'`, `getCapabilities: () => DEEPSEEK_CAPABILITIES` (import from `@archon/providers`), and a helper `deepseekAbortResult(sessionId)` returning exactly `{ type: 'result', sessionId, stopReason: 'aborted', isError: true, errorSubtype: 'deepseek_aborted', terminalReason: <spike value> }`. Point `mockGetAgentProviderDag` at the fixture in a nested `describe('deepseek conformance')` `beforeEach`, restoring the Claude mock in `afterEach` as the outer block already does.
+Both direct and loop paths must call this same helper while retaining the existing independent guards:
 
-1. `'deepseek: interrupt parks the abort-marked result in idle and Send now resumes on the same session'` — direct path; assert `sendQuery` call 2 receives `resumeSessionId === 'sess-1'` (the executor sets `turnResumeId = newSessionId ?? turnResumeId` at `dag-executor.ts:3488`, so the abort result MUST carry `sessionId`), `storedEventTypes` has no `node_failed`, has `node_completed`, and exactly one `interrupted` status row.
-2. `'deepseek: the same abort result without the operator flag keeps the existing Cancel/SDK-error failure'` — no `interrupt()` call, result yielded as-is → `node_failed` with `SDK returned deepseek_aborted` (locks the Cancel path).
-3. `'deepseek: interrupt in an AI loop idles inside the iteration and Send now resumes without consuming one'` — mirror `:27698` (`{ id, loop: { prompt, until, max_iterations } }`, `transcriptStates` contains `'interrupted'`, call 2 `resumeSessionId === 'loop-sess-1'`) with the DeepSeek shape; loop path resumes `settledTurnSessionId ?? currentSessionId` (`:7060+`).
-4. `'deepseek: an outstanding tool at interrupt settles interrupted — one status row'` — mirror `:27502` with the bridge's chunk shapes (`{ type:'tool', toolName, toolCallId, toolInput }` / `{ type:'tool_result', toolName, toolCallId, toolOutput, toolOutcome }`, `event-bridge.ts:77–115`); include a second variant where the bridge emitted `toolOutcome:'interrupted'` itself (Phase 1 step 8) and assert no duplicate status row.
-5. `'deepseek: interrupt skips structured-output validation and the re-ask'` — `output_format` node, abort result with no `structuredOutput` → idle, no `validation_miss`/re-ask.
+- matching live turn token;
+- `wasOperatorInterrupted(token) === true`;
+- node Cancel check still wins later by its established position.
+
+Do not add provider-id branching, prefix matching, prose/error-message parsing, or `terminalReason:'cancelled'`.
+
+## Test harness setup
+
+`dag-executor.test.ts` bootstraps selected providers but not DeepSeek. Import and call `registerDeepseekProvider()` in the test bootstrap, and import `DEEPSEEK_CAPABILITIES` from `@archon/providers`. Confirm the additional registration does not alter any provider-list assertion in this file.
+
+Extend the local `invokeDag()` helper's assistant union/config branch with `deepseek`, because `getProviderCapabilities('deepseek')` reads the real registry even though `deps.getAgentProvider` is mocked. Add a local DeepSeek fake provider returning:
+
+- `getType: () => 'deepseek'`;
+- `getCapabilities: () => DEEPSEEK_CAPABILITIES`;
+- the shared mocked `sendQuery`;
+- an `abortedResult(sessionId)` helper with exactly the Phase 1 shape and no `terminalReason`.
+
+Keep this as a nested `describe('deepseek conformance', ...)`; do not build a generic conformance framework for two providers.
+
+## Tests first
+
+Run from `packages/workflows`:
+
+```bash
+bun test src/dag-executor.test.ts -t 'deepseek conformance'
+```
+
+Add these cases:
+
+1. **Direct path, full contract:** first turn triggers the live handle interrupt, emits an open DeepSeek-shaped tool call and the exact abort result, enters idle with one `interrupted` status and no `node_failed`, then drains older queued guidance plus `Send now` in order. The second call receives the interrupted result's session id and completes. Assert the open tool has exactly one `interrupted` outcome. If Phase 1 needed the evidence-gated bridge mapping, add a focused variant that emits its terminal interrupted tool result before the abort result and still asserts one outcome. Use an `output_format` node or an explicit call-count assertion so the interrupted pass cannot run a structured-output re-ask.
+2. **No operator flag:** yielding the exact DeepSeek abort result without calling `interrupt()` follows the existing `SDK returned deepseek_aborted` node-failure path. This preserves node Cancel/non-operator behavior.
+3. **Exactness guard:** with the operator flag set, a result missing any member of the DeepSeek triple is not classified by the new branch. Use an error-shaped near miss and assert normal failure rather than idle.
+4. **AI-loop path:** the exact DeepSeek abort result enters idle inside the current iteration; `Send now` resumes the same session id without consuming an iteration, then completes with no `node_failed`.
+
+The existing Story 2.3 matrix already covers natural-result races, repeated interrupts, Cancel dominance, missing session id, background tasks, idle discard, and both docks. Do not clone those provider-neutral tests unless the new predicate changes them.
 
 ## Implementation steps
 
-1. `dag-executor.ts`: add the DeepSeek marker to `INTERRUPT_TERMINAL_REASONS`; rewrite the comment to "provider-native abort markers, one entry per interrupt-capable provider: Claude `aborted_streaming`/`aborted_tools`, DeepSeek/ACP `<value>`". No prefix matching.
-2. Run the five tests; they pass with no other executor change. If any fails on the loop path, the scout pass identifies the divergence — do not add a provider-id branch.
-
-## Refactor (protected)
-
-None planned. The classifier stays a single `Set` lookup gated by `wasOperatorInterrupted(token)`.
-
-## Tests after
-
-- The five DeepSeek tests plus the existing 19 Story 2.3 scenarios pass unchanged.
-
-## Test scenario matrix
-
-| Path | Critical | High | Medium |
-| --- | --- | --- | --- |
-| Direct | interrupted → idle → send_now same session | Cancel path unchanged (`isError` failure) | structured-output skip |
-| AI loop | interrupted iteration resumes without consuming one | — | — |
-| Tools | outstanding tool → `interrupted`, one status row | — | — |
+1. Add `isInterruptMarkedResult()` beside the current terminal-reason helper and explain that exact provider-normalized result fields are transport contracts, not prose inference.
+2. Replace the two `isInterruptTerminalReason(msg.terminalReason)` call sites with the shared result predicate. Change no other direct/loop control flow.
+3. Add the DeepSeek fixture and four tests. Verify the exactness test fails if the helper is broadened to one field or a prefix.
+4. Change `DEEPSEEK_CAPABILITIES.interrupt` to `'native'` with a concise ACP cancel/same-id-resume comment.
+5. Update the exact DeepSeek capability fixture and registry native-provider list (`['claude', 'deepseek']` after sorting).
+6. Update the `ProviderCapabilities.interrupt` documentation to include DeepSeek ACP `session/cancel` followed by `session/resume` on the same persisted id as a native example. Do not edit `MessageChunk.terminalReason` documentation.
 
 ## Regression gate
 
 ```bash
-cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt'
-cd packages/workflows && bun test src/steering-registry.test.ts
+cd packages/providers
+bun test src/community/deepseek/config.test.ts src/registry.test.ts
+
+cd ../workflows
+bun test src/dag-executor.test.ts -t 'deepseek conformance'
+bun test src/dag-executor.test.ts -t 'interrupt and redirect'
+
+cd ../..
 bun run type-check
 ```
 
-## Todo
+## Completion checklist
 
-- [ ] Scout pass on the three executor sites and the matrix block
-- [ ] Fixture + five tests written and failing
-- [ ] Set entry + comment; tests green
-- [ ] Regression gate green
+- [ ] Phase 1 report says `Proceed`.
+- [ ] Direct and loop tests use the exact production DeepSeek abort result with no synthetic field.
+- [ ] Flagless and near-miss results fail normally.
+- [ ] Direct redirect keeps message order/session id and interrupted tool outcome.
+- [ ] Capability constant, provider object, registry, and type documentation agree on `'native'`.
+- [ ] Existing Story 2.3 interrupt matrix remains green without route/UI changes.
 
-## Success criteria
+## Risks and rollback
 
-Both execution paths classify the DeepSeek abort result as interrupted with the flag set and as a failure without it; no `node_failed` on the interrupted path.
-
-## Risk assessment
-
-- The loop path uses `turnToken` rather than `passTurn.token`; the scout pass confirms both sites read `msg.terminalReason` identically before tests are written.
-- If the spike changed the marker string, this phase uses the recorded value; a mismatch here is the only way Phase 1 and 2 can drift — check the report first.
+- A broad result check could hide genuine provider errors racing Stop. The exact triple plus operator token and near-miss test are the safety boundary.
+- Registering DeepSeek in a large shared test file can affect global registry state. Register once with the existing bootstrap pattern and verify no list-order assumptions change.
+- Rollback sets the capability to `false` and removes only the DeepSeek arm from the result predicate/tests. Claude classification remains unchanged.
