@@ -1,0 +1,19 @@
+$ bun --cwd packages/cli src/cli.ts doctor
+archon doctor — verifying your setup
+
+○ Claude binary: dev mode (SDK resolves via node_modules)
+○ Codex binary: Codex not configured (not the default assistant, no OpenAI credential connected)
+○ Grok CLI: Grok not configured (not the default assistant, no xAI credential connected)
+✓ gh CLI: authenticated
+○ Pi provider: Pi not configured
+○ OpenCode runtime: OpenCode not configured (pass --full to probe the runtime SDK)
+✓ Database: reachable (sqlite); schema created by dev, last applied by dev
+○ Folder project: cwd is not a registered folder project
+○ AI credentials: none connected — run: archon ai login <vendor>  or  archon ai key set <vendor>
+✓ Workspace: /tmp/archon-verify/20260909T111554Z-c78c74c9/home is writable
+✓ Bundled defaults: 40 workflow(s), 68 command(s) loaded
+○ Telemetry: disabled (ARCHON_TELEMETRY_DISABLED=1)
+○ Slack: no SLACK_BOT_TOKEN set
+○ Telegram: no TELEGRAM_BOT_TOKEN set
+
+All checks passed.
