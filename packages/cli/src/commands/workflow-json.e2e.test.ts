@@ -2117,15 +2117,26 @@ describe('R1-F30 — durable side-effect proofs (Story 3.3d)', () => {
 
     expect(status).toBe('completed');
     expect(winnerCompletionCount).toBe(1);
-    const logFiles = readdirSync(join(isolatedHome, 'logs')).filter(
-      file => file.startsWith('detached-retry-') && file.includes(runId)
-    );
+    // The DB status flips to completed before the detached worker's log file
+    // finishes flushing stdout; poll the file with the same bounded cadence.
+    let logFiles: string[] = [];
+    let combinedLogs = '';
+    for (
+      let i = 0;
+      i < 100 && (logFiles.length === 0 || !combinedLogs.includes('concurrent-worker-proof'));
+      i++
+    ) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      logFiles = readdirSync(join(isolatedHome, 'logs')).filter(
+        file => file.startsWith('detached-retry-') && file.includes(runId)
+      );
+      combinedLogs = logFiles
+        .map(file => readFileSync(join(isolatedHome, 'logs', file), 'utf8'))
+        .join('\n');
+    }
     expect(logFiles.length).toBeGreaterThanOrEqual(1);
-    const combinedLogs = logFiles
-      .map(file => readFileSync(join(isolatedHome, 'logs', file), 'utf8'))
-      .join('\n');
     expect(combinedLogs.split('concurrent-worker-proof').length - 1).toBe(1);
-  });
+  }, 30000);
 });
 
 // ---------------------------------------------------------------------------

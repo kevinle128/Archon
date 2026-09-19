@@ -2,27 +2,34 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   beginGuidanceSubmission,
+  beginWithdraw,
   canSubmitGuidance,
   createSteeringDockState,
+  deleteButtonAccessibleName,
   isQueueShortcut,
   loadSteeringDraft,
+  nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
   queuedCountPhrase,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
+  resolveWithdrawFailure,
+  resolveWithdrawSuccess,
   saveSteeringDraft,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
   STEERING_ASK_BLOCKED_REASON,
+  STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
   STEERING_SEND_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   SteeringSendError,
   toSteeringRefusal,
   toSteeringSendError,
+  type LocalSentReceipt,
   type SteeringDockState,
 } from './steering-dock';
 
@@ -233,6 +240,114 @@ describe('submission state transitions', () => {
     const draft = '  pad me\n';
     const begun = beginGuidanceSubmission(createSteeringDockState(), draft, newId);
     expect(begun.state.pendingRetry?.message).toBe(draft);
+  });
+});
+
+describe('withdraw transitions', () => {
+  const receipt = (messageId: string, message: string): LocalSentReceipt => ({
+    messageId,
+    message,
+    state: 'queued',
+  });
+
+  function stateWith(
+    sent: readonly LocalSentReceipt[],
+    overrides?: Partial<SteeringDockState>
+  ): SteeringDockState {
+    return { ...createSteeringDockState(), sent, ...overrides };
+  }
+
+  test('initial state has no active withdraw', () => {
+    expect(createSteeringDockState().withdrawingMessageId).toBeNull();
+  });
+
+  test('begin marks an existing receipt withdrawing and changes nothing else', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      pendingRetry: { messageId: 'p', message: 'wip' },
+      refusal: { code: 'node_finished', message: 'done' },
+    });
+    const begun = beginWithdraw(state, 'a');
+    expect(begun.withdrawingMessageId).toBe('a');
+    expect(begun.sent).toBe(state.sent);
+    expect(begun.inFlight).toBe(state.inFlight);
+    expect(begun.pendingRetry).toBe(state.pendingRetry);
+    expect(begun.refusal).toBe(state.refusal);
+  });
+
+  test('begin for a missing id or while another withdraw is active is a same-state no-op', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    expect(beginWithdraw(state, 'missing')).toBe(state);
+    const active = beginWithdraw(state, 'a');
+    expect(beginWithdraw(active, 'a')).toBe(active);
+    expect(beginWithdraw(active, 'missing')).toBe(active);
+  });
+
+  test('success removes only the matching row, preserves order and send state, clears id and refusal', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta'), receipt('c', 'gamma')], {
+      pendingRetry: { messageId: 'p', message: 'wip' },
+      refusal: { code: 'stale', message: 'old' },
+    });
+    const resolved = resolveWithdrawSuccess(beginWithdraw(state, 'b'), 'b');
+    expect(resolved.sent).toEqual([receipt('a', 'alpha'), receipt('c', 'gamma')]);
+    expect(resolved.withdrawingMessageId).toBeNull();
+    expect(resolved.refusal).toBeNull();
+    expect(resolved.pendingRetry).toEqual({ messageId: 'p', message: 'wip' });
+  });
+
+  test('success for a stale or mismatched id is a no-op', () => {
+    const idle = stateWith([receipt('a', 'alpha')]);
+    expect(resolveWithdrawSuccess(idle, 'a')).toBe(idle);
+    const active = beginWithdraw(stateWith([receipt('a', 'alpha'), receipt('b', 'beta')]), 'a');
+    expect(resolveWithdrawSuccess(active, 'b')).toBe(active);
+  });
+
+  test('failure retains rows and send state, stores refusal, clears the matching id', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      pendingRetry: { messageId: 'p', message: 'wip' },
+    });
+    const failed = resolveWithdrawFailure(beginWithdraw(state, 'a'), 'a', {
+      code: 'node_finished',
+      message: 'done',
+    });
+    expect(failed.sent).toBe(state.sent);
+    expect(failed.pendingRetry).toEqual({ messageId: 'p', message: 'wip' });
+    expect(failed.withdrawingMessageId).toBeNull();
+    expect(failed.refusal).toEqual({ code: 'node_finished', message: 'done' });
+  });
+
+  test('failure for a mismatched id is a no-op', () => {
+    const active = beginWithdraw(stateWith([receipt('a', 'alpha')]), 'a');
+    expect(resolveWithdrawFailure(active, 'other', { code: 'x', message: 'nope' })).toBe(active);
+  });
+
+  test('a send success during an active withdraw appends and keeps the withdraw id', () => {
+    const state = stateWith([receipt('a', 'alpha')], {
+      pendingRetry: { messageId: 'p', message: 'second' },
+    });
+    const active = beginWithdraw(state, 'a');
+    const resolved = resolveGuidanceSuccess(active, { message_id: 'p' });
+    expect(resolved.sent).toEqual([receipt('a', 'alpha'), receipt('p', 'second')]);
+    expect(resolved.withdrawingMessageId).toBe('a');
+  });
+
+  test('accessible name starts with the visible label, trims, and names the message', () => {
+    expect(STEERING_DELETE_LABEL).toBe('delete');
+    expect(deleteButtonAccessibleName('keep the padding  ')).toBe('delete · keep the padding');
+    expect(deleteButtonAccessibleName('  wrong suite')).toBe('delete · wrong suite');
+    expect(deleteButtonAccessibleName('one').startsWith('delete')).toBe(true);
+  });
+
+  test('focus moves next, then previous, then field; unknown resolves to field', () => {
+    expect(nextFocusAfterRemoval(['a', 'b', 'c'], 'b')).toEqual({
+      kind: 'delete',
+      messageId: 'c',
+    });
+    expect(nextFocusAfterRemoval(['a', 'b', 'c'], 'c')).toEqual({
+      kind: 'delete',
+      messageId: 'b',
+    });
+    expect(nextFocusAfterRemoval(['a'], 'a')).toEqual({ kind: 'field' });
+    expect(nextFocusAfterRemoval(['a', 'b'], 'missing')).toEqual({ kind: 'field' });
   });
 });
 

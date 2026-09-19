@@ -2976,6 +2976,7 @@ describe('ConsoleNodeRoom', () => {
               outputState: base.outputState,
             }
           ),
+        execution: overrides.execution ?? null,
       };
     }
 
