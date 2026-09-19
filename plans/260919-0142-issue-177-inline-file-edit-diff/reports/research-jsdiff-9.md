@@ -24,7 +24,10 @@ Step 2 of `create.ts`:
 for (const hunk of hunks) {
   for (let i = 0; i < hunk.lines.length; i++) {
     if (hunk.lines[i].endsWith('\n')) hunk.lines[i] = hunk.lines[i].slice(0, -1);
-    else { hunk.lines.splice(i + 1, 0, '\\ No newline at end of file'); i++; }
+    else {
+      hunk.lines.splice(i + 1, 0, '\\ No newline at end of file');
+      i++;
+    }
   }
 }
 ```

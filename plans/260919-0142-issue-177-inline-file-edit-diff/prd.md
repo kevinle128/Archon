@@ -56,25 +56,25 @@ Deterministic bounds: 65,536 UTF-8 bytes/side, 2,000 logical lines/side, `maxEdi
 
 ## Technical context (real anchors)
 
-| File | Role |
-| ---- | ---- |
-| `packages/web/src/lib/tool-presentation.ts` | Family inference (`inferFamily` :460, `BEFORE_AFTER_PAIRS` :142, `hasOwn` :232), badge types (`ToolRowBadgeKind` :55, `ToolRowBadgeTone` :64), `toolRowPresentation` :748, file body arm |
-| `packages/web/src/lib/tool-output.ts` | `sanitizeBounded` :191 — reuse for diff line sanitization (1,024 cap) |
-| `packages/web/src/components/workflows/source-control/git-hunk-adapter.ts` (+`.test.ts`) | **Move to `src/lib/`**; converts generated `GitDiffHunk`→`HunkData`; must use `@/lib/api.generated` types only |
-| `packages/web/src/components/workflows/source-control/virtualized-diff.tsx` | Proven `react-diff-view` import pattern; update adapter import only |
-| `packages/web/src/lib/node-message-pages.ts` | Preserves row-object identity on normal merges → justifies WeakMap fast path |
-| `packages/web/src/components/workflows/NodeRoom.tsx` | Legacy renderer host (separate JSX by design, UX-DR3) |
-| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` | Console renderer host; bans component imports + runtime `@/lib/api` |
-| `packages/web/src/experiments/console/console-isolation.test.ts` | Approved `@/lib/*` set :115-133 — add `@/lib/git-hunk-adapter` with comment |
-| `packages/web/src/index.css` | Add one scoped `.tool-diff` block beside tool-family body styles |
-| `packages/providers/src/e2e-fake/provider.ts` | `scenarioSchema` :128, exclusivity refinement :142-155, `toolInput` emission :426/:450/:472 — extend with `fileEdit` enum |
-| `packages/providers/src/codex/provider.ts:709` | `file_change` → system chunk (evidence for gate; do not modify) |
-| `packages/workflows/src/dag-executor.ts:2691-2748` | Unhandled system chunks debug-logged (evidence for gate; do not modify) |
-| `e2e/lib/playwright/archon-runtime.ts` | Fixture registration + CLI runner helpers |
-| `_bmad-output/specs/spec-agent-node-room/` | `SPEC.md` (CAP-5), `tool-presentation-contract.md`, `test-plan.md` — owning docs |
-| `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` | Story 1.4 |
-| `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/` | `EXPERIENCE.md` (behavior) + `DESIGN.md` (visuals) are authoritative over `mockups/key-transcript-states.html` |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | Closeout target |
+| File                                                                                     | Role                                                                                                                                                                                     |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/web/src/lib/tool-presentation.ts`                                              | Family inference (`inferFamily` :460, `BEFORE_AFTER_PAIRS` :142, `hasOwn` :232), badge types (`ToolRowBadgeKind` :55, `ToolRowBadgeTone` :64), `toolRowPresentation` :748, file body arm |
+| `packages/web/src/lib/tool-output.ts`                                                    | `sanitizeBounded` :191 — reuse for diff line sanitization (1,024 cap)                                                                                                                    |
+| `packages/web/src/components/workflows/source-control/git-hunk-adapter.ts` (+`.test.ts`) | **Move to `src/lib/`**; converts generated `GitDiffHunk`→`HunkData`; must use `@/lib/api.generated` types only                                                                           |
+| `packages/web/src/components/workflows/source-control/virtualized-diff.tsx`              | Proven `react-diff-view` import pattern; update adapter import only                                                                                                                      |
+| `packages/web/src/lib/node-message-pages.ts`                                             | Preserves row-object identity on normal merges → justifies WeakMap fast path                                                                                                             |
+| `packages/web/src/components/workflows/NodeRoom.tsx`                                     | Legacy renderer host (separate JSX by design, UX-DR3)                                                                                                                                    |
+| `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`    | Console renderer host; bans component imports + runtime `@/lib/api`                                                                                                                      |
+| `packages/web/src/experiments/console/console-isolation.test.ts`                         | Approved `@/lib/*` set :115-133 — add `@/lib/git-hunk-adapter` with comment                                                                                                              |
+| `packages/web/src/index.css`                                                             | Add one scoped `.tool-diff` block beside tool-family body styles                                                                                                                         |
+| `packages/providers/src/e2e-fake/provider.ts`                                            | `scenarioSchema` :128, exclusivity refinement :142-155, `toolInput` emission :426/:450/:472 — extend with `fileEdit` enum                                                                |
+| `packages/providers/src/codex/provider.ts:709`                                           | `file_change` → system chunk (evidence for gate; do not modify)                                                                                                                          |
+| `packages/workflows/src/dag-executor.ts:2691-2748`                                       | Unhandled system chunks debug-logged (evidence for gate; do not modify)                                                                                                                  |
+| `e2e/lib/playwright/archon-runtime.ts`                                                   | Fixture registration + CLI runner helpers                                                                                                                                                |
+| `_bmad-output/specs/spec-agent-node-room/`                                               | `SPEC.md` (CAP-5), `tool-presentation-contract.md`, `test-plan.md` — owning docs                                                                                                         |
+| `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`                         | Story 1.4                                                                                                                                                                                |
+| `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/`       | `EXPERIENCE.md` (behavior) + `DESIGN.md` (visuals) are authoritative over `mockups/key-transcript-states.html`                                                                           |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`               | Closeout target                                                                                                                                                                          |
 
 Dependencies: `@archon/web` pins `react-diff-view@3.3.3`; add exact `diff@9.0.0` (hoisted `diff@8` is unrelated). Verified v9 behavior: 4-line default context, `undefined` over `maxEditLength`, no hunks for identical input, `\\ No newline` markers as separate entries (can repeat mid-array), fixture order = context → deletes → inserts.
 
@@ -87,12 +87,12 @@ Dependencies: `@archon/web` pins `react-diff-view@3.3.3`; add exact `diff@9.0.0`
 
 ## Story overview
 
-| ID | Title | Maps to | Depends on |
-| -- | ----- | ------- | ---------- |
-| US-001 | Resolve product-contract gate (presentation-only) | Plan "Gate" row | — |
-| US-002 | Bounded differ, adapter move, presentation contract | Phase 1 | US-001 |
-| US-003 | Inline diff on Legacy and Console | Phase 2 | US-002 |
-| US-004 | Deterministic full-stack proof and closeout | Phase 3 | US-003 |
+| ID     | Title                                               | Maps to         | Depends on |
+| ------ | --------------------------------------------------- | --------------- | ---------- |
+| US-001 | Resolve product-contract gate (presentation-only)   | Plan "Gate" row | —          |
+| US-002 | Bounded differ, adapter move, presentation contract | Phase 1         | US-001     |
+| US-003 | Inline diff on Legacy and Console                   | Phase 2         | US-002     |
+| US-004 | Deterministic full-stack proof and closeout         | Phase 3         | US-003     |
 
 ## Validation commands
 
