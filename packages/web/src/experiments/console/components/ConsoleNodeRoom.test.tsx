@@ -2957,6 +2957,7 @@ describe('ConsoleNodeRoom', () => {
         output: 'truncated-output',
         outcome: 'succeeded' as const,
         exitCode: null,
+        execution: null,
         durationMs: 1500,
         canLoadFullOutput: true,
         outputState: 'truncated' as const,
