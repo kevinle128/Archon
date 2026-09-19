@@ -1,10 +1,12 @@
 /**
- * Story 2.1 queue composer dock for the Console node room: guarded send into
- * the run's process-local steering queue while the selected agent node is
- * generating. Mirrors the Legacy ComposerDock semantics through console-owned
- * seams — the POST response is the only queue evidence (no polling, no queue
- * read, no rehydration). Sent receipts are in-memory only; the unsent draft
- * and ambiguous retry id persist in sessionStorage scoped by run + node id.
+ * Steering composer dock for the Console node room: guarded send into the
+ * run's process-local steering queue, plus the Story 2.3 turn model —
+ * `Stop` interrupts the agent's current generation, `Send now` delivers a
+ * typed message on the same session once the agent is idle-after-interrupt.
+ * Mirrors the Legacy ComposerDock semantics through console-owned seams —
+ * the POST response is the only queue evidence (no polling, no queue read,
+ * no rehydration). Sent receipts are in-memory only; the unsent draft and
+ * ambiguous retry id persist in sessionStorage scoped by run + node id.
  *
  * The console-wide `.console-root :focus-visible` ring (--accent-ring at 0.3
  * alpha) composites to ~2:1 on the dock surfaces — under the 3:1 non-text
@@ -15,6 +17,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   beginGuidanceSubmission,
+  beginInterrupt,
+  beginSendNow,
   canSubmitGuidance,
   createSteeringDockState,
   isQueueShortcut,
@@ -22,21 +26,34 @@ import {
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
-  queuedCountPhrase,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
+  resolveInterruptError,
+  resolveInterruptOutcome,
+  resolveSendNowFailure,
+  resolveSendNowSuccess,
   saveSteeringDraft,
+  sendNowButtonAccessibleName,
+  steeringAgentMode,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
+  syncProjectedSubState,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_INTERRUPT_DISCLOSURE,
+  STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   toSteeringRefusal,
+  willSendBandHeader,
+  willSendListLabel,
   type SteeringDockState,
+  type SteeringSubState,
 } from '@/lib/steering-dock';
 
 import {
+  interruptNode,
   sendNodeGuidance,
+  type InterruptWorkflowNodeResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
   type WorkflowNodeState,
@@ -47,6 +64,11 @@ export type SendNodeGuidance = (
   nodeId: string,
   body: SendWorkflowNodeBody
 ) => Promise<SendWorkflowNodeResponse>;
+
+export type InterruptNode = (
+  runId: string,
+  nodeId: string
+) => Promise<InterruptWorkflowNodeResponse>;
 
 export interface ConsoleComposerDockProps {
   runId: string;
@@ -59,8 +81,20 @@ export interface ConsoleComposerDockProps {
   live: boolean;
   /** This node's pending ask blocks send; sibling asks must not reach here. */
   hasPendingAsk: boolean;
+  /**
+   * Projected agent sub-state from the run payload. Absent means a live
+   * queue-only handle — never a detached verdict on its own.
+   */
+  subState?: SteeringSubState;
   send?: SendNodeGuidance;
+  interrupt?: InterruptNode;
   storage?: Storage;
+  /**
+   * Focuses the last rendered transcript row (scroller fallback) when the
+   * Stop control or the whole dock leaves the DOM — focus must never land
+   * on `<body>`.
+   */
+  focusLastRow?: () => void;
 }
 
 const FIELD_CLASSES = [
@@ -69,9 +103,22 @@ const FIELD_CLASSES = [
   'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
 ].join(' ');
 
+const CONTROL_BASE_CLASSES = [
+  'min-h-[32px] flex-none rounded-md border bg-transparent px-3 font-mono text-[11px]',
+  'transition-colors motion-reduce:transition-none',
+  'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+].join(' ');
+const CONTROL_ENABLED_CLASSES = 'border-border-bright text-text-primary hover:bg-surface-inset';
+const CONTROL_DISABLED_CLASSES = 'border-border text-text-secondary';
+
 const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
+
+/** Modes where the dock's focusable controls are in the DOM. */
+function controlsMounted(mode: 'hidden' | 'blocked' | 'detached' | 'composer'): boolean {
+  return mode === 'composer' || mode === 'blocked';
+}
 
 export function ConsoleComposerDock({
   runId,
@@ -80,8 +127,11 @@ export function ConsoleComposerDock({
   rowStatus,
   live,
   hasPendingAsk,
+  subState,
   send = sendNodeGuidance,
+  interrupt = interruptNode,
   storage,
+  focusLastRow,
 }: ConsoleComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
   const storageKey = steeringDraftStorageKey(runId, nodeId);
@@ -89,9 +139,10 @@ export function ConsoleComposerDock({
   const reasonId = useId();
   const bandHeaderId = useId();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const wellRef = useRef<HTMLDivElement>(null);
 
   const [dock, setDock] = useState<SteeringDockState>(() => ({
-    ...createSteeringDockState(),
+    ...createSteeringDockState(subState),
     pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
   }));
   const [draft, setDraft] = useState<string>(() => loadSteeringDraft(store, storageKey).draft);
@@ -104,19 +155,84 @@ export function ConsoleComposerDock({
     prevScopeRef.current = storageKey;
     const saved = loadSteeringDraft(store, storageKey);
     setDraft(saved.draft);
-    setDock({ ...createSteeringDockState(), pendingRetry: saved.pendingRetry });
-  }, [storageKey, store]);
+    setDock({ ...createSteeringDockState(subState), pendingRetry: saved.pendingRetry });
+  }, [storageKey, store, subState]);
 
   useEffect(() => {
     saveSteeringDraft(store, storageKey, { draft, pendingRetry: dock.pendingRetry });
   }, [store, storageKey, draft, dock.pendingRetry]);
 
+  // The projected sub-state is authoritative; the local interrupting
+  // transient yields to it when a defined projection arrives.
+  useEffect(() => {
+    setDock(current => syncProjectedSubState(current, subState));
+  }, [subState]);
+
   const mode = steeringDockMode({ rowStatus, live, hasPendingAsk, refusal: dock.refusal });
+
+  // When the dock's controls leave the DOM — terminal state hides the dock,
+  // a 422 swaps it for the detached disclosure — focus must move to the
+  // transcript rather than fall to <body>.
+  const focusLastRowRef = useRef(focusLastRow);
+  useEffect(() => {
+    focusLastRowRef.current = focusLastRow;
+  });
+  // Track whether focus ever sat inside the dock so an unmount moves it to
+  // the transcript only when the dock actually held it — a StrictMode mount
+  // replay must never steal focus it never owned.
+  const focusInsideRef = useRef(false);
+  const controlsMountedRef = useRef(controlsMounted(mode));
+  useEffect(() => {
+    const wasMounted = controlsMountedRef.current;
+    controlsMountedRef.current = controlsMounted(mode);
+    if (!wasMounted || controlsMountedRef.current) return;
+    const active = document.activeElement;
+    if (
+      focusInsideRef.current ||
+      active === null ||
+      active === document.body ||
+      !document.contains(active)
+    ) {
+      focusLastRowRef.current?.();
+    }
+  });
+  useEffect(
+    () => (): void => {
+      if (!controlsMountedRef.current) return;
+      const active = document.activeElement;
+      const inside =
+        focusInsideRef.current || (active !== null && (wellRef.current?.contains(active) ?? false));
+      if (inside) focusLastRowRef.current?.();
+    },
+    []
+  );
+
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
+  const agentMode = steeringAgentMode(dock);
+  const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
 
   const submit = (): void => {
-    if (!canSubmitGuidance({ mode, inFlight: dock.inFlight, draft })) return;
+    if (!canSubmit) return;
     const submittedDraft = draft;
+    if (agentMode === 'idle') {
+      const begun = beginSendNow(dock, draft);
+      setDock(begun.state);
+      void send(runId, nodeId, {
+        message: draft,
+        message_id: begun.messageId,
+        intent: 'send_now',
+      }).then(
+        (receipt): void => {
+          setDock(current => resolveSendNowSuccess(current, receipt));
+          setDraft(current => (current === submittedDraft ? '' : current));
+          fieldRef.current?.focus();
+        },
+        (error: unknown): void => {
+          setDock(current => resolveSendNowFailure(current, toSteeringRefusal(error)));
+        }
+      );
+      return;
+    }
     const begun = beginGuidanceSubmission(dock, draft);
     setDock(begun.state);
     void send(runId, nodeId, {
@@ -137,6 +253,27 @@ export function ConsoleComposerDock({
     );
   };
 
+  const stop = (): void => {
+    if (dock.interruptInFlight || dock.subState !== 'generating') return;
+    setDock(current => beginInterrupt(current));
+    void interrupt(runId, nodeId).then(
+      (response): void => {
+        setDock(current => resolveInterruptOutcome(current, response.sub_state));
+        if (response.sub_state === 'idle-after-interrupt') {
+          focusLastRowRef.current?.();
+        }
+      },
+      (error: unknown): void => {
+        setDock(current =>
+          resolveInterruptError(
+            current,
+            toSteeringRefusal(error, STEERING_INTERRUPT_FAILED_MESSAGE)
+          )
+        );
+      }
+    );
+  };
+
   if (mode === 'hidden') return null;
 
   if (mode === 'detached') {
@@ -150,12 +287,10 @@ export function ConsoleComposerDock({
   }
 
   const blocked = mode === 'blocked';
-  const statusText =
-    blocked && blockedReason !== null
-      ? blockedReason
-      : dock.sent.length > 0
-        ? queuedCountPhrase(dock.sent.length)
-        : '';
+  const idle = agentMode === 'idle';
+  const statusText = blocked && blockedReason !== null ? blockedReason : (dock.notice ?? '');
+  const showStop = agentMode === 'generating' || agentMode === 'interrupting';
+  const stopping = agentMode === 'interrupting';
 
   return (
     <>
@@ -168,10 +303,14 @@ export function ConsoleComposerDock({
             id={bandHeaderId}
             className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
           >
-            {queueBandHeader(dock.sent.length)}
+            {idle ? willSendBandHeader(dock.sent.length) : queueBandHeader(dock.sent.length)}
           </h3>
           <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
-            <ul aria-label={queueListLabel(dock.sent.length)}>
+            <ul
+              aria-label={
+                idle ? willSendListLabel(dock.sent.length) : queueListLabel(dock.sent.length)
+              }
+            >
               {dock.sent.map(receipt => (
                 <li
                   key={receipt.messageId}
@@ -187,7 +326,27 @@ export function ConsoleComposerDock({
           </div>
         </section>
       )}
-      <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
+      <div
+        ref={wellRef}
+        onFocusCapture={(): void => {
+          focusInsideRef.current = true;
+        }}
+        onBlurCapture={(event): void => {
+          if (
+            event.relatedTarget instanceof Node &&
+            event.currentTarget.contains(event.relatedTarget)
+          ) {
+            return;
+          }
+          focusInsideRef.current = false;
+        }}
+        className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]"
+      >
+        {idle ? (
+          <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+            {STEERING_INTERRUPT_DISCLOSURE}
+          </p>
+        ) : null}
         <label htmlFor={fieldId} className="sr-only">
           message to {nodeLabel}
         </label>
@@ -226,25 +385,40 @@ export function ConsoleComposerDock({
           </p>
         ) : null}
         <div className="mt-[6px] flex items-center gap-3">
+          {showStop ? (
+            <button
+              type="button"
+              aria-disabled={stopping ? true : undefined}
+              onClick={stop}
+              className={[
+                CONTROL_BASE_CLASSES,
+                stopping ? CONTROL_DISABLED_CLASSES : CONTROL_ENABLED_CLASSES,
+              ].join(' ')}
+            >
+              {stopping ? 'Stopping…' : 'Stop'}
+            </button>
+          ) : null}
           <p className="min-w-0 flex-1 font-mono text-[10.5px] leading-[1.45] text-text-secondary">
             {STEERING_SEND_HINT}
           </p>
           <button
             type="button"
-            aria-label={queueButtonAccessibleName(dock.sent.length)}
+            aria-label={
+              idle
+                ? sendNowButtonAccessibleName(dock.sent.length)
+                : queueButtonAccessibleName(dock.sent.length)
+            }
             aria-keyshortcuts="Meta+Enter Control+Enter"
-            aria-disabled={blocked ? true : undefined}
+            aria-disabled={canSubmit ? undefined : true}
             aria-describedby={blocked ? reasonId : undefined}
             onClick={submit}
             className={[
-              'min-h-[32px] min-w-[84px] flex-none rounded-md border border-border bg-transparent',
-              'px-3 font-mono text-[11px]',
-              blocked ? 'text-text-secondary' : 'text-text-primary hover:bg-surface-inset',
-              'transition-colors motion-reduce:transition-none',
-              'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+              CONTROL_BASE_CLASSES,
+              'min-w-[84px]',
+              canSubmit ? CONTROL_ENABLED_CLASSES : CONTROL_DISABLED_CLASSES,
             ].join(' ')}
           >
-            Queue
+            {idle ? 'Send now' : 'Queue'}
           </button>
         </div>
         <div role="status" className="sr-only">

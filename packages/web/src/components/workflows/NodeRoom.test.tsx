@@ -387,6 +387,18 @@ describe('NodeRoom', () => {
     });
     expect(errorMarkup.indexOf('end-extension')).toBeGreaterThan(errorMarkup.indexOf('Retry'));
   });
+
+  test('marks only the last rendered item as the dock focus target', () => {
+    const markup = renderRoom();
+    const markers = markup.match(/data-last-row=""/g) ?? [];
+    expect(markers).toHaveLength(1);
+    expect(markup).toContain('data-last-row="" tabindex="-1"');
+    // The marker sits on the last item's wrapper — after the tool row.
+    const markerAt = markup.indexOf('data-last-row');
+    expect(markerAt).toBeGreaterThan(markup.indexOf('data-tool-id="tool-use-1"'));
+    const unmarked = renderRoom({ items: [] });
+    expect(unmarked).not.toContain('data-last-row');
+  });
 });
 
 describe('NodeRoom tool rows', () => {
@@ -701,11 +713,10 @@ describe('NodeRoom tool rows', () => {
     expect(markup).not.toContain('gap-3');
     expect(markup).toContain('px-3');
     expect(markup).toContain('py-2.5');
-    // Non-tool content keeps its own vertical margins.
+    // Non-tool content keeps its own vertical margins; the last item's
+    // wrapper additionally carries the dock focus-target marker.
     expect(markup).toContain('<div class="my-1.5"><div class="chat-markdown');
-    expect(markup).toContain(
-      '<div class="my-1.5"><p class="text-xs text-text-secondary">completed'
-    );
+    expect(markup).toContain('<p class="text-xs text-text-secondary">completed');
   });
 
   test('extension slots keep their anchor and gain separation below the row', () => {
@@ -1670,7 +1681,7 @@ describe('NodeRoom occurrence headings', () => {
     const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
     expect(headingTexts(markup)).toEqual(['Run 1', 'Run 2 · retry · failed']);
     expect(markup.match(/<h3/g)?.length).toBe(2);
-    expect(markup.match(/tabindex="-1"/g)?.length).toBe(2);
+    expect(markup.match(/<h3[^>]*tabindex="-1"/g)?.length).toBe(2);
     expect(markup).toContain('id="test-room-occ-occ-a"');
     expect(markup).toContain('id="test-room-occ-occ-b"');
     const headingTag = /<h3[^>]*>/.exec(markup)?.[0] ?? '';

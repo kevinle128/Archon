@@ -5,7 +5,7 @@
  */
 import type { WorkflowRunStatus } from '@/lib/types';
 import type { components } from '@/lib/api.generated';
-import { toSteeringSendError } from '@/lib/steering-dock';
+import { toSteeringRequestError } from '@/lib/steering-dock';
 
 export type WorkflowDefinition = components['schemas']['WorkflowDefinition'];
 type GeneratedDagNode = components['schemas']['DagNode'];
@@ -752,7 +752,7 @@ export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeRe
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send:
  * operator guidance for a live in-process agent node, drained at the next
- * natural provider-turn boundary. Refusals surface as SteeringSendError
+ * natural provider-turn boundary. Refusals surface as SteeringRequestError
  * carrying the nested {code,message} so callers can distinguish a canonical
  * 422 `not_steerable_here` from other failures. No auto-retry and no message
  * logging — the caller owns `message_id` reuse for ambiguous failures.
@@ -775,7 +775,34 @@ export async function sendNodeGuidance(
       body: JSON.stringify(body),
     });
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
+  }
+}
+
+export type InterruptWorkflowNodeResponse = components['schemas']['InterruptWorkflowNodeResponse'];
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt — Story 2.3 turn
+ * interrupt: stops the live provider turn of an interrupt-capable node
+ * without cancelling the run. The awaited response is the ACTUAL settled
+ * sub-state — `idle-after-interrupt` or `generating` — and terminal
+ * refusals surface as SteeringRequestError (409 `node_finished`, 422
+ * `not_steerable_here`). No request body, no auto-retry.
+ */
+export async function interruptNode(
+  runId: string,
+  nodeId: string
+): Promise<InterruptWorkflowNodeResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/interrupt';
+  try {
+    return await fetchJSON<InterruptWorkflowNodeResponse>(url, { method: 'POST' });
+  } catch (error) {
+    throw toSteeringRequestError(error);
   }
 }
 

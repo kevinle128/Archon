@@ -430,6 +430,15 @@ export function NodeTranscriptPane({
   const waitingForFirstPage =
     row !== null && pageState.rows.length === 0 && pageState.error === null && !pageState.complete;
 
+  // The steering dock's focus fallback: the last rendered transcript row,
+  // or the transcript scroller itself when no row exists yet — never body.
+  const focusLastRow = (): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+    (lastRow ?? el).focus({ preventScroll: true });
+  };
+
   const scroller = (
     <div
       ref={scrollRef}
@@ -528,6 +537,8 @@ export function NodeTranscriptPane({
         rowStatus={rowStatus}
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
+        subState={nodeState?.steeringSubState}
+        focusLastRow={focusLastRow}
       />
     </RoomRegion>
   );

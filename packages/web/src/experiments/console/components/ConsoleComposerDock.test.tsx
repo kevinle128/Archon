@@ -4,9 +4,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
 import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
-import { SteeringSendError } from '@/lib/steering-dock';
-import type { SendNodeGuidance } from './ConsoleComposerDock';
-import type { SendWorkflowNodeBody, SendWorkflowNodeResponse } from '../skills/runs';
+import { SteeringRequestError, type SteeringSubState } from '@/lib/steering-dock';
+import type { InterruptNode, SendNodeGuidance } from './ConsoleComposerDock';
+import type {
+  InterruptWorkflowNodeResponse,
+  SendWorkflowNodeBody,
+  SendWorkflowNodeResponse,
+} from '../skills/runs';
 
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');
@@ -43,6 +47,11 @@ interface SendCall {
   body: SendWorkflowNodeBody;
 }
 
+interface InterruptCall {
+  runId: string;
+  nodeId: string;
+}
+
 function deferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -61,13 +70,19 @@ function okReceipt(messageId: string): SendWorkflowNodeResponse {
   return { success: true, message_id: messageId, state: 'queued' };
 }
 
+function idleAck(): InterruptWorkflowNodeResponse {
+  return { success: true, sub_state: 'idle-after-interrupt' };
+}
+
 describe('ConsoleComposerDock', () => {
   let win: ReturnType<typeof installHappyDom>;
   let host: Element;
   let root: Root;
   let composerDock: typeof import('./ConsoleComposerDock');
   const calls: SendCall[] = [];
+  const interruptCalls: InterruptCall[] = [];
   let nextSend: SendNodeGuidance;
+  let nextInterrupt: InterruptNode;
 
   beforeEach(async () => {
     win = installHappyDom();
@@ -78,9 +93,14 @@ describe('ConsoleComposerDock', () => {
     root = createRoot(host);
     composerDock = await loadComposerModule();
     calls.length = 0;
+    interruptCalls.length = 0;
     nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
       calls.push({ runId, nodeId, body });
       return okReceipt(body.message_id);
+    };
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
     };
   });
 
@@ -105,9 +125,12 @@ describe('ConsoleComposerDock', () => {
       rowStatus: 'pending' | 'running' | 'awaiting' | 'completed' | 'failed' | 'skipped';
       live: boolean;
       hasPendingAsk: boolean;
+      subState: SteeringSubState;
       send: SendNodeGuidance;
+      interrupt: InterruptNode;
       storage: Storage;
       nodeLabel: string;
+      focusLastRow: () => void;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -119,8 +142,11 @@ describe('ConsoleComposerDock', () => {
           rowStatus: overrides.rowStatus ?? 'running',
           live: overrides.live ?? true,
           hasPendingAsk: overrides.hasPendingAsk ?? false,
+          subState: overrides.subState,
           send: overrides.send ?? nextSend,
+          interrupt: overrides.interrupt ?? nextInterrupt,
           storage: overrides.storage,
+          focusLastRow: overrides.focusLastRow,
         })
       );
     });
@@ -443,7 +469,7 @@ describe('ConsoleComposerDock', () => {
 
   test('422 not_steerable_here replaces the dock with the exact disclosure', async () => {
     nextSend = async (): Promise<SendWorkflowNodeResponse> => {
-      throw new SteeringSendError(
+      throw new SteeringRequestError(
         422,
         'not_steerable_here',
         'No live steering session for this node in this process'
@@ -475,5 +501,287 @@ describe('ConsoleComposerDock', () => {
     expect(field().value).toBe('from storage');
     await clickQueue();
     expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBeNull();
+  });
+
+  function buttonByText(text: string): HTMLButtonElement {
+    const match = [...host.querySelectorAll('button')].find(
+      button => (button.textContent ?? '').trim() === text
+    );
+    if (match === undefined) throw new Error(`missing ${text} button`);
+    return match as unknown as HTMLButtonElement;
+  }
+
+  function stopButton(): HTMLButtonElement {
+    return buttonByText('Stop');
+  }
+
+  function sendNowButton(): HTMLButtonElement {
+    return buttonByText('Send now');
+  }
+
+  async function clickStop(): Promise<void> {
+    await act(async () => {
+      stopButton().click();
+    });
+    await flush();
+  }
+
+  async function clickSendNow(): Promise<void> {
+    await act(async () => {
+      sendNowButton().click();
+    });
+    await flush();
+  }
+
+  test('queue-only node (no projected sub-state) shows Queue without Stop', async () => {
+    await renderDock();
+    expect(queueButton()).not.toBeNull();
+    expect(host.textContent).not.toContain('Stop');
+    expect(host.textContent).not.toContain('Send now');
+  });
+
+  test('generating sub-state shows Stop left of Queue with console ring tokens', async () => {
+    await renderDock({ subState: 'generating' });
+    const stop = stopButton();
+    expect(stop.getAttribute('disabled')).toBeNull();
+    expect(stop.className).toContain('min-h-[32px]');
+    expect(stop.className).toContain('border-border-bright');
+    expect(stop.className).toContain('bg-transparent');
+    expect(stop.className).toContain('focus-visible:outline-accent-bright');
+    await setDraft('a message enables send');
+    const queue = queueButton();
+    expect(queue.getAttribute('aria-disabled')).toBeNull();
+    expect(queue.className).toContain('border-border-bright');
+    expect(queue.className).toContain('bg-transparent');
+    const children = [...(stop.parentElement?.children ?? [])];
+    expect(children.indexOf(stop)).toBeLessThan(children.indexOf(queue));
+  });
+
+  test('Stop resolves idle: one announcement, Send now, disclosure, focus leaves', async () => {
+    let focused = 0;
+    const focusLastRow = (): void => {
+      focused += 1;
+      (host.querySelector('textarea') as HTMLElement | null)?.focus();
+    };
+    await renderDock({ subState: 'generating', focusLastRow });
+    const stop = stopButton();
+    await act(async () => {
+      stop.focus();
+    });
+    await clickStop();
+    expect(interruptCalls).toEqual([{ runId: 'run-1', nodeId: 'grp.body' }]);
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+    expect(host.textContent).toContain(
+      'stopped after the last completed tool call · files already written stay written'
+    );
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      'agent idle · Send now delivers'
+    );
+    expect(focused).toBe(1);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+
+  test('interrupting keeps Stop focusable with aria-disabled and Queue usable', async () => {
+    const pending = deferred<InterruptWorkflowNodeResponse>();
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return pending.promise;
+    };
+    await renderDock({ subState: 'generating' });
+    const stop = stopButton();
+    await act(async () => {
+      stop.focus();
+    });
+    await clickStop();
+    const stopping = buttonByText('Stopping…');
+    expect(stopping.getAttribute('aria-disabled')).toBe('true');
+    expect(stopping.getAttribute('disabled')).toBeNull();
+    expect(stopping.className).toContain('text-text-secondary');
+    expect((win.document.activeElement as unknown) === stopping).toBe(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent interrupting');
+
+    await act(async () => {
+      stopping.click();
+    });
+    await flush();
+    expect(interruptCalls).toHaveLength(1);
+
+    await setDraft('wait for send now');
+    await clickQueue();
+    await pressKey({ key: 'Enter', metaKey: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.intent).toBe('queue');
+    expect(host.textContent).toContain('queued · 1');
+
+    await act(async () => {
+      pending.resolve(idleAck());
+    });
+    await flush();
+    expect(host.textContent).toContain('will send · 1');
+    const list = host.querySelector('ul[aria-label="Will send, 1"]');
+    expect(list?.querySelector('li')?.textContent).toContain('wait for send now');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      'agent idle · Send now delivers'
+    );
+  });
+
+  test('200 generating resolves a spent interrupt without a fake row or Stop loss', async () => {
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return { success: true, sub_state: 'generating' };
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('queued during the race');
+    await clickQueue();
+    await clickStop();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      'turn ended before stop · 1 sent · agent generating'
+    );
+    expect(stopButton()).not.toBeNull();
+    expect(queueButton()).not.toBeNull();
+    expect(host.textContent).toContain('queued · 1');
+    expect(host.textContent).not.toContain('interrupted');
+  });
+
+  test('interrupt refusals keep the draft: 409 alert, 422 detached, retryable network', async () => {
+    nextInterrupt = async (): Promise<InterruptWorkflowNodeResponse> => {
+      throw new SteeringRequestError(409, 'node_finished', 'Workflow node is finished');
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('kept draft');
+    await clickStop();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
+    expect(field().value).toBe('kept draft');
+    expect(host.textContent).not.toContain('Stopping…');
+  });
+
+  test('422 on interrupt uses the existing detached disclosure path', async () => {
+    nextInterrupt = async (): Promise<InterruptWorkflowNodeResponse> => {
+      throw new SteeringRequestError(
+        422,
+        'not_steerable_here',
+        'No live steering session for this node in this process'
+      );
+    };
+    await renderDock({ subState: 'generating' });
+    await clickStop();
+    expect(host.textContent).toBe(DETACHED);
+    expect(host.querySelector('textarea')).toBeNull();
+  });
+
+  test('network interrupt failure returns to generating with a retryable Stop', async () => {
+    let attempt = 0;
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      attempt += 1;
+      if (attempt === 1) throw new TypeError('offline');
+      return idleAck();
+    };
+    await renderDock({ subState: 'generating' });
+    await clickStop();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      "couldn't interrupt · try again"
+    );
+    expect(stopButton()).not.toBeNull();
+    await clickStop();
+    expect(interruptCalls).toHaveLength(2);
+    expect(sendNowButton()).not.toBeNull();
+  });
+
+  test('payload idle state renders Send now without a local click', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+    expect(host.textContent).toContain(
+      'stopped after the last completed tool call · files already written stay written'
+    );
+    const send = sendNowButton();
+    expect(send.getAttribute('aria-label')?.startsWith('Send now')).toBe(true);
+    expect(send.getAttribute('aria-label')).toContain('Cmd/Ctrl+Enter to send');
+  });
+
+  test('Send now requires a non-blank draft even when receipts exist', async () => {
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('already queued');
+    await clickQueue();
+    await clickStop();
+    expect(host.textContent).toContain('will send · 1');
+    const send = sendNowButton();
+    expect(send.getAttribute('aria-disabled')).toBe('true');
+    await clickSendNow();
+    await pressKey({ key: 'Enter', metaKey: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  test('Send now posts only the new draft, clears band and draft on success', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    await setDraft('redirect the agent');
+    await clickSendNow();
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.message).toBe('redirect the agent');
+    expect(calls[0].body.intent).toBe('send_now');
+    expect(field().value).toBe('');
+    expect(stopButton()).not.toBeNull();
+    expect(queueButton()).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
+  });
+
+  test('Send-now failure restores old then new items and keeps the retry id', async () => {
+    const first = deferred<SendWorkflowNodeResponse>();
+    const second = deferred<SendWorkflowNodeResponse>();
+    let attempt = 0;
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
+    };
+    nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
+      calls.push({ runId, nodeId, body });
+      attempt += 1;
+      if (attempt === 3) return first.promise;
+      if (attempt === 4) return second.promise;
+      return okReceipt(body.message_id);
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('queued one');
+    await clickQueue();
+    await setDraft('queued two');
+    await clickQueue();
+    await clickStop();
+    await setDraft('the redirect');
+    await clickSendNow();
+    expect(calls[2].body.intent).toBe('send_now');
+    expect(host.querySelectorAll('li')).toHaveLength(0);
+    await act(async () => {
+      first.reject(new TypeError('network lost'));
+    });
+    await flush();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      "couldn't send · back in the queue"
+    );
+    const list = host.querySelector('ul[aria-label="Will send, 2"]');
+    const items = [...(list?.querySelectorAll('li') ?? [])].map(li => li.textContent ?? '');
+    expect(items[0]).toContain('queued one');
+    expect(items[1]).toContain('queued two');
+    expect(field().value).toBe('the redirect');
+
+    await clickSendNow();
+    expect(calls).toHaveLength(4);
+    expect(calls[3].body.message_id).toBe(calls[2].body.message_id);
+    await act(async () => {
+      second.resolve({
+        success: true,
+        message_id: calls[3].body.message_id,
+        state: 'awaiting_send_now',
+      });
+    });
+    await flush();
+    expect(host.querySelectorAll('li')).toHaveLength(0);
+    expect(stopButton()).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
   });
 });
