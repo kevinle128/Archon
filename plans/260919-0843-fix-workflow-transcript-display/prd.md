@@ -64,6 +64,7 @@ Repaired experience: new ACP fragments group into one answer per execution attem
 Prior-session reproduction measured viewport 873px, root scroll height ~18,000px, `window.scrollY` 668px (`research/live-legacy-scroll-reproduction.md`). Causes: `span.sr-only` labels absolutely positioned as direct children of **static** tool summaries; Legacy right room panel lacks `min-h-0`/overflow containment; transcript scroller lacks overscroll boundary. MUST recapture as failing browser assertions before CSS edits.
 
 Repair order (local fixes mandatory; shared-layout escalation conditional):
+
 1. `packages/web/src/components/workflows/NodeRoom.tsx` — add `relative` to the direct tool-row summary (keep `sr-only` text present, not visually exposed).
 2. `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — same fix on the duplicated Console row.
 3. `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` — `min-h-0 overflow-hidden` on the right resizable run panel.
@@ -88,13 +89,13 @@ Browser proof: `e2e/ui/workflow-run-hitl-room.spec.ts` gains desktop (`1440x1000
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-| --- | --- | --- | --- |
-| US-001 | Provider delta boundaries + loop missing-output attempt rotation | 1 | — |
-| US-002 | Canonical spec reconciliation + one-string unwrap transform in `buildAgentHistory()` | 2 (core) | US-001 |
-| US-003 | Wire `outputFormat` through three transcript mounts + deterministic real-server E2E | 2 (wiring/E2E) | US-002 |
-| US-004 | Legacy viewport containment, hidden-label geometry, runtime minimap removal + browser proof | 3 (fix) | US-003 |
-| US-005 | Governed verification registration + fresh functional/visual attempt + full validate | 3 (governance) | US-004 |
+| ID     | Title                                                                                       | Phase          | Depends on |
+| ------ | ------------------------------------------------------------------------------------------- | -------------- | ---------- |
+| US-001 | Provider delta boundaries + loop missing-output attempt rotation                            | 1              | —          |
+| US-002 | Canonical spec reconciliation + one-string unwrap transform in `buildAgentHistory()`        | 2 (core)       | US-001     |
+| US-003 | Wire `outputFormat` through three transcript mounts + deterministic real-server E2E         | 2 (wiring/E2E) | US-002     |
+| US-004 | Legacy viewport containment, hidden-label geometry, runtime minimap removal + browser proof | 3 (fix)        | US-003     |
+| US-005 | Governed verification registration + fresh functional/visual attempt + full validate        | 3 (governance) | US-004     |
 
 ## Working agreements
 
