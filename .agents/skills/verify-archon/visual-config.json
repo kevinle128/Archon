@@ -43,15 +43,15 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
-      "sha256": "1ca28a6ac813ccd70428649efa3355fdc7cb8a4b99afaa31abcdadc40ab2874d"
+      "sha256": "e7c1f5224097e0bd07013faf78795b778033416f915d544c024fc6d8926a2446"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
-      "sha256": "20ba39cec1bf6ed76f90b6bf6885fb1673d9bce70148a4a701e1afb1fecaf96b"
+      "sha256": "998d8a000a0d614cb67608d241fc293aa8486446288871dcc4d019be1c68e0db"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md",
-      "sha256": "807cf6174527b843eff59b9eacf236c1e655ae1e5ff5a612bcad611baa008247"
+      "sha256": "7cfb794d486b782bd8b63320895b614f2cf7c4e57fe51339e70777d4cfc55811"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
@@ -59,11 +59,11 @@
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
-      "sha256": "42bf518d81ea6cd2f5ff34c675e40dce7c630203783f536b7d2fe929352c2e8e"
+      "sha256": "b0359ab9d84bbfe995355b3a4bb179ba55735e713c0f72502982ba8b46e148d0"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
-      "sha256": "b8377b9c71f6020775fcdfaff797e51c6b84b867b9b67cd7a4c370589e7c9e08"
+      "sha256": "6eeb1621dd3d550f988d5bfcf78ebfe61787799711639d42c9afed60afa4bdc8"
     },
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/README.md",
@@ -75,7 +75,7 @@
     },
     {
       "path": "packages/web/src/index.css",
-      "sha256": "ccb4af1ac10ae13b5b0b3934e7cbe383e7e4e3d5aab2b2c2e3f9e0954c987b65"
+      "sha256": "6aa3b79a15f7b4f8f055a5983daf1b15410a57f1e0df97627d8e41b8e485f0f3"
     },
     {
       "path": "packages/web/src/experiments/console/theme.css",
