@@ -10,29 +10,38 @@ import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   sendNodeGuidance,
+  withdrawNodeGuidance,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
+  type WithdrawWorkflowNodeResponse,
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
 import {
   beginGuidanceSubmission,
+  beginWithdraw,
   canSubmitGuidance,
   createSteeringDockState,
+  deleteButtonAccessibleName,
   isQueueShortcut,
   loadSteeringDraft,
+  nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
   queuedCountPhrase,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
+  resolveWithdrawFailure,
+  resolveWithdrawSuccess,
   saveSteeringDraft,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
+  STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
   STEERING_SEND_HINT,
   toSteeringRefusal,
+  type RemovalFocusTarget,
   type SteeringDockState,
 } from '@/lib/steering-dock';
 import { cn } from '@/lib/utils';
@@ -42,6 +51,12 @@ export type SendNodeGuidance = (
   nodeId: string,
   body: SendWorkflowNodeBody
 ) => Promise<SendWorkflowNodeResponse>;
+
+export type WithdrawNodeGuidance = (
+  runId: string,
+  nodeId: string,
+  messageId: string
+) => Promise<WithdrawWorkflowNodeResponse>;
 
 export interface ComposerDockProps {
   runId: string;
@@ -55,6 +70,7 @@ export interface ComposerDockProps {
   /** This node's pending ask blocks send; sibling asks must not reach here. */
   hasPendingAsk: boolean;
   send?: SendNodeGuidance;
+  withdraw?: WithdrawNodeGuidance;
   storage?: Storage;
 }
 
@@ -76,6 +92,7 @@ export function ComposerDock({
   live,
   hasPendingAsk,
   send = sendNodeGuidance,
+  withdraw = withdrawNodeGuidance,
   storage,
 }: ComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
@@ -84,6 +101,9 @@ export function ComposerDock({
   const reasonId = useId();
   const bandHeaderId = useId();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
+  const detachedAlertRef = useRef<HTMLParagraphElement>(null);
 
   const [dock, setDock] = useState<SteeringDockState>(() => ({
     ...createSteeringDockState(),
@@ -109,6 +129,24 @@ export function ComposerDock({
   const mode = steeringDockMode({ rowStatus, live, hasPendingAsk, refusal: dock.refusal });
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
 
+  // A stored 422 replaces the dock with the detached disclosure — move focus
+  // to it instead of returning keyboard users to <body>. Send- and
+  // withdraw-triggered 422s share this one disclosure path.
+  useEffect(() => {
+    if (mode === 'detached') detachedAlertRef.current?.focus();
+  }, [mode]);
+
+  // After a successful withdraw removes its row, move focus to the target
+  // captured at activation time (next row → previous row → field).
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    if (target === null) return;
+    pendingFocusRef.current = null;
+    const button =
+      target.kind === 'delete' ? deleteButtonsRef.current.get(target.messageId) : undefined;
+    (button ?? fieldRef.current)?.focus();
+  }, [dock.sent]);
+
   const submit = (): void => {
     if (!canSubmitGuidance({ mode, inFlight: dock.inFlight, draft })) return;
     const submittedDraft = draft;
@@ -132,12 +170,37 @@ export function ComposerDock({
     );
   };
 
+  const withdrawMessage = (messageId: string): void => {
+    // One active withdraw per dock — a second click while one is in flight
+    // issues no request.
+    if (dock.withdrawingMessageId !== null) return;
+    pendingFocusRef.current = nextFocusAfterRemoval(
+      dock.sent.map(receipt => receipt.messageId),
+      messageId
+    );
+    setDock(current => beginWithdraw(current, messageId));
+    void withdraw(runId, nodeId, messageId).then(
+      (): void => {
+        setDock(current => resolveWithdrawSuccess(current, messageId));
+      },
+      (error: unknown): void => {
+        pendingFocusRef.current = null;
+        setDock(current => resolveWithdrawFailure(current, messageId, toSteeringRefusal(error)));
+      }
+    );
+  };
+
   if (mode === 'hidden') return null;
 
   if (mode === 'detached') {
     return (
       <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
-        <p role="alert" className="font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+        <p
+          role="alert"
+          ref={detachedAlertRef}
+          tabIndex={-1}
+          className="font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+        >
           {STEERING_DETACHED_DISCLOSURE}
         </p>
       </div>
@@ -176,6 +239,29 @@ export function ComposerDock({
                     {receipt.message}
                   </span>
                   <span className="flex-none">sent</span>
+                  <button
+                    type="button"
+                    ref={(el): void => {
+                      if (el === null) {
+                        deleteButtonsRef.current.delete(receipt.messageId);
+                      } else {
+                        deleteButtonsRef.current.set(receipt.messageId, el);
+                      }
+                    }}
+                    aria-label={deleteButtonAccessibleName(receipt.message)}
+                    aria-disabled={dock.withdrawingMessageId !== null ? true : undefined}
+                    onClick={(): void => {
+                      withdrawMessage(receipt.messageId);
+                    }}
+                    className={cn(
+                      'min-h-[24px] min-w-[24px] flex-none rounded-md px-2 font-mono text-[11px]',
+                      'text-text-secondary hover:bg-surface-inset',
+                      'transition-colors motion-reduce:transition-none',
+                      'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
+                    )}
+                  >
+                    {STEERING_DELETE_LABEL}
+                  </button>
                 </li>
               ))}
             </ul>

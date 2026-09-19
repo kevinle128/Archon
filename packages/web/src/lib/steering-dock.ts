@@ -29,6 +29,13 @@ export interface SteeringDockState {
   readonly inFlight: boolean;
   readonly pendingRetry: PendingSubmission | null;
   readonly refusal: SteeringRefusal | null;
+  /**
+   * The one in-flight withdraw. A single active id is deliberate: the dock
+   * has one refusal channel and one focus transfer, and simultaneous deletes
+   * would let response order decide focus or let one success erase another
+   * request's failure. The brief dock-wide delete guard never blocks send.
+   */
+  readonly withdrawingMessageId: string | null;
 }
 
 export type SteeringDockMode = 'hidden' | 'blocked' | 'detached' | 'composer';
@@ -123,7 +130,13 @@ export function queueButtonAccessibleName(count: number): string {
 }
 
 export function createSteeringDockState(): SteeringDockState {
-  return { sent: [], inFlight: false, pendingRetry: null, refusal: null };
+  return {
+    sent: [],
+    inFlight: false,
+    pendingRetry: null,
+    refusal: null,
+    withdrawingMessageId: null,
+  };
 }
 
 /**
@@ -160,7 +173,15 @@ export function resolveGuidanceSuccess(
           state: 'queued' as const,
         },
       ];
-  return { sent, inFlight: false, pendingRetry: null, refusal: null };
+  return {
+    sent,
+    inFlight: false,
+    pendingRetry: null,
+    refusal: null,
+    // A send resolving during a withdraw appends its row without losing the
+    // active withdraw id.
+    withdrawingMessageId: state.withdrawingMessageId,
+  };
 }
 
 /** A failed submission keeps the pending retry so unchanged text reuses it. */
@@ -169,6 +190,78 @@ export function resolveGuidanceFailure(
   refusal: SteeringRefusal
 ): SteeringDockState {
   return { ...state, inFlight: false, refusal };
+}
+
+/**
+ * Begin the single allowed withdraw. Sets the id only when the receipt is in
+ * `sent` and no other withdraw is active; anything else is a same-state
+ * no-op. Never alters send state or the stored refusal.
+ */
+export function beginWithdraw(state: SteeringDockState, messageId: string): SteeringDockState {
+  if (state.withdrawingMessageId !== null) return state;
+  if (!state.sent.some(entry => entry.messageId === messageId)) return state;
+  return { ...state, withdrawingMessageId: messageId };
+}
+
+/**
+ * A withdraw 200 removes exactly that receipt (sibling order and send state
+ * preserved) and clears the active id plus any stored refusal. A stale or
+ * mismatched completion is a no-op.
+ */
+export function resolveWithdrawSuccess(
+  state: SteeringDockState,
+  messageId: string
+): SteeringDockState {
+  if (state.withdrawingMessageId !== messageId) return state;
+  return {
+    ...state,
+    sent: state.sent.filter(entry => entry.messageId !== messageId),
+    withdrawingMessageId: null,
+    refusal: null,
+  };
+}
+
+/**
+ * A failed withdraw retains every row and all send state, clears the
+ * matching active id, and stores the refusal. Mismatched id is a no-op.
+ */
+export function resolveWithdrawFailure(
+  state: SteeringDockState,
+  messageId: string,
+  refusal: SteeringRefusal
+): SteeringDockState {
+  if (state.withdrawingMessageId !== messageId) return state;
+  return { ...state, withdrawingMessageId: null, refusal };
+}
+
+export const STEERING_DELETE_LABEL = 'delete';
+
+/**
+ * Accessible name for the per-row delete control. The visible text stays
+ * `delete`; the name identifies the specific message so the action is
+ * unambiguous. Outer whitespace is trimmed.
+ */
+export function deleteButtonAccessibleName(message: string): string {
+  return `delete · ${message.trim()}`;
+}
+
+export type RemovalFocusTarget =
+  | { readonly kind: 'delete'; readonly messageId: string }
+  | { readonly kind: 'field' };
+
+/**
+ * Where focus goes after a queued row is removed: the next row's delete
+ * button in the activation-time order, otherwise the previous row's,
+ * otherwise the composer field. An unknown id resolves to the field.
+ */
+export function nextFocusAfterRemoval(
+  orderedIds: readonly string[],
+  removedId: string
+): RemovalFocusTarget {
+  const index = orderedIds.indexOf(removedId);
+  if (index === -1) return { kind: 'field' };
+  const sibling = orderedIds[index + 1] ?? orderedIds[index - 1];
+  return sibling === undefined ? { kind: 'field' } : { kind: 'delete', messageId: sibling };
 }
 
 export interface SteeringDraftRecord {

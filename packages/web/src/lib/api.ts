@@ -748,6 +748,7 @@ export async function getWorkflowNodeMessage(
 
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
+export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkflowNodeResponse'];
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send:
@@ -774,6 +775,32 @@ export async function sendNodeGuidance(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+  } catch (error) {
+    throw toSteeringSendError(error);
+  }
+}
+
+/**
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — Story 2.2
+ * withdraw of a still-queued guidance message. Bodyless: no request body and
+ * no synthetic JSON content type, no auto-retry. Refusals normalize through
+ * the same SteeringSendError surface as the send helper so callers keep
+ * using `toSteeringRefusal`.
+ */
+export async function withdrawNodeGuidance(
+  runId: string,
+  nodeId: string,
+  messageId: string
+): Promise<WithdrawWorkflowNodeResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/queue/' +
+    encodeURIComponent(messageId);
+  try {
+    return await fetchJSON<WithdrawWorkflowNodeResponse>(url, { method: 'DELETE' });
   } catch (error) {
     throw toSteeringSendError(error);
   }

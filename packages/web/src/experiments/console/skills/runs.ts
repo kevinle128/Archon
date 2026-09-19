@@ -157,6 +157,7 @@ export async function getNodeMessage(
 
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
+export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkflowNodeResponse'];
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send.
@@ -174,6 +175,27 @@ export async function sendNodeGuidance(
     return await requestJson<SendWorkflowNodeResponse>(
       `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/send`,
       { method: 'POST', body: JSON.stringify(body) }
+    );
+  } catch (error) {
+    throw toSteeringSendError(error);
+  }
+}
+
+/**
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — Story 2.2
+ * withdraw of a still-queued guidance message. Bodyless: requestJson adds a
+ * JSON content type only when a body is present, so none is sent. No
+ * auto-retry; refusals surface as SteeringSendError like the send helper.
+ */
+export async function withdrawNodeGuidance(
+  runId: string,
+  nodeId: string,
+  messageId: string
+): Promise<WithdrawWorkflowNodeResponse> {
+  try {
+    return await requestJson<WithdrawWorkflowNodeResponse>(
+      `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue/${encodeURIComponent(messageId)}`,
+      { method: 'DELETE' }
     );
   } catch (error) {
     throw toSteeringSendError(error);
