@@ -3049,7 +3049,7 @@ describe('ConsoleNodeRoom', () => {
         canLoadFullOutput: true,
         outputState: 'truncated' as const,
         messageId: 'msg-tool-1',
-        execution: null,
+        execution: null as TranscriptExecution | null,
         ...overrides,
       };
       return {
