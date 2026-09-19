@@ -1,0 +1,62 @@
+{
+  "ok": true,
+  "feature": "hitl-run-room",
+  "webUrl": "http://127.0.0.1:15173",
+  "runId": "07dfb4f113ff55dd1777a385872c877b",
+  "projectId": "a076a876a025971215f40ada5aaa0ef1",
+  "inspectNode": "inspect-file",
+  "roomRatio": 0.4,
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "assertions": [
+    {
+      "id": "run-detail-api",
+      "detail": "codebase_id=a076a876a025971215f40ada5aaa0ef1",
+      "ok": true
+    },
+    {
+      "id": "run-title",
+      "detail": "run detail shows e2e-hitl-run",
+      "ok": true
+    },
+    {
+      "id": "room-absent",
+      "detail": "first visit has no room and no divider",
+      "ok": true
+    },
+    {
+      "id": "room-open",
+      "detail": "region inspect-file room is visible",
+      "ok": true
+    },
+    {
+      "id": "room-ratio",
+      "detail": "ratio=0.400",
+      "ok": true
+    },
+    {
+      "id": "room-history",
+      "detail": "ASSISTANT + HITL_TOOL_OUTPUT_VISIBLE visible in room",
+      "ok": true
+    },
+    {
+      "id": "room-close",
+      "detail": "Close removes console-run-room",
+      "ok": true
+    },
+    {
+      "id": "room-deeplink",
+      "detail": "?node=inspect-file opens the room",
+      "ok": true
+    }
+  ],
+  "screenshots": [
+    "hitl-room-open.png",
+    "hitl-room-closed.png",
+    "hitl-room-deeplink.png"
+  ],
+  "video": "/Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/.agents/skills/verify-archon/evidence/runs/20260909T111554Z-c78c74c9/video/page@124beaa9a4c6597001268a04691060f7.webm",
+  "videoEnabled": true
+}

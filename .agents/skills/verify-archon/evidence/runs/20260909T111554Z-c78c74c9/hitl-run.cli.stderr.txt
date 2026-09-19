@@ -1,0 +1,6 @@
+$ bun --cwd packages/cli src/cli.ts --cwd /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon workflow run "e2e-hitl-run" --no-worktree --json
+[inspect-file] Started
+[inspect-file] Completed (9ms)
+[inspect-twice] Started
+[inspect-twice] Completed (3ms)
+[ask-starter] Started
