@@ -204,6 +204,105 @@ body {
   background: transparent;
 }
 
+/* Inline file-edit diffs inside tool body boxes. The react-diff-view package
+   stylesheet supplies the base layout; every override stays scoped to
+   .tool-diff. Unified mode emits two gutter cells per row — the visible
+   old-side cell carries a 1ch +/− marker plus a right-aligned 3ch number,
+   and the new-side column/cells are hidden. State foregrounds are local
+   custom properties so a contrast correction is one scoped change per state
+   (code and marker share it; line numbers stay --text-secondary). */
+.tool-diff {
+  --diff-background-color: var(--surface-inset);
+  --diff-text-color: var(--text-primary);
+  --diff-font-family: var(--font-mono);
+  --diff-selection-background-color: color-mix(in oklch, var(--ring) 35%, transparent);
+  --tool-diff-insert-fg: var(--success);
+  /* Pure --error measures ~4.3:1 on the 12% delete tint over --surface-inset;
+     mixing 15% toward --text-primary clears the 4.5:1 floor while the hue
+     stays on the error axis. */
+  --tool-diff-delete-fg: color-mix(in oklch, var(--error) 85%, var(--text-primary));
+  --diff-gutter-insert-background-color: color-mix(
+    in oklch,
+    var(--success) 12%,
+    var(--surface-inset)
+  );
+  --diff-gutter-insert-text-color: var(--text-secondary);
+  --diff-gutter-delete-background-color: color-mix(
+    in oklch,
+    var(--error) 12%,
+    var(--surface-inset)
+  );
+  --diff-gutter-delete-text-color: var(--text-secondary);
+  --diff-code-insert-background-color: color-mix(
+    in oklch,
+    var(--success) 12%,
+    var(--surface-inset)
+  );
+  --diff-code-insert-text-color: var(--tool-diff-insert-fg);
+  --diff-code-delete-background-color: color-mix(in oklch, var(--error) 12%, var(--surface-inset));
+  --diff-code-delete-text-color: var(--tool-diff-delete-fg);
+  --diff-gutter-selected-background-color: var(--surface-hover);
+  --diff-code-selected-background-color: var(--surface-hover);
+
+  margin-top: 4px;
+}
+
+.tool-diff.diff {
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Marker + 3ch number fit one fixed 4ch column; nothing inside may grow it. */
+.tool-diff col.diff-gutter-col {
+  width: 4ch;
+}
+
+/* Hide the new-side gutter column and cells unified mode always emits. */
+.tool-diff col.diff-gutter-col:nth-child(2),
+.tool-diff .diff-line > .diff-gutter:nth-child(2) {
+  display: none;
+}
+
+.tool-diff .diff-gutter {
+  cursor: default;
+  padding: 0;
+  color: var(--text-secondary);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.tool-diff-marker {
+  display: inline-block;
+  width: 1ch;
+}
+
+.tool-diff .diff-gutter-insert .tool-diff-marker {
+  color: var(--tool-diff-insert-fg);
+}
+
+.tool-diff .diff-gutter-delete .tool-diff-marker {
+  color: var(--tool-diff-delete-fg);
+}
+
+.tool-diff-line-number {
+  display: inline-block;
+  width: 3ch;
+  text-align: right;
+}
+
+.tool-diff .diff-code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-diff .diff-decoration {
+  user-select: none;
+}
+
+.tool-diff .diff-decoration-content {
+  color: var(--text-secondary);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -49,6 +49,14 @@ const TODO_STRIP_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-todo-strip.yaml'
 );
+const FILE_EDIT_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-file-edit.yaml'
+);
 const QUEUE_GUIDANCE_WORKFLOW_FIXTURE = join(
   HERE,
   '..',
@@ -95,6 +103,11 @@ export const HITL_ASK_DECLINE_NODE = 'ask-decline';
 export const E2E_TASK_DISPATCH_WORKFLOW_NAME = 'e2e-task-dispatch';
 export const TASK_DISPATCH_OMP_NODE = 'omp-dispatch';
 export const TASK_DISPATCH_CLAUDE_NODE = 'claude-dispatch';
+export const E2E_FILE_EDIT_WORKFLOW_NAME = 'e2e-file-edit';
+export const FILE_EDIT_NODE = 'file-edit';
+export const FILE_EDIT_FAILED_NODE = 'file-edit-failed';
+export const FILE_EDIT_WRITE_NODE = 'file-edit-write';
+export const FILE_EDIT_BARE_NODE = 'file-edit-bare';
 export const E2E_QUEUE_GUIDANCE_WORKFLOW_NAME = 'e2e-queue-guidance';
 export const E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME = 'e2e-queue-guidance-loop';
 export const QUEUE_GUIDANCE_NODE = 'steer-me';
@@ -206,6 +219,13 @@ export interface ArchonRuntime {
   runHitlTwoAsksWorkflow(): Promise<CliRunResult>;
   /** Run the two-node task-dispatch fixture (OMP batch + Claude single) to completion. */
   runTaskDispatchWorkflow(): Promise<CliRunResult>;
+  /**
+   * Run the four-node file-edit fixture: `file-edit` emits a qualified edit
+   * pair, `file-edit-failed` the same pair with an error outcome,
+   * `file-edit-write` a path+content write, and `file-edit-bare` a tool call
+   * with no input — one persisted row per node for the inline-diff proof.
+   */
+  runFileEditWorkflow(): Promise<CliRunResult>;
   /**
    * Run the todo-strip fixture: `todo-plan` emits four folded todo calls plus a
    * long Read transcript; `no-todo` emits ordinary tool calls only.
@@ -468,6 +488,11 @@ async function startArchonRuntime(
   );
 
   writeFileSync(
+    join(home, 'workflows', `${E2E_FILE_EDIT_WORKFLOW_NAME}.yaml`),
+    readFileSync(FILE_EDIT_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
     join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_WORKFLOW_NAME}.yaml`),
     readFileSync(QUEUE_GUIDANCE_WORKFLOW_FIXTURE)
   );
@@ -628,6 +653,17 @@ async function startArchonRuntime(
       'workflow',
       'run',
       E2E_TASK_DISPATCH_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+  };
+
+  const runFileEditWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_FILE_EDIT_WORKFLOW_NAME,
       '--folder',
       '--json',
     ]);
@@ -979,6 +1015,7 @@ async function startArchonRuntime(
     runHitlLongHistoryWorkflow,
     runHitlTwoAsksWorkflow,
     runTaskDispatchWorkflow,
+    runFileEditWorkflow,
     runTodoStripWorkflow,
     prepareTranscriptDisplayRun,
     startHitlWorkflow,

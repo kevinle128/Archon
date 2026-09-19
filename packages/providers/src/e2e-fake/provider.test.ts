@@ -5,6 +5,13 @@ import { E2E_FAKE_CAPABILITIES } from './capabilities';
 import {
   E2E_FAKE_AGENT_INPUT,
   E2E_FAKE_AGENT_TOOL_NAME,
+  E2E_FAKE_BARE_EDIT_OUTPUT,
+  E2E_FAKE_BARE_EDIT_TOOL_NAME,
+  E2E_FAKE_EDIT_FAILURE_OUTPUT,
+  E2E_FAKE_EDIT_INPUT,
+  E2E_FAKE_EDIT_OUTPUT,
+  E2E_FAKE_EDIT_PATH,
+  E2E_FAKE_EDIT_TOOL_NAME,
   E2E_FAKE_LOOP_DONE,
   E2E_FAKE_TASK_OMP_INPUT,
   E2E_FAKE_TASK_TOOL_NAME,
@@ -14,6 +21,9 @@ import {
   E2E_FAKE_TOOL_NAME,
   E2E_FAKE_TOOL_OUTPUT,
   E2E_FAKE_TOOL_PASS_TEXT,
+  E2E_FAKE_WRITE_INPUT,
+  E2E_FAKE_WRITE_OUTPUT,
+  E2E_FAKE_WRITE_TOOL_NAME,
   E2eFakeProvider,
 } from './provider';
 
@@ -211,6 +221,107 @@ describe('E2eFakeProvider', () => {
       '{"taskDispatch":"omp","repeatTool":2}',
       '{"taskDispatch":"claude","largeLastToolOutput":true}',
       '{"taskDispatch":"serial"}',
+    ];
+    for (const body of invalid) {
+      await expect(
+        collect(provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp'))
+      ).rejects.toThrow('scenario directive failed validation');
+    }
+  });
+
+  test('fileEdit edit emits one Edit call/result pair with the pinned input', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"fileEdit":"edit"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    expect(chunks.map(chunk => chunk.type)).toEqual(['assistant', 'tool', 'tool_result', 'result']);
+    const tool = chunks[1];
+    const result = chunks[2];
+    if (tool?.type !== 'tool' || result?.type !== 'tool_result') {
+      throw new Error('expected tool pair');
+    }
+    expect(tool.toolName).toBe(E2E_FAKE_EDIT_TOOL_NAME);
+    expect(tool.toolCallId).toBe('e2e-fake-tool-sess');
+    expect(tool.toolInput).toEqual(E2E_FAKE_EDIT_INPUT);
+    expect(E2E_FAKE_EDIT_INPUT.file_path).toBe(E2E_FAKE_EDIT_PATH);
+    expect(E2E_FAKE_EDIT_INPUT.old_string).toContain('min(31)');
+    expect(E2E_FAKE_EDIT_INPUT.old_string).toContain('secs + 1');
+    expect(E2E_FAKE_EDIT_INPUT.new_string).toContain('min(30)');
+    expect(E2E_FAKE_EDIT_INPUT.new_string).toContain('from_secs(secs)');
+    expect(E2E_FAKE_EDIT_INPUT.replace_all).toBe(false);
+    expect(result.toolName).toBe(E2E_FAKE_EDIT_TOOL_NAME);
+    expect(result.toolCallId).toBe(tool.toolCallId);
+    expect(result.toolOutput).toBe(E2E_FAKE_EDIT_OUTPUT);
+    expect(result.toolOutcome).toBe('success');
+  });
+
+  test('fileEdit failed emits the same edit input with an error outcome', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"fileEdit":"failed"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    const tool = chunks[1];
+    const result = chunks[2];
+    if (tool?.type !== 'tool' || result?.type !== 'tool_result') {
+      throw new Error('expected tool pair');
+    }
+    expect(tool.toolName).toBe(E2E_FAKE_EDIT_TOOL_NAME);
+    expect(tool.toolInput).toEqual(E2E_FAKE_EDIT_INPUT);
+    expect(result.toolCallId).toBe(tool.toolCallId);
+    expect(result.toolOutput).toBe(E2E_FAKE_EDIT_FAILURE_OUTPUT);
+    expect(result.toolOutcome).toBe('error');
+  });
+
+  test('fileEdit write emits a Write pair with path/content input and no edit pair', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"fileEdit":"write"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    const tool = chunks[1];
+    const result = chunks[2];
+    if (tool?.type !== 'tool' || result?.type !== 'tool_result') {
+      throw new Error('expected tool pair');
+    }
+    expect(tool.toolName).toBe(E2E_FAKE_WRITE_TOOL_NAME);
+    expect(tool.toolInput).toEqual(E2E_FAKE_WRITE_INPUT);
+    expect(E2E_FAKE_WRITE_INPUT.file_path).toBe('notes/summary.md');
+    expect('old_string' in E2E_FAKE_WRITE_INPUT).toBe(false);
+    expect('new_string' in E2E_FAKE_WRITE_INPUT).toBe(false);
+    expect(result.toolName).toBe(E2E_FAKE_WRITE_TOOL_NAME);
+    expect(result.toolCallId).toBe(tool.toolCallId);
+    expect(result.toolOutput).toBe(E2E_FAKE_WRITE_OUTPUT);
+    expect(result.toolOutcome).toBe('success');
+  });
+
+  test('fileEdit bare emits an Edit pair that omits toolInput entirely', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"fileEdit":"bare"}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    const tool = chunks[1];
+    const result = chunks[2];
+    if (tool?.type !== 'tool' || result?.type !== 'tool_result') {
+      throw new Error('expected tool pair');
+    }
+    expect(tool.toolName).toBe(E2E_FAKE_BARE_EDIT_TOOL_NAME);
+    expect('toolInput' in tool).toBe(false);
+    expect(result.toolName).toBe(E2E_FAKE_BARE_EDIT_TOOL_NAME);
+    expect(result.toolCallId).toBe(tool.toolCallId);
+    expect(result.toolOutput).toBe(E2E_FAKE_BARE_EDIT_OUTPUT);
+    expect(result.toolOutcome).toBe('success');
+  });
+
+  test('fileEdit composes with delayMs', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"fileEdit":"bare","delayMs":1}<</E2E_SCENARIO>>';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess'));
+    expect(chunks.some(chunk => chunk.type === 'tool')).toBe(true);
+  });
+
+  test('rejects fileEdit combined with any other scenario key', async () => {
+    const invalid = [
+      '{"fileEdit":"edit","emitTool":true}',
+      '{"fileEdit":"edit","emitTodo":true}',
+      '{"fileEdit":"edit","askHuman":true}',
+      '{"fileEdit":"edit","doneWhenPromptIncludes":"x"}',
+      '{"fileEdit":"edit","repeatTool":2}',
+      '{"fileEdit":"edit","largeLastToolOutput":true}',
+      '{"fileEdit":"edit","taskDispatch":"omp"}',
+      '{"fileEdit":"edit","echoPrompt":true}',
+      '{"taskDispatch":"claude","fileEdit":"write"}',
+      '{"fileEdit":"serial"}',
+      '{"fileEdit":true}',
     ];
     for (const body of invalid) {
       await expect(

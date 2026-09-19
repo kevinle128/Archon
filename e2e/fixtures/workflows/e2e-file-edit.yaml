@@ -1,0 +1,32 @@
+name: e2e-file-edit
+description: "E2E — four deterministic file-tool payloads (qualified edit, failed edit, write, bare no-input) emitted by the env-gated fake provider for the inline file-edit diff proof."
+mutates_checkout: false
+
+nodes:
+  - id: file-edit
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"fileEdit":"edit"}<</E2E_SCENARIO>>
+      $ARGUMENTS
+  - id: file-edit-failed
+    depends_on: [file-edit]
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"fileEdit":"failed"}<</E2E_SCENARIO>>
+      $ARGUMENTS
+  - id: file-edit-write
+    depends_on: [file-edit-failed]
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"fileEdit":"write"}<</E2E_SCENARIO>>
+      $ARGUMENTS
+  - id: file-edit-bare
+    depends_on: [file-edit-write]
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"fileEdit":"bare"}<</E2E_SCENARIO>>
+      $ARGUMENTS

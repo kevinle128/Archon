@@ -1,0 +1,167 @@
+## Codebase Patterns
+
+### react-diff-view v3.3.3 unified-mode DOM contract
+- **Where**: `packages/web/src/components/workflows/NodeRoom.tsx` + `.../ConsoleAgentHistoryList.tsx` InlineDiff, `packages/web/src/index.css` `.tool-diff` block
+- **Pattern**: unified mode always emits `<colgroup><col class="diff-gutter-col"/><col class="diff-gutter-col"/><col/></colgroup>` and two `.diff-gutter` cells per `.diff-line` row — one visible gutter needs BOTH `col.diff-gutter-col:nth-child(2)` and `.diff-line > .diff-gutter:nth-child(2)` hidden plus a `renderGutter` that returns `null` for `side === 'new'`. `Decoration` renders `<tbody class="diff-decoration"><tr><td colSpan="3" class="diff-decoration-content">` — assert `tbody.diff-decoration`, never `/diff-decoration/` (matches `diff-decoration-content` too), and React SSR serializes the attribute camelCase `colSpan="3"`. For insert lines `renderDefault()` yields '' so the visible number needs `computeNewLineNumber(change)`; delete/normal use `renderDefault()`.
+- **Example**: `const number = change.type === 'insert' ? computeNewLineNumber(change) : renderDefault();`
+
+
+### Injecting control characters into test fixtures safely
+- **Where**: `packages/web/src/lib/diff-hunks.test.ts` display-safety block, `packages/web/src/lib/diff-hunks.ts:33`
+- **Pattern**: never type literal U+2028/U+2029/C0 chars into source — editors/tools mangle or double-escape them, and JS regex `.` never matches U+2028/U+2029 so `replace()` silently no-ops on lines containing them. Write `'\u{XXXX}'` escape syntax in the file, and edit by line index or `[\s\S]` patterns.
+- **Example**: `const hostile = ['bad', '\u{2028}', '\u{001B}[31m'].join('')` — real chars at runtime, pure ASCII in the file.
+
+### Adding a dep without lockfile drift
+- **Where**: `bun.lock`
+- **Pattern**: `bun install` opportunistically re-resolves floating ranges (it unified `@tanstack/react-virtual` 3.13.22→3.14.10 here). For a minimal story diff, hand-revert the unrelated hunks back to HEAD content — nested-package entries restore at their sorted key positions — then verify with `bun install --frozen-lockfile` (exits clean = self-consistent graph).
+- **Example**: adding `"diff": "9.0.0"` only needs the workspace dep line plus re-hoisting `diff` top-level and the `astro/diff`/`shadcn/diff` nested entries — everything else reverts.
+
+### Row-level cache over a shared bounded cache
+- **Where**: `packages/web/src/lib/tool-presentation.ts` `fileDiffCache`/`fileDiffFor`
+- **Pattern**: a module `WeakMap` keyed by the input record object makes "compute once per row" work when summary and body paths each call `asRecord(input)` (same reference); equal strings on fresh objects fall through to the inner dual-bounded LRU and return the identical result object. Verify "once" in tests with a counting getter on an own key.
+
+### Gate/scope-resolution doc style
+- **Where**: `_bmad-output/specs/spec-agent-node-room/SPEC.md` CAP-5, `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` Story 1.4 `_Scope:_` note
+- **Pattern**: record scope resolutions as plain prose inside the owning section, citing `file:line` anchors (`codex/provider.ts:709`, `dag-executor.ts` `dag.system_message_unhandled`). No phase numbers, audit labels, or plan finding IDs in spec docs.
+- **Example**: `Scope is presentation over persisted rows only: current Codex file_change events are emitted as system chunks (codex/provider.ts:709) ... never become persisted file rows`
+
+### Pre-existing prettier failure in EXPERIENCE.md
+- **Where**: `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:115`
+- **Pattern**: the `Body box: diff` table row was already unformatted at HEAD (prettier wanted different cell padding). `prettier --write` on the file is safe — the delta is confined to that one row, not a whole-file reformat.
+
+---
+
+## 2026-09-19 — US-001: Resolve product-contract gate to presentation-only scope
+
+**Status**: PASSED
+**Files changed**:
+- `_bmad-output/specs/spec-agent-node-room/SPEC.md` — CAP-5 success text: rows without both before/after string sides fall back to path plus preview; Codex `file_change` system chunks explicitly excluded with file:line evidence; Codex transcript visibility named as separately tracked work
+- `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` — Story 1.4 second AC rewritten presentation-only; `_Scope:_` note added before `_Refs:_`
+- `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md` — inline-diff tail rewritten: structural qualification, resolved gate recorded, no-input test row labeled generic defensive coverage never Codex stand-in
+- `_bmad-output/specs/spec-agent-node-room/test-plan.md` — gate resolution paragraph appended to the CAP-5 presentation-test section
+- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md` — three Codex overclaims corrected (Body box: diff row, state-pattern row, Flow 2 failure line)
+
+**Acceptance criteria verified**:
+- [x] SPEC.md CAP-5 states fallback for any persisted file row without both before/after string sides and explicitly excludes current Codex `file_change` system chunks
+- [x] epics.md Story 1.4 amended to presentation-only scope; successful Codex file-change transcript visibility noted as separately tracked work
+- [x] tool-presentation-contract.md and test-plan.md record the gate resolution; neither claims a no-input fake-provider row proves Codex behavior
+- [x] No provider, transcript, storage, API, or schema changes — diff is 5 markdown files only
+- [x] `sources/spec-readable-agent-transcript/` untouched
+
+**Learnings**:
+- Verified the cited evidence before editing: `codex/provider.ts:731-734` yields `file_change` as `{type:'system'}`; `dag-executor.ts:2745-2749` debug-logs generic system chunks (`dag.system_message_unhandled`) — a successful `file_change` (starts with ✅, not ⚠️) never reaches the transcript.
+- EXPERIENCE.md is adopted by SPEC.md as authoritative for behavior and carried the same Codex overclaim in three places; fixing it was required by the story intent ("no document claims Codex coverage the code does not provide") even though the AC list named only four docs.
+- US-002 will add the detailed behavior invariants (caps, memoization, numbering, escaping, identical/refusal semantics, later-hunk separator) to the same four docs — keep the same prose-in-section style, no phase numbers.
+- Validation for docs-only stories: `bun x prettier --check` on the edited files (repo `format:check` covers md); lint-staged re-runs prettier on commit.
+
+---
+
+## 2026-09-19 — US-002: Bounded differ, adapter move, presentation contract
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/package.json` + `bun.lock` — exact `"diff": "9.0.0"` direct dependency; lock diff confined to the diff re-hoist (top-level 9.0.0, `astro/diff`/`shadcn/diff` nested 8.0.3)
+- `packages/web/src/lib/diff-hunks.ts` (new) — the only `structuredPatch` caller: byte/line/edit-length bounds, no-newline marker handling, display sanitisation + `\u{HEX}` escaping inside 1,024 units, dual-bounded LRU, `createDiffHunks` factory + `diffHunks` singleton
+- `packages/web/src/lib/diff-hunks.test.ts` (new) — 25 tests covering every bound edge, conversion, safety, and memoization case
+- `packages/web/src/lib/git-hunk-adapter.ts` + `.test.ts` — moved unchanged from `components/workflows/source-control/`; types re-aliased from `api.generated`
+- `packages/web/src/components/workflows/source-control/virtualized-diff.tsx` — import path only
+- `packages/web/src/lib/tool-presentation.ts` — `fileEditPair`/`replaceAllFact`/`fileDiffFor` (WeakMap), `FileDiff` export, `diff` badge kind + `success` tone, file body `diff` field, bodyFacts for all families, diff badges excluded from body bar
+- `packages/web/src/lib/tool-presentation.test.ts` — `file edit diff` suite (qualification, badges, facts, no-changes, fallback, WeakMap once, pair-LRU identity, Raw untouched); existing file-body expectations gained `diff: null`
+- `packages/web/src/components/workflows/NodeRoom.tsx`, `.../ConsoleAgentHistoryList.tsx` — exhaustive `success: text-success` tone entries only
+- `_bmad-output/specs/spec-agent-node-room/{SPEC.md,tool-presentation-contract.md,test-plan.md}`, `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` — shipped invariants recorded in the owning sections
+
+**Acceptance criteria verified**:
+- [x] `diff@9.0.0` exact direct dep; `grep structuredPatch` hits only `diff-hunks.ts` (plus one unrelated field-name fixture in tool-output.test.ts)
+- [x] All exported constants/types/factory with positive-integer fail-fast validation
+- [x] Uncached `.length` precheck, injected `byteLength`, no-`split` line counting, fixed `context:4`/`maxEditLength:2000`, cached `undefined`/thrown results, LRU refresh + dual-budget eviction
+- [x] Hunk counters from `oldStart`/`newStart`, `\\` markers skipped mid-array/doubled, jsdiff order preserved, deterministic `@@` header
+- [x] `sanitizeBounded(...,1024)` + `Cf`/`U+2028`/`U+2029` `\u{HEX}` escapes inside the ceiling; raw strings diffed; Raw payload untouched
+- [x] Adapter moved to `src/lib/` with generated types; `virtualized-diff.tsx` import-only change; 77/77 source-control tests pass
+- [x] `fileEditPair` own-property/try-catch qualification after family resolves `file`; WeakMap + `fileDiffFor` shared by summary and body; `FileDiff`, `diff` kind, `success` tone, body `diff` field
+- [x] `+n` success / `−m` danger badges gated on positive counts; `N hunk(s)` + own-boolean `replace_all` facts; `no changes` for identical; fallback preserved for refusal/no pair; diff badges excluded from body bar
+- [x] Both tone maps gained `success: { className: 'text-success' }`; no other JSX changes
+- [x] All tests green: 255 focused + 77 source-control
+- [x] Owning docs updated (gate, qualification, caps, dual memoization, snippet-relative numbering, no-newline, escaping, identical/refusal, failed-output, later-hunk separator)
+- [x] `bun run type-check`, `bun run lint`, `bun run format:check` all clean
+
+**Learnings**:
+- Empirically verified jsdiff 9 before implementing: `\\ No newline` markers appear mid-array and twice per hunk; `maxEditLength` boundary is inclusive (2000 ok, 2001 → `undefined`); `structuredPatch` emits `' '`,`'-'`,`'+'`,`'\\'` prefixes only.
+- `git stash pop` can leave files STAGED — an unblock `git commit` then sweeps them in. Verify `git diff --cached --stat` shows only the named unblock files before committing; reset and restage by name if not.
+- lint-staged hooks run eslint+prettier on every commit — a `chore(unblock)` md-only commit still triggers the `*.{ts,tsx}` task on any strays left staged.
+
+---
+
+## Blocker Ledger
+
+BLOCKER US-002 | gate=bun run type-check | cause=pre-existing `ConsoleNodeRoom.test.tsx:2966` TS2322 — `toolItem()` base fixture never set required `AgentHistoryItem.execution` (same fingerprint on clean base via stash protocol) | action=fixed on base: `execution: null as TranscriptExecution | null` in base before `...overrides`, committed `chore(unblock)` 3a64b1b1; gate green on base then with story | 2026-09-19
+BLOCKER US-002 | gate=bun run format:check | cause=pre-existing prettier drift in 5 tracked plan artifacts (`plans/260919-0142-issue-177-inline-file-edit-diff/prd.md` + 4 `reports/*.md`) committed via archon checkpoints (same fingerprint on clean base) | action=`prettier --write` on exactly those 5 files, committed `chore(unblock)` 36235bcf; gate green after | 2026-09-19
+
+---
+
+## 2026-09-19 — US-003: Inline diff on Legacy and Console
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — react-diff-view imports (values `/esm/index.js`, types root, stylesheet), `toHunkData` + `FileDiff` imports; local `renderToolDiffGutter` + `InlineDiff`; file arm rewritten: path div first, diff / `no changes` / unchanged fallback, non-succeeded second inset box
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — equivalent Console-local copy (no shared component); identical file-arm semantics
+- `packages/web/src/index.css` — one scoped `.tool-diff` block: token mapping, success/error 12% tints over inset, secondary right-aligned 3ch numbers + 1ch marker in a fixed 4ch column, hidden second gutter col/cells verified against real v3.3.3 DOM, fixed table layout, `pre-wrap`/`overflow-wrap:anywhere`, secondary noninteractive decoration, local `--tool-diff-insert-fg`/`--tool-diff-delete-fg` props
+- `packages/web/src/lib/diff-boundary.test.ts` (new) — 4 tests: only `diff-hunks.ts` owns `structuredPatch` across production src; renderers import neither `diff` nor `@/lib/diff-hunks`; adapter types come from `@/lib/api.generated`; Console third-party diff imports limited to the three proven v3.3.3 specifiers
+- `packages/web/src/experiments/console/console-isolation.test.ts` — `@/lib/git-hunk-adapter` added to approved set with concrete-need comment (pure conversion shared with source control)
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — `file-edit diff bodies` describe: path-first anatomy, jsdiff-order cells, marker/number sequences, badges + bar facts, failed second box, multi-hunk decoration, identical, one-sided/no-input/refused fallbacks, control-char escapes, Raw swap
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — interaction tests: open mounts table, Raw swaps exact payload (literal U+2028, `\u001b`) and restores, focus order summary → Raw → controls, no diff tab stop
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — mirrored anatomy/state/Raw/keyboard describe (9 tests)
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — persisted Edit row through `loadMessages`: collapsed badges, opened table anatomy, Raw swap/restore
+
+**Acceptance criteria verified**:
+- [x] Both renderers import values from `react-diff-view/esm/index.js`, types from `react-diff-view`, the package stylesheet, `toHunkData`, `FileDiff`; neither imports `diff` nor `@/lib/diff-hunks`; separate local components
+- [x] File body states identical on both surfaces (path first, diff, `no changes`, unchanged fallback, failed second inset box, success prose Raw-only)
+- [x] InlineDiff contract: `toHunkData` per hunk, unified modify, first hunk direct, later `Decoration` with `@@` header, local renderGutter marker+number, null new gutter, AT-exposed markers, zero tab stops
+- [x] One scoped `.tool-diff` block with all required tokens/tints/metrics/hidden-gutter/wrapping/secondary-decoration rules
+- [x] Legacy static + interaction tests green (111 incl. boundary file)
+- [x] Console room (110) + execution-history (15) + isolation tests green; console dir 1002
+- [x] Boundary tests green; adapter approved with comment
+- [x] No timeouts widened; `bun --filter @archon/web test`, `bun run type-check`, `bun run lint`, `bun run format:check` all green; stable hooks kept
+- [x] No contrast assertions in happy-dom
+
+**Learnings**:
+- `JSON.stringify` emits literal U+2028/U+2029 and lowercase `\u001b` — Raw-payload assertions must match that, not assumed uppercase escapes.
+- React SSR serializes `colSpan` camelCase in markup; happy-dom `getAttribute('colspan')` normalizes — static-markup tests need `colSpan="3"`, DOM tests need `colspan`.
+- The file-arm second box keys on `body.diff !== null && statusLabel !== 'succeeded' && (unreadable || preview !== null)` — a failed row with a diff still needs its normalized output somewhere honest.
+- `renderGutter`'s `renderDefault()` returns '' for inserts in unified mode; `computeNewLineNumber(change)` from `/esm/index.js` supplies the insert-side number so all six rows carry a number.
+
+---
+
+## 2026-09-19 — US-004: Deterministic full-stack proof and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts` — `fileEdit: z.enum(['edit','failed','write','bare']).optional()` mutually exclusive with all existing variant fields (`delayMs` may coexist); pinned constants `E2E_FAKE_EDIT_*` / `E2E_FAKE_WRITE_*` / `E2E_FAKE_BARE_EDIT_*`; each variant emits one paired call/result with cloned inputs — edit two-sided success, failed same input + `String to replace not found in file.` + `toolOutcome 'error'`, write one-sided Write, bare lowercase `edit` with absent (not undefined) `toolInput`
+- `packages/providers/src/e2e-fake/provider.test.ts` — event order, tool names, paired ids/results, input shapes, absent bare toolInput, every exclusivity rejection
+- `e2e/fixtures/workflows/e2e-file-edit.yaml` — `mutates_checkout: false`, four chained e2e-fake nodes (edit/failed/write/bare)
+- `e2e/lib/playwright/archon-runtime.ts` — fixture registration + typed `runFileEditWorkflow()`
+- `e2e/ui/file-edit-diff.spec.ts` — `[P1] file-edit:` both-surface proof: badges `+2`/`−2` (U+2212), body bar `file · 1 hunk · replace_all: false`, path-first anatomy, jsdiff-order cells/markers/numbers, zero `tbody.diff-decoration`, Raw swap/restore, failed second inset box, write/bare fallbacks (bare labeled generic no-input fallback), request ledger proving no off-origin traffic during open/toggle, geometry + tab-order + measured-contrast matrix
+- `packages/web/src/index.css` — `--tool-diff-delete-fg: color-mix(in oklch, var(--error) 85%, var(--text-primary))` (pure --error measured 4.32:1 on Legacy; mix clears 4.5:1 on both surfaces, floor unchanged)
+- `plans/.../reports/implementation-evidence.md`, `visual-acceptance.md`, `captures/` — full state×surface×viewport×theme matrix, every measured ratio with resolved colors, mockup comparison, documented deviations
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — `1-4-view-a-file-edit-as-an-inline-diff: done`
+- `plans/.../prd.json` — US-004 passes
+
+**Acceptance criteria verified**:
+- [x] `fileEdit` enum + exclusivity + pinned constants; provider tests green (37 e2e-fake tests)
+- [x] Fixture with 4 chained nodes + `runFileEditWorkflow()` typed helper
+- [x] Spec assertions all green: badges, bar, anatomy, Raw cycle, failed box, fallbacks, zero off-origin requests — 5/5 tests pass
+- [x] Viewport/theme matrix: Legacy 460px + Console 520px at 1440×1000, shared 460px, 390×844 — both dark token sources measured as the theme axis
+- [x] Geometry: table width = body content within 2px (0.3px max delta), no h-overflow, one-line summary, wrap `pre-wrap`/`anywhere`, 27.6px marker+3ch gutter
+- [x] A11y: native details/summary, 0 focusable descendants, Tab summary → Raw → next control; every measured pair ≥4.5:1 (Legacy min 5.35, Console min 6.83)
+- [x] Reports record gate resolution, commands, results, captures, deviations (snippet-relative numbering, grouped jsdiff ordering), component evidence for identical/refused/multi-hunk/malicious-control
+- [x] Validation in order: providers ✅ → web legs (880/539/1002) ✅ → web full ✅ → e2e typecheck ✅ → file-edit spec ✅ → HITL (38 pass, 0 flaky) ✅ → `bun run validate` ✅
+- [x] sprint-status 1.4 done after line-by-line AC→evidence mapping; PR deferred to parent workflow (hard rule)
+
+**Learnings**:
+- The e2e runtime's `waitFor`/`details.open` resolves before React mounts the body — wait for `.tool-family-body` visibility before reading body-bar text.
+- The request-quietness window must be scoped to the open/toggle/Raw interactions; page navigation legitimately fetches the app's declared Google Fonts, which are outside the contract.
+- Pure `--error` (oklch 0.6) on Legacy's 12% delete tint measures ~4.32:1 — a scoped `color-mix(in oklch, var(--error) 85%, var(--text-primary))` clears the floor on both surfaces while keeping the error hue.
+- "Both themes" resolves to the two dark token sources (index.css vs experiments/console/theme.css) — the app is dark-only by design (EXPERIENCE.md:38).
+- Playwright suite regenerates tracked captures in other plan dirs — `git checkout` them before staging to keep the diff scoped.
+- Pre-existing breakage this story unblocked in separate commits: OMP session-usage 8MiB I/O test needed 60s under suite load (`9992e724`); PR #202 left stale HITL contracts — dropped Raw `focus-visible:` classes, a `.tool-family-body` raw `pre` selector that never matched, `aria-expanded` count expectations against the lazy-mount contract, and a count-0 tail assertion from before family bodies existed (`a04d8db9`, `5a28e621` folded in).
+
+---

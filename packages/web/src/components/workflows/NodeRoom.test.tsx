@@ -1403,6 +1403,243 @@ describe('NodeRoom tool bodies', () => {
     expect(unreadable).toContain('output unreadable — open Raw');
   });
 
+  describe('file-edit diff bodies', () => {
+    const BACKOFF_BEFORE =
+      '  pub fn backoff(attempt: u32) -> Duration {\n' +
+      '     let secs = 2u64.pow(attempt).min(31);\n' +
+      '     Duration::from_secs(secs + 1)\n' +
+      '  }';
+    const BACKOFF_AFTER =
+      '  pub fn backoff(attempt: u32) -> Duration {\n' +
+      '     let secs = 2u64.pow(attempt).min(30);\n' +
+      '     Duration::from_secs(secs)\n' +
+      '  }';
+    const EDIT_INPUT: Record<string, unknown> = {
+      file_path: 'src/auto_retry.rs',
+      old_string: BACKOFF_BEFORE,
+      new_string: BACKOFF_AFTER,
+      replace_all: false,
+    };
+
+    function editItem(
+      toolUseId: string,
+      overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
+    ): Extract<AgentHistoryItem, { kind: 'tool' }> {
+      return openToolItem({
+        toolUseId,
+        name: 'Edit',
+        input: EDIT_INPUT,
+        output: 'File updated successfully',
+        outputState: 'full',
+        canLoadFullOutput: false,
+        ...overrides,
+      });
+    }
+
+    test('changed pair: path first, one unified table in jsdiff order, markers, snippet numbers', () => {
+      const body = bodyOf(renderRoom({ items: [editItem('t-edit')] }), 't-edit');
+      expect(body).toContain('text-node-command">src/auto_retry.rs<');
+      expect(body.indexOf('src/auto_retry.rs')).toBeLessThan(body.indexOf('tool-diff'));
+      expect(body).toContain('diff diff-unified tool-diff');
+      // jsdiff order for this fixture: context, both deletes, both inserts, context.
+      const cellTypes = [...body.matchAll(/diff-code diff-code-(normal|delete|insert)/g)].map(
+        match => match[1]
+      );
+      expect(cellTypes).toEqual(['normal', 'delete', 'delete', 'insert', 'insert', 'normal']);
+      // The +/− markers are the required non-color cue, exposed to AT.
+      const markers = [...body.matchAll(/tool-diff-marker">([^<]*)</g)].map(match => match[1]);
+      expect(markers).toEqual(['', '−', '−', '+', '+', '']);
+      const numbers = [...body.matchAll(/tool-diff-line-number">([^<]*)</g)].map(match => match[1]);
+      expect(numbers).toEqual(['1', '2', '3', '2', '3', '4']);
+      // The duplicated new-side gutter cells react-diff-view emits stay empty;
+      // CSS hides them — only the old-side cell carries content.
+      expect(body.match(/diff-gutter-[a-z]+" data-change-key="[^"]+"><\/td>/g)?.length).toBe(6);
+      // One hunk needs no @@ decoration row.
+      expect(body).not.toContain('diff-decoration');
+      // Success prose stays behind Raw; the sent payload never serializes.
+      expect(body).not.toContain('File updated successfully');
+      expect(body).not.toContain('old_string');
+    });
+
+    test('summary carries +2/−2 badges; the bar shows hunk and replace_all facts without counts', () => {
+      const markup = renderRoom({ items: [editItem('t-edit')] });
+      const row = rowMarkup(markup, 't-edit');
+      const summary = summaryMarkup(row);
+      expect(badgeMarkup(summary, '+2')).toContain('text-success');
+      const removed = badgeMarkup(summary, '−2');
+      expect(removed).toContain('var(--error)');
+      // The bar keeps the facts and drops the diff badges — no repeated counts.
+      const body = bodyOf(markup, 't-edit');
+      const bar = /<span class="[^"]*whitespace-nowrap[^"]*"[^>]*>([^<]*)<\/span>/.exec(body);
+      expect(bar?.[1]).toBe('file · 1 hunk · replace_all: false · 1.5s');
+      expect(bar?.[1]).not.toContain('+2');
+      expect(bar?.[1]).not.toContain('−2');
+    });
+
+    test('a failed row keeps the table and adds its normalized output in a second inset box', () => {
+      const body = bodyOf(
+        renderRoom({
+          items: [
+            editItem('t-edit-fail', {
+              output: 'edit failed: permission denied',
+              outcome: 'failed',
+              exitCode: 1,
+            }),
+          ],
+        }),
+        't-edit-fail'
+      );
+      expect(body.match(/tool-family-body/g)?.length).toBe(2);
+      expect(body).toContain('diff diff-unified tool-diff');
+      expect(body.indexOf('tool-diff')).toBeLessThan(body.indexOf('permission denied'));
+      // The failure output lives in the second box, not the diff box.
+      const boxes = body.split('tool-family-body');
+      expect(boxes[1]).not.toContain('permission denied');
+      expect(boxes[2]).toContain('edit failed: permission denied');
+      expect(body).toContain('mt-1.5');
+    });
+
+    test('later hunks get a text-only @@ decoration; the first hunk has none', () => {
+      const before = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n');
+      const after = Array.from({ length: 20 }, (_, index) =>
+        index === 4 || index === 15 ? `line ${index + 1} changed` : `line ${index + 1}`
+      ).join('\n');
+      const body = bodyOf(
+        renderRoom({
+          items: [
+            openToolItem({
+              toolUseId: 't-two',
+              name: 'Edit',
+              input: { file_path: 'src/two.ts', old_string: before, new_string: after },
+              output: 'done',
+              outputState: 'full',
+              canLoadFullOutput: false,
+            }),
+          ],
+        }),
+        't-two'
+      );
+      expect(body).toContain('diff diff-unified tool-diff');
+      // Exactly one decoration: the second hunk's synthesized header.
+      expect(body.match(/<tbody class="diff-decoration"/g)?.length).toBe(1);
+      expect(body).toContain('diff-decoration-content');
+      expect(body).toContain('colSpan="3"');
+      expect(body).toContain('@@ -12,9 +12,9 @@');
+      // It sits between hunk one's last line and hunk two's first line.
+      expect(body.indexOf('>line 9<')).toBeLessThan(body.indexOf('@@ -12,9 +12,9 @@'));
+      expect(body.indexOf('@@ -12,9 +12,9 @@')).toBeLessThan(body.indexOf('>line 12<'));
+      expect(body).toContain('file · 2 hunks · 1.5s');
+    });
+
+    test('identical sides render the no-changes note with no table or diff badges', () => {
+      const same = 'same content\nsecond line';
+      const markup = renderRoom({
+        items: [
+          openToolItem({
+            toolUseId: 't-same',
+            name: 'Edit',
+            input: { file_path: 'same.ts', old_string: same, new_string: same },
+            output: 'done',
+            outputState: 'full',
+            canLoadFullOutput: false,
+          }),
+        ],
+      });
+      const body = bodyOf(markup, 't-same');
+      expect(body).toContain('text-node-command">same.ts<');
+      expect(body).toContain('>no changes<');
+      expect(body).not.toContain('tool-diff');
+      expect(body).toContain('file · no changes · 1.5s');
+      const summary = summaryMarkup(rowMarkup(markup, 't-same'));
+      expect(summary).not.toContain('>+');
+      expect(summary).not.toContain('>−');
+    });
+
+    test('one-sided, no-input, and refused pairs keep the path-plus-preview fallback', () => {
+      const markup = renderRoom({
+        items: [
+          openToolItem({
+            toolUseId: 't-write',
+            name: 'Write',
+            input: { file_path: 'w.ts', content: 'brand new file' },
+            output: 'written',
+          }),
+          openToolItem({
+            toolUseId: 't-naked',
+            name: 'Edit',
+            input: {},
+            output: 'done',
+            outputState: 'full',
+            canLoadFullOutput: false,
+          }),
+          openToolItem({
+            toolUseId: 't-huge',
+            name: 'Edit',
+            input: { file_path: 'big.ts', old_string: 'x'.repeat(70_000), new_string: 'y' },
+            output: 'done',
+          }),
+        ],
+      });
+      // One-sided Write: content alone never fabricates an after side.
+      const write = bodyOf(markup, 't-write');
+      expect(write).toContain('text-node-command">w.ts<');
+      expect(write).toContain('written');
+      expect(write).not.toContain('tool-diff');
+      expect(write).toContain('file · truncated · 1.5s');
+      // Bare Edit input: the family label stands in for the path, preview shown.
+      const naked = bodyOf(markup, 't-naked');
+      expect(naked).toContain('text-node-command">Edit<');
+      expect(naked).toContain('done');
+      expect(naked).not.toContain('tool-diff');
+      // Over-limit pair: the differ refuses and the row falls back intact.
+      const huge = bodyOf(markup, 't-huge');
+      expect(huge).toContain('text-node-command">big.ts<');
+      expect(huge).toContain('done');
+      expect(huge).not.toContain('tool-diff');
+      expect(huge).toContain('file · truncated · 1.5s');
+      // None of the three rows earns a hunk fact or a diff badge.
+      for (const id of ['t-write', 't-naked', 't-huge']) {
+        const body = bodyOf(markup, id);
+        expect(body).not.toContain('hunk');
+        expect(body).not.toContain('no changes');
+        const summary = summaryMarkup(rowMarkup(markup, id));
+        expect(summary).not.toContain('>+');
+        expect(summary).not.toContain('>−');
+      }
+    });
+
+    test('control characters render as bounded escapes, one DOM row per change', () => {
+      const body = bodyOf(
+        renderRoom({
+          items: [
+            openToolItem({
+              toolUseId: 't-ctl',
+              name: 'Edit',
+              input: {
+                file_path: 'ctl.ts',
+                old_string: 'plain',
+                new_string: 'mark\u{2028}\u{001B}[31mred',
+              },
+              output: 'done',
+              outputState: 'full',
+              canLoadFullOutput: false,
+            }),
+          ],
+        }),
+        't-ctl'
+      );
+      // One hunk, one delete row, one insert row — each change is one DOM row.
+      expect(body.match(/<tr class="diff-line"/g)?.length).toBe(2);
+      expect(body.match(/diff-code-delete/g)?.length).toBe(1);
+      expect(body.match(/diff-code-insert/g)?.length).toBe(1);
+      // ANSI is stripped; U+2028 survives only as the visible escape text.
+      const insert = /diff-code-insert"[^>]*>([^<]*)</.exec(body)?.[1] ?? '';
+      expect(insert).toBe('mark\\u{2028}red');
+      expect(body).not.toContain('\u{2028}');
+      expect(body).not.toContain('\u{001B}');
+    });
+  });
+
   test('matches body: pattern + scope header, path:line rows, and text-only lines', () => {
     const items: AgentHistoryItem[] = [
       openToolItem({

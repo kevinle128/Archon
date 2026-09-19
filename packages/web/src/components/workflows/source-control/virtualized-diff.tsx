@@ -6,7 +6,7 @@ import 'react-diff-view/style/index.css';
 
 import type { GitReadyDiffResponse } from '@/lib/api';
 
-import { hunksForSide, toHunkData } from './git-hunk-adapter';
+import { hunksForSide, toHunkData } from '@/lib/git-hunk-adapter';
 import './source-control-diff.css';
 import { highlightDiffTokens, renderHighlightedToken } from './syntax-highlight';
 

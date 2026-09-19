@@ -3049,7 +3049,7 @@ describe('ConsoleNodeRoom', () => {
         canLoadFullOutput: true,
         outputState: 'truncated' as const,
         messageId: 'msg-tool-1',
-        execution: null,
+        execution: null as TranscriptExecution | null,
         ...overrides,
       };
       return {
@@ -3326,6 +3326,280 @@ describe('ConsoleNodeRoom', () => {
       expect(none.querySelector('.text-node-command')?.textContent).toBe('b.ts');
       expect(none.textContent).toContain('no preview');
       expect(bodyBox(toolRow('t-unread')).textContent).toContain('output unreadable — open Raw');
+    });
+
+    describe('file-edit diff bodies', () => {
+      const BACKOFF_BEFORE =
+        '  pub fn backoff(attempt: u32) -> Duration {\n' +
+        '     let secs = 2u64.pow(attempt).min(31);\n' +
+        '     Duration::from_secs(secs + 1)\n' +
+        '  }';
+      const BACKOFF_AFTER =
+        '  pub fn backoff(attempt: u32) -> Duration {\n' +
+        '     let secs = 2u64.pow(attempt).min(30);\n' +
+        '     Duration::from_secs(secs)\n' +
+        '  }';
+      const EDIT_INPUT: Record<string, unknown> = {
+        file_path: 'src/auto_retry.rs',
+        old_string: BACKOFF_BEFORE,
+        new_string: BACKOFF_AFTER,
+        replace_all: false,
+      };
+
+      function editItem(
+        toolUseId: string,
+        overrides: Partial<Extract<AgentHistoryItem, { kind: 'tool' }>> = {}
+      ): Extract<AgentHistoryItem, { kind: 'tool' }> {
+        return openToolItem({
+          toolUseId,
+          name: 'Edit',
+          input: EDIT_INPUT,
+          output: 'File updated successfully',
+          outputState: 'full',
+          canLoadFullOutput: false,
+          ...overrides,
+        });
+      }
+
+      function diffTable(row: Element): Element {
+        const table = row.querySelector('.tool-diff');
+        if (table === null) throw new Error(`diff table missing: ${row.innerHTML}`);
+        return table;
+      }
+
+      test('changed pair: path first, unified table in jsdiff order, markers, snippet numbers', async () => {
+        await mountRows([editItem('t-edit')]);
+        const row = toolRow('t-edit');
+        const body = bodyBox(row);
+        // The path is the first block child; the table follows it.
+        const path = body.querySelector('.text-node-command');
+        expect(path?.textContent).toBe('src/auto_retry.rs');
+        expect(path).toBe(body.firstElementChild);
+        const table = diffTable(row);
+        expect(table.previousElementSibling).toBe(path);
+        expect(table.className).toContain('diff-unified');
+        // jsdiff order for this fixture: context, both deletes, both inserts, context.
+        const codes = Array.from(table.querySelectorAll('.diff-code')).map(td => td.className);
+        expect(codes).toEqual([
+          'diff-code diff-code-normal',
+          'diff-code diff-code-delete',
+          'diff-code diff-code-delete',
+          'diff-code diff-code-insert',
+          'diff-code diff-code-insert',
+          'diff-code diff-code-normal',
+        ]);
+        // The +/− markers are the required non-color cue, exposed to AT.
+        expect(
+          Array.from(table.querySelectorAll('.tool-diff-marker')).map(el => el.textContent)
+        ).toEqual(['', '−', '−', '+', '+', '']);
+        expect(
+          Array.from(table.querySelectorAll('.tool-diff-line-number')).map(el => el.textContent)
+        ).toEqual(['1', '2', '3', '2', '3', '4']);
+        // Only the old-side gutter cell carries content; the duplicated
+        // new-side cell stays empty and is hidden by scoped CSS.
+        for (const tr of Array.from(table.querySelectorAll('.diff-line'))) {
+          expect(tr.children[0]?.querySelector('.tool-diff-line-number')).not.toBeNull();
+          expect(tr.children[1]?.textContent).toBe('');
+        }
+        // One hunk needs no @@ decoration row.
+        expect(table.querySelector('tbody.diff-decoration')).toBeNull();
+        // Success prose stays behind Raw; the sent payload never serializes.
+        expect(body.textContent).not.toContain('File updated successfully');
+        expect(body.textContent).not.toContain('old_string');
+      });
+
+      test('summary carries +2/−2 badges; the bar shows hunk and replace_all facts without counts', async () => {
+        await mountRows([editItem('t-edit')]);
+        const row = toolRow('t-edit');
+        const summaryText = rowSummary(row).textContent ?? '';
+        expect(summaryText).toContain('+2');
+        expect(summaryText).toContain('−2');
+        const bar = row.querySelector('summary + div div span');
+        expect(bar?.textContent).toBe('file · 1 hunk · replace_all: false · 1.5s');
+        expect(bar?.textContent).not.toContain('+2');
+        expect(bar?.textContent).not.toContain('−2');
+      });
+
+      test('a failed row keeps the table and adds its normalized output in a second inset box', async () => {
+        await mountRows([
+          editItem('t-edit-fail', {
+            output: 'edit failed: permission denied',
+            outcome: 'failed',
+            exitCode: 1,
+          }),
+        ]);
+        const row = toolRow('t-edit-fail');
+        const boxes = row.querySelectorAll('.tool-family-body');
+        expect(boxes).toHaveLength(2);
+        expect(boxes[0]?.querySelector('.tool-diff')).not.toBeNull();
+        expect(boxes[0]?.textContent).not.toContain('permission denied');
+        expect(boxes[1]?.textContent).toContain('edit failed: permission denied');
+        expect(boxes[1]?.className).toContain('mt-1.5');
+      });
+
+      test('later hunks get a text-only @@ decoration; the first hunk has none', async () => {
+        const before = Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join('\n');
+        const after = Array.from({ length: 20 }, (_, index) =>
+          index === 4 || index === 15 ? `line ${index + 1} changed` : `line ${index + 1}`
+        ).join('\n');
+        await mountRows([
+          openToolItem({
+            toolUseId: 't-two',
+            name: 'Edit',
+            input: { file_path: 'src/two.ts', old_string: before, new_string: after },
+            output: 'done',
+            outputState: 'full',
+            canLoadFullOutput: false,
+          }),
+        ]);
+        const row = toolRow('t-two');
+        const table = diffTable(row);
+        const decorations = table.querySelectorAll('tbody.diff-decoration');
+        expect(decorations).toHaveLength(1);
+        const decoration = decorations[0];
+        expect(decoration?.textContent).toBe('@@ -12,9 +12,9 @@');
+        const cell = decoration?.querySelector('td');
+        expect(cell?.getAttribute('colspan')).toBe('3');
+        // It sits between hunk one's last line and hunk two's first line.
+        expect(decoration?.previousElementSibling?.textContent).toContain('line 9');
+        expect(decoration?.nextElementSibling?.textContent).toContain('line 12');
+        const bar = row.querySelector('summary + div div span');
+        expect(bar?.textContent).toBe('file · 2 hunks · 1.5s');
+      });
+
+      test('identical sides render the no-changes note with no table or diff badges', async () => {
+        const same = 'same content\nsecond line';
+        await mountRows([
+          openToolItem({
+            toolUseId: 't-same',
+            name: 'Edit',
+            input: { file_path: 'same.ts', old_string: same, new_string: same },
+            output: 'done',
+            outputState: 'full',
+            canLoadFullOutput: false,
+          }),
+        ]);
+        const row = toolRow('t-same');
+        const body = bodyBox(row);
+        expect(body.querySelector('.text-node-command')?.textContent).toBe('same.ts');
+        expect(body.textContent).toContain('no changes');
+        expect(row.querySelector('.tool-diff')).toBeNull();
+        const summaryText = rowSummary(row).textContent ?? '';
+        expect(summaryText).not.toContain('+');
+        expect(summaryText).not.toContain('−');
+        const bar = row.querySelector('summary + div div span');
+        expect(bar?.textContent).toBe('file · no changes · 1.5s');
+      });
+
+      test('one-sided, no-input, and refused pairs keep the path-plus-preview fallback', async () => {
+        await mountRows([
+          openToolItem({
+            toolUseId: 't-write',
+            name: 'Write',
+            input: { file_path: 'w.ts', content: 'brand new file' },
+            output: 'written',
+          }),
+          openToolItem({
+            toolUseId: 't-naked',
+            name: 'Edit',
+            input: {},
+            output: 'done',
+            outputState: 'full',
+            canLoadFullOutput: false,
+          }),
+          openToolItem({
+            toolUseId: 't-huge',
+            name: 'Edit',
+            input: { file_path: 'big.ts', old_string: 'x'.repeat(70_000), new_string: 'y' },
+            output: 'done',
+          }),
+        ]);
+        for (const [id, pathText, preview] of [
+          ['t-write', 'w.ts', 'written'],
+          ['t-naked', 'Edit', 'done'],
+          ['t-huge', 'big.ts', 'done'],
+        ] as const) {
+          const row = toolRow(id);
+          const body = bodyBox(row);
+          expect(body.querySelector('.text-node-command')?.textContent).toBe(pathText);
+          expect(body.textContent).toContain(preview);
+          expect(row.querySelector('.tool-diff')).toBeNull();
+          const summaryText = rowSummary(row).textContent ?? '';
+          expect(summaryText).not.toContain('+');
+          expect(summaryText).not.toContain('−');
+          const bar = row.querySelector('summary + div div span');
+          expect(bar?.textContent).not.toContain('hunk');
+          expect(bar?.textContent).not.toContain('no changes');
+        }
+      });
+
+      test('control characters render as bounded escapes, one DOM row per change', async () => {
+        await mountRows([
+          openToolItem({
+            toolUseId: 't-ctl',
+            name: 'Edit',
+            input: {
+              file_path: 'ctl.ts',
+              old_string: 'plain',
+              new_string: 'mark\u{2028}\u{001B}[31mred',
+            },
+            output: 'done',
+            outputState: 'full',
+            canLoadFullOutput: false,
+          }),
+        ]);
+        const row = toolRow('t-ctl');
+        const table = diffTable(row);
+        expect(table.querySelectorAll('.diff-line')).toHaveLength(2);
+        const insert = table.querySelector('.diff-code-insert');
+        expect(insert?.textContent).toBe('mark\\u{2028}red');
+        expect(bodyBox(row).textContent).not.toContain('\u{2028}');
+        expect(bodyBox(row).textContent).not.toContain('\u{001B}');
+      });
+
+      test('Raw swaps the diff table for the exact payload and back', async () => {
+        await mountRows([editItem('t-edit-raw')]);
+        const row = toolRow('t-edit-raw');
+        expect(bodyBox(row).querySelector('.tool-diff')).not.toBeNull();
+        const raw = rawButton(row);
+        await act(async () => {
+          click(raw);
+        });
+        expect(raw.getAttribute('aria-expanded')).toBe('true');
+        expect(row.querySelector('.tool-diff')).toBeNull();
+        expect(row.querySelector('.tool-family-body')).toBeNull();
+        expect(rawPanel(row).textContent).toBe(
+          JSON.stringify(
+            { name: 'Edit', input: EDIT_INPUT, output: 'File updated successfully' },
+            null,
+            2
+          )
+        );
+        await act(async () => {
+          click(raw);
+        });
+        expect(raw.getAttribute('aria-expanded')).toBe('false');
+        expect(bodyBox(row).querySelector('.tool-diff')).not.toBeNull();
+      });
+
+      test('the diff contributes no tab stop: summary → Raw → existing controls', async () => {
+        await mountRows([
+          editItem('t-edit-keys', {
+            outputState: 'truncated',
+            canLoadFullOutput: true,
+          }),
+        ]);
+        const row = toolRow('t-edit-keys');
+        expect(row.querySelector('.tool-diff')).not.toBeNull();
+        const focusables = Array.from(row.querySelectorAll('summary, button, [tabindex]'));
+        expect(focusables[0]).toBe(rowSummary(row));
+        expect(focusables[1]).toBe(rawButton(row));
+        expect(focusables[2]).toBe(rowButton(row, 'View full output'));
+        expect(
+          row.querySelector('.tool-diff button, .tool-diff a, .tool-diff [tabindex]')
+        ).toBeNull();
+        expect(focusables).toHaveLength(3);
+      });
     });
 
     test('matches body: pattern + scope header, path:line rows, and text-only lines', async () => {

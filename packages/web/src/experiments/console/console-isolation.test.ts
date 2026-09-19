@@ -123,6 +123,10 @@ describe('console NFR4 isolation', () => {
       '@/lib/pair-tool-transcript',
       '@/lib/project-text-transcript',
       '@/lib/tool-presentation',
+      // Concrete need (issue #177): the inline file-edit diff converts
+      // generated GitDiffHunk values through the same pure adapter source
+      // control already uses — conversion only, no API or React surface.
+      '@/lib/git-hunk-adapter',
       // Concrete need (issue #176): the body bar's sent-name fallback must run
       // the same bounded ANSI/control sanitization as the Legacy renderer;
       // tool-presentation does not re-export it.
