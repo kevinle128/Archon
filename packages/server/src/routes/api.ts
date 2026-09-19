@@ -5319,7 +5319,7 @@ export function registerApiRoutes(
     steeringValidationErrorHook
   );
 
-  // Steering withdraw (issue #182): the gated identity check runs before
+  // Steering withdraw: the gated identity check runs before
   // OpenAPI param validation so an unauthenticated caller receives nested 401
   // even with a non-UUID path id. DELETE-only and bodyless — the send
   // middleware stays POST-only and nothing here parses a body.

@@ -145,12 +145,15 @@ export function ConsoleComposerDock({
   // captured at activation time (next row → previous row → field).
   useEffect(() => {
     const target = pendingFocusRef.current;
-    if (target === null) return;
+    // A concurrent send also changes `sent`. Keep the target pending until the
+    // withdraw itself settles so an unrelated append cannot move focus early
+    // or consume the focus restoration needed if the withdraw later succeeds.
+    if (target === null || dock.withdrawingMessageId !== null) return;
     pendingFocusRef.current = null;
     const button =
       target.kind === 'delete' ? deleteButtonsRef.current.get(target.messageId) : undefined;
     (button ?? fieldRef.current)?.focus();
-  }, [dock.sent]);
+  }, [dock.sent, dock.withdrawingMessageId]);
 
   const submit = (): void => {
     if (!canSubmitGuidance({ mode, inFlight: dock.inFlight, draft })) return;
@@ -261,7 +264,6 @@ export function ConsoleComposerDock({
                     className={[
                       'min-h-[24px] min-w-[24px] flex-none rounded-md px-2 font-mono text-[11px]',
                       'text-text-secondary hover:bg-surface-inset',
-                      'transition-colors motion-reduce:transition-none',
                       'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
                     ].join(' ')}
                   >

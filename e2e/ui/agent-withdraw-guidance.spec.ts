@@ -19,8 +19,7 @@ import {
 import { T } from '../lib/playwright/timeouts';
 
 /**
- * Withdraw a queued guidance message — outside-in behavior + evidence
- * (issue #182, Story 2.2).
+ * Withdraw a queued guidance message — outside-in behavior + evidence.
  *
  * The `e2e-queue-guidance` fixture holds the first provider turn open for a
  * bounded 30-second delay, so a real web-dispatched run stays steerable long
@@ -380,6 +379,7 @@ for (const surface of ['console', 'legacy'] as const) {
       );
       await page.keyboard.press(activationKey);
       const response = await deletion;
+      expect(response.status()).toBe(200);
       expect(response.request().postData(), 'DELETE carries no request body').toBeNull();
       expect(await response.json()).toEqual({ success: true, message_id: firstId });
 
@@ -452,6 +452,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await focusDeleteViaKeyboard(page, room, 1, 0);
     await page.keyboard.press(activationKey);
     const response = await deletion;
+    expect(response.status()).toBe(200);
     expect(response.request().postData(), 'DELETE carries no request body').toBeNull();
     expect(await response.json()).toEqual({ success: true, message_id: messageId });
 

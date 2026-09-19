@@ -531,6 +531,7 @@ describe('ConsoleComposerDock', () => {
       // alpha) composites under the 3:1 non-text floor on dock surfaces.
       expect(button.className).toContain('focus-visible:outline-accent-bright!');
       expect(button.className).toContain('focus-visible:outline-offset-2');
+      expect(button.className).not.toContain('transition');
     }
     expect(buttons[0].getAttribute('aria-label')).toBe('delete · first');
     expect(buttons[1].getAttribute('aria-label')).toBe('delete · second');
@@ -589,6 +590,51 @@ describe('ConsoleComposerDock', () => {
     const items = [...host.querySelectorAll('li')].map(li => li.textContent ?? '');
     expect(items[0]).toContain('second');
     expect(items[1]).toContain('third');
+  });
+
+  test('a concurrent send append does not consume focus reserved for withdraw success', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+    const nextDelete = deleteButtons()[1];
+
+    const pendingSend = deferred<SendWorkflowNodeResponse>();
+    const pendingWithdraw = deferred<WithdrawWorkflowNodeResponse>();
+    const send: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return pendingSend.promise;
+    };
+    const withdraw: WithdrawNodeGuidance = async (runId, nodeId, messageId) => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return pendingWithdraw.promise;
+    };
+    await renderDock({ send, withdraw });
+
+    await setDraft('third');
+    await clickQueue();
+    const selectedDelete = deleteButtons()[0];
+    await act(async () => {
+      selectedDelete.focus();
+      selectedDelete.click();
+    });
+    await flush();
+
+    await act(async () => {
+      pendingSend.resolve(okReceipt(calls[2].body.message_id));
+    });
+    await flush();
+    expect(host.textContent).toContain('queued · 3');
+
+    await act(async () => {
+      queueButton().focus();
+      pendingWithdraw.resolve({ success: true, message_id: calls[0].body.message_id });
+    });
+    await flush();
+
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+    expect((win.document.activeElement as unknown) === nextDelete).toBe(true);
   });
 
   test('success removes only the selected row, updates wording, and focuses the next delete', async () => {

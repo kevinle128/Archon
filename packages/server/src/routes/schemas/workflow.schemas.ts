@@ -576,7 +576,7 @@ export const steeringErrorSchema = z
 export type SteeringError = z.infer<typeof steeringErrorSchema>;
 
 // ---------------------------------------------------------------------------
-// DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId (steering, #182)
+// DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId (steering)
 // ---------------------------------------------------------------------------
 
 /**

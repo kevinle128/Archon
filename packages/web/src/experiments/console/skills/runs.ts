@@ -182,8 +182,8 @@ export async function sendNodeGuidance(
 }
 
 /**
- * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — Story 2.2
- * withdraw of a still-queued guidance message. Bodyless: requestJson adds a
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
+ * a still-queued guidance message. Bodyless: requestJson adds a
  * JSON content type only when a body is present, so none is sent. No
  * auto-retry; refusals surface as SteeringSendError like the send helper.
  */

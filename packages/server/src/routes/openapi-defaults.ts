@@ -48,7 +48,7 @@ export const workflowEnvValidationErrorHook: DefaultHook = (result, c): Response
 };
 
 /**
- * Steering route-scoped validation hook (issue #181; withdraw added by #182).
+ * Steering route-scoped validation hook.
  *
  * Every steering route — send, withdraw, and any later steering route — shares
  * the nested error shape `{ success: false, error: { code, message } }` so

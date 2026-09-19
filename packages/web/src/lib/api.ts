@@ -781,8 +781,8 @@ export async function sendNodeGuidance(
 }
 
 /**
- * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — Story 2.2
- * withdraw of a still-queued guidance message. Bodyless: no request body and
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
+ * a still-queued guidance message. Bodyless: no request body and
  * no synthetic JSON content type, no auto-retry. Refusals normalize through
  * the same SteeringSendError surface as the send helper so callers keep
  * using `toSteeringRefusal`.
