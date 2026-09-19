@@ -69,7 +69,7 @@
       "dependsOn": ["US-001", "US-002"],
       "priority": 3,
       "passes": false,
-      "notes": ""
+      "notes": "BLOCKED iteration 3: cannot close out. Spike report still Block/missing-env (no DEEPSEEK_API_KEY/BASE_URL/LIVE_MODEL; vault empty). ACs require Proceed evidence, interrupt:'native' matrix cell, issue #187 link, and sprint 2-7 done — all forbidden under D5/D6 without live resume proof. No code changes. Operator re-run spike:interrupt:deepseek then resume US-003."
     }
   ]
 }

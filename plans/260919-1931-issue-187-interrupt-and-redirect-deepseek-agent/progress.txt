@@ -74,3 +74,30 @@
 - Prefer instance `getCapabilities().interrupt` when declared, else registry — keeps Claude mocks (field omitted) and pi queue-only behaviour intact.
 
 ---
+
+## Blocker Ledger
+
+BLOCKER US-003 | gate=plans/reports/deepseek-interrupt-resume-spike.md must record Proceed + DEEPSEEK_CAPABILITIES.interrupt='native' + matrix **native** + issue #187 evidence link + sprint 2-7 done | cause=spike outcome is Block (failureCategory=missing-env). Re-checked this iteration: DEEPSEEK_API_KEY/BASE_URL/LIVE_MODEL unset; no .env DEEPSEEK_*; remote_agent_user_provider_keys count=0; no DEEPSEEK codebase env vars. Phase 3 AC5/checklist require live Proceed before capability flip, docs claiming verified stop/resume, matrix native cell, and sprint done. Cannot obtain credentials in-agent. | action=no code change; leave DEEPSEEK_CAPABILITIES.interrupt=false; leave sprint 2-7 backlog; do not fake Proceed or matrix native. Operator must re-run: cd packages/providers && DEEPSEEK_LIVE_TEST=1 DEEPSEEK_API_KEY=… DEEPSEEK_BASE_URL=… DEEPSEEK_LIVE_MODEL=… bun run spike:interrupt:deepseek — then re-enter US-003. | 2026-09-19T20:20:20Z
+
+---
+
+## 2026-09-19T20:20:20Z — US-003: Capability matrix regeneration, provider docs, and sprint closeout
+
+**Status**: BLOCKED (hard — missing live spike credentials)
+**Files changed**: none (no safe partial closeout under Block)
+
+**Acceptance criteria status**:
+- [ ] generate:capability-matrix DeepSeek interrupt ❌→**native** — blocked; product interrupt still false per Phase 1/2 Block gate
+- [ ] ai-assistants.md five verified facts — blocked; would document unverified live resume
+- [x] Docs do not promise warm process / 31ms / retained text / cost / soft inject — N/A (no docs edit)
+- [ ] spike report Proceed + tool-status + link on #187 — report remains Block/missing-env; toolMappingDecision incomplete
+- [ ] Nine-perspective acceptance review — cannot pass product/verification perspectives without pinned-runtime Proceed
+- [ ] sprint-status 2-7 backlog→done — intentionally not flipped
+- [ ] Full validation gate with native matrix — not run as ship gate under Block
+
+**Learnings**:
+- US-003 has no honor-Block closeout path: every ship criterion is gated on Proceed + capability native.
+- Partial docs/matrix without flip would diverge generated docs from runtime capabilities and violate D5/D6.
+
+---
+
