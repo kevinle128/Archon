@@ -164,7 +164,9 @@ const BLOCKED_REASON_CLASSES =
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
 
 /** Modes where the dock's focusable controls are in the DOM. */
-function controlsMounted(mode: 'hidden' | 'blocked' | 'detached' | 'composer'): boolean {
+function controlsMounted(
+  mode: 'hidden' | 'blocked' | 'detached' | 'composer' | 'finished-iteration'
+): boolean {
   return mode === 'composer' || mode === 'blocked';
 }
 

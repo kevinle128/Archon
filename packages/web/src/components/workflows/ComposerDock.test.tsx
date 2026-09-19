@@ -1574,6 +1574,15 @@ describe('ComposerDock', () => {
     expect(host.textContent ?? '').toContain('from scope b');
   });
 
+  // ---------------------------------------------------------------------------
+  // Story 2.10 (#190) — finished-iteration read-only dock.
+  // ---------------------------------------------------------------------------
+
+  const FINISHED = {
+    liveRowId: 'occ-live',
+    liveIteration: 3,
+  } as const;
+
   test('finished-iteration renders exact disclosure and Go label', async () => {
     const selected: string[] = [];
     await renderDock({
@@ -1802,5 +1811,4 @@ describe('ComposerDock', () => {
     expect(host.querySelector('textarea')).toBeNull();
     expect(host.textContent ?? '').toBe('');
   });
-
 });
