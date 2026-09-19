@@ -370,6 +370,7 @@ function installHappyDom(): Window {
   win.document.documentElement.style.fontSize = '16px';
   Object.defineProperty(win.HTMLElement.prototype, 'getBoundingClientRect', {
     configurable: true,
+    writable: true,
     value: (): DOMRect =>
       ({
         x: 0,
