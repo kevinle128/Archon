@@ -1,5 +1,16 @@
 ## Codebase Patterns
 
+### E2E starter identity header for browser sends
+- **Where**: `e2e/ui/agent-queue-guidance.spec.ts`, `e2e/ui/agent-interrupt-redirect.spec.ts`
+- **Pattern**: `page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER })` before room navigation so UI POSTs resolve `e2e-starter` projection. `startWorkflowViaWeb` already uses the starter; the default page does not.
+- **Example**: `await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });`
+
+### Attempt-scoped rooms drop prior-attempt tools
+- **Where**: Console/Legacy node rooms load messages with `attemptId`
+- **Pattern**: After redirect `Send now`, the live room switches to the resumed attempt and no longer mounts the interrupted attempt’s `[data-tool-id]`. Prove interrupted→operator adjacency via API `seq`; prove operator→echo with `compareDocumentPosition` on the live/fresh room.
+- **Example**: `expect(interrupted!.seq).toBeLessThan(operatorRows[0]!.seq)`
+
+
 ### Operator receipt at first stream yield
 - **Where**: `packages/workflows/src/dag-executor.ts` (`runStreamPass`, loop stream try)
 - **Pattern**: Carry `readonly QueuedOperatorMessage[]` from drain/send_now; join prompt after `newTranscriptAttempt`; await `appendOperatorTranscript` on first stream chunk or normal empty completion of pass zero only; re-asks get no context.
@@ -113,5 +124,38 @@
 **Learnings**:
 - Operator rows must not be asserted while the first yield is still held — the seam is immediately before processing that chunk, so hold proves beginTurn-only, then release proves operator-before-caused order via append instrumentation
 - re-ask rotates loop iterationExecutionScope after attempt 0; pendingOperatorReceipt must keep the guidance attempt scope and skip re-asks via reaskAttempt === 0
+
+---
+
+## 2026-09-19T21:16:06Z — US-004: Integration, rollout, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- e2e/lib/playwright/run-detail.ts — NodeMessageRow type + listNodeMessages widening
+- e2e/ui/agent-queue-guidance.spec.ts — positive direct operator API/DOM proof + starter header + message_id tracking
+- e2e/ui/agent-interrupt-redirect.spec.ts — interrupt operator matrix, visual contract, OPERATOR_EVIDENCE_DIR captures
+- plans/.../reports/acceptance-evidence.md — criterion→test map, gates, captures, rollout/rollback
+- plans/.../reports/evidence/us-004-*-operator-rows.png — 460/1440 Console+Legacy
+- _bmad-output/.../sprint-status.yaml — 2-8 done
+- packages/workflows/src/loader.test.ts — unblock: drop stale pr-e2e-verify test
+- packages/workflows/src/defaults/bundled-defaults.test.ts — unblock: omp/xai-oauth loop expectations
+
+**Acceptance criteria verified**:
+- [x] listNodeMessages type widened (id/seq/kind/payload/created_at/operator_display_name/metadata)
+- [x] direct-{console,legacy} positive operator API + DOM with e2e-starter
+- [x] interrupt-{console,legacy} triple + attempt placement + sent; API seq interrupted < ops < echo
+- [x] interrupt-visual both surfaces 460/1440 operator visual contract + captures in this plan
+- [x] no third spec
+- [x] package gates + type-check + lint + build:web + e2e typecheck + playwright 13+22 + validate
+- [x] acceptance-evidence.md written
+- [x] sprint-status 2-8 done
+- [x] no PR (parent owns publication)
+
+**Learnings**:
+- Sibling worktrees can hold ARCHON_E2E_PORT_BASE 3400; use ARCHON_E2E_PORT_BASE offset for local runs
+- Attempt-scoped message loads hide interrupted tools once redirect attempt is selected — do not require cross-attempt tool+operator DOM co-presence after Send now
+- Pre-existing workflows failures (pr-e2e-verify YAML gone; ralph-loop-run provider omp) blocked validate; fixed as separate chore(unblock) commits
+
+BLOCKER US-004 | gate=bun --filter @archon/workflows test | cause=loader.test pr-e2e-verify.yaml ENOENT (deleted by #203) + bundled-defaults expected devin/swe-2-max vs YAML omp/xai-oauth/grok-4.5 | action=chore(unblock) drop stale test; align provider/model expectations | 2026-09-19
 
 ---

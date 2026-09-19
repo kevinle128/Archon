@@ -98,7 +98,7 @@ permanent lowercase `sent` status.
   ids exist; the steering route validates its own UUIDs).
 - Row shape: `kind: 'text'`, `payload: { text: <verbatim queued message> }`,
   `metadata: transcriptMetadata(scope, { origin: 'operator', operator_user_id,
-  message_id })`. No `stream_id`/`block_id`/`text_mode`, so the existing text
+message_id })`. No `stream_id`/`block_id`/`text_mode`, so the existing text
   projector treats it as one complete block and cannot coalesce it.
 - `src/transcript-execution-scope.ts` — `newTranscriptAttempt` (:40),
   `transcriptMetadata` (:128).
@@ -128,7 +128,7 @@ permanent lowercase `sent` status.
 - `packages/core/src/db/users.ts` — existing `getUserById` (:41) and the
   cross-dialect `$N` query adapter. Add
   `getUserDisplayNamesByIds(ids: readonly string[]): Promise<Array<Pick<User,
-  'id' | 'display_name'>>>`: dedupe ids, `[]` without querying on empty input,
+'id' | 'display_name'>>>`: dedupe ids, `[]` without querying on empty input,
   `SELECT id, display_name FROM remote_agent_users` with positional `IN`
   params (never interpolate), sequential chunks of ≤500 ids. No cache.
 - `packages/server/src/routes/schemas/workflow.schemas.ts:194` —
@@ -169,8 +169,8 @@ permanent lowercase `sent` status.
 - `src/lib/agent-history.ts` — `AgentHistoryItem` union (:27),
   `buildAgentHistory` (:304). Add one union member:
   `{ kind: 'operator'; id; seq; role: 'operator'; text; operatorUserId:
-  string | null; operatorDisplayName: string | null; messageId: string | null;
-  delivery: 'sent'; execution: TranscriptExecution | null }`.
+string | null; operatorDisplayName: string | null; messageId: string | null;
+delivery: 'sent'; execution: TranscriptExecution | null }`.
   Branch after tool-card handling, before the generic text branch, on
   `message.kind === 'text' && message.metadata?.origin === 'operator'`. Text is
   verbatim (no trim/transform); display name = non-blank response field, else
@@ -256,12 +256,12 @@ permanent lowercase `sent` status.
 
 ## Story overview
 
-| Story | Title | Phase | Depends on |
-| ----- | ----- | ----- | ---------- |
-| US-001 | Contract and server read model | 1 | — |
-| US-002 | Web read model and both shell renderers | 2 | US-001 |
-| US-003 | Executor persistence and ordering | 3 | US-001, US-002 |
-| US-004 | Integration, rollout, and closeout | 4 | US-001–US-003 |
+| Story  | Title                                   | Phase | Depends on     |
+| ------ | --------------------------------------- | ----- | -------------- |
+| US-001 | Contract and server read model          | 1     | —              |
+| US-002 | Web read model and both shell renderers | 2     | US-001         |
+| US-003 | Executor persistence and ordering       | 3     | US-001, US-002 |
+| US-004 | Integration, rollout, and closeout      | 4     | US-001–US-003  |
 
 ## Verification commands
 

@@ -85,8 +85,8 @@
       "technicalNotes": "Phase 4 (phase-04-integration-rollout-and-closeout.md). Reuse e2e/ui/agent-queue-guidance.spec.ts and agent-interrupt-redirect.spec.ts — they already cover natural drain, FIFO queueing, Stop, Send now, interrupted tool state, resumed echo, and 460/1440 captures on both surfaces. E2E_STARTER_WEB_USER is the seeded user whose display name is 'e2e-starter'; archon.startWorkflowViaWeb already uses that identity but the default Playwright page needs the X-Archon-User header before navigation for browser-originated sends. Playwright's worker fixture owns its server; reconcile only this worktree's PIDs/ports on cleanup bypass.",
       "dependsOn": ["US-001", "US-002", "US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: e2e/lib/playwright/run-detail.ts, e2e/ui/agent-queue-guidance.spec.ts, e2e/ui/agent-interrupt-redirect.spec.ts, reports/acceptance-evidence.md, reports/evidence/*, sprint-status.yaml. Unblocks: loader pr-e2e-verify drop, bundled-defaults omp loop provider."
     }
   ]
 }
