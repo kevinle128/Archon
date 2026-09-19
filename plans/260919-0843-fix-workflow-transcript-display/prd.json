@@ -38,8 +38,8 @@
       "technicalNotes": "Phase 2 core (phase-02-structured-transcript-presentation.md, requirements + decision matrix + security sections). Production change confined to packages/web/src/lib/agent-history.ts: optional input field plus a small local helper using own-key checks, explicit non-null/non-array checks, JSON.parse in try/catch, canonical-equality enforcement, and copy-on-qualify mapping. No mount wiring in this story (US-003). No evaluation, JSON repair, raw HTML, or custom sanitizer. Tests-before: unit cases exposing today's raw-wrapper output for an exact one-string schema, the full decision matrix, delta-before-unwrap ordering, per-block behavior, byte preservation, and input immutability.",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2 (commit 8437175f; unblock fix 08d78de9). Files: _bmad-output/specs/spec-agent-node-room/SPEC.md (resolved rule + three surfaces), packages/web/src/lib/agent-history.ts (outputFormat input + fail-closed one-string unwrap), agent-history.test.ts (28-case matrix + ordering/immutability), dag-executor.test.ts (engine contract). RED→GREEN recorded; web 42/42, workflows 630/630; tsc/eslint/prettier clean."
     },
     {
       "id": "US-003",

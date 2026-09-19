@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### One-string output_format → unwrapped assistant text
+- Where: `packages/web/src/lib/agent-history.ts` — `singleStringSchemaKey()` + `presentedText()`; applied per projected assistant item inside `buildAgentHistory()` after `projectTextTranscript()`.
+- Pattern: The matched definition node's `output_format` arrives as optional `outputFormat` on `AgentHistoryInput`. Unwrap only when the schema is an object with exactly one `type:'string'` property AND the whole text is the canonical `JSON.stringify` of that one-key object; every other shape returns the original bytes (fail closed). Never mutates rows; per-item, so tool rows stay block boundaries.
+- Example: `'{"report":"# Title"}'` + `{type:'object',properties:{report:{type:'string'}}}` → assistant text `# Title`.
+
 ### MessageChunk textMode → transcript metadata.text_mode
 - Where: `packages/providers/src/provider-types.ts` (MessageChunk.textMode?: 'complete' | 'delta' | 'snapshot'); persistence forwarding in `packages/workflows/src/dag-executor.ts` — `...(msg.textMode !== undefined ? { text_mode: msg.textMode } : {})` in BOTH the direct-node and loop-node transcript paths.
 - Pattern: Providers declare the text boundary semantic on the chunk; the executor forwards it into row metadata verbatim. No DB/schema change needed — `metadata` is a free-form JSON column validated by `packages/workflows/src/schemas/node-execution.ts`.
@@ -55,3 +60,40 @@
 - `runNodes` needed a provider parameter so loop/agent nodes with an explicit `provider:` field resolve `workflowProvider` instead of defaulting to claude.
 
 ---
+
+## 2026-09-19 — US-002: Canonical spec reconciliation and one-string unwrap transform in buildAgentHistory()
+
+**Status**: PASSED
+**Commit**: 8437175f `feat: unwrap exact one-string structured envelopes in agent history`
+**Unblock commit**: 08d78de9 `chore(unblock): fix pre-existing type error blocking web type-check`
+**Files changed**:
+- `_bmad-output/specs/spec-agent-node-room/SPEC.md` — read-half constraint rewritten: tool payloads keep CAP-7 Raw toggle, exact one-string envelopes render their string value, unclassifiable assistant text fails closed to original bytes; three surfaces named (LegacyNodeRoom via NodeTranscriptPane, ConsoleNodeRoom, ConsoleInspectPane via ConsoleExecutionHistory). Edited BEFORE code.
+- `packages/web/src/lib/agent-history.ts` — `outputFormat?: Record<string, unknown>` on `AgentHistoryInput`; `singleStringSchemaKey()` + `presentedText()` local helpers; transform applied per projected assistant item after `projectTextTranscript()`.
+- `packages/web/src/lib/agent-history.test.ts` — new nested describe: canonical unwrap, delta-then-unwrap ordering, lone fragment, tool-boundary independence, 28-case fail-closed matrix, annotated schemas/empty/nested-JSON-string values, input immutability + field preservation.
+- `packages/workflows/src/dag-executor.test.ts` — engine contract: `{ report: string }` structuredOutput → `$producer.output.report` resolves the string in the consumer prompt (no JSON envelope).
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — unblock fix only: `execution: null` added to `toolItem()` base (committed separately).
+
+**RED evidence** (before production edits):
+- 5 failures in the new describe: canonical unwrap, delta-assembled unwrap, tool-boundary unwrap, annotated-schema unwrap, and qualifying-text copy all rendered the raw `{"report":...}` wrapper (outputFormat ignored).
+- Fail-closed matrix and lone-fragment cases were vacuously green pre-change (they pin the fallback contract).
+- dag-executor contract test green pre-change as intended (regression proof, engine untouched).
+
+**Acceptance criteria verified**:
+- [x] SPEC.md updated BEFORE code: resolved rule stated, three production surfaces named
+- [x] `AgentHistoryInput.outputFormat?: Record<string, unknown>`; transform runs after `projectTextTranscript()` per projected text item; tool rows remain boundaries
+- [x] Unwrap only when ALL guards pass (non-array object schema, exactly-one string property, exact one-key payload with string value, `text === JSON.stringify(parsed)`)
+- [x] Every failed guard/parse returns original bytes — 28-case matrix (absent/non-record/non-object schema, missing/non-record/zero/multiple properties, non-record/non-string/missing property type, malformed/fenced/prose-wrapped/array/primitive/null payloads, missing/extra keys, non-string/null values, duplicate keys, whitespace, noncanonical escaping, reordered extra keys)
+- [x] Delta-assembled exact payload unwraps once after assembly; tool-separated matching blocks unwrap independently without joining
+- [x] Input rows never mutated; id/seq/execution/occurrence/attempt/timestamps/tool items/status preserved; only qualifying text copied
+- [x] dag-executor test proves structured result stays `{ report: string }` and downstream `$producer.output.report` receives the string
+- [x] Focused suites: web 42/42, workflows 630/630; web tsc clean; eslint 0/0; prettier clean
+
+**Learnings**:
+- `bun test` transpiles without typechecking — tests passing an undeclared `outputFormat` input still run (and fail at runtime = RED) before the field exists; tsc only validates after GREEN.
+- `asRecord()` in agent-history.ts is the codebase's non-array-record guard — reuse it for both schema and payload checks instead of hand-rolled `typeof` chains.
+- eslint `@typescript-eslint/prefer-optional-chain` prefers `schema?.type !== 'object'` over `schema === null || schema.type !== 'object'`; `asRecord` returning null composes cleanly with that.
+- The plannotator-gate integration test (`runs producer → real gate → downstream`) is flaky under load — JSON EOF reading a spawned control file; passes standalone. Not a story blocker; noted for future iterations.
+
+## Blocker Ledger
+
+BLOCKER US-002 | gate=`cd packages/web && bun x tsc --noEmit` | cause=pre-existing TS2322 at `ConsoleNodeRoom.test.tsx:2966` — `toolItem()` base omitted required `execution` field since 81ba296f; identical fingerprint with story stashed; file outside story diff | action=added `execution: null` to base, committed separately as 08d78de9 `chore(unblock):` | 2026-09-19
