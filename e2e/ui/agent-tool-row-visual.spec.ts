@@ -1190,7 +1190,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await raw.press('Enter');
       await expect(raw).toHaveAttribute('aria-expanded', 'true');
       // Raw swaps in the exact serialized payload, replacing the family body.
-      const rawBox = row.locator(':scope > div > .tool-family-body').first();
+      const rawBox = row.locator(':scope > div > pre').first();
       const rawText = await rawBox.textContent();
       expect(rawText ?? '', 'Raw is the serialized payload').toContain('"name"');
       expect(rawText ?? '').toContain('"input"');

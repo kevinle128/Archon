@@ -696,8 +696,8 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   ).sort();
   expect(visibleIds).toEqual(storedIds);
   // The full-output action is offered on the expanded row before Raw is ever
-  // opened; the fetched tail stays out of the DOM until Raw is opened, then
-  // renders inside the wrapping panel without sideways scroll.
+  // opened; the fetched tail then renders readably in the normalized family
+  // body, and the verbatim payload lands in Raw without sideways scroll.
   const lastRow = room.locator('details[data-tool-id]').last();
   await lastRow.locator('summary').first().click();
   const rawToggle = lastRow.getByRole('button', { name: 'Raw', exact: true });
@@ -714,7 +714,9 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   );
   await viewFullOutput.click();
   expect((await detailResponse).status()).toBe(200);
-  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);
+  await expect(lastRow.locator('.tool-family-body').first()).toContainText(
+    '[e2e-fake] full output tail'
+  );
   await rawToggle.click();
   const rawPanel = lastRow.locator('pre');
   await expect(rawPanel).toContainText('[e2e-fake] full output tail', { timeout: T.medium });
