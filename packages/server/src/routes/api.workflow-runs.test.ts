@@ -6210,6 +6210,34 @@ function postNodeSend(
   });
 }
 
+function deleteNodeQueue(
+  app: OpenAPIHono,
+  messageId: string,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/queue/${messageId}`, {
+    method: 'DELETE',
+    headers,
+  });
+}
+
+/** Queues an item directly on the handle — the registry state a DELETE targets. */
+function queueSteerItem(
+  handle: NodeSteeringHandle,
+  messageId: string,
+  text = 'queued guidance'
+): void {
+  const result = handle.enqueue({
+    messageId,
+    message: text,
+    operatorUserId: STEER_STARTER_ID,
+    receivedAt: NOW,
+  });
+  if (!result.ok) throw new Error('test setup: enqueue refused');
+}
+
 describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance', () => {
   beforeEach(() => {
     getSteeringRegistry().clearForTests();
@@ -6655,5 +6683,385 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     await expectSteeringError(res, 409, 'node_finished');
     expect(handle.snapshot().queued).toHaveLength(0);
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
+// ---------------------------------------------------------------------------
+
+describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw queued guidance', () => {
+  beforeEach(() => {
+    getSteeringRegistry().clearForTests();
+    mockGetWorkflowRun.mockReset();
+    mockListWorkflowEvents.mockReset();
+    mockListPendingInteractions.mockReset();
+    mockFindOrCreateUserByPlatformIdentity.mockClear();
+    mockCreateWorkflowEvent.mockClear();
+    mockAddMessage.mockClear();
+    mockUpdateWorkflowRun.mockClear();
+  });
+
+  /** Running run + node_started projection + live registry handle. */
+  function liveSetup(nodeId: string = STEER_NODE_ID): NodeSteeringHandle {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', nodeId)]);
+    return getSteeringRegistry().register(STEER_RUN_ID, nodeId);
+  }
+
+  /** Rejections must leave the queue, transcript, and run state untouched. */
+  function expectNoSteeringMutation(
+    handle: NodeSteeringHandle,
+    before: SteeringHandleSnapshot
+  ): void {
+    const after = handle.snapshot();
+    expect(after.phase).toBe(before.phase);
+    expect(after.acceptedCount).toBe(before.acceptedCount);
+    expect(after.queued).toEqual(before.queued);
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    expect(mockAddMessage).not.toHaveBeenCalled();
+    expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
+  }
+
+  async function expectSteeringError(res: Response, status: number, code: string): Promise<void> {
+    expect(res.status).toBe(status);
+    const body = (await res.json()) as {
+      success: boolean;
+      error: { code: string; message: string };
+    };
+    expect(body.success).toBe(false);
+    expect(body.error.code).toBe(code);
+    expect(typeof body.error.message).toBe('string');
+    expect(body.error.message.length).toBeGreaterThan(0);
+  }
+
+  // -- Actor matrix ---------------------------------------------------------
+
+  test('returns 200 and removes the queued id for the run starter', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID, {
+      'X-Archon-User': STEER_STARTER_ID,
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
+    expect(handle.snapshot().queued).toHaveLength(0);
+    // Accepted-id memory is preserved — only the pending item was removed.
+    expect(handle.snapshot().acceptedCount).toBe(1);
+  });
+
+  test('returns 200 for another authenticated member identity', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    mockFindOrCreateUserByPlatformIdentity.mockImplementationOnce(
+      async (_platform: string, platformUserId: string) => ({
+        id: platformUserId,
+        display_name: platformUserId,
+        email: null,
+        role: 'member' as const,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+    );
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID, {
+      'X-Archon-User': 'member-other',
+    });
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued).toHaveLength(0);
+  });
+
+  test('returns 200 for an admin identity that does not own the run', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID, {
+      'X-Archon-User': 'user-admin-9',
+    });
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued).toHaveLength(0);
+  });
+
+  test('returns 200 on an identity-less install', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued).toHaveLength(0);
+  });
+
+  test('returns nested 401 before path validation for a gated unauthenticated caller', async () => {
+    // Resolve the auth singleton as "disabled" BEFORE flipping the env gate on —
+    // getAuth() caches the resolution so no pg.Pool is constructed. The API gate
+    // is kept off so the route middleware (not the global /api/* gate) decides.
+    getAuth();
+    const savedDb = process.env.DATABASE_URL;
+    const savedSecret = process.env.BETTER_AUTH_SECRET;
+    const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
+    process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
+    process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
+    process.env.ARCHON_WEB_AUTH_REQUIRED = 'false';
+    try {
+      const { app } = makeApp();
+      // Non-UUID path id — 401 must still win over 400.
+      const res = await deleteNodeQueue(app, 'not-a-uuid');
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: { code: 'unauthenticated', message: 'Authentication required' },
+      });
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    } finally {
+      if (savedDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedDb;
+      if (savedSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = savedSecret;
+      if (savedRequired === undefined) delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+      else process.env.ARCHON_WEB_AUTH_REQUIRED = savedRequired;
+    }
+  });
+
+  // -- Validation -----------------------------------------------------------
+
+  test('returns nested 400 for a non-UUID path messageId', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, 'not-a-uuid', {
+      'X-Archon-User': STEER_STARTER_ID,
+    });
+
+    await expectSteeringError(res, 400, 'invalid_request');
+    expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+  });
+
+  // -- Target/refusal ladder -------------------------------------------------
+
+  test('returns 404 for an unknown run', async () => {
+    mockGetWorkflowRun.mockResolvedValue(null);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID)).toBeUndefined();
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 404 for an unknown node (no projection, no handle)', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'other-node')]);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID)).toBeUndefined();
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 for a terminal run even with a stale queued handle', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 409 for each terminal node state even with a stale queued handle', async () => {
+    const { app } = makeApp();
+    for (const eventType of ['node_completed', 'node_failed', 'node_skipped']) {
+      const nodeId = `node-${eventType}`;
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+      mockListWorkflowEvents.mockResolvedValue([steerEvent(eventType, nodeId)]);
+      const handle = getSteeringRegistry().register(STEER_RUN_ID, nodeId);
+      queueSteerItem(handle, STEER_MESSAGE_ID);
+      const before = handle.snapshot();
+
+      const res = await deleteNodeQueue(app, STEER_MESSAGE_ID, {}, STEER_RUN_ID, nodeId);
+
+      await expectSteeringError(res, 409, 'node_finished');
+      expectNoSteeringMutation(handle, before);
+    }
+  });
+
+  test('returns 409 for a closed handle', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    handle.close();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 422 for a running node with no handle (detached)', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns 200 for a live handle with no projected node yet', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([]);
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    expect(res.status).toBe(200);
+    expect(handle.snapshot().queued).toHaveLength(0);
+  });
+
+  test('returns 200 for a parked AskHuman handle and removes only that item', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID, 'first');
+    queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
+    handle.park();
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'paused' }));
+    mockListPendingInteractions.mockResolvedValue([
+      {
+        id: 'pi-steer-ask',
+        workflow_run_id: STEER_RUN_ID,
+        node_id: STEER_NODE_ID,
+        tool_use_id: 'toolu_steer_ask',
+        kind: 'ask',
+        status: 'pending',
+        envelope: {},
+        answer: null,
+        provider_session_id: 'sess-steer',
+        created_at: NOW,
+        resolved_at: null,
+        resolved_by: null,
+      },
+    ]);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    expect(res.status).toBe(200);
+    const snap = handle.snapshot();
+    expect(snap.phase).toBe('parked');
+    expect(snap.queued.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID_2]);
+    expect(snap.acceptedCount).toBe(2);
+  });
+
+  test('returns 404 when the run disappears on the final re-read', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const before = handle.snapshot();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun.mockResolvedValueOnce(mockSteerableRun()).mockResolvedValueOnce(null);
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 404, 'not_found');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 409 when the run turns terminal between lookup and final re-read', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const before = handle.snapshot();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      .mockResolvedValueOnce(mockSteerableRun({ status: 'cancelled' }));
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  test('returns 409 when the handle closes during the final run read', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const before = handle.snapshot();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      // The final status re-read still reports running, but the executor's
+      // teardown gate closed the handle during the await.
+      .mockImplementationOnce(async () => {
+        handle.close();
+        return mockSteerableRun();
+      });
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    // The post-await phase recheck refused before withdraw() could mutate:
+    // the item remains queued on the now-closed handle.
+    expect(handle.snapshot().queued).toHaveLength(1);
+    expect(handle.snapshot().acceptedCount).toBe(before.acceptedCount);
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  test('returns nested 500 when the event store throws', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID);
+    const before = handle.snapshot();
+    mockListWorkflowEvents.mockRejectedValue(new Error('event store down'));
+    const { app } = makeApp();
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+
+    await expectSteeringError(res, 500, 'internal_error');
+    expectNoSteeringMutation(handle, before);
+  });
+
+  // -- Idempotency and response ----------------------------------------------
+
+  test('returns the exact success shape and stays 200 for repeat, drained, and never-seen ids', async () => {
+    const handle = liveSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID, 'first');
+    queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
+    const { app } = makeApp();
+
+    // Live queued id — removed, siblings preserved, accepted memory intact.
+    const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+    expect(res.status).toBe(200);
+    // Exact wire shape: only `success` and `message_id` — no `removed` leak.
+    expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
+    expect(handle.snapshot().queued.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID_2]);
+    expect(handle.snapshot().acceptedCount).toBe(2);
+
+    // Repeat — identical receipt, still mutation-free.
+    const repeat = await deleteNodeQueue(app, STEER_MESSAGE_ID);
+    expect(repeat.status).toBe(200);
+    expect(await repeat.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
+    expect(handle.snapshot().queued).toHaveLength(1);
+
+    // Already-drained id — identical receipt.
+    handle.drain();
+    const drained = await deleteNodeQueue(app, STEER_MESSAGE_ID_2);
+    expect(drained.status).toBe(200);
+    expect(await drained.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID_2 });
+    expect(handle.snapshot().queued).toHaveLength(0);
+
+    // Never-seen valid UUID — identical receipt echoing the requested id.
+    const neverSeen = await deleteNodeQueue(app, STEER_MESSAGE_ID_3);
+    expect(neverSeen.status).toBe(200);
+    expect(await neverSeen.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID_3 });
+    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(handle.snapshot().acceptedCount).toBe(2);
   });
 });

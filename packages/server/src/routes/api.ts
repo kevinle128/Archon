@@ -481,6 +481,8 @@ import {
   sendWorkflowNodeBodySchema,
   sendWorkflowNodeResponseSchema,
   steeringErrorSchema,
+  withdrawWorkflowNodeParamsSchema,
+  withdrawWorkflowNodeResponseSchema,
 } from './schemas/workflow.schemas';
 import {
   workflowEnvWorkflowParamsSchema,
@@ -1604,6 +1606,34 @@ const sendWorkflowNodeRoute = createRoute({
     404: steeringJsonError('Unknown run or node'),
     409: steeringJsonError('Node no longer running'),
     422: steeringJsonError('No live steering session in this process'),
+  },
+});
+
+const withdrawWorkflowNodeRoute = createRoute({
+  method: 'delete',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}',
+  tags: ['Workflows'],
+  summary: 'Withdraw a queued guidance message from a running workflow node',
+  description:
+    "Removes one still-pending operator message from the node's in-process " +
+    'steering queue. Bodyless; idempotent on `messageId` — a repeat, ' +
+    'already-drained, or never-seen id returns the same success receipt. ' +
+    'Rejections leave the run, queue, and transcript unchanged.',
+  request: {
+    params: withdrawWorkflowNodeParamsSchema,
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: withdrawWorkflowNodeResponseSchema } },
+      description: 'Message withdrawn or already absent from the queue',
+    },
+    400: steeringJsonError('Malformed or schema-invalid request'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+    500: steeringJsonError('Server error'),
   },
 });
 
@@ -5284,6 +5314,114 @@ export function registerApiRoutes(
       } catch (error) {
         getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_send_failed');
         return steeringError(c, 500, 'internal_error', 'Failed to queue guidance');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // Steering withdraw (issue #182): the gated identity check runs before
+  // OpenAPI param validation so an unauthenticated caller receives nested 401
+  // even with a non-UUID path id. DELETE-only and bodyless — the send
+  // middleware stays POST-only and nothing here parses a body.
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId', async (c, next) => {
+    if (c.req.method !== 'DELETE') return next();
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    return next();
+  });
+
+  // DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId - Withdraw queued guidance
+  registerOpenApiRoute(
+    withdrawWorkflowNodeRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      const messageId = c.req.param('messageId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+
+        // Project the effective node state and inspect the registry handle to
+        // establish the target — the same precedence ladder as send. The
+        // projection is authoritative for lifecycle: a stale live handle can
+        // never beat a terminal run/node. A parked handle is intentionally
+        // allowed — withdraw manages the queue, not the provider session.
+        const events = await workflowEventDb.listWorkflowEvents(runId);
+        const pendingInteractions =
+          await workflowPendingInteractionDb.listPendingInteractions(runId);
+        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
+          state => state.nodeId === nodeId
+        );
+        const handle = getSteeringRegistry().get(runId, nodeId);
+
+        if (nodeState === undefined && handle === undefined) {
+          return steeringError(c, 404, 'not_found', 'Workflow node not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle?.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle === undefined) {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        // Final gate: a concurrent terminal transition wins. withdraw() is
+        // synchronous — no await runs between the post-await phase recheck
+        // and the mutation.
+        const latestRun = await workflowDb.getWorkflowRun(runId);
+        if (latestRun === null) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        // The run re-read awaited — the handle may have closed during that gap
+        // (the executor's teardown gate). Recheck before mutating: withdraw()
+        // alone cannot distinguish "closed" from "id not found" by boolean.
+        if (handle.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+
+        const removed = handle.withdraw(messageId);
+        getLog().info(
+          {
+            runId,
+            nodeId,
+            messageId,
+            operatorUserId: requester?.userId ?? null,
+            removed,
+          },
+          'api.workflow_node_withdraw_completed'
+        );
+        return c.json({ success: true as const, message_id: messageId }, 200);
+      } catch (error) {
+        getLog().error(
+          { err: error, runId, nodeId, messageId },
+          'api.workflow_node_withdraw_failed'
+        );
+        return steeringError(c, 500, 'internal_error', 'Failed to withdraw guidance');
       }
     },
     steeringValidationErrorHook

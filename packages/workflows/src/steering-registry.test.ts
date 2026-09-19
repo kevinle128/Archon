@@ -360,6 +360,135 @@ describe('drain', () => {
   });
 });
 
+describe('withdraw', () => {
+  test('removing B from pending A/B/C leaves A/C in order, phase live, pendingCount decremented', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    const a = msg('m-1', 'a');
+    const b = msg('m-2', 'b');
+    const c = msg('m-3', 'c');
+    handle.enqueue(a);
+    handle.enqueue(b);
+    handle.enqueue(c);
+
+    expect(handle.withdraw('m-2')).toBe(true);
+    const snap = handle.snapshot();
+    expect(snap.queued).toEqual([a, c]);
+    expect(snap.phase).toBe('live');
+    expect(snap.acceptedCount).toBe(3);
+    expect(handle.pendingCount()).toBe(2);
+  });
+
+  test('never-seen and already-drained ids return false without changing the snapshot', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.enqueue(msg('m-1'));
+    handle.enqueue(msg('m-2'));
+    handle.drain();
+    const before = handle.snapshot();
+
+    expect(handle.withdraw('m-1')).toBe(false);
+    expect(handle.withdraw('m-never-seen')).toBe(false);
+    const after = handle.snapshot();
+    expect(after.phase).toBe(before.phase);
+    expect(after.queued).toEqual(before.queued);
+    expect(after.acceptedCount).toBe(before.acceptedCount);
+  });
+
+  test('repeating a successful withdraw returns false and is mutation-free', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.enqueue(msg('m-1'));
+    handle.enqueue(msg('m-2'));
+
+    expect(handle.withdraw('m-1')).toBe(true);
+    const before = handle.snapshot();
+    expect(handle.withdraw('m-1')).toBe(false);
+    const after = handle.snapshot();
+    expect(after.phase).toBe(before.phase);
+    expect(after.queued).toEqual(before.queued);
+    expect(after.acceptedCount).toBe(before.acceptedCount);
+  });
+
+  test('replaying enqueue(A) after withdraw returns the original duplicate receipt without requeueing', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.enqueue(msg('m-1', 'original'));
+    expect(handle.withdraw('m-1')).toBe(true);
+    expect(handle.pendingCount()).toBe(0);
+
+    const dup = handle.enqueue(msg('m-1', 'original'));
+    expect(dup).toEqual({
+      ok: true,
+      duplicate: true,
+      receipt: { messageId: 'm-1', state: 'queued' },
+    });
+    expect(handle.pendingCount()).toBe(0);
+    expect(handle.snapshot().acceptedCount).toBe(1);
+  });
+
+  test('a parked handle removes A while remaining parked; resume drains only the retained siblings', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    const a = msg('m-1', 'a');
+    const b = msg('m-2', 'b');
+    const c = msg('m-3', 'c');
+    handle.enqueue(a);
+    handle.enqueue(b);
+    handle.enqueue(c);
+    handle.park();
+
+    expect(handle.withdraw('m-1')).toBe(true);
+    expect(handle.snapshot().phase).toBe('parked');
+    expect(handle.snapshot().queued).toEqual([b, c]);
+
+    handle.resume();
+    expect(handle.drain()).toEqual([b, c]);
+    expect(handle.snapshot().phase).toBe('live');
+  });
+
+  test('a closed handle containing A returns false and keeps the full snapshot unchanged', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.enqueue(msg('m-1'));
+    handle.enqueue(msg('m-2'));
+    handle.close();
+    const before = handle.snapshot();
+
+    expect(handle.withdraw('m-1')).toBe(false);
+    const after = handle.snapshot();
+    expect(after.phase).toBe('closed');
+    expect(after.queued).toEqual(before.queued);
+    expect(after.acceptedCount).toBe(before.acceptedCount);
+  });
+
+  test('removing the last live item does not close the handle - only closeIfEmpty seals', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.enqueue(msg('m-1'));
+
+    expect(handle.withdraw('m-1')).toBe(true);
+    expect(handle.snapshot().phase).toBe('live');
+    expect(handle.pendingCount()).toBe(0);
+    // The executor's last gate still owns the seal, and it still applies.
+    expect(handle.closeIfEmpty()).toBe(true);
+    expect(handle.snapshot().phase).toBe('closed');
+  });
+
+  test('a later drain cannot return a previously withdrawn item', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    const a = msg('m-1', 'a');
+    const b = msg('m-2', 'b');
+    handle.enqueue(a);
+    handle.enqueue(b);
+
+    expect(handle.withdraw('m-1')).toBe(true);
+    expect(handle.drain()).toEqual([b]);
+    expect(handle.drain()).toEqual([]);
+  });
+});
+
 describe('park/resume/close', () => {
   test('park retains queued items and blocks enqueue; resume re-lives the same handle', () => {
     const registry = createSteeringRegistry();

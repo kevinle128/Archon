@@ -109,6 +109,18 @@ export class NodeSteeringHandle {
     return items;
   }
 
+  /**
+   * Removes one still-pending message from a live or parked queue. Accepted-id
+   * memory and handle phase are preserved. Closed handles are immutable.
+   */
+  withdraw(messageId: string): boolean {
+    if (this.phase === 'closed') return false;
+    const index = this.pending.findIndex(item => item.messageId === messageId);
+    if (index === -1) return false;
+    this.pending.splice(index, 1);
+    return true;
+  }
+
   park(): void {
     if (this.phase === 'live') {
       this.phase = 'parked';

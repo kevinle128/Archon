@@ -574,3 +574,33 @@ export const steeringErrorSchema = z
   .openapi('SteeringError');
 
 export type SteeringError = z.infer<typeof steeringErrorSchema>;
+
+// ---------------------------------------------------------------------------
+// DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId (steering, #182)
+// ---------------------------------------------------------------------------
+
+/**
+ * Path params for the withdraw route. `messageId` carries the same UUID
+ * validator as send's `message_id` — the caller-stamped correlation key.
+ */
+export const withdrawWorkflowNodeParamsSchema = z
+  .object({
+    runId: z.string().min(1),
+    nodeId: z.string().min(1),
+    messageId: z.string().uuid(),
+  })
+  .strict();
+
+/**
+ * Withdraw success receipt. Identical for a removed, already-drained, or
+ * never-seen id — the wire never reveals the drain-race winner.
+ */
+export const withdrawWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message_id: z.string().uuid(),
+  })
+  .strict()
+  .openapi('WithdrawWorkflowNodeResponse');
+
+export type WithdrawWorkflowNodeResponse = z.infer<typeof withdrawWorkflowNodeResponseSchema>;
