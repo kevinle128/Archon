@@ -31,6 +31,10 @@ import { answerDeepseekPermissionRequest } from './permission';
 
 const STDERR_CAP = 4096;
 const DEFAULT_TERMINATE_GRACE_MS = 2000;
+/** Post-cancel window for a compliant agent to flush trailing updates and settle the prompt before a hung one is released. Matches Devin ACP. */
+const CANCEL_DRAIN_GRACE_MS = 500;
+
+type DeepseekCancellationCause = 'node-cancel' | 'operator-interrupt' | 'cleanup';
 
 export interface DeepseekAcpTurnInput {
   cwd: string;
@@ -41,7 +45,10 @@ export interface DeepseekAcpTurnInput {
   effort?: 'off' | 'low' | 'high' | 'max';
   mcpServers: McpServer[];
   outputSchema?: Record<string, unknown>;
+  /** Node-level Cancel — tears down the turn via ACP session/cancel. */
   abortSignal?: AbortSignal;
+  /** Operator Stop — cancels only the current prompt via ACP session/cancel; same wire path, distinct first-cause. */
+  interruptSignal?: AbortSignal;
 }
 
 export interface DeepseekProcessInput extends DeepseekAcpTurnInput {
@@ -264,6 +271,45 @@ export async function* driveDeepseekAcpTurn(
   let clientCtx: ClientContext | undefined;
   let transcript = '';
 
+  // Shared turn cancellation state — outside individual listeners so first cause
+  // wins, pre-session cancels stay pending, and a natural prompt result freezes
+  // the outcome against a late Stop during session/close.
+  let cancellationCause: DeepseekCancellationCause | undefined;
+  let cancelSent: Promise<void> | undefined;
+  let promptSettledNaturally = false;
+  let resolveLocalCancellation!: () => void;
+  const localCancellation = new Promise<void>((resolve: () => void) => {
+    resolveLocalCancellation = resolve;
+  });
+
+  const requestCancel = (cause: DeepseekCancellationCause): void => {
+    if (cancellationCause !== undefined) return;
+    cancellationCause = cause;
+    resolveLocalCancellation();
+  };
+
+  const flushCancel = (): void => {
+    if (
+      cancellationCause === undefined ||
+      promptSettledNaturally ||
+      clientCtx === undefined ||
+      activeSessionId === undefined ||
+      cancelSent !== undefined
+    ) {
+      return;
+    }
+    cancelSent = clientCtx.notify(methods.agent.session.cancel, { sessionId: activeSessionId });
+  };
+
+  const onNodeCancel = (): void => {
+    requestCancel('node-cancel');
+    flushCancel();
+  };
+  const onOperatorInterrupt = (): void => {
+    requestCancel('operator-interrupt');
+    flushCancel();
+  };
+
   const app = client({ name: 'archon-deepseek' })
     .onRequest(methods.client.session.requestPermission, () => answerDeepseekPermissionRequest())
     .onNotification(methods.client.session.update, ({ params }) => {
@@ -309,26 +355,32 @@ export async function* driveDeepseekAcpTurn(
         const sessionId = activeSessionId;
         sessionLive = true;
 
-        let aborted = input.abortSignal?.aborted === true;
-        let cancelSent: Promise<void> | undefined;
-        const onAbort = (): void => {
-          aborted = true;
-          cancelSent = ctx.notify(methods.agent.session.cancel, { sessionId });
-        };
-        if (!aborted) {
-          input.abortSignal?.addEventListener('abort', onAbort);
+        // Node Cancel dominates when both are already aborted at session start.
+        if (input.abortSignal?.aborted === true) {
+          requestCancel('node-cancel');
+        } else if (input.interruptSignal?.aborted === true) {
+          requestCancel('operator-interrupt');
         }
+
+        let listenersAttached = false;
+        if (cancellationCause === undefined) {
+          input.abortSignal?.addEventListener('abort', onNodeCancel);
+          input.interruptSignal?.addEventListener('abort', onOperatorInterrupt);
+          listenersAttached = true;
+        }
+        // Flush any cancel that arrived before the session existed (or was already aborted).
+        flushCancel();
 
         let promptResponse: PromptResponse | undefined;
         try {
-          if (input.model !== undefined) {
+          if (cancellationCause === undefined && input.model !== undefined) {
             await ctx.request(methods.agent.session.setConfigOption, {
               sessionId,
               configId: 'model',
               value: JSON.stringify([input.providerRoute, input.model]),
             });
           }
-          if (input.effort !== undefined) {
+          if (cancellationCause === undefined && input.effort !== undefined) {
             await ctx.request(methods.agent.session.setConfigOption, {
               sessionId,
               configId: 'reasoning_effort',
@@ -336,24 +388,39 @@ export async function* driveDeepseekAcpTurn(
             });
           }
 
-          if (!aborted) {
+          if (cancellationCause === undefined) {
             const outbound =
               input.outputSchema !== undefined
                 ? augmentPromptForJsonSchema(input.prompt, input.outputSchema)
                 : input.prompt;
             try {
-              promptResponse = await ctx.request(methods.agent.session.prompt, {
-                sessionId,
-                prompt: [{ type: 'text', text: outbound }],
-              });
+              promptResponse = await Promise.race([
+                ctx.request(methods.agent.session.prompt, {
+                  sessionId,
+                  prompt: [{ type: 'text', text: outbound }],
+                }),
+                localCancellation.then(async () => {
+                  await waitMs(CANCEL_DRAIN_GRACE_MS);
+                  return undefined;
+                }),
+              ]);
             } catch (error) {
-              if (!aborted) throw error;
+              if (cancellationCause === undefined) throw error;
             }
           }
+
+          // Freeze natural settlement before close so a late Stop cannot convert
+          // the result or send a stale session/cancel.
+          if (promptResponse !== undefined && cancellationCause === undefined) {
+            promptSettledNaturally = true;
+          }
         } catch (error) {
-          if (!aborted) throw error;
+          if (cancellationCause === undefined) throw error;
         } finally {
-          input.abortSignal?.removeEventListener('abort', onAbort);
+          if (listenersAttached) {
+            input.abortSignal?.removeEventListener('abort', onNodeCancel);
+            input.interruptSignal?.removeEventListener('abort', onOperatorInterrupt);
+          }
           if (cancelSent !== undefined) {
             try {
               await cancelSent;
@@ -365,7 +432,7 @@ export async function* driveDeepseekAcpTurn(
           sessionLive = false;
         }
 
-        if (aborted) {
+        if (cancellationCause !== undefined && !promptSettledNaturally) {
           queue.push(abortedResult(sessionId));
           return;
         }
@@ -390,12 +457,10 @@ export async function* driveDeepseekAcpTurn(
       yield chunk;
     }
   } finally {
-    if (sessionLive && clientCtx !== undefined && activeSessionId !== undefined) {
-      try {
-        await clientCtx.notify(methods.agent.session.cancel, { sessionId: activeSessionId });
-      } catch {
-        // Connection may already be closing.
-      }
+    // Early consumer return and any other unfinished turn: one cancel path.
+    if (sessionLive) {
+      requestCancel('cleanup');
+      flushCancel();
     }
     await connected;
   }

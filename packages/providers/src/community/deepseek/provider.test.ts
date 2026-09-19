@@ -111,6 +111,29 @@ describe('DeepseekProvider', () => {
     expect(dshCalled).toBe(false);
   });
 
+  test('forwards interruptSignal alongside abortSignal into DeepseekProcessInput', async () => {
+    const calls: DeepseekProcessInput[] = [];
+    const abort = new AbortController();
+    const interrupt = new AbortController();
+    const provider = new DeepseekProvider({
+      runTurn: recordingRunner(calls),
+      resolveNodeBinary: () => '/stub/node',
+      resolveDshEntrypoint: () => '/stub/dsh.js',
+    });
+
+    await collect(
+      provider.sendQuery('hi', '/repo', undefined, {
+        abortSignal: abort.signal,
+        interruptSignal: interrupt.signal,
+        env: queryEnv(),
+      })
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.abortSignal).toBe(abort.signal);
+    expect(calls[0]?.interruptSignal).toBe(interrupt.signal);
+  });
+
   test('allows DSH-managed credentials without DEEPSEEK_API_KEY', async () => {
     const previous = process.env.DEEPSEEK_API_KEY;
     delete process.env.DEEPSEEK_API_KEY;
