@@ -61,8 +61,8 @@
       "technicalNotes": "Follow phase-02-two-surface-renderers.md. Re-check both ToolBodySwitch call sites and memo deps before editing; reuse virtualized-diff.tsx import specifiers exactly; add only the pure adapter to console-isolation approved set (:115-133). Fallback may gain block wrappers for valid table layout but text/order/tones/behavior unchanged. Fixture order asserted must be jsdiff's (context, deletes, inserts), not the mockup's alternating illustration. If test duration looks suspicious use --reporter=junit before touching timeouts.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/web/src/components/workflows/NodeRoom.tsx, packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx, packages/web/src/index.css, packages/web/src/lib/diff-boundary.test.ts (new), packages/web/src/experiments/console/console-isolation.test.ts, plus tests in NodeRoom.test.tsx, LegacyNodeRoom.test.tsx, ConsoleNodeRoom.test.tsx, ConsoleExecutionHistory.test.tsx."
     },
     {
       "id": "US-004",

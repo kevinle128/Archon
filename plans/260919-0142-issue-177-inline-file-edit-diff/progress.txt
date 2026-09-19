@@ -1,5 +1,11 @@
 ## Codebase Patterns
 
+### react-diff-view v3.3.3 unified-mode DOM contract
+- **Where**: `packages/web/src/components/workflows/NodeRoom.tsx` + `.../ConsoleAgentHistoryList.tsx` InlineDiff, `packages/web/src/index.css` `.tool-diff` block
+- **Pattern**: unified mode always emits `<colgroup><col class="diff-gutter-col"/><col class="diff-gutter-col"/><col/></colgroup>` and two `.diff-gutter` cells per `.diff-line` row — one visible gutter needs BOTH `col.diff-gutter-col:nth-child(2)` and `.diff-line > .diff-gutter:nth-child(2)` hidden plus a `renderGutter` that returns `null` for `side === 'new'`. `Decoration` renders `<tbody class="diff-decoration"><tr><td colSpan="3" class="diff-decoration-content">` — assert `tbody.diff-decoration`, never `/diff-decoration/` (matches `diff-decoration-content` too), and React SSR serializes the attribute camelCase `colSpan="3"`. For insert lines `renderDefault()` yields '' so the visible number needs `computeNewLineNumber(change)`; delete/normal use `renderDefault()`.
+- **Example**: `const number = change.type === 'insert' ? computeNewLineNumber(change) : renderDefault();`
+
+
 ### Injecting control characters into test fixtures safely
 - **Where**: `packages/web/src/lib/diff-hunks.test.ts` display-safety block, `packages/web/src/lib/diff-hunks.ts:33`
 - **Pattern**: never type literal U+2028/U+2029/C0 chars into source — editors/tools mangle or double-escape them, and JS regex `.` never matches U+2028/U+2029 so `replace()` silently no-ops on lines containing them. Write `'\u{XXXX}'` escape syntax in the file, and edit by line index or `[\s\S]` patterns.
@@ -89,5 +95,38 @@
 
 BLOCKER US-002 | gate=bun run type-check | cause=pre-existing `ConsoleNodeRoom.test.tsx:2966` TS2322 — `toolItem()` base fixture never set required `AgentHistoryItem.execution` (same fingerprint on clean base via stash protocol) | action=fixed on base: `execution: null as TranscriptExecution | null` in base before `...overrides`, committed `chore(unblock)` 3a64b1b1; gate green on base then with story | 2026-09-19
 BLOCKER US-002 | gate=bun run format:check | cause=pre-existing prettier drift in 5 tracked plan artifacts (`plans/260919-0142-issue-177-inline-file-edit-diff/prd.md` + 4 `reports/*.md`) committed via archon checkpoints (same fingerprint on clean base) | action=`prettier --write` on exactly those 5 files, committed `chore(unblock)` 36235bcf; gate green after | 2026-09-19
+
+---
+
+## 2026-09-19 — US-003: Inline diff on Legacy and Console
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — react-diff-view imports (values `/esm/index.js`, types root, stylesheet), `toHunkData` + `FileDiff` imports; local `renderToolDiffGutter` + `InlineDiff`; file arm rewritten: path div first, diff / `no changes` / unchanged fallback, non-succeeded second inset box
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — equivalent Console-local copy (no shared component); identical file-arm semantics
+- `packages/web/src/index.css` — one scoped `.tool-diff` block: token mapping, success/error 12% tints over inset, secondary right-aligned 3ch numbers + 1ch marker in a fixed 4ch column, hidden second gutter col/cells verified against real v3.3.3 DOM, fixed table layout, `pre-wrap`/`overflow-wrap:anywhere`, secondary noninteractive decoration, local `--tool-diff-insert-fg`/`--tool-diff-delete-fg` props
+- `packages/web/src/lib/diff-boundary.test.ts` (new) — 4 tests: only `diff-hunks.ts` owns `structuredPatch` across production src; renderers import neither `diff` nor `@/lib/diff-hunks`; adapter types come from `@/lib/api.generated`; Console third-party diff imports limited to the three proven v3.3.3 specifiers
+- `packages/web/src/experiments/console/console-isolation.test.ts` — `@/lib/git-hunk-adapter` added to approved set with concrete-need comment (pure conversion shared with source control)
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — `file-edit diff bodies` describe: path-first anatomy, jsdiff-order cells, marker/number sequences, badges + bar facts, failed second box, multi-hunk decoration, identical, one-sided/no-input/refused fallbacks, control-char escapes, Raw swap
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — interaction tests: open mounts table, Raw swaps exact payload (literal U+2028, `\u001b`) and restores, focus order summary → Raw → controls, no diff tab stop
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — mirrored anatomy/state/Raw/keyboard describe (9 tests)
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx` — persisted Edit row through `loadMessages`: collapsed badges, opened table anatomy, Raw swap/restore
+
+**Acceptance criteria verified**:
+- [x] Both renderers import values from `react-diff-view/esm/index.js`, types from `react-diff-view`, the package stylesheet, `toHunkData`, `FileDiff`; neither imports `diff` nor `@/lib/diff-hunks`; separate local components
+- [x] File body states identical on both surfaces (path first, diff, `no changes`, unchanged fallback, failed second inset box, success prose Raw-only)
+- [x] InlineDiff contract: `toHunkData` per hunk, unified modify, first hunk direct, later `Decoration` with `@@` header, local renderGutter marker+number, null new gutter, AT-exposed markers, zero tab stops
+- [x] One scoped `.tool-diff` block with all required tokens/tints/metrics/hidden-gutter/wrapping/secondary-decoration rules
+- [x] Legacy static + interaction tests green (111 incl. boundary file)
+- [x] Console room (110) + execution-history (15) + isolation tests green; console dir 1002
+- [x] Boundary tests green; adapter approved with comment
+- [x] No timeouts widened; `bun --filter @archon/web test`, `bun run type-check`, `bun run lint`, `bun run format:check` all green; stable hooks kept
+- [x] No contrast assertions in happy-dom
+
+**Learnings**:
+- `JSON.stringify` emits literal U+2028/U+2029 and lowercase `\u001b` — Raw-payload assertions must match that, not assumed uppercase escapes.
+- React SSR serializes `colSpan` camelCase in markup; happy-dom `getAttribute('colspan')` normalizes — static-markup tests need `colSpan="3"`, DOM tests need `colspan`.
+- The file-arm second box keys on `body.diff !== null && statusLabel !== 'succeeded' && (unreadable || preview !== null)` — a failed row with a diff still needs its normalized output somewhere honest.
+- `renderGutter`'s `renderDefault()` returns '' for inserts in unified mode; `computeNewLineNumber(change)` from `/esm/index.js` supplies the insert-side number so all six rows carry a number.
 
 ---
