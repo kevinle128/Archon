@@ -19,15 +19,15 @@ Make Grok end only its current CLI turn when `interruptSignal` fires, return a r
 
 ## Files
 
-| File | Action | Responsibility |
-| --- | --- | --- |
-| `packages/providers/src/grok/capabilities.ts` | modify last | Advertise `'stream-abort'` after implementation/tests and Phase 1 gates pass |
-| `packages/providers/src/grok/provider.ts` | modify | Assigned IDs, interrupt listener, shutdown cause, graceful/forced termination, structured logs |
-| `packages/providers/src/grok/event-parser.ts` | modify | End-state query, parameterized tool closure, interrupted result builder |
-| `packages/providers/src/grok/provider.test.ts` | modify | Controllable-process and race tests |
-| `packages/providers/src/grok/event-parser.test.ts` | modify | Parser/result tests |
-| `packages/providers/src/types.ts` | modify | Provider-neutral interrupt/terminal-reason documentation |
-| `packages/providers/src/grok/usage-contract.test.ts` | modify only if needed | Pin that no-end interrupt does not fabricate aggregate spend |
+| File                                                 | Action                | Responsibility                                                                                 |
+| ---------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------------- |
+| `packages/providers/src/grok/capabilities.ts`        | modify last           | Advertise `'stream-abort'` after implementation/tests and Phase 1 gates pass                   |
+| `packages/providers/src/grok/provider.ts`            | modify                | Assigned IDs, interrupt listener, shutdown cause, graceful/forced termination, structured logs |
+| `packages/providers/src/grok/event-parser.ts`        | modify                | End-state query, parameterized tool closure, interrupted result builder                        |
+| `packages/providers/src/grok/provider.test.ts`       | modify                | Controllable-process and race tests                                                            |
+| `packages/providers/src/grok/event-parser.test.ts`   | modify                | Parser/result tests                                                                            |
+| `packages/providers/src/types.ts`                    | modify                | Provider-neutral interrupt/terminal-reason documentation                                       |
+| `packages/providers/src/grok/usage-contract.test.ts` | modify only if needed | Pin that no-end interrupt does not fabricate aggregate spend                                   |
 
 If Phase 1 proves group termination is required, the same provider/test files also extend `GrokProcess` with the minimum PID/group information and `GrokSpawnOptions` with explicit POSIX group ownership. Do not add those fields when the evidence says the child is already reaped.
 
@@ -35,14 +35,14 @@ If Phase 1 proves group termination is required, the same provider/test files al
 
 ### Parser tests
 
-| ID | Scenario | Required assertion |
-| --- | --- | --- |
-| P1 | open tool then `closeOutstandingTools('interrupted')` | one interrupted `tool_result`; second close is empty |
-| P2 | default `closeOutstandingTools()` | remains `unknown` |
-| P3 | any validly parsed `end`, including one with no session ID | `hasEnded()` is true; this is independent of `getSessionId()` |
-| P4 | `buildInterruptedResult` with concrete ID and no `end` | non-error result, correct terminal reason/session/resumed state, no incomplete-output error |
-| P5 | interrupted result after an `end` | retains authoritative aggregate usage/cost and reported ID |
-| P6 | ordinary `buildResult` without `end` | remains `grok_incomplete_output` |
+| ID  | Scenario                                                   | Required assertion                                                                          |
+| --- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| P1  | open tool then `closeOutstandingTools('interrupted')`      | one interrupted `tool_result`; second close is empty                                        |
+| P2  | default `closeOutstandingTools()`                          | remains `unknown`                                                                           |
+| P3  | any validly parsed `end`, including one with no session ID | `hasEnded()` is true; this is independent of `getSessionId()`                               |
+| P4  | `buildInterruptedResult` with concrete ID and no `end`     | non-error result, correct terminal reason/session/resumed state, no incomplete-output error |
+| P5  | interrupted result after an `end`                          | retains authoritative aggregate usage/cost and reported ID                                  |
+| P6  | ordinary `buildResult` without `end`                       | remains `grok_incomplete_output`                                                            |
 
 `buildInterruptedResult` accepts a required `string` session ID. Do not make it optional and defer a broken invariant to the executor.
 
@@ -50,25 +50,25 @@ If Phase 1 proves group termination is required, the same provider/test files al
 
 Extend the current fake spawner with a controllable process whose stdout can remain open, flush an optional `end`, resolve with a chosen exit code, and record SIGTERM/SIGKILL. Keep all tests offline.
 
-| ID | Scenario | Required assertion |
-| --- | --- | --- |
-| T1 | new/forked interrupt-capable turns | new UUID passed through `--session-id`; resumed non-fork turn uses the old ID and adds no new flag |
-| T2 | no `interruptSignal` | argv remains byte-for-byte compatible and has no assigned ID |
-| T3 | interrupt already spent initially or during binary resolution | no query process spawned; `Query interrupted` |
-| T4 | signal fires after spawn but before/while listener installation | immediate post-registration recheck catches it exactly once |
-| T5 | mid-tool, no `end`, graceful exit 143 | tool → interrupted tool result → non-error `aborted_tools` result with assigned ID; one SIGTERM, no SIGKILL |
-| T6 | mid-text, no open tool | non-error `aborted_streaming`; no synthetic tool result |
-| T7 | SIGTERM flushes matching `end` | reported ID and aggregate usage/cost retained; still normalized as interrupted |
-| T8 | interrupted resumed turn | result carries the existing ID and `resumed: true` |
-| T9 | `end` parsed before Stop | natural unmarked result; no termination signal |
-| T10 | Cancel alone or racing Stop | existing `Query aborted` path wins; no interrupt result |
-| T11 | Stop claimed first, then induced stdout/stderr error or exit 143 | remains interrupted, not a transport/non-zero-exit failure |
-| T12 | protocol/transport failure recorded first, then Stop | real failure retained; Stop cannot relabel it as interrupted |
-| T13 | graceful timer expires and SIGKILL is sent | distinct non-abort failure; no resumable result; structured escalation log |
-| T14 | `end.sessionId` differs from assigned ID | use reported ID, structured warning, no user-facing `system` chunk |
-| T15 | no assigned/resumed/reported ID at interrupt settlement | fail fast; never emit an abort marker without a resumable ID |
-| T16 | normal/error/interrupted cleanup | both listeners removed, timers cleared, process awaited once, no extra kill after exit |
-| T17 | Phase 1 required group termination | own and signal the POSIX group; retain explicit Windows behaviour proved by S4 |
+| ID  | Scenario                                                         | Required assertion                                                                                          |
+| --- | ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| T1  | new/forked interrupt-capable turns                               | new UUID passed through `--session-id`; resumed non-fork turn uses the old ID and adds no new flag          |
+| T2  | no `interruptSignal`                                             | argv remains byte-for-byte compatible and has no assigned ID                                                |
+| T3  | interrupt already spent initially or during binary resolution    | no query process spawned; `Query interrupted`                                                               |
+| T4  | signal fires after spawn but before/while listener installation  | immediate post-registration recheck catches it exactly once                                                 |
+| T5  | mid-tool, no `end`, graceful exit 143                            | tool → interrupted tool result → non-error `aborted_tools` result with assigned ID; one SIGTERM, no SIGKILL |
+| T6  | mid-text, no open tool                                           | non-error `aborted_streaming`; no synthetic tool result                                                     |
+| T7  | SIGTERM flushes matching `end`                                   | reported ID and aggregate usage/cost retained; still normalized as interrupted                              |
+| T8  | interrupted resumed turn                                         | result carries the existing ID and `resumed: true`                                                          |
+| T9  | `end` parsed before Stop                                         | natural unmarked result; no termination signal                                                              |
+| T10 | Cancel alone or racing Stop                                      | existing `Query aborted` path wins; no interrupt result                                                     |
+| T11 | Stop claimed first, then induced stdout/stderr error or exit 143 | remains interrupted, not a transport/non-zero-exit failure                                                  |
+| T12 | protocol/transport failure recorded first, then Stop             | real failure retained; Stop cannot relabel it as interrupted                                                |
+| T13 | graceful timer expires and SIGKILL is sent                       | distinct non-abort failure; no resumable result; structured escalation log                                  |
+| T14 | `end.sessionId` differs from assigned ID                         | use reported ID, structured warning, no user-facing `system` chunk                                          |
+| T15 | no assigned/resumed/reported ID at interrupt settlement          | fail fast; never emit an abort marker without a resumable ID                                                |
+| T16 | normal/error/interrupted cleanup                                 | both listeners removed, timers cleared, process awaited once, no extra kill after exit                      |
+| T17 | Phase 1 required group termination                               | own and signal the POSIX group; retain explicit Windows behaviour proved by S4                              |
 
 Also retain every existing Grok provider, parser, and usage-contract test unchanged unless the asserted public contract intentionally changes above.
 

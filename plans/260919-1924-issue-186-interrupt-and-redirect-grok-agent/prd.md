@@ -51,7 +51,7 @@
 
 ### Design invariants (binding — from plan.md §Design)
 
-1. **Interrupt ≠ Cancel.** Provider listens to `requestOptions.interruptSignal` *in addition to* `abortSignal`. Spent Cancel fails pre-spawn as today; spent interrupt fails pre-spawn with `Query interrupted`. After spawn, install listeners and immediately recheck both signals (covers abort during binary resolution). Cancel checked first after shutdown — dominant if both fire. Never merge with `AbortSignal.any()`.
+1. **Interrupt ≠ Cancel.** Provider listens to `requestOptions.interruptSignal` _in addition to_ `abortSignal`. Spent Cancel fails pre-spawn as today; spent interrupt fails pre-spawn with `Query interrupted`. After spawn, install listeners and immediately recheck both signals (covers abort during binary resolution). Cancel checked first after shutdown — dominant if both fire. Never merge with `AbortSignal.any()`.
 2. **Pre-assigned session ID.** With `interruptSignal`: new session → generate UUID, pass `--session-id <uuid>`; resumed non-fork → use `resumeSessionId`, no `--session-id` (Grok rejects the combo); resumed + `forkSession: true` → new UUID with `--resume … --fork-session`. Without `interruptSignal`, argv unchanged. Reported `end.sessionId` is authoritative — on mismatch use reported ID + structured warning, never a user-facing `system` chunk. Never emit an abort-marked result without a concrete assigned/resumed/reported ID.
 3. **Causal shutdown classification.** Track first real cause: (a) `end` before Stop → natural result; (b) Cancel → existing `Query aborted`; (c) interrupt claimed while alive and before `end` → graceful stream-abort; (d) protocol/transport fault claimed first → real failure; (e) SIGKILL escalation → distinct non-abort error. Interrupt-induced stdout/stderr closure after (c) must not reclassify as transport error; an earlier fault must not be hidden by a later Stop. Add explicit `hasEnded()` parser query — absent session ID is not a proxy.
 4. **Normalize only proven graceful interrupts.** For case (c), after exit within the evidence-backed grace: close each open tool exactly once with `toolOutcome: 'interrupted'`; yield one non-error result with `terminalReason: 'aborted_tools'` (tool was open) or `'aborted_streaming'`; include concrete session ID + any authoritative aggregate usage from `end`; return before non-zero-exit handling (SIGTERM exit 143 is expected). Replace — don't follow — the unconditional `closeOutstandingTools()` call, or persisted outcome stays `unknown`.
@@ -80,11 +80,11 @@ Never run bare `bun test` from the repo root (bypasses package isolation).
 
 ## Story overview
 
-| Story | Phase | Title | Depends on |
-| --- | --- | --- | --- |
-| US-001 | 1 | Grok protocol/process/version/platform spike gate | — |
-| US-002 | 2 | Grok provider stream-abort seam | US-001 |
-| US-003 | 3 | Engine conformance: direct, loop, loop-group | US-002 |
-| US-004 | 4 | Capability matrix, docs, doctor, validation, closeout | US-001, US-002, US-003 |
+| Story  | Phase | Title                                                 | Depends on             |
+| ------ | ----- | ----------------------------------------------------- | ---------------------- |
+| US-001 | 1     | Grok protocol/process/version/platform spike gate     | —                      |
+| US-002 | 2     | Grok provider stream-abort seam                       | US-001                 |
+| US-003 | 3     | Engine conformance: direct, loop, loop-group          | US-002                 |
+| US-004 | 4     | Capability matrix, docs, doctor, validation, closeout | US-001, US-002, US-003 |
 
 Source plan: `plan.md` + `phase-01…phase-04` in this directory — the phase files carry binding detail (TDD matrices, release gates, completion checklists); consult the phase file for the story being implemented.

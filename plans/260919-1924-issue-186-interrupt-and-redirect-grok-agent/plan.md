@@ -108,12 +108,12 @@ The capability is static and generated into public docs. It must not be flipped 
 
 ## Delivery phases
 
-| # | Phase | Gate |
-| --- | --- | --- |
-| 1 | [Protocol, process, version, and platform spike](./phase-01-grok-stream-abort-spike-gate.md) | All release gates pass; otherwise stop |
-| 2 | [Grok provider stream-abort seam](./phase-02-grok-provider-stream-abort-seam.md) | Phase 1 evidence recorded |
-| 3 | [Engine conformance: direct, loop, loop-group](./phase-03-engine-conformance-direct-loop-loop-group.md) | Provider shape complete |
-| 4 | [Capability matrix, docs, validation, and closeout](./phase-04-capability-matrix-docs-and-closeout.md) | Phases 1-3 green |
+| #   | Phase                                                                                                   | Gate                                   |
+| --- | ------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| 1   | [Protocol, process, version, and platform spike](./phase-01-grok-stream-abort-spike-gate.md)            | All release gates pass; otherwise stop |
+| 2   | [Grok provider stream-abort seam](./phase-02-grok-provider-stream-abort-seam.md)                        | Phase 1 evidence recorded              |
+| 3   | [Engine conformance: direct, loop, loop-group](./phase-03-engine-conformance-direct-loop-loop-group.md) | Provider shape complete                |
+| 4   | [Capability matrix, docs, validation, and closeout](./phase-04-capability-matrix-docs-and-closeout.md)  | Phases 1-3 green                       |
 
 ## Acceptance criteria
 

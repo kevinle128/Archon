@@ -15,10 +15,10 @@ Prove that the shipped provider-neutral executor contract accepts Grok's exact s
 
 ## Files
 
-| File | Action | Purpose |
-| --- | --- | --- |
-| `packages/workflows/src/dag-executor.test.ts` | modify | Add three Grok-shape conformance scenarios using existing steering helpers |
-| `packages/workflows/src/dag-executor.ts` | comments only | Describe normalized cross-provider abort reasons rather than Claude-only reasons |
+| File                                          | Action        | Purpose                                                                          |
+| --------------------------------------------- | ------------- | -------------------------------------------------------------------------------- |
+| `packages/workflows/src/dag-executor.test.ts` | modify        | Add three Grok-shape conformance scenarios using existing steering helpers       |
+| `packages/workflows/src/dag-executor.ts`      | comments only | Describe normalized cross-provider abort reasons rather than Claude-only reasons |
 
 `packages/providers/src/types.ts` is owned by Phase 2; do not edit it again here. `packages/workflows/src/steering-registry.ts`, routes, stores, and UI should not change.
 
@@ -30,11 +30,11 @@ The #183 block already proves the engine's queue ordering, same-session `forkSes
 
 The mock identifies as Grok, returns `GROK_CAPABILITIES`, and yields the Phase 2 provider shape: optional `tool`, interrupted `tool_result`, then a non-error `result` with the assigned/resumed ID and normalized terminal reason.
 
-| ID | Path | Required assertions |
-| --- | --- | --- |
-| G1 | direct AI node, mid-tool | one `interrupted` status; exactly one `tool_completed` with `tool_outcome: 'interrupted'`; no node failure; idle state reached; `Send now` resumes the same ID with `forkSession: false`; two queued messages plus new message arrive in receipt order; node can complete |
-| G2 | AI loop, mid-text | interrupt parks inside the current iteration; `Send now` resumes the same ID; the interrupted pass does not consume an iteration or trigger output validation; loop completes without node failure |
-| G3 | provider-calling loop-group body, mid-tool | the namespaced step parks and resumes; interrupted tool outcome persists once; no parent/body node failure; group continues normally |
+| ID  | Path                                       | Required assertions                                                                                                                                                                                                                                                       |
+| --- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| G1  | direct AI node, mid-tool                   | one `interrupted` status; exactly one `tool_completed` with `tool_outcome: 'interrupted'`; no node failure; idle state reached; `Send now` resumes the same ID with `forkSession: false`; two queued messages plus new message arrive in receipt order; node can complete |
+| G2  | AI loop, mid-text                          | interrupt parks inside the current iteration; `Send now` resumes the same ID; the interrupted pass does not consume an iteration or trigger output validation; loop completes without node failure                                                                        |
+| G3  | provider-calling loop-group body, mid-tool | the namespaced step parks and resumes; interrupted tool outcome persists once; no parent/body node failure; group continues normally                                                                                                                                      |
 
 G1 proves the transcript data that both existing readers render as `⚠ interrupted`; no new browser test is needed because Story 2.3 already tests the shared dock/read model. G2 and G3 are required because those are separate executor paths.
 

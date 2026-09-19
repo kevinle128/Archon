@@ -20,8 +20,8 @@
       "technicalNotes": "Phase 1 of the plan (phase-01-grok-stream-abort-spike-gate.md). Installed CLI is grok 1.0.34; bundled docs state SIGINT/SIGTERM save session to last completed tool call and exit 130/143, and --session-id may accompany --resume only when forking. Fork syntax needs no paid experiment (docs + buildGrokArgs unit tests cover --resume <old> --fork-session --session-id <new>). Do not duplicate engine queue/race cases already covered by the 19 generic #183 tests in packages/workflows/src/dag-executor.test.ts. Orphan check must create a temporary slow-tool script that writes its own PID, then check/clean that exact PID \u2014 no broad pkill/pgrep. The four blocking questions the report must answer: (1) does SIGTERM preserve a resumable session when Stop arrives immediately after spawn; (2) does the real native Windows launch path exit gracefully and preserve the same session; (3) does Grok reap a long-running tool child and what grace interval reliably permits persistence; (4) what minimum CLI version can be supported and diagnosed honestly. Phase 2 starts only when the report records a pass on all gates.",
       "dependsOn": [],
       "priority": 1,
-      "passes": true,
-      "notes": "Implemented in iteration 1. Files: packages/providers/src/grok/interrupt-resume-spike.ts, packages/providers/package.json (spike:interrupt:grok), plans/reports/spike-260920-0243-grok-interrupt-resume.md. Overall report BLOCKED (S2 earliest-stop resume fails; S4 Windows unproven; process-group required). Evidence attached to #186. No production capability flip."
+      "passes": false,
+      "notes": "Review corrected the runner and re-ran native macOS S0-S3. The runner now verifies retained context, observes S3 after assistant text, bounds timers, cleans the exact child PID, and supports the Windows wrapper shape. Unchanged ACs still require native Linux and Windows evidence; S2 earliest-stop same-session resume fails on grok 1.0.34 and S4 is unproven. No production capability flip."
     },
     {
       "id": "US-002",
@@ -47,7 +47,7 @@
       "dependsOn": ["US-001"],
       "priority": 2,
       "passes": false,
-      "notes": "Iteration 2 BLOCKED on Phase 1 entry gate. Copied gate values: CLI grok 1.0.34 (3736acbc8658) [stable]; min version = that floor; grace 5000ms (parent exit ~0-7ms); process-group REQUIRED (child survived); Windows S4 unproven. Release gates 2 (S2 earliest-stop resume) and 5 (native Windows) are BLOCKED — plan forbids production seam and capability flip. No provider/parser/capability code changed. Needs product scope decision and/or native Windows + S2 re-spike."
+      "notes": "Blocked on Phase 1 entry gate. Fresh macOS evidence: CLI grok 1.0.34 (3736acbc8658) [stable]; exact-tested build is the floor; grace 5000ms (S1 13ms, S2 0ms); POSIX process group REQUIRED (child survived); Windows S4 unproven. Release gates 2 (S2 earliest-stop resume) and 5 (native Windows) are BLOCKED, so the plan forbids the production seam and capability flip. No provider/parser/capability code changed. Needs a product scope decision or a newer-CLI S2 and native-Windows re-spike."
     },
     {
       "id": "US-003",

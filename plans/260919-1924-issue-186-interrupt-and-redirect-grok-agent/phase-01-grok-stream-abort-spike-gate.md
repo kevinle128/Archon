@@ -24,11 +24,11 @@ Phase 2 is blocked until every release gate below passes. â€œUsually resumableâ€
 
 ## Files
 
-| File | Action | Purpose |
-| --- | --- | --- |
-| `packages/providers/src/grok/interrupt-resume-spike.ts` | create | Diagnostic-only real-CLI runner; not exported and not run in CI |
-| `packages/providers/package.json` | modify | Add `spike:interrupt:grok` beside the Claude spike command |
-| `plans/reports/spike-260920-0243-grok-interrupt-resume.md` | create | Sanitized evidence and release-gate decision |
+| File                                                       | Action | Purpose                                                         |
+| ---------------------------------------------------------- | ------ | --------------------------------------------------------------- |
+| `packages/providers/src/grok/interrupt-resume-spike.ts`    | create | Diagnostic-only real-CLI runner; not exported and not run in CI |
+| `packages/providers/package.json`                          | modify | Add `spike:interrupt:grok` beside the Claude spike command      |
+| `plans/reports/spike-260920-0243-grok-interrupt-resume.md` | create | Sanitized evidence and release-gate decision                    |
 
 No production provider/capability code changes in this phase.
 
@@ -44,13 +44,13 @@ No production provider/capability code changes in this phase.
 
 The script should share one line parser and one result schema. Record event **types**, `end.stopReason`, session-ID equality, whether standalone `usage` and final aggregate usage were seen, exit value, signal-to-exit duration, child liveness, and resume booleans only.
 
-| ID | Experiment | Pass condition |
-| --- | --- | --- |
-| S0 | Preflight: version, `--session-id` acceptance, normal new-session completion with an assigned UUID | Flag is accepted; exit 0; `end.sessionId` equals the assigned UUID. The report identifies the conservative minimum version for this feature. |
-| S1 | POSIX mid-tool Stop: launch a platform-appropriate temporary slow-tool, wait until its PID file proves the child is running, send SIGTERM, then resume the assigned session with a nonce check | Parent exits on SIGTERM in under one second and within the proposed grace, without SIGKILL; any `end` ID matches; the exact child PID is gone; resume exits 0 on the same ID and demonstrates retained context. |
-| S2 | POSIX earliest Stop: send SIGTERM immediately after spawn, before the first stdout line, then resume the assigned session | Parent exits in under one second; resume succeeds on the same ID with retained context. If it does not, the story is blocked; do not downgrade this to a documented early-turn limitation. |
-| S3 | Repeated Stop: resume the S1 session, interrupt another turn, then resume once more | Both interrupted turns preserve the same session and the final continuation succeeds. |
-| S4 | Native Windows: repeat S1 and S2 through the actual resolved `.exe` or `.cmd`/`cmd.exe` path used by `buildSpawnCommand` | Under-one-second graceful exit and same-ID resume both pass. A forceful Windows termination or lost session blocks capability publication. |
+| ID  | Experiment                                                                                                                                                                                     | Pass condition                                                                                                                                                                                                  |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S0  | Preflight: version, `--session-id` acceptance, normal new-session completion with an assigned UUID                                                                                             | Flag is accepted; exit 0; `end.sessionId` equals the assigned UUID. The report identifies the conservative minimum version for this feature.                                                                    |
+| S1  | POSIX mid-tool Stop: launch a platform-appropriate temporary slow-tool, wait until its PID file proves the child is running, send SIGTERM, then resume the assigned session with a nonce check | Parent exits on SIGTERM in under one second and within the proposed grace, without SIGKILL; any `end` ID matches; the exact child PID is gone; resume exits 0 on the same ID and demonstrates retained context. |
+| S2  | POSIX earliest Stop: send SIGTERM immediately after spawn, before the first stdout line, then resume the assigned session                                                                      | Parent exits in under one second; resume succeeds on the same ID with retained context. If it does not, the story is blocked; do not downgrade this to a documented early-turn limitation.                      |
+| S3  | Repeated Stop: resume the S1 session, interrupt another turn, then resume once more                                                                                                            | Both interrupted turns preserve the same session and the final continuation succeeds.                                                                                                                           |
+| S4  | Native Windows: repeat S1 and S2 through the actual resolved `.exe` or `.cmd`/`cmd.exe` path used by `buildSpawnCommand`                                                                       | Under-one-second graceful exit and same-ID resume both pass. A forceful Windows termination or lost session blocks capability publication.                                                                      |
 
 Fork syntax does not need another paid experiment: bundled CLI docs plus `buildGrokArgs` unit tests cover `--resume <old> --fork-session --session-id <new>`. Do not spend model calls duplicating the engine's already-covered queue/race cases.
 

@@ -17,7 +17,7 @@
  * Optional: GROK_SPIKE_REPORT_PATH writes a sanitized markdown report.
  * Optional: GROK_SPIKE_ONLY=S0,S1 scopes experiments.
  */
-import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcessByStdio } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -30,6 +30,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import type { Readable } from 'node:stream';
 import { setTimeout as delay } from 'node:timers/promises';
 
 import { resolveGrokBinaryPath } from './binary-resolver';
@@ -41,7 +42,6 @@ const EXIT_WAIT_MS = 15_000;
 const PROPOSED_GRACE_MS = 5_000;
 const SIGNAL_TO_EXIT_BUDGET_MS = 1_000;
 const CONTINUATION_PREFIX = 'SPIKE_CONT_';
-const SLOW_SCRIPT = 'slow_tool.sh';
 const SLOW_PID_FILE = 'slow_tool.pid';
 const NO_SHELL_DISALLOWED =
   'run_terminal_command,run_terminal_cmd,Agent,write,search_replace,web_search,web_fetch';
@@ -53,6 +53,7 @@ interface ParsedLine {
   type: string;
   stopReason?: string;
   sessionId?: string;
+  text?: string;
   hasUsage?: boolean;
   hasEndUsage?: boolean;
   toolStatus?: string;
@@ -119,6 +120,7 @@ interface RunOutcome {
   usedSigkill: boolean;
   firstStdoutAtMs: number | null;
   sawToolInProgress: boolean;
+  expectedTextSeen: boolean | null;
   errorMessage: string | null;
 }
 
@@ -155,6 +157,7 @@ function parseLine(line: string): ParsedLine | null {
     type,
     stopReason: fieldString(event, 'stopReason'),
     sessionId: fieldString(event, 'sessionId'),
+    text: type === 'text' ? fieldString(event, 'data') : undefined,
     hasUsage: type === 'usage' ? true : usageObj !== null,
     hasEndUsage: type === 'end' && (usageObj !== null || modelUsageObj !== null),
     toolStatus: fieldString(event, 'status'),
@@ -223,8 +226,10 @@ function buildHeadlessArgs(input: {
   return args;
 }
 
+type SpawnedGrokChild = ChildProcessByStdio<null, Readable, Readable>;
+
 interface OwnedProcess {
-  child: ChildProcessWithoutNullStreams;
+  child: SpawnedGrokChild;
   kill: (signal: NodeJS.Signals) => boolean;
 }
 
@@ -260,7 +265,16 @@ function isPidAlive(pid: number): boolean {
   }
 }
 
-function currentExit(child: ChildProcessWithoutNullStreams): ExitObservation | null {
+async function waitForPidExit(pid: number, timeoutMs = 5_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) return true;
+    await delay(50);
+  }
+  return !isPidAlive(pid);
+}
+
+function currentExit(child: SpawnedGrokChild): ExitObservation | null {
   if (child.exitCode !== null || child.signalCode !== null) {
     return { code: child.exitCode, signal: child.signalCode };
   }
@@ -268,7 +282,7 @@ function currentExit(child: ChildProcessWithoutNullStreams): ExitObservation | n
 }
 
 async function waitForExit(
-  child: ChildProcessWithoutNullStreams,
+  child: SpawnedGrokChild,
   timeoutMs: number
 ): Promise<ExitObservation | null> {
   const already = currentExit(child);
@@ -298,8 +312,9 @@ function normalizeExitCode(obs: ExitObservation | null): number | null {
 }
 
 async function consumeStdout(
-  child: ChildProcessWithoutNullStreams,
-  onFirstChunk?: () => void
+  child: SpawnedGrokChild,
+  onEvent?: (event: ParsedLine) => void,
+  expectedText?: string
 ): Promise<{
   eventTypes: string[];
   endStopReason: string | null;
@@ -308,6 +323,7 @@ async function consumeStdout(
   finalUsageSeen: boolean;
   sawToolInProgress: boolean;
   firstStdoutAtMs: number | null;
+  expectedTextSeen: boolean | null;
 }> {
   const started = Date.now();
   const eventTypes: string[] = [];
@@ -317,13 +333,13 @@ async function consumeStdout(
   let finalUsageSeen = false;
   let sawToolInProgress = false;
   let firstStdoutAtMs: number | null = null;
+  let textOutput = '';
   let buffer = '';
 
   try {
     for await (const chunk of child.stdout) {
       if (firstStdoutAtMs === null) {
         firstStdoutAtMs = Date.now() - started;
-        onFirstChunk?.();
       }
       const piece = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
       buffer += piece;
@@ -332,6 +348,7 @@ async function consumeStdout(
         const parsed = parseLine(buffer.slice(0, nl));
         buffer = buffer.slice(nl + 1);
         if (parsed) {
+          onEvent?.(parsed);
           eventTypes.push(parsed.type);
           if (parsed.type === 'usage') standaloneUsageSeen = true;
           if (parsed.type === 'end') {
@@ -345,13 +362,18 @@ async function consumeStdout(
           ) {
             sawToolInProgress = true;
           }
+          if (parsed.type === 'text' && parsed.text !== undefined) textOutput += parsed.text;
         }
         nl = buffer.indexOf('\n');
       }
     }
     if (buffer.trim().length > 0) {
       const parsed = parseLine(buffer);
-      if (parsed) eventTypes.push(parsed.type);
+      if (parsed) {
+        onEvent?.(parsed);
+        eventTypes.push(parsed.type);
+        if (parsed.type === 'text' && parsed.text !== undefined) textOutput += parsed.text;
+      }
     }
   } catch {
     // stdout may close under signal; recorded types so far still count
@@ -365,6 +387,7 @@ async function consumeStdout(
     finalUsageSeen,
     sawToolInProgress,
     firstStdoutAtMs,
+    expectedTextSeen: expectedText === undefined ? null : textOutput.trim() === expectedText,
   };
 }
 
@@ -376,10 +399,13 @@ async function runGrokTurn(input: {
   resumeSessionId?: string;
   tools?: string;
   disallowedTools?: string;
-  interruptOnFirstStdout?: boolean;
+  /** SIGTERM when the first assistant text event proves the turn is active. */
+  interruptOnFirstText?: boolean;
   interruptWhenPidFile?: string;
   /** SIGTERM immediately after spawn, before any stdout. */
   interruptImmediately?: boolean;
+  /** Exact response expected from a same-session continuation, never reported. */
+  expectedText?: string;
   timeoutMs?: number;
 }): Promise<RunOutcome> {
   const args = buildHeadlessArgs({
@@ -399,25 +425,27 @@ async function runGrokTurn(input: {
   let lastExit: ExitObservation | null = null;
   let errorMessage: string | null = null;
   let stderrTail = '';
+  let sigkillTimer: ReturnType<typeof setTimeout> | undefined;
 
   owned.child.once('exit', (code, signal) => {
     processExited = true;
     exitedAt = Date.now();
     lastExit = { code, signal };
+    if (sigkillTimer !== undefined) clearTimeout(sigkillTimer);
   });
 
   const maybeInterrupt = (): void => {
     if (interrupted || processExited) return;
     interrupted = true;
     signalSentAt = Date.now();
-    owned.kill('SIGTERM');
-    void delay(PROPOSED_GRACE_MS).then(() => {
+    sigkillTimer = setTimeout(() => {
       // Signal deaths leave exitCode null — gate on processExited, not exitCode.
       if (!processExited) {
         usedSigkill = true;
         owned.kill('SIGKILL');
       }
-    });
+    }, PROPOSED_GRACE_MS);
+    owned.kill('SIGTERM');
   };
 
   if (input.interruptImmediately) {
@@ -429,11 +457,11 @@ async function runGrokTurn(input: {
     if (stderrTail.length < 4_000) stderrTail += chunk.slice(0, 4_000 - stderrTail.length);
   });
 
+  const pidPath = input.interruptWhenPidFile;
   const pidWatcher =
-    input.interruptWhenPidFile !== undefined
+    pidPath !== undefined
       ? (async (): Promise<void> => {
           const deadline = Date.now() + PID_WAIT_MS;
-          const pidPath = input.interruptWhenPidFile;
           while (Date.now() < deadline) {
             if (existsSync(pidPath)) {
               await delay(50);
@@ -448,34 +476,22 @@ async function runGrokTurn(input: {
         })()
       : Promise.resolve();
 
-  const stdoutPromise = consumeStdout(owned.child, () => {
-    if (input.interruptOnFirstStdout) maybeInterrupt();
-  });
+  const stdoutPromise = consumeStdout(
+    owned.child,
+    event => {
+      if (input.interruptOnFirstText && event.type === 'text') maybeInterrupt();
+    },
+    input.expectedText
+  );
 
   const timeoutMs = input.timeoutMs ?? EXPERIMENT_TIMEOUT_MS;
-  await Promise.race([
-    waitForExit(owned.child, timeoutMs),
-    delay(timeoutMs).then(() => {
-      if (!processExited) {
-        usedSigkill = true;
-        owned.kill('SIGKILL');
-      }
-      return null;
-    }),
-  ]);
+  const timelyExit = await waitForExit(owned.child, timeoutMs);
+  if (timelyExit === null && !processExited) {
+    usedSigkill = true;
+    owned.kill('SIGKILL');
+  }
 
-  const stdout = await Promise.race([
-    stdoutPromise,
-    delay(2_000).then(() => ({
-      eventTypes: [] as string[],
-      endStopReason: null as string | null,
-      reportedSessionId: null as string | null,
-      standaloneUsageSeen: false,
-      finalUsageSeen: false,
-      sawToolInProgress: false,
-      firstStdoutAtMs: null as number | null,
-    })),
-  ]);
+  const stdout = await waitForStdout(stdoutPromise);
   await pidWatcher.catch(() => undefined);
 
   if (!processExited) {
@@ -488,6 +504,7 @@ async function runGrokTurn(input: {
     const forced = await waitForExit(owned.child, EXIT_WAIT_MS);
     if (forced) lastExit = forced;
   }
+  if (sigkillTimer !== undefined) clearTimeout(sigkillTimer);
 
   if (errorMessage === null && /auth|credential|sign.?in|login|unauthorized/i.test(stderrTail)) {
     errorMessage = 'authentication';
@@ -505,16 +522,48 @@ async function runGrokTurn(input: {
     usedSigkill,
     firstStdoutAtMs: stdout.firstStdoutAtMs,
     sawToolInProgress: stdout.sawToolInProgress,
+    expectedTextSeen: stdout.expectedTextSeen,
     errorMessage,
   };
 }
 
-function writeSlowToolScript(cwd: string): { pidPath: string } {
-  const scriptPath = join(cwd, SLOW_SCRIPT);
+async function waitForStdout(
+  output: ReturnType<typeof consumeStdout>
+): Promise<Awaited<ReturnType<typeof consumeStdout>>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      output,
+      new Promise<Awaited<ReturnType<typeof consumeStdout>>>(resolve => {
+        timer = setTimeout(() => {
+          resolve({
+            eventTypes: [],
+            endStopReason: null,
+            reportedSessionId: null,
+            standaloneUsageSeen: false,
+            finalUsageSeen: false,
+            sawToolInProgress: false,
+            firstStdoutAtMs: null,
+            expectedTextSeen: null,
+          });
+        }, 2_000);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function writeSlowToolScript(cwd: string): { pidPath: string; command: string } {
+  const isWindows = process.platform === 'win32';
+  const scriptName = isWindows ? 'slow_tool.cmd' : 'slow_tool.sh';
+  const scriptPath = join(cwd, scriptName);
   const pidPath = join(cwd, SLOW_PID_FILE);
   writeFileSync(
     scriptPath,
-    `#!/usr/bin/env sh
+    isWindows
+      ? `@echo off\r\npowershell -NoProfile -Command "$PID | Set-Content -NoNewline -Encoding ascii ${SLOW_PID_FILE}; Start-Sleep -Seconds 120"\r\n`
+      : `#!/usr/bin/env sh
 set -eu
 echo $$ > "${SLOW_PID_FILE}"
 sleep 120
@@ -526,7 +575,10 @@ sleep 120
   } catch {
     // Windows may ignore mode bits.
   }
-  return { pidPath };
+  return {
+    pidPath,
+    command: isWindows ? `cmd.exe /d /s /c ${scriptName}` : `./${scriptName}`,
+  };
 }
 
 function readPidFile(pidPath: string): number | null {
@@ -551,7 +603,9 @@ function ensureTempGitRepo(): string {
 
 function deleteSession(binaryPath: string, cwd: string, sessionId: string): boolean {
   try {
-    execFileSync(binaryPath, ['sessions', 'delete', sessionId], {
+    const [file, ...args] = buildSpawnCommand(binaryPath, ['sessions', 'delete', sessionId]);
+    if (!file) return false;
+    execFileSync(file, args, {
       cwd,
       stdio: 'ignore',
       env: { ...process.env, GROK_DISABLE_AUTOUPDATER: '1' },
@@ -565,7 +619,9 @@ function deleteSession(binaryPath: string, cwd: string, sessionId: string): bool
 
 function readCliVersion(binaryPath: string): string {
   try {
-    return execFileSync(binaryPath, ['--version'], {
+    const [file, ...args] = buildSpawnCommand(binaryPath, ['--version']);
+    if (!file) throw new Error('empty version command');
+    return execFileSync(file, args, {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GROK_DISABLE_AUTOUPDATER: '1' },
@@ -599,30 +655,31 @@ async function runResumeCheck(input: {
   binaryPath: string;
   cwd: string;
   sessionId: string;
+  contextMarker: string;
 }): Promise<{
   exitCode: number | null;
   sameSession: boolean;
   retained: boolean;
   eventTypes: string[];
 }> {
-  const marker = continuationMarker();
   const turn = await runGrokTurn({
     binaryPath: input.binaryPath,
     cwd: input.cwd,
     resumeSessionId: input.sessionId,
-    prompt: `Reply with exactly ${marker} and nothing else.`,
+    prompt:
+      'Reply with only the exact non-secret context token from the interrupted turn. Do not add commentary.',
     disallowedTools: NO_SHELL_DISALLOWED,
+    expectedText: input.contextMarker,
     timeoutMs: 90_000,
   });
-  // Sanitized spike cannot inspect model text; retained context is evidenced by
-  // successful same-ID resume completion (updates.jsonl is authoritative per docs).
   return {
     exitCode: turn.exitCode,
     sameSession: turn.reportedSessionId === input.sessionId,
     retained:
       turn.exitCode === 0 &&
       turn.reportedSessionId === input.sessionId &&
-      turn.endStopReason !== null,
+      turn.endStopReason !== null &&
+      turn.expectedTextSeen === true,
     eventTypes: turn.eventTypes,
   };
 }
@@ -650,13 +707,13 @@ async function runS1(binaryPath: string, cwd: string, platform: string): Promise
   const result = emptyExperiment('S1', platform);
   const sessionId = randomUUID();
   result.assignedSessionId = sessionId;
-  const { pidPath } = writeSlowToolScript(cwd);
+  const marker = continuationMarker();
+  const { pidPath, command } = writeSlowToolScript(cwd);
   const turn = await runGrokTurn({
     binaryPath,
     cwd,
     sessionId,
-    prompt:
-      'Using the shell tool, execute the local script ./slow_tool.sh in the foreground. Do not background it yourself. Do not edit files.',
+    prompt: `Remember this exact non-secret context token for a later turn: ${marker}. Using the shell tool, execute ${command} in the foreground. Do not background it yourself. Do not edit files.`,
     tools: 'run_terminal_command,run_terminal_cmd',
     interruptWhenPidFile: pidPath,
     timeoutMs: 120_000,
@@ -666,17 +723,22 @@ async function runS1(binaryPath: string, cwd: string, platform: string): Promise
   result.childPid = childPid;
   // Parent exit must be observed before the liveness check.
   result.childAliveAfterParentExit = childPid !== null ? isPidAlive(childPid) : null;
-  if (childPid !== null && isPidAlive(childPid)) {
+  if (childPid !== null && result.childAliveAfterParentExit === true) {
     try {
       process.kill(childPid, 'SIGKILL');
+      if (await waitForPidExit(childPid)) {
+        result.notes.push('exact-child-pid-cleaned-by-spike');
+      } else {
+        result.notes.push('exact-child-pid-still-alive-after-sigkill');
+      }
     } catch {
       // exact-PID cleanup only
+      result.notes.push('exact-child-pid-cleanup-failed');
     }
-    result.notes.push('exact-child-pid-required-manual-sigkill');
   }
   if (!turn.sawToolInProgress && childPid === null) result.notes.push('mid-tool-not-observed');
 
-  const resume = await runResumeCheck({ binaryPath, cwd, sessionId });
+  const resume = await runResumeCheck({ binaryPath, cwd, sessionId, contextMarker: marker });
   result.resumeExitCode = resume.exitCode;
   result.resumeSameSession = resume.sameSession;
   result.resumeContextRetained = resume.retained;
@@ -707,11 +769,12 @@ async function runS2(binaryPath: string, cwd: string, platform: string): Promise
   const result = emptyExperiment('S2', platform);
   const sessionId = randomUUID();
   result.assignedSessionId = sessionId;
+  const marker = continuationMarker();
   const turn = await runGrokTurn({
     binaryPath,
     cwd,
     sessionId,
-    prompt: 'Count slowly from 1 to 10000, one number per line, with no other commentary.',
+    prompt: `Remember this exact non-secret context token for a later turn: ${marker}. Count slowly from 1 to 10000, one number per line, with no other commentary.`,
     disallowedTools: NO_SHELL_DISALLOWED,
     interruptImmediately: true,
     timeoutMs: 90_000,
@@ -721,7 +784,7 @@ async function runS2(binaryPath: string, cwd: string, platform: string): Promise
     result.notes.push(`firstStdoutAtMs=${String(turn.firstStdoutAtMs)}`);
   }
 
-  const resume = await runResumeCheck({ binaryPath, cwd, sessionId });
+  const resume = await runResumeCheck({ binaryPath, cwd, sessionId, contextMarker: marker });
   result.resumeExitCode = resume.exitCode;
   result.resumeSameSession = resume.sameSession;
   result.resumeContextRetained = resume.retained;
@@ -730,6 +793,7 @@ async function runS2(binaryPath: string, cwd: string, platform: string): Promise
     !result.usedSigkill &&
     result.signalToExitMs !== null &&
     result.signalToExitMs < SIGNAL_TO_EXIT_BUDGET_MS &&
+    turn.firstStdoutAtMs === null &&
     (result.exitCode === 143 || result.exitCode === 130) &&
     resume.exitCode === 0 &&
     resume.sameSession &&
@@ -749,20 +813,25 @@ async function runS3(
   priorSessionId: string | null
 ): Promise<ExperimentResult> {
   const result = emptyExperiment('S3', platform);
-  const sessionId = priorSessionId ?? randomUUID();
+  if (!priorSessionId) {
+    result.notes.push('S1 did not provide a resumable session for repeated-stop verification');
+    return result;
+  }
+  const sessionId = priorSessionId;
   result.assignedSessionId = sessionId;
+  const marker = continuationMarker();
   const turn = await runGrokTurn({
     binaryPath,
     cwd,
     resumeSessionId: sessionId,
-    prompt: 'Count slowly from 1 to 10000, one number per line, with no other commentary.',
+    prompt: `Remember this exact non-secret context token for a later turn: ${marker}. Count slowly from 1 to 10000, one number per line, with no other commentary.`,
     disallowedTools: NO_SHELL_DISALLOWED,
-    interruptOnFirstStdout: true,
+    interruptOnFirstText: true,
     timeoutMs: 90_000,
   });
   applyTurnFields(result, turn, sessionId);
 
-  const resume = await runResumeCheck({ binaryPath, cwd, sessionId });
+  const resume = await runResumeCheck({ binaryPath, cwd, sessionId, contextMarker: marker });
   result.resumeExitCode = resume.exitCode;
   result.resumeSameSession = resume.sameSession;
   result.resumeContextRetained = resume.retained;

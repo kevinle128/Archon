@@ -15,15 +15,15 @@ Publish only the capability proved by Phases 1-3, give operators actionable vers
 
 ## Files
 
-| File | Action | Purpose |
-| --- | --- | --- |
-| `packages/docs-web/src/content/docs/reference/provider-capabilities.md` | regenerate | Show Grok `stream-abort` from static capabilities |
-| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` | modify | Document Stop/same-session continuation, minimum CLI version, written-file semantics, and update command |
-| `packages/providers/src/grok/config.ts` | modify | Own the minimum supported stream-abort CLI version constant |
-| `packages/cli/src/commands/doctor.ts` | modify | Give configured older Grok CLIs an actionable compatibility diagnosis |
-| `packages/cli/src/commands/doctor.test.ts` | modify | Supported, older, and unparsable version cases |
-| `plans/reports/acceptance-260920-0243-issue-186-grok-interrupt.md` | create | Map every acceptance criterion to evidence |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify last | Move only Story 2.6 from `backlog` to `done` |
+| File                                                                       | Action      | Purpose                                                                                                  |
+| -------------------------------------------------------------------------- | ----------- | -------------------------------------------------------------------------------------------------------- |
+| `packages/docs-web/src/content/docs/reference/provider-capabilities.md`    | regenerate  | Show Grok `stream-abort` from static capabilities                                                        |
+| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md`      | modify      | Document Stop/same-session continuation, minimum CLI version, written-file semantics, and update command |
+| `packages/providers/src/grok/config.ts`                                    | modify      | Own the minimum supported stream-abort CLI version constant                                              |
+| `packages/cli/src/commands/doctor.ts`                                      | modify      | Give configured older Grok CLIs an actionable compatibility diagnosis                                    |
+| `packages/cli/src/commands/doctor.test.ts`                                 | modify      | Supported, older, and unparsable version cases                                                           |
+| `plans/reports/acceptance-260920-0243-issue-186-grok-interrupt.md`         | create      | Map every acceptance criterion to evidence                                                               |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify last | Move only Story 2.6 from `backlog` to `done`                                                             |
 
 The minimum-version value should have one owner. Prefer exporting a small constant from the Grok capability/config surface and importing it into doctor rather than duplicating a literal in production files. The generated capability matrix remains host-independent; do not make static capabilities depend on `process.platform`.
 

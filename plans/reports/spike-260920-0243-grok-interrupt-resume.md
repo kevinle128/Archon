@@ -5,71 +5,19 @@
 - **Issue**: #186
 - **CLI version (exact)**: `grok 1.0.34 (3736acbc8658) [stable]`
 - **Binary basename**: `grok`
-- **Proposed grace**: 5000 ms (matches production `TERMINATION_GRACE_MS`)
+- **Proposed grace**: 5000 ms
 
 ## Environments
 
-| Host               | Kind                                      | Result                 | Notes                                                                                                    |
-| ------------------ | ----------------------------------------- | ---------------------- | -------------------------------------------------------------------------------------------------------- |
-| macOS Darwin arm64 | native                                    | ran S0–S4 (S4 skipped) | primary evidence below                                                                                   |
-| Linux arm64        | Docker container (`linuxkit`), not native | attempted S0–S2        | `--sandbox workspace` refuses start (`hooks-paths` verify / bwrap); not counted as native Linux evidence |
-| Windows            | not available                             | S4 not run             | no native Windows host / Parallels VM in this environment                                                |
+| Host               | Kind                         | Result                      | Notes                                                                                                 |
+| ------------------ | ---------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| macOS Darwin arm64 | native                       | S0-S3 re-run by this review | Primary evidence below.                                                                               |
+| Linux arm64        | Docker container, not native | S0-S2 attempted             | `--sandbox workspace` refuses start at `hooks-paths` verification; this is not native-Linux evidence. |
+| Windows            | unavailable                  | S4 not run                  | No native Windows host or VM is available.                                                            |
 
-## Minimum version decision
+## Method and sanitization
 
-Minimum supported CLI version floor: grok 1.0.34 (3736acbc8658) [stable] (exact tested build). Older builds unproven — doctor should fail below this floor until re-spiked.
-
-## Process-group decision
-
-Phase 2 MUST add POSIX process-group ownership — exact child PID survived parent exit
-
-## Blocking questions (Phase 1)
-
-1. **Does SIGTERM preserve a resumable session when Stop arrives immediately after spawn?** **NO on macOS 1.0.34.** S2 exits 143 in <1ms without SIGKILL, but same-ID resume fails (`resumeExit=1`, `resumeSameSession=false`). Earliest-stop same-session continuation is **not** proven — gate 2 BLOCKED.
-2. **Does the real native Windows launch path exit gracefully and preserve the same session?** **UNPROVEN.** No native Windows host available in this run — gate 5 BLOCKED.
-3. **Does Grok reap a long-running tool child and what grace interval reliably permits persistence?** Parent exits on SIGTERM in **~6ms** (well under 1s / 5s grace) **without SIGKILL**. Exact slow-tool child PID **survived** parent exit — Phase 2 **must** take POSIX process-group ownership. Resume after mid-tool Stop **does** work on the same session ID.
-4. **What minimum CLI version can be supported and diagnosed honestly?** Tested floor: **`grok 1.0.34 (3736acbc8658) [stable]`**. Older builds unproven. Doctor should fail below this floor until re-spiked. Capability must **not** flip to `stream-abort` while gates 2 and 5 remain BLOCKED.
-
-## macOS experiment table
-
-| ID  | Passed | Exit | Signal→exit ms | SIGKILL | Session equal | Resume same/retained | Child alive | Standalone usage | Final usage |
-| --- | ------ | ---- | -------------- | ------- | ------------- | -------------------- | ----------- | ---------------- | ----------- |
-| S0  | True   | 0    | None           | False   | True          | None/None            | None        | True             | True        |
-| S1  | False  | 143  | 6              | False   | None          | True/True            | True        | True             | False       |
-| S2  | False  | 143  | 0              | False   | None          | False/False          | None        | False            | False       |
-| S3  | True   | 143  | 7              | False   | None          | True/True            | None        | False            | False       |
-| S4  | False  | None | None           | False   | None          | None/None            | None        | False            | False       |
-
-### Event types (no payloads)
-
-- **S0**: available_commands, available_commands, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, text, available_commands, usage, end
-- **S1**: available_commands, available_commands, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, thought, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, available_commands, usage, tool_call, tool_call_update, tool_call, tool_call_update, tool_call_update, tool_call_update, thought, thought, thought, thought, thought, thought, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, text, available_commands, usage, tool_call, tool_call_update, tool_call_update, resume:available_commands, resume:available_commands, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:thought, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:text, resume:available_commands, resume:usage, resume:end
-  - notes: exact-child-pid-required-manual-sigkill | S1 checks: sigkill=false signalToExitMs=6 exit=143 childAlive=true resumeExit=0 resumeSame=true
-- **S2**: (none)
-  - notes: S2 checks: sigkill=false signalToExitMs=0 exit=143 resumeExit=1 resumeSame=false
-- **S3**: available_commands
-- **S4**: (none)
-  - notes: not-run-on-non-windows-host
-
-## Release gates
-
-| #   | Gate                                                               | Status      | Evidence                                                                                                                                                                    |
-| --- | ------------------------------------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | caller-assigned session IDs accepted and returned                  | **PASS**    | S0 exit=0 sessionIdEqual=True                                                                                                                                               |
-| 2   | S1/S2/S3 resume same session with retained context                 | **BLOCKED** | S1resume=True/True S2resume=False/False S3resume=True/True                                                                                                                  |
-| 3   | ordinary SIGTERM exits <1s inside grace without SIGKILL            | **PASS**    | S1ms=6 S2ms=0 sigkill=False                                                                                                                                                 |
-| 4   | slow-tool child gone after parent exit (or process-group required) | **PASS**    | child survived parent exit — Phase 2 MUST own a POSIX process group and signal it                                                                                           |
-| 5   | S4 native Windows under real launch path                           | **BLOCKED** | not-run-on-non-windows-host                                                                                                                                                 |
-| 6   | minimum supported CLI version/floor explicit                       | **PASS**    | Minimum supported CLI version floor: grok 1.0.34 (3736acbc8658) [stable] (exact tested build). Older builds unproven — doctor should fail below this floor until re-spiked. |
-| 7   | standalone/final usage presence recorded without inventing spend   | **PASS**    | S0:standalone=True,final=True; S1:standalone=True,final=False; S2:standalone=False,final=False; S3:standalone=False,final=False; S4:standalone=False,final=False            |
-
-## Cleanup
-
-- sessions deleted: 3 (UUIDs omitted when delete succeeded)
-- sessions delete failed: 0
-- temp dir removed: True
-
-## Commands (shape only)
+The diagnostic-only runner resolves the binary with `resolveGrokBinaryPath`, uses a fresh temporary git repository, caller-assigned UUIDs, `--no-auto-update`, and `--sandbox workspace`. Every continuation must output the exact non-secret context token given before the interruption; neither tokens nor model text are written to this report. The runner records only event types, IDs, timing, booleans, and usage presence. It deletes its exact created session IDs from the matching temporary cwd, terminates its exact child PID when necessary, and removes the temporary directory.
 
 ```text
 grok --version
@@ -77,24 +25,50 @@ grok --single <nonce-prompt> --verbatim --cwd <temp-git-repo> \
   --output-format streaming-json --permission-mode bypassPermissions \
   --no-auto-update --sandbox workspace --session-id <uuid> \
   [--resume <uuid>] [--tools run_terminal_command]
-# mid-tool: temporary slow_tool.sh writes its own PID; spike SIGTERMs parent; checks that exact PID
 grok sessions delete <uuid>   # from the matching temp cwd only
 ```
 
-## Runner
+## macOS experiment table
 
-- `packages/providers/src/grok/interrupt-resume-spike.ts` (diagnostic-only; not exported; not CI)
-- `packages/providers` script: `bun run spike:interrupt:grok`
-- Optional env: `GROK_SPIKE_ONLY`, `GROK_SPIKE_REPORT_PATH`, `GROK_SPIKE_HOST_KIND`, `GROK_SPIKE_BIN_PATH`
+| ID  | Passed | Exit | Signal-to-exit ms | SIGKILL | Session equal | Resume same / context retained | Child alive after parent | Standalone / final usage |
+| --- | ------ | ---- | ----------------- | ------- | ------------- | ------------------------------ | ------------------------ | ------------------------ |
+| S0  | true   | 0    | n/a               | false   | true          | n/a                            | n/a                      | true / true              |
+| S1  | false  | 143  | 13                | false   | n/a           | true / true                    | true                     | true / false             |
+| S2  | false  | 143  | 0                 | false   | n/a           | false / false                  | n/a                      | false / false            |
+| S3  | true   | 143  | 12                | false   | n/a           | true / true                    | n/a                      | false / false            |
+| S4  | false  | n/a  | n/a               | false   | n/a           | n/a                            | n/a                      | false / false            |
 
-## Sanitization
+- S0 observed `available_commands`, `thought`, `text`, `usage`, and `end` events.
+- S1 observed the same stream categories plus `tool_call` and `tool_call_update`; the exact slow-tool child survived its parent, then the spike reaped that exact PID. The same-session continuation passed the non-secret context-token check.
+- S2 emitted no stdout before SIGTERM, exited in 0 ms without SIGKILL, and then failed same-ID resume. This reproduces the earliest-stop durability failure.
+- S3 interrupted only after an assistant `text` event (rather than setup output) and passed the same-ID context-token continuation check.
+- S4 was skipped because this host is not Windows. The runner uses the provider's `cmd.exe` wrapper for `.cmd`/`.bat` binaries and creates a Windows-compatible slow-tool helper, but this is not runtime proof.
 
-No credentials, prompt/model output, home paths, or session transcript contents. Session UUIDs listed only on delete failure.
+## Minimum version and process decision
+
+The conservative feature floor is the exact tested build, `grok 1.0.34 (3736acbc8658) [stable]`; older versions remain unproven. The doctor must reject earlier or unparsable versions if this feature is later approved.
+
+The slow-tool child survived S1, so any later Phase 2 implementation must own and terminate a POSIX process group. The spike itself cleaned that exact PID; it does not claim the CLI reaped it.
+
+## Release gates
+
+| #   | Gate                                                                   | Status      | Evidence                                                                        |
+| --- | ---------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------- |
+| 1   | Caller-assigned session IDs accepted and returned                      | **PASS**    | S0 exited 0 and `end.sessionId` equalled the assigned UUID.                     |
+| 2   | S1, S2, and S3 resume the same session with retained context           | **BLOCKED** | S1 true/true; S2 false/false; S3 true/true.                                     |
+| 3   | Ordinary SIGTERM exits under one second, inside grace, without SIGKILL | **PASS**    | S1 13 ms and S2 0 ms, neither escalated.                                        |
+| 4   | Slow-tool child is gone or Phase 2 has a process-group requirement     | **PASS**    | S1 child survived; POSIX group ownership is required.                           |
+| 5   | S4 native Windows follows Archon's real launch path                    | **BLOCKED** | No native Windows evidence.                                                     |
+| 6   | Minimum supported version is explicit                                  | **PASS**    | Exact tested build is the floor.                                                |
+| 7   | Usage presence is recorded without fabricated spend                    | **PASS**    | S0 has standalone/final usage; interrupted turns record only observed presence. |
+
+## Cleanup
+
+- Sessions deleted: 3; UUIDs are omitted because all deletes succeeded.
+- Session deletions failed: 0.
+- Temporary repository removed: true.
+- Surviving S1 child: exact PID reaped by the spike.
 
 ## Verdict for Phase 2
 
-**BLOCKED.** Do not flip `GROK_CAPABILITIES.interrupt` to `stream-abort`. Do not start Phase 2 production seam until:
-
-1. earliest-stop (S2) same-session resume is proven on supported platforms, or product explicitly revises the promise;
-2. native Windows S4 is proven under Archon’s real `.exe`/`.cmd`/`cmd.exe` launch path;
-3. Phase 2 plans POSIX process-group ownership (child survival is already evidenced on macOS).
+**BLOCKED.** Do not enable `GROK_CAPABILITIES.interrupt = 'stream-abort'` and do not begin the production seam until an explicit product/architecture decision revises the earliest-stop promise or a newer Grok CLI proves S2, and a native Windows S4 run proves Archon's real `.exe`/`.cmd`/`cmd.exe` launch path. Phase 2 must also include the evidenced POSIX process-group requirement if it is ever unblocked.
