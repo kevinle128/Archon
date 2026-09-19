@@ -38,3 +38,31 @@
 - Overall report remains BLOCKED until native Windows is measured; US-002 gate must not start.
 
 ---
+
+## Blocker Ledger
+
+BLOCKER US-002 | gate=reports/codex-interrupt-resume-spike.md full-matrix PASS (native Linux+macOS+Windows) | cause=windows family BLOCKED — no native Windows host: /usr/local/bin/prlctl missing, ARCHON_WINDOWS_VM unavailable, CI test.yml matrix is ubuntu-latest only (no windows-latest), no remote Windows runner path for credentialed spike | action=cannot clear without operator-provided native Windows host or Parallels VM; did not implement Phase 2 or flip interrupt capability; left US-002 passes:false | 2026-09-19T20:30:59Z
+
+---
+
+## 2026-09-19 — US-002: Codex provider/executor interrupt slice with strict same-thread resume
+
+**Status**: BLOCKED (hard — external host)
+**Files changed**: none (gate failed before implementation)
+
+**Acceptance criteria verified**:
+- [ ] Gate: spike report PASS on native Linux, macOS, and Windows — FAIL: report Outcome is **BLOCKED** (windows untested). macos PASS, linux PASS only.
+- [ ] All remaining Phase-2 criteria not attempted — AC1 forbids proceeding on a BLOCKED report.
+
+**Attempts to clear**:
+- Confirmed spike report still overall BLOCKED for windows (section exists, no evidence).
+- Probed Parallels path from `test-windows` skill: `prlctl` not installed (`/usr/local/bin/prlctl` missing); no Parallels Desktop app present.
+- Probed CI: `.github/workflows/test.yml` matrix `os: [ubuntu-latest]` only; no `windows-latest` workflow target to run `bun run spike:interrupt:codex`.
+- Credentials (`OPENAI_API_KEY`) present on macOS host only — insufficient without a native Windows runtime for descendant cleanup + abort terminal measurement.
+
+**Learnings**:
+- US-001 correctly remains `passes: true` as a diagnostic that recorded BLOCKED for the untested family; US-002 must not start production work until the report Outcome flips to PASS including windows.
+- Do not weaken the three-OS gate, invent a Windows terminal variant, or flip `interrupt: 'stream-abort'` on partial evidence.
+
+---
+
