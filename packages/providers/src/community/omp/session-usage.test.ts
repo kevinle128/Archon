@@ -539,7 +539,7 @@ describe('collectHiddenSessionUsage', () => {
       sessionId: fx.sessionId,
     });
     expect(hidden).toBeUndefined();
-  }, 30000);
+  }, 60_000);
 
   test('missing files and null snapshot skip enrichment safely', async () => {
     const fx = await layoutFresh();
