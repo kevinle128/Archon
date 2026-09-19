@@ -87,12 +87,12 @@
 - [x] Delete in composer+blocked modes; hidden unchanged; 422 focuses detached alert equally for send/withdraw
 - [x] 10 component cases per shell pass incl. blocked-by-ask withdraw, 409 focus retention, last/only-row focus rules
 - [x] Console isolation suite green; no Console file imports `@/lib/api`; NodeTranscriptPane/ConsoleNodeRoom tests pass unchanged
-- [x] Validation: steering-dock 58 pass; Legacy pair 69 pass; Console trio 134 pass; `bun run type-check` green; eslint 0 errors
+- [x] Validation: steering-dock 58 pass; Legacy pair 70 pass; Console trio 135 pass; `bun run type-check` green; eslint 0 errors
 
 **Validation commands/results**:
 - `(cd packages/web && bun test src/lib/steering-dock.test.ts)` — 58 pass, 0 fail
-- `(cd packages/web && NODE_ENV=development bun test src/components/workflows/ComposerDock.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx)` — 69 pass
-- `(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleComposerDock.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/console-isolation.test.ts)` — 134 pass
+- `(cd packages/web && NODE_ENV=development bun test src/components/workflows/ComposerDock.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx)` — 70 pass
+- `(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleComposerDock.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/console-isolation.test.ts)` — 135 pass
 - `bun run type-check` — pass (all packages)
 - `NODE_OPTIONS=--max-old-space-size=8192 bun x eslint . --cache` — 0 errors
 - `bun x prettier --write` on the 8 story files — all clean
@@ -110,7 +110,7 @@
 
 **Status**: PASSED
 **Files changed**:
-- `e2e/ui/agent-withdraw-guidance.spec.ts` — new self-contained spec (584 lines): `[V:withdraw.drain-console|legacy]` two-row delivery-exclusion, `[V:withdraw.last-console|legacy]` last-row field restore + reduced-motion parity, `[V:withdraw.route-ladder]` refusal ladder; local helpers only (`openGuidanceRoom`, field/list locators, route paths, `waitForNodeStarted`, `transcriptTexts`); event/response/DOM/status waits, zero fixed sleeps; evidence capture + measurements merge into the plan's reports/evidence/
+- `e2e/ui/agent-withdraw-guidance.spec.ts` — new self-contained spec (585 lines): `[V:withdraw.drain-console|legacy]` two-row delivery-exclusion, `[V:withdraw.last-console|legacy]` last-row field restore + reduced-motion parity, `[V:withdraw.route-ladder]` refusal ladder; local helpers only (`openGuidanceRoom`, field/list locators, route paths, `waitForNodeStarted`, `transcriptTexts`); event/response/DOM/status waits, zero fixed sleeps; evidence capture + measurements merge into the plan's reports/evidence/
 - `plans/260919-0135-issue-182-withdraw-queued-guidance-message/reports/evidence/` — 9 PNGs + `withdraw-measurements.json` (real measured values)
 - `plans/260919-0135-issue-182-withdraw-queued-guidance-message/reports/acceptance.md` — criterion→test/command/count/evidence map, delivery-exclusion + refusal assertions, limitations, unrun checks
 - `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — ONLY `2-2-withdraw-a-queued-guidance-message: backlog → done`; 2-1 untouched
@@ -126,8 +126,8 @@
 
 **Validation commands/results**:
 - `(cd e2e && npm run typecheck)` — pass
-- `bun run --cwd e2e test:ui -- --grep 'withdraw'` — 5 passed
-- `bun run --cwd e2e test:ui -- --grep 'withdraw|queue guidance'` — 16 passed
+- `bun run --cwd e2e test:ui -- --grep 'withdraw'` — 5 passed (2.9m)
+- `bun run --cwd e2e test:ui -- --grep 'withdraw|queue guidance'` — 16 passed (6.8m)
 - `bun run validate` — exit 0 (after unblock commits below)
 
 **Learnings**:

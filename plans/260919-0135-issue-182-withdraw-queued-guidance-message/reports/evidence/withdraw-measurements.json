@@ -6,15 +6,15 @@
     },
     "roomWidth": 464,
     "firstDelete": {
-      "ariaLabel": "delete · WITHDRAWN-61d01955d6f8 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding",
+      "ariaLabel": "delete · WITHDRAWN-ce70c7ec7019 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding",
       "type": "button",
       "width": 55.125,
       "height": 24,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "outlineColor": "oklab(0.64 0.255478 -0.1475 / 0.734714)"
+      "outlineColor": "oklab(0.64 0.255478 -0.1475 / 0.710281)"
     },
-    "secondDeleteName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-61d01955d6f8",
+    "secondDeleteName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-ce70c7ec7019",
     "messageSpan": {
       "scrollWidth": 3260,
       "clientWidth": 346,
@@ -22,11 +22,11 @@
       "whiteSpace": "nowrap",
       "overflowX": "hidden"
     },
-    "activeBeforeRemoval": "button:delete · WITHDRAWN-61d01955d6f8 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding"
+    "activeBeforeRemoval": "button:delete · WITHDRAWN-ce70c7ec7019 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding"
   },
   "drain-console-one-row": {
-    "activeAfterRemoval": "button:delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-61d01955d6f8",
-    "remainingName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-61d01955d6f8"
+    "activeAfterRemoval": "button:delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-ce70c7ec7019",
+    "remainingName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-ce70c7ec7019"
   },
   "last-console": {
     "activeElement": "textarea",
@@ -40,15 +40,15 @@
     },
     "roomWidth": 460,
     "firstDelete": {
-      "ariaLabel": "delete · WITHDRAWN-d432427cb6a6 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding",
+      "ariaLabel": "delete · WITHDRAWN-83b32de5aa68 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding",
       "type": "button",
       "width": 55.609375,
       "height": 24,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "outlineColor": "oklab(0.65 -0.0615636 -0.169145 / 0.5)"
+      "outlineColor": "oklab(0.672201 -0.0615636 -0.169145 / 0.594232)"
     },
-    "secondDeleteName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-d432427cb6a6",
+    "secondDeleteName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-83b32de5aa68",
     "messageSpan": {
       "scrollWidth": 3298,
       "clientWidth": 341,
@@ -56,11 +56,11 @@
       "whiteSpace": "nowrap",
       "overflowX": "hidden"
     },
-    "activeBeforeRemoval": "button:delete · WITHDRAWN-d432427cb6a6 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding"
+    "activeBeforeRemoval": "button:delete · WITHDRAWN-83b32de5aa68 obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding obsolete operator instruction padding"
   },
   "drain-legacy-one-row": {
-    "activeAfterRemoval": "button:delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-d432427cb6a6",
-    "remainingName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-d432427cb6a6"
+    "activeAfterRemoval": "button:delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-83b32de5aa68",
+    "remainingName": "delete · <<E2E_SCENARIO>>{\"echoPrompt\":true}<</E2E_SCENARIO>>SECOND-83b32de5aa68"
   },
   "last-legacy": {
     "activeElement": "textarea",

@@ -6798,15 +6798,17 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
 
   test('returns nested 401 before path validation for a gated unauthenticated caller', async () => {
     // Resolve the auth singleton as "disabled" BEFORE flipping the env gate on —
-    // getAuth() caches the resolution so no pg.Pool is constructed. The API gate
-    // is kept off so the route middleware (not the global /api/* gate) decides.
+    // getAuth() caches the resolution so no pg.Pool is constructed. Keep the
+    // install-wide API gate at its enabled default: the route middleware must
+    // run before both that gate and OpenAPI UUID validation so the steering
+    // contract's nested 401 wins.
     getAuth();
     const savedDb = process.env.DATABASE_URL;
     const savedSecret = process.env.BETTER_AUTH_SECRET;
     const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
     process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
     process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
-    process.env.ARCHON_WEB_AUTH_REQUIRED = 'false';
+    delete process.env.ARCHON_WEB_AUTH_REQUIRED;
     try {
       const { app } = makeApp();
       // Non-UUID path id — 401 must still win over 400.

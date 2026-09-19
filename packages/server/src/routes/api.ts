@@ -2290,6 +2290,22 @@ export function registerApiRoutes(
   // Override with WEB_UI_ORIGIN env var to restrict if exposing publicly.
   app.use('/api/*', cors({ origin: process.env.WEB_UI_ORIGIN || '*' }));
 
+  // Steering withdraw authentication must run before the install-wide API
+  // gate as well as before OpenAPI parameter validation. Otherwise a default
+  // gated install would return the generic API 401 shape before this route can
+  // provide the nested steering error contract. DELETE-only and bodyless —
+  // the send middleware stays POST-only and nothing here parses a body.
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId', async (c, next) => {
+    if (c.req.method !== 'DELETE') return next();
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    return next();
+  });
+
   // Server-side access gate: when web auth is enabled (and not opted out via
   // ARCHON_WEB_AUTH_REQUIRED=false), every /api/* request must resolve to an
   // identity or get 401 — this is what makes Better Auth the real access
@@ -5318,21 +5334,6 @@ export function registerApiRoutes(
     },
     steeringValidationErrorHook
   );
-
-  // Steering withdraw: the gated identity check runs before
-  // OpenAPI param validation so an unauthenticated caller receives nested 401
-  // even with a non-UUID path id. DELETE-only and bodyless — the send
-  // middleware stays POST-only and nothing here parses a body.
-  app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId', async (c, next) => {
-    if (c.req.method !== 'DELETE') return next();
-    if (isWebAuthEnabled() || isApiGateEnabled()) {
-      const requester = await resolveAuthContext(c);
-      if (!requester) {
-        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
-      }
-    }
-    return next();
-  });
 
   // DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId - Withdraw queued guidance
   registerOpenApiRoute(
