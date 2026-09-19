@@ -37,8 +37,8 @@
       "technicalNotes": "Phase 1 implementation contract + test matrix. Resolver lives in execution-room-model.ts (lineage reasoning), not steering-dock.ts (mode/copy only). Keep the callback optional so rollback needs no endpoint or persisted-data change. Run: cd packages/web && bun test src/lib/execution-room-model.test.ts src/lib/steering-dock.test.ts src/components/workflows/build-log-rows.test.ts src/experiments/console/components/inspect/build-log-rows.test.ts",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: execution-room-model.ts (+ ancestry types, resolveFinishedIterationView), both build-log-rows.ts (full loopAncestry map), steering-dock.ts (finished-iteration mode, copy helpers, optional onError), and matching unit tests. Commit 527bd475."
     },
     {
       "id": "US-003",
@@ -59,8 +59,8 @@
       "technicalNotes": "Phase 2 Legacy half. Keep NodeTranscriptPane as the surviving owner of the consume-once focus ref (keyed ComposerDock remounts). A small local render helper inside ComposerDock is acceptable; no cross-surface abstraction. Test at ownership boundaries, not every pass-through.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: LegacyGraphLogsPane.tsx (resolve once + gate on onSelectExecution), LegacyNodeRoom.tsx (pass-through), NodeTranscriptPane.tsx (consume-once focus handoff), ComposerDock.tsx (finished-iteration branch + poll onError), matching tests. Commit pending."
     },
     {
       "id": "US-004",

@@ -5,6 +5,18 @@
 - **Pattern**: B1 = Execution selection entry + mutation-only ban + shared GET queue band; B2 = one flex row, disclosure wraps, Go ≥32px, band below. Headless adoption recorded in plan Validation Log.
 - **Example**: AD-16 rule + DESIGN finished-iteration dock anatomy
 
+### Finished-iteration shared core
+- **Where**: `packages/web/src/lib/execution-room-model.ts` (`resolveFinishedIterationView`); `steering-dock.ts` (`finished-iteration` mode + optional `onError`); both `build-log-rows.ts` occurrence mappers
+- **Pattern**: Preserve full `loopAncestry` on occurrence selections; resolver proves same-lineage live candidate (retry/route/prefix/final-node) and fails closed; mode trusts a non-null descriptor and never mutates; poll `onError` is optional and fires once before retry/stop
+- **Example**: `resolveFinishedIterationView({ rows, selected, nodeStatus: 'running', live: true })` → `{ liveRowId, liveIteration }` or `null`
+
+### Legacy finished-iteration dock wiring
+- **Where**: `LegacyGraphLogsPane.tsx` (descriptor once); `NodeTranscriptPane.tsx` (consume-once `pendingGoTargetRef`); `ComposerDock.tsx` (finished branch)
+- **Pattern**: Descriptor only when `onSelectExecution` exists; Go stores `{fromRowId,toRowId}` then calls existing selection; clear pending before focus — field / Go / scroller; finished poll 422 is inline alert (not detached mode)
+- **Example**: `finishedIteration={resolveFinishedIterationView(...)}` + `onSelectLiveRow={onSelectExecution}`
+
+
+
 ---
 
 ## 2026-09-20 — US-001: Ratify B1/B2 decisions in canonical authority docs
@@ -31,5 +43,59 @@
 **Learnings**:
 - Highest existing AD heading was AD-15; AD-16 is next free
 - Prettier rewrote long table rows on commit via lint-staged — expected for md
+
+---
+
+## 2026-09-20 — US-002: Shared core: lineage preservation, finished-iteration resolver, dock mode, poll error callback
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/execution-room-model.ts` — `ExecutionLoopAncestryEntry`, `FinishedIterationView`, `resolveFinishedIterationView`, occurrence `loopAncestry`
+- `packages/web/src/lib/execution-room-model.test.ts` — fail-closed identity matrix + preference tests
+- `packages/web/src/components/workflows/build-log-rows.ts` + test — map full wire ancestry
+- `packages/web/src/experiments/console/components/inspect/build-log-rows.ts` + test — same mapping
+- `packages/web/src/lib/steering-dock.ts` + test — `finished-iteration` mode, disclosure/Go helpers, optional poll `onError`
+
+**Acceptance criteria verified**:
+- [x] Ancestry entry type + `loopAncestry` on ExecutionRowSelection and both LogRowSelection copies
+- [x] Both build-log-rows map full ordered ancestry; final iteration/route/retry/id/status/labels unchanged; event-fallback fabricates nothing
+- [x] `FinishedIterationView` + pure `resolveFinishedIterationView` beside chooseExecutionForNode
+- [x] Resolver fail-closed identity rules + awaiting→running→order preference; no terminal fallback
+- [x] `SteeringDockMode` gains finished-iteration; precedence and ratified copy helpers
+- [x] Optional `onError` once per failed read before retry/stop; omit preserves today
+- [x] Focused unit tests green (169); web type-check + package tests green; no server/schema/migration touches
+
+**Learnings**:
+- Route activation: both-absent matches; absent vs numeric must fail closed
+- `retryEpoch ?? 0` equates undefined with initial retry 0
+- Mode trusts the resolver descriptor; do not re-check rowStatus for finished-iteration
+
+---
+
+## 2026-09-20 — US-003: Legacy shell renders and wires the finished-iteration dock
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` — compute `resolveFinishedIterationView` once; pass descriptor only with `onSelectExecution`
+- `packages/web/src/components/workflows/LegacyNodeRoom.tsx` — typed pass-through of descriptor + selection callback
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — consume-once Go focus handoff; wire ComposerDock props; export `isLiveRunStatus`
+- `packages/web/src/components/workflows/ComposerDock.tsx` — finished-iteration branch (disclosure/Go/422 alert/read-only band), poll enablement + onError semantics, autofocus targets
+- `ComposerDock.test.tsx` / `NodeTranscriptPane.test.tsx` / `LegacyGraphLogsPane.test.tsx` — phase-02 matrix coverage
+
+**Acceptance criteria verified**:
+- [x] Descriptor computed once at pane and threaded as only new props
+- [x] No selection callback → no finished dock / no enabled Go
+- [x] DOM order disclosure → Go → 422 alert → band; band reuses helpers, no delete
+- [x] No textarea/send/Queue/delete/mutation handlers; GET poll only; zero mutation spies
+- [x] 422 alert + clear + keep polling; 200 restores; network/5xx silent; 409 clear+stop never detached
+- [x] Go uses existing selection callback; focus field / Go / scroller consume-once; no body steal
+- [x] Draft hidden in finished mode and restored on return
+- [x] Visual contract classes: one flex row, Go min-h-32px, band max-h-33vh
+- [x] Focused tests green (142); web type-check + eslint on changed files green
+
+**Learnings**:
+- Finished 422 must stay in finished-iteration mode (inline alert), not flip to detached mode via refusal
+- Go focus handoff must record fromRowId so the effect waits for selection commit
+- Host without onSelectExecution must drop the descriptor at the pane, not only at the dock
 
 ---

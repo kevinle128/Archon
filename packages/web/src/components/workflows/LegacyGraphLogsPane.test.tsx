@@ -8,6 +8,7 @@ import type {
   ConversationResponse,
   DagNode,
   MessageResponse,
+  NodeExecution,
   PendingInteraction,
   WorkflowEventResponse,
   WorkflowNodeMessagesResponse,
@@ -373,10 +374,19 @@ describe('LegacyGraphLogsPane', () => {
       viewerIsStarter?: boolean;
       starterDisplayName?: string | null;
       onSubmitAsk?: (requestId: string, body: AskAnswerBody) => Promise<void>;
+      nodeExecutions?: readonly NodeExecution[];
+      onSelectExecution?: (rowId: string) => void;
+      omitSelectExecution?: boolean;
+      initialSelectedNodeId?: string | null;
+      initialSelectedLogRowId?: string | null;
     } & ParentConversationOverrides
   ): React.ReactElement {
-    const [selectedNodeId, setSelectedNodeId] = react.useState<string | null>(null);
-    const [selectedLogRowId, setSelectedLogRowId] = react.useState<string | null>(null);
+    const [selectedNodeId, setSelectedNodeId] = react.useState<string | null>(
+      props.initialSelectedNodeId ?? null
+    );
+    const [selectedLogRowId, setSelectedLogRowId] = react.useState<string | null>(
+      props.initialSelectedLogRowId ?? null
+    );
     const [lastExplicitRowByNode, setLastExplicitRowByNode] = react.useState<
       Record<string, string>
     >({});
@@ -417,6 +427,7 @@ describe('LegacyGraphLogsPane', () => {
       runStartedAt: CREATED_AT,
       nodeStates: props.nodeStates,
       events: props.events,
+      nodeExecutions: props.nodeExecutions,
       loadMessages: props.loadMessages,
       parentPlatformId: props.parentPlatformId === undefined ? 'parent-1' : props.parentPlatformId,
       loadParentMessages: props.loadParentMessages ?? (async (): Promise<MessageResponse[]> => []),
@@ -441,6 +452,12 @@ describe('LegacyGraphLogsPane', () => {
         props.starterDisplayName === undefined ? 'Avery' : props.starterDisplayName,
       actionStates: {},
       onSubmitAsk: props.onSubmitAsk ?? (async (): Promise<void> => undefined),
+      onSelectExecution: props.omitSelectExecution
+        ? undefined
+        : (props.onSelectExecution ??
+          ((rowId: string): void => {
+            setSelectedLogRowId(rowId);
+          })),
     });
   }
 
@@ -462,6 +479,11 @@ describe('LegacyGraphLogsPane', () => {
       viewerIsStarter?: boolean;
       starterDisplayName?: string | null;
       onSubmitAsk?: (requestId: string, body: AskAnswerBody) => Promise<void>;
+      nodeExecutions?: readonly NodeExecution[];
+      onSelectExecution?: (rowId: string) => void;
+      omitSelectExecution?: boolean;
+      initialSelectedNodeId?: string | null;
+      initialSelectedLogRowId?: string | null;
     } & ParentConversationOverrides
   ): void {
     root.render(
@@ -2473,5 +2495,227 @@ describe('LegacyGraphLogsPane', () => {
     await flushUntil(host, 'composer sent', () => sendCalls.length === 1);
     expect(sendCalls).toEqual([['parent-1', 'not an ask']]);
     expect(askCalls).toEqual([]);
+  });
+
+  test('same-lineage finished occurrence shows finished-iteration dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return new Response(JSON.stringify({ success: true, queued: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'GET' && pathname.includes('/messages')) {
+        return new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const selected: string[] = [];
+      await act(async () => {
+        renderLogs({
+          runId: 'run-loop',
+          nodeStates: [{ nodeId: 'loop', name: 'Loop', status: 'running', retryEpoch: 0 }],
+          events: [],
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          definitionPending: false,
+          runStatus: 'running',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          nodeExecutions: [
+            {
+              node_id: 'loop',
+              status: 'completed',
+              occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              attempt_id: '11111111-1111-4111-8111-111111111111',
+              loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+            },
+            {
+              node_id: 'loop',
+              status: 'running',
+              occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              attempt_id: '22222222-2222-4222-8222-222222222222',
+              loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+            },
+          ],
+          initialSelectedNodeId: 'loop',
+          initialSelectedLogRowId: finishedId,
+          onSelectExecution: (rowId): void => {
+            selected.push(rowId);
+          },
+        });
+      });
+      await flush();
+      await flushUntil(host, 'finished dock', () =>
+        (host.textContent ?? '').includes('reading a finished iteration')
+      );
+      expect(host.textContent).toContain(
+        'reading a finished iteration · the agent is working in iteration 2'
+      );
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      expect(go).not.toBeUndefined();
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+      expect(selected).toEqual([
+        'exec:loop:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:22222222-2222-4222-8222-222222222222:1',
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('retry-epoch mismatch fail-closes the finished dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      await act(async () => {
+        renderLogs({
+          runId: 'run-loop',
+          nodeStates: [{ nodeId: 'loop', name: 'Loop', status: 'running', retryEpoch: 0 }],
+          events: [],
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          definitionPending: false,
+          runStatus: 'running',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          nodeExecutions: [
+            {
+              node_id: 'loop',
+              status: 'completed',
+              occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              attempt_id: '11111111-1111-4111-8111-111111111111',
+              retry_epoch: 0,
+              loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+            },
+            {
+              node_id: 'loop',
+              status: 'running',
+              occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              attempt_id: '22222222-2222-4222-8222-222222222222',
+              retry_epoch: 1,
+              loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+            },
+          ],
+          initialSelectedNodeId: 'loop',
+          initialSelectedLogRowId: finishedId,
+        });
+      });
+      await flush();
+      expect(host.textContent ?? '').not.toContain('reading a finished iteration');
+      expect(
+        [...host.querySelectorAll('button')].some(b =>
+          (b.textContent ?? '').includes('Go to iteration')
+        )
+      ).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('without onSelectExecution the finished dock is not rendered', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      await act(async () => {
+        renderLogs({
+          runId: 'run-loop',
+          nodeStates: [{ nodeId: 'loop', name: 'Loop', status: 'running', retryEpoch: 0 }],
+          events: [],
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          definitionPending: false,
+          runStatus: 'running',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          omitSelectExecution: true,
+          nodeExecutions: [
+            {
+              node_id: 'loop',
+              status: 'completed',
+              occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              attempt_id: '11111111-1111-4111-8111-111111111111',
+              loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+            },
+            {
+              node_id: 'loop',
+              status: 'running',
+              occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              attempt_id: '22222222-2222-4222-8222-222222222222',
+              loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+            },
+          ],
+          initialSelectedNodeId: 'loop',
+          initialSelectedLogRowId: finishedId,
+        });
+      });
+      await flush();
+      expect(host.textContent ?? '').not.toContain('reading a finished iteration');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

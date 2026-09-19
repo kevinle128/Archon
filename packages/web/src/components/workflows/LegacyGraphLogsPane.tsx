@@ -23,6 +23,7 @@ import {
 import { readApprovalContext, type WebApprovalContext } from '@/lib/approval-context';
 import {
   chooseExecutionForNode,
+  resolveFinishedIterationView,
   roomOpenerId,
   type ExecutionHeaderModel,
 } from '@/lib/execution-room-model';
@@ -38,6 +39,7 @@ import { buildChatTimeline, type ChatTimelineEntry } from './build-chat-timeline
 import { buildLogRows, type LogRow } from './build-log-rows';
 import { ChatTimeline } from './ChatTimeline';
 import { LegacyNodeRoom } from './LegacyNodeRoom';
+import { isLiveRunStatus } from './NodeTranscriptPane';
 import { NodeRunList } from './NodeRunList';
 import type { ExecutionHeaderOption } from './NodeRoomHeader';
 import { resolveGraphRoomRow } from './resolve-graph-room-row';
@@ -261,6 +263,21 @@ export function LegacyGraphLogsPane({
   const ownsUnscopedInteractions =
     selectedRow !== null &&
     !rows.some(row => row.nodeId === selectedRow.nodeId && row.order > selectedRow.order);
+
+  const selectedNodeState =
+    selectedRow === null
+      ? undefined
+      : visibleNodeStates.find(state => state.nodeId === selectedRow.nodeId);
+  // Descriptor only when the host can act on Go via the existing selection path.
+  const finishedIteration =
+    selectedRow === null || onSelectExecution === undefined
+      ? null
+      : resolveFinishedIterationView({
+          rows,
+          selected: selectedRow,
+          nodeStatus: selectedNodeState?.status ?? selectedRow.status,
+          live: isLiveRunStatus(runStatus),
+        });
 
   const parentMessagesQuery = useQuery({
     queryKey: ['runChatMessages', parentPlatformId],
@@ -505,14 +522,11 @@ export function LegacyGraphLogsPane({
         starterDisplayName={starterDisplayName}
         actionStates={actionStates}
         onSubmitAsk={onSubmitAsk}
-        nodeState={
-          selectedRow === null
-            ? undefined
-            : visibleNodeStates.find(state => state.nodeId === selectedRow.nodeId)
-        }
+        nodeState={selectedNodeState}
         headerModel={headerModel}
         headerOptions={headerOptions}
         onSelectRow={onSelectExecution}
+        finishedIteration={finishedIteration}
         onClose={onCloseRoom}
         closeLabel={mode === 'single' ? 'Back' : 'Close'}
         scopeKey={scopeKey}

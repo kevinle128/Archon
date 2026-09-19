@@ -7,6 +7,7 @@
  * abortable poll; local POST/DELETE responses still update immediately.
  * Sent receipts are in-memory; the unsent draft and ambiguous retry id
  * persist in sessionStorage scoped by run + namespaced node id.
+ * Story 2.10 adds a read-only finished-iteration branch (GET poll only).
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
@@ -22,6 +23,7 @@ import {
   type WithdrawWorkflowNodeResponse,
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
+import type { FinishedIterationView } from '@/lib/execution-room-model';
 import {
   applyQueueSnapshot,
   beginGuidanceSubmission,
@@ -31,7 +33,9 @@ import {
   canSubmitGuidance,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  finishedIterationDisclosure,
   focusTargetAfterSnapshot,
+  goToIterationLabel,
   isQueueShortcut,
   loadSteeringDraft,
   nextFocusAfterRemoval,
@@ -63,6 +67,7 @@ import {
   toSteeringRefusal,
   willSendBandHeader,
   willSendListLabel,
+  toSteeringRequestError,
   type RemovalFocusTarget,
   type SteeringDockState,
   type SteeringSubState,
@@ -108,6 +113,22 @@ export interface ComposerDockProps {
    * queue-only handle — never a detached verdict on its own.
    */
   subState?: SteeringSubState;
+  /**
+   * Proven same-lineage live iteration. Non-null selects finished-iteration
+   * mode; omitted/null keeps today's visibility table.
+   */
+  finishedIteration?: FinishedIterationView | null;
+  /**
+   * Existing execution-selection callback. Required for an enabled Go control;
+   * without it the finished dock must not render.
+   */
+  onSelectLiveRow?: (liveRowId: string) => void;
+  /**
+   * Parent-owned consume-once autofocus after a Go-driven dock remount.
+   * Cleared via onAutoFocusApplied once focus is moved.
+   */
+  autoFocusTarget?: 'field' | 'go' | null;
+  onAutoFocusApplied?: () => void;
   send?: SendNodeGuidance;
   interrupt?: InterruptNode;
   withdraw?: WithdrawNodeGuidance;
@@ -155,6 +176,10 @@ export function ComposerDock({
   live,
   hasPendingAsk,
   subState,
+  finishedIteration = null,
+  onSelectLiveRow,
+  autoFocusTarget = null,
+  onAutoFocusApplied,
   send = sendNodeGuidance,
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
@@ -170,6 +195,7 @@ export function ComposerDock({
   const bandHeaderId = useId();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const wellRef = useRef<HTMLDivElement>(null);
+  const goButtonRef = useRef<HTMLButtonElement>(null);
   const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
   const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
   const detachedAlertRef = useRef<HTMLParagraphElement>(null);
@@ -180,6 +206,10 @@ export function ComposerDock({
     pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
   }));
   const [draft, setDraft] = useState<string>(() => loadSteeringDraft(store, storageKey).draft);
+  /** Finished-iteration poll 422: show detached alert without leaving the mode. */
+  const [readDetached, setReadDetached] = useState(false);
+  /** Finished-iteration other 4xx notify copy (poll stopped). */
+  const [readNotify, setReadNotify] = useState<string | null>(null);
   dockRef.current = dock;
 
   // Receipts live for the mounted execution only; a scope change resets them
@@ -191,6 +221,8 @@ export function ComposerDock({
     const saved = loadSteeringDraft(store, storageKey);
     setDraft(saved.draft);
     setDock({ ...createSteeringDockState(subState), pendingRetry: saved.pendingRetry });
+    setReadDetached(false);
+    setReadNotify(null);
   }, [storageKey, store, subState]);
 
   useEffect(() => {
@@ -203,19 +235,36 @@ export function ComposerDock({
     setDock(current => syncProjectedSubState(current, subState));
   }, [subState]);
 
-  const mode = steeringDockMode({ rowStatus, live, hasPendingAsk, refusal: dock.refusal });
+  // A host without a selection callback must never show an enabled Go control.
+  const usableFinishedIteration =
+    finishedIteration !== null && finishedIteration !== undefined && onSelectLiveRow !== undefined
+      ? finishedIteration
+      : null;
 
-  // Shared-queue reads only while the composer/blocked surfaces are mounted.
+  const mode = steeringDockMode({
+    rowStatus,
+    live,
+    hasPendingAsk,
+    refusal: dock.refusal,
+    finishedIteration: usableFinishedIteration,
+  });
+  // Shared-queue reads while composer/blocked/finished-iteration are mounted.
   // Hidden historical/terminal rooms and send-triggered detached disclosures
   // never poll — Story 2.9 gives queue reads no capability-state transition.
-  const pollingEnabled = mode === 'composer' || mode === 'blocked';
+  // finished-iteration polls GET only (no mutation handlers bound).
+  const pollingEnabled = mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
 
   useEffect(() => {
     if (!pollingEnabled) return;
+    const finishedMode = mode === 'finished-iteration';
     return startQueuePolling({
       read: signal => readQueue(runId, nodeId, { signal }),
       currentGeneration: () => dockRef.current.queueGeneration,
       onSnapshot: (snapshot, generationAtRequest): void => {
+        if (finishedMode) {
+          setReadDetached(false);
+          setReadNotify(null);
+        }
         let focusedId: string | null = null;
         for (const [messageId, button] of deleteButtonsRef.current) {
           if (button === document.activeElement) {
@@ -229,6 +278,7 @@ export function ComposerDock({
           if (next === current) return current;
           const nextIds = next.sent.map(receipt => receipt.messageId);
           if (
+            !finishedMode &&
             focusedId !== null &&
             previousIds.includes(focusedId) &&
             !nextIds.includes(focusedId) &&
@@ -239,9 +289,31 @@ export function ComposerDock({
           return next;
         });
       },
+      onError: finishedMode
+        ? (error): void => {
+            const normalized = toSteeringRequestError(error);
+            if (normalized.status === 422 && normalized.code === 'not_steerable_here') {
+              setReadDetached(true);
+              setReadNotify(null);
+              setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
+              return;
+            }
+            if (normalized.status === 409) {
+              setReadDetached(false);
+              setReadNotify(null);
+              setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
+              return;
+            }
+            // network (0) / 5xx: silent retry; last snapshot retained
+            if (normalized.status === 0 || normalized.status >= 500) return;
+            // other 4xx: notify + stop (poller already stops non-retryable)
+            setReadDetached(false);
+            setReadNotify(normalized.message);
+          }
+        : undefined,
       intervalMs: pollIntervalMs,
     });
-  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled]);
+  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -286,6 +358,17 @@ export function ComposerDock({
   useEffect(() => {
     if (mode === 'detached') detachedAlertRef.current?.focus();
   }, [mode]);
+
+  // Parent-owned consume-once autofocus after Go-driven selection remount.
+  useEffect(() => {
+    if (autoFocusTarget === null || autoFocusTarget === undefined) return;
+    if (autoFocusTarget === 'field') {
+      fieldRef.current?.focus();
+    } else if (autoFocusTarget === 'go') {
+      goButtonRef.current?.focus();
+    }
+    onAutoFocusApplied?.();
+  }, [autoFocusTarget, onAutoFocusApplied]);
 
   // After a successful withdraw removes its row, move focus to the target
   // captured at activation time (next row → previous row → field). The same
@@ -403,6 +486,79 @@ export function ComposerDock({
           {STEERING_DETACHED_DISCLOSURE}
         </p>
       </div>
+    );
+  }
+
+  if (mode === 'finished-iteration' && usableFinishedIteration !== null) {
+    const liveIteration = usableFinishedIteration.liveIteration;
+    const liveRowId = usableFinishedIteration.liveRowId;
+    return (
+      <>
+        <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
+          <div className="flex min-w-0 items-start gap-3">
+            <p className="min-w-0 flex-1 font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+              {finishedIterationDisclosure(liveIteration)}
+            </p>
+            <button
+              type="button"
+              ref={goButtonRef}
+              onClick={(): void => {
+                onSelectLiveRow?.(liveRowId);
+              }}
+              className={cn(
+                'min-h-[32px] flex-none shrink-0 rounded-md border border-border bg-transparent',
+                'px-3 font-mono text-[11px] text-text-primary hover:bg-surface-inset',
+                'transition-colors motion-reduce:transition-none',
+                'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
+              )}
+            >
+              {goToIterationLabel(liveIteration)}
+            </button>
+          </div>
+          {readDetached ? (
+            <p
+              role="alert"
+              className="mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+            >
+              {STEERING_DETACHED_DISCLOSURE}
+            </p>
+          ) : null}
+          {readNotify !== null ? (
+            <p role="alert" className={REFUSAL_CLASSES}>
+              {readNotify}
+            </p>
+          ) : null}
+        </div>
+        {dock.sent.length === 0 ? null : (
+          <section
+            aria-labelledby={bandHeaderId}
+            className="flex-none border-t border-border bg-surface-elevated"
+          >
+            <h3
+              id={bandHeaderId}
+              className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+            >
+              {queueBandHeader(dock.sent.length)}
+            </h3>
+            <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+              <ul aria-label={queueListLabel(dock.sent.length)}>
+                {dock.sent.map(receipt => (
+                  <li
+                    key={receipt.messageId}
+                    data-message-id={receipt.messageId}
+                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                  >
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {receipt.message}
+                    </span>
+                    <span className="flex-none">sent</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        )}
+      </>
     );
   }
 
