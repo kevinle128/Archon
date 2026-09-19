@@ -20,8 +20,8 @@
       "technicalNotes": "Implements plan Phase 1 verbatim (`phase-01-codex-stream-abort-seam-and-real-sdk-gate.md`). This is a diagnostic gate, not a feature prototype — do not flip capabilities or touch provider/executor code. Bound every iterator settlement and resumed turn with explicit timeouts; never leave a promise or child running after a failed assertion. If any gate item fails on any required OS family, record BLOCKED and stop; Phase 2 (US-002) may not start. Verification: `cd packages/providers && bun run spike:interrupt:codex && bun x tsc --noEmit`. Inspect the report for secrets/ids/absolute paths before committing it.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Spike + script + sanitized report. macOS native PASS, Linux linuxkit PASS, Windows BLOCKED (no host). Measured terminal: AbortError / 'The operation was aborted.' Files: packages/providers/src/codex/interrupt-resume-spike.ts, packages/providers/package.json, plans/.../reports/codex-interrupt-resume-spike.md. Production untouched. Phase 2 blocked until Windows PASS."
     },
     {
       "id": "US-002",
