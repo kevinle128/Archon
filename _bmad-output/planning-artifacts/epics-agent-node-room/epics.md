@@ -299,7 +299,7 @@ So that I can understand the change without leaving the transcript.
 **When** I expand it
 **Then** it renders add, delete, and hunk lines through `react-diff-view`.
 
-**Given** a file edit with only one side, including a Codex edit without input
+**Given** a persisted file tool row without both before/after string sides — a one-sided write, a refused pair, or a call with no usable input
 **When** I expand it
 **Then** it renders path and preview
 **And** it never fabricates a diff.
@@ -312,6 +312,8 @@ So that I can understand the change without leaving the transcript.
 **Given** repeated content, mid-array no-newline markers, repeated computation, or adapter conversion
 **When** tests run
 **Then** output is deterministic, memoized, and has valid line numbers as required by the diff contract.
+
+_Scope:_ presentation-only over persisted tool rows. Current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and nothing here is a Codex row. Making successful Codex file-change events visible in the transcript is separately tracked work.
 
 _Refs:_ CAP-5, UX-DR3, `test-plan.md` diff-hunks contract.
 _Depends on:_ Stories 1.1 and 1.3.

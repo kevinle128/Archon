@@ -271,8 +271,9 @@ So CAP-5 needs two modules, not one.
 
 **The existing adapter then runs unchanged, and moves to `packages/web/src/lib/`** so Console can import it without crossing the `@/components/` boundary. It re-aliases `GitDiffHunk`/`GitDiffChange` from `api.generated` rather than `@/lib/api`, which the Console lint rule bans outright — including for `import type`. Its two consumers, `virtualized-diff.tsx` and its test, update their import path.
 
-Claude always qualifies.
-Codex never does — no tool input at all — so it falls back to path plus preview.
+Qualification is structural, not per-provider, and the scope is presentation over persisted tool rows only (the resolved product-contract gate): a persisted `file` row renders a diff only when an alias pair exists as own properties with both values strings, and any row without both sides — one-sided, missing, refused, or unreadable — falls back to path plus preview with no fabricated diff.
+Claude's `Edit` always qualifies because `FileEditInput` declares `old_string`/`new_string` required.
+Current Codex `file_change` events never reach this contract at all: `codex/provider.ts:709` emits them as `system` chunks and `dag-executor.ts` debug-logs them (`dag.system_message_unhandled`) instead of appending them to the node transcript, so no Codex file row is persisted. Making successful Codex file changes visible is separately tracked work, and a no-input row in tests is generic defensive coverage of this fallback — never a stand-in for Codex.
 
 ## Occurrence grouping
 

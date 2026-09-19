@@ -36,6 +36,8 @@ Table-driven over the resolver tiers.
 - hostile and oversized outputs stay within the contract ceilings: nested `file_matches` and web-result arrays report their hidden tail, grep path/text values and generic field keys are independently bounded and sanitized, over-cap text ends in an ellipsis without exceeding its ceiling, and assembled web markdown cannot exceed the text ceiling
 - inherited enumerable properties are never emitted and count toward the finite key-scan budget, so a hostile prototype cannot force an unbounded scan
 
+CAP-5 scope is presentation over persisted rows — the resolved product gate: current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and no fixture row is a Codex row. A no-input fake-provider row exercises the same fallback as **generic defensive coverage only**; tests, reports, and docs label it that way and never read it as Codex behavior.
+
 ## Generic-fallback corpus audit — CAP-2 / Story 1.3 (the < 2% bound)
 
 The < 2% generic-fallback bound is measured against the deployment corpus (22,867 rows, 2,369 distinct names), **not** reproducible from a CI fixture. So it is a **release-time deployment audit**, not a unit test:

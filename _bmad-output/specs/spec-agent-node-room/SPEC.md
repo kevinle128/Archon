@@ -69,7 +69,7 @@ The **read** half is CAP-1…CAP-7; the **write** half is CAP-8…CAP-13.
 
 - **CAP-5** — See what a file edit changed
   - **intent:** A reader can see the actual change a file edit made, inline, without leaving the transcript.
-  - **success:** When the payload carries both before and after content, a line diff renders through `react-diff-view`. Claude always qualifies — `FileEditInput` declares `old_string` and `new_string` as required. Codex never does and falls back to path plus preview. A diff is never fabricated from one side.
+  - **success:** When the payload carries both before and after content, a line diff renders through `react-diff-view`. Claude always qualifies — `FileEditInput` declares `old_string` and `new_string` as required. Any persisted file tool row without both before/after string sides falls back to path plus preview, and a diff is never fabricated from one side. Scope is presentation over persisted rows only: current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs as `dag.system_message_unhandled` (`dag-executor.ts:2691-2748`) instead of appending them to the node transcript, so they never become persisted file rows and are explicitly excluded here. Making successful Codex file changes visible in the transcript is separately tracked work.
 
 - **CAP-6** — Tell attempts and loop iterations apart
   - **intent:** A reader can tell which attempt or loop iteration produced a given tool call.
