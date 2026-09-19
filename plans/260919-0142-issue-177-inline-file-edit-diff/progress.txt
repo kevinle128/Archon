@@ -1,0 +1,37 @@
+## Codebase Patterns
+
+### Gate/scope-resolution doc style
+- **Where**: `_bmad-output/specs/spec-agent-node-room/SPEC.md` CAP-5, `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` Story 1.4 `_Scope:_` note
+- **Pattern**: record scope resolutions as plain prose inside the owning section, citing `file:line` anchors (`codex/provider.ts:709`, `dag-executor.ts` `dag.system_message_unhandled`). No phase numbers, audit labels, or plan finding IDs in spec docs.
+- **Example**: `Scope is presentation over persisted rows only: current Codex file_change events are emitted as system chunks (codex/provider.ts:709) ... never become persisted file rows`
+
+### Pre-existing prettier failure in EXPERIENCE.md
+- **Where**: `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:115`
+- **Pattern**: the `Body box: diff` table row was already unformatted at HEAD (prettier wanted different cell padding). `prettier --write` on the file is safe — the delta is confined to that one row, not a whole-file reformat.
+
+---
+
+## 2026-09-19 — US-001: Resolve product-contract gate to presentation-only scope
+
+**Status**: PASSED
+**Files changed**:
+- `_bmad-output/specs/spec-agent-node-room/SPEC.md` — CAP-5 success text: rows without both before/after string sides fall back to path plus preview; Codex `file_change` system chunks explicitly excluded with file:line evidence; Codex transcript visibility named as separately tracked work
+- `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` — Story 1.4 second AC rewritten presentation-only; `_Scope:_` note added before `_Refs:_`
+- `_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md` — inline-diff tail rewritten: structural qualification, resolved gate recorded, no-input test row labeled generic defensive coverage never Codex stand-in
+- `_bmad-output/specs/spec-agent-node-room/test-plan.md` — gate resolution paragraph appended to the CAP-5 presentation-test section
+- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md` — three Codex overclaims corrected (Body box: diff row, state-pattern row, Flow 2 failure line)
+
+**Acceptance criteria verified**:
+- [x] SPEC.md CAP-5 states fallback for any persisted file row without both before/after string sides and explicitly excludes current Codex `file_change` system chunks
+- [x] epics.md Story 1.4 amended to presentation-only scope; successful Codex file-change transcript visibility noted as separately tracked work
+- [x] tool-presentation-contract.md and test-plan.md record the gate resolution; neither claims a no-input fake-provider row proves Codex behavior
+- [x] No provider, transcript, storage, API, or schema changes — diff is 5 markdown files only
+- [x] `sources/spec-readable-agent-transcript/` untouched
+
+**Learnings**:
+- Verified the cited evidence before editing: `codex/provider.ts:731-734` yields `file_change` as `{type:'system'}`; `dag-executor.ts:2745-2749` debug-logs generic system chunks (`dag.system_message_unhandled`) — a successful `file_change` (starts with ✅, not ⚠️) never reaches the transcript.
+- EXPERIENCE.md is adopted by SPEC.md as authoritative for behavior and carried the same Codex overclaim in three places; fixing it was required by the story intent ("no document claims Codex coverage the code does not provide") even though the AC list named only four docs.
+- US-002 will add the detailed behavior invariants (caps, memoization, numbering, escaping, identical/refusal semantics, later-hunk separator) to the same four docs — keep the same prose-in-section style, no phase numbers.
+- Validation for docs-only stories: `bun x prettier --check` on the edited files (repo `format:check` covers md); lint-staged re-runs prettier on commit.
+
+---

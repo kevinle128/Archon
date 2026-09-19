@@ -15,8 +15,8 @@
       "technicalNotes": "Plan gate: plan.md 'Mandatory product-contract gate', resolved to Option 1 (presentation-only) — see prd.md for rationale. Evidence to cite in docs: packages/providers/src/codex/provider.ts:709 emits file_change as a system chunk; packages/workflows/src/dag-executor.ts:2691-2748 debug-logs unhandled generic system chunks (dag.system_message_unhandled) instead of appending them to the node transcript. Docs record scope resolution only; behavior/limit invariants are documented by US-002.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: SPEC.md (CAP-5), epics.md (Story 1.4 + _Scope_ note), tool-presentation-contract.md, test-plan.md, EXPERIENCE.md (3 Codex overclaims). Presentation-only gate resolution recorded with file:line evidence; docs-only, no code/schema changes."
     },
     {
       "id": "US-002",
