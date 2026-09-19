@@ -1,27 +1,37 @@
 {
   "surface": "console",
-  "tag": "8999a83815a5",
+  "tag": "e6b2be8d984a",
   "nodeId": "steer-a",
-  "viewport": {
-    "width": 460,
-    "height": 900
-  },
-  "runId": "10958c71139b80bafee44deee735bc4d",
-  "identities": {
-    "starterA": true,
-    "starterB": true,
-    "teammate": false
-  },
+  "viewport": { "width": 460, "height": 900 },
+  "runId": "ba22f6b60018d4ad764333dbf6a82ce1",
+  "identities": { "starterA": true, "starterB": true, "teammate": false },
   "draftsBefore": {
-    "starterBField": "draft-alpha-8999a83815a5",
-    "starterBStorage": "{\"draft\":\"draft-alpha-8999a83815a5\",\"pendingRetry\":null}",
-    "teammateField": "draft-beta-8999a83815a5",
-    "teammateStorage": "{\"draft\":\"draft-beta-8999a83815a5\",\"pendingRetry\":null}"
+    "starterBField": "draft-alpha-e6b2be8d984a",
+    "starterBStorage": "{\"draft\":\"draft-alpha-e6b2be8d984a\",\"pendingRetry\":null}",
+    "teammateField": "draft-beta-e6b2be8d984a",
+    "teammateStorage": "{\"draft\":\"draft-beta-e6b2be8d984a\",\"pendingRetry\":null}"
   },
   "twoRow": {
-    "starterId": "865c8849-486e-4413-a267-20057b4e1b30",
-    "teammateId": "4dcf8397-f84f-4ad8-b79c-1b181f0c0598",
-    "orderedIds": ["865c8849-486e-4413-a267-20057b4e1b30", "4dcf8397-f84f-4ad8-b79c-1b181f0c0598"],
+    "starterId": "d189eaae-8025-4636-b3e2-bd74745babd1",
+    "teammateId": "9a5c33be-976d-4742-9a7d-2d172b1b6d80",
+    "orderedIds": ["d189eaae-8025-4636-b3e2-bd74745babd1", "9a5c33be-976d-4742-9a7d-2d172b1b6d80"],
+    "observations": {
+      "views": {
+        "starterA": [
+          "d189eaae-8025-4636-b3e2-bd74745babd1",
+          "9a5c33be-976d-4742-9a7d-2d172b1b6d80"
+        ],
+        "starterB": [
+          "d189eaae-8025-4636-b3e2-bd74745babd1",
+          "9a5c33be-976d-4742-9a7d-2d172b1b6d80"
+        ],
+        "teammate": ["d189eaae-8025-4636-b3e2-bd74745babd1", "9a5c33be-976d-4742-9a7d-2d172b1b6d80"]
+      },
+      "identities": {
+        "starter": ["d189eaae-8025-4636-b3e2-bd74745babd1", "9a5c33be-976d-4742-9a7d-2d172b1b6d80"],
+        "teammate": ["d189eaae-8025-4636-b3e2-bd74745babd1", "9a5c33be-976d-4742-9a7d-2d172b1b6d80"]
+      }
+    },
     "visual": {
       "starterA": {
         "expectedCount": 2,
@@ -29,8 +39,18 @@
           "hasMaxH33vh": true,
           "maxHeight": "297px",
           "overflowY": "auto",
-          "bandText": "queued · 2starter-one-8999a83815a5sentdeletedraft-beta-8999a83815a5sentdelete",
-          "hasThisTabOnlyInBand": false
+          "bandText": "queued · 2starter-one-e6b2be8d984asentdeletedraft-beta-e6b2be8d984asentdelete",
+          "hasThisTabOnlyInBand": false,
+          "hasSurfaceElevatedBand": true,
+          "bandImmediatelyBeforeComposer": true,
+          "bandIsFullBleed": true
+        },
+        "overflow": {
+          "pageOverflow": 0,
+          "roomInsideViewport": true,
+          "roomScroll": 0,
+          "insideCount": 0,
+          "outsideSample": []
         }
       },
       "starterB": {
@@ -39,8 +59,18 @@
           "hasMaxH33vh": true,
           "maxHeight": "297px",
           "overflowY": "auto",
-          "bandText": "queued · 2starter-one-8999a83815a5sentdeletedraft-beta-8999a83815a5sentdelete",
-          "hasThisTabOnlyInBand": false
+          "bandText": "queued · 2starter-one-e6b2be8d984asentdeletedraft-beta-e6b2be8d984asentdelete",
+          "hasThisTabOnlyInBand": false,
+          "hasSurfaceElevatedBand": true,
+          "bandImmediatelyBeforeComposer": true,
+          "bandIsFullBleed": true
+        },
+        "overflow": {
+          "pageOverflow": 0,
+          "roomInsideViewport": true,
+          "roomScroll": 0,
+          "insideCount": 0,
+          "outsideSample": []
         }
       },
       "teammate": {
@@ -49,41 +79,84 @@
           "hasMaxH33vh": true,
           "maxHeight": "297px",
           "overflowY": "auto",
-          "bandText": "queued · 2starter-one-8999a83815a5sentdeletedraft-beta-8999a83815a5sentdelete",
-          "hasThisTabOnlyInBand": false
+          "bandText": "queued · 2starter-one-e6b2be8d984asentdeletedraft-beta-e6b2be8d984asentdelete",
+          "hasThisTabOnlyInBand": false,
+          "hasSurfaceElevatedBand": true,
+          "bandImmediatelyBeforeComposer": true,
+          "bandIsFullBleed": true
+        },
+        "overflow": {
+          "pageOverflow": 0,
+          "roomInsideViewport": true,
+          "roomScroll": 0,
+          "insideCount": 0,
+          "outsideSample": []
         }
       }
     }
   },
-  "activeBeforeFirstRemoval": "button:delete · starter-one-8999a83815a5",
-  "activeAfterFirstRemoval": "button:delete · draft-beta-8999a83815a5",
+  "activeBeforeFirstRemoval": "button:delete · starter-one-e6b2be8d984a",
+  "activeAfterFirstRemoval": "button:delete · draft-beta-e6b2be8d984a",
   "oneRow": {
-    "orderedIds": ["4dcf8397-f84f-4ad8-b79c-1b181f0c0598"],
+    "orderedIds": ["9a5c33be-976d-4742-9a7d-2d172b1b6d80"],
+    "observations": {
+      "views": {
+        "starterA": ["9a5c33be-976d-4742-9a7d-2d172b1b6d80"],
+        "starterB": ["9a5c33be-976d-4742-9a7d-2d172b1b6d80"],
+        "teammate": ["9a5c33be-976d-4742-9a7d-2d172b1b6d80"]
+      },
+      "identities": {
+        "starter": ["9a5c33be-976d-4742-9a7d-2d172b1b6d80"],
+        "teammate": ["9a5c33be-976d-4742-9a7d-2d172b1b6d80"]
+      }
+    },
     "visual": {
       "expectedCount": 1,
       "geometry": {
         "hasMaxH33vh": true,
         "maxHeight": "297px",
         "overflowY": "auto",
-        "bandText": "queued · 1draft-beta-8999a83815a5sentdelete",
-        "hasThisTabOnlyInBand": false
+        "bandText": "queued · 1draft-beta-e6b2be8d984asentdelete",
+        "hasThisTabOnlyInBand": false,
+        "hasSurfaceElevatedBand": true,
+        "bandImmediatelyBeforeComposer": true,
+        "bandIsFullBleed": true
+      },
+      "overflow": {
+        "pageOverflow": 0,
+        "roomInsideViewport": true,
+        "roomScroll": 0,
+        "insideCount": 0,
+        "outsideSample": []
       }
     },
     "starterBDeleteCount": 0,
     "teammateDeleteCount": 0
   },
+  "activeBeforeSecondRemoval": "button:delete · draft-beta-e6b2be8d984a",
   "activeAfterEmpty": "textarea",
   "final": {
     "orderedIds": [],
+    "visual": {
+      "expectedCount": 0,
+      "bandAbsent": true,
+      "overflow": {
+        "pageOverflow": 0,
+        "roomInsideViewport": true,
+        "roomScroll": 0,
+        "insideCount": 0,
+        "outsideSample": []
+      }
+    },
     "drafts": {
-      "starterBField": "draft-alpha-8999a83815a5",
-      "starterBStorage": "{\"draft\":\"draft-alpha-8999a83815a5\",\"pendingRetry\":null}",
+      "starterBField": "draft-alpha-e6b2be8d984a",
+      "starterBStorage": "{\"draft\":\"draft-alpha-e6b2be8d984a\",\"pendingRetry\":null}",
       "teammateField": ""
     },
     "requestCounts": {
-      "starterAGets": 4,
-      "starterBGets": 4,
-      "teammateGets": 4,
+      "starterAGets": 5,
+      "starterBGets": 5,
+      "teammateGets": 6,
       "starterBDeletes": 0,
       "teammateDeletes": 1
     }

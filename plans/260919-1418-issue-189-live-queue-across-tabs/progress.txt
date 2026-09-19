@@ -121,4 +121,3 @@
 - Running the full steering grep rewrites unrelated prior-plan evidence PNGs; stage only this story’s paths.
 
 ---
-

@@ -888,6 +888,28 @@ describe('startQueuePolling', () => {
   });
 
   test('cleanup aborts the in-flight request, clears the timer, and suppresses late settles', async () => {
+    // First prove cleanup removes a timer that is waiting between reads.
+    const timerClock = fakeClock();
+    const timerReads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    const stopBetweenReads = startQueuePolling({
+      read: () => {
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        timerReads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      intervalMs: 1000,
+      setTimer: timerClock.setTimer,
+      clearTimer: timerClock.clearTimer,
+    });
+    timerReads[0].resolve({ queued: [] });
+    await flush();
+    expect(timerClock.pending.size).toBe(1);
+    stopBetweenReads();
+    expect(timerClock.pending.size).toBe(0);
+
+    // Then prove cleanup aborts an active read and suppresses late settlement.
     const clock = fakeClock();
     const signals: AbortSignal[] = [];
     const snapshots: unknown[] = [];

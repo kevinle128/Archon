@@ -1,28 +1,65 @@
 {
   "surface": "legacy",
-  "tag": "ad64bbc86587",
+  "tag": "8ac1a1c06292",
   "nodeA": "steer-a",
   "nodeB": "steer-b",
-  "viewport": {
-    "width": 460,
-    "height": 900
-  },
-  "runId": "283181bf6bbe35263db643e1005ca3fa",
+  "viewport": { "width": 460, "height": 900 },
+  "runId": "2f2958336070b45babd0f74ea7b454a9",
   "split": {
-    "aId": "985eb060-2ae8-4870-91db-71e2941ff4ff",
-    "bId": "b88ef6be-d109-445a-ba81-c600cdf90c4c",
-    "roomA": ["985eb060-2ae8-4870-91db-71e2941ff4ff"],
-    "roomB": ["b88ef6be-d109-445a-ba81-c600cdf90c4c"],
-    "serverA": ["985eb060-2ae8-4870-91db-71e2941ff4ff"],
-    "serverB": ["b88ef6be-d109-445a-ba81-c600cdf90c4c"]
+    "aId": "dfc19eae-d610-430f-a39d-2597be95214a",
+    "bId": "3394879f-e28f-4a1f-8830-b42bc1f89a9a",
+    "roomA": ["dfc19eae-d610-430f-a39d-2597be95214a"],
+    "roomB": ["3394879f-e28f-4a1f-8830-b42bc1f89a9a"],
+    "serverA": ["dfc19eae-d610-430f-a39d-2597be95214a"],
+    "serverB": ["3394879f-e28f-4a1f-8830-b42bc1f89a9a"]
+  },
+  "splitVisual": {
+    "nodeA": {
+      "expectedCount": 1,
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "bandText": "queued · 1A-only-8ac1a1c06292sentdelete",
+        "hasThisTabOnlyInBand": false,
+        "hasSurfaceElevatedBand": true,
+        "bandImmediatelyBeforeComposer": true,
+        "bandIsFullBleed": true
+      },
+      "overflow": {
+        "pageOverflow": 0,
+        "roomInsideViewport": true,
+        "roomScroll": 0,
+        "insideCount": 0,
+        "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+      }
+    },
+    "nodeB": {
+      "expectedCount": 1,
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "bandText": "queued · 1B-only-8ac1a1c06292sentdelete",
+        "hasThisTabOnlyInBand": false,
+        "hasSurfaceElevatedBand": true,
+        "bandImmediatelyBeforeComposer": true,
+        "bandIsFullBleed": true
+      },
+      "overflow": {
+        "pageOverflow": 0,
+        "roomInsideViewport": true,
+        "roomScroll": 0,
+        "insideCount": 0,
+        "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+      }
+    },
+    "nodeAWide": null
   },
   "rehydrate": {
-    "pageAOnB": [],
-    "pageABack": ["985eb060-2ae8-4870-91db-71e2941ff4ff"],
-    "pageBThroughout": ["b88ef6be-d109-445a-ba81-c600cdf90c4c"],
-    "requestCounts": {
-      "pageAGetsNodeA": 1,
-      "pageBGetsNodeB": 0
-    }
+    "pageAOnB": ["3394879f-e28f-4a1f-8830-b42bc1f89a9a"],
+    "pageABack": ["dfc19eae-d610-430f-a39d-2597be95214a"],
+    "pageBThroughout": ["3394879f-e28f-4a1f-8830-b42bc1f89a9a"],
+    "requestCounts": { "pageAGetsNodeA": 1, "pageBGetsNodeB": 0 }
   }
 }

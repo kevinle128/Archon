@@ -1050,14 +1050,26 @@ describe('ComposerDock', () => {
     expect(win.document.activeElement).not.toBe(win.document.body);
   });
 
-  test('remote snapshot leaves draft and sessionStorage byte-for-byte unchanged', async () => {
+  test('remote snapshot leaves draft, pending retry, and sessionStorage byte-for-byte unchanged', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
-    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    const failingSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      throw new Error('offline');
+    };
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read, send: failingSend });
     await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
     await setDraft('unsent draft · keep me');
+    await clickQueue();
     const before = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
     expect(before).not.toBeNull();
+    const beforeRecord = JSON.parse(before ?? '{}') as {
+      draft?: string;
+      pendingRetry?: { messageId?: string; message?: string } | null;
+    };
+    expect(beforeRecord.draft).toBe('unsent draft · keep me');
+    expect(beforeRecord.pendingRetry?.message).toBe('unsent draft · keep me');
+    expect(beforeRecord.pendingRetry?.messageId).toBe(calls[0]?.body.message_id);
 
     await settleSnapshot(
       ctrl,
@@ -1137,61 +1149,39 @@ describe('ComposerDock', () => {
     await flush();
     expect(host.textContent ?? '').not.toContain('should not appear');
 
-    // Fresh root for scope-change path.
+    // Fresh root for scope-change path. Separate readers make it impossible
+    // to mistake the new scope's valid hydrate for the old scope's late one.
     root = createRoot(host);
-    await renderDock({ pollIntervalMs: 60_000, readQueue: ctrl.read });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
-    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
-
-    // Change scope while a read is pending for the new scope.
+    const oldScope = controllableRead();
+    const newScope = controllableRead();
     await renderDock({
       pollIntervalMs: 60_000,
-      readQueue: ctrl.read,
-      nodeId: 'other.node',
-    });
-    expect(ctrl.pendingCount()).toBeGreaterThanOrEqual(1);
-    await act(async () => {
-      // Drain every pending promise opened across the scope transition. The
-      // aborted prior-scope read must not paint onto the new scope, and the
-      // new scope starts empty until its own hydrate is accepted — here we
-      // only prove late prior payloads cannot leak.
-      while (ctrl.pendingCount() > 0) {
-        ctrl.resolveNext(okQueue([{ message_id: 'id-stale', message: 'stale scope' }]));
-      }
-    });
-    await flush();
-    // New scope may accept its own hydrate with 'stale scope' if that was the
-    // open request for the new scope. Re-assert by mounting a fresh scope with
-    // a still-pending prior read that is then resolved after unmount.
-    await act(async () => {
-      root.unmount();
-    });
-    root = createRoot(host);
-    const ctrl2 = controllableRead();
-    await renderDock({
-      pollIntervalMs: 60_000,
-      readQueue: ctrl2.read,
+      readQueue: oldScope.read,
       nodeId: 'scope-a',
     });
-    expect(ctrl2.pendingCount()).toBe(1);
+    expect(oldScope.pendingCount()).toBe(1);
+    const oldSignal = readCalls.at(-1)?.signal;
     await renderDock({
       pollIntervalMs: 60_000,
-      readQueue: ctrl2.read,
+      readQueue: newScope.read,
       nodeId: 'scope-b',
     });
-    // At least the new scope's read is pending; prior may already be aborted.
-    expect(ctrl2.pendingCount()).toBeGreaterThanOrEqual(1);
-    const callsBefore = readCalls.length;
+    expect(oldSignal?.aborted).toBe(true);
+    expect(newScope.pendingCount()).toBe(1);
+
     await act(async () => {
-      while (ctrl2.pendingCount() > 0) {
-        ctrl2.resolveNext(okQueue([{ message_id: 'id-x', message: 'from-a-or-b' }]));
-      }
+      oldScope.resolveNext(okQueue([{ message_id: 'id-stale', message: 'from scope a' }]));
     });
     await flush();
-    // Scope-b may show the hydrate from its own request; that is correct.
-    // The important unmount proof already ran above. Ensure no crash and that
-    // at least one read was issued for the transition.
-    expect(readCalls.length).toBeGreaterThanOrEqual(callsBefore);
+    expect(host.textContent ?? '').not.toContain('from scope a');
+    expect(host.querySelector('li')).toBeNull();
+
+    await act(async () => {
+      newScope.resolveNext(okQueue([{ message_id: 'id-b', message: 'from scope b' }]));
+    });
+    await flush();
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
+    expect(host.textContent ?? '').toContain('from scope b');
   });
 
   test('hidden and detached modes never read; detached preserves disclosure', async () => {

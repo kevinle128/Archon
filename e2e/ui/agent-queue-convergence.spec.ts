@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
 import type { APIRequestContext, Locator, Page, Request, TestInfo } from '@playwright/test';
+import { format } from 'prettier';
 
 import {
   E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME,
@@ -111,12 +112,26 @@ async function captureEvidence(target: Locator, name: string, testInfo: TestInfo
   await testInfo.attach(name, { body: shot, contentType: 'image/png' });
 }
 
-function writeMeasurements(filename: string, data: Record<string, unknown>): void {
+async function writeMeasurements(filename: string, data: Record<string, unknown>): Promise<void> {
   mkdirSync(EVIDENCE_DIR, { recursive: true });
-  writeFileSync(join(EVIDENCE_DIR, filename), `${JSON.stringify(data, null, 2)}\n`);
+  const rendered = await format(JSON.stringify(data), {
+    parser: 'json',
+    printWidth: 100,
+    tabWidth: 2,
+    endOfLine: 'lf',
+  });
+  writeFileSync(join(EVIDENCE_DIR, filename), rendered);
 }
 
-async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<void> {
+interface OverflowFacts {
+  pageOverflow: number;
+  roomInsideViewport: boolean;
+  roomScroll: number;
+  insideCount: number;
+  outsideSample: string[];
+}
+
+async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<OverflowFacts> {
   const report = await room.evaluate(roomEl => {
     const width = document.documentElement.clientWidth;
     const offenders: { tag: string; insideRoom: boolean }[] = [];
@@ -151,6 +166,7 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
     report.insideCount,
     `no room element overflows the page ${context} (outside offenders: ${report.outsideSample.join(', ') || 'none'}; page overflow ${String(report.pageOverflow)}px)`
   ).toBe(0);
+  return report;
 }
 
 async function waitForNodeStarted(page: Page, runId: string, nodeId: string): Promise<void> {
@@ -340,15 +356,19 @@ async function queueGeometryFacts(room: Locator): Promise<{
   overflowY: string;
   bandText: string;
   hasThisTabOnlyInBand: boolean;
+  hasSurfaceElevatedBand: boolean;
+  bandImmediatelyBeforeComposer: boolean;
+  bandIsFullBleed: boolean;
 }> {
   return room.evaluate(roomEl => {
     const list = roomEl.querySelector('ul[aria-label^="Queued messages"]');
     const wrapper = list?.parentElement ?? null;
     const style = wrapper ? roomEl.ownerDocument.defaultView?.getComputedStyle(wrapper) : null;
-    const band = roomEl.querySelector('h3, [class*="surface-elevated"]');
-    // The queue band is the surface-elevated sibling above the composer.
-    const elevated = roomEl.querySelector('.bg-surface-elevated, [class*="surface-elevated"]');
-    const bandRoot = elevated ?? band;
+    const bandRoot = wrapper?.parentElement ?? null;
+    const composer = bandRoot?.nextElementSibling ?? null;
+    const bandRect = bandRoot?.getBoundingClientRect();
+    const roomRect = roomEl.getBoundingClientRect();
+    const bandClass = typeof bandRoot?.className === 'string' ? bandRoot.className : '';
     const bandText = bandRoot?.textContent ?? '';
     return {
       hasMaxH33vh: wrapper?.className.includes('max-h-[33vh]') ?? false,
@@ -356,6 +376,13 @@ async function queueGeometryFacts(room: Locator): Promise<{
       overflowY: style?.overflowY ?? '',
       bandText,
       hasThisTabOnlyInBand: /this tab only/i.test(bandText),
+      hasSurfaceElevatedBand: bandClass.includes('bg-surface-elevated'),
+      bandImmediatelyBeforeComposer:
+        composer !== null && composer.querySelector('textarea') !== null,
+      bandIsFullBleed:
+        bandRect !== undefined &&
+        Math.abs(bandRect.left - roomRect.left) <= 1 &&
+        Math.abs(bandRect.right - roomRect.right) <= 1,
     };
   });
 }
@@ -368,7 +395,8 @@ async function assertQueueVisualContract(
   if (expectedCount === 0) {
     await expect(room.getByText(/^queued ·/i)).toHaveCount(0);
     await expect(queueList(room)).toHaveCount(0);
-    return { expectedCount: 0, bandAbsent: true };
+    const overflow = await expectNoRoomDrivenOverflow(room, context);
+    return { expectedCount: 0, bandAbsent: true, overflow };
   }
 
   await expect(room.getByText(new RegExp(`queued · ${String(expectedCount)}`, 'i'))).toBeVisible();
@@ -383,6 +411,14 @@ async function assertQueueVisualContract(
   expect(geometry.hasThisTabOnlyInBand, `queue band has no this-tab-only copy ${context}`).toBe(
     false
   );
+  expect(geometry.hasSurfaceElevatedBand, `queue band keeps surface-elevated ${context}`).toBe(
+    true
+  );
+  expect(
+    geometry.bandImmediatelyBeforeComposer,
+    `queue band sits immediately above composer ${context}`
+  ).toBe(true);
+  expect(geometry.bandIsFullBleed, `queue band stays full-bleed ${context}`).toBe(true);
 
   // Composer hint still owns the tab-only copy.
   await expect(room.getByText(/this tab only/i)).toBeVisible();
@@ -410,8 +446,8 @@ async function assertQueueVisualContract(
     expect(name, `named delete control ${context}`).toMatch(/^delete · /);
   }
 
-  await expectNoRoomDrivenOverflow(room, context);
-  return { expectedCount, geometry };
+  const overflow = await expectNoRoomDrivenOverflow(room, context);
+  return { expectedCount, geometry, overflow };
 }
 
 for (const surface of ['console', 'legacy'] as const) {
@@ -542,6 +578,20 @@ for (const surface of ['console', 'legacy'] as const) {
       await expectServerQueueIds(starterA.request, run.runId, nodeId, twoRow);
       await expectServerQueueIds(teammate.request, run.runId, nodeId, twoRow);
 
+      const starterServerTwo = await readQueue(starterA.request, run.runId, nodeId);
+      const teammateServerTwo = await readQueue(teammate.request, run.runId, nodeId);
+      const twoRowObservations = {
+        views: {
+          starterA: await rowIds(roomA),
+          starterB: await rowIds(roomB),
+          teammate: await rowIds(roomT),
+        },
+        identities: {
+          starter: starterServerTwo.queued.map(row => row.message_id),
+          teammate: teammateServerTwo.queued.map(row => row.message_id),
+        },
+      };
+
       // Exact text/order + no duplicates.
       for (const room of [roomA, roomB, roomT]) {
         const items = queueList(room).getByRole('listitem');
@@ -576,6 +626,7 @@ for (const surface of ['console', 'legacy'] as const) {
         starterId,
         teammateId,
         orderedIds: twoRow,
+        observations: twoRowObservations,
         visual: { starterA: visualTwoA, starterB: visualTwoB, teammate: visualTwoT },
       };
 
@@ -601,6 +652,20 @@ for (const surface of ['console', 'legacy'] as const) {
       await expectQueueIds(roomT, oneRow);
       await expectServerQueueIds(starterA.request, run.runId, nodeId, oneRow);
       await expectServerQueueIds(teammate.request, run.runId, nodeId, oneRow);
+
+      const starterServerOne = await readQueue(starterA.request, run.runId, nodeId);
+      const teammateServerOne = await readQueue(teammate.request, run.runId, nodeId);
+      const oneRowObservations = {
+        views: {
+          starterA: await rowIds(roomA),
+          starterB: await rowIds(roomB),
+          teammate: await rowIds(roomT),
+        },
+        identities: {
+          starter: starterServerOne.queued.map(row => row.message_id),
+          teammate: teammateServerOne.queued.map(row => row.message_id),
+        },
+      };
 
       expect(deletesB.count() - deletesBBefore, 'starterB issued zero DELETEs').toBe(0);
       expect(
@@ -631,12 +696,14 @@ for (const surface of ['console', 'legacy'] as const) {
 
       measurements.oneRow = {
         orderedIds: oneRow,
+        observations: oneRowObservations,
         visual: visualOne,
         starterBDeleteCount: deletesB.count(),
         teammateDeleteCount: deletesT.count(),
       };
 
       // Teammate withdraws remaining id.
+      measurements.activeBeforeSecondRemoval = await activeElementDescriptor(starterB);
       await withdrawViaKeyboard(teammate, roomT, run.runId, nodeId, teammateId, activationKey);
 
       await expectQueueIds(roomA, []);
@@ -663,11 +730,12 @@ for (const surface of ['console', 'legacy'] as const) {
 
       expect(deletesB.count(), 'starterB issued zero DELETEs for entire journey').toBe(0);
 
-      await expectNoRoomDrivenOverflow(roomB, `${surface} empty band`);
+      const visualEmpty = await assertQueueVisualContract(roomB, 0, `${surface} empty band`);
       await captureEvidence(roomB, `converge-${surface}-460-empty-starterB.png`, testInfo);
 
       measurements.final = {
         orderedIds: [],
+        visual: visualEmpty,
         drafts: {
           starterBField: await fieldB.inputValue(),
           starterBStorage: await readDraftStorage(starterB, run.runId, nodeId),
@@ -682,7 +750,7 @@ for (const surface of ['console', 'legacy'] as const) {
         },
       };
 
-      writeMeasurements(`convergence-${surface}.json`, measurements);
+      await writeMeasurements(`convergence-${surface}.json`, measurements);
       await testInfo.attach(`convergence-${surface}.json`, {
         body: Buffer.from(`${JSON.stringify(measurements, null, 2)}\n`),
         contentType: 'application/json',
@@ -772,14 +840,15 @@ for (const surface of ['console', 'legacy'] as const) {
         serverB: serverB.queued.map(r => r.message_id),
       };
 
-      await assertQueueVisualContract(roomA, 1, `${surface} scope A`);
-      await assertQueueVisualContract(roomB, 1, `${surface} scope B`);
+      const visualScopeA = await assertQueueVisualContract(roomA, 1, `${surface} scope A`);
+      const visualScopeB = await assertQueueVisualContract(roomB, 1, `${surface} scope B`);
       await captureEvidence(roomA, `scope-${surface}-460-nodeA.png`, testInfo);
       await captureEvidence(roomB, `scope-${surface}-460-nodeB.png`, testInfo);
 
+      let visualScopeWide: Record<string, unknown> | null = null;
       if (surface === 'console') {
         await pageA.setViewportSize(WIDE);
-        await assertQueueVisualContract(roomA, 1, 'console@1440 scope A');
+        visualScopeWide = await assertQueueVisualContract(roomA, 1, 'console@1440 scope A');
         await captureEvidence(roomA, 'scope-console-1440-nodeA.png', testInfo);
         await pageA.setViewportSize(NARROW);
       }
@@ -789,6 +858,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expectQueueIds(roomAOnB, [bId]);
       await expect(roomAOnB.getByText(textA)).toHaveCount(0);
       await expect(roomAOnB.getByText(textB)).toBeVisible();
+      const pageAOnBIds = await rowIds(roomAOnB);
 
       // Navigate back to node A — exactly [aId]; page B stays [bId].
       const roomABack = await openGuidanceRoom(pageA, surface, run.runId, nodeA);
@@ -796,18 +866,26 @@ for (const surface of ['console', 'legacy'] as const) {
       await expectQueueIds(roomB, [bId]);
       await expect(roomABack.getByText(textB)).toHaveCount(0);
       await expect(roomB.getByText(textA)).toHaveCount(0);
+      const pageABackIds = await rowIds(roomABack);
+      const pageBThroughoutIds = await rowIds(roomB);
+
+      measurements.splitVisual = {
+        nodeA: visualScopeA,
+        nodeB: visualScopeB,
+        nodeAWide: visualScopeWide,
+      };
 
       measurements.rehydrate = {
-        pageAOnB: await rowIds(roomAOnB),
-        pageABack: await rowIds(roomABack),
-        pageBThroughout: await rowIds(roomB),
+        pageAOnB: pageAOnBIds,
+        pageABack: pageABackIds,
+        pageBThroughout: pageBThroughoutIds,
         requestCounts: {
           pageAGetsNodeA: getsA.count(),
           pageBGetsNodeB: getsB.count(),
         },
       };
 
-      writeMeasurements(`scope-${surface}.json`, measurements);
+      await writeMeasurements(`scope-${surface}.json`, measurements);
       await testInfo.attach(`scope-${surface}.json`, {
         body: Buffer.from(`${JSON.stringify(measurements, null, 2)}\n`),
         contentType: 'application/json',
