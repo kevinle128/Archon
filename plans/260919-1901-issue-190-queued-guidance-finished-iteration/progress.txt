@@ -133,3 +133,32 @@
 
 ---
 
+## 2026-09-20 — US-005: Real-loop E2E journey on both shells plus regression sweep
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/agent-finished-iteration.spec.ts` — event-driven real-loop journeys for
+  Legacy and Console, using the existing queue-guidance fixture and constants
+- `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` — stable
+  `steer.finished-iteration-legacy` and `steer.finished-iteration-console`
+  verification mapping
+- `plans/reports/evidence/issue-190/` — fixture-only screenshots and concise
+  request/measurement artifacts for both shells
+
+**Acceptance criteria verified**:
+- [x] Both stable verification ids run independently through the real loop with
+  event polling and a `T.xlong * 2` budget
+- [x] The finished view proves its own successful queue GET and zero send, delete,
+  or interrupt mutations from before selection through keyboard Go
+- [x] The exact disclosure, read-only ordered `sent` band, absent mutation surface,
+  retained draft, keyboard focus handoff, and terminal hiding pass on both shells
+- [x] DOM measurements at 460px and 1440px show no horizontal overflow, a fully
+  visible 32px Go button, a full-width band, and the 33vh cap
+- [x] Focused journey rerun passed (Legacy 53.0s; Console 50.3s); the 26 affected
+  queue, withdrawal, convergence, and occurrence tests also passed
+
+**Learnings**:
+- The successful queue-read assertion starts after the finished dock renders, so a
+  previous live-view poll cannot satisfy the finished-view contract.
+
+---

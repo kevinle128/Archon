@@ -101,7 +101,7 @@ Shared core (story US-002):
 
 - `packages/web/src/lib/execution-room-model.ts:13` — `ExecutionRowSelection`;
   `occurrence` arm at :17–24 currently carries `occurrenceId/attemptId/retryEpoch/
-  iteration/routeActivationSeq` but **no** ancestry. Add
+iteration/routeActivationSeq` but **no** ancestry. Add
   `ExecutionLoopAncestryEntry { nodeId, iteration }`,
   `loopAncestry?: readonly ExecutionLoopAncestryEntry[]` on that arm,
   `FinishedIterationView { liveRowId, liveIteration }`, and
@@ -115,7 +115,7 @@ Shared core (story US-002):
 - `packages/web/src/lib/steering-dock.ts:50` — `SteeringDockMode` union gains
   `'finished-iteration'`; `steeringDockMode()` (:68) precedence:
   `!live → hidden; finishedIteration != null → 'finished-iteration';
-  rowStatus not running/awaiting → hidden;` then existing blocked → detached →
+rowStatus not running/awaiting → hidden;` then existing blocked → detached →
   composer unchanged. Copy helpers near `STEERING_DETACHED_DISCLOSURE` (:53),
   `queueBandHeader` (:129), `queueListLabel` (:133).
 - `steering-dock.ts:351` — `QueuePollingOptions` gains optional
@@ -188,8 +188,8 @@ Canonical docs to reconcile (US-001, re-check in US-006):
 Validation commands:
 
 - Focused: `cd packages/web && bun test src/lib/execution-room-model.test.ts
-  src/lib/steering-dock.test.ts src/components/workflows/build-log-rows.test.ts
-  src/experiments/console/components/inspect/build-log-rows.test.ts` (plus changed
+src/lib/steering-dock.test.ts src/components/workflows/build-log-rows.test.ts
+src/experiments/console/components/inspect/build-log-rows.test.ts` (plus changed
   component test files).
 - Package: web type-check, lint, and test scripts per `packages/web/package.json`.
 - Repo gate: `bun run validate` from root; `git diff --check`.
@@ -199,11 +199,11 @@ Validation commands:
 
 ## Story overview
 
-| ID | Story | Depends on | Gate |
-|----|-------|-----------|------|
-| US-001 | Ratify B1/B2 in canonical docs (new AD, doc sync, Validation Log) | — | doc-only |
-| US-002 | Shared core: lineage preservation, `resolveFinishedIterationView`, `finished-iteration` mode, poll `onError` | US-001 | unit tests |
-| US-003 | Legacy shell: descriptor threading, read-only dock branch, focus handoff | US-002 | renderer + integration tests |
-| US-004 | Console shell: same contract, parallel renderer | US-002 | renderer + integration tests |
-| US-005 | Real-loop E2E journey on both shells + test-plan ids + regression specs | US-003, US-004 | E2E green |
-| US-006 | Closure: #188-gated AC 4, acceptance report, evidence, doc drift, sprint status, `bun run validate` | US-005 | all ACs pass; #188 merged |
+| ID     | Story                                                                                                        | Depends on     | Gate                         |
+| ------ | ------------------------------------------------------------------------------------------------------------ | -------------- | ---------------------------- |
+| US-001 | Ratify B1/B2 in canonical docs (new AD, doc sync, Validation Log)                                            | —              | doc-only                     |
+| US-002 | Shared core: lineage preservation, `resolveFinishedIterationView`, `finished-iteration` mode, poll `onError` | US-001         | unit tests                   |
+| US-003 | Legacy shell: descriptor threading, read-only dock branch, focus handoff                                     | US-002         | renderer + integration tests |
+| US-004 | Console shell: same contract, parallel renderer                                                              | US-002         | renderer + integration tests |
+| US-005 | Real-loop E2E journey on both shells + test-plan ids + regression specs                                      | US-003, US-004 | E2E green                    |
+| US-006 | Closure: #188-gated AC 4, acceptance report, evidence, doc drift, sprint status, `bun run validate`          | US-005         | all ACs pass; #188 merged    |

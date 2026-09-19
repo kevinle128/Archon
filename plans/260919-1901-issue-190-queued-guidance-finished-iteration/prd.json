@@ -103,8 +103,8 @@
       "technicalNotes": "Phase 3 E2E implementation, minus the #188-gated closure steps. Precedents: agent-queue-guidance.spec.ts and agent-queue-convergence.spec.ts for request recording/room opening/viewports/fake provider; occurrence-navigation.spec.ts for execution-select helpers (lift to shared helper only if this becomes their third stable caller). Recorded request count corroborates no overlap/mutation \u2014 never assert a brittle exact poll count.",
       "dependsOn": ["US-003", "US-004"],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented and verified 2026-09-20. `agent-finished-iteration.spec.ts` reuses the existing real loop fixture on Legacy and Console; it proves a post-selection queue GET, zero finished-view mutations, keyboard Go/focus/draft restoration, terminal hiding, and 460px/1440px measurements. Both journeys passed (53.0s / 50.3s), as did all 26 affected steering/occurrence E2Es and E2E typecheck. Evidence is under plans/reports/evidence/issue-190/."
     },
     {
       "id": "US-006",
