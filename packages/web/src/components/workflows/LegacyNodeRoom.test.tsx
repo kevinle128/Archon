@@ -2177,4 +2177,143 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
     expect(row.querySelectorAll('details[data-subtask-index]')).toHaveLength(0);
     expect(rawPanel(row).textContent).toContain('"name"');
   });
+
+  describe('file-edit inline diff', () => {
+    const BACKOFF_BEFORE =
+      '  pub fn backoff(attempt: u32) -> Duration {\n' +
+      '     let secs = 2u64.pow(attempt).min(31);\n' +
+      '     Duration::from_secs(secs + 1)\n' +
+      '  }';
+    const BACKOFF_AFTER =
+      '  pub fn backoff(attempt: u32) -> Duration {\n' +
+      '     let secs = 2u64.pow(attempt).min(30);\n' +
+      '     Duration::from_secs(secs)\n' +
+      '  }';
+    const EDIT_INPUT: Record<string, unknown> = {
+      file_path: 'src/auto_retry.rs',
+      old_string: BACKOFF_BEFORE,
+      new_string: BACKOFF_AFTER,
+      replace_all: false,
+    };
+    const EDIT_ROWS: readonly WorkflowNodeMessageResponse[] = [
+      callRow('t-edit', 10, 'Edit', EDIT_INPUT),
+      resultRow('t-edit', 11, 'Edit', EDIT_INPUT, 'File updated successfully', {
+        outcome: 'success',
+      }),
+    ];
+
+    test('opening mounts the table; Raw swaps it for the exact payload and back', async () => {
+      await act(async () => {
+        mountItems(historyItems(EDIT_ROWS));
+      });
+      const row = toolRow('t-edit');
+      // Collapsed: the summary carries the counts but no table mounts.
+      expect(row.querySelector('.tool-diff')).toBeNull();
+      expect(rowSummary(row).textContent).toContain('+2');
+      expect(rowSummary(row).textContent).toContain('−2');
+
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.open).toBe(true);
+      const body = row.querySelector('.tool-family-body');
+      expect(body?.querySelector('.tool-diff')).not.toBeNull();
+      expect(body?.querySelector('.text-node-command')?.textContent).toBe('src/auto_retry.rs');
+      expect(body?.querySelectorAll('.diff-code-insert')).toHaveLength(2);
+      expect(body?.querySelectorAll('.diff-code-delete')).toHaveLength(2);
+      expect(body?.querySelectorAll('.diff-code-normal')).toHaveLength(2);
+      expect(
+        Array.from(body?.querySelectorAll('.tool-diff-marker') ?? []).map(el => el.textContent)
+      ).toEqual(['', '−', '−', '+', '+', '']);
+      // Success prose stays behind Raw, never in the diff body.
+      expect(body?.textContent).not.toContain('File updated successfully');
+      expect(body?.textContent).not.toContain('old_string');
+
+      // Raw replaces the safe table with the exact sent payload.
+      const raw = rawButton(row);
+      await act(async () => {
+        click(raw);
+      });
+      expect(raw.getAttribute('aria-expanded')).toBe('true');
+      expect(row.querySelector('.tool-diff')).toBeNull();
+      expect(row.querySelector('.tool-family-body')).toBeNull();
+      expect(rawPanel(row).textContent).toBe(
+        JSON.stringify(
+          { name: 'Edit', input: EDIT_INPUT, output: 'File updated successfully' },
+          null,
+          2
+        )
+      );
+
+      await act(async () => {
+        click(raw);
+      });
+      expect(row.querySelector('.tool-family-body')?.querySelector('.tool-diff')).not.toBeNull();
+      expect(row.open).toBe(true);
+    });
+
+    test('the diff contributes no tab stop: summary → Raw → existing controls', async () => {
+      const rows: readonly WorkflowNodeMessageResponse[] = [
+        callRow('t-edit', 10, 'Edit', EDIT_INPUT, { full_output_available: true }),
+        resultRow('t-edit', 11, 'Edit', EDIT_INPUT, 'File updated successfully', {
+          outcome: 'success',
+          output_state: 'truncated',
+          full_output_available: true,
+        }),
+      ];
+      await act(async () => {
+        mountItems(historyItems(rows));
+      });
+      const row = toolRow('t-edit');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      expect(row.querySelector('.tool-diff')).not.toBeNull();
+      const focusables = Array.from(row.querySelectorAll('summary, button, [tabindex]'));
+      expect(focusables[0]).toBe(rowSummary(row));
+      expect(focusables[1]).toBe(rawButton(row));
+      expect(focusables[2]).toBe(rowButton(row, 'View full output'));
+      // No interactive element lives inside the diff table.
+      expect(
+        row.querySelector('.tool-diff button, .tool-diff a, .tool-diff [tabindex]')
+      ).toBeNull();
+      expect(focusables).toHaveLength(3);
+    });
+
+    test('Raw keeps the unsanitized source the diff table escaped', async () => {
+      const controlInput: Record<string, unknown> = {
+        file_path: 'ctl.ts',
+        old_string: 'plain',
+        new_string: 'mark\u{2028}\u{001B}[31mred',
+      };
+      const rows: readonly WorkflowNodeMessageResponse[] = [
+        callRow('t-ctl', 10, 'Edit', controlInput),
+        resultRow('t-ctl', 11, 'Edit', controlInput, 'done', { outcome: 'success' }),
+      ];
+      await act(async () => {
+        mountItems(historyItems(rows));
+      });
+      const row = toolRow('t-ctl');
+      await act(async () => {
+        click(rowSummary(row));
+      });
+      // The table shows the bounded escape; the raw bytes never reach the DOM.
+      const insert = row.querySelector('.diff-code-insert');
+      expect(insert?.textContent).toBe('mark\\u{2028}red');
+      expect(row.querySelector('.tool-family-body')?.textContent).not.toContain('\u{2028}');
+
+      const raw = rawButton(row);
+      await act(async () => {
+        click(raw);
+      });
+      // The provider payload is preserved byte-for-byte: the ANSI CSI survives
+      // as a JSON escape and the literal separator reaches the panel raw.
+      const payload = rawPanel(row).textContent ?? '';
+      expect(payload).toBe(
+        JSON.stringify({ name: 'Edit', input: controlInput, output: 'done' }, null, 2)
+      );
+      expect(payload).toContain('\\u001b');
+      expect(payload).toContain('\u{2028}');
+    });
+  });
 });

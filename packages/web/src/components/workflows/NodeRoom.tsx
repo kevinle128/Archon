@@ -3,6 +3,9 @@
  * selected execution. Cursor paging and Ask placement stay in NodeTranscriptPane.
  */
 import { Fragment, useEffect, useId, useMemo, useState } from 'react';
+import { computeNewLineNumber, Decoration, Diff, Hunk } from 'react-diff-view/esm/index.js';
+import type { HunkData, RenderGutter } from 'react-diff-view';
+import 'react-diff-view/style/index.css';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
@@ -10,11 +13,13 @@ import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
+import { toHunkData } from '@/lib/git-hunk-adapter';
 import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   toolBodyPresentation,
   toolRawPayloadJson,
   toolRowPresentation,
+  type FileDiff,
   type TaskSubtaskCard,
   type ToolBody,
   type ToolFamily,
@@ -495,6 +500,62 @@ function codeFence(source: string): string {
 
 const CODE_LANGUAGE_PATTERN = /^[A-Za-z0-9_+#.-]+$/;
 
+// --- Inline file-edit diff ---
+// Local to the Legacy surface: the Console history list owns an equivalent
+// copy. The shared contract is the data — FileDiff plus toHunkData — never
+// the component, and neither surface imports the differ.
+
+/**
+ * One visible gutter per row: the new-side cell react-diff-view always emits
+ * returns null here and its column/cell is hidden in the .tool-diff block.
+ * The +/− marker is the required non-color cue, so it stays exposed to
+ * assistive technology rather than aria-hidden.
+ */
+const renderToolDiffGutter: RenderGutter = ({ change, side, renderDefault }) => {
+  if (side === 'new') return null;
+  const marker = change.type === 'insert' ? '+' : change.type === 'delete' ? '−' : '';
+  const number = change.type === 'insert' ? computeNewLineNumber(change) : renderDefault();
+  return (
+    <>
+      <span className="tool-diff-marker">{marker}</span>
+      <span className="tool-diff-line-number">{number}</span>
+    </>
+  );
+};
+
+/**
+ * The qualified before/after pair as one bounded unified table: jsdiff order
+ * is preserved exactly, the first hunk mounts directly, and every later hunk
+ * is preceded by a text-only Decoration carrying its synthesized @@ header.
+ * No anchors, tokens, or focusable controls — the diff adds no tab stop.
+ */
+function InlineDiff({ diff }: { diff: FileDiff }): React.ReactElement {
+  const hunks = useMemo(() => diff.hunks.map(toHunkData), [diff]);
+  return (
+    <Diff
+      diffType="modify"
+      viewType="unified"
+      hunks={hunks}
+      renderGutter={renderToolDiffGutter}
+      className="tool-diff"
+    >
+      {(list: HunkData[]): React.ReactElement[] =>
+        list.map((hunk, index) => {
+          const key = `-${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines}`;
+          return index === 0 ? (
+            <Hunk key={key} hunk={hunk} />
+          ) : (
+            <Fragment key={key}>
+              <Decoration>{hunk.content}</Decoration>
+              <Hunk hunk={hunk} />
+            </Fragment>
+          );
+        })
+      }
+    </Diff>
+  );
+}
+
 function ToolBodySwitch({
   input,
   presentation,
@@ -535,20 +596,45 @@ function ToolBodySwitch({
           ) : null}
         </div>
       );
-    case 'file':
+    case 'file': {
+      // A qualified pair renders the diff or the identical-pair note; a
+      // non-succeeded outcome adds its normalized output in a second inset
+      // box, never an empty one. Success prose stays behind Raw. An
+      // unqualified pair keeps the path-plus-preview fallback unchanged.
+      const failureOutput =
+        body.diff !== null &&
+        presentation.statusLabel !== 'succeeded' &&
+        (body.unreadable || body.preview !== null);
       return (
-        <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
-          <span className="text-node-command">{body.path}</span>
-          {'\n'}
-          {body.unreadable ? (
-            <span className="text-text-secondary">output unreadable — open Raw</span>
-          ) : body.preview === null ? (
-            <span className="text-text-secondary">no preview</span>
-          ) : (
-            body.preview
-          )}
-        </div>
+        <>
+          <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
+            <div className="text-node-command">{body.path}</div>
+            {body.diff === null ? (
+              body.unreadable ? (
+                <div className="text-text-secondary">output unreadable — open Raw</div>
+              ) : body.preview === null ? (
+                <div className="text-text-secondary">no preview</div>
+              ) : (
+                <div>{body.preview}</div>
+              )
+            ) : body.diff.hunks.length === 0 ? (
+              <div className="text-text-secondary">no changes</div>
+            ) : (
+              <InlineDiff diff={body.diff} />
+            )}
+          </div>
+          {failureOutput ? (
+            <div className={cn(TOOL_BODY_BOX, 'mt-1.5')} style={{ overflowWrap: 'anywhere' }}>
+              {body.unreadable ? (
+                <span className="text-text-secondary">output unreadable — open Raw</span>
+              ) : (
+                body.preview
+              )}
+            </div>
+          ) : null}
+        </>
       );
+    }
     case 'matches':
       return (
         <div className={TOOL_BODY_BOX} style={{ overflowWrap: 'anywhere' }}>
