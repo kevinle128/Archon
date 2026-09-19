@@ -3235,6 +3235,55 @@ describe('executeDagWorkflow -- output_format structured output', () => {
       .filter(msg => typeof msg === 'string' && msg.includes('did not return structured output'));
     expect(warningMessages).toHaveLength(0);
   });
+
+  it('keeps a one-string structured result an object and hands the string to downstream refs', async () => {
+    const report = '# Report\n\nFindings **bold**';
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: JSON.stringify({ report }) };
+      yield { type: 'result', sessionId: 'sid-report', structuredOutput: { report } };
+    });
+
+    const mockDeps = createMockDeps();
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('one-string-report-run', {
+      user_message: 'write the report',
+    });
+
+    const nodes: DagNode[] = [
+      {
+        id: 'producer',
+        command: 'classify',
+        output_format: { type: 'object', properties: { report: { type: 'string' } } },
+      },
+      {
+        id: 'consumer',
+        prompt: 'Report body: $producer.output.report',
+        depends_on: ['producer'],
+      },
+    ];
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-report',
+      testDir,
+      { name: 'one-string-report', nodes },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const consumerPrompt = mockSendQueryDag.mock.calls[1][0] as string;
+    expect(consumerPrompt).toContain(`Report body: ${report}`);
+    expect(consumerPrompt).not.toContain('"report"');
+  });
 });
 
 describe('executeDagWorkflow -- when condition parse errors (fail-closed)', () => {

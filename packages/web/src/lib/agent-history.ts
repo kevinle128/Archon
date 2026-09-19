@@ -17,6 +17,8 @@ export interface AgentHistoryInput {
   events: readonly components['schemas']['WorkflowEvent'][];
   nodeId: string;
   nowMs: number;
+  /** Matched definition node's `output_format`; absent or ineligible schemas leave text untouched. */
+  outputFormat?: Record<string, unknown>;
 }
 
 /** Typed execution scope carried on wire rows; `null` on pre-scope history. */
@@ -72,6 +74,48 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return null;
   }
   return value as Record<string, unknown>;
+}
+
+/**
+ * The declared property key when `outputFormat` is exactly an object schema with
+ * one `type: 'string'` property; null for every other shape. Annotations and
+ * constraints on the property do not disqualify it.
+ */
+function singleStringSchemaKey(outputFormat: Record<string, unknown> | undefined): string | null {
+  const schema = asRecord(outputFormat);
+  if (schema?.type !== 'object') return null;
+  const properties = asRecord(schema.properties);
+  if (properties === null) return null;
+  const keys = Object.keys(properties);
+  const key = keys[0];
+  if (keys.length !== 1 || key === undefined) return null;
+  const property = asRecord(properties[key]);
+  if (property?.type !== 'string') return null;
+  return key;
+}
+
+/**
+ * The envelope's string value when `text` is the canonical serialization of the
+ * declared one-key object; otherwise the input text unchanged. Any ambiguity —
+ * malformed, extra or missing keys, non-string value, non-canonical bytes —
+ * fails closed so audit text survives byte-for-byte.
+ */
+function presentedText(schemaKey: string | null, text: string): string {
+  if (schemaKey === null) return text;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  const record = asRecord(parsed);
+  if (record === null) return text;
+  const keys = Object.keys(record);
+  if (keys.length !== 1 || keys[0] !== schemaKey) return text;
+  const value = record[schemaKey];
+  if (typeof value !== 'string') return text;
+  if (text !== JSON.stringify(parsed)) return text;
+  return value;
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | null {
@@ -259,6 +303,7 @@ export function toolRuntime(
 
 export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
   const projected = projectToolTranscript(projectTextTranscript(input.rows));
+  const envelopeKey = singleStringSchemaKey(input.outputFormat);
   const items: AgentHistoryItem[] = [];
   for (let index = 0; index < projected.length; index++) {
     const item = projected[index];
@@ -288,7 +333,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         id: message.id,
         seq: message.seq,
         role: 'assistant',
-        text: message.payload.text,
+        text: presentedText(envelopeKey, message.payload.text),
         execution: message.metadata?.execution ?? null,
       });
       continue;
