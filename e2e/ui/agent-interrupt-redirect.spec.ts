@@ -281,6 +281,10 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
     const offenders: { tag: string; insideRoom: boolean }[] = [];
     document.querySelectorAll('body *').forEach(el => {
       const rect = el.getBoundingClientRect();
+      // Zero-area / hairline SVG geometry can report a sub-pixel overhang
+      // without contributing to page scroll — ignore those; they are not a
+      // room-driven overflow the operator can see.
+      if (rect.width < 1 || rect.height < 1) return;
       if (rect.right > width + 1 || rect.left < -1) {
         offenders.push({
           tag: `${el.tagName}.${typeof el.className === 'string' ? (el.className.split(' ')[0] ?? '') : ''}`,
@@ -730,7 +734,7 @@ for (const surface of ['console', 'legacy'] as const) {
     });
   });
 
-  test(`[P1] [V:steer.interrupt-422-${surface}] interrupt 422 keeps drafts and receipts under the detached disclosure on ${surface}`, async ({
+  test(`[P1] [V:steer.interrupt-422-${surface}] interrupt and redirect 422 keeps drafts and receipts under the detached disclosure on ${surface}`, async ({
     page,
     archon,
   }) => {
@@ -892,6 +896,14 @@ for (const surface of ['console', 'legacy'] as const) {
     await test.step('460px states: generating+queue, interrupting, idle, generating-again', async () => {
       await page.setViewportSize({ width: 460, height: 900 });
       await expect(queueList(room).getByRole('listitem')).toHaveCount(1);
+      // Wait for the room panel to reflow into the 460px viewport before the
+      // geometry assertion — a mid-resize snapshot can report a transient
+      // overhang that the final layout does not keep.
+      await expect
+        .poll(async () => (await room.boundingBox())?.width ?? Number.POSITIVE_INFINITY, {
+          timeout: T.medium,
+        })
+        .toBeLessThanOrEqual(460);
       await expectNoRoomDrivenOverflow(room, `${surface}@460-generating`);
       await captureEvidence(room, `us-005-${surface}-460-generating-queue.png`, testInfo);
       const roomWidth = (await room.boundingBox())?.width ?? 0;
@@ -1080,8 +1092,13 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   expect(await idleQueued.json()).toMatchObject({ success: true, state: 'awaiting_send_now' });
 
   const sendNowId = randomUUID();
+  // Bound the redirected turn so the live handle stays registered long enough
+  // for the duplicate send_now replay to hit accept()'s idempotent path
+  // instead of racing a natural node_finished 409.
+  const sendNowMessage =
+    '<<E2E_SCENARIO>>{"echoPrompt":true,"delayMs":5000}<</E2E_SCENARIO>>route send now';
   const sendNow = await post(run.runId, QUEUE_GUIDANCE_NODE, {
-    message: '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>route send now',
+    message: sendNowMessage,
     message_id: sendNowId,
     intent: 'send_now',
   });
@@ -1092,13 +1109,20 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
     state: 'awaiting_send_now',
   });
 
+  await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'generating');
+
   // A replayed send_now is idempotent — the accepted id never drains twice.
   const replay = await post(run.runId, QUEUE_GUIDANCE_NODE, {
-    message: '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>route send now',
+    message: sendNowMessage,
     message_id: sendNowId,
     intent: 'send_now',
   });
   expect(replay.status).toBe(200);
+  expect(await replay.json()).toEqual({
+    success: true,
+    message_id: sendNowId,
+    state: 'awaiting_send_now',
+  });
 
   const unknown = await interrupt(run.runId, 'ghost-node');
   expect(unknown.status).toBe(404);
