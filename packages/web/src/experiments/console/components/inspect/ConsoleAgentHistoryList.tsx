@@ -277,6 +277,7 @@ const BADGE_TONE: Record<ToolRowBadgeTone, { className?: string; style?: React.C
   warning: { className: 'text-warning' },
   running: { className: 'text-[color:var(--running)]' },
   muted: { className: 'text-text-tertiary' },
+  success: { className: 'text-success' },
   danger: {
     style: { color: 'color-mix(in oklch, var(--error) 75%, var(--text-primary))' },
   },

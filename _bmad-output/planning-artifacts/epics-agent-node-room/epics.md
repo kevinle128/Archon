@@ -297,21 +297,26 @@ So that I can understand the change without leaving the transcript.
 
 **Given** a file-edit payload with before and after content
 **When** I expand it
-**Then** it renders add, delete, and hunk lines through `react-diff-view`.
+**Then** it renders add, delete, and hunk lines through `react-diff-view` — a single hunk undecorated, a text-only `@@` separator before each later hunk.
 
 **Given** a persisted file tool row without both before/after string sides — a one-sided write, a refused pair, or a call with no usable input
 **When** I expand it
 **Then** it renders path and preview
 **And** it never fabricates a diff.
 
+**Given** a failed file-edit row with a qualified pair
+**When** I expand it
+**Then** the attempted diff still renders and the normalized failure output appears alongside it.
+
 **Given** pathological or large content
 **When** the diff is computed
-**Then** `diff-hunks.ts` applies the declared byte ceiling and `maxEditLength`
-**And** it falls back to path and preview instead of blocking the UI.
+**Then** `diff-hunks.ts` applies the declared byte, line, and `maxEditLength` caps — all functions of the inputs, never a wall-clock timeout
+**And** it falls back to path and preview instead of blocking the UI
+**And** display lines strip ANSI/C0/C1 and escape `Cf`/`U+2028`/`U+2029` as `\u{HEX}` so hostile content cannot draw hidden or fake rows.
 
 **Given** repeated content, mid-array no-newline markers, repeated computation, or adapter conversion
 **When** tests run
-**Then** output is deterministic, memoized, and has valid line numbers as required by the diff contract.
+**Then** output is deterministic, memoized (per-record `WeakMap` plus the dual-bounded pair cache), and has valid snippet-relative line numbers as required by the diff contract.
 
 _Scope:_ presentation-only over persisted tool rows. Current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and nothing here is a Codex row. Making successful Codex file-change events visible in the transcript is separately tracked work.
 

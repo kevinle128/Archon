@@ -31,7 +31,10 @@ Table-driven over the resolver tiers.
 - empty, null and array inputs never throw
 - chip rule: a short name is kept verbatim; a long Codex-style name falls back to the family. **Assert `label.length <= 24` for every row in the table**, so no future tool can burst the chip
 - `headlineKind` is `'path'` for the file and glob families, `'text'` for shell and content search
-- a diff is produced only when both sides are present, and never fabricated from one
+- a diff is produced only when both sides are present as own-property strings on a `file`-family row, and never fabricated from one — the canonical pair and both aliases qualify (empty strings included), while inherited/prototype keys, throwing accessors, one-sided pairs, wrong types, absent input, and alias-shaped keys on non-file families do not
+- a nonempty diff emits `+n` (success) and `−m` (danger) collapsed badges — each only when its side is positive — and body facts `N hunk`/`N hunks` then `replace_all: true|false` only for an own boolean input; the body bar composes `file · 1 hunk · replace_all: false` and never repeats the `+n −m` badges
+- an identical pair reports `no changes` with no badges; a refused pair keeps the preview fallback with no facts
+- repeated summary and body calls on the same record read the pair once (the record `WeakMap`), and a second record with equal strings reuses the identical pair-cache result object
 - the exit code reaches the row: a `bash` call recording `exit_code: 1` carries an `exit 1` badge on the **collapsed** row. This is CAP-1's own success signal and it is currently unreachable, the code discarding the value after deriving the outcome
 - hostile and oversized outputs stay within the contract ceilings: nested `file_matches` and web-result arrays report their hidden tail, grep path/text values and generic field keys are independently bounded and sanitized, over-cap text ends in an ellipsis without exceeding its ceiling, and assembled web markdown cannot exceed the text ceiling
 - inherited enumerable properties are never emitted and count toward the finite key-scan budget, so a hostile prototype cannot force an unbounded scan
@@ -52,12 +55,15 @@ The < 2% generic-fallback bound is measured against the deployment corpus (22,86
 
 ## `diff-hunks.test.ts` — CAP-5
 
-The module is the only caller of `structuredPatch`, so its traps are tested here rather than through a renderer.
+The module is the only caller of `structuredPatch`, so its traps are tested here rather than through a renderer. Tests drive a `createDiffHunks` factory with injected `patch`/`byteLength`/memo budgets — the exported `diffHunks` singleton carries no test seams.
 
 - line numbers survive the `\ No newline at end of file` marker: a fixture whose hunk carries the marker **mid-array**, and one carrying it **twice**, both produce `oldLine`/`newLine` values matching a hand-checked expectation. Asserting only the trailing case passes while the counters are already desynchronised
-- an input above the byte ceiling returns `null` without calling `structuredPatch`, and a pair exceeding `maxEditLength` returns `null` — both degrade to path plus preview, neither throws and neither hangs
-- the same pair of strings yields the identical result on repeat calls, which is what an edit-length bound buys over a wall-clock timeout
-- the produced `GitDiffHunk` feeds `git-hunk-adapter` without tripping its `requiredLine()` guard
+- an input above the byte ceiling returns `null` without calling `structuredPatch` — including a multibyte string that passes the code-unit `.length` precheck but fails the UTF-8 measurement — and a pair exceeding `maxEditLength` returns `null` (a real 1,001/1,000 disjoint-edit fixture plus an injected `undefined`), as does a thrown patch; both degrade to path plus preview, neither throws and neither hangs. Refusals are cached, but the uncached `.length` precheck never stores an oversized pair
+- the line cap is exact: 2,000 logical lines accepted, 2,001 refused without `patch`, including the no-trailing-newline off-by-one
+- the same pair of strings yields the identical result object on repeat calls, which is what an edit-length bound buys over a wall-clock timeout; a cache hit refreshes LRU order, and count eviction plus source-weight eviction each recompute only the evicted pair
+- empty-to-content, deletion-to-empty, identical sides (`{ hunks: [] }`), repeated content, and CRLF-vs-LF pairs (raw-compared, so a line-ending rewrite shows changed rows with equal visible text) all produce deterministic results
+- ANSI escapes, C0/C1 controls, bidi overrides/isolates, zero-width format controls, BOM, and `U+2028`/`U+2029` cannot create hidden, reordered, or fake display lines — `Cf` and the two separators become visible `\u{HEX}` text and every emitted line stays within 1,024 code units, ellipsis included
+- the produced `GitDiffHunk` feeds `git-hunk-adapter` without tripping its `requiredLine()` guard — every emitted line number is positive and snippet-relative to its hunk's `oldStart`/`newStart`
 
 ## `task-normalize.test.ts` — CAP-4
 
