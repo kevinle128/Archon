@@ -18,8 +18,8 @@
       "technicalNotes": "Phase 1 of the plan (phase-01-start.md). Production edits are exactly two: add textMode: 'delta' to the assistant-object returns in mapDevinSessionUpdate() (packages/providers/src/community/devin/event-bridge.ts) and mapDeepseekSessionUpdate() (packages/providers/src/community/deepseek/event-bridge.ts); call newTranscriptAttempt(executionScope-equivalent) in the loop missing structured-output re-ask branch of packages/workflows/src/dag-executor.ts (~line 6660). Do NOT extract a shared ACP mapper. Tests-before: tighten exact bridge object assertions, extend fake ACP processes to emit split chunks, add executor persistence + re-ask-isolation assertions; record failures before implementing.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1 (commit 0a42a072). Files: packages/providers/src/community/devin/event-bridge.ts, packages/providers/src/community/deepseek/event-bridge.ts, packages/workflows/src/dag-executor.ts + their test files. RED→GREEN evidence recorded; providers 78/78, workflows 629/629, web 35/35 focused tests pass; eslint/prettier/tsc clean."
     },
     {
       "id": "US-002",

@@ -1,0 +1,57 @@
+## Codebase Patterns
+
+### MessageChunk textMode → transcript metadata.text_mode
+- Where: `packages/providers/src/provider-types.ts` (MessageChunk.textMode?: 'complete' | 'delta' | 'snapshot'); persistence forwarding in `packages/workflows/src/dag-executor.ts` — `...(msg.textMode !== undefined ? { text_mode: msg.textMode } : {})` in BOTH the direct-node and loop-node transcript paths.
+- Pattern: Providers declare the text boundary semantic on the chunk; the executor forwards it into row metadata verbatim. No DB/schema change needed — `metadata` is a free-form JSON column validated by `packages/workflows/src/schemas/node-execution.ts`.
+- Example: `return [{ type: 'assistant', content: update.content.text, textMode: 'delta' }];`
+
+### Transcript execution scope / attempt rotation
+- Where: `packages/workflows/src/transcript-execution-scope.ts` — `newTranscriptAttempt(scope)` returns `{ ...scope, attempt_id: randomUUID() }` (same occurrence_id, new attempt).
+- Pattern: Every provider re-ask inside a loop MUST rotate the scope before the next pass, or failed + repaired text land in the same attempt. The invalid-structured-output branch already did this (~dag-executor.ts:6630); the missing-output branch (~6660) previously only bumped `reaskAttempt` — now it rotates too.
+- Example: `reaskAttempt++; iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope); reaskErrors = ['no JSON object was found in the response']; continue attempts;`
+
+### Executor test infra for transcript rows
+- Where: `packages/workflows/src/dag-executor.test.ts` — `runNodes()` helper + fake transcript store capture; `runNodes` accepts an optional provider name (added `provider` param this iteration) so node `provider:` fields resolve through `workflowProvider`.
+- Pattern: Assert on captured append payloads: `textRows[i].payload` for text, `textRows[i].metadata.execution` for `{ occurrence_id, attempt_id, retry_epoch, text_mode }`.
+- Gotcha: `bun test -t` filters run fast; the full file is ~48s/629 tests. Test files are in the repo eslintignore — lint only production files when checking warnings.
+
+### ACP bridge test fakes
+- Where: `packages/providers/src/community/{devin,deepseek}/acp-client.test.ts`
+- Pattern: Fake ACP child processes emit session/update JSON-RPC notifications; to test split streaming, emit two `agent_message_chunk` notifications ('Hel' then 'lo') before the terminal result and assert two ordered delta chunks.
+
+---
+
+## 2026-03-20 — US-001: Provider delta boundaries and loop missing-output attempt rotation
+
+**Status**: PASSED
+**Commit**: 0a42a072 `fix(workflows): preserve ACP delta transcript boundaries`
+**Files changed**:
+- `packages/providers/src/community/devin/event-bridge.ts` — `textMode: 'delta'` on text-valued agent_message_chunk → assistant MessageChunk mapping
+- `packages/providers/src/community/deepseek/event-bridge.ts` — same delta mapping
+- `packages/workflows/src/dag-executor.ts` — `newTranscriptAttempt(iterationExecutionScope)` added to the missing structured-output re-ask branch
+- `packages/providers/src/community/devin/event-bridge.test.ts` — exact assertions tightened to `textMode: 'delta'`; thought/tool/replay/usage unchanged
+- `packages/providers/src/community/deepseek/event-bridge.test.ts` — same
+- `packages/providers/src/community/devin/acp-client.test.ts` — split 'Hel'/'lo' chunks through fake ACP process → two ordered delta chunks + unchanged terminal result; loaded-session replay suppression + first-new-message-is-delta
+- `packages/providers/src/community/deepseek/acp-client.test.ts` — same
+- `packages/workflows/src/dag-executor.test.ts` — `runNodes` provider param; new tests: direct + loop `metadata.text_mode === 'delta'` persistence; invalid-output and missing-output re-asks each produce distinct attempt_id under same occurrence_id
+
+**RED evidence** (before production edits):
+- event-bridge tests: 3 failures — chunks emitted without `textMode` vs expected `{ type: 'assistant', content, textMode: 'delta' }`
+- acp-client tests: 10 failures — split 'Hel'/'lo' chunks lacked `textMode: 'delta'`
+- executor: missing-output re-ask rows shared the same attempt_id; invalid-output isolation already passed (proves existing rotation)
+
+**Acceptance criteria verified**:
+- [x] Devin + DeepSeek bridges map text agent_message_chunk → MessageChunk textMode 'delta' (RED→GREEN recorded)
+- [x] ACP client tests send 'Hel'/'lo' through fake ACP child → two ordered deltas → 'Hello', terminal result unchanged
+- [x] Loaded-session replay still suppresses replays; first new message is a delta
+- [x] Direct and loop persisted chunks carry `metadata.text_mode: 'delta'`
+- [x] Invalid-output AND missing-output re-asks produce distinct transcript attempts (same occurrence_id)
+- [x] No new state, stream id, DB field, provider buffering, or UI heuristic; historical rows untouched (metadata forwarder was pre-existing)
+- [x] Focused suites: providers 78/78, workflows 629/629, web 35/35; tsc --noEmit clean (providers, workflows); eslint clean on production files; prettier clean
+
+**Learnings**:
+- The executor's text_mode forwarder already existed in both direct and loop paths — the bug was purely providers not declaring the boundary + one missing scope rotation. Minimal two-line production fix plus one line in the executor.
+- Test files are eslint-ignored repo-wide; lint production paths directly to get a meaningful signal.
+- `runNodes` needed a provider parameter so loop/agent nodes with an explicit `provider:` field resolve `workflowProvider` instead of defaulting to claude.
+
+---
