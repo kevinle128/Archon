@@ -60,7 +60,7 @@
       "dependsOn": ["US-002"],
       "priority": 3,
       "passes": true,
-      "notes": "Implemented in iteration 3. Files: LegacyGraphLogsPane.tsx (resolve once + gate on onSelectExecution), LegacyNodeRoom.tsx (pass-through), NodeTranscriptPane.tsx (consume-once focus handoff), ComposerDock.tsx (finished-iteration branch + poll onError), matching tests. Commit pending."
+      "notes": "Implemented in iteration 3. Files: LegacyGraphLogsPane.tsx (resolve once + gate on onSelectExecution), LegacyNodeRoom.tsx (pass-through), NodeTranscriptPane.tsx (consume-once focus handoff), ComposerDock.tsx (finished-iteration branch + poll onError), matching tests. Commit 5418cce5."
     },
     {
       "id": "US-004",
