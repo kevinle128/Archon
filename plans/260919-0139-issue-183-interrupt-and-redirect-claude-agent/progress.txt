@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Visual pin + capability fixture totality (US-005 unblock)
+- **Where**: `.agents/skills/verify-archon/visual-config.json` + `features/run-ui.json`; provider `**/config.test.ts` exact capability objects
+- **Pattern**: `visualBinding()` = `visual-` + digest(visual-config.json). Any pin refresh MUST retarget the catalog binding id. Every provider exact capability `toEqual` fixture must include the required `interrupt` axis (`false` for non-Claude).
+- **Example**: deepseek/devin fixtures needed `interrupt: false`; after pin refresh binding moved `visual-78d882…` → `visual-92fb1a…`.
+
 ### Dock-removal focus fallback (US-004)
 - **Where**: `packages/web/src/components/workflows/ComposerDock.tsx` (mirrored in `experiments/console/components/ConsoleComposerDock.tsx`); pane-side target in `NodeTranscriptPane.tsx`/`ConsoleNodeRoom.tsx` (`focusLastRow`); row marker in `NodeRoom.tsx`/`ConsoleAgentHistoryList.tsx` (`data-last-row` + `tabIndex={-1}` on the last rendered item only).
 - **Pattern**: when a removable control region can own focus, latch `focusInsideRef` on `focusCapture` (cleared on blurCapture leaving the region) and track `controlsMountedRef` across mode transitions. On the mounted→unmounted transition (or full unmount while focus was inside), call an injected `focusLastRow()` that focuses `[data-last-row]` else the transcript scroller with `preventScroll` — never let focus fall to `<body>`. The latch is what makes React 19 StrictMode mount replay safe: cleanup fires on a dock that never owned focus and must not steal it.
@@ -171,5 +176,39 @@
 - The shared submit predicate (non-blank draft) means `aria-disabled` is true on a blank-draft Queue — tests asserting "not blocked" must type a draft first, otherwise they can't distinguish ask-block from empty-draft.
 - **Environmental**: this host runs at load ~100 (other worktrees' rustc/Chrome/stale bun-test processes). `ConsoleNodeRoom > polls live agent rooms` and `console-isolation` are I/O/timing-bound and exceed bun's default 5s per-test budget under load — both pass with `--timeout 60000` and passed in the final full-suite run once stale `bun test` processes (139+ CPU-min each) were killed. Not a regression: measured 12.9s test-internal on the clean base.
 - lint-staged creates a backup stash during commit — the shared-stash-list hazard from US-003 applies here too.
+
+---
+
+## 2026-09-20 — US-005: Deterministic E2E evidence and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts(+test)` — already on branch from f7e5f097; re-verified 42 unit tests
+- `e2e/fixtures/workflows/e2e-queue-guidance.yaml` / `-loop.yaml` — interruptible first-turn directives (f7e5f097)
+- `e2e/ui/agent-interrupt-redirect.spec.ts` — both-shell direct/fail/422/loop/visual + route ladder; closeout hardening for duplicate send_now race, 422 grep title, overflow settle
+- `plans/.../reports/acceptance.md` + `reports/evidence/*` — acceptance map + screenshots/measurements
+- `_bmad-output/.../sprint-status.yaml` — only `2-3-interrupt-and-redirect-a-running-claude-agent: done`
+- Unblock commits: deepseek/devin capability fixtures; visual-config source pins + ui.visual binding retarget
+
+**Acceptance criteria verified**:
+- [x] e2e-fake interruptible scenario + unit coverage + type-check
+- [x] fixtures extended not duplicated; archon-runtime untouched; queue-guidance 11 pass
+- [x] both-shell direct interrupt+redirect Playwright flow
+- [x] failure/race + route ladder (idle idempotent, duplicate send_now, 404/409/422)
+- [x] loop parity both shells; loop-group via executor unit
+- [x] visual/a11y evidence 460 + 1440 + reduced-motion + measurements JSON
+- [x] reports/acceptance.md complete
+- [x] sprint status flipped only for Story 2.3
+- [x] final gate: typecheck, interrupt E2E 11, queue guidance 11, capability-matrix, validate exit 0
+
+**Learnings**:
+- Route ladder send_now without delayMs races node_finished before duplicate replay — bound the redirected turn.
+- 422 test titles must include the final-gate grep phrase `interrupt and redirect`.
+- Overflow assertion can flake mid-viewport-resize; poll room width ≤460 and ignore zero-area SVG geometry.
+- Capability axis additions need EVERY exact `toEqual` capability fixture updated (deepseek/devin missed in US-001).
+- Refreshing visual-config source pins also changes `visualBinding()` digest — retarget `features/run-ui.json` binding id in the same unblock series.
+
+BLOCKER US-005 | gate=`bun run validate` | cause=DEEPSEEK/DEVIN capability toEqual missing interrupt:false (same on clean base) | action=chore(unblock) 0f844e6c | 2026-09-20
+BLOCKER US-005 | gate=`bun run validate` / scripts/verify-feature-gate.test.ts | cause=stale visual-config source pins + ui.visual binding hash mismatch (same on clean base) | action=chore(unblock) 4e2e2653 + 53cfd43f | 2026-09-20
 
 ---

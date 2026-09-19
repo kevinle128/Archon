@@ -116,8 +116,8 @@
       "technicalNotes": "Follow phase-05-e2e-evidence-and-closeout.md. The real Claude primitive is proven by US-001's spike + provider tests; the e2e fake proves Archon integration/UI deterministically. Redirect messages include echoPrompt:true + bounded delay so generating-again is observable; loop redirect includes doneWhenPromptIncludes. Do not increase test timeouts to hide a missing event. Enhancing shared fixtures can regress Story 2.1 \u2014 its spec is an explicit gate.",
       "dependsOn": ["US-001", "US-002", "US-003", "US-004"],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 5 (implementation landed in f7e5f097; closeout 18d649ec). Files: packages/providers/src/e2e-fake/provider.ts(+test) interruptible scenario; e2e fixtures e2e-queue-guidance{,-loop}.yaml; e2e/ui/agent-interrupt-redirect.spec.ts (both-shell direct/fail/422/loop/visual + routes); reports/acceptance.md + evidence; sprint-status 2-3 \u2192 done. Unblocks: deepseek/devin capability fixtures, visual-config pins + binding. Gates: e2e-fake 42, interrupt E2E 11, queue guidance 11, capability-matrix OK, bun run validate exit 0."
     }
   ]
 }
