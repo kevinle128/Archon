@@ -2,7 +2,7 @@
  * Inspect-only node transcript room: render projected agent history for the
  * selected execution. Cursor paging and Ask placement stay in NodeTranscriptPane.
  */
-import { useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
@@ -10,6 +10,7 @@ import remarkGfm from 'remark-gfm';
 
 import type { AgentHistoryItem } from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
+import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   toolBodyPresentation,
   toolRawPayloadJson,
@@ -45,6 +46,14 @@ export interface NodeRoomProps {
    * strip can sit beside the scroller inside the region).
    */
   embedded?: boolean;
+  /**
+   * Occurrence grouping computed by the caller. When it reports showHeaders
+   * the body renders one h3 section heading per group; otherwise the flat
+   * item render is unchanged.
+   */
+  occurrenceGrouping?: OccurrenceGrouping;
+  /** useId-owned namespace for occurrence heading DOM ids (navigator targets). */
+  headingIdPrefix?: string;
 }
 
 const UNKNOWN_SCOPE_NOTICE =
@@ -933,10 +942,41 @@ export function NodeRoom({
   renderAfterItem,
   renderAtEnd,
   embedded = false,
+  occurrenceGrouping,
+  headingIdPrefix,
 }: NodeRoomProps): React.ReactElement {
+  const generatedHeadingPrefix = useId();
   if (nodeId === null) {
     return <RoomPlaceholder>Select a node</RoomPlaceholder>;
   }
+
+  const headingPrefix = headingIdPrefix ?? generatedHeadingPrefix;
+  const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
+
+  const renderItem = (item: AgentHistoryItem): React.ReactElement => {
+    if (item.kind === 'assistant') {
+      return (
+        <div key={item.id} className="my-1.5">
+          <AssistantHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'tool') {
+      return (
+        <div key={item.id}>
+          <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    return (
+      <div key={item.id} className="my-1.5">
+        <LifecycleHistory item={item} />
+        {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+      </div>
+    );
+  };
 
   let body: React.ReactNode;
   if (isPending && items.length === 0 && error === null) {
@@ -961,30 +1001,28 @@ export function NodeRoom({
         {unknownScope ? (
           <p className="mb-1.5 text-xs text-warning">{UNKNOWN_SCOPE_NOTICE}</p>
         ) : null}
-        {items.map(item => {
-          if (item.kind === 'assistant') {
-            return (
-              <div key={item.id} className="my-1.5">
-                <AssistantHistory item={item} />
-                {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-              </div>
-            );
-          }
-          if (item.kind === 'tool') {
-            return (
-              <div key={item.id}>
-                <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
-                {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-              </div>
-            );
-          }
-          return (
-            <div key={item.id} className="my-1.5">
-              <LifecycleHistory item={item} />
-              {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
-            </div>
-          );
-        })}
+        {grouping === null ? (
+          items.map(renderItem)
+        ) : (
+          <>
+            {grouping.prefixItems.map(renderItem)}
+            {grouping.groups.map(group => (
+              <Fragment key={group.key}>
+                <h3
+                  id={`${headingPrefix}occ-${group.key}`}
+                  tabIndex={-1}
+                  className="mb-[5px] mt-[10px] flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.08em] text-text-secondary"
+                >
+                  <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+                    {group.label}
+                  </span>
+                  <span aria-hidden="true" className="h-px flex-1 bg-border" />
+                </h3>
+                {group.items.map(renderItem)}
+              </Fragment>
+            ))}
+          </>
+        )}
         {error !== null ? <RoomIncompleteNotice error={error} onRetry={onRetry} /> : null}
         {renderAtEnd === undefined || renderAtEnd === null || renderAtEnd === false ? null : (
           <div className="mt-1.5">{renderAtEnd}</div>

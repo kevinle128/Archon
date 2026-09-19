@@ -2,7 +2,7 @@
 name: Archon
 description: The node room on both web surfaces — the readable agent transcript that is read, and the steering dock it is written from. shadcn/Radix on Tailwind v4, dark-only; this DESIGN.md specifies both deltas over two inherited token sets and forks neither palette.
 status: final
-updated: 2026-09-13
+updated: 2026-09-19
 sources:
   - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/SPEC.md
   - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/tool-presentation-contract.md
@@ -613,6 +613,8 @@ The card is itself a `<details>`, so it carries the same chevron as a tool row a
 **Key-value list** (`{components.kv-list}`) — up to three rows, key in text-secondary at `{spacing.kv-key-w}`, value in text-primary; `{…}` and `[n]` are literal text.
 
 **Occurrence header** (`{components.occurrence-header}`) — `{typography.occurrence-header}` uppercase text-secondary label, then a 1px `border` rule to the right edge; margin `{spacing.occurrence-margin}`.
+
+**Occurrence navigator** (adopted delta 5, 2026-09-19) — one control row at the bottom edge of the room region, a sibling of the transcript scroller like the dock is, never a child of it: the `Jump to` label in `text-xs` text-secondary beside a native `<select>` that shares the header `Execution` select's anatomy verbatim — `text-xs` text, `surface-elevated` fill, 1px `border`, `rounded`, end-elided, `10rem` max width — and `Jump to latest` holding the row's right edge unchanged. The row takes the room's existing `px-3` side padding and `py-2`; the select clears the 24px SC 2.5.8 floor through its `py-0.5` vertical padding plus border — grown, not enlarged, the way the tool row reaches it — so its painted anatomy stays the header select's. It renders only while two or more displayable occurrence groups exist; its absent state is the absent control — the row itself can still stand for `Jump to latest` alone — never a disabled control, and the transcript declares no breakpoint for it: under the host room's small-viewport layout the select shrinks with end-elision exactly as the `Execution` select does in the header.
 
 **Assistant text** (`{components.assistant-text}`) — sans, text-secondary, with a 10px uppercase text-secondary `assistant` role label above it on the room screens.
 Inline code inside it is mono at 11px.

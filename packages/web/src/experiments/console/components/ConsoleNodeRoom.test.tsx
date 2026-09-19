@@ -3,7 +3,8 @@ process.env.NODE_ENV = 'development';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
-import type { AgentHistoryItem } from '@/lib/agent-history';
+import type { AgentHistoryItem, TranscriptExecution } from '@/lib/agent-history';
+import { groupByOccurrence } from '@/lib/occurrence-groups';
 
 import type { ConsoleAgentHistoryListProps } from './inspect/ConsoleAgentHistoryList';
 import type { LogRow } from './inspect/build-log-rows';
@@ -3478,6 +3479,834 @@ describe('ConsoleNodeRoom', () => {
         expect(rawButton(row).getAttribute('aria-expanded')).toBe('false');
         expect(rawButton(row).textContent).toContain('Raw');
       }
+    });
+  });
+
+  describe('Console occurrence headings', () => {
+    type Loader = Parameters<typeof consoleNodeRoom.ConsoleNodeRoom>[0]['loadMessages'];
+
+    const NOW_MS = new Date(CREATED_AT).getTime() + 30_000;
+    const OCC_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+
+    function executed(
+      occurrenceId: string,
+      overrides: Partial<TranscriptExecution> = {}
+    ): TranscriptExecution {
+      return {
+        occurrence_id: occurrenceId,
+        attempt_id: `${occurrenceId}-attempt-1`,
+        ...overrides,
+      };
+    }
+
+    function textMsg(seq: number, text: string, exec?: TranscriptExecution): WorkflowNodeMessage {
+      return {
+        id: `text-${seq}`,
+        seq,
+        kind: 'text',
+        payload: { text },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function statusMsg(
+      seq: number,
+      state: string,
+      detail: string | null = null,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `status-${seq}`,
+        seq,
+        kind: 'status',
+        payload: detail === null ? { state } : { state, detail },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolCall(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `call-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' } },
+        metadata: { tool_phase: 'call', ...(exec === undefined ? {} : { execution: exec }) },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolResult(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `result-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' }, output: 'chunk' },
+        metadata: {
+          tool_phase: 'result',
+          outcome: 'success',
+          ...(exec === undefined ? {} : { execution: exec }),
+        },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function historyItems(rows: readonly WorkflowNodeMessage[]): AgentHistoryItem[] {
+      return agentHistory.buildAgentHistory({ rows, events: [], nodeId: 'review', nowMs: NOW_MS })
+        .items;
+    }
+
+    function mountGroupedList(
+      items: readonly AgentHistoryItem[],
+      options: {
+        showToolCalls?: boolean;
+        showSystem?: boolean;
+        unknownScope?: boolean;
+        renderAfterItem?: ConsoleAgentHistoryListProps['renderAfterItem'];
+        renderAtEnd?: ConsoleAgentHistoryListProps['renderAtEnd'];
+      } = {}
+    ): void {
+      root.render(
+        createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+          items,
+          showToolCalls: options.showToolCalls ?? true,
+          showSystem: options.showSystem ?? true,
+          onLoadFullOutput: async (): Promise<unknown> => undefined,
+          occurrenceGrouping: groupByOccurrence(items),
+          headingIdPrefix: 'test-room-',
+          unknownScope: options.unknownScope ?? false,
+          renderAfterItem: options.renderAfterItem,
+          renderAtEnd: options.renderAtEnd,
+        })
+      );
+    }
+
+    function headings(): Element[] {
+      return Array.from(host.querySelectorAll('h3[id]'));
+    }
+
+    function headingTexts(): string[] {
+      return headings().map(el => el.textContent ?? '');
+    }
+
+    test('renders no occurrence headings and no navigator for zero or one occurrence', async () => {
+      const unscoped = historyItems([textMsg(1, 'solo'), statusMsg(2, 'completed')]);
+      await act(async () => {
+        mountGroupedList(unscoped);
+      });
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelectorAll('select')).toHaveLength(0);
+
+      const single = historyItems([
+        textMsg(1, 'solo', executed(OCC_A)),
+        statusMsg(2, 'completed', null, executed(OCC_A)),
+      ]);
+      await act(async () => {
+        mountGroupedList(single);
+      });
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelectorAll('select')).toHaveLength(0);
+    });
+
+    test('renders one h3 heading per occurrence in group order with the exact core labels', async () => {
+      const items = historyItems([
+        statusMsg(1, 'started', null, executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(2, 'first-run', executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(3, 'second-run', executed(OCC_B, { retry_epoch: 1 })),
+        statusMsg(4, 'failed', null, executed(OCC_B, { retry_epoch: 1 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry · failed']);
+      const first = headings()[0];
+      const second = headings()[1];
+      expect(first?.getAttribute('tabindex')).toBe('-1');
+      expect(first?.getAttribute('id')).toBe(`test-room-occ-${OCC_A}`);
+      expect(second?.getAttribute('id')).toBe(`test-room-occ-${OCC_B}`);
+      const className = first?.getAttribute('class') ?? '';
+      expect(className).toContain('font-mono');
+      expect(className).toContain('text-[10.5px]');
+      expect(className).toContain('uppercase');
+      expect(className).toContain('tracking-[0.08em]');
+      expect(className).toContain('text-text-secondary');
+      expect(className).toContain('mt-[10px]');
+      expect(className).toContain('mb-[5px]');
+      expect(first?.querySelector('span.bg-border')).not.toBeNull();
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Run 1')).toBeLessThan(text.indexOf('first-run'));
+      expect(text.indexOf('first-run')).toBeLessThan(text.indexOf('Run 2'));
+      expect(text.indexOf('Run 2')).toBeLessThan(text.indexOf('second-run'));
+    });
+
+    test('disambiguates colliding base labels into distinct B4-qualified headings', async () => {
+      const routed = historyItems([
+        textMsg(1, 'route one', executed(OCC_A, { retry_epoch: 0, route_activation_seq: 1 })),
+        textMsg(2, 'route two', executed(OCC_B, { retry_epoch: 0, route_activation_seq: 2 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(routed);
+      });
+      expect(headingTexts()).toEqual(['Run 1 #1', 'Run 1 #2']);
+
+      const nested = historyItems([
+        textMsg(
+          1,
+          'x',
+          executed(OCC_A, {
+            loop_ancestry: [
+              { node_id: 'outer', iteration: 1 },
+              { node_id: 'inner', iteration: 3 },
+            ],
+          })
+        ),
+        textMsg(
+          2,
+          'y',
+          executed(OCC_B, {
+            loop_ancestry: [
+              { node_id: 'outer', iteration: 2 },
+              { node_id: 'inner', iteration: 3 },
+            ],
+          })
+        ),
+      ]);
+      await act(async () => {
+        mountGroupedList(nested);
+      });
+      expect(headingTexts()).toEqual(['Iteration 1 › Iteration 3', 'Iteration 2 › Iteration 3']);
+    });
+
+    test('renders no extra heading for multiple attempts inside one occurrence', async () => {
+      const items = historyItems([
+        textMsg(1, 'attempt one', executed(OCC_A, { attempt_id: 'att-1', retry_epoch: 0 })),
+        textMsg(2, 'attempt two', executed(OCC_A, { attempt_id: 'att-2', retry_epoch: 0 })),
+        textMsg(3, 'other', executed(OCC_B, { retry_epoch: 1 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+      const text = host.textContent ?? '';
+      expect(text.indexOf('attempt one')).toBeLessThan(text.indexOf('attempt two'));
+      expect(text.indexOf('attempt two')).toBeLessThan(text.indexOf('Run 2'));
+    });
+
+    test('renders a leading unscoped prefix once before the first heading', async () => {
+      const items = historyItems([
+        textMsg(1, 'before-scope'),
+        textMsg(2, 'scoped-a', executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(3, 'scoped-b', executed(OCC_B, { retry_epoch: 1 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      const text = host.textContent ?? '';
+      expect(text.match(/before-scope/g)?.length).toBe(1);
+      expect(text.indexOf('before-scope')).toBeLessThan(text.indexOf('Run 1'));
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+    });
+
+    test('renders non-contiguous occurrence rows once under one unique heading', async () => {
+      const items = historyItems([
+        textMsg(1, 'a-first', executed(OCC_A, { retry_epoch: 0 })),
+        textMsg(2, 'b-first', executed(OCC_B, { retry_epoch: 1 })),
+        textMsg(3, 'a-second', executed(OCC_A, { retry_epoch: 0 })),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 2 · retry']);
+      const text = host.textContent ?? '';
+      expect(text.match(/a-second/g)?.length).toBe(1);
+      expect(text.indexOf('a-first')).toBeLessThan(text.indexOf('a-second'));
+      expect(text.indexOf('a-second')).toBeLessThan(text.indexOf('Run 2'));
+      expect(text.indexOf('Run 2')).toBeLessThan(text.indexOf('b-first'));
+    });
+
+    test('keeps assistant, tool, and lifecycle order stable inside each group', async () => {
+      const items = historyItems([
+        textMsg(1, 'notes-a', executed(OCC_A)),
+        toolCall('t1', 2, executed(OCC_A)),
+        toolResult('t1', 3, executed(OCC_A)),
+        statusMsg(4, 'completed', null, executed(OCC_A)),
+        textMsg(5, 'notes-b', executed(OCC_B)),
+        toolCall('t2', 6, executed(OCC_B)),
+        toolResult('t2', 7, executed(OCC_B)),
+        statusMsg(8, 'failed', null, executed(OCC_B)),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2 · failed']);
+      const text = host.textContent ?? '';
+      const firstRead = text.indexOf('Read');
+      const secondRead = text.lastIndexOf('Read');
+      const secondHeading = text.indexOf('Run 1 · occurrence 2');
+      expect(text.indexOf('notes-a')).toBeLessThan(firstRead);
+      expect(firstRead).toBeLessThan(text.indexOf('completed'));
+      expect(text.indexOf('completed')).toBeLessThan(secondHeading);
+      expect(secondHeading).toBeLessThan(text.indexOf('notes-b'));
+      expect(text.indexOf('notes-b')).toBeLessThan(secondRead);
+      expect(secondRead).toBeLessThan(text.lastIndexOf('failed'));
+    });
+
+    test('keeps renderAfterItem attached to its item and renderAtEnd after all groups', async () => {
+      const items = historyItems([
+        textMsg(1, 'alpha', executed(OCC_A)),
+        toolCall('t1', 2, executed(OCC_B)),
+        toolResult('t1', 3, executed(OCC_B)),
+      ]);
+      await act(async () => {
+        mountGroupedList(items, {
+          renderAfterItem: (item): string => `after-${item.id}`,
+          renderAtEnd: 'end-extension',
+        });
+      });
+      const text = host.textContent ?? '';
+      const secondHeading = text.indexOf('Run 1 · occurrence 2');
+      expect(text.indexOf('after-text-1')).toBeGreaterThan(text.indexOf('alpha'));
+      expect(text.indexOf('after-text-1')).toBeLessThan(secondHeading);
+      expect(text.indexOf('after-call-t1')).toBeGreaterThan(secondHeading);
+      expect(text.indexOf('end-extension')).toBeGreaterThan(text.indexOf('after-call-t1'));
+    });
+
+    test('keeps the partial-page error, retry, and unknown-scope warning visible', async () => {
+      const loadMessages: Loader = async (_runId, _nodeId, options) => {
+        if ((options?.afterSeq ?? 0) === 0) {
+          return {
+            messages: [textMsg(1, 'alpha', executed(OCC_A)), textMsg(2, 'beta', executed(OCC_B))],
+            hasMore: true,
+            nextCursor: '2',
+            highWatermark: 3,
+          };
+        }
+        throw new Error('page-two-failed');
+      };
+      await act(async () => {
+        renderRoom({
+          loadMessages,
+          selectedRow: row({
+            nodeId: 'review',
+            label: 'Review',
+            status: 'running',
+            unknownScope: true,
+          }),
+        });
+      });
+      await flushUntil('partial error', () =>
+        (host.textContent ?? '').includes('Failed to load node transcript')
+      );
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+      expect(host.textContent).toContain('Execution scope was not recorded');
+      expect(host.textContent).toContain('Retry');
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Failed to load node transcript')).toBeGreaterThan(text.indexOf('beta'));
+    });
+
+    test('never lets item content text alter the headings', async () => {
+      const items = historyItems([
+        textMsg(1, 'Run 99', executed(OCC_A)),
+        textMsg(2, 'Iteration 99', executed(OCC_B)),
+      ]);
+      await act(async () => {
+        mountGroupedList(items);
+      });
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+    });
+
+    test('hides a group only when no row or attached Ask remains renderable', async () => {
+      // Occ A holds only a tool row and a lifecycle row — both hidden by the
+      // Console filters and carrying no Ask — so the group leaves the display.
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          toolCall('tool-1', 1, executed(OCC_A)),
+          toolResult('tool-1', 2, executed(OCC_A)),
+          statusMsg(3, 'completed', null, executed(OCC_A)),
+          textMsg(4, 'visible-b', executed(OCC_B)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false, showSystem: false });
+      });
+      await flushUntil('visible b', () => (host.textContent ?? '').includes('visible-b'));
+      expect(headings()).toHaveLength(0);
+      expect(host.querySelector('details[data-tool-id="tool-1"]')).toBeNull();
+      expect(host.querySelectorAll('select')).toHaveLength(1);
+    });
+
+    test('keeps a hidden tool group visible through its attached Ask card', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          toolCall('tool-1', 1, executed(OCC_A)),
+          toolResult('tool-1', 2, executed(OCC_A)),
+          textMsg(3, 'visible-b', executed(OCC_B)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({
+          loadMessages,
+          showToolCalls: false,
+          showSystem: false,
+          pendingInteractions: [ask({ tool_use_id: 'tool-1' })],
+        });
+      });
+      await flushUntil('ask', () => (host.textContent ?? '').includes('Ship it?'));
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+      expect(host.querySelector('details[data-tool-id="tool-1"]')).toBeNull();
+      const text = host.textContent ?? '';
+      expect(text.indexOf('Run 1 · occurrence 2')).toBeLessThan(text.indexOf('visible-b'));
+    });
+
+    test('drops all occurrence headings when filters leave one displayable group', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          toolCall('tool-1', 1, executed(OCC_A)),
+          toolResult('tool-1', 2, executed(OCC_A)),
+          statusMsg(3, 'completed', null, executed(OCC_A)),
+          textMsg(4, 'visible-b', executed(OCC_B)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages });
+      });
+      await flushUntil('both occurrences', () => headings().length === 2);
+      expect(headingTexts()).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false, showSystem: false });
+      });
+      await flushUntil(
+        'filtered',
+        () => host.querySelector('details[data-tool-id="tool-1"]') === null
+      );
+      expect(headings()).toHaveLength(0);
+      expect(host.textContent).toContain('visible-b');
+    });
+  });
+
+  describe('Console occurrence navigator', () => {
+    type Loader = Parameters<typeof consoleNodeRoom.ConsoleNodeRoom>[0]['loadMessages'];
+
+    const OCC_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const OCC_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    function executed(occurrenceId: string, retryEpoch = 0): TranscriptExecution {
+      return {
+        occurrence_id: occurrenceId,
+        attempt_id: `${occurrenceId}-attempt-1`,
+        retry_epoch: retryEpoch,
+      };
+    }
+
+    function textMsg(seq: number, text: string, exec?: TranscriptExecution): WorkflowNodeMessage {
+      return {
+        id: `text-${seq}`,
+        seq,
+        kind: 'text',
+        payload: { text },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function statusMsg(
+      seq: number,
+      state: string,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `status-${seq}`,
+        seq,
+        kind: 'status',
+        payload: { state },
+        ...(exec === undefined ? {} : { metadata: { execution: exec } }),
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolCall(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `call-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' } },
+        metadata: { tool_phase: 'call', ...(exec === undefined ? {} : { execution: exec }) },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolResult(
+      toolUseId: string,
+      seq: number,
+      exec?: TranscriptExecution
+    ): WorkflowNodeMessage {
+      return {
+        id: `result-${toolUseId}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Read', id: toolUseId, input: { path: 'a.ts' }, output: 'chunk' },
+        metadata: {
+          tool_phase: 'result',
+          outcome: 'success',
+          ...(exec === undefined ? {} : { execution: exec }),
+        },
+        created_at: CREATED_AT,
+      };
+    }
+
+    const TWO_OCCURRENCES: readonly WorkflowNodeMessage[] = [
+      statusMsg(1, 'started', executed(OCC_A)),
+      textMsg(2, 'run-one', executed(OCC_A)),
+      statusMsg(3, 'completed', executed(OCC_A)),
+      statusMsg(4, 'started', executed(OCC_B, 1)),
+      textMsg(5, 'run-two', executed(OCC_B, 1)),
+      statusMsg(6, 'completed', executed(OCC_B, 1)),
+    ];
+
+    function occHeadings(): HTMLElement[] {
+      return Array.from(host.querySelectorAll<HTMLElement>('h3[id]'));
+    }
+
+    function occurrenceHeading(occurrenceId: string): HTMLElement {
+      const heading = host.querySelector(`h3[id$="occ-${occurrenceId}"]`);
+      if (!(heading instanceof HTMLElement)) throw new Error(`missing heading ${occurrenceId}`);
+      return heading;
+    }
+
+    function navigatorSelect(): HTMLSelectElement | null {
+      const label = Array.from(host.querySelectorAll('label')).find(
+        el => (el.textContent ?? '') === 'Jump to'
+      );
+      const id = label?.getAttribute('for');
+      if (id === null || id === undefined) return null;
+      return host.querySelector(`select[id="${id}"]`);
+    }
+
+    function scrollerEl(): HTMLElement {
+      const el = host.querySelector('[data-testid="console-node-room-scroll"]');
+      if (!(el instanceof HTMLElement)) throw new Error('missing scroller');
+      return el;
+    }
+
+    function stubRect(el: Element, top: number, bottom: number): void {
+      (el as HTMLElement).getBoundingClientRect = (): DOMRect =>
+        ({
+          top,
+          bottom,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: bottom - top,
+          x: 0,
+          y: top,
+          toJSON: (): Record<string, number> => ({}),
+        }) as DOMRect;
+    }
+
+    function stubScroller(el: HTMLElement): void {
+      stubRect(el, 0, 100);
+      Object.defineProperty(el, 'scrollHeight', { configurable: true, value: 600 });
+      Object.defineProperty(el, 'clientHeight', { configurable: true, value: 100 });
+    }
+
+    async function commitSelect(select: HTMLSelectElement, value: string): Promise<void> {
+      await act(async () => {
+        select.value = value;
+        select.dispatchEvent(new win.Event('change', { bubbles: true }) as unknown as Event);
+      });
+      await flush();
+    }
+
+    function jumpToLatestButton(): HTMLElement | undefined {
+      return Array.from(host.querySelectorAll('button')).find(button =>
+        (button.textContent ?? '').includes('Jump to latest')
+      ) as HTMLElement | undefined;
+    }
+
+    async function mountTwoOccurrences(
+      onScrollTopChange?: (scrollTop: number) => void
+    ): Promise<[string, string][]> {
+      const calls: [string, string][] = [];
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (runId, nodeId): Promise<WorkflowNodeMessagesResponse> => {
+            calls.push([runId, nodeId]);
+            return { messages: [...TWO_OCCURRENCES] };
+          },
+          onScrollTopChange,
+        });
+      });
+      await flushUntil('occurrences', () => (host.textContent ?? '').includes('run-two'));
+      return calls;
+    }
+
+    test('no navigator for zero or one displayable occurrence group', async () => {
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [...FIXTURE],
+          }),
+        });
+      });
+      await flushUntil('unscoped fixture', () => (host.textContent ?? '').includes('first'));
+      expect(navigatorSelect()).toBeNull();
+      expect(occHeadings()).toHaveLength(0);
+
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [
+              textMsg(1, 'solo', executed(OCC_A)),
+              statusMsg(2, 'completed', executed(OCC_A)),
+            ],
+          }),
+        });
+      });
+      await flushUntil('single occurrence', () => (host.textContent ?? '').includes('solo'));
+      expect(navigatorSelect()).toBeNull();
+      // The header Execution filter select is untouched and still present.
+      expect(host.querySelector('select[aria-label="Execution"]')).not.toBeNull();
+    });
+
+    test('renders a labelled select whose options mirror the headings verbatim', async () => {
+      await mountTwoOccurrences();
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      const options = Array.from(select.querySelectorAll('option'));
+      expect(options.map(option => option.textContent)).toEqual([
+        '2 occurrences',
+        'Run 1',
+        'Run 2 · retry',
+      ]);
+      expect(options[0]?.disabled).toBe(true);
+      expect(options[0]?.getAttribute('value')).toBe('');
+      expect(options[1]?.getAttribute('value')).toBe(OCC_A);
+      expect(options[2]?.getAttribute('value')).toBe(OCC_B);
+      expect(occHeadings().map(heading => heading.textContent)).toEqual(
+        options.slice(1).map(option => option.textContent)
+      );
+      expect(select.value).toBe('');
+      expect(select.getAttribute('aria-controls')).toBeNull();
+      expect(select.getAttribute('tabindex')).toBeNull();
+    });
+
+    test('committed change scrolls, focuses the heading, holds the room, and issues no request', async () => {
+      const positions: number[] = [];
+      const calls = await mountTwoOccurrences((scrollTop: number): void => {
+        positions.push(scrollTop);
+      });
+      const scroller = scrollerEl();
+      const headingB = occurrenceHeading(OCC_B);
+      stubScroller(scroller);
+      stubRect(headingB, 150, 170);
+
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+
+      expect(select.value).toBe(OCC_B);
+      expect(select.getAttribute('aria-controls')).toBe(headingB.getAttribute('id'));
+      expect(win.document.activeElement as unknown as Element | null).toBe(headingB);
+      expect(scroller.scrollTop).toBe(150);
+      expect(positions).toContain(150);
+      expect(calls).toEqual([['run-1', 'review']]);
+      expect(jumpToLatestButton()).not.toBeUndefined();
+    });
+
+    test('an already-visible target moves focus without scrolling and enters manual hold', async () => {
+      await mountTwoOccurrences();
+      const scroller = scrollerEl();
+      const headingB = occurrenceHeading(OCC_B);
+      stubScroller(scroller);
+      scroller.scrollTop = 0;
+      stubRect(headingB, 40, 60);
+
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+
+      expect(win.document.activeElement as unknown as Element | null).toBe(headingB);
+      expect(scroller.scrollTop).toBe(0);
+      expect(jumpToLatestButton()?.className).toContain('ml-auto');
+    });
+
+    test('reader scroll after navigation stays manual; Jump to latest restores follow', async () => {
+      await mountTwoOccurrences();
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(jumpToLatestButton()).not.toBeUndefined();
+
+      await act(async () => {
+        scroller.scrollTop = 300;
+        scroller.dispatchEvent(new win.Event('scroll', { bubbles: true }) as unknown as Event);
+      });
+      expect(scroller.scrollTop).toBe(300);
+      expect(jumpToLatestButton()).not.toBeUndefined();
+
+      const jump = jumpToLatestButton();
+      if (jump === undefined) throw new Error('missing Jump to latest');
+      await act(async () => {
+        jump.click();
+      });
+      expect(scroller.scrollTop).toBe(500);
+      expect(jumpToLatestButton()).toBeUndefined();
+    });
+
+    test('a Console filter removal resets the select and lands focus on it', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          textMsg(1, 'visible-a', executed(OCC_A)),
+          statusMsg(2, 'completed', executed(OCC_A)),
+          toolCall('tool-1', 3, executed(OCC_B, 1)),
+          toolResult('tool-1', 4, executed(OCC_B, 1)),
+          textMsg(5, 'visible-c', executed(OCC_C, 2)),
+          statusMsg(6, 'completed', executed(OCC_C, 2)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages });
+      });
+      await flushUntil('three groups', () => occHeadings().length === 3);
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(win.document.activeElement as unknown as Element | null).toBe(
+        occurrenceHeading(OCC_B)
+      );
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false });
+      });
+      await flushUntil(
+        'tool rows hidden',
+        () => host.querySelector('details[data-tool-id="tool-1"]') === null
+      );
+
+      // Two displayable groups remain — the select stays and resets to placeholder.
+      const after = navigatorSelect();
+      if (after === null) throw new Error('navigator should still render');
+      expect(after.value).toBe('');
+      expect(after.getAttribute('aria-controls')).toBeNull();
+      expect(win.document.activeElement as unknown as Element | null).toBe(after);
+      expect(host.querySelector(`h3[id$="occ-${OCC_B}"]`)).toBeNull();
+      expect(occHeadings()).toHaveLength(2);
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: true });
+      });
+      await flushUntil('tool rows restored', () => occHeadings().length === 3);
+      expect(navigatorSelect()?.value).toBe('');
+    });
+
+    test('a filter removal down to one group drops the navigator and lands focus on the scroller', async () => {
+      const loadMessages: Loader = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          textMsg(1, 'visible-a', executed(OCC_A)),
+          statusMsg(2, 'completed', executed(OCC_A)),
+          toolCall('tool-1', 3, executed(OCC_B, 1)),
+          toolResult('tool-1', 4, executed(OCC_B, 1)),
+        ],
+      });
+      await act(async () => {
+        renderRoom({ loadMessages });
+      });
+      await flushUntil('two groups', () => occHeadings().length === 2);
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(win.document.activeElement as unknown as Element | null).toBe(
+        occurrenceHeading(OCC_B)
+      );
+
+      await act(async () => {
+        renderRoom({ loadMessages, showToolCalls: false });
+      });
+      await flushUntil(
+        'tool rows hidden',
+        () => host.querySelector('details[data-tool-id="tool-1"]') === null
+      );
+
+      expect(navigatorSelect()).toBeNull();
+      expect(occHeadings()).toHaveLength(0);
+      expect(win.document.activeElement as unknown as Element | null).toBe(scroller);
+    });
+
+    test('a scope change drops the select to placeholder and keeps focus in the room', async () => {
+      await mountTwoOccurrences();
+      const scroller = scrollerEl();
+      stubScroller(scroller);
+      stubRect(occurrenceHeading(OCC_B), 150, 170);
+      const select = navigatorSelect();
+      if (select === null) throw new Error('missing navigator select');
+      await commitSelect(select, OCC_B);
+      expect(win.document.activeElement as unknown as Element | null).toBe(
+        occurrenceHeading(OCC_B)
+      );
+
+      await act(async () => {
+        renderRoom({
+          scopeKey: 'scope-b',
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [
+              statusMsg(1, 'started', executed(OCC_A)),
+              textMsg(2, 'other-one', executed(OCC_A)),
+              statusMsg(3, 'started', executed(OCC_C, 1)),
+              textMsg(4, 'other-three', executed(OCC_C, 1)),
+            ],
+          }),
+        });
+      });
+      await flushUntil('scope b', () => (host.textContent ?? '').includes('other-three'));
+
+      const after = navigatorSelect();
+      if (after === null) throw new Error('missing navigator select');
+      expect(after.value).toBe('');
+      const active: unknown = win.document.activeElement;
+      expect(active === null || active === win.document.body).toBe(false);
+    });
+
+    test('removes occurrence navigation when switching to a non-agent room', async () => {
+      await mountTwoOccurrences();
+      expect(navigatorSelect()).not.toBeNull();
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'setup',
+          selectedRow: row({ nodeId: 'setup', label: 'Setup', status: 'completed' }),
+          definitionNodes: [{ id: 'setup', bash: 'echo hi' }],
+          nodeStates: [nodeState({ nodeId: 'setup', name: 'Setup', status: 'completed' })],
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+        });
+      });
+
+      expect(navigatorSelect()).toBeNull();
+      expect(occHeadings()).toHaveLength(0);
     });
   });
 });

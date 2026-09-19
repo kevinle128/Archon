@@ -3,8 +3,9 @@ import { Window } from 'happy-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Root } from 'react-dom/client';
 
-import type { AgentHistoryItem } from '@/lib/agent-history';
+import type { AgentHistoryItem, TranscriptExecution } from '@/lib/agent-history';
 import type { WorkflowNodeMessageResponse } from '@/lib/api';
+import { groupByOccurrence, type OccurrenceGrouping } from '@/lib/occurrence-groups';
 import type { TodoPhase } from '@/lib/todo-state';
 import { toolRowPresentation } from '@/lib/tool-presentation';
 
@@ -80,17 +81,34 @@ function visibleText(markup: string): string {
     .trim();
 }
 
-function assistantItem(id: string, seq: number, text: string): AgentHistoryItem {
-  return { kind: 'assistant', id, seq, role: 'assistant', text };
+function execution(
+  occurrenceId: string,
+  overrides: Partial<TranscriptExecution> = {}
+): TranscriptExecution {
+  return {
+    occurrence_id: occurrenceId,
+    attempt_id: `${occurrenceId}-attempt-1`,
+    ...overrides,
+  };
+}
+
+function assistantItem(
+  id: string,
+  seq: number,
+  text: string,
+  execution: TranscriptExecution | null = null
+): AgentHistoryItem {
+  return { kind: 'assistant', id, seq, role: 'assistant', text, execution };
 }
 
 function lifecycleItem(
   id: string,
   seq: number,
   state: string,
-  detail: string | null = null
+  detail: string | null = null,
+  execution: TranscriptExecution | null = null
 ): AgentHistoryItem {
-  return { kind: 'lifecycle', id, seq, state, detail };
+  return { kind: 'lifecycle', id, seq, state, detail, execution };
 }
 
 function toolItem(
@@ -111,6 +129,7 @@ function toolItem(
     canLoadFullOutput: true,
     outputState: 'truncated' as const,
     messageId: 'msg-tool-1',
+    execution: null,
     ...overrides,
   };
   return {
@@ -192,6 +211,8 @@ function renderRoom(
     renderAfterItem?: (item: AgentHistoryItem) => React.ReactNode;
     renderAtEnd?: React.ReactNode;
     embedded?: boolean;
+    occurrenceGrouping?: OccurrenceGrouping;
+    headingIdPrefix?: string;
   } = {}
 ): string {
   const defaultItems: AgentHistoryItem[] = [
@@ -214,6 +235,8 @@ function renderRoom(
       renderAfterItem={overrides.renderAfterItem}
       renderAtEnd={overrides.renderAtEnd}
       embedded={overrides.embedded ?? false}
+      occurrenceGrouping={overrides.occurrenceGrouping}
+      headingIdPrefix={overrides.headingIdPrefix ?? 'test-room-'}
     />
   );
 }
@@ -1609,5 +1632,225 @@ describe('NodeRoom tool bodies', () => {
       expect(body).toContain('aria-expanded="false"');
       expect(body).toContain('>Raw');
     }
+  });
+});
+
+describe('NodeRoom occurrence headings', () => {
+  function headingTexts(markup: string): string[] {
+    return [...markup.matchAll(/<h3[^>]*>([\s\S]*?)<\/h3>/g)].map(match =>
+      visibleText(match[1] ?? '')
+    );
+  }
+
+  test('renders no occurrence headings and no navigator for zero or one occurrence', () => {
+    const unscoped: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'solo'),
+      lifecycleItem('s1', 2, 'completed'),
+    ];
+    const flat = renderRoom({ items: unscoped, occurrenceGrouping: groupByOccurrence(unscoped) });
+    expect(flat).not.toContain('<h3');
+    expect(flat).not.toContain('Jump to');
+
+    const single: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'solo', execution('occ-a')),
+      lifecycleItem('s1', 2, 'completed', null, execution('occ-a')),
+    ];
+    const oneGroup = renderRoom({ items: single, occurrenceGrouping: groupByOccurrence(single) });
+    expect(oneGroup).not.toContain('<h3');
+    expect(oneGroup).not.toContain('Jump to');
+  });
+
+  test('renders one h3 heading per occurrence in group order with the exact core labels', () => {
+    const items: AgentHistoryItem[] = [
+      lifecycleItem('s1', 1, 'started', null, execution('occ-a', { retry_epoch: 0 })),
+      assistantItem('a1', 2, 'first-run', execution('occ-a', { retry_epoch: 0 })),
+      assistantItem('a2', 3, 'second-run', execution('occ-b', { retry_epoch: 1 })),
+      lifecycleItem('s2', 4, 'failed', null, execution('occ-b', { retry_epoch: 1 })),
+    ];
+    const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 2 · retry · failed']);
+    expect(markup.match(/<h3/g)?.length).toBe(2);
+    expect(markup.match(/tabindex="-1"/g)?.length).toBe(2);
+    expect(markup).toContain('id="test-room-occ-occ-a"');
+    expect(markup).toContain('id="test-room-occ-occ-b"');
+    const headingTag = /<h3[^>]*>/.exec(markup)?.[0] ?? '';
+    expect(headingTag).toContain('font-mono');
+    expect(headingTag).toContain('text-[10.5px]');
+    expect(headingTag).toContain('uppercase');
+    expect(headingTag).toContain('tracking-[0.08em]');
+    expect(headingTag).toContain('text-text-secondary');
+    expect(headingTag).toContain('mt-[10px]');
+    expect(headingTag).toContain('mb-[5px]');
+    expect(markup).toContain('bg-border');
+    expect(markup.indexOf('Run 1')).toBeLessThan(markup.indexOf('first-run'));
+    expect(markup.indexOf('first-run')).toBeLessThan(markup.indexOf('Run 2'));
+    expect(markup.indexOf('Run 2')).toBeLessThan(markup.indexOf('second-run'));
+  });
+
+  test('disambiguates colliding base labels into distinct B4-qualified headings', () => {
+    const routed: AgentHistoryItem[] = [
+      assistantItem(
+        'a1',
+        1,
+        'route one',
+        execution('occ-a', { retry_epoch: 0, route_activation_seq: 1 })
+      ),
+      assistantItem(
+        'a2',
+        2,
+        'route two',
+        execution('occ-b', { retry_epoch: 0, route_activation_seq: 2 })
+      ),
+    ];
+    const markup = renderRoom({ items: routed, occurrenceGrouping: groupByOccurrence(routed) });
+    expect(headingTexts(markup)).toEqual(['Run 1 #1', 'Run 1 #2']);
+
+    const nested: AgentHistoryItem[] = [
+      assistantItem(
+        'a1',
+        1,
+        'x',
+        execution('occ-a', {
+          loop_ancestry: [
+            { node_id: 'outer', iteration: 1 },
+            { node_id: 'inner', iteration: 3 },
+          ],
+        })
+      ),
+      assistantItem(
+        'a2',
+        2,
+        'y',
+        execution('occ-b', {
+          loop_ancestry: [
+            { node_id: 'outer', iteration: 2 },
+            { node_id: 'inner', iteration: 3 },
+          ],
+        })
+      ),
+    ];
+    const nestedMarkup = renderRoom({
+      items: nested,
+      occurrenceGrouping: groupByOccurrence(nested),
+    });
+    expect(headingTexts(nestedMarkup)).toEqual([
+      'Iteration 1 › Iteration 3',
+      'Iteration 2 › Iteration 3',
+    ]);
+  });
+
+  test('renders no extra heading for multiple attempts inside one occurrence', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem(
+        'a1',
+        1,
+        'attempt one',
+        execution('occ-a', { attempt_id: 'att-1', retry_epoch: 0 })
+      ),
+      assistantItem(
+        'a2',
+        2,
+        'attempt two',
+        execution('occ-a', { attempt_id: 'att-2', retry_epoch: 0 })
+      ),
+      assistantItem('b1', 3, 'other', execution('occ-b', { retry_epoch: 1 })),
+    ];
+    const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 2 · retry']);
+    expect(markup.match(/<h3/g)?.length).toBe(2);
+    expect(markup.indexOf('attempt one')).toBeLessThan(markup.indexOf('attempt two'));
+    expect(markup.indexOf('attempt two')).toBeLessThan(markup.indexOf('Run 2'));
+  });
+
+  test('renders a leading unscoped prefix once before the first heading', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('pre', 1, 'before-scope'),
+      assistantItem('a1', 2, 'scoped-a', execution('occ-a', { retry_epoch: 0 })),
+      assistantItem('b1', 3, 'scoped-b', execution('occ-b', { retry_epoch: 1 })),
+    ];
+    const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
+    expect(markup.match(/before-scope/g)?.length).toBe(1);
+    expect(markup.indexOf('before-scope')).toBeLessThan(markup.indexOf('<h3'));
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 2 · retry']);
+  });
+
+  test('renders non-contiguous occurrence rows once under one unique heading', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'a-first', execution('occ-a', { retry_epoch: 0 })),
+      assistantItem('b1', 2, 'b-first', execution('occ-b', { retry_epoch: 1 })),
+      assistantItem('a2', 3, 'a-second', execution('occ-a', { retry_epoch: 0 })),
+    ];
+    const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 2 · retry']);
+    expect(markup.match(/a-second/g)?.length).toBe(1);
+    expect(markup.indexOf('a-first')).toBeLessThan(markup.indexOf('a-second'));
+    expect(markup.indexOf('a-second')).toBeLessThan(markup.indexOf('Run 2'));
+    expect(markup.indexOf('Run 2')).toBeLessThan(markup.indexOf('b-first'));
+  });
+
+  test('keeps assistant, tool, and lifecycle order stable inside each group', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'notes-a', execution('occ-a')),
+      toolItem({ id: 't1', toolUseId: 't1', seq: 2, execution: execution('occ-a') }),
+      lifecycleItem('s1', 3, 'completed', null, execution('occ-a')),
+      assistantItem('a2', 4, 'notes-b', execution('occ-b')),
+      toolItem({ id: 't2', toolUseId: 't2', seq: 5, execution: execution('occ-b') }),
+      lifecycleItem('s2', 6, 'failed', null, execution('occ-b')),
+    ];
+    const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 1 · occurrence 2 · failed']);
+    const secondHeading = markup.indexOf('Run 1 · occurrence 2');
+    expect(markup.indexOf('notes-a')).toBeLessThan(markup.indexOf('data-tool-id="t1"'));
+    expect(markup.indexOf('data-tool-id="t1"')).toBeLessThan(markup.indexOf('completed'));
+    expect(markup.indexOf('completed')).toBeLessThan(secondHeading);
+    expect(secondHeading).toBeLessThan(markup.indexOf('notes-b'));
+    expect(markup.indexOf('notes-b')).toBeLessThan(markup.indexOf('data-tool-id="t2"'));
+    expect(markup.indexOf('data-tool-id="t2"')).toBeLessThan(markup.lastIndexOf('failed'));
+  });
+
+  test('keeps renderAfterItem attached to its item and renderAtEnd after all groups', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'alpha', execution('occ-a')),
+      toolItem({ id: 't1', toolUseId: 't1', seq: 2, execution: execution('occ-b') }),
+    ];
+    const markup = renderRoom({
+      items,
+      occurrenceGrouping: groupByOccurrence(items),
+      renderAfterItem: (item): string => `after-${item.id}`,
+      renderAtEnd: 'end-extension',
+    });
+    expect(markup.indexOf('after-a1')).toBeGreaterThan(markup.indexOf('alpha'));
+    expect(markup.indexOf('after-a1')).toBeLessThan(markup.indexOf('Run 1 · occurrence 2'));
+    expect(markup.indexOf('after-t1')).toBeGreaterThan(markup.indexOf('data-tool-id="t1"'));
+    expect(markup.indexOf('end-extension')).toBeGreaterThan(markup.indexOf('after-t1'));
+  });
+
+  test('keeps the partial-page error, retry, and unknown-scope warning visible', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'alpha', execution('occ-a')),
+      assistantItem('b1', 2, 'beta', execution('occ-b')),
+    ];
+    const markup = renderRoom({
+      items,
+      occurrenceGrouping: groupByOccurrence(items),
+      error: 'boom',
+      unknownScope: true,
+    });
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+    expect(markup).toContain('Execution scope was not recorded');
+    expect(markup).toContain('Failed to load node transcript');
+    expect(markup).toContain('Retry');
+    expect(markup.indexOf('Failed to load node transcript')).toBeGreaterThan(
+      markup.indexOf('beta')
+    );
+  });
+
+  test('never lets item content text alter the headings', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('a1', 1, 'Run 99', execution('occ-a')),
+      assistantItem('a2', 2, 'Iteration 99', execution('occ-b')),
+    ];
+    const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
+    expect(headingTexts(markup)).toEqual(['Run 1', 'Run 1 · occurrence 2']);
   });
 });

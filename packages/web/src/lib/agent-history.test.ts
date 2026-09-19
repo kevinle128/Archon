@@ -32,13 +32,20 @@ function textRow(
   };
 }
 
-function statusRow(id: string, seq: number, state: string, detail?: string): NodeMessageRow {
+function statusRow(
+  id: string,
+  seq: number,
+  state: string,
+  detail?: string,
+  metadata?: NonNullable<Extract<NodeMessageRow, { kind: 'status' }>['metadata']>
+): NodeMessageRow {
   return {
     id,
     seq,
     kind: 'status',
     payload: detail === undefined ? { state } : { state, detail },
     created_at: CREATED_AT,
+    ...(metadata === undefined ? {} : { metadata }),
   };
 }
 
@@ -260,6 +267,7 @@ describe('buildAgentHistory', () => {
       seq: 6,
       state: 'iteration_started',
       detail: '1',
+      execution: null,
     });
 
     expect(truncatedTool).toMatchObject({
@@ -669,6 +677,7 @@ describe('buildAgentHistory', () => {
       seq: 4,
       state: 'iteration_started',
       detail: '2',
+      execution: null,
     });
     expect(pendingFolded).toMatchObject({ id: 'call-p', seq: 5, outcome: 'interrupted' });
   });
@@ -1149,5 +1158,99 @@ describe('buildAgentHistory', () => {
         items: [{ content: 'Read the spec', status: 'blocked', blocker: 'CI has one build job' }],
       },
     ]);
+  });
+
+  test('carries projected message execution onto assistant and lifecycle items', () => {
+    const execution = {
+      occurrence_id: 'occ-1',
+      attempt_id: 'att-1',
+      retry_epoch: 1,
+    };
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        textRow('t-scoped', 1, 'scoped text', { execution }),
+        statusRow('s-scoped', 2, 'completed', undefined, { execution }),
+      ],
+    });
+    expect(items[0]).toMatchObject({
+      kind: 'assistant',
+      text: 'scoped text',
+      execution,
+    });
+    expect(items[1]).toMatchObject({
+      kind: 'lifecycle',
+      state: 'completed',
+      execution,
+    });
+  });
+
+  test('carries call then result execution onto tool items', () => {
+    const execution = { occurrence_id: 'occ-1', attempt_id: 'att-1' };
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-scoped',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'scoped-1',
+          metadata: { tool_phase: 'call', execution },
+        }),
+        toolRow({
+          id: 'result-scoped',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'scoped-1',
+          output: 'ok',
+          metadata: { tool_phase: 'result', outcome: 'success', execution },
+        }),
+        toolRow({
+          id: 'result-lone',
+          seq: 3,
+          name: 'Read',
+          toolUseId: 'lone-1',
+          output: 'orphan',
+          metadata: {
+            tool_phase: 'result',
+            outcome: 'success',
+            execution: { occurrence_id: 'occ-2', attempt_id: 'att-2' },
+          },
+        }),
+      ],
+    });
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ kind: 'tool', execution });
+    expect(items[1]).toMatchObject({
+      kind: 'tool',
+      execution: { occurrence_id: 'occ-2', attempt_id: 'att-2' },
+    });
+  });
+
+  test('produces execution null on every item variant for historical rows without scope', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        textRow('t-old', 1, 'old text'),
+        toolRow({
+          id: 'call-old',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'old-1',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-old', 3, 'completed'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['assistant', 'tool', 'lifecycle']);
+    for (const item of items) {
+      expect(item.execution).toBeNull();
+    }
   });
 });

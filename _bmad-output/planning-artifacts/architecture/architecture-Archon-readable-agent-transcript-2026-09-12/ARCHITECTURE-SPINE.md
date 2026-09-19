@@ -130,6 +130,8 @@ graph TD
 
   All three call sites feed this the output of `selectNodeRoomMessages`, and on the _occurrence-entry_ path the server has already filtered to one occurrence (`select-node-room-messages.ts:12`), so exactly one group arrives and no header renders. That is intended, not a gap: CAP-6 exists for the node-entry path, which is the default selection (`resolve-graph-room-row.ts:19-27` prefers the ordinary `node` row). Every surface applies the grouping; a surface may not opt out.
 
+- **Amendment (2026-09-19 — issue #180 decision B1, recorded):** the compatibility-only reading above is the adopted contract, not a stopgap awaiting a better one. A first-class aggregate multi-occurrence view for occurrence-scoped executions — the modern loop rows — was evaluated and is **not authorized**: no entry point, selection identity, retry/nested-loop/route-activation boundary, Ask-ownership, authorization/visibility boundary, paging, default-selection, or performance contract was authored for it, and the earlier `loopParent` / `All iterations` sketch stays rejected. Two consequences, stated plainly so no implementer re-derives them: a modern loop opened through its occurrence rows renders **no** occurrence headings and **no** navigator — exactly one group arrives, as this AD intends — and Story 2.10's "finished iteration selected through Story 1.7" remains blocked on a future reachability decision, which would be a new AD if it is ever taken. Multi-occurrence headings and the navigator exist only on the node-scoped path described above.
+
 ### AD-8 — The resolver is eager and unmemoized; the diff is the stated exception
 
 - **Binds:** all three call sites, and the performance envelope.

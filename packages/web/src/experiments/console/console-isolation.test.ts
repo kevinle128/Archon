@@ -116,6 +116,7 @@ describe('console NFR4 isolation', () => {
       '@/lib/agent-history',
       '@/lib/execution-room-model',
       '@/lib/node-message-pages',
+      '@/lib/occurrence-groups',
       '@/lib/room-scroll-follow',
       '@/lib/room-split-layout',
       '@/lib/use-container-split-mode',

@@ -75,6 +75,10 @@ body { background: oklch(0.11 0.005 265); color: var(--text-primary); font-famil
 .panel-close { margin-left: auto; border: none; background: transparent; color: var(--text-tertiary); font-size: 13px; padding: 4px 7px; }
 .ph-meta { font-size: 11px; color: var(--text-tertiary); }
 #panel-body { flex: 1; overflow-y: auto; padding: 10px 12px; min-height: 0; }
+.room-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 12px; }
+.room-controls .occ-nav { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 8px 0; font-size: 12px; color: var(--text-secondary); }
+.exec-select { font-size: 11px; font-family: var(--font-mono); background: var(--surface-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; padding: 1px 6px; }
+.room-controls .occ-nav select { min-width: 0; max-width: 10rem; flex: 0 1 10rem; }
 .cc-composer { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); }
 .cc-composer input { flex: 1; background: var(--surface-inset); border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; color: var(--text-primary); font: inherit; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: white; }
@@ -186,6 +190,7 @@ assertion `left == right` failed
           <details class="tcall"><summary><span class="chev">▶</span><span class="gl gl-run">◐</span><span class="fam fam-shell" title="shell · run_terminal_command" aria-label="shell · run_terminal_command">run_terminal_command</span><span class="hl">CARGO_BUILD_JOBS=1 cargo test -p gigo-harness-worker --test auto_retry</span><span class="bd"><span class="run">running</span> · 1m 48s</span></summary></details>
 
         </div>
+        <div class="room-controls"><span class="occ-nav"><label for="occ-jump">Jump to</label><select id="occ-jump" class="exec-select"><option selected disabled>2 occurrences</option><option>Run 1</option><option>Run 2 · retry</option></select></span></div>
       </aside>
     </main>
     <form class="cc-composer"><input type="text" placeholder="Reply… (queued for the run's conversation)" /><button class="btn btn-primary" type="button">Continue</button></form>

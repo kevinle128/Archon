@@ -1,0 +1,220 @@
+## Codebase Patterns
+
+### Occurrence navigator + focus redirect
+- **Where**: `NodeTranscriptPane.tsx` / `ConsoleNodeRoom.tsx` (controls row after the scroller), `room-scroll-follow.ts` (`jumpToOccurrence`).
+- **Pattern**: bottom row `[navigator, jumpButton]` in `justify-between`. Select commits on `change` only; `navTarget` holds the last committed `occurrence_id`, and the displayed value derives to `''` (placeholder) whenever the target leaves the displayed-group list. A deps-free effect watches `navigatedHeadingRef`: when that heading disconnects AND focus dropped (`activeElement` ∈ {null, body, detached heading}), focus lands on the select if still mounted else the scroller — never body. Scroller needs `tabIndex={-1}` to be a programmatic target. Heading focus uses `focus({preventScroll:true})` so the reducer stays the single scroll writer.
+- **happy-dom test recipe**: per-element `getBoundingClientRect` stubs drive the fully-visible check; `Object.defineProperty(el,'scrollHeight'|'clientHeight')` for viewport math; commit a select via `el.value = v; dispatchEvent(new win.Event('change',{bubbles:true}))`; assert focus with `win.document.activeElement as unknown as Element | null`.
+
+### Dated decision recording convention
+- **Where**: `ARCHITECTURE-SPINE.md` (AD amendments), `EXPERIENCE.md` (`adopted delta N, YYYY-MM-DD`), `DESIGN.md` (same delta scheme — last used was delta 4, so new records are delta 5+).
+- **Pattern**: gate decisions are recorded as dated amendments inside the owning canonical artifact (never only in `plan.md`); the plan then indexes into them. Amendments state consequences explicitly so no implementer re-derives them.
+
+### Execution/occurrence label vocabulary
+- **Where**: `packages/web/src/components/workflows/build-log-rows.ts:94-103` (and its Console twin).
+- **Pattern**: `baseName ×N` for loop-ancestry iteration, `baseName #N` for `route_activation_seq`. The B4 rule reuses `#N` inside occurrence headings; `·` separates facts; `›` joins an ancestry path; `Attempt`, `Pass`, reason-only labels, raw UUIDs are all forbidden.
+
+### Scroll-follow is a pure reducer
+- **Where**: `packages/web/src/lib/room-scroll-follow.ts` (`createScrollFollow` / `onRoomScroll` / `jumpToLatest`), used identically by `NodeTranscriptPane.tsx` and `ConsoleNodeRoom.tsx`.
+- **Pattern**: `{follow, scrollTop, pinToBottom}`; a reader scroll >24px from bottom flips to manual hold. New navigation interactions must be explicit transitions on this reducer (e.g. `jumpToOccurrence` → manual-hold), never `ignoreNextScroll`-style event suppression.
+
+### Two controls beside the transcript, different kinds
+- **Pattern**: `Execution` (header `<select aria-label="Execution">`, `NodeRoomHeader.tsx:64` / `ConsoleRoomHeader.tsx:60`) **filters** — it changes which messages load. The Story 1.7 `Jump to` navigator **scrolls** — it moves within loaded messages and issues no request. They are deliberately separate controls; never merge them.
+
+### Room structure for scroll controls
+- **Where**: `NodeTranscriptPane.tsx:406-428`, `ConsoleNodeRoom.tsx:891-905`.
+- **Pattern**: `RoomRegion > [TodoStrip?] > overflow-y-auto scroller > bottom row`. The `Jump to latest` button renders conditionally (`!follow.follow && running|awaiting`) as a sibling after the scroller — the navigator control row takes the same sibling position.
+
+### In-room heading convention
+- **Where**: `TodoStrip.tsx:162`, `NodePalette.tsx:37`.
+- **Pattern**: room title is `h2`; in-room sub-section labels are `h3` uppercase text-secondary — occurrence headers adopt `h3` and `tabindex="-1"` (programmatic focus only, not a `Tab` stop).
+
+### Branch reality: `develop`, not `dev`
+- **Pattern**: `origin/HEAD` = `develop`; `origin/dev` is deleted; local `dev` is stale (~68 behind). AGENTS.md, e2e-smoke.yml, release.yml were corrected 2026-09-19. `.claude/skills/release/SKILL.md` still encodes `dev`→`main` (residual debt, release-time fix — also touched by PR #202).
+
+### Derive wire types from api.generated.d.ts, never re-declare
+- **Where**: `packages/web/src/lib/agent-history.ts` (`TranscriptExecution`), `occurrence-groups.ts`.
+- **Pattern**: `type TranscriptExecution = NonNullable<NonNullable<NodeMessageRow['metadata']>['execution']>` — indexed access off the generated row type keeps the render-neutral contract in lockstep with the wire. Hand-copied interfaces drift; derived types make drift a compile error.
+
+### Occurrence grouping is render-neutral
+- **Where**: `packages/web/src/lib/occurrence-groups.ts`.
+- **Pattern**: `groupOccurrences(items)` returns `{prefixItems, groups, showHeaders}` — grouping is a pure lib function over `AgentHistoryItem[]` keyed by `execution.occurrence_id`. Unkeyed items before the first keyed row go to `prefixItems`; unkeyed items after join the nearest preceding group; a repeated non-contiguous key rejoins its original group. `showHeaders = groups.length >= 2`. Shells call this and render headings — they never derive labels themselves.
+
+### Stream correlation keys must carry execution identity
+- **Where**: `packages/web/src/lib/project-text-transcript.ts` (keyed `stream_id\0message_id\0block_id\0occurrence_id\0attempt_id`), mirrors `pair-tool-transcript.ts`.
+- **Pattern**: providers reuse stream/message/block ids across occurrences and attempts — identity keys without occurrence+attempt silently concatenate text across runs. Anonymous deltas track the same identity and reset the accumulator when it changes.
+
+### Adding a required field to AgentHistoryItem
+- **Where**: `packages/web/src/lib/agent-history.ts` + `NodeRoom.test.tsx` helpers.
+- **Pattern**: only `NodeRoom.test.tsx` constructs `AgentHistoryItem` literals directly — all other suites go through `buildAgentHistory()` and compile untouched. Update the three literal helpers (`execution: null`) and whole-item `toEqual` assertions; everything else follows the builder.
+
+### Displayable occurrence groups are filtered at the shell, not in the lib
+- **Where**: `ConsoleNodeRoom.tsx` (~line 650), `ConsoleExecutionHistory.tsx` (~line 213), `ConsoleAgentHistoryList.tsx` (`historyItemRowVisible`).
+- **Pattern**: `groupByOccurrence` stays render-neutral — shells post-filter `groups` to *displayable* ones and rebuild `{prefixItems, groups, showHeaders}` before passing `occurrenceGrouping` down. Console rule: a group is displayable iff some row passes `historyItemRowVisible(item, {showToolCalls, showSystem})` OR a hidden tool row owns an anchored Ask (`anchoredAskToolIds`); `ConsoleExecutionHistory` uses the visible-row rule only (extras are unanchored `renderAtEnd`). `showHeaders` recomputes as `displayableGroups.length >= 2`, so filtering to one group removes headings. **US-004 navigator options must derive from this same displayable list, never raw groups.**
+- **Heading target contract**: `h3 id={`${useIdPrefix}occ-${group.key}`}` + `tabIndex={-1}` in both shells — the navigator anchors/focuses these ids.
+
+---
+
+## 2026-09-19 — US-001: Close decision gates B1–B4, refresh plan, preflight
+
+**Status**: PASSED
+**Files changed**:
+- `_bmad-output/.../ARCHITECTURE-SPINE.md` — AD-7 amendment recording B1 (compatibility-only; modern loop rows show no headings/navigator; Story 2.10 stays blocked on a future reachability decision; `loopParent`/`All iterations` stays rejected).
+- `_bmad-output/.../EXPERIENCE.md` — IA amendment (navigator scrolls vs Execution filters), Component Patterns → Occurrence navigator, 4 State Pattern rows, Interaction Primitives, 4 Accessibility Floor bullets (h3, focus, names, no announcement), B4 disambiguation rule + examples in Occurrence grouping, resolved-question row amended; `updated:` bumped.
+- `_bmad-output/.../DESIGN.md` — Occurrence navigator component entry (delta 5); `updated:` bumped.
+- `AGENTS.md` — `dev`→`develop` (working branch + `/release` comparison), the stale repository authority.
+- `.github/workflows/e2e-smoke.yml` — push trigger `[main, dev]`→`[main, develop]` + comment.
+- `.github/workflows/release.yml` — `ref: dev`→`develop`, `git push origin dev`→`develop`.
+- `plans/.../plan.md` — comprehensive refresh: frontmatter unblocked, Recorded decisions section, behavior-table note, resolved technical decisions, scope/inventory (+`room-scroll-follow` rows, navigator details, decisions-consumed list), acceptance criteria, test strategy + commands, compatibility/rollback, new Performance budget + Preflight record, risks, unresolved-questions closed.
+- `plans/.../phase-01-start.md` — gates A–D marked recorded with locations; preflight record appended; frontmatter in-progress.
+- `plans/.../phase-02-two-shell-headers-and-selector.md` — navigator section replaced with the concrete B2 contract; h3/id concretized; exit criteria resolved; frontmatter pending.
+- `plans/.../phase-03-end-to-end-and-doc-sync.md` — compatibility-only integration strategy, concrete matrix/a11y rows, doc-sync becomes verification, Playwright path recorded, PR base `develop`; frontmatter pending.
+
+**Acceptance criteria verified**:
+- [x] B1 recorded in AD-7 amendment + EXPERIENCE.md — compatibility-only is the default; the un-authored aggregate contract fields are named; rejected `loopParent`/`All iterations` stays rejected.
+- [x] Compatibility-only consequences explicit: modern loop occurrence rows show no headings/navigator; Story 2.10 remains blocked — stated in AD-7 amendment, plan.md B1, and the behavior-table note.
+- [x] B2 recorded as adopted artifact (EXPERIENCE.md + DESIGN.md delta 5) covering control type, Execution relationship, copy, placement, sizes, states, pointer/keyboard activation, focus destination, live-poll/scroll-follow, vanished-target, 460px + small-viewport, accessible name, h3 relationship, announcement — commit-on-change only, no inferred key heuristics.
+- [x] B4 rule in Occurrence grouping with concrete examples: `Run 1 #1`/`Run 1 #2` (route seq), `Iteration 1 › Iteration 3`/`Iteration 2 › Iteration 3` + `· <node_id>` (nested), `· occurrence K` residual, suffix ordering (`Run 1 #2 · retry`), navigator names = final labels, never raw UUIDs.
+- [x] B3 = `develop` from git evidence (origin HEAD, open PRs #202/#205, `origin/dev` deleted, local `dev` 68 behind); stale authority corrected (AGENTS.md, e2e-smoke.yml, release.yml) so plan/CI/PR base agree; SKILL.md residual debt recorded.
+- [x] plan.md updated: verified behavior table, file inventory, acceptance criteria, test list, performance budget, compatibility, rollback, all B1–B4 decisions.
+- [x] Preflight recorded in plan.md: issue #180 (open, `status:processing`, milestone Agent Node Room), sprint `1-7`=backlog, git status/branch/base/worktrees surveyed, PR #202 overlap itemized, focused baselines re-run green (27+96+72 tests, type-check clean), no unrelated production changes.
+- [x] No production source file modified — `git status` shows only docs/config/plan files.
+
+**Learnings**:
+- The gate was closable entirely from repository evidence: AD-7 already asserted the compatibility-only reading, so B1 was recorded as an amendment rather than a new decision — the cheapest honest record is often strengthening what the artifact already says.
+- B2's real risk was conflating two select semantics (filter vs scroll). Writing "it is an action, not a position indicator" into the contract prevents a whole class of stale-value bugs.
+- B4 needed only typed fields (`route_activation_seq`, deeper `loop_ancestry`, differing `node_id`) plus one ordinal fallback — no new vocabulary was required once `#N` was recognized as the shipped route suffix.
+- B3 was broader than AGENTS.md: CI triggers and the release job also carried `dev`. The residual `.claude/skills/release/SKILL.md` was left deliberately — it overlaps open PR #202 and its own `origin/dev` ancestry check fails loudly rather than silently.
+
+---
+
+## 2026-09-19 — US-002: Occurrence-safe projection and pure grouping core
+
+**Status**: PASSED
+**Commit**: `fd197802` — `feat: Occurrence-safe projection and pure grouping core`
+**Files changed**:
+- `packages/web/src/lib/agent-history.ts` — added `TranscriptExecution` (derived via `NonNullable<NonNullable<NodeMessageRow['metadata']>['execution']>`) and a required `execution: TranscriptExecution | null` on all three `AgentHistoryItem` variants; assistant/lifecycle take it from `message.metadata?.execution ?? null`, tool items from `card.call?.metadata?.execution ?? card.result?.metadata?.execution ?? null`.
+- `packages/web/src/lib/project-text-transcript.ts` — `ProjectableTextMetadata` gained optional `execution {occurrence_id?, attempt_id?}`; keyed stream identity is now `stream\0message\0block\0occurrence\0attempt`; anonymous delta accumulation tracks execution identity and resets the accumulator when it changes.
+- `packages/web/src/lib/occurrence-groups.ts` (new) — pure `groupOccurrences(items)`: one pass, `Map<occurrence_id, draft>` + ordered drafts; `prefixItems` for leading unkeyed rows; unkeyed rows after a key join the nearest preceding group; repeated non-contiguous keys rejoin the original group; `showHeaders = groups.length >= 2`; label composer emits `Run N` / `Iteration N` with `· retry` / `· failed` suffixes and B4 qualifiers (`#N` route seq, `›` ancestry path, `· <node_id>`, `· occurrence K`) — typed fields only, never raw ids/provider/model text.
+- `packages/web/src/lib/agent-history.test.ts` — execution-carry coverage per variant (assistant, lifecycle, paired tool, standalone result, historical null) + `execution: null` added to two whole-item `toEqual`s.
+- `packages/web/src/lib/project-text-transcript.test.ts` — three new merge-isolation proofs (cross-occurrence, cross-attempt, anonymous-identity reset).
+- `packages/web/src/lib/occurrence-groups.test.ts` (new) — 16 tests covering all 13 planned cases incl. B4 collision examples and input immutability.
+- `packages/web/src/components/workflows/NodeRoom.test.tsx` — the only suite constructing `AgentHistoryItem` literals; helpers gained `execution: null`.
+
+**Acceptance criteria verified**:
+- [x] `TranscriptExecution` derived from `NodeMessageRow['metadata']['execution']`; required `execution` on every variant; historical rows → `null`.
+- [x] agent-history tests cover all variants + historical null; folding/todo/outcome/presentation assertions unchanged except the added field.
+- [x] Keyed correlation includes occurrence+attempt; anonymous accumulation resets on identity change; tests prove no cross-occurrence/attempt merge, same-identity merge preserved, metadata-less sequence unchanged, inputs unmutated, no UUID regexes.
+- [x] occurrence-groups.ts is new and pure — single pass, Map+ordered array, prefix/nearest-preceding/rejoin semantics, fresh arrays, `showHeaders = groups >= 2`; zero React/DOM/provider/network deps.
+- [x] Labels: final ancestry → `Iteration N` (no suffix); `retry_epoch+1` → `Run N`, `· retry` when >0, `· failed` only on failed lifecycle in that occurrence; B4 disambiguation implemented; no attempt_id/UUID/agent text/provider names.
+- [x] All 13 planned grouping cases covered (16 tests).
+- [x] `(cd packages/web && bun test src/lib/project-text-transcript.test.ts src/lib/agent-history.test.ts src/lib/occurrence-groups.test.ts)` → 51 pass.
+- [x] `(cd packages/web && bun run type-check)` → clean.
+- [x] No fetch/selection/renderer/scroll/product-copy change — lib + tests only; NodeRoom.test.tsx helper edit is the compile-forced field addition.
+- [x] Lint `--max-warnings 0` clean on touched files; prettier clean (lint-staged hooks ran on commit).
+
+**Learnings**:
+- TDD ordering worked cleanly: write the 16 grouping tests + 3 projection tests + execution-propagation tests first (red: 3+5 failures), then implement — green in one pass.
+- `bun run lint` flags `no-unnecessary-type-assertion` on indexed array access (`arr[i] as T`) — the index signature already yields `T`; drop the assertion.
+- Test files are ESLint-ignored in this repo (`--no-warn-ignored`); lint-staged ran eslint+prettier on commit — prettier reformatted `TranscriptExecution` to one line and cleaned test formatting.
+- Only `NodeRoom.test.tsx` builds `AgentHistoryItem` literals; every other suite (Legacy, Console, transcript panes) goes through `buildAgentHistory()` — one required field = one helper edit, not a sweep.
+- `git commit -m "$(cat <<'EOF' … EOF)"` broke on this shell (bad substitution) — `git commit -F -` with a plain heredoc works.
+
+---
+
+## 2026-09-19 — US-003: Occurrence headings on all three history consumers
+
+**Status**: PASSED
+**Commit**: `771f3890` — `feat: Occurrence headings on all three history consumers`
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — computes `groupByOccurrence(items)` + `useId` heading prefix; passes `occurrenceGrouping`/`headingIdPrefix` to `NodeRoom`.
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `renderItem` extracted; grouped path renders `prefixItems` then per-group `h3` + items; flat path unchanged when `showHeaders=false`.
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — exports pure `historyItemRowVisible(item, filters)` + `ConsoleHistoryFilters`; same grouped `h3` render; hidden-row `renderAfterItem` (anchored Ask) preserved.
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — filters groups to displayable (visible row OR hidden tool owning an anchored Ask); `showHeaders = displayableGroups.length >= 2`.
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` — same grouping with visible-row rule only; unanchored Ask/approval extras stay in `renderAtEnd` after history; no navigator.
+- `packages/web/src/experiments/console/console-isolation.test.ts` — `@/lib/occurrence-groups` added to the Console shared-lib allowlist.
+- Tests: `NodeRoom.test.tsx` (+9 paired heading cases), `ConsoleNodeRoom.test.tsx` (+9 paired + Console filter-visibility cases), `ConsoleExecutionHistory.test.tsx` (+5 headings-only/extras cases).
+
+**Acceptance criteria verified**:
+- [x] Post-PR-#202 versions of all five consumers + tests re-read before editing; plan inventory matched (no update needed).
+- [x] `NodeTranscriptPane` computes grouping; `NodeRoom` flat path preserved when `showHeaders=false`; one `h3` per group after `prefixItems`; `renderAfterItem`/notice/retry/`renderAtEnd` positions unchanged.
+- [x] One shared pure predicate `historyItemRowVisible` used by list, room, and inline history; group displayable iff visible row OR hidden tool with attached Ask; `showHeaders` derives from the displayable list; <2 displayable groups → flat.
+- [x] `ConsoleExecutionHistory` headings only, no navigator; unanchored extras remain after history, no synthetic group.
+- [x] Heading styling matches DESIGN.md on both shells: `font-mono text-[10.5px] uppercase tracking-[0.08em] text-text-secondary`, `mt-[10px] mb-[5px]`, flex label + `h-px flex-1 bg-border` rule; `h3` + `tabIndex={-1}`; DOM ids = `useId` prefix + `occ-` + `occurrence_id` (never index).
+- [x] Paired tests share names/intent across Legacy/Console; Console-specific visibility cases (hidden tools, hidden lifecycle, hidden tool + Ask, drop-to-one-group, extras after history) covered.
+- [x] `LegacyNodeRoom.test.tsx` compiles unchanged; `console-isolation.test.ts` green; no Console→`@/components/` imports; no new tokens/components.
+- [x] `NODE_ENV=development bun test` Legacy suite → 106 pass; Console suite + isolation → 88 pass (194 total, 1282 expect calls).
+- [x] `bun run type-check` clean; `bun run lint --max-warnings 0` clean (fixed 2 `prefer-optional-chain`); prettier clean.
+
+**Learnings**:
+- Test fixtures that put a `failed` lifecycle row inside an occurrence produce the `· failed` label suffix — paired expectations must include it (`Run 1 · occurrence 2 · failed`), in BOTH suites.
+- `prefer-optional-chain` fires on `x !== undefined && x.flag` guards — write `x?.flag ? x : null` directly.
+- Prettier runs via lint-staged on commit but the pre-commit `--check` gate still fails on unformatted files — run `bun x prettier --check <files>` before committing, not just eslint.
+- Console heading ids interpolate the real `occurrence_id` (full UUID) — test assertions should build the expected id from the fixture constant, not a hand-typed short id.
+
+---
+
+## 2026-09-19 — US-004: B2-approved occurrence navigator on both node rooms
+
+**Status**: PASSED
+**Commit**: `21c2a0d5` — `feat: B2-approved occurrence navigator on both node rooms`
+**Files changed**:
+- `packages/web/src/lib/room-scroll-follow.ts` — added explicit `jumpToOccurrence(state, scrollTop)` transition: `{follow:false, scrollTop, pinToBottom:false}`; the existing apply-effect writes the position (same mechanism as saved-scrollTop restore). No `ignoreNextScroll`.
+- `packages/web/src/lib/room-scroll-follow.test.ts` — +3 reducer tests: manual-hold at recorded target, same hold from any prior state, live appends stay parked until `jumpToLatest`.
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — `navTarget` state (reset on scope change), `navigatorSelectRef`/`navigatedHeadingRef`, focus-redirect effect, `handleJumpToOccurrence` (rect-based fully-visible check; scroll to top via `jumpToOccurrence`; `focus({preventScroll:true})`), bottom controls row `{navigator, jumpButton}`, scroller `tabIndex={-1}`.
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — identical navigator, options from `displayableGroups` (never raw groups).
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — +6 navigator tests.
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — +7 navigator tests (adds Console filter-removal cases).
+
+**Acceptance criteria verified**:
+- [x] Navigator at B2 location on both panes: bottom control row after the transcript scroller (same sibling slot as `Jump to latest`, `justify-between` — navigator left). Options derive only from rendered displayable groups, valued by `occurrence_id`; heading target ids = `useId` prefix + `occ-` + key.
+- [x] `jumpToOccurrence` is an explicit reducer transition to manual hold — no event-suppression flag; `Jump to latest` untouched and still restores follow.
+- [x] Independent of `Execution`: header files unmodified; navigation issues no request (tests assert loader call count stays 1; options come from loaded items).
+- [x] Removed target: `navSelectValue` derives `''` (placeholder) when the target leaves displayed groups (scope change, Console filters); focused-heading unmount → focus to select if still rendered else scroller — never body (tested all three focus destinations).
+- [x] B2 input contract: real `<label>Jump to</label>` + native `<select>` in Tab order, disabled `{N} occurrences` placeholder, commit on `change` only, `aria-controls` → target heading after commit, no key handlers, no live-region announcement (heading focus is the announcement).
+- [x] Scroll/follow cases: live-pinned navigation → hold; row growth after navigation → parked; reader scroll after navigation → stays manual; `Jump to latest` → restores; saved scrollTop path unchanged; already-visible target → focus without scrolling and manual hold; target scroll position recorded + persisted via `onScrollTopChange`.
+- [x] Paired Legacy/Console tests, identical intent; navigator absent below two displayable groups on both.
+- [x] `NODE_ENV=development bun test` Legacy suite → 113 pass; Console suite + isolation + reducer → 105 pass (218 total, 1378 expect calls).
+- [x] `bun run type-check` clean; `bun run lint --max-warnings 0` clean; prettier clean.
+
+**Learnings**:
+- Focus-redirect needs the ref cleared BEFORE checking where focus lives: a disconnected heading must stop being tracked even when focus already moved elsewhere, else a later drop-to-body triggers a stale redirect.
+- `focus({preventScroll:true})` on the heading keeps the reducer as the single scroll writer — no intermediate native scroll-into-view fighting the recorded `scrollTop`.
+- happy-dom `activeElement` typing (`HTMLElement|SVGElement`) clashes with lib-dom `HTMLElement` in `toBe` — cast `win.document.activeElement as unknown as Element | null` (existing convention in these suites).
+- React controlled `<select>` commits in tests: set `el.value` then dispatch bubbling `change` — React's value tracker fires `onChange` with the new value; no need to reach for `__reactProps$` for the commit path (still useful for asserting NO custom key handlers).
+- In Legacy, "target removed while navigator survives" is unreachable — groups only shrink via scope change, which empties the room first (focus lands on scroller). The select-redirect path is exercised by Console's tool/system filters, which can drop one group while others remain.
+- `no-unnecessary-type-assertion` fires on `Array.from(querySelectorAll('h3[id]')) as HTMLElement[]` — `querySelectorAll<HTMLElement>` infers the same type without the assertion.
+- Scope change resets `navTarget` explicitly AND the derived select value already collapses to placeholder when the group is gone — belt and suspenders, both cheap.
+
+---
+
+## 2026-09-19 — US-005: Integration evidence, visual/a11y matrix, doc sync, and PR handoff
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/occurrence-navigation.spec.ts` — NEW. Real SQLite-seeded renderer-integration spec (6 tests): lifecycle events + node messages inserted via the worker's real DB, exercising the true request path (`json_extract` occurrence filter, run-detail execution projection, pagination drain) on both shells. Explicitly compatibility/B1 evidence — not modern-loop executor reachability.
+- `plans/.../reports/acceptance.md` — NEW. Maps every US-005 AC to named tests, commands, evidence type, artifacts, measured room width, B1 limitation.
+- `plans/.../reports/evidence/*.png` — 14 screenshots (see below).
+- UX docs: `DESIGN.md` (delta-5 navigator paragraph reconciled to shipped anatomy), `EXPERIENCE.md` (residual-tie `· occurrence K` wording corrected to global 1-based order), `key-legacy-node-room.html` + `key-console-node-room.html` (added the delta-5 `Jump to` control row + `.exec-select` style).
+
+**Acceptance criteria verified**:
+- [x] B1 integration evidence: e2e asserts node-scoped request with `occurrenceId=null` (no filter) and scoped selection sending exact `occurrenceId`+`attemptId` → one group, no headings/navigator. Component suites remain the primary multi-occurrence proof. No aggregate entry point; 2.10 stays blocked.
+- [x] Regression evidence: distinct filtered requests, Execution select filter/refetch, pagination (high-watermark/refresh/500-partial-failure), live follow/manual hold/`Jump to latest`, Console tool+system toggles, console-isolation suite — all green.
+- [x] Visual matrix, 9 states, both shells: flat unscoped (`occ-none` metadata-less node), single-occurrence flat, retry pair (`Run 1 · failed`, `Run 2 · retry · failed`), loop occurrences (`Iteration N`), nested-collision disambiguation (`Iteration 1 › Iteration 1 · loopX/loopY`), Console filtered to one displayable group → flat, 500 partial-error with loaded groups, live append under manual hold, target-removed→placeholder+focus-on-toggle.
+- [x] 460px authoritative width: measured exactly 460px both shells (Console @1430×560, Legacy @1150×560), asserted 452–468 + tokens via computed styles; narrow 390×844 host breakpoint covered; focus-visible screenshots for select + heading.
+- [x] Automated a11y: h3-per-group exact names, no heading on prefix, `Jump to` label/placeholder/options/`aria-controls`, DOM==visual order, keyboard traversal+commit on both shells, zero live-regions in scroller. Manual AT recorded as unavailable.
+- [x] Doc sync: EXPERIENCE/DESIGN/mocks now match shipped; ARCHITECTURE-SPINE AD-7/AD-12.7 verified already aligned — no edits needed there.
+- [x] reports/acceptance.md written.
+- [x] Gates: 51 + 113 + 96 focused tests, web type-check, lint --max-warnings 0, e2e typecheck, 6/6 e2e, `bun run validate` — ALL PASS.
+- [x] PR handoff recorded as parent-owned (branch `archon/thread-499eb44c`, base `develop`, template `.github/pull_request_template.md`, title `feat(web): navigate transcript occurrences`, `Closes #180` warranted). No PR created here; no sprint-status mutation.
+
+**Learnings**:
+- Console `System` toggle defaults OFF → status-only groups are hidden; a seeded status-only occurrence is invisible until System is enabled. Use this to exercise the displayable-groups filter contract rather than fighting it.
+- `jumpToOccurrence` always clears `follow`, including for an already-visible target; applying the recorded target position preserves that explicit hold even near the 24px follow threshold.
+- Legacy `Close` lives in NodeRoomHeader outside the transcript region — same as Console; scope focus assertions to `page`, not the room region.
+- Room opener button ids embed the encoded rowId (`exec:occ-multi:unscoped:...`) — `button[id*="unscoped"]` can match OTHER nodes' rows; scope with the node id too.
+- Seeding order matters: latest execution row wins the default `?node=` selection — seed the unscoped execution LAST for a node-scoped multi-occurrence room.
+- `bun run validate` parallel test phase can hit transient `SQLITE_BUSY_RECOVERY` in `packages/cli` e2e tests on this external drive — deterministic on isolated re-run, flake under parallel load.
+
+BLOCKER US-005 | gate=`bun run validate` (prettier --check) | cause=pre-existing prettier drift in plans/260918-1711-.../prd.md + plans/journals/2026-09-18-plan-issue-180-...md — same fingerprint on clean base with story stashed | action=chore(unblock) commit 0f844ea8 running prettier --write on exactly those two files; gate then green | 2026-09-19
+
+---
