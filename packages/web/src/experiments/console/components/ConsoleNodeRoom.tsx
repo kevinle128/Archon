@@ -651,6 +651,7 @@ export function ConsoleNodeRoom({
           rows: visibleMessages,
           events,
           nodeId: row.nodeId,
+          outputFormat: resolution?.definitionNode?.output_format,
           nowMs,
         });
   const items = agentHistory.items;

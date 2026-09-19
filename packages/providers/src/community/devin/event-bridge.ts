@@ -90,7 +90,7 @@ export function mapDevinSessionUpdate(
   switch (update.sessionUpdate) {
     case 'agent_message_chunk': {
       if (update.content.type !== 'text') return [];
-      return [{ type: 'assistant', content: update.content.text }];
+      return [{ type: 'assistant', content: update.content.text, textMode: 'delta' }];
     }
     case 'agent_thought_chunk': {
       if (update.content.type !== 'text') return [];

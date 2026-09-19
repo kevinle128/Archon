@@ -269,7 +269,7 @@ describe('driveDevinAcpTurn — fresh turn', () => {
     const init = fake.calls[0]?.params as InitializeRequest;
     expect(init.clientCapabilities).toEqual({});
     expect(chunks).toEqual([
-      { type: 'assistant', content: 'PONG' },
+      { type: 'assistant', content: 'PONG', textMode: 'delta' },
       {
         type: 'result',
         sessionId: 'sess-new-1',
@@ -439,7 +439,7 @@ describe('driveDevinAcpTurn — session load', () => {
     ]);
     expect(fake.calls[1]?.params).toEqual({ sessionId: 'sess-old', cwd: '/repo', mcpServers: [] });
     expect(chunks).toEqual([
-      { type: 'assistant', content: 'new answer' },
+      { type: 'assistant', content: 'new answer', textMode: 'delta' },
       expect.objectContaining({ type: 'result', sessionId: 'sess-old' }),
     ]);
   });
@@ -484,7 +484,7 @@ describe('driveDevinAcpTurn — session load', () => {
       'AskHuman call_ask_1 answers:\n[{"questionId":"q0","value":"blue"}]\n\nContinue the task using these answers. Do not call ask_user_question again for these questions.'
     );
     expect(promptParams.prompt[0]?.text).not.toContain('original node prompt');
-    expect(chunks[0]).toEqual({ type: 'assistant', content: 'CHOSEN=blue' });
+    expect(chunks[0]).toEqual({ type: 'assistant', content: 'CHOSEN=blue', textMode: 'delta' });
   });
 });
 
@@ -581,7 +581,7 @@ describe('driveDevinAcpTurn — permission and abort', () => {
     const fake = createFakeDevin({ promptHold: hold, promptText: 'partial' });
     const gen = driveDevinAcpTurn(fake.app, baseInput({ abortSignal: abort.signal }));
     const first = await gen.next();
-    expect(first.value).toEqual({ type: 'assistant', content: 'partial' });
+    expect(first.value).toEqual({ type: 'assistant', content: 'partial', textMode: 'delta' });
     abort.abort();
     const rest: MessageChunk[] = [];
     for await (const chunk of gen) rest.push(chunk);
@@ -652,7 +652,7 @@ describe('driveDevinAcpTurn — permission and abort', () => {
     try {
       const gen = driveDevinAcpTurn(fake.app, baseInput({ abortSignal: abort.signal }));
       const first = await gen.next();
-      expect(first.value).toEqual({ type: 'assistant', content: 'partial' });
+      expect(first.value).toEqual({ type: 'assistant', content: 'partial', textMode: 'delta' });
       abort.abort();
       const rest: MessageChunk[] = [];
       for await (const chunk of gen) rest.push(chunk);
@@ -750,8 +750,42 @@ describe('runDevinAcpTurn — process wrapper', () => {
         },
       },
     ]);
-    expect(chunks[0]).toEqual({ type: 'assistant', content: 'PONG' });
+    expect(chunks[0]).toEqual({ type: 'assistant', content: 'PONG', textMode: 'delta' });
     expect(child.signals).toContain('SIGTERM');
+  });
+
+  test('two message chunks stream as two ordered delta chunks before the terminal result', async () => {
+    const fake = createFakeDevin({
+      promptUpdates: [
+        {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Hel' },
+        } as SessionUpdate,
+        {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'lo' },
+        } as SessionUpdate,
+      ],
+    });
+    const child = new FakeChild();
+    const spawnImpl = (() => {
+      attachAgent(child, fake);
+      return child as unknown as ChildProcess;
+    }) as unknown as typeof import('node:child_process').spawn;
+    const chunks = await collect(
+      runDevinAcpTurn(processInput(), { spawn: spawnImpl, terminateGraceMs: 0 })
+    );
+    expect(chunks.slice(0, 2)).toEqual([
+      { type: 'assistant', content: 'Hel', textMode: 'delta' },
+      { type: 'assistant', content: 'lo', textMode: 'delta' },
+    ]);
+    expect(
+      chunks
+        .filter(chunk => chunk.type === 'assistant')
+        .map(chunk => (chunk as { content: string }).content)
+        .join('')
+    ).toBe('Hello');
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', stopReason: 'end_turn' });
   });
 
   test('a child that dies mid-turn fails with devin_child_exited and redacted stderr', async () => {

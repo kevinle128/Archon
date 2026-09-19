@@ -155,6 +155,13 @@
   border-color: var(--border-bright);
 }
 
+/* Same cascade trap as the Raw toggle: the wildcard border pin above
+   defeats `border-warning` on the pending Ask card. Restore the warning
+   border so the card stays warning-toned against the elevated surface. */
+.console-root [data-ask-card] {
+  border-color: var(--warning);
+}
+
 .console-root ::selection {
   background: var(--accent-ring);
   color: var(--text-primary);

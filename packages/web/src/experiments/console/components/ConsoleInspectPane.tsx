@@ -47,6 +47,7 @@ import {
 import type { LogRow } from './inspect/build-log-rows';
 import type { ConsoleExecutionHeaderOption } from './inspect/ConsoleRoomHeader';
 import { isInspectRunLive } from './inspect/inspect-status';
+import { resolveRoomKind } from './inspect/resolve-room-kind';
 
 export type ConsoleInspectView = 'log' | 'graph' | 'artifacts';
 
@@ -272,6 +273,10 @@ export function ConsoleInspectPane({
                 loadMessage={loadMessage}
                 pendingInteractions={pendingInteractions}
                 nodeStates={nodeStates}
+                outputFormat={
+                  resolveRoomKind(entry.row.nodeId, definitionNodes, rawEvents, approval)
+                    .definitionNode?.output_format
+                }
                 approval={approval}
                 showToolCalls={showToolCalls}
                 showSystem={showSystem}

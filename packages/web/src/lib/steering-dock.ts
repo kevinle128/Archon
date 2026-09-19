@@ -2,11 +2,9 @@
  * Framework-free steering-dock logic shared by the Legacy and Console
  * composer renderers: visibility/blocked predicates, the guarded submit
  * transitions with stable retry ids, the interrupt/Send-now turn model,
- * sessionStorage draft persistence, and the nested steering error surface
- * both API helpers normalize onto.
- *
- * The POST response is the only queue evidence — there is no queue read,
- * polling, rehydration, or cross-tab convergence in this story (Story 2.9+).
+ * live queue polling/withdraw reconciliation, sessionStorage draft
+ * persistence, and the nested steering error surface both API helpers
+ * normalize onto.
  */
 export interface LocalSentReceipt {
   readonly messageId: string;
@@ -47,6 +45,21 @@ export interface SteeringDockState {
   readonly refusal: SteeringRefusal | null;
   /** Text for the single polite role="status" region, set per transition. */
   readonly notice: string | null;
+  /**
+   * The one in-flight withdraw. A single active id is deliberate: the dock
+   * has one refusal channel and one focus transfer, and simultaneous deletes
+   * would let response order decide focus or let one success erase another
+   * request's failure. The brief dock-wide delete guard never blocks send.
+   */
+  readonly withdrawingMessageId: string | null;
+  /**
+   * Local queue-mutation counter, starting at 0. Every resolved send or
+   * withdraw bumps it; a queue snapshot carries the generation captured when
+   * its request fired, so a snapshot that predates this tab's latest mutation
+   * is discarded instead of briefly resurrecting a row the operator just
+   * withdrew or dropping one they just sent.
+   */
+  readonly queueGeneration: number;
 }
 
 export type SteeringDockMode = 'hidden' | 'blocked' | 'detached' | 'composer';
@@ -193,6 +206,8 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     pendingRetry: null,
     refusal: null,
     notice: null,
+    withdrawingMessageId: null,
+    queueGeneration: 0,
   };
 }
 
@@ -248,8 +263,18 @@ export function resolveGuidanceSuccess(
   state: SteeringDockState,
   receipt: { message_id: string; state?: 'queued' | 'awaiting_send_now' }
 ): SteeringDockState {
+  // A replayed success never duplicates the row but still bumps
+  // `queueGeneration`, because the server accepted the mutation either way.
+  // An active withdraw id is preserved across send resolve.
   if (state.sent.some(entry => entry.messageId === receipt.message_id)) {
-    return { ...state, sendInFlight: false, pendingRetry: null, refusal: null };
+    return {
+      ...state,
+      sendInFlight: false,
+      pendingRetry: null,
+      refusal: null,
+      withdrawingMessageId: state.withdrawingMessageId,
+      queueGeneration: state.queueGeneration + 1,
+    };
   }
   const sent = [
     ...state.sent,
@@ -265,6 +290,8 @@ export function resolveGuidanceSuccess(
     sendInFlight: false,
     pendingRetry: null,
     refusal: null,
+    withdrawingMessageId: state.withdrawingMessageId,
+    queueGeneration: state.queueGeneration + 1,
     notice: queuedCountPhrase(sent.length),
   };
 }
@@ -347,6 +374,7 @@ export function resolveSendNowSuccess(
       inFlightBatch: null,
       pendingRetry: null,
       refusal: null,
+      queueGeneration: state.queueGeneration + 1,
       notice: willSendCountPhrase(state.inFlightBatch.length),
     };
   }
@@ -357,6 +385,7 @@ export function resolveSendNowSuccess(
     pendingRetry: null,
     refusal: null,
     subState: 'generating',
+    queueGeneration: state.queueGeneration + 1,
     notice: STEERING_AGENT_GENERATING,
   };
 }
@@ -416,6 +445,255 @@ export function resolveInterruptError(
   refusal: SteeringRefusal
 ): SteeringDockState {
   return { ...state, interruptInFlight: false, refusal };
+}
+
+/**
+ * Begin the single allowed withdraw. Sets the id only when the receipt is in
+ * `sent` and no other withdraw is active; anything else is a same-state
+ * no-op. Never alters send state or the stored refusal.
+ */
+export function beginWithdraw(state: SteeringDockState, messageId: string): SteeringDockState {
+  if (state.withdrawingMessageId !== null) return state;
+  if (!state.sent.some(entry => entry.messageId === messageId)) return state;
+  return { ...state, withdrawingMessageId: messageId };
+}
+
+/**
+ * A withdraw 200 removes exactly that receipt (sibling order and send state
+ * preserved) and clears the active id plus any stored refusal. The generation
+ * bumps even when a snapshot already removed the row — the server confirmed
+ * the mutation either way. A stale or mismatched completion is a no-op.
+ */
+export function resolveWithdrawSuccess(
+  state: SteeringDockState,
+  messageId: string
+): SteeringDockState {
+  if (state.withdrawingMessageId !== messageId) return state;
+  const sent = state.sent.filter(entry => entry.messageId !== messageId);
+  return {
+    ...state,
+    sent,
+    withdrawingMessageId: null,
+    refusal: null,
+    queueGeneration: state.queueGeneration + 1,
+    notice:
+      sent.length === 0
+        ? state.subState === 'idle-after-interrupt'
+          ? STEERING_AGENT_IDLE
+          : state.subState === 'generating'
+            ? STEERING_AGENT_GENERATING
+            : null
+        : sent.some(entry => entry.state === 'awaiting_send_now')
+          ? willSendCountPhrase(sent.length)
+          : queuedCountPhrase(sent.length),
+  };
+}
+
+/**
+ * A failed withdraw retains every row and all send state, clears the
+ * matching active id, and stores the refusal. Mismatched id is a no-op.
+ */
+export function resolveWithdrawFailure(
+  state: SteeringDockState,
+  messageId: string,
+  refusal: SteeringRefusal
+): SteeringDockState {
+  if (state.withdrawingMessageId !== messageId) return state;
+  return { ...state, withdrawingMessageId: null, refusal };
+}
+
+export const STEERING_DELETE_LABEL = 'delete';
+
+/**
+ * Accessible name for the per-row delete control. The visible text stays
+ * `delete`; the name identifies the specific message so the action is
+ * unambiguous. Outer whitespace is trimmed.
+ */
+export function deleteButtonAccessibleName(message: string): string {
+  return `delete · ${message.trim()}`;
+}
+
+export type RemovalFocusTarget =
+  | { readonly kind: 'delete'; readonly messageId: string }
+  | { readonly kind: 'field' };
+
+/**
+ * Where focus goes after a queued row is removed: the next row's delete
+ * button in the activation-time order, otherwise the previous row's,
+ * otherwise the composer field. An unknown id resolves to the field.
+ */
+export function nextFocusAfterRemoval(
+  orderedIds: readonly string[],
+  removedId: string
+): RemovalFocusTarget {
+  const index = orderedIds.indexOf(removedId);
+  if (index === -1) return { kind: 'field' };
+  const sibling = orderedIds[index + 1] ?? orderedIds[index - 1];
+  return sibling === undefined ? { kind: 'field' } : { kind: 'delete', messageId: sibling };
+}
+
+/** One queued-guidance row exactly as the GET queue route returns it. */
+export interface QueuedGuidanceRow {
+  readonly message_id: string;
+  readonly message: string;
+}
+
+/** The queue-read wire payload: only still-pending rows in receipt order. */
+export interface QueueSnapshot {
+  readonly queued: readonly QueuedGuidanceRow[];
+}
+
+/**
+ * Reconcile the rendered queue with the server's authoritative order. A
+ * generation mismatch returns the identical state object — the snapshot
+ * predates this tab's latest resolved mutation and must not resurrect or
+ * drop rows. On match, `sent` is replaced wholesale with the server-ordered
+ * queued receipts; `sendInFlight`, `pendingRetry`, `refusal`,
+ * `withdrawingMessageId`, and `queueGeneration` are preserved exactly.
+ * Identical ids, text, and order return the identical state object so React
+ * skips a render. The draft, sessionStorage, and a stored refusal are never
+ * touched — the server has no opinion on any of them.
+ */
+export function applyQueueSnapshot(
+  state: SteeringDockState,
+  snapshot: QueueSnapshot,
+  generationAtRequest: number
+): SteeringDockState {
+  if (generationAtRequest !== state.queueGeneration) return state;
+  const nextSent: LocalSentReceipt[] = snapshot.queued.map(row => ({
+    messageId: row.message_id,
+    message: row.message,
+    state: 'queued',
+  }));
+  const unchanged =
+    nextSent.length === state.sent.length &&
+    nextSent.every(
+      (row, i) => row.messageId === state.sent[i].messageId && row.message === state.sent[i].message
+    );
+  if (unchanged) return state;
+  return { ...state, sent: nextSent };
+}
+
+/**
+ * Where focus goes after a snapshot replaces the queue. Returns null when
+ * nothing was focused or the focused row survived — no DOM move is needed.
+ * When another operator/tab withdrew the focused row, pick the nearest
+ * surviving next id in the pre-snapshot order, then the nearest surviving
+ * previous id, then the composer field — skipping siblings removed by the
+ * same snapshot. Never returns a `<body>` target: a moved focus always
+ * lands on an explicit destination.
+ */
+export function focusTargetAfterSnapshot(
+  previousIds: readonly string[],
+  nextIds: readonly string[],
+  focusedMessageId: string | null
+): RemovalFocusTarget | null {
+  if (focusedMessageId === null) return null;
+  if (nextIds.includes(focusedMessageId)) return null;
+  const index = previousIds.indexOf(focusedMessageId);
+  if (index === -1) return { kind: 'field' };
+  for (let i = index + 1; i < previousIds.length; i++) {
+    if (nextIds.includes(previousIds[i])) return { kind: 'delete', messageId: previousIds[i] };
+  }
+  for (let i = index - 1; i >= 0; i--) {
+    if (nextIds.includes(previousIds[i])) return { kind: 'delete', messageId: previousIds[i] };
+  }
+  return { kind: 'field' };
+}
+
+export interface QueuePollingOptions {
+  /** One queue read; resolves with the wire payload, rejects on any failure. */
+  readonly read: (signal: AbortSignal) => Promise<QueueSnapshot>;
+  /** The dock's current `queueGeneration`, sampled as each request fires. */
+  readonly currentGeneration: () => number;
+  /**
+   * Receives each 200 payload plus the generation captured when its request
+   * fired — the pair `applyQueueSnapshot` needs to discard a stale read.
+   */
+  readonly onSnapshot: (snapshot: QueueSnapshot, generationAtRequest: number) => void;
+  /** Reconcile cadence (~1s in the docks). */
+  readonly intervalMs: number;
+  readonly setTimer?: typeof setTimeout;
+  readonly clearTimer?: typeof clearTimeout;
+}
+
+/**
+ * Framework-free queue reconcile loop: fires one read immediately, then
+ * schedules the next read only after the current promise settles — requests
+ * never overlap. Each request samples `currentGeneration` at fire time and
+ * hands it to `onSnapshot` so the caller can discard a stale read.
+ * Synchronous throws and rejections both normalize through
+ * `toSteeringRequestError`: 422, transport (0), and 5xx reschedule silently;
+ * any other 4xx stops the loop without a snapshot callback. The returned
+ * cleanup aborts the in-flight request, clears the pending timer, and
+ * suppresses every late settle — an abort caused by stop() never schedules
+ * a retry. No read-error callback exists because Story 2.9 adds no
+ * read-specific UI.
+ */
+export function startQueuePolling(options: QueuePollingOptions): () => void {
+  const setTimer = options.setTimer ?? setTimeout;
+  const clearTimer = options.clearTimer ?? clearTimeout;
+  let stopped = false;
+  let epoch = 0;
+  let controller: AbortController | null = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const schedule = (): void => {
+    if (stopped) return;
+    timer = setTimer(tick, options.intervalMs);
+  };
+
+  const tick = (): void => {
+    if (stopped) return;
+    const myEpoch = ++epoch;
+    const generationAtRequest = options.currentGeneration();
+    const request = new AbortController();
+    controller = request;
+
+    const settle = (error: unknown): void => {
+      if (stopped || epoch !== myEpoch) return;
+      controller = null;
+      const status = toSteeringRequestError(error).status;
+      const retryable = status === 422 || status === 0 || status >= 500;
+      if (!retryable) {
+        stopped = true;
+        return;
+      }
+      schedule();
+    };
+
+    let payload: Promise<QueueSnapshot>;
+    try {
+      payload = options.read(request.signal);
+    } catch (error: unknown) {
+      settle(error);
+      return;
+    }
+    void payload.then(
+      snapshot => {
+        if (stopped || epoch !== myEpoch) return;
+        controller = null;
+        options.onSnapshot(snapshot, generationAtRequest);
+        schedule();
+      },
+      (error: unknown) => {
+        settle(error);
+      }
+    );
+  };
+
+  tick();
+
+  return () => {
+    stopped = true;
+    epoch++;
+    controller?.abort();
+    controller = null;
+    if (timer !== null) {
+      clearTimer(timer);
+      timer = null;
+    }
+  };
 }
 
 export interface SteeringDraftRecord {

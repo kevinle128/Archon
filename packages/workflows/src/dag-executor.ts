@@ -7035,6 +7035,7 @@ async function executeLoopNodeInner(
             interruptibleHandle?.settleTurn(turnToken, 'generating');
           }
           reaskAttempt++;
+          iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
           reaskErrors = ['no JSON object was found in the response'];
           continue attempts;
         }

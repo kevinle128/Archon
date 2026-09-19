@@ -169,6 +169,90 @@ const PLAN_MESSAGES: WorkflowNodeMessage[] = [
   },
 ];
 
+const REPORT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { report: { type: 'string' } },
+  required: ['report'],
+  additionalProperties: false,
+};
+const REPORT_TEXT = 'Readable report body';
+const REPORT_MESSAGES: readonly WorkflowNodeMessage[] = [
+  {
+    id: 'r1',
+    seq: 1,
+    kind: 'text',
+    payload: { text: '{"report":"Readable ' },
+    metadata: { text_mode: 'delta' },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r2',
+    seq: 2,
+    kind: 'text',
+    payload: { text: 'report ' },
+    metadata: { text_mode: 'delta' },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r3',
+    seq: 3,
+    kind: 'text',
+    payload: { text: 'body"}' },
+    metadata: { text_mode: 'delta' },
+    created_at: CREATED_AT,
+  },
+];
+const NESTED_DEFINITION_NODES: DagNode[] = [
+  {
+    id: 'group',
+    loop_group: {
+      max_iterations: 1,
+      fresh_context: false,
+      nodes: [{ id: 'child', prompt: 'Report', output_format: REPORT_SCHEMA }],
+    },
+  },
+];
+const CHILD_NODE_STATES: WorkflowNodeState[] = [
+  nodeState({ nodeId: 'group', name: 'Group', status: 'completed' }),
+  nodeState({ nodeId: 'group.child', name: 'Child', status: 'completed' }),
+];
+const CHILD_RAW_EVENTS: WorkflowEvent[] = [
+  workflowEvent({
+    id: 'group-start',
+    event_type: 'node_started',
+    step_name: 'group',
+    created_at: '2026-06-05T10:00:01Z',
+    data: { name: 'Group' },
+  }),
+  workflowEvent({
+    id: 'child-start',
+    event_type: 'node_started',
+    step_name: 'group.child',
+    created_at: '2026-06-05T10:00:02Z',
+    data: { name: 'Child' },
+  }),
+  workflowEvent({
+    id: 'child-done',
+    event_type: 'node_completed',
+    step_name: 'group.child',
+    created_at: '2026-06-05T10:00:03Z',
+    data: { name: 'Child', duration_ms: 1000 },
+  }),
+  workflowEvent({
+    id: 'group-done',
+    event_type: 'node_completed',
+    step_name: 'group',
+    created_at: '2026-06-05T10:00:04Z',
+    data: { name: 'Group', duration_ms: 3000 },
+  }),
+];
+const CHILD_LOG_ENTRIES = buildConsoleLogEntries({
+  rows: buildLogRows(CHILD_NODE_STATES, CHILD_RAW_EVENTS),
+  rawEvents: CHILD_RAW_EVENTS,
+  nodeRuns: foldNodeRuns(CHILD_RAW_EVENTS.map(toRunEvent)),
+  runStartedAt: CREATED_AT,
+});
+
 function deferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -565,6 +649,65 @@ describe('ConsoleInspectPane', () => {
     expect(host.querySelector('[data-testid="console-run-graph-canvas"]')).toBeNull();
     expect(host.textContent).toContain(PLAN_TEXT);
     expect(host.querySelector('[aria-label="plan room"]')).not.toBeNull();
+  });
+
+  test('inline history unwraps the structured envelope for a nested definition node', async () => {
+    const loadMessages = (_runId: string, nodeId: string): Promise<WorkflowNodeMessagesResponse> =>
+      Promise.resolve({
+        messages: nodeId === 'group.child' ? [...REPORT_MESSAGES] : [],
+      });
+
+    await act(async () => {
+      renderPane({
+        view: 'log',
+        selectedNodeId: null,
+        selectedLogRowId: null,
+        nodeStates: CHILD_NODE_STATES,
+        events: CHILD_RAW_EVENTS.map(toRunEvent),
+        rawEvents: CHILD_RAW_EVENTS,
+        logEntries: CHILD_LOG_ENTRIES,
+        loadDefinition: (): Promise<DagNode[]> => Promise.resolve(NESTED_DEFINITION_NODES),
+        loadMessages,
+      });
+    });
+    await flushUntil('nested structured history', () =>
+      (host.textContent ?? '').includes(REPORT_TEXT)
+    );
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
+  });
+
+  test('inline history renders the raw envelope until the nested definition resolves', async () => {
+    const pending = deferred<DagNode[]>();
+    const loadMessages = (_runId: string, nodeId: string): Promise<WorkflowNodeMessagesResponse> =>
+      Promise.resolve({
+        messages: nodeId === 'group.child' ? [...REPORT_MESSAGES] : [],
+      });
+    const overrides: Partial<ConsoleInspectPaneProps> = {
+      view: 'log',
+      selectedNodeId: null,
+      selectedLogRowId: null,
+      nodeStates: CHILD_NODE_STATES,
+      events: CHILD_RAW_EVENTS.map(toRunEvent),
+      rawEvents: CHILD_RAW_EVENTS,
+      logEntries: CHILD_LOG_ENTRIES,
+      loadMessages,
+    };
+
+    await act(async () => {
+      renderPane({ ...overrides, loadDefinition: (): Promise<DagNode[]> => pending.promise });
+    });
+    await flushUntil('raw inline history', () => (host.textContent ?? '').includes('{"report"'));
+    expect(host.textContent).toContain('{"report"');
+
+    await act(async () => {
+      pending.resolve(NESTED_DEFINITION_NODES);
+    });
+    await flushUntil('resolved inline history', () =>
+      (host.textContent ?? '').includes(REPORT_TEXT)
+    );
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
   });
 
   test('split layout uses a 60/40 percentage room and omits the room when unselected', async () => {

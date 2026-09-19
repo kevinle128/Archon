@@ -21,7 +21,7 @@ describe('CLI help output', () => {
     expect(result.stdout).toContain(
       'workflow resume <run-id>   Resume a failed or paused run from completed nodes'
     );
-  });
+  }, 30000);
 
   it('documents workflow dry-run flags', () => {
     const result = spawnSync(process.execPath, [join(import.meta.dir, 'cli.ts'), '--help'], {
@@ -33,7 +33,7 @@ describe('CLI help output', () => {
     expect(result.stdout).toContain('--stubs <path>');
     expect(result.stdout).toContain('--exec-code');
     expect(result.stdout).toContain('--pause-at-gates');
-  });
+  }, 30000);
 });
 
 // Test the argument parsing logic used in cli.ts

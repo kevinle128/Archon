@@ -748,6 +748,8 @@ export async function getWorkflowNodeMessage(
 
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
+export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkflowNodeResponse'];
+export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowNodeQueueResponse'];
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send:
@@ -803,6 +805,61 @@ export async function interruptNode(
     return await fetchJSON<InterruptWorkflowNodeResponse>(url, { method: 'POST' });
   } catch (error) {
     throw toSteeringRequestError(error, STEERING_INTERRUPT_FAILED_MESSAGE);
+  }
+}
+
+/**
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
+ * a still-queued guidance message. Bodyless: no request body and
+ * no synthetic JSON content type, no auto-retry. Refusals normalize through
+ * the same SteeringRequestError surface as the send helper so callers keep
+ * using `toSteeringRefusal`.
+ */
+export async function withdrawNodeGuidance(
+  runId: string,
+  nodeId: string,
+  messageId: string
+): Promise<WithdrawWorkflowNodeResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/queue/' +
+    encodeURIComponent(messageId);
+  try {
+    return await fetchJSON<WithdrawWorkflowNodeResponse>(url, { method: 'DELETE' });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * GET /api/workflows/runs/:runId/nodes/:nodeId/queue — read the node's
+ * still-pending queue snapshot so a mounted dock converges on the shared
+ * registry queue. Bodyless GET with `cache: 'no-store'`, optional
+ * AbortSignal, no auto-retry — failures normalize through the same
+ * SteeringRequestError surface as the send/withdraw helpers.
+ */
+export async function readNodeGuidanceQueue(
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+): Promise<ReadWorkflowNodeQueueResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/queue';
+  try {
+    return await fetchJSON<ReadWorkflowNodeQueueResponse>(url, {
+      method: 'GET',
+      cache: 'no-store',
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
   }
 }
 

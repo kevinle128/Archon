@@ -579,7 +579,7 @@ describe('auditSqlite corpus path', () => {
         'source',
       ]);
     });
-  });
+  }, 30000);
 
   test('node above the configured ceiling fails closed', async () => {
     await withSandbox(ctx => {

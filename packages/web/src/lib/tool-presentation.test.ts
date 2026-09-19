@@ -16,6 +16,7 @@ import {
   toolRawPayloadJson,
   toolRowPresentation,
   type ToolFamily,
+  type ToolRowBadge,
   type ToolRowFacts,
 } from './tool-presentation';
 import { MAX_TASK_SUBTASKS, MAX_TASK_TOTAL_TEXT_CODE_UNITS } from './task-normalize';
@@ -1267,6 +1268,7 @@ describe('file body', () => {
       path: '/a.ts',
       preview: 'line1\nline2',
       unreadable: false,
+      diff: null,
     });
   });
 
@@ -1274,6 +1276,229 @@ describe('file body', () => {
     const b = body('Write', { file_path: '/a.ts', content: 'body text' }, null, 'file');
     if (b?.kind !== 'file') throw new Error('expected file');
     expect(b.preview).toBe('body text');
+    expect(b.diff).toBeNull();
+  });
+});
+
+describe('file edit diff', () => {
+  const DIFF_BADGE_SUCCESS: ToolRowBadge = { kind: 'diff', text: '+1', tone: 'success' };
+  const DIFF_BADGE_DANGER: ToolRowBadge = { kind: 'diff', text: '−1', tone: 'danger' };
+
+  test('canonical pair qualifies: +n success and −m danger badges plus a hunk fact', () => {
+    const presentation = row(
+      'Edit',
+      { file_path: '/a.ts', old_string: 'x\ny', new_string: 'x\nz' },
+      'ok',
+      SUCCEEDED
+    );
+    expect(presentation.family).toBe('file');
+    expect(presentation.badges).toContainEqual(DIFF_BADGE_SUCCESS);
+    expect(presentation.badges).toContainEqual(DIFF_BADGE_DANGER);
+    expect(presentation.bodyFacts).toEqual(['1 hunk']);
+    expect(presentation.bodyBarText).toBe('file · 1 hunk');
+  });
+
+  test('both alias pairs qualify on file-family names', () => {
+    const aliased = call('str_replace', { path: 'a', old_str: 'x', new_str: 'y' });
+    expect(aliased.family).toBe('file');
+    expect(aliased.contentBadges).toContainEqual(DIFF_BADGE_SUCCESS);
+    expect(aliased.contentBadges).toContainEqual(DIFF_BADGE_DANGER);
+    const contentPair = call('Edit', { file_path: 'a', content: 'x', new_content: 'y' });
+    expect(contentPair.contentBadges).toContainEqual(DIFF_BADGE_SUCCESS);
+  });
+
+  test('empty sides qualify: insert-only and delete-only emit only their own badge', () => {
+    const insertOnly = row(
+      'Edit',
+      { file_path: 'a', old_string: '', new_string: 'x' },
+      'ok',
+      SUCCEEDED
+    );
+    expect(insertOnly.badges).toContainEqual(DIFF_BADGE_SUCCESS);
+    expect(insertOnly.badges.filter(badge => badge.kind === 'diff')).toHaveLength(1);
+    const deleteOnly = row(
+      'Edit',
+      { file_path: 'a', old_string: 'x', new_string: '' },
+      'ok',
+      SUCCEEDED
+    );
+    expect(deleteOnly.badges).toContainEqual(DIFF_BADGE_DANGER);
+    expect(deleteOnly.badges.filter(badge => badge.kind === 'diff')).toHaveLength(1);
+  });
+
+  test('replace_all composes only for an own boolean input', () => {
+    const exact = row(
+      'Edit',
+      { file_path: 'a', old_string: 'x', new_string: 'y', replace_all: false },
+      'ok',
+      SUCCEEDED
+    );
+    expect(exact.bodyBarText).toBe('file · 1 hunk · replace_all: false');
+    const truthy = call('Edit', {
+      file_path: 'a',
+      old_string: 'x',
+      new_string: 'y',
+      replace_all: true,
+    });
+    expect(truthy.bodyFacts).toEqual(['1 hunk', 'replace_all: true']);
+    const nonBoolean = call('Edit', {
+      file_path: 'a',
+      old_string: 'x',
+      new_string: 'y',
+      replace_all: 'yes',
+    });
+    expect(nonBoolean.bodyFacts).toEqual(['1 hunk']);
+    const inherited = call(
+      'Edit',
+      Object.assign(Object.create({ replace_all: true }), {
+        file_path: 'a',
+        old_string: 'x',
+        new_string: 'y',
+      })
+    );
+    expect(inherited.bodyFacts).toEqual(['1 hunk']);
+  });
+
+  test('plural hunk fact for multi-hunk diffs', () => {
+    const before = Array.from({ length: 20 }, (_, i) => `line${String(i)}`).join('\n');
+    const after = before.replace('line2', 'LINE2').replace('line17', 'LINE17');
+    const presentation = call('Edit', { file_path: 'a', old_string: before, new_string: after });
+    expect(presentation.bodyFacts).toEqual(['2 hunks']);
+  });
+
+  test('identical pair yields the no-changes fact and no diff badges', () => {
+    const presentation = row(
+      'Edit',
+      { file_path: 'a', old_string: 'x', new_string: 'x' },
+      'ok',
+      SUCCEEDED
+    );
+    expect(presentation.bodyFacts).toEqual(['no changes']);
+    expect(presentation.badges.filter(badge => badge.kind === 'diff')).toHaveLength(0);
+    expect(presentation.bodyBarText).toBe('file · no changes');
+  });
+
+  test('diff badges never reach the body bar', () => {
+    const presentation = row('Edit', { file_path: 'a', old_string: 'x', new_string: 'y' }, 'ok', {
+      outcome: 'succeeded',
+      outputState: 'full',
+      durationMs: 120,
+    });
+    expect(presentation.bodyBarText).toBe('file · 1 hunk · 120ms');
+    expect(presentation.bodyBarText).not.toContain('+1');
+    expect(presentation.bodyBarText).not.toContain('−1');
+  });
+
+  test('file body arm carries the diff result; refused and missing pairs keep the preview fallback', () => {
+    const qualified = body(
+      'Edit',
+      { file_path: '/a.ts', old_string: 'x\ny', new_string: 'x\nz' },
+      null,
+      'file'
+    );
+    if (qualified?.kind !== 'file') throw new Error('expected file');
+    expect(qualified.diff).not.toBeNull();
+    expect(qualified.diff?.added).toBe(1);
+    expect(qualified.diff?.deleted).toBe(1);
+    expect(qualified.diff?.hunks).toHaveLength(1);
+    expect(qualified.preview).toBe('x\nz');
+
+    const overLines = `a\n${'x\n'.repeat(2_001)}`;
+    const refused = body(
+      'Edit',
+      { file_path: '/a.ts', old_string: 'a', new_string: overLines },
+      null,
+      'file'
+    );
+    if (refused?.kind !== 'file') throw new Error('expected file');
+    expect(refused.diff).toBeNull();
+    expect(refused.preview).toBe(overLines);
+
+    const oneSided = body('Edit', { file_path: '/a.ts', old_string: 'a' }, null, 'file');
+    if (oneSided?.kind !== 'file') throw new Error('expected file');
+    expect(oneSided.diff).toBeNull();
+
+    const wrongTypes = body(
+      'Edit',
+      { file_path: '/a.ts', old_string: 1, new_string: 'b' },
+      null,
+      'file'
+    );
+    if (wrongTypes?.kind !== 'file') throw new Error('expected file');
+    expect(wrongTypes.diff).toBeNull();
+
+    const noInput = body('Edit', undefined, null, 'file');
+    if (noInput?.kind !== 'file') throw new Error('expected file');
+    expect(noInput.diff).toBeNull();
+  });
+
+  test('throwing accessors and inherited pair keys are non-qualifying, never a reclassification', () => {
+    const throwing = Object.create(null) as Record<string, unknown>;
+    throwing.file_path = '/a.ts';
+    Object.defineProperty(throwing, 'old_string', {
+      enumerable: true,
+      get() {
+        throw new Error('hostile getter');
+      },
+    });
+    throwing.new_string = 'y';
+    const presentation = call('Edit', throwing);
+    expect(presentation.family).toBe('file');
+    expect(presentation.contentBadges.filter(badge => badge.kind === 'diff')).toHaveLength(0);
+    expect(presentation.bodyFacts).toEqual([]);
+    const b = body('Edit', throwing, null, 'file');
+    if (b?.kind !== 'file') throw new Error('expected file');
+    expect(b.diff).toBeNull();
+
+    const inherited = call(
+      'Edit',
+      Object.create({ old_string: 'x', new_string: 'y', file_path: '/a.ts' })
+    );
+    expect(inherited.contentBadges.filter(badge => badge.kind === 'diff')).toHaveLength(0);
+    expect(inherited.bodyFacts).toEqual([]);
+  });
+
+  test('aliases on non-file families never produce a diff', () => {
+    const shell = call('bash', { command: 'x', old_string: 'a', new_string: 'b' });
+    expect(shell.family).toBe('shell');
+    expect(shell.contentBadges.filter(badge => badge.kind === 'diff')).toHaveLength(0);
+    expect(shell.bodyFacts).toEqual([]);
+    const mcp = call('mcp__srv__edit', { old_string: 'a', new_string: 'b' });
+    expect(mcp.family).toBe('generic');
+    expect(mcp.contentBadges).toHaveLength(0);
+  });
+
+  test('repeated summary/body calls for the same record read the pair once', () => {
+    let reads = 0;
+    const input = { file_path: '/a.ts', new_string: 'y' } as Record<string, unknown>;
+    Object.defineProperty(input, 'old_string', {
+      enumerable: true,
+      get() {
+        reads++;
+        return 'x';
+      },
+    });
+    const presentation = toolRowPresentation({ name: 'Edit', input, output: 'ok' }, SUCCEEDED);
+    expect(presentation.badges).toContainEqual(DIFF_BADGE_SUCCESS);
+    const firstReads = reads;
+    const b = toolBodyPresentation({ name: 'Edit', input, output: null }, 'file');
+    expect(reads).toBe(firstReads);
+    if (b?.kind !== 'file') throw new Error('expected file');
+    expect(b.diff).not.toBeNull();
+  });
+
+  test('a second record with equal strings reuses the same pair-cache result object', () => {
+    const first = body('Edit', { file_path: 'a', old_string: 'x', new_string: 'y' }, null, 'file');
+    const second = body('Edit', { file_path: 'b', old_string: 'x', new_string: 'y' }, null, 'file');
+    if (first?.kind !== 'file' || second?.kind !== 'file') throw new Error('expected file');
+    expect(first.diff).not.toBeNull();
+    expect(second.diff).toBe(first.diff);
+  });
+
+  test('raw payload keeps the untouched pair', () => {
+    const input = { file_path: '/a.ts', old_string: 'x', new_string: 'y' };
+    const presentation = row('Edit', input, 'ok', SUCCEEDED);
+    expect(presentation.rawPayload.input).toBe(input);
   });
 });
 

@@ -3,45 +3,59 @@
  * run's process-local steering queue, plus the Story 2.3 turn model —
  * `Stop` interrupts the agent's current generation, `Send now` delivers a
  * typed message on the same session once the agent is idle-after-interrupt.
- * The POST response is the only queue evidence — no polling, no queue read,
- * no rehydration (Story 2.9 owns that later). Sent receipts are in-memory
- * only; the unsent draft and ambiguous retry id persist in sessionStorage
- * scoped by run + namespaced node id.
+ * Story 2.9 hydrates and reconciles the shared registry queue via a serial
+ * abortable poll; local POST/DELETE responses still update immediately.
+ * Sent receipts are in-memory; the unsent draft and ambiguous retry id
+ * persist in sessionStorage scoped by run + namespaced node id.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
 import {
   interruptNode,
+  readNodeGuidanceQueue,
   sendNodeGuidance,
+  withdrawNodeGuidance,
   type InterruptWorkflowNodeResponse,
+  type ReadWorkflowNodeQueueResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
+  type WithdrawWorkflowNodeResponse,
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
 import {
+  applyQueueSnapshot,
   beginGuidanceSubmission,
   beginInterrupt,
   beginSendNow,
+  beginWithdraw,
   canSubmitGuidance,
   createSteeringDockState,
+  deleteButtonAccessibleName,
+  focusTargetAfterSnapshot,
   isQueueShortcut,
   loadSteeringDraft,
+  nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
+  queuedCountPhrase,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
   resolveInterruptError,
   resolveInterruptOutcome,
   resolveSendNowFailure,
   resolveSendNowSuccess,
+  resolveWithdrawFailure,
+  resolveWithdrawSuccess,
   saveSteeringDraft,
   sendNowButtonAccessibleName,
+  startQueuePolling,
   steeringAgentMode,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
   syncProjectedSubState,
+  STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
   STEERING_INTERRUPT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
@@ -49,6 +63,7 @@ import {
   toSteeringRefusal,
   willSendBandHeader,
   willSendListLabel,
+  type RemovalFocusTarget,
   type SteeringDockState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
@@ -64,6 +79,18 @@ export type InterruptNode = (
   runId: string,
   nodeId: string
 ) => Promise<InterruptWorkflowNodeResponse>;
+
+export type WithdrawNodeGuidance = (
+  runId: string,
+  nodeId: string,
+  messageId: string
+) => Promise<WithdrawWorkflowNodeResponse>;
+
+export type ReadNodeGuidanceQueue = (
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+) => Promise<ReadWorkflowNodeQueueResponse>;
 
 export interface ComposerDockProps {
   runId: string;
@@ -83,6 +110,11 @@ export interface ComposerDockProps {
   subState?: SteeringSubState;
   send?: SendNodeGuidance;
   interrupt?: InterruptNode;
+  withdraw?: WithdrawNodeGuidance;
+  /** Queue snapshot reader; defaults to the Legacy API helper. */
+  readQueue?: ReadNodeGuidanceQueue;
+  /** Poll cadence in ms; production default 1000, narrow test seam only. */
+  pollIntervalMs?: number;
   storage?: Storage;
   /**
    * Focuses the last rendered transcript row (scroller fallback) when the
@@ -125,6 +157,9 @@ export function ComposerDock({
   subState,
   send = sendNodeGuidance,
   interrupt = interruptNode,
+  withdraw = withdrawNodeGuidance,
+  readQueue = readNodeGuidanceQueue,
+  pollIntervalMs = 1000,
   storage,
   focusLastRow,
 }: ComposerDockProps): React.ReactElement | null {
@@ -135,12 +170,17 @@ export function ComposerDock({
   const bandHeaderId = useId();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const wellRef = useRef<HTMLDivElement>(null);
+  const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
+  const detachedAlertRef = useRef<HTMLParagraphElement>(null);
+  const dockRef = useRef<SteeringDockState>(createSteeringDockState(subState));
 
   const [dock, setDock] = useState<SteeringDockState>(() => ({
     ...createSteeringDockState(subState),
     pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
   }));
   const [draft, setDraft] = useState<string>(() => loadSteeringDraft(store, storageKey).draft);
+  dockRef.current = dock;
 
   // Receipts live for the mounted execution only; a scope change resets them
   // while the persisted draft for the new scope hydrates from storage.
@@ -164,6 +204,44 @@ export function ComposerDock({
   }, [subState]);
 
   const mode = steeringDockMode({ rowStatus, live, hasPendingAsk, refusal: dock.refusal });
+
+  // Shared-queue reads only while the composer/blocked surfaces are mounted.
+  // Hidden historical/terminal rooms and send-triggered detached disclosures
+  // never poll — Story 2.9 gives queue reads no capability-state transition.
+  const pollingEnabled = mode === 'composer' || mode === 'blocked';
+
+  useEffect(() => {
+    if (!pollingEnabled) return;
+    return startQueuePolling({
+      read: signal => readQueue(runId, nodeId, { signal }),
+      currentGeneration: () => dockRef.current.queueGeneration,
+      onSnapshot: (snapshot, generationAtRequest): void => {
+        let focusedId: string | null = null;
+        for (const [messageId, button] of deleteButtonsRef.current) {
+          if (button === document.activeElement) {
+            focusedId = messageId;
+            break;
+          }
+        }
+        setDock(current => {
+          const previousIds = current.sent.map(receipt => receipt.messageId);
+          const next = applyQueueSnapshot(current, snapshot, generationAtRequest);
+          if (next === current) return current;
+          const nextIds = next.sent.map(receipt => receipt.messageId);
+          if (
+            focusedId !== null &&
+            previousIds.includes(focusedId) &&
+            !nextIds.includes(focusedId) &&
+            pendingFocusRef.current === null
+          ) {
+            pendingFocusRef.current = focusTargetAfterSnapshot(previousIds, nextIds, focusedId);
+          }
+          return next;
+        });
+      },
+      intervalMs: pollIntervalMs,
+    });
+  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -201,6 +279,28 @@ export function ComposerDock({
     },
     []
   );
+
+  // A stored 422 replaces the dock with the detached disclosure — move focus
+  // to it instead of returning keyboard users to <body>. Send- and
+  // withdraw-triggered 422s share this one disclosure path.
+  useEffect(() => {
+    if (mode === 'detached') detachedAlertRef.current?.focus();
+  }, [mode]);
+
+  // After a successful withdraw removes its row, move focus to the target
+  // captured at activation time (next row → previous row → field). The same
+  // path restores focus after a remote snapshot removes the focused row.
+  useEffect(() => {
+    const target = pendingFocusRef.current;
+    // A concurrent send also changes `sent`. Keep the target pending until the
+    // withdraw itself settles so an unrelated append cannot move focus early
+    // or consume the focus restoration needed if the withdraw later succeeds.
+    if (target === null || dock.withdrawingMessageId !== null) return;
+    pendingFocusRef.current = null;
+    const button =
+      target.kind === 'delete' ? deleteButtonsRef.current.get(target.messageId) : undefined;
+    (button ?? fieldRef.current)?.focus();
+  }, [dock.sent, dock.withdrawingMessageId]);
 
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
   const agentMode = steeringAgentMode(dock);
@@ -269,12 +369,37 @@ export function ComposerDock({
     );
   };
 
+  const withdrawMessage = (messageId: string): void => {
+    // One active withdraw per dock — a second click while one is in flight
+    // issues no request.
+    if (dock.withdrawingMessageId !== null) return;
+    pendingFocusRef.current = nextFocusAfterRemoval(
+      dock.sent.map(receipt => receipt.messageId),
+      messageId
+    );
+    setDock(current => beginWithdraw(current, messageId));
+    void withdraw(runId, nodeId, messageId).then(
+      (): void => {
+        setDock(current => resolveWithdrawSuccess(current, messageId));
+      },
+      (error: unknown): void => {
+        pendingFocusRef.current = null;
+        setDock(current => resolveWithdrawFailure(current, messageId, toSteeringRefusal(error)));
+      }
+    );
+  };
+
   if (mode === 'hidden') return null;
 
   if (mode === 'detached') {
     return (
       <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
-        <p role="alert" className="font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+        <p
+          role="alert"
+          ref={detachedAlertRef}
+          tabIndex={-1}
+          className="font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+        >
           {STEERING_DETACHED_DISCLOSURE}
         </p>
       </div>
@@ -283,7 +408,10 @@ export function ComposerDock({
 
   const blocked = mode === 'blocked';
   const idle = agentMode === 'idle';
-  const statusText = blocked && blockedReason !== null ? blockedReason : (dock.notice ?? '');
+  const statusText =
+    blocked && blockedReason !== null
+      ? blockedReason
+      : (dock.notice ?? (dock.sent.length > 0 ? queuedCountPhrase(dock.sent.length) : ''));
   const showStop = agentMode === 'generating' || agentMode === 'interrupting';
   const stopping = agentMode === 'interrupting';
 
@@ -309,12 +437,35 @@ export function ComposerDock({
               {dock.sent.map(receipt => (
                 <li
                   key={receipt.messageId}
+                  data-message-id={receipt.messageId}
                   className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
                 >
                   <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                     {receipt.message}
                   </span>
                   <span className="flex-none">sent</span>
+                  <button
+                    type="button"
+                    ref={(el): void => {
+                      if (el === null) {
+                        deleteButtonsRef.current.delete(receipt.messageId);
+                      } else {
+                        deleteButtonsRef.current.set(receipt.messageId, el);
+                      }
+                    }}
+                    aria-label={deleteButtonAccessibleName(receipt.message)}
+                    aria-disabled={dock.withdrawingMessageId !== null ? true : undefined}
+                    onClick={(): void => {
+                      withdrawMessage(receipt.messageId);
+                    }}
+                    className={cn(
+                      'min-h-[24px] min-w-[24px] flex-none rounded-md px-2 font-mono text-[11px]',
+                      'text-text-secondary hover:bg-surface-inset',
+                      'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
+                    )}
+                  >
+                    {STEERING_DELETE_LABEL}
+                  </button>
                 </li>
               ))}
             </ul>

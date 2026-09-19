@@ -18,10 +18,10 @@ const configSchema = z.object({
   accepted_differences: z.array(z.string()), comparison: z.string(),
 }).passthrough();
 const manifestSchema = z.object({ runId: z.string(), cases: z.array(z.object({
-  id: z.string(), surface: z.string(), state: z.string(), source: z.string(),
+  id: z.string(), surface: z.string(), state: z.string(), source: z.string(), runId: z.string(),
   viewport: z.object({ width: z.number(), height: z.number() }),
   reference_viewport: z.object({ width: z.number(), height: z.number() }),
-  actual_geometry: geometrySchema, reference_geometry: geometrySchema, room_geometry: geometrySchema,
+  actual_geometry: geometrySchema, reference_geometry: geometrySchema, room_geometry: geometrySchema.optional(),
   images: z.array(z.object({ path: relativePathSchema, sha256: z.string() })).length(4),
 })) });
 const outcomeSchema = z.object({

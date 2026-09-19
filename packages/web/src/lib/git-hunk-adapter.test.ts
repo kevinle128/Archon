@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import type { HunkData } from 'react-diff-view';
 
-import type { GitDiffChange, GitDiffHunk } from '@/lib/api';
+import type { components } from '@/lib/api.generated';
 
 import { hunksForSide, toChangeData, toHunkData } from './git-hunk-adapter';
+
+type GitDiffChange = components['schemas']['GitDiffChange'];
+type GitDiffHunk = components['schemas']['GitDiffHunk'];
 
 const SAMPLE_HUNK: GitDiffHunk = {
   header: '@@ -1,3 +1,3 @@',

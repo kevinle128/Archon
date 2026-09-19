@@ -157,6 +157,8 @@ export async function getNodeMessage(
 
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
+export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkflowNodeResponse'];
+export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowNodeQueueResponse'];
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send.
@@ -199,6 +201,53 @@ export async function interruptNode(
     );
   } catch (error) {
     throw toSteeringRequestError(error, STEERING_INTERRUPT_FAILED_MESSAGE);
+  }
+}
+
+/**
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
+ * a still-queued guidance message. Bodyless: requestJson adds a
+ * JSON content type only when a body is present, so none is sent. No
+ * auto-retry; refusals surface as SteeringRequestError like the send helper.
+ */
+export async function withdrawNodeGuidance(
+  runId: string,
+  nodeId: string,
+  messageId: string
+): Promise<WithdrawWorkflowNodeResponse> {
+  try {
+    return await requestJson<WithdrawWorkflowNodeResponse>(
+      `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue/${encodeURIComponent(messageId)}`,
+      { method: 'DELETE' }
+    );
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * GET /api/workflows/runs/:runId/nodes/:nodeId/queue — read the node's
+ * still-pending queue snapshot so a mounted dock converges on the shared
+ * registry queue. Bodyless GET with `cache: 'no-store'`, optional
+ * AbortSignal, no auto-retry; failures surface as SteeringRequestError like
+ * the send/withdraw helpers.
+ */
+export async function readNodeGuidanceQueue(
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+): Promise<ReadWorkflowNodeQueueResponse> {
+  try {
+    return await requestJson<ReadWorkflowNodeQueueResponse>(
+      `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
+      }
+    );
+  } catch (error) {
+    throw toSteeringRequestError(error);
   }
 }
 

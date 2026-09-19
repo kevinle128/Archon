@@ -599,3 +599,75 @@ export const steeringErrorSchema = z
   .openapi('SteeringError');
 
 export type SteeringError = z.infer<typeof steeringErrorSchema>;
+
+// ---------------------------------------------------------------------------
+// DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId (steering)
+// ---------------------------------------------------------------------------
+
+/**
+ * Path params for the withdraw route. `messageId` carries the same UUID
+ * validator as send's `message_id` — the caller-stamped correlation key.
+ */
+export const withdrawWorkflowNodeParamsSchema = z
+  .object({
+    runId: z.string().min(1),
+    nodeId: z.string().min(1),
+    messageId: z.string().uuid(),
+  })
+  .strict();
+
+/**
+ * Withdraw success receipt. Identical for a removed, already-drained, or
+ * never-seen id — the wire never reveals the drain-race winner.
+ */
+export const withdrawWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message_id: z.string().uuid(),
+  })
+  .strict()
+  .openapi('WithdrawWorkflowNodeResponse');
+
+export type WithdrawWorkflowNodeResponse = z.infer<typeof withdrawWorkflowNodeResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// GET /api/workflows/runs/:runId/nodes/:nodeId/queue (steering read, #189)
+// ---------------------------------------------------------------------------
+
+/**
+ * Path params for the queue snapshot route. Same strict shape as the other
+ * steering routes — no messageId: the read returns the whole pending queue.
+ */
+export const readWorkflowNodeQueueParamsSchema = z
+  .object({
+    runId: z.string().min(1),
+    nodeId: z.string().min(1),
+  })
+  .strict();
+
+/**
+ * One still-pending queued guidance row on the wire. `message` stays an
+ * untransformed string — the registry holds text the send route accepted
+ * verbatim. `message_id` is the caller-stamped UUID correlation key.
+ */
+export const queuedGuidanceMessageSchema = z
+  .object({
+    message_id: z.string().uuid(),
+    message: z.string(),
+  })
+  .strict()
+  .openapi('QueuedGuidanceMessage');
+
+/**
+ * Queue snapshot response: only the handle's current pending items, in
+ * receipt order. Drained/withdrawn ids and accepted-id memory never appear.
+ */
+export const readWorkflowNodeQueueResponseSchema = z
+  .object({
+    success: z.literal(true),
+    queued: z.array(queuedGuidanceMessageSchema),
+  })
+  .strict()
+  .openapi('ReadWorkflowNodeQueueResponse');
+
+export type ReadWorkflowNodeQueueResponse = z.infer<typeof readWorkflowNodeQueueResponseSchema>;

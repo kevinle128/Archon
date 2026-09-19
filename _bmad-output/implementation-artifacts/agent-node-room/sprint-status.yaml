@@ -58,7 +58,7 @@ development_status:
   1-1-scan-a-tool-call-as-one-readable-row: done
   1-2-inspect-the-raw-payload-of-a-tool-call: done
   1-3-read-expanded-details-shaped-for-the-tool-family: done
-  1-4-view-a-file-edit-as-an-inline-diff: backlog
+  1-4-view-a-file-edit-as-an-inline-diff: done
   1-5-track-the-agents-current-todo-state-in-a-pinned-strip: backlog
   1-6-inspect-a-subagent-dispatch-and-its-subtasks: done
   1-7-navigate-transcript-occurrences-and-loop-iterations: backlog
@@ -66,14 +66,14 @@ development_status:
 
   epic-2: backlog
   2-1-queue-guidance-for-a-running-agent: backlog
-  2-2-withdraw-a-queued-guidance-message: backlog
+  2-2-withdraw-a-queued-guidance-message: done
   2-3-interrupt-and-redirect-a-running-claude-agent: done
   2-4-interrupt-and-redirect-a-running-codex-agent: backlog
   2-5-interrupt-and-redirect-a-running-omp-agent: backlog
   2-6-interrupt-and-redirect-a-running-grok-agent: backlog
   2-7-interrupt-and-redirect-a-running-deepseek-agent: backlog
   2-8-see-operator-messages-in-the-transcript: backlog
-  2-9-see-the-same-live-queue-across-tabs-and-operators: backlog
+  2-9-see-the-same-live-queue-across-tabs-and-operators: done
   2-10-see-queued-guidance-while-viewing-a-finished-iteration: backlog
   2-11-recover-messages-that-were-never-sent-when-the-node-ends: backlog
   2-12-fail-an-abandoned-redirect-safely-after-30-minutes: backlog

@@ -1,0 +1,164 @@
+{
+  "surface": "legacy",
+  "tag": "286479213f61",
+  "nodeId": "steer-a",
+  "viewport": { "width": 460, "height": 900 },
+  "runId": "b479aad5fd1af98ad14f8ef9424ed9b9",
+  "identities": { "starterA": true, "starterB": true, "teammate": false },
+  "draftsBefore": {
+    "starterBField": "draft-alpha-286479213f61",
+    "starterBStorage": "{\"draft\":\"draft-alpha-286479213f61\",\"pendingRetry\":null}",
+    "teammateField": "draft-beta-286479213f61",
+    "teammateStorage": "{\"draft\":\"draft-beta-286479213f61\",\"pendingRetry\":null}"
+  },
+  "twoRow": {
+    "starterId": "47ddffea-b697-4714-9cb9-56f096b29f7f",
+    "teammateId": "429d71c2-32b0-4213-a13c-5852170ad1fa",
+    "orderedIds": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"],
+    "observations": {
+      "views": {
+        "starterA": [
+          "47ddffea-b697-4714-9cb9-56f096b29f7f",
+          "429d71c2-32b0-4213-a13c-5852170ad1fa"
+        ],
+        "starterB": [
+          "47ddffea-b697-4714-9cb9-56f096b29f7f",
+          "429d71c2-32b0-4213-a13c-5852170ad1fa"
+        ],
+        "teammate": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"]
+      },
+      "identities": {
+        "starter": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"],
+        "teammate": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"]
+      }
+    },
+    "visual": {
+      "starterA": {
+        "expectedCount": 2,
+        "geometry": {
+          "hasMaxH33vh": true,
+          "maxHeight": "297px",
+          "overflowY": "auto",
+          "bandText": "queued · 2starter-one-286479213f61sentdeletedraft-beta-286479213f61sentdelete",
+          "hasThisTabOnlyInBand": false,
+          "hasSurfaceElevatedBand": true,
+          "bandImmediatelyBeforeComposer": true,
+          "bandIsFullBleed": true
+        },
+        "overflow": {
+          "pageOverflow": 0,
+          "roomInsideViewport": true,
+          "roomScroll": 0,
+          "insideCount": 0,
+          "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+        }
+      },
+      "starterB": {
+        "expectedCount": 2,
+        "geometry": {
+          "hasMaxH33vh": true,
+          "maxHeight": "297px",
+          "overflowY": "auto",
+          "bandText": "queued · 2starter-one-286479213f61sentdeletedraft-beta-286479213f61sentdelete",
+          "hasThisTabOnlyInBand": false,
+          "hasSurfaceElevatedBand": true,
+          "bandImmediatelyBeforeComposer": true,
+          "bandIsFullBleed": true
+        },
+        "overflow": {
+          "pageOverflow": 0,
+          "roomInsideViewport": true,
+          "roomScroll": 0,
+          "insideCount": 0,
+          "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+        }
+      },
+      "teammate": {
+        "expectedCount": 2,
+        "geometry": {
+          "hasMaxH33vh": true,
+          "maxHeight": "297px",
+          "overflowY": "auto",
+          "bandText": "queued · 2starter-one-286479213f61sentdeletedraft-beta-286479213f61sentdelete",
+          "hasThisTabOnlyInBand": false,
+          "hasSurfaceElevatedBand": true,
+          "bandImmediatelyBeforeComposer": true,
+          "bandIsFullBleed": true
+        },
+        "overflow": {
+          "pageOverflow": 0,
+          "roomInsideViewport": true,
+          "roomScroll": 0,
+          "insideCount": 0,
+          "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+        }
+      }
+    }
+  },
+  "activeBeforeFirstRemoval": "button:delete · starter-one-286479213f61",
+  "activeAfterFirstRemoval": "button:delete · draft-beta-286479213f61",
+  "oneRow": {
+    "orderedIds": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
+    "observations": {
+      "views": {
+        "starterA": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
+        "starterB": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
+        "teammate": ["429d71c2-32b0-4213-a13c-5852170ad1fa"]
+      },
+      "identities": {
+        "starter": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
+        "teammate": ["429d71c2-32b0-4213-a13c-5852170ad1fa"]
+      }
+    },
+    "visual": {
+      "expectedCount": 1,
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "bandText": "queued · 1draft-beta-286479213f61sentdelete",
+        "hasThisTabOnlyInBand": false,
+        "hasSurfaceElevatedBand": true,
+        "bandImmediatelyBeforeComposer": true,
+        "bandIsFullBleed": true
+      },
+      "overflow": {
+        "pageOverflow": 0,
+        "roomInsideViewport": true,
+        "roomScroll": 0,
+        "insideCount": 0,
+        "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+      }
+    },
+    "starterBDeleteCount": 0,
+    "teammateDeleteCount": 0
+  },
+  "activeBeforeSecondRemoval": "button:delete · draft-beta-286479213f61",
+  "activeAfterEmpty": "textarea",
+  "final": {
+    "orderedIds": [],
+    "visual": {
+      "expectedCount": 0,
+      "bandAbsent": true,
+      "overflow": {
+        "pageOverflow": 0,
+        "roomInsideViewport": true,
+        "roomScroll": 0,
+        "insideCount": 0,
+        "outsideSample": ["A.flex", "A.flex", "svg.", "path.", "circle."]
+      }
+    },
+    "drafts": {
+      "starterBField": "draft-alpha-286479213f61",
+      "starterBStorage": "{\"draft\":\"draft-alpha-286479213f61\",\"pendingRetry\":null}",
+      "teammateField": ""
+    },
+    "requestCounts": {
+      "starterAGets": 4,
+      "starterBGets": 4,
+      "teammateGets": 3,
+      "starterBDeletes": 0,
+      "teammateDeletes": 1
+    }
+  }
+}

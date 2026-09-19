@@ -567,6 +567,8 @@ export function LegacyGraphLogsPane({
             {mode === 'split' ? <ResizableHandle withHandle aria-label="Resize node room" /> : null}
             <PercentResizablePanel
               id="legacy-run-room"
+              className="min-h-0 min-w-0 overflow-hidden"
+              style={{ overflow: 'hidden' }}
               defaultSize={mode === 'single' ? '100%' : sizes.room.defaultSize}
               minSize={mode === 'single' ? '100%' : sizes.room.minSize}
               maxSize={mode === 'single' ? '100%' : sizes.room.maxSize}

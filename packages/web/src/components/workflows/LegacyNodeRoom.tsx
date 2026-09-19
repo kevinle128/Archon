@@ -184,6 +184,7 @@ export function LegacyNodeRoom({
             starterDisplayName={starterDisplayName}
             actionStates={actionStates}
             nodeState={nodeState}
+            outputFormat={resolution.definitionNode?.output_format}
             onSubmitAsk={onSubmitAsk}
             events={events}
             scopeKey={scopeKey}
