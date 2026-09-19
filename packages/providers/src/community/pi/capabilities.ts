@@ -34,4 +34,5 @@ export const PI_CAPABILITIES: ProviderCapabilities = {
   nativeTools: true,
   containerExec: false, // no in-container spawn path yet (fail-fast source of truth)
   askHuman: true,
+  interrupt: false,
 };

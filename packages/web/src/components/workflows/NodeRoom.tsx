@@ -1040,10 +1040,20 @@ export function NodeRoom({
   const headingPrefix = headingIdPrefix ?? generatedHeadingPrefix;
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
+  // Only the actual last rendered history item is programmatically focusable
+  // (the steering dock's Stop-removal focus target); it never joins Tab order.
+  const lastItemId = items.length === 0 ? null : items[items.length - 1].id;
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
+    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  const lastRowRing = (item: AgentHistoryItem): string | undefined =>
+    item.id === lastItemId
+      ? 'focus-visible:outline-2 focus-visible:outline-accent-bright'
+      : undefined;
+
   const renderItem = (item: AgentHistoryItem): React.ReactElement => {
     if (item.kind === 'assistant') {
       return (
-        <div key={item.id} className="my-1.5">
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
           <AssistantHistory item={item} />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
@@ -1051,14 +1061,14 @@ export function NodeRoom({
     }
     if (item.kind === 'tool') {
       return (
-        <div key={item.id}>
+        <div key={item.id} className={lastRowRing(item)} {...lastRowMarker(item)}>
           <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
       );
     }
     return (
-      <div key={item.id} className="my-1.5">
+      <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
         <LifecycleHistory item={item} />
         {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
       </div>

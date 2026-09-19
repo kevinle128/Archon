@@ -29,6 +29,10 @@ export const E2E_FAKE_TOOL_INPUT = { path: 'HITL_TOOL_INPUT.txt' } as const;
 export const E2E_FAKE_TOOL_OUTPUT = 'HITL_TOOL_OUTPUT_VISIBLE';
 export const E2E_FAKE_LOOP_DONE = 'E2E_LOOP_DONE';
 export const E2E_FAKE_TOOL_PASS_TEXT = '[e2e-fake] tool pass';
+export const E2E_FAKE_TOOL_INTERRUPTED_OUTPUT = '[e2e-fake] tool interrupted';
+export const E2E_FAKE_INTERRUPT_TERMINAL_TOOL = 'aborted_tools';
+export const E2E_FAKE_INTERRUPT_TERMINAL_STREAM = 'aborted_streaming';
+const INTERRUPTIBLE_MAX_DELAY_MS = 120_000;
 
 /**
  * Deterministic task-dispatch payloads for the node-room e2e proof. The OMP
@@ -173,6 +177,7 @@ const scenarioSchema = z
     largeLastToolOutput: z.boolean().optional(),
     taskDispatch: z.enum(['omp', 'claude']).optional(),
     echoPrompt: z.boolean().optional(),
+    interruptible: z.boolean().optional(),
     fileEdit: z.enum(['edit', 'failed', 'write', 'bare']).optional(),
   })
   .strict()
@@ -190,6 +195,26 @@ const scenarioSchema = z
         }
       }
     }
+    if (scenario.interruptible === true) {
+      if (scenario.emitTool !== true) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['interruptible'],
+          message: 'interruptible_requires_emitTool',
+        });
+      }
+      if (
+        scenario.delayMs === undefined ||
+        scenario.delayMs <= 0 ||
+        scenario.delayMs > INTERRUPTIBLE_MAX_DELAY_MS
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['delayMs'],
+          message: 'interruptible_requires_bounded_positive_delayMs',
+        });
+      }
+    }
     if (scenario.fileEdit !== undefined) {
       // fileEdit emits its own fixed tool pair per variant; every other
       // scenario key except delayMs would be dead or contradictory config.
@@ -201,6 +226,7 @@ const scenarioSchema = z
         'repeatTool',
         'largeLastToolOutput',
         'echoPrompt',
+        'interruptible',
       ] as const) {
         if (scenario[key] !== undefined) {
           ctx.addIssue({
@@ -377,22 +403,41 @@ function findAskHumanTool(nativeTools: NativeTool[] | undefined): NativeTool {
   return tool;
 }
 
-async function waitUnlessAborted(delayMs: number, abortSignal?: AbortSignal): Promise<void> {
-  if (delayMs <= 0) return;
-  await new Promise<void>((resolve, reject) => {
-    if (abortSignal?.aborted) {
-      reject(new Error('Query aborted'));
-      return;
-    }
-    const timer = setTimeout(() => {
-      abortSignal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    const onAbort = (): void => {
+/**
+ * First-wins bounded wait: the delay elapsing is the natural path, the node
+ * `abortSignal` (Cancel) outranks a same-tick turn `interruptSignal` (Stop),
+ * and every listener/timer is removed on settle so a spent wait leaves
+ * nothing behind.
+ */
+async function waitForBoundary(
+  delayMs: number,
+  abortSignal: AbortSignal | undefined,
+  interruptSignal: AbortSignal | undefined
+): Promise<'elapsed' | 'aborted' | 'interrupted'> {
+  if (abortSignal?.aborted) return 'aborted';
+  if (interruptSignal?.aborted) return 'interrupted';
+  if (delayMs <= 0) return 'elapsed';
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      reject(new Error('Query aborted'));
+      abortSignal?.removeEventListener('abort', onAbort);
+      interruptSignal?.removeEventListener('abort', onInterrupt);
+      resolve(
+        abortSignal?.aborted ? 'aborted' : interruptSignal?.aborted ? 'interrupted' : 'elapsed'
+      );
+    };
+    const timer = setTimeout(finish, delayMs);
+    const onAbort = (): void => {
+      finish();
+    };
+    const onInterrupt = (): void => {
+      finish();
     };
     abortSignal?.addEventListener('abort', onAbort, { once: true });
+    interruptSignal?.addEventListener('abort', onInterrupt, { once: true });
   });
 }
 
@@ -435,7 +480,12 @@ export class E2eFakeProvider implements IAgentProvider {
     resumeSessionId?: string,
     requestOptions?: SendQueryOptions
   ): AsyncGenerator<MessageChunk> {
-    if (requestOptions?.abortSignal?.aborted) throw new Error('Query aborted');
+    const abortSignal = requestOptions?.abortSignal;
+    const interruptSignal = requestOptions?.interruptSignal;
+    if (abortSignal?.aborted) throw new Error('Query aborted');
+    // A spent interrupt signal never starts a query — the same guard Claude
+    // runs before every SDK attempt.
+    if (interruptSignal?.aborted) throw new Error('Query interrupted');
 
     const usageDirective = extractDelimitedBlock(
       prompt,
@@ -454,11 +504,35 @@ export class E2eFakeProvider implements IAgentProvider {
     const sessionId = resumeSessionId ?? `e2e-fake-${randomUUID()}`;
     const resumed = resumeSessionId !== undefined ? true : undefined;
 
-    await waitUnlessAborted(scenario.delayMs ?? 0, requestOptions?.abortSignal);
-    if (requestOptions?.abortSignal?.aborted) throw new Error('Query aborted');
-
     const usageBreakdown =
       usageDirective === undefined ? undefined : parseUsageDirective(usageDirective);
+
+    const interruptible = scenario.interruptible === true;
+    /** Abort-marked result mirroring the Claude SDK interrupt shape. */
+    const interruptedResult = (terminalReason: string): MessageChunk => ({
+      type: 'result',
+      sessionId,
+      isError: true,
+      errorSubtype: 'error_during_execution',
+      terminalReason,
+      ...(usageBreakdown !== undefined ? { usageBreakdown } : {}),
+      resumed,
+    });
+
+    // Default path keeps the bounded wait before any emission; the opt-in
+    // interruptible scenario moves it behind the in-flight tool call so a
+    // Stop lands while the tool card is live.
+    if (!interruptible) {
+      const boundary = await waitForBoundary(scenario.delayMs ?? 0, abortSignal, interruptSignal);
+      if (boundary === 'aborted') throw new Error('Query aborted');
+      if (boundary === 'interrupted') {
+        // No tool was emitted yet — a mid-text interrupt mirrors the SDK's
+        // 'aborted_streaming' terminal reason.
+        log.info({ sessionId }, 'e2e-fake.query_interrupted_streaming');
+        yield interruptedResult(E2E_FAKE_INTERRUPT_TERMINAL_STREAM);
+        return;
+      }
+    }
 
     const resumeInteractions = requestOptions?.resumeInteractions;
     if (resumeInteractions !== undefined && resumeInteractions.length > 0) {
@@ -498,7 +572,12 @@ export class E2eFakeProvider implements IAgentProvider {
 
     if (scenario.emitTool === true) {
       const repeat = scenario.repeatTool ?? 1;
+      const successOutput = (index: number): string =>
+        scenario.largeLastToolOutput === true && index === repeat - 1
+          ? `${E2E_FAKE_TOOL_OUTPUT}\n${'x'.repeat(20_000)}\n[e2e-fake] full output tail`
+          : E2E_FAKE_TOOL_OUTPUT;
       yield { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT };
+      const pendingToolCallIds: string[] = [];
       for (let index = 0; index < repeat; index += 1) {
         const toolCallId =
           scenario.repeatTool === undefined
@@ -510,17 +589,38 @@ export class E2eFakeProvider implements IAgentProvider {
           toolInput: { ...E2E_FAKE_TOOL_INPUT },
           toolCallId,
         };
-        const toolOutput =
-          scenario.largeLastToolOutput === true && index === repeat - 1
-            ? `${E2E_FAKE_TOOL_OUTPUT}\n${'x'.repeat(20_000)}\n[e2e-fake] full output tail`
-            : E2E_FAKE_TOOL_OUTPUT;
-        yield {
-          type: 'tool_result',
-          toolName: E2E_FAKE_TOOL_NAME,
-          toolOutput,
-          toolCallId,
-          toolOutcome: 'success',
-        };
+        if (!interruptible) {
+          yield {
+            type: 'tool_result',
+            toolName: E2E_FAKE_TOOL_NAME,
+            toolOutput: successOutput(index),
+            toolCallId,
+            toolOutcome: 'success',
+          };
+        } else {
+          pendingToolCallIds.push(toolCallId);
+        }
+      }
+      if (interruptible) {
+        // Opt-in visual scenario: tool calls are live while the bounded wait
+        // runs — first of node abort, turn interrupt, or the delay settles it.
+        const boundary = await waitForBoundary(scenario.delayMs ?? 0, abortSignal, interruptSignal);
+        if (boundary === 'aborted') throw new Error('Query aborted');
+        for (const [index, toolCallId] of pendingToolCallIds.entries()) {
+          yield {
+            type: 'tool_result',
+            toolName: E2E_FAKE_TOOL_NAME,
+            toolOutput:
+              boundary === 'interrupted' ? E2E_FAKE_TOOL_INTERRUPTED_OUTPUT : successOutput(index),
+            toolCallId,
+            toolOutcome: boundary === 'interrupted' ? 'interrupted' : 'success',
+          };
+        }
+        if (boundary === 'interrupted') {
+          log.info({ sessionId }, 'e2e-fake.query_interrupted_tools');
+          yield interruptedResult(E2E_FAKE_INTERRUPT_TERMINAL_TOOL);
+          return;
+        }
       }
     } else if (scenario.taskDispatch !== undefined) {
       const toolName =

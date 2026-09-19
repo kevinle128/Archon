@@ -1,17 +1,16 @@
 /**
  * Framework-free steering-dock logic shared by the Legacy and Console
  * composer renderers: visibility/blocked predicates, the guarded submit
- * transition with stable retry ids, sessionStorage draft persistence, the
- * nested steering error surface both API helpers normalize onto, and the
- * Story 2.9 (#189) queue-reconciliation primitives — `queueGeneration`,
- * `applyQueueSnapshot`, `focusTargetAfterSnapshot`, and `startQueuePolling` —
- * that let every mounted dock converge on the one authoritative registry
- * queue while drafts and retry state stay per-tab.
+ * transitions with stable retry ids, the interrupt/Send-now turn model,
+ * live queue polling/withdraw reconciliation, sessionStorage draft
+ * persistence, and the nested steering error surface both API helpers
+ * normalize onto.
  */
 export interface LocalSentReceipt {
   readonly messageId: string;
   readonly message: string;
-  readonly state: 'queued';
+  /** Wire-compatible display state (`queued | awaiting_send_now`). */
+  readonly state: 'queued' | 'awaiting_send_now';
 }
 
 export interface PendingSubmission {
@@ -25,11 +24,27 @@ export interface SteeringRefusal {
   readonly message: string;
 }
 
+/** The agent's projected sub-state inside a still-running node. */
+export type SteeringSubState = 'generating' | 'idle-after-interrupt';
+
 export interface SteeringDockState {
+  /** Projected agent sub-state; null means a live queue-only handle. */
+  readonly subState: SteeringSubState | null;
   readonly sent: readonly LocalSentReceipt[];
-  readonly inFlight: boolean;
+  /** A send (Queue or Send now) request is in flight. */
+  readonly sendInFlight: boolean;
+  /** UI-local Stop press in flight; never projected or persisted. */
+  readonly interruptInFlight: boolean;
+  /**
+   * Displayed accepted receipts plus the new Send-now draft, snapshotted when
+   * submission began. Cleared from the visible band optimistically and
+   * restored in order on failure. Only the draft's id is ever posted.
+   */
+  readonly inFlightBatch: readonly LocalSentReceipt[] | null;
   readonly pendingRetry: PendingSubmission | null;
   readonly refusal: SteeringRefusal | null;
+  /** Text for the single polite role="status" region, set per transition. */
+  readonly notice: string | null;
   /**
    * The one in-flight withdraw. A single active id is deliberate: the dock
    * has one refusal channel and one focus transfer, and simultaneous deletes
@@ -49,11 +64,20 @@ export interface SteeringDockState {
 
 export type SteeringDockMode = 'hidden' | 'blocked' | 'detached' | 'composer';
 
+/** The agent sub-state the dock renders — interrupting is UI-local only. */
+export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | 'idle';
+
 export const STEERING_ASK_BLOCKED_REASON = "answer the agent's question first";
 export const STEERING_DETACHED_DISCLOSURE =
   'not steerable here · this run was started detached, so its live session is not in this process';
 export const STEERING_SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
 export const STEERING_SEND_FAILED_MESSAGE = "couldn't send · back in the queue";
+export const STEERING_INTERRUPT_FAILED_MESSAGE = "couldn't interrupt · try again";
+export const STEERING_INTERRUPT_DISCLOSURE =
+  'stopped after the last completed tool call · files already written stay written';
+export const STEERING_AGENT_INTERRUPTING = 'agent interrupting';
+export const STEERING_AGENT_IDLE = 'agent idle · Send now delivers';
+export const STEERING_AGENT_GENERATING = 'agent generating';
 
 const STEERING_NOT_STEERABLE_CODE = 'not_steerable_here';
 const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
@@ -86,13 +110,31 @@ export function steeringBlockedReason(input: {
   return input.rowStatus === 'awaiting' || input.hasPendingAsk ? STEERING_ASK_BLOCKED_REASON : null;
 }
 
-/** The single guard shared by the Queue button and the keyboard shortcut. */
+/**
+ * Derived control anatomy: a missing projected sub-state is queue-only (not
+ * detached); a defined projection or a local Stop press drives the rest.
+ */
+export function steeringAgentMode(input: {
+  subState: SteeringSubState | null;
+  interruptInFlight: boolean;
+}): SteeringAgentMode {
+  if (input.interruptInFlight) return 'interrupting';
+  if (input.subState === 'generating') return 'generating';
+  if (input.subState === 'idle-after-interrupt') return 'idle';
+  return 'queue-only';
+}
+
+/**
+ * The single guard shared by Queue, Send now, and the keyboard shortcut:
+ * non-blank draft, no send in flight, composer mode. `interrupting` does
+ * NOT block Queue — a message sent in the race waits for Send now.
+ */
 export function canSubmitGuidance(input: {
   mode: SteeringDockMode;
-  inFlight: boolean;
+  sendInFlight: boolean;
   draft: string;
 }): boolean {
-  return input.mode === 'composer' && !input.inFlight && input.draft.trim().length > 0;
+  return input.mode === 'composer' && !input.sendInFlight && input.draft.trim().length > 0;
 }
 
 export interface SteeringShortcutEvent {
@@ -125,27 +167,72 @@ export function queuedCountPhrase(count: number): string {
   return count === 1 ? '1 message queued' : `${count.toString()} messages queued`;
 }
 
+export function willSendCountPhrase(count: number): string {
+  return count === 1 ? '1 message will send' : `${count.toString()} messages will send`;
+}
+
 /** Lowercase DOM text; the renderer applies CSS uppercase + phase tracking. */
 export function queueBandHeader(count: number): string {
   return `queued · ${count.toString()}`;
+}
+
+export function willSendBandHeader(count: number): string {
+  return `will send · ${count.toString()}`;
 }
 
 export function queueListLabel(count: number): string {
   return `Queued messages, ${count.toString()}`;
 }
 
+export function willSendListLabel(count: number): string {
+  return `Will send, ${count.toString()}`;
+}
+
 export function queueButtonAccessibleName(count: number): string {
   return `Queue · Cmd/Ctrl+Enter to send · ${queuedCountPhrase(count)}`;
 }
 
-export function createSteeringDockState(): SteeringDockState {
+export function sendNowButtonAccessibleName(count: number): string {
+  return `Send now · Cmd/Ctrl+Enter to send · ${willSendCountPhrase(count)}`;
+}
+
+export function createSteeringDockState(subState?: SteeringSubState): SteeringDockState {
   return {
+    subState: subState ?? null,
     sent: [],
-    inFlight: false,
+    sendInFlight: false,
+    interruptInFlight: false,
+    inFlightBatch: null,
     pendingRetry: null,
     refusal: null,
+    notice: null,
     withdrawingMessageId: null,
     queueGeneration: 0,
+  };
+}
+
+/**
+ * Fold the projected sub-state into dock state. A defined projection is
+ * authoritative and supersedes the local interrupting transient; an absent
+ * projection only means queue-only — never a detached verdict — so the
+ * transient survives until the caller's own interrupt response lands.
+ */
+export function syncProjectedSubState(
+  state: SteeringDockState,
+  projected: SteeringSubState | undefined
+): SteeringDockState {
+  const next = projected ?? null;
+  if (state.subState === next) return state;
+  return {
+    ...state,
+    subState: next,
+    interruptInFlight: projected === undefined ? state.interruptInFlight : false,
+    notice:
+      next === 'idle-after-interrupt'
+        ? STEERING_AGENT_IDLE
+        : next === 'generating'
+          ? STEERING_AGENT_GENERATING
+          : state.notice,
   };
 }
 
@@ -162,38 +249,50 @@ export function beginGuidanceSubmission(
     state.pendingRetry !== null && state.pendingRetry.message === draft
       ? state.pendingRetry
       : { messageId: newId(), message: draft };
-  return { state: { ...state, inFlight: true, pendingRetry }, messageId: pendingRetry.messageId };
+  return {
+    state: { ...state, sendInFlight: true, pendingRetry },
+    messageId: pendingRetry.messageId,
+  };
 }
 
 /**
  * 200 appends once by `message_id`, in acceptance order — a replayed success
- * never duplicates the row but still bumps `queueGeneration`, because the
- * server accepted the mutation either way. Clears the pending retry and any
- * stored refusal.
+ * never duplicates the row. Clears the pending retry and any stored refusal.
  */
 export function resolveGuidanceSuccess(
   state: SteeringDockState,
-  receipt: { message_id: string }
+  receipt: { message_id: string; state?: 'queued' | 'awaiting_send_now' }
 ): SteeringDockState {
-  const sent = state.sent.some(entry => entry.messageId === receipt.message_id)
-    ? state.sent
-    : [
-        ...state.sent,
-        {
-          messageId: receipt.message_id,
-          message: state.pendingRetry?.message ?? '',
-          state: 'queued' as const,
-        },
-      ];
+  // A replayed success never duplicates the row but still bumps
+  // `queueGeneration`, because the server accepted the mutation either way.
+  // An active withdraw id is preserved across send resolve.
+  if (state.sent.some(entry => entry.messageId === receipt.message_id)) {
+    return {
+      ...state,
+      sendInFlight: false,
+      pendingRetry: null,
+      refusal: null,
+      withdrawingMessageId: state.withdrawingMessageId,
+      queueGeneration: state.queueGeneration + 1,
+    };
+  }
+  const sent = [
+    ...state.sent,
+    {
+      messageId: receipt.message_id,
+      message: state.pendingRetry?.message ?? '',
+      state: receipt.state ?? 'queued',
+    },
+  ];
   return {
+    ...state,
     sent,
-    inFlight: false,
+    sendInFlight: false,
     pendingRetry: null,
     refusal: null,
-    // A send resolving during a withdraw appends its row without losing the
-    // active withdraw id.
     withdrawingMessageId: state.withdrawingMessageId,
     queueGeneration: state.queueGeneration + 1,
+    notice: queuedCountPhrase(sent.length),
   };
 }
 
@@ -202,7 +301,150 @@ export function resolveGuidanceFailure(
   state: SteeringDockState,
   refusal: SteeringRefusal
 ): SteeringDockState {
-  return { ...state, inFlight: false, refusal };
+  return { ...state, sendInFlight: false, refusal };
+}
+
+/**
+ * Send now: snapshot the displayed accepted receipts plus the new draft into
+ * the batch and clear the visible band optimistically, so nothing looks
+ * pickable twice. Only the new draft posts (with its stable retry UUID);
+ * earlier items already exist in the server registry.
+ */
+export function beginSendNow(
+  state: SteeringDockState,
+  draft: string,
+  newId: () => string = () => crypto.randomUUID()
+): { state: SteeringDockState; messageId: string } {
+  const previousPending = state.pendingRetry;
+  const pendingRetry =
+    previousPending !== null && previousPending.message === draft
+      ? previousPending
+      : { messageId: newId(), message: draft };
+  // Editing a failed Send-now draft replaces its optimistic display row. An
+  // unchanged retry keeps the same row/id, while server-accepted receipts are
+  // never removed or re-posted.
+  const displayedReceipts =
+    previousPending !== null && previousPending.message !== draft
+      ? state.sent.filter(entry => entry.messageId !== previousPending.messageId)
+      : state.sent;
+  const inFlightBatch = displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
+    ? displayedReceipts
+    : [
+        ...displayedReceipts,
+        {
+          messageId: pendingRetry.messageId,
+          message: pendingRetry.message,
+          state: 'awaiting_send_now' as const,
+        },
+      ];
+  return {
+    state: {
+      ...state,
+      sendInFlight: true,
+      inFlightBatch,
+      sent: [],
+      pendingRetry,
+      refusal: null,
+    },
+    messageId: pendingRetry.messageId,
+  };
+}
+
+/**
+ * Send-now success: the batch is discarded (server drained it), the sub-state
+ * derives generating, and one composite announcement lands. A replayed
+ * success after settlement is a no-op — the band never reappears.
+ */
+export function resolveSendNowSuccess(
+  state: SteeringDockState,
+  receipt: { message_id: string; state: 'queued' | 'awaiting_send_now' }
+): SteeringDockState {
+  if (!state.sendInFlight || state.inFlightBatch === null) return state;
+  if (state.pendingRetry?.messageId !== receipt.message_id) return state;
+  // A Queue request with an ambiguous response may be retried after the node
+  // becomes idle. Idempotency replays its original `queued` receipt and cannot
+  // release the idle waiter. Keep the resolved message in Will send and require
+  // a genuinely new draft instead of falsely showing generating or duplicating
+  // the original content under a new id.
+  if (receipt.state === 'queued') {
+    return {
+      ...state,
+      sent: state.inFlightBatch,
+      sendInFlight: false,
+      inFlightBatch: null,
+      pendingRetry: null,
+      refusal: null,
+      queueGeneration: state.queueGeneration + 1,
+      notice: willSendCountPhrase(state.inFlightBatch.length),
+    };
+  }
+  return {
+    ...state,
+    sendInFlight: false,
+    inFlightBatch: null,
+    pendingRetry: null,
+    refusal: null,
+    subState: 'generating',
+    queueGeneration: state.queueGeneration + 1,
+    notice: STEERING_AGENT_GENERATING,
+  };
+}
+
+/**
+ * Ambiguous Send-now failure: snapshotted receipts return to the front in
+ * original order (including the new message), the new message keeps its retry
+ * id, and the dock stays idle — an alert, not the polite region, carries the
+ * failure.
+ */
+export function resolveSendNowFailure(
+  state: SteeringDockState,
+  refusal: SteeringRefusal
+): SteeringDockState {
+  return {
+    ...state,
+    sendInFlight: false,
+    sent: [...(state.inFlightBatch ?? []), ...state.sent],
+    inFlightBatch: null,
+    refusal,
+  };
+}
+
+/** One Stop press: local interrupting + exactly one polite announcement. */
+export function beginInterrupt(state: SteeringDockState): SteeringDockState {
+  return { ...state, interruptInFlight: true, notice: STEERING_AGENT_INTERRUPTING };
+}
+
+/**
+ * Settled interrupt: the response's ACTUAL sub-state wins. `generating`
+ * means the turn ended naturally or the queue auto-drained — a composite
+ * announcement carries the drained count and no interrupted row is faked.
+ */
+export function resolveInterruptOutcome(
+  state: SteeringDockState,
+  outcome: SteeringSubState
+): SteeringDockState {
+  return {
+    ...state,
+    interruptInFlight: false,
+    subState: outcome,
+    notice:
+      outcome === 'idle-after-interrupt'
+        ? STEERING_AGENT_IDLE
+        : `turn ended before stop · ${state.sent.length.toString()} sent · ${STEERING_AGENT_GENERATING}`,
+  };
+}
+
+/**
+ * Interrupt refusal: the transient clears, the draft/receipts survive, and
+ * the refusal renders through the same alert path sends already use —
+ * 409 `node_finished` waits on the authoritative row state, 422 flips the
+ * dock to the detached disclosure, other failures return to generating.
+ */
+export function resolveInterruptError(
+  state: SteeringDockState,
+  refusal: SteeringRefusal
+): SteeringDockState {
+  return { ...state, interruptInFlight: false, refusal };
 }
 
 /**
@@ -227,12 +469,23 @@ export function resolveWithdrawSuccess(
   messageId: string
 ): SteeringDockState {
   if (state.withdrawingMessageId !== messageId) return state;
+  const sent = state.sent.filter(entry => entry.messageId !== messageId);
   return {
     ...state,
-    sent: state.sent.filter(entry => entry.messageId !== messageId),
+    sent,
     withdrawingMessageId: null,
     refusal: null,
     queueGeneration: state.queueGeneration + 1,
+    notice:
+      sent.length === 0
+        ? state.subState === 'idle-after-interrupt'
+          ? STEERING_AGENT_IDLE
+          : state.subState === 'generating'
+            ? STEERING_AGENT_GENERATING
+            : null
+        : sent.some(entry => entry.state === 'awaiting_send_now')
+          ? willSendCountPhrase(sent.length)
+          : queuedCountPhrase(sent.length),
   };
 }
 
@@ -295,7 +548,7 @@ export interface QueueSnapshot {
  * generation mismatch returns the identical state object — the snapshot
  * predates this tab's latest resolved mutation and must not resurrect or
  * drop rows. On match, `sent` is replaced wholesale with the server-ordered
- * queued receipts; `inFlight`, `pendingRetry`, `refusal`,
+ * queued receipts; `sendInFlight`, `pendingRetry`, `refusal`,
  * `withdrawingMessageId`, and `queueGeneration` are preserved exactly.
  * Identical ids, text, and order return the identical state object so React
  * skips a render. The draft, sessionStorage, and a stored refusal are never
@@ -370,7 +623,7 @@ export interface QueuePollingOptions {
  * never overlap. Each request samples `currentGeneration` at fire time and
  * hands it to `onSnapshot` so the caller can discard a stale read.
  * Synchronous throws and rejections both normalize through
- * `toSteeringSendError`: 422, transport (0), and 5xx reschedule silently;
+ * `toSteeringRequestError`: 422, transport (0), and 5xx reschedule silently;
  * any other 4xx stops the loop without a snapshot callback. The returned
  * cleanup aborts the in-flight request, clears the pending timer, and
  * suppresses every late settle — an abort caused by stop() never schedules
@@ -400,7 +653,7 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
     const settle = (error: unknown): void => {
       if (stopped || epoch !== myEpoch) return;
       controller = null;
-      const status = toSteeringSendError(error).status;
+      const status = toSteeringRequestError(error).status;
       const retryable = status === 422 || status === 0 || status >= 500;
       if (!retryable) {
         stopped = true;
@@ -498,16 +751,17 @@ export function saveSteeringDraft(
 }
 
 /**
- * Typed steering refusal surfaced by both API helpers: carries the HTTP
- * status plus the nested `error.code`/`error.message` when the body held the
- * canonical `{success:false, error:{code,message}}` shape.
+ * Typed steering refusal surfaced by both API helpers on either steering
+ * endpoint: carries the HTTP status plus the nested `error.code`/
+ * `error.message` when the body held the canonical
+ * `{success:false, error:{code,message}}` shape.
  */
-export class SteeringSendError extends Error {
+export class SteeringRequestError extends Error {
   readonly status: number;
   readonly code: string | null;
   constructor(status: number, code: string | null, message: string) {
     super(message);
-    this.name = 'SteeringSendError';
+    this.name = 'SteeringRequestError';
     this.status = status;
     this.code = code;
   }
@@ -531,14 +785,17 @@ function parseNestedSteeringError(
 }
 
 /**
- * Normalize any transport failure into a SteeringSendError. Both API layers
- * embed the truncated error body differently: fetchJSON suffixes it onto
- * `Error.message` (`API error 422 (/path): {...}`) while the console's
+ * Normalize any transport failure into a SteeringRequestError. Both API
+ * layers embed the truncated error body differently: fetchJSON suffixes it
+ * onto `Error.message` (`API error 422 (/path): {...}`) while the console's
  * HttpError exposes `bodySnippet`. A non-HTTP failure (offline fetch) has no
- * status and reports the ambiguous-failure copy.
+ * status and reports the given ambiguous-failure copy.
  */
-export function toSteeringSendError(error: unknown): SteeringSendError {
-  if (error instanceof SteeringSendError) return error;
+export function toSteeringRequestError(
+  error: unknown,
+  ambiguousMessage: string = STEERING_SEND_FAILED_MESSAGE
+): SteeringRequestError {
+  if (error instanceof SteeringRequestError) return error;
   const status =
     typeof error === 'object' &&
     error !== null &&
@@ -556,16 +813,19 @@ export function toSteeringSendError(error: unknown): SteeringSendError {
       : messageText.slice(Math.max(0, messageText.indexOf('{')));
   const nested = parseNestedSteeringError(bodyText);
   if (status === 0 && nested === null) {
-    return new SteeringSendError(0, null, STEERING_SEND_FAILED_MESSAGE);
+    return new SteeringRequestError(0, null, ambiguousMessage);
   }
-  return new SteeringSendError(
+  return new SteeringRequestError(
     status,
     nested?.code ?? null,
     nested?.message ?? `Request failed (${status.toString()})`
   );
 }
 
-export function toSteeringRefusal(error: unknown): SteeringRefusal {
-  const normalized = toSteeringSendError(error);
+export function toSteeringRefusal(
+  error: unknown,
+  ambiguousMessage: string = STEERING_SEND_FAILED_MESSAGE
+): SteeringRefusal {
+  const normalized = toSteeringRequestError(error, ambiguousMessage);
   return { code: normalized.code, message: normalized.message };
 }

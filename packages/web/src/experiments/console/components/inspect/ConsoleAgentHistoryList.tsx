@@ -981,18 +981,36 @@ export function ConsoleAgentHistoryList({
   const filters: ConsoleHistoryFilters = { showToolCalls, showSystem };
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
+  const afterById = new Map<string, ReactNode>();
+  for (const item of items) afterById.set(item.id, renderAfterItem?.(item));
+  // Only the actual last rendered history item is programmatically focusable
+  // (the steering dock's Stop-removal focus target); it never joins Tab order.
+  let lastItemId: string | null = null;
+  for (const item of items) {
+    const after = afterById.get(item.id);
+    if (historyItemRowVisible(item, filters) || (after !== undefined && after !== null)) {
+      lastItemId = item.id;
+    }
+  }
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
+    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  const lastRowRing = (item: AgentHistoryItem): string =>
+    item.id === lastItemId ? ' focus-visible:outline-2 focus-visible:outline-accent-bright!' : '';
+
   const renderItem = (item: AgentHistoryItem): ReactElement | null => {
-    const after = renderAfterItem?.(item);
+    const after = afterById.get(item.id);
+    const marker = lastRowMarker(item);
+    const ring = lastRowRing(item);
     if (!historyItemRowVisible(item, filters)) {
       return after === undefined || after === null ? null : (
-        <div key={item.id} className="my-1.5">
+        <div key={item.id} className={`my-1.5${ring}`} {...marker}>
           {after}
         </div>
       );
     }
     if (item.kind === 'assistant') {
       return (
-        <div key={item.id} className="my-1.5">
+        <div key={item.id} className={`my-1.5${ring}`} {...marker}>
           <AssistantHistory item={item} />
           {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
         </div>
@@ -1000,14 +1018,14 @@ export function ConsoleAgentHistoryList({
     }
     if (item.kind === 'tool') {
       return (
-        <div key={item.id}>
+        <div key={item.id} className={ring === '' ? undefined : ring.trim()} {...marker}>
           <ToolHistory item={item} onLoadFullOutput={onLoadFullOutput} />
           {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
         </div>
       );
     }
     return (
-      <div key={item.id} className="my-1.5">
+      <div key={item.id} className={`my-1.5${ring}`} {...marker}>
         <LifecycleHistory item={item} />
         {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
       </div>

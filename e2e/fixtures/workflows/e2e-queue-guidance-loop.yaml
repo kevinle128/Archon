@@ -8,7 +8,7 @@ nodes:
     model: e2e-fake-model
     loop:
       prompt: |
-        <<E2E_SCENARIO>>{"delayMs":25000}<</E2E_SCENARIO>>
+        <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":25000}<</E2E_SCENARIO>>
         $LOOP_PREV_OUTPUT
       until: E2E_LOOP_DONE
       max_iterations: 3

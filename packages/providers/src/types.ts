@@ -348,6 +348,13 @@ export type MessageChunk =
       /** Concrete model reported by the provider; omitted when its SDK does not expose one. */
       resolvedModel?: ResolvedModel;
       /**
+       * Provider-native terminal reason forwarded verbatim from the SDK result
+       * (Claude `terminal_reason` — e.g. 'aborted_streaming', 'aborted_tools',
+       * 'completed'). The executor uses it to classify how the turn ended;
+       * never inferred from assistant prose or tool text.
+       */
+      terminalReason?: string;
+      /**
        * Outcome of a session-resume attempt, so a failed resume is observable
        * instead of silently continuing with a fresh (cold) session:
        *   - `true`   a resume was requested and the prior session was restored
@@ -591,6 +598,15 @@ export interface AgentTraceContext {
 export interface AgentRequestOptions {
   model?: string;
   abortSignal?: AbortSignal;
+  /**
+   * Turn-scoped interrupt signal (operator "Stop"): providers declaring
+   * `capabilities.interrupt === 'native'` end only the current provider turn
+   * via the SDK's native interrupt — the workflow node stays running so the
+   * operator can redirect the same session afterward. Distinct from
+   * `abortSignal`, which remains the node-level Cancel that tears the turn
+   * down. Providers without the capability ignore it.
+   */
+  interruptSignal?: AbortSignal;
   systemPrompt?: SystemPromptInput;
   outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
   env?: Record<string, string>;
@@ -819,6 +835,16 @@ export interface ProviderCapabilities {
    * `false` until they implement the AskHuman converter + abort path.
    */
   askHuman: boolean;
+  /**
+   * Turn-scoped interrupt support (operator "Stop" without node cancel):
+   *  - `'native'`       — the provider can end only the current turn in-process
+   *    while keeping the session resumable on the same id (Claude
+   *    `Query.interrupt()`; e2e-fake's deterministic equivalent).
+   *  - `'stream-abort'` — the provider can only end the turn by aborting its
+   *    stream (reserved; no provider declares it yet).
+   *  - `false`          — no turn interrupt; operators get queue-guidance only.
+   */
+  interrupt: 'native' | 'stream-abort' | false;
 }
 
 /**

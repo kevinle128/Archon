@@ -90,6 +90,7 @@ describe('DEVIN_CAPABILITIES', () => {
       nativeTools: false,
       containerExec: false,
       askHuman: true,
+      interrupt: false,
     });
   });
 });

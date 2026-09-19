@@ -825,6 +825,15 @@ export function ConsoleNodeRoom({
     pageState.error === null &&
     (pageState.loading || !pageState.complete);
 
+  // The steering dock's focus fallback: the last rendered transcript row,
+  // or the transcript scroller itself when no row exists yet — never body.
+  const focusLastRow = (): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+    (lastRow ?? el).focus({ preventScroll: true });
+  };
+
   let body: ReactNode;
   if (nodeId === null || resolution === null || row === null) {
     body = <RoomPlaceholder>Select a node</RoomPlaceholder>;
@@ -1028,6 +1037,8 @@ export function ConsoleNodeRoom({
               rowStatus={rowStatus}
               live={isLive}
               hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
+              subState={selectedNodeState?.steeringSubState}
+              focusLastRow={focusLastRow}
             />
           ) : null}
         </RoomRegion>

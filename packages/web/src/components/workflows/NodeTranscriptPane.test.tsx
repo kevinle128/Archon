@@ -1631,6 +1631,21 @@ describe('NodeTranscriptPane', () => {
     });
     await flushUntil(host, 'composer field', () => dockField() !== null);
     expect(host.textContent).not.toContain("answer the agent's question first");
+    // A non-blank draft lifts the semantic disable — a sibling's ask is not
+    // this dock's block.
+    const field = dockField();
+    if (field === null) throw new Error('missing dock field');
+    const fiberKey = Object.keys(field).find(key => key.startsWith('__reactProps$'));
+    const onChange = (
+      field as unknown as Record<
+        string,
+        { onChange?: (event: { target: { value: string } }) => void }
+      >
+    )[fiberKey ?? '']?.onChange;
+    if (onChange === undefined) throw new Error('missing onChange');
+    await act(async () => {
+      onChange({ target: { value: 'a message' } });
+    });
     const button = Array.from(host.querySelectorAll('button')).find(
       el => (el.textContent ?? '').trim() === 'Queue'
     );
@@ -1651,6 +1666,142 @@ describe('NodeTranscriptPane', () => {
       (host.textContent ?? '').includes("answer the agent's question first")
     );
     expect(dockField()).not.toBeNull();
+  });
+
+  function generatingState(
+    subState?: 'generating' | 'idle-after-interrupt'
+  ): WorkflowNodeStateResponse {
+    return {
+      nodeId: 'review',
+      name: 'Review',
+      status: 'running',
+      retryEpoch: 0,
+      steeringSubState: subState,
+    };
+  }
+
+  test('a generating projection renders Stop in the live dock', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        nodeState: generatingState('generating'),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'stop button', () =>
+      Array.from(host.querySelectorAll('button')).some(
+        el => (el.textContent ?? '').trim() === 'Stop'
+      )
+    );
+    expect(host.textContent).not.toContain('Send now');
+  });
+
+  test('an idle-after-interrupt projection renders Send now and the disclosure', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        nodeState: generatingState('idle-after-interrupt'),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'send now button', () =>
+      Array.from(host.querySelectorAll('button')).some(
+        el => (el.textContent ?? '').trim() === 'Send now'
+      )
+    );
+    expect(
+      Array.from(host.querySelectorAll('button')).some(
+        el => (el.textContent ?? '').trim() === 'Stop'
+      )
+    ).toBe(false);
+    expect(host.textContent).toContain(
+      'stopped after the last completed tool call · files already written stay written'
+    );
+  });
+
+  test('dock removal moves focus to the last transcript row, never body', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        nodeState: generatingState('generating'),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'stop button', () =>
+      Array.from(host.querySelectorAll('button')).some(
+        el => (el.textContent ?? '').trim() === 'Stop'
+      )
+    );
+    const stop = Array.from(host.querySelectorAll('button')).find(
+      el => (el.textContent ?? '').trim() === 'Stop'
+    );
+    if (stop === undefined) throw new Error('missing Stop');
+    await act(async () => {
+      (stop as unknown as HTMLElement).focus();
+    });
+
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        nodeState: generatingState('generating'),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flush();
+    expect(dockField()).toBeNull();
+    const lastRow = host.querySelector('[data-last-row]');
+    if (lastRow === null) throw new Error('missing last-row marker');
+    expect(lastRow.getAttribute('tabindex')).toBe('-1');
+    expect((win.document.activeElement as unknown) === lastRow).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+
+  test('with no transcript rows the scroller itself takes the fallback focus', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        nodeState: generatingState('generating'),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [],
+        }),
+      });
+    });
+    await flushUntil(host, 'composer field', () => dockField() !== null);
+    const field = dockField();
+    if (field === null) throw new Error('missing dock field');
+    await act(async () => {
+      (field as unknown as HTMLElement).focus();
+    });
+
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        nodeState: generatingState('generating'),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [],
+        }),
+      });
+    });
+    await flush();
+    expect(dockField()).toBeNull();
+    expect(host.querySelector('[data-last-row]')).toBeNull();
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    if (scroller === null) throw new Error('missing scroller');
+    expect((win.document.activeElement as unknown) === scroller).toBe(true);
   });
 
   describe('occurrence navigator', () => {

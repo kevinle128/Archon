@@ -1,0 +1,214 @@
+## Codebase Patterns
+
+### Visual pin + capability fixture totality (US-005 unblock)
+- **Where**: `.agents/skills/verify-archon/visual-config.json` + `features/run-ui.json`; provider `**/config.test.ts` exact capability objects
+- **Pattern**: `visualBinding()` = `visual-` + digest(visual-config.json). Any pin refresh MUST retarget the catalog binding id. Every provider exact capability `toEqual` fixture must include the required `interrupt` axis (`false` for non-Claude).
+- **Example**: deepseek/devin fixtures needed `interrupt: false`; after pin refresh binding moved `visual-78d882…` → `visual-92fb1a…`.
+
+### Dock-removal focus fallback (US-004)
+- **Where**: `packages/web/src/components/workflows/ComposerDock.tsx` (mirrored in `experiments/console/components/ConsoleComposerDock.tsx`); pane-side target in `NodeTranscriptPane.tsx`/`ConsoleNodeRoom.tsx` (`focusLastRow`); row marker in `NodeRoom.tsx`/`ConsoleAgentHistoryList.tsx` (`data-last-row` + `tabIndex={-1}` on the last rendered item only).
+- **Pattern**: when a removable control region can own focus, latch `focusInsideRef` on `focusCapture` (cleared on blurCapture leaving the region) and track `controlsMountedRef` across mode transitions. On the mounted→unmounted transition (or full unmount while focus was inside), call an injected `focusLastRow()` that focuses `[data-last-row]` else the transcript scroller with `preventScroll` — never let focus fall to `<body>`. The latch is what makes React 19 StrictMode mount replay safe: cleanup fires on a dock that never owned focus and must not steal it.
+- **Test seam**: pane/room tests drive the fallback by flipping `runStatus`/`isLive` live→terminal with focus inside the dock — no network needed. The polling/isolation tests are timing-bound under this host's ~100 load; treat 5s per-test timeouts as environmental and re-run (see US-004 learnings).
+
+### Cross-worktree shared stash list (US-003 hazard)
+- **Where**: `git stash` — the stash list is repo-wide, shared across ALL worktrees of this checkout.
+- **Pattern**: NEVER bare `git stash pop` here. Another ralph worktree (e.g. `archon/thread-5da49924` holding `ralph-unblock:US-004`) can push a stash between your `git stash push` and `pop` — bare pop then applies THEIR stash and conflicts. Always `git stash list` first and `git stash pop stash@{N}` with the exact index of your `ralph-unblock:<story>` entry; leave foreign entries untouched. lint-staged also briefly creates its own backup stash during commits.
+- **Recovery**: if a wrong stash was applied, `git reset --hard HEAD` (nothing of yours is in the tree — it's still stashed), then pop by exact index.
+
+### Dev server port in a worktree (US-003)
+- **Where**: `packages/core/src/utils/port-allocation.ts` (`getPort`)
+- **Pattern**: `PORT` env wins; else worktree path → deterministic `3090 + hash-offset` (3190–4089); else 3090. BUT `bun --filter @archon/server dev` runs with cwd=`packages/server`, so worktree detection fails and it falls back to 3090 — set `PORT` explicitly when generating types from a worktree (e.g. `PORT=4038 bun run dev:server`), then `bun x openapi-typescript http://localhost:<port>/api/openapi.json -o packages/web/src/lib/api.generated.d.ts`. Verify any already-listening port's owner worktree via `lsof -p <pid> | grep cwd` before reuse — a server on 3090 may belong to a different checkout.
+
+### Claude interrupt seam (US-001)
+- **Where**: `packages/providers/src/claude/provider.ts` (`singleTurnInput`, `raceInterruptFailure`, `sendQuery`)
+- **Pattern**: interrupt-capable calls send `prompt` as a one-message `AsyncIterable<SDKUserMessage>` held open by a provider-owned deferred (`releaseInput`). `interruptSignal` abort → bound `query.interrupt()` exactly once — never `controller.abort()`/`query.close()` (those remain `abortSignal`'s Cancel teardown). An abort landing before the query binds sets `interruptRequested`, flushed right after `currentInterrupt` is assigned.
+- **Gotchas proven against SDK 0.3.209** (`reports/claude-interrupt-resume-spike.md`):
+  - `await stream.interrupt()` inside `for await` DEADLOCKS — the ack is serviced by the same stream pump; fire unawaited.
+  - Held-open input keeps the stream open AFTER the terminal result — resolve the input gate when the result chunk is observed, or the subprocess never exits.
+  - Real SDK yields the abort-marked result (`terminal_reason='aborted_streaming'`, `subtype='error_during_execution'`, `is_error=true`) AND THEN throws `Claude Code returned an error result: [ede_diagnostic] result_type=user` — consumers see result chunk + trailing throw; executor must classify on the result it already saw.
+  - `Query.interrupt()` exists only on streaming-input queries; string prompts expose no `interrupt()`.
+- **Iterator pitfall**: `iterator.return()` awaited while the inner iterator is parked at a pending `next()` queues behind that read and never resolves — skip `return()` in the read-failed path and keep abandoned `next()` promises observed with `.catch(() => undefined)`.
+
+### Environmental flakes (this worktree)
+- `bun test src/community/omp/session-usage.test.ts` — 'oversized line omits all hidden enrichment' times out at the 5s default on the external WD_BLACK drive; passes with `--timeout 30000`. Pre-existing, unrelated to provider capabilities.
+- Root `bun run type-check` fails on PRE-EXISTING `@archon/web` error: `src/experiments/console/components/ConsoleNodeRoom.test.tsx(2966,7)` — `execution?: ... | undefined` vs required `execution: ... | null`. packages/web does not depend on @archon/providers; untouched by US-001. Package-scoped `type-check` in packages/providers is clean.
+
+### Steering handle turn lifecycle (US-002)
+- **Where**: `packages/workflows/src/steering-registry.ts` (`NodeSteeringHandle`), executor integration in `dag-executor.ts` (~line 3196 direct register, ~5960 loop register).
+- **Pattern**: one ACTIVE turn per handle, tokenized by `beginTurn(controller)` immediately before each `sendQuery`. `endTurnStream(token)` in the stream `finally` clears ONLY the matching controller (a late `interrupt()` then waits on classification instead of aborting a dead stream). `settleTurn(token, outcome)` is classification's write — resolves that token's shared pending interrupt once. `enterIdle(token)` settles as `idle-after-interrupt` and returns ONE waiter for `send_now`/`terminated`. Server route (US-003) calls `interrupt()` → shared promise resolves to the classified outcome; `accept(msg, 'queue'|'send_now')` is the ONLY route-side mutation.
+- **Gotchas**:
+  - `wasOperatorInterrupted(token)` gates ALL interrupt classification — a natural `terminalReason`-less result that raced a Stop stays natural (settles `generating` or `node_finished` at the boundary); the flag only reclassifies abort-marked ends (`aborted_streaming|aborted_tools`) and abort-shaped throws.
+  - Interrupt resume id = `newSessionId ?? turnResumeId` (direct) / `settledTurnSessionId ?? currentSessionId` (loop) — a throw can interrupt before any result chunk, and a loop re-ask's throwaway session is never a redirect target.
+  - The 'interrupted' transcript status row is AWAITED before `enterIdle` — the interrupt request only resolves once the committed outcome exists (agent-history fold overrides the preceding tool card).
+  - `raceIdleWake` polls `getWorkflowRunStatus` with `CANCEL_CHECK_INTERVAL_MS` but its FIRST tick is immediate — idle tests can't wait 10s, and a pre-terminal run must not linger.
+  - `interrupt()` while already idle resolves `idle-after-interrupt` immediately (idempotent Stop); `send_now` while generating queues like a normal enqueue — no wake.
+  - Mock-store `getWorkflowRunStatus` reads a captured flag — flip it inside the generator to simulate mid-stream cancel (first chunk always polls; throttle map starts at 0).
+
+---
+
+## 2026-02-19 — US-001: Claude native interrupt seam and real-SDK gate
+
+**Status**: PASSED
+**Files changed** (commit e476d59a):
+- `packages/providers/src/types.ts` — `AgentRequestOptions.interruptSignal?: AbortSignal`; `ProviderCapabilities.interrupt: 'native' | 'stream-abort' | false` (required); result `MessageChunk.terminalReason?: string`
+- `packages/providers/src/claude/provider.ts` — streaming-input path when interruptSignal present; native interrupt() binding exactly once; pending-flush for pre-bind aborts; no controller abort / no query close; interrupt rejection surfaced through stream; no retry when interrupted; listeners removed in finally; input gate resolved on terminal result + finally
+- `packages/providers/src/claude/provider.test.ts` — 14 interrupt tests (string-prompt preservation, AsyncIterable shape, gate lifetime, exactly-once, no-abort/no-close, terminalReason, error-result metadata, pre-aborted, no-retry, rejection propagation, listener cleanup, pending-flush)
+- `packages/providers/src/claude/interrupt-resume-spike.ts` + `spike:interrupt:claude` script — real-SDK gate
+- `reports/claude-interrupt-resume-spike.md` — sanitized evidence (no prompts/credentials/model content)
+- `packages/providers/src/{claude,e2e-fake}/capabilities.ts` — `interrupt: 'native'`; 9 other providers `interrupt: false`; `codex/provider.test.ts` fixture updated
+- `scripts/generate-capability-matrix.ts` + regenerated `provider-capabilities.md` — Interrupt row
+- `packages/providers/src/registry.test.ts` — capability totality assertions
+
+**Acceptance criteria verified**:
+- [x] `interruptSignal?: AbortSignal` on AgentRequestOptions
+- [x] required `interrupt` axis; Claude+e2e-fake='native', others=false
+- [x] `terminalReason?: string` on result chunk
+- [x] string-prompt path preserved without interruptSignal
+- [x] one-message AsyncIterable held open via provider-owned deferred
+- [x] interrupt() exactly once; no controller abort/close; listeners removed in finally
+- [x] pre-aborted checked before every retry; interrupted attempt never retried; rejection surfaced
+- [x] Interrupt row in capability matrix; generate+check pass
+- [x] spike + script + sanitized report — `protocol: "interrupt-turn-resume"`, sessionIdConsistent=true on SDK 0.3.209
+- [x] all phase-1 tests-first items covered
+- [x] focused validation: `bun test src/claude/provider.test.ts -t 'interrupt'` (14 pass), registry/observability/e2e-fake green, `type-check` clean, capability-matrix generate+check OK
+
+**Learnings**:
+- See Codebase Patterns — the four real-SDK behaviors above are load-bearing for US-002+ executor classification.
+- The trailing post-result throw (`result_type=user`) means the executor sees result-chunk-then-throw on a real interrupt, not just a clean result.
+- Capability axis additions require updating EVERY provider's capabilities.ts literal plus `toEqual` test fixtures (codex fixture was caught by the suite, not type-check — tests are excluded from tsc).
+- lint-staged runs on commit (eslint --fix + prettier); stage precisely, it only touches staged files.
+
+---
+
+## 2026-02-19 — US-002: Registry tokenized turns, executor classification, and idle-await
+
+**Status**: PASSED
+**Files changed** (commit 7cd601fe):
+- `packages/workflows/src/steering-registry.ts` — `{ interruptible }` on `register()` with fail-fast mismatch; monotonic `beginTurn`/`endTurnStream`/`settleTurn`/`wasOperatorInterrupted`; `interrupt()` shared settlement promise; `accept(message, intent)` atomic mutation (`queued` | `awaiting_send_now` immutable receipts); `enterIdle` one-waiter; `steeringSubState` on live interruptible handles only; `seal()` resolves pending interrupt + idle waiter exactly once on every phase exit
+- `packages/workflows/src/dag-executor.ts` — `settleRunningToolsOutcome` helper ('unknown'|'interrupted'); `INTERRUPT_TERMINAL_REASONS` (aborted_streaming|aborted_tools only); `isAbortLikeStreamError` narrow throw helper; `raceIdleWake` first-wins idle poll (immediate first tick, CANCEL_CHECK_INTERVAL_MS re-checks, torn down on wake); `PassTurn` per-pass classification carrier; `finishCancelled` shared cancel finalizer; direct path: interruptSignal per pass, five-case classification, idle+send_now same-session redirect; loop path: same inside attempts/turns, redirect before until/gate/max-iteration without consuming an iteration
+- `packages/workflows/src/steering-registry.test.ts` — +19 tests (capability-aware register, token monotonicity, stale no-ops, shared promise, post-stream interrupt, idle waiter wake sources, accept receipts/order, non-interruptible refusal)
+- `packages/workflows/src/dag-executor.test.ts` — +19 executor-matrix tests (all 15 phase-2 scenarios plus loop-group namespaced body, queue-only provider pin, unrelated-throw-races-Stop, double-interrupt fresh token)
+
+**Acceptance criteria verified**:
+- [x] `register(runId, nodeId, { interruptible })` — reuse only when interruptibility agrees, fail fast otherwise; all prior handle semantics preserved
+- [x] monotonic tokens; beginTurn fails on unsettled prior; endTurnStream/settleTurn stale-safe
+- [x] interrupt() sync-aborts stored controller once, shared promise, idle→idle, post-stream→classification wait, flag cleared on settle
+- [x] settlements: idle-after-interrupt/generating/node_finished/not_steerable_here; close/park/discard/clear settle waiters once
+- [x] accept() atomic; dup replay; queue-vs-send_now receipt states; send_now drains in receipt order same tick; receipts immutable
+- [x] enterIdle projection + waiter; first of send_now/discard/cancel-poll wins; subState only live+interruptible
+- [x] fresh interruptSignal per provider pass (re-ask + guidance + iteration included); direct/loop/loop-group identical
+- [x] five-case positional classification; Cancel first; marker before isError guard; flag joins canReask; narrow throw helper
+- [x] marker = aborted_streaming|aborted_tools only — no prefix/prose/presence inference
+- [x] accounting: usage recorder in finally, cost/tokens fold once, no partial batch/credit/empty/completion on interrupt, background-wait overridden, redirect retains totals
+- [x] tool settlement 'interrupted' vs provider-emitted retained; exactly ONE awaited 'interrupted' status row before enterIdle; no failed/completion/validation events
+- [x] boundaries: queue+natural→drain+generating; empty+natural→closeIfEmpty+node_finished; interrupted→resumable-id-required idle; send_now→double-newline+same session; missing id→fail-fast queue intact
+- [x] loop redirect inside same iteration, no count increment
+- [x] idle exits: send_now / discardRun / cancel-status timer only — no inactivity timer
+- [x] all tests: registry 57, interrupt matrix 19, queued guidance 18, full dag-executor file 644, full @archon/workflows package green
+- [x] validation commands: `bun test src/steering-registry.test.ts` (57 pass), `-t 'interrupt'` (19 pass), `-t 'queued guidance'` (18 pass), `bun run type-check` (clean), `bun --filter @archon/workflows test` (all pass); eslint + prettier clean
+
+**Learnings**:
+- The registry rewrite had to PRESERVE the existing API exactly (`operatorUserId`, `receivedAt`, `snapshot()`, two-level runs map, `discardRun()` → `{handles, queued}`, `createSteeringRegistry()`) — server route tests pin `snapshot().queued`/`acceptedCount`. Search all callers before extending a shared API.
+- `settledTurnSessionId` (loop) is attempt-0-only by #2563 design — an interrupted re-ask pass must fall back to `currentSessionId`, not the throwaway re-ask session. Direct path equivalent: `newSessionId ?? turnResumeId` (a throw interrupts before any result).
+- The mid-stream cancel poll fires on the FIRST chunk (throttle map starts empty) — flipping the mock status inside the generator reliably simulates a cancel co-fire without timers.
+- Prettier reformats whole files — run it before the lint-staged commit anyway; eslint `prefer-optional-chain` flags `x !== undefined && x.y !== undefined` and `return-await` flags returns inside try/finally.
+
+---
+
+## 2026-09-19 — US-003: Interrupt route, atomic Send now, and sub-state projection
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/api.ts` (checkpoint bfac4b11) — `interruptWorkflowNodeRoute` + handler (auth → projection/handle → 404/409/422 → final run re-read → synchronous `handle.interrupt()` → settlement → outcome map), `handle.accept(message, body.intent)` on send, `joinSteeringSubStates` on GET-run after terminal-settling
+- `packages/server/src/routes/schemas/workflow.schemas.ts` (checkpoint) — `interruptWorkflowNodeResponseSchema`, optional `steeringSubState` on WorkflowNodeState
+- `packages/server/src/routes/api.workflow-runs.test.ts` (checkpoint) — all 15 phase-3 items: idle/generating/409 settlements, concurrent+repeated interrupts, idempotent idle interrupt, actor ladder + gated 401, 404/409/422 ladder, terminal-after-read, queue-vs-send_now on idle, duplicate replay, send during interrupting, namespaced loop-body projection, wire-identical absence, OpenAPI assertions
+- `packages/web/src/lib/api.generated.d.ts` (commit 7258681d) — regenerated against this worktree's server (`PORT=4038 bun run dev:server`; port 3090 server belonged to a different checkout and was left running); diff = interrupt path + InterruptWorkflowNodeResponse + optional steeringSubState only, no unrelated churn
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` (separate chore(unblock) commit 2b9f1e52) — `execution: null` default in toolItem() base fixture; pre-existing TS2322, zero story changes in that commit
+
+**Acceptance criteria verified**:
+- [x] interrupt route via registerOpenApiRoute(createRoute), no body, returns only actual settlement (200 idle / 200 generating / 409)
+- [x] strict nested steering error shape 401/403/404/409/422/500; NO `not_interruptible`
+- [x] handler sequencing: persisted lifecycle outranks stale handle; final run re-read is last await; interrupt() synchronous; caller disconnect cannot undo
+- [x] send passes intent into ONE synchronous handle.accept; returns receipt.state exactly; duplicate message_id replays without second drain
+- [x] optional steeringSubState joined AFTER terminal-settling; only live+interruptible+running (incl. `loop.body` namespaced key); never persisted/synthesized; `interrupting` never projected
+- [x] openapi-defaults.ts unchanged
+- [x] all 15 phase-3 route tests pass
+- [x] api.generated.d.ts regenerated via tracked dev server (started PORT=4038, recorded, stopped after); generated diff clean
+- [x] `bun test -t 'interrupt'` (21), `-t 'queued guidance'` (27), full file (252 pass / 0 fail), server type-check clean, web type-check clean, eslint + prettier clean
+
+**Learnings**:
+- A checkpoint commit had already landed the route/tests/schemas — verify-then-complete instead of re-implementing.
+- `bun --filter @archon/server dev` cannot detect the worktree (cwd is packages/server) → always sets port 3090; use `PORT=` explicitly (see patterns).
+- **Blocker Ledger**: BLOCKER US-003 | gate=`cd packages/web && bun run type-check` | cause=pre-existing TS2322 at ConsoleNodeRoom.test.tsx:2966 (`execution?: ...|undefined` vs required `execution: ...|null`), identical fingerprint on clean base with story stashed, culprit file outside story diff | action=fixed via `execution: null` default in toolItem() base, separate `chore(unblock)` commit 2b9f1e52 | 2026-09-19
+- git stash list is shared across worktrees — a foreign `ralph-unblock:US-004` stash (worktree thread-5da49924) was left untouched; always pop by exact index (see patterns).
+
+---
+
+## 2026-09-19 — US-004: Both web docks, accessibility, and visual states
+
+**Status**: PASSED (commit 181ae601)
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — `SteeringSubState`, `SteeringAgentMode`, separate `sendInFlight`/`interruptInFlight`, `inFlightBatch` snapshot/restore, intent-aware receipts (`queued`/`awaiting_send_now`), `syncProjectedSubState`, `beginInterrupt`/`resolveInterruptOutcome`/`resolveInterruptError`, `beginSendNow`/`resolveSendNowSuccess`/`resolveSendNowFailure`, Send-now/Queue accessible-name + band/list label helpers, exact copy constants, `SteeringRequestError` rename + `toSteeringRequestError`/`toSteeringRefusal` normalizers
+- `packages/web/src/lib/steering-dock.test.ts` — +30 shared-logic tests covering mode derivation, projection sync, every interrupt resolution, Queue-during-interrupting, Send-now non-blank gate, batch success/failure/retry-id stability, duplicate-receipt dedupe, exact strings
+- `packages/web/src/lib/api.ts` — `interruptNode` typed helper (POST …/interrupt, SteeringRequestError normalization); sendNodeGuidance re-pointed at renamed normalizer
+- `packages/web/src/experiments/console/skills/runs.ts` — console-owned `interruptNode` via `requestJson`, same normalization
+- `packages/web/src/components/workflows/ComposerDock.tsx` — Stop/Stopping + Queue/Send-now control row (aria-disabled only, 32px targets, 84px send min-width, bordered transparent, motion-reduce), queue-during-interrupting, optimistic Send-now batch with failure restore + stable retry id, idle disclosure, single role=status + role=alert split, StrictMode-safe focus-ownership tracking (focusInsideRef/controlsMountedRef) so unmount/mode-transition moves focus via injected `focusLastRow` without mount-replay stealing it
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — +15 dock tests incl. deferred-interrupt/send races, refusals (409/422/network), Send-now batch restore + retry-id reuse
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` + test — same anatomy/behavior on console-owned seams (`!`-important accent rings per console token rules), 32 dock tests
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `data-last-row` + `tabIndex={-1}` marker on the actual last rendered history item (never Tab order)
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — same marker, last *rendered* item computed across visibility filters + after-content rows (`afterById` memo so renderAfterItem runs once per item)
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx`, `ConsoleNodeRoom.tsx` — pass `subState` projection + `focusLastRow` (last `[data-last-row]` else scroller, `preventScroll`)
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`, `NodeRoom.test.tsx`, `ConsoleNodeRoom.test.tsx` — projection wiring (Stop / Send-now / disclosure), dock-removal focus → last row, empty-transcript focus → scroller, last-row marker markup, sibling-ask draft-aware aria-disabled
+
+**Acceptance criteria verified**:
+- [x] shared state machine: sub-state, split in-flight flags, interrupting transient, intent receipts, reversible batch, exact copy, SteeringRequestError rename through both request layers
+- [x] derived modes: absent projection → queue-only (not detached); generating → Stop+Queue; interrupting → focusable Stopping… + usable Queue; idle → Send-now + disclosure + will-send band
+- [x] interrupt flow: one announcement, suppressed repeats, idle→focus last row, generating→composite announcement no fake row, 409/422/network refusal paths with draft retained
+- [x] Queue during interrupting guarded only by shared predicate; receipts re-label on idle resolution
+- [x] Send now: non-blank gate, batch snapshot/optimistic clear, only-new-draft POST + stable retry id, success discard/generating announce, failure restore-front + `couldn't send · back in the queue` role=alert, retry reuses id
+- [x] anatomy + styling identical both shells; band headers lowercase-DOM/uppercase-CSS; list labels; no third dock; console-isolation green
+- [x] focus: one polite status per transition; failure via role=alert; last-row programmatic focus, scroller fallback, never <body>
+- [x] gate commands: `bun test src/lib/steering-dock.test.ts` (69 pass), legacy trio (136 pass), console trio (141 pass), `bun run type-check` (clean); eslint + prettier clean on all touched files
+
+**Learnings**:
+- React 19 runs deletion cleanups before DOM removal — `el.contains(document.activeElement)` still works in unmount cleanups; pair it with a `focusInsideRef` latch (set on focusCapture) or StrictMode mount replay steals focus the dock never owned.
+- `renderToStaticMarkup` pins exact wrapper markup — adding `data-last-row`/`tabIndex` to the last item's div breaks sibling markup assertions; scope tabindex counts to the tag (`/<h3[^>]*tabindex/`).
+- The shared submit predicate (non-blank draft) means `aria-disabled` is true on a blank-draft Queue — tests asserting "not blocked" must type a draft first, otherwise they can't distinguish ask-block from empty-draft.
+- **Environmental**: this host runs at load ~100 (other worktrees' rustc/Chrome/stale bun-test processes). `ConsoleNodeRoom > polls live agent rooms` and `console-isolation` are I/O/timing-bound and exceed bun's default 5s per-test budget under load — both pass with `--timeout 60000` and passed in the final full-suite run once stale `bun test` processes (139+ CPU-min each) were killed. Not a regression: measured 12.9s test-internal on the clean base.
+- lint-staged creates a backup stash during commit — the shared-stash-list hazard from US-003 applies here too.
+
+---
+
+## 2026-09-20 — US-005: Deterministic E2E evidence and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts(+test)` — already on branch from f7e5f097; re-verified 42 unit tests
+- `e2e/fixtures/workflows/e2e-queue-guidance.yaml` / `-loop.yaml` — interruptible first-turn directives (f7e5f097)
+- `e2e/ui/agent-interrupt-redirect.spec.ts` — both-shell direct/fail/422/loop/visual + route ladder; closeout hardening for duplicate send_now race, 422 grep title, overflow settle
+- `plans/.../reports/acceptance.md` + `reports/evidence/*` — acceptance map + screenshots/measurements
+- `_bmad-output/.../sprint-status.yaml` — only `2-3-interrupt-and-redirect-a-running-claude-agent: done`
+- Unblock commits: deepseek/devin capability fixtures; visual-config source pins + ui.visual binding retarget
+
+**Acceptance criteria verified**:
+- [x] e2e-fake interruptible scenario + unit coverage + type-check
+- [x] fixtures extended not duplicated; archon-runtime untouched; queue-guidance 11 pass
+- [x] both-shell direct interrupt+redirect Playwright flow
+- [x] failure/race + route ladder (idle idempotent, duplicate send_now, 404/409/422)
+- [x] loop parity both shells; loop-group via executor unit
+- [x] visual/a11y evidence 460 + 1440 + reduced-motion + measurements JSON
+- [x] reports/acceptance.md complete
+- [x] sprint status flipped only for Story 2.3
+- [x] final gate: typecheck, interrupt E2E 11, queue guidance 11, capability-matrix, validate exit 0
+
+**Learnings**:
+- Route ladder send_now without delayMs races node_finished before duplicate replay — bound the redirected turn.
+- 422 test titles must include the final-gate grep phrase `interrupt and redirect`.
+- Overflow assertion can flake mid-viewport-resize; poll room width ≤460 and ignore zero-area SVG geometry.
+- Capability axis additions need EVERY exact `toEqual` capability fixture updated (deepseek/devin missed in US-001).
+- Refreshing visual-config source pins also changes `visualBinding()` digest — retarget `features/run-ui.json` binding id in the same unblock series.
+
+BLOCKER US-005 | gate=`bun run validate` | cause=DEEPSEEK/DEVIN capability toEqual missing interrupt:false (same on clean base) | action=chore(unblock) 0f844e6c | 2026-09-20
+BLOCKER US-005 | gate=`bun run validate` / scripts/verify-feature-gate.test.ts | cause=stale visual-config source pins + ui.visual binding hash mismatch (same on clean base) | action=chore(unblock) 4e2e2653 + 53cfd43f | 2026-09-20
+
+---

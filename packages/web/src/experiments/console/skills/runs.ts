@@ -2,7 +2,7 @@ import { requestJson } from '../lib/http';
 import { toRun, type Run } from '../primitives/run';
 import { toRunEvent, type RunEvent } from '../primitives/event';
 import type { RunStatus } from '../lib/run-status';
-import { toSteeringSendError } from '@/lib/steering-dock';
+import { STEERING_INTERRUPT_FAILED_MESSAGE, toSteeringRequestError } from '@/lib/steering-dock';
 import type { components } from '@/lib/api.generated';
 
 export interface ListRunsOptions {
@@ -162,8 +162,8 @@ export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowN
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send.
- * Refusals surface as SteeringSendError carrying the nested {code,message} so
- * the dock can distinguish a canonical 422 `not_steerable_here` from other
+ * Refusals surface as SteeringRequestError carrying the nested {code,message}
+ * so the dock can distinguish a canonical 422 `not_steerable_here` from other
  * failures. No auto-retry and no message logging — the caller owns
  * `message_id` reuse for ambiguous failures.
  */
@@ -178,7 +178,29 @@ export async function sendNodeGuidance(
       { method: 'POST', body: JSON.stringify(body) }
     );
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
+  }
+}
+
+export type InterruptWorkflowNodeResponse = components['schemas']['InterruptWorkflowNodeResponse'];
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt — Story 2.3 turn
+ * interrupt. The awaited response is the ACTUAL settled sub-state —
+ * `idle-after-interrupt` or `generating` — and terminal refusals surface as
+ * SteeringRequestError (409 `node_finished`, 422 `not_steerable_here`).
+ */
+export async function interruptNode(
+  runId: string,
+  nodeId: string
+): Promise<InterruptWorkflowNodeResponse> {
+  try {
+    return await requestJson<InterruptWorkflowNodeResponse>(
+      `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/interrupt`,
+      { method: 'POST' }
+    );
+  } catch (error) {
+    throw toSteeringRequestError(error, STEERING_INTERRUPT_FAILED_MESSAGE);
   }
 }
 
@@ -186,7 +208,7 @@ export async function sendNodeGuidance(
  * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
  * a still-queued guidance message. Bodyless: requestJson adds a
  * JSON content type only when a body is present, so none is sent. No
- * auto-retry; refusals surface as SteeringSendError like the send helper.
+ * auto-retry; refusals surface as SteeringRequestError like the send helper.
  */
 export async function withdrawNodeGuidance(
   runId: string,
@@ -199,7 +221,7 @@ export async function withdrawNodeGuidance(
       { method: 'DELETE' }
     );
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
   }
 }
 
@@ -207,7 +229,7 @@ export async function withdrawNodeGuidance(
  * GET /api/workflows/runs/:runId/nodes/:nodeId/queue — read the node's
  * still-pending queue snapshot so a mounted dock converges on the shared
  * registry queue. Bodyless GET with `cache: 'no-store'`, optional
- * AbortSignal, no auto-retry; failures surface as SteeringSendError like
+ * AbortSignal, no auto-retry; failures surface as SteeringRequestError like
  * the send/withdraw helpers.
  */
 export async function readNodeGuidanceQueue(
@@ -225,7 +247,7 @@ export async function readNodeGuidanceQueue(
       }
     );
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
   }
 }
 

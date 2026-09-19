@@ -57,6 +57,7 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
 | In-process native tools | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Container exec (folder-project container backend) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | AskHuman mid-turn questions | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅⁴ |
+| Turn interrupt (operator Stop) | **native** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ## Caveats
 
@@ -76,6 +77,10 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
   or ❌ (unsupported). See [AI Assistants → Structured output guarantees](/getting-started/ai-assistants/#structured-output-guarantees).
 - **In-process native tools** — the provider can register Archon `NativeTool`s for a
   turn (gates auto-injection of Archon's `manage_run` tool into project-scoped chat).
+- **Turn interrupt** — `native` (the provider can end only the current turn
+  in-process, keeping the session resumable on the same id — e.g. Claude
+  `Query.interrupt()`), `stream-abort` (the turn ends by aborting the provider's
+  stream), or ❌ (no turn interrupt; operator guidance queues for the next turn).
 
 For per-provider field-level notes (YAML syntax, caveats), see the
 [AI Assistants guide](/getting-started/ai-assistants/).

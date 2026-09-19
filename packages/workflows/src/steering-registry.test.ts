@@ -602,3 +602,355 @@ describe('discardRun', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Capability-aware registration (#183)
+// ---------------------------------------------------------------------------
+
+describe('capability-aware registration', () => {
+  test('live/parked handles are reused only when interruptibility agrees', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    expect(handle.isInterruptible()).toBe(true);
+    expect(registry.register('run-1', 'node-1', { interruptible: true })).toBe(handle);
+    handle.park();
+    expect(registry.register('run-1', 'node-1', { interruptible: true })).toBe(handle);
+  });
+
+  test('mismatched overlapping executions fail fast', () => {
+    const registry = createSteeringRegistry();
+    registry.register('run-1', 'node-1', { interruptible: true });
+    expect(() => registry.register('run-1', 'node-1')).toThrow(/interruptible/);
+    expect(() => registry.register('run-1', 'node-1', { interruptible: false })).toThrow(
+      /interruptible/
+    );
+  });
+
+  test('mismatched parked handle fails fast too — no silent downgrade', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.park();
+    expect(() => registry.register('run-1', 'node-1')).toThrow(/interruptible/);
+    expect(registry.register('run-1', 'node-1', { interruptible: true })).toBe(handle);
+  });
+
+  test('a closed handle is replaced regardless of interruptibility', () => {
+    const registry = createSteeringRegistry();
+    const first = registry.register('run-1', 'node-1', { interruptible: true });
+    first.close();
+    const second = registry.register('run-1', 'node-1');
+    expect(second).not.toBe(first);
+    expect(second.isInterruptible()).toBe(false);
+    const third = registry.register('run-1', 'node-2');
+    third.close();
+    const fourth = registry.register('run-1', 'node-2', { interruptible: true });
+    expect(fourth.isInterruptible()).toBe(true);
+  });
+
+  test('non-interruptible handles keep queue-only shape: no sub-state, no turns', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    expect(handle.isInterruptible()).toBe(false);
+    expect(handle.steeringSubState()).toBeUndefined();
+    expect(handle.snapshot().subState).toBeUndefined();
+    expect(() => handle.beginTurn(new AbortController())).toThrow(/interruptible/);
+    expect(handle.enqueue(msg('m-1'))).toEqual({
+      ok: true,
+      duplicate: false,
+      receipt: { messageId: 'm-1', state: 'queued' },
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tokenized turns (#183)
+// ---------------------------------------------------------------------------
+
+describe('tokenized turns', () => {
+  test('beginTurn returns monotonic tokens and projects generating', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    expect(t1).toBe(1);
+    expect(handle.steeringSubState()).toBe('generating');
+    expect(handle.snapshot().subState).toBe('generating');
+    handle.endTurnStream(t1);
+    handle.settleTurn(t1, 'generating');
+    const t2 = handle.beginTurn(new AbortController());
+    expect(t2).toBe(2);
+    expect(t2).toBeGreaterThan(t1);
+  });
+
+  test('beginTurn fails while the prior token is unsettled — even after stream end', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    handle.endTurnStream(t1); // stream ended but classification pending
+    expect(() => handle.beginTurn(new AbortController())).toThrow(/unsettled/);
+    handle.settleTurn(t1, 'node_finished');
+    expect(() => handle.beginTurn(new AbortController())).not.toThrow();
+  });
+
+  test('beginTurn fails on non-live handles', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.park();
+    expect(() => handle.beginTurn(new AbortController())).toThrow(/live/);
+    handle.resume();
+    const t = handle.beginTurn(new AbortController());
+    handle.settleTurn(t, 'node_finished');
+    handle.close();
+    expect(() => handle.beginTurn(new AbortController())).toThrow(/live/);
+  });
+
+  test('endTurnStream clears only the matching controller; stale tokens no-op', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const t1 = handle.beginTurn(controller);
+    handle.endTurnStream(999); // stale — no-op
+    const pending = handle.interrupt();
+    expect(controller.signal.aborted).toBe(true); // still-abortable turn aborts
+    handle.endTurnStream(t1);
+    handle.settleTurn(t1, 'generating');
+    await expect(pending).resolves.toBe('generating');
+  });
+
+  test('settleTurn resolves the matching pending interrupt exactly once', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    const pending = handle.interrupt();
+    handle.settleTurn(999, 'generating'); // stale — no-op
+    handle.settleTurn(t1, 'node_finished');
+    handle.settleTurn(t1, 'generating'); // duplicate — no-op
+    await expect(pending).resolves.toBe('node_finished');
+    expect(handle.wasOperatorInterrupted(t1)).toBe(false); // flag cleared on settle
+  });
+});
+
+// ---------------------------------------------------------------------------
+// interrupt() (#183)
+// ---------------------------------------------------------------------------
+
+describe('interrupt', () => {
+  test('aborts the current controller once and shares one settlement promise', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const token = handle.beginTurn(controller);
+    let abortEvents = 0;
+    controller.signal.addEventListener('abort', () => {
+      abortEvents += 1;
+    });
+    const first = handle.interrupt();
+    const second = handle.interrupt();
+    expect(first).toBe(second); // shared settlement promise
+    expect(controller.signal.aborted).toBe(true);
+    expect(abortEvents).toBe(1); // never aborted twice
+    expect(handle.wasOperatorInterrupted(token)).toBe(true);
+    handle.endTurnStream(token);
+    handle.settleTurn(token, 'idle-after-interrupt');
+    await expect(first).resolves.toBe('idle-after-interrupt');
+  });
+
+  test('after stream end but before classification: waits without aborting the old controller', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const token = handle.beginTurn(controller);
+    handle.endTurnStream(token);
+    const pending = handle.interrupt();
+    expect(controller.signal.aborted).toBe(false); // dead controller untouched
+    expect(handle.wasOperatorInterrupted(token)).toBe(true); // flag set for classification
+    handle.settleTurn(token, 'generating');
+    await expect(pending).resolves.toBe('generating');
+  });
+
+  test('idle calls return idle immediately', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    void handle.enterIdle(token);
+    await expect(handle.interrupt()).resolves.toBe('idle-after-interrupt');
+  });
+
+  test('non-interruptible, parked, and closed handles resolve without a turn', async () => {
+    const registry = createSteeringRegistry();
+    const queueOnly = registry.register('run-1', 'node-1');
+    await expect(queueOnly.interrupt()).resolves.toBe('not_steerable_here');
+    const parked = registry.register('run-1', 'node-2', { interruptible: true });
+    parked.park();
+    await expect(parked.interrupt()).resolves.toBe('not_steerable_here');
+    const closed = registry.register('run-1', 'node-3', { interruptible: true });
+    closed.close();
+    await expect(closed.interrupt()).resolves.toBe('node_finished');
+  });
+
+  test('park/discard/cancel resolve a pending interrupt exactly once', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.beginTurn(new AbortController());
+    const pending = handle.interrupt();
+    handle.park();
+    await expect(pending).resolves.toBe('not_steerable_here');
+
+    const natural = registry.register('run-1', 'node-2', { interruptible: true });
+    natural.beginTurn(new AbortController());
+    const pendingClose = natural.interrupt();
+    natural.close();
+    await expect(pendingClose).resolves.toBe('node_finished');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Atomic accept + idle await (#183)
+// ---------------------------------------------------------------------------
+
+describe('accept + enterIdle', () => {
+  test('queue intent while generating lands as queued', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.beginTurn(new AbortController());
+    expect(handle.accept(msg('m-1'), 'queue')).toEqual({
+      ok: true,
+      duplicate: false,
+      receipt: { messageId: 'm-1', state: 'queued' },
+    });
+    expect(handle.pendingCount()).toBe(1);
+  });
+
+  test('queue intent while interrupting lands as queued — no wake semantics', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    const pending = handle.interrupt();
+    expect(handle.accept(msg('m-1'), 'queue')).toEqual({
+      ok: true,
+      duplicate: false,
+      receipt: { messageId: 'm-1', state: 'queued' },
+    });
+    handle.settleTurn(token, 'idle-after-interrupt');
+    await expect(pending).resolves.toBe('idle-after-interrupt');
+  });
+
+  test('queue intent while idle lands as awaiting_send_now and never wakes', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter = handle.enterIdle(token);
+    expect(handle.steeringSubState()).toBe('idle-after-interrupt');
+    expect(handle.accept(msg('m-1', 'hold'), 'queue')).toEqual({
+      ok: true,
+      duplicate: false,
+      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
+    });
+    // The waiter stays pending — racing it against a resolved sentinel proves
+    // no implicit wake.
+    const settled = await Promise.race([waiter.then(() => 'woke'), Promise.resolve('still-idle')]);
+    expect(settled).toBe('still-idle');
+    expect(handle.pendingCount()).toBe(1);
+    handle.close(); // test cleanup — resolves the waiter
+    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+  });
+
+  test('send_now while idle drains in order and resolves the waiter in the same tick', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter = handle.enterIdle(token);
+    const first = msg('m-1', 'first');
+    const second = msg('m-2', 'second');
+    const trigger = msg('m-3', 'go');
+    handle.accept(first, 'queue');
+    handle.accept(second, 'send_now'); // non-blank: drains [m-1, m-2] itself
+    const wake1 = await waiter;
+    expect(wake1).toEqual({ kind: 'send_now', messages: [first, second] });
+    expect(handle.steeringSubState()).toBe('generating');
+
+    // Second idle cycle: a later send_now drains the whole batch in order.
+    const token2 = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter2 = handle.enterIdle(token2);
+    handle.accept(trigger, 'send_now');
+    const wake2 = await waiter2;
+    expect(wake2.kind).toBe('send_now');
+    if (wake2.kind === 'send_now') {
+      expect(wake2.messages.map(m => m.messageId)).toEqual(['m-3']);
+    }
+  });
+
+  test('duplicate ids replay the original receipt and never release a second drain', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter = handle.enterIdle(token);
+    handle.accept(msg('m-1', 'go'), 'send_now');
+    const wake = await waiter;
+    expect(wake.kind).toBe('send_now');
+    // Replay: the original receipt comes back — no re-enqueue, no waiter release.
+    const dup = handle.accept(msg('m-1', 'go'), 'send_now');
+    expect(dup).toEqual({
+      ok: true,
+      duplicate: true,
+      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
+    });
+    expect(handle.pendingCount()).toBe(0);
+  });
+
+  test('send_now while generating queues normally — never drains the live turn', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.beginTurn(new AbortController());
+    expect(handle.accept(msg('m-1', 'not now'), 'send_now')).toEqual({
+      ok: true,
+      duplicate: false,
+      receipt: { messageId: 'm-1', state: 'queued' },
+    });
+    expect(handle.pendingCount()).toBe(1);
+    expect(handle.steeringSubState()).toBe('generating');
+  });
+
+  test('enterIdle resolves the in-flight interrupt as idle and fails on stale tokens', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    const pending = handle.interrupt();
+    void handle.enterIdle(token);
+    await expect(pending).resolves.toBe('idle-after-interrupt');
+    expect(() => handle.enterIdle(token)).toThrow(/stale/);
+    expect(() => handle.enterIdle(999)).toThrow(/stale/);
+    handle.close();
+  });
+
+  test('close/park/discard resolve the idle waiter exactly once', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter = handle.enterIdle(token);
+    handle.discard();
+    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+
+    const second = registry.register('run-1', 'node-2', { interruptible: true });
+    const t2 = second.beginTurn(new AbortController());
+    second.interrupt();
+    const waiter2 = second.enterIdle(t2);
+    second.close();
+    await expect(waiter2).resolves.toEqual({ kind: 'terminated' });
+  });
+
+  test('clearForTests resolves outstanding idle waiters — no unresolved promises', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter = handle.enterIdle(token);
+    registry.clearForTests();
+    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+  });
+});

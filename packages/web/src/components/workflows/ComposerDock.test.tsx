@@ -5,13 +5,19 @@ import type { Root } from 'react-dom/client';
 
 import { installHappyDom, restoreHappyDom } from '@/experiments/console/test/install-happy-dom';
 import type {
+  InterruptWorkflowNodeResponse,
   ReadWorkflowNodeQueueResponse,
   SendWorkflowNodeBody,
   SendWorkflowNodeResponse,
   WithdrawWorkflowNodeResponse,
 } from '@/lib/api';
-import { SteeringSendError } from '@/lib/steering-dock';
-import type { ReadNodeGuidanceQueue, SendNodeGuidance, WithdrawNodeGuidance } from './ComposerDock';
+import { SteeringRequestError, type SteeringSubState } from '@/lib/steering-dock';
+import type {
+  InterruptNode,
+  ReadNodeGuidanceQueue,
+  SendNodeGuidance,
+  WithdrawNodeGuidance,
+} from './ComposerDock';
 
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');
@@ -48,6 +54,11 @@ interface SendCall {
   body: SendWorkflowNodeBody;
 }
 
+interface InterruptCall {
+  runId: string;
+  nodeId: string;
+}
+
 interface WithdrawCall {
   runId: string;
   nodeId: string;
@@ -68,8 +79,15 @@ function deferred<T>(): {
   return { promise, resolve, reject };
 }
 
-function okReceipt(messageId: string): SendWorkflowNodeResponse {
-  return { success: true, message_id: messageId, state: 'queued' };
+function okReceipt(
+  messageId: string,
+  state: SendWorkflowNodeResponse['state'] = 'queued'
+): SendWorkflowNodeResponse {
+  return { success: true, message_id: messageId, state };
+}
+
+function idleAck(): InterruptWorkflowNodeResponse {
+  return { success: true, sub_state: 'idle-after-interrupt' };
 }
 
 describe('ComposerDock', () => {
@@ -78,7 +96,9 @@ describe('ComposerDock', () => {
   let root: Root;
   let composerDock: typeof import('./ComposerDock');
   const calls: SendCall[] = [];
+  const interruptCalls: InterruptCall[] = [];
   let nextSend: SendNodeGuidance;
+  let nextInterrupt: InterruptNode;
   const withdrawCalls: WithdrawCall[] = [];
   let nextWithdraw: WithdrawNodeGuidance;
   const readCalls: { runId: string; nodeId: string; signal?: AbortSignal }[] = [];
@@ -93,9 +113,17 @@ describe('ComposerDock', () => {
     root = createRoot(host);
     composerDock = await loadComposerModule();
     calls.length = 0;
+    interruptCalls.length = 0;
     nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
       calls.push({ runId, nodeId, body });
-      return okReceipt(body.message_id);
+      return okReceipt(
+        body.message_id,
+        body.intent === 'send_now' ? 'awaiting_send_now' : 'queued'
+      );
+    };
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
     };
     withdrawCalls.length = 0;
     nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
@@ -134,12 +162,15 @@ describe('ComposerDock', () => {
       rowStatus: 'pending' | 'running' | 'awaiting' | 'completed' | 'failed' | 'skipped';
       live: boolean;
       hasPendingAsk: boolean;
+      subState: SteeringSubState;
       send: SendNodeGuidance;
+      interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
       readQueue: ReadNodeGuidanceQueue;
       pollIntervalMs: number;
       storage: Storage;
       nodeLabel: string;
+      focusLastRow: () => void;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -151,11 +182,14 @@ describe('ComposerDock', () => {
           rowStatus: overrides.rowStatus ?? 'running',
           live: overrides.live ?? true,
           hasPendingAsk: overrides.hasPendingAsk ?? false,
+          subState: overrides.subState,
           send: overrides.send ?? nextSend,
+          interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
           readQueue: overrides.readQueue ?? nextRead,
           pollIntervalMs: overrides.pollIntervalMs ?? 60_000,
           storage: overrides.storage,
+          focusLastRow: overrides.focusLastRow,
         })
       );
     });
@@ -228,19 +262,6 @@ describe('ComposerDock', () => {
   async function clickQueue(): Promise<void> {
     await act(async () => {
       queueButton().click();
-    });
-    await flush();
-  }
-
-  function deleteButtons(): HTMLButtonElement[] {
-    return [...host.querySelectorAll('button')].filter(
-      button => (button.textContent ?? '').trim() === 'delete'
-    ) as unknown as HTMLButtonElement[];
-  }
-
-  async function clickDelete(index: number): Promise<void> {
-    await act(async () => {
-      deleteButtons()[index]?.click();
     });
     await flush();
   }
@@ -497,7 +518,7 @@ describe('ComposerDock', () => {
 
   test('a rejected send keeps focus off the document body', async () => {
     nextSend = async (): Promise<SendWorkflowNodeResponse> => {
-      throw new SteeringSendError(409, 'node_finished', 'Workflow node is finished');
+      throw new SteeringRequestError(409, 'node_finished', 'Workflow node is finished');
     };
     await renderDock();
     await setDraft('keep me');
@@ -541,7 +562,7 @@ describe('ComposerDock', () => {
 
   test('422 not_steerable_here replaces the dock with the exact disclosure', async () => {
     nextSend = async (): Promise<SendWorkflowNodeResponse> => {
-      throw new SteeringSendError(
+      throw new SteeringRequestError(
         422,
         'not_steerable_here',
         'No live steering session for this node in this process'
@@ -556,10 +577,6 @@ describe('ComposerDock', () => {
     expect(host.querySelector('textarea')).toBeNull();
     expect(host.querySelector('button')).toBeNull();
     expect(host.querySelector('ul')).toBeNull();
-
-    const alert = host.querySelector('[role="alert"]');
-    expect(alert).not.toBeNull();
-    expect((win.document.activeElement as unknown) === alert).toBe(true);
 
     const stored = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
     expect(stored).not.toBeNull();
@@ -579,83 +596,478 @@ describe('ComposerDock', () => {
     expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBeNull();
   });
 
-  test('each queued row exposes a native delete control named for its message', async () => {
-    await renderDock();
-    await setDraft('first');
-    await clickQueue();
-    await setDraft('second');
-    await clickQueue();
+  function buttonByText(text: string): HTMLButtonElement {
+    const match = [...host.querySelectorAll('button')].find(
+      button => (button.textContent ?? '').trim() === text
+    );
+    if (match === undefined) throw new Error(`missing ${text} button`);
+    return match as unknown as HTMLButtonElement;
+  }
 
-    const buttons = deleteButtons();
-    expect(buttons).toHaveLength(2);
-    for (const button of buttons) {
-      expect(button.textContent?.trim()).toBe('delete');
-      expect(button.getAttribute('type')).toBe('button');
-      expect(button.className).toContain('min-h-[24px]');
-      expect(button.className).toContain('min-w-[24px]');
-      expect(button.className).toContain('focus-visible:outline-accent-bright');
-      expect(button.className).toContain('focus-visible:-outline-offset-2');
-      expect(button.className).not.toContain('transition');
-    }
-    expect(buttons[0].getAttribute('aria-label')).toBe('delete · first');
-    expect(buttons[1].getAttribute('aria-label')).toBe('delete · second');
+  function stopButton(): HTMLButtonElement {
+    return buttonByText('Stop');
+  }
+
+  function sendNowButton(): HTMLButtonElement {
+    return buttonByText('Send now');
+  }
+
+  async function clickStop(): Promise<void> {
+    await act(async () => {
+      stopButton().click();
+    });
+    await flush();
+  }
+
+  async function clickSendNow(): Promise<void> {
+    await act(async () => {
+      sendNowButton().click();
+    });
+    await flush();
+  }
+
+  test('queue-only node (no projected sub-state) shows Queue without Stop', async () => {
+    await renderDock();
+    expect(queueButton()).not.toBeNull();
+    expect(host.textContent).not.toContain('Stop');
+    expect(host.textContent).not.toContain('Send now');
   });
 
-  test('clicking a row delete issues exactly one withdraw for run, node, and row id', async () => {
-    await renderDock();
-    await setDraft('first');
-    await clickQueue();
-    await setDraft('second');
-    await clickQueue();
-
-    await clickDelete(0);
-    expect(withdrawCalls).toEqual([
-      { runId: 'run-1', nodeId: 'grp.body', messageId: calls[0].body.message_id },
-    ]);
+  test('generating sub-state shows Stop left of Queue', async () => {
+    await renderDock({ subState: 'generating' });
+    const stop = stopButton();
+    expect(stop.getAttribute('disabled')).toBeNull();
+    expect(stop.className).toContain('min-h-[32px]');
+    expect(stop.className).toContain('border-border-bright');
+    expect(stop.className).toContain('bg-transparent');
+    await setDraft('a message enables send');
+    const queue = queueButton();
+    expect(queue.getAttribute('aria-disabled')).toBeNull();
+    expect(queue.className).toContain('border-border-bright');
+    expect(queue.className).toContain('bg-transparent');
+    const row = stop.parentElement;
+    expect(row).not.toBeNull();
+    const children = [...(row?.children ?? [])];
+    expect(children.indexOf(stop)).toBeLessThan(children.indexOf(queue));
   });
 
-  test('a pending withdraw guards every delete while Queue/send stays usable', async () => {
-    const pending = deferred<WithdrawWorkflowNodeResponse>();
+  test('Stop resolves idle: Stopping… transient, one announcement, focus leaves the dock', async () => {
+    let focused = 0;
+    const focusLastRow = (): void => {
+      focused += 1;
+      (host.querySelector('textarea') as HTMLElement | null)?.focus();
+    };
+    await renderDock({ subState: 'generating', focusLastRow });
+    const stop = stopButton();
+    await act(async () => {
+      stop.focus();
+    });
+    await clickStop();
+    expect(interruptCalls).toEqual([{ runId: 'run-1', nodeId: 'grp.body' }]);
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+    expect(host.textContent).toContain(
+      'stopped after the last completed tool call · files already written stay written'
+    );
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      'agent idle · Send now delivers'
+    );
+    expect(focused).toBe(1);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+
+  test('interrupting keeps Stop focusable with aria-disabled and Queue usable', async () => {
+    const pending = deferred<InterruptWorkflowNodeResponse>();
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return pending.promise;
+    };
+    await renderDock({ subState: 'generating' });
+    const stop = stopButton();
+    await act(async () => {
+      stop.focus();
+    });
+    await clickStop();
+    const stopping = buttonByText('Stopping…');
+    expect(stopping.getAttribute('aria-disabled')).toBe('true');
+    expect(stopping.getAttribute('disabled')).toBeNull();
+    expect(stopping.className).toContain('text-text-secondary');
+    expect((win.document.activeElement as unknown) === stopping).toBe(true);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent interrupting');
+
+    // Repeated presses are suppressed — only one request is in flight.
+    await act(async () => {
+      stopping.click();
+    });
+    await flush();
+    expect(interruptCalls).toHaveLength(1);
+
+    // Queue stays usable on click and keyboard while the interrupt is pending.
+    await setDraft('wait for send now');
+    await clickQueue();
+    await pressKey({ key: 'Enter', metaKey: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body.intent).toBe('queue');
+    expect(host.textContent).toContain('queued · 1');
+
+    await act(async () => {
+      pending.resolve(idleAck());
+    });
+    await flush();
+    expect(host.textContent).toContain('will send · 1');
+    const list = host.querySelector('ul[aria-label="Will send, 1"]');
+    expect(list).not.toBeNull();
+    expect(list?.querySelector('li')?.textContent).toContain('wait for send now');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      'agent idle · Send now delivers'
+    );
+  });
+
+  test('200 generating resolves a spent interrupt without a fake row or Stop loss', async () => {
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return { success: true, sub_state: 'generating' };
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('queued during the race');
+    await clickQueue();
+    await clickStop();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(
+      'turn ended before stop · 1 sent · agent generating'
+    );
+    expect(stopButton()).not.toBeNull();
+    expect(queueButton()).not.toBeNull();
+    expect(host.textContent).toContain('queued · 1');
+    expect(host.textContent).not.toContain('interrupted');
+  });
+
+  test('409 node_finished clears the transient, keeps the draft, alerts', async () => {
+    nextInterrupt = async (): Promise<InterruptWorkflowNodeResponse> => {
+      throw new SteeringRequestError(409, 'node_finished', 'Workflow node is finished');
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('kept draft');
+    await clickStop();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
+    expect(field().value).toBe('kept draft');
+    expect(host.textContent).not.toContain('Stopping…');
+  });
+
+  test('422 on interrupt uses the existing detached disclosure path', async () => {
+    nextInterrupt = async (): Promise<InterruptWorkflowNodeResponse> => {
+      throw new SteeringRequestError(
+        422,
+        'not_steerable_here',
+        'No live steering session for this node in this process'
+      );
+    };
+    await renderDock({ subState: 'generating' });
+    await clickStop();
+    expect(host.textContent).toBe(DETACHED);
+    expect(host.querySelector('textarea')).toBeNull();
+  });
+
+  test('network interrupt failure returns to generating with a retryable Stop', async () => {
+    let attempt = 0;
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      attempt += 1;
+      if (attempt === 1) throw new TypeError('offline');
+      return idleAck();
+    };
+    await renderDock({ subState: 'generating' });
+    await clickStop();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      "couldn't interrupt · try again"
+    );
+    expect(stopButton()).not.toBeNull();
+    expect(host.textContent).not.toContain('Stopping…');
+    await clickStop();
+    expect(interruptCalls).toHaveLength(2);
+    expect(sendNowButton()).not.toBeNull();
+  });
+
+  test('payload idle state renders Send now without a local click', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+    expect(host.textContent).toContain(
+      'stopped after the last completed tool call · files already written stay written'
+    );
+    const send = sendNowButton();
+    expect(send.getAttribute('aria-label')?.startsWith('Send now')).toBe(true);
+    expect(send.getAttribute('aria-label')).toContain('Cmd/Ctrl+Enter to send');
+  });
+
+  test('idle with receipts shows will send band and labelled list', async () => {
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
+    };
+    withdrawCalls.length = 0;
     nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
       withdrawCalls.push({ runId, nodeId, messageId });
-      return pending.promise;
+      return { success: true, message_id: messageId };
+    };
+    readCalls.length = 0;
+    // Default: a never-settling read so existing send/withdraw tests stay
+    // deterministic with no real fetch and no hydration race.
+    nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      return deferred<ReadWorkflowNodeQueueResponse>().promise;
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('one');
+    await clickQueue();
+    await setDraft('two');
+    await clickQueue();
+    await clickStop();
+    expect(host.textContent).toContain('will send · 2');
+    const list = host.querySelector('ul[aria-label="Will send, 2"]');
+    expect(list).not.toBeNull();
+    expect(list?.querySelectorAll('li')).toHaveLength(2);
+  });
+
+  test('Send now requires a non-blank draft even when receipts exist', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    const send = sendNowButton();
+    expect(send.getAttribute('aria-disabled')).toBe('true');
+    await clickSendNow();
+    await pressKey({ key: 'Enter', metaKey: true });
+    expect(calls).toHaveLength(0);
+  });
+
+  test('Send now posts only the new draft, clears band and draft on success', async () => {
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
+    };
+    withdrawCalls.length = 0;
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return { success: true, message_id: messageId };
+    };
+    readCalls.length = 0;
+    // Default: a never-settling read so existing send/withdraw tests stay
+    // deterministic with no real fetch and no hydration race.
+    nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      return deferred<ReadWorkflowNodeQueueResponse>().promise;
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('already queued');
+    await clickQueue();
+    await clickStop();
+    await setDraft('redirect the agent');
+    await clickSendNow();
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body.message).toBe('redirect the agent');
+    expect(calls[1].body.intent).toBe('send_now');
+    expect(calls[1].body.message_id.length).toBeGreaterThan(0);
+    // The in-flight band empties, then settles generating with no leftovers.
+    expect(host.textContent).not.toContain('will send ·');
+    expect(host.textContent).not.toContain('queued ·');
+    expect(host.querySelectorAll('li')).toHaveLength(0);
+    expect(field().value).toBe('');
+    expect(stopButton()).not.toBeNull();
+    expect(queueButton()).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
+  });
+
+  test('Send-now failure restores old then new items and keeps the retry id', async () => {
+    const first = deferred<SendWorkflowNodeResponse>();
+    const second = deferred<SendWorkflowNodeResponse>();
+    let attempt = 0;
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
+    };
+    withdrawCalls.length = 0;
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return { success: true, message_id: messageId };
+    };
+    readCalls.length = 0;
+    // Default: a never-settling read so existing send/withdraw tests stay
+    // deterministic with no real fetch and no hydration race.
+    nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      return deferred<ReadWorkflowNodeQueueResponse>().promise;
+    };
+    nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
+      calls.push({ runId, nodeId, body });
+      attempt += 1;
+      if (attempt === 3) return first.promise;
+      if (attempt === 4) return second.promise;
+      return okReceipt(body.message_id);
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('queued one');
+    await clickQueue();
+    await setDraft('queued two');
+    await clickQueue();
+    await clickStop();
+    await setDraft('the redirect');
+    await clickSendNow();
+    expect(calls[2].body.intent).toBe('send_now');
+    // Band cleared optimistically during flight.
+    expect(host.querySelectorAll('li')).toHaveLength(0);
+    await act(async () => {
+      first.reject(new TypeError('network lost'));
+    });
+    await flush();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe(
+      "couldn't send · back in the queue"
+    );
+    const list = host.querySelector('ul[aria-label="Will send, 3"]');
+    expect(list).not.toBeNull();
+    const items = [...(list?.querySelectorAll('li') ?? [])].map(li => li.textContent ?? '');
+    expect(items[0]).toContain('queued one');
+    expect(items[1]).toContain('queued two');
+    expect(items[2]).toContain('the redirect');
+    expect(field().value).toBe('the redirect');
+
+    // Retry reposts only the same new id — prior receipts are never re-sent.
+    await clickSendNow();
+    expect(calls).toHaveLength(4);
+    expect(calls[3].body.message_id).toBe(calls[2].body.message_id);
+    expect(calls[3].body.intent).toBe('send_now');
+    await act(async () => {
+      second.resolve({
+        success: true,
+        message_id: calls[3].body.message_id,
+        state: 'awaiting_send_now',
+      });
+    });
+    await flush();
+    expect(host.querySelectorAll('li')).toHaveLength(0);
+    expect(stopButton()).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
+  });
+
+  function deleteButtons(): HTMLButtonElement[] {
+    return [...host.querySelectorAll('button')].filter(
+      button => (button.textContent ?? '').trim() === 'delete'
+    ) as unknown as HTMLButtonElement[];
+  }
+  async function clickDelete(index: number): Promise<void> {
+    await act(async () => {
+      deleteButtons()[index]?.click();
+    });
+    await flush();
+  }
+  function okQueue(rows: { message_id: string; message: string }[]): ReadWorkflowNodeQueueResponse {
+    return { success: true, queued: rows };
+  }
+  function controllableRead(): {
+    read: ReadNodeGuidanceQueue;
+    resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
+    rejectNext: (reason?: unknown) => void;
+    pendingCount: () => number;
+  } {
+    const pending: ReturnType<typeof deferred<ReadWorkflowNodeQueueResponse>>[] = [];
+    const read: ReadNodeGuidanceQueue = async (runId, nodeId, options) => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      const d = deferred<ReadWorkflowNodeQueueResponse>();
+      pending.push(d);
+      return d.promise;
+    };
+    return {
+      read,
+      resolveNext: (value): void => {
+        const d = pending.shift();
+        if (d === undefined) throw new Error('no pending read to resolve');
+        d.resolve(value);
+      },
+      rejectNext: (reason): void => {
+        const d = pending.shift();
+        if (d === undefined) throw new Error('no pending read to reject');
+        d.reject(reason);
+      },
+      pendingCount: (): number => pending.length,
+    };
+  }
+
+  async function waitForPending(ctrl: { pendingCount: () => number }, min = 1): Promise<void> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (ctrl.pendingCount() >= min) return;
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 2));
+      });
+      await flush();
+    }
+    throw new Error(
+      `pending read never reached ${String(min)} (have ${String(ctrl.pendingCount())})`
+    );
+  }
+  async function settleSnapshot(
+    ctrl: {
+      resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
+      pendingCount: () => number;
+    },
+    value: ReadWorkflowNodeQueueResponse
+  ): Promise<void> {
+    await waitForPending(ctrl);
+    await act(async () => {
+      ctrl.resolveNext(value);
+    });
+    await flush();
+  }
+  async function settleRejection(
+    ctrl: {
+      rejectNext: (reason?: unknown) => void;
+      pendingCount: () => number;
+    },
+    reason: unknown
+  ): Promise<void> {
+    await waitForPending(ctrl);
+    await act(async () => {
+      ctrl.rejectNext(reason);
+    });
+    await flush();
+  }
+  test('a 409 refusal keeps the row and focus on its delete control and shows the alert', async () => {
+    nextWithdraw = async (): Promise<WithdrawWorkflowNodeResponse> => {
+      throw new SteeringRequestError(409, 'node_finished', 'Workflow node is finished');
+    };
+    await renderDock();
+    await setDraft('keep me');
+    await clickQueue();
+
+    const button = deleteButtons()[0];
+    await act(async () => {
+      button.focus();
+    });
+    await act(async () => {
+      button.click();
+    });
+    await flush();
+
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
+    expect((win.document.activeElement as unknown) === button).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+  test('a 422 refusal follows the detached disclosure and focuses its alert', async () => {
+    nextWithdraw = async (): Promise<WithdrawWorkflowNodeResponse> => {
+      throw new SteeringRequestError(
+        422,
+        'not_steerable_here',
+        'No live steering session for this node in this process'
+      );
     };
     await renderDock();
     await setDraft('first');
     await clickQueue();
-    await setDraft('second');
-    await clickQueue();
+    await clickDelete(0);
 
-    await act(async () => {
-      deleteButtons()[0]?.click();
-    });
-    await flush();
-    expect(withdrawCalls).toHaveLength(1);
-    for (const button of deleteButtons()) {
-      expect(button.getAttribute('aria-disabled')).toBe('true');
-      expect(button.getAttribute('disabled')).toBeNull();
-    }
-    await act(async () => {
-      deleteButtons()[1]?.click();
-    });
-    await flush();
-    expect(withdrawCalls).toHaveLength(1);
-
-    await setDraft('third');
-    await clickQueue();
-    expect(calls).toHaveLength(3);
-    expect(host.textContent).toContain('queued · 3');
-
-    await act(async () => {
-      pending.resolve({ success: true, message_id: calls[0].body.message_id });
-    });
-    await flush();
-    expect(host.textContent).toContain('queued · 2');
-    const items = [...host.querySelectorAll('li')].map(li => li.textContent ?? '');
-    expect(items[0]).toContain('second');
-    expect(items[1]).toContain('third');
+    expect(host.textContent).toBe(DETACHED);
+    expect(host.querySelector('ul')).toBeNull();
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect((win.document.activeElement as unknown) === alert).toBe(true);
   });
-
   test('a concurrent send append does not consume focus reserved for withdraw success', async () => {
     await renderDock();
     await setDraft('first');
@@ -700,89 +1112,47 @@ describe('ComposerDock', () => {
     expect(host.querySelectorAll('li')).toHaveLength(2);
     expect((win.document.activeElement as unknown) === nextDelete).toBe(true);
   });
-
-  test('success removes only the selected row, updates wording, and focuses the next delete', async () => {
-    await renderDock();
-    await setDraft('first');
-    await clickQueue();
-    await setDraft('second');
-    await clickQueue();
-
-    const nextDelete = deleteButtons()[1];
-    await clickDelete(0);
-
-    const items = [...host.querySelectorAll('li')];
-    expect(items).toHaveLength(1);
-    expect(items[0].textContent).toContain('second');
-    expect(items[0].textContent).not.toContain('first');
-    expect(host.textContent).toContain('queued · 1');
-    expect(host.querySelector('ul[aria-label="Queued messages, 1"]')).not.toBeNull();
-    expect(host.querySelector('[role="status"]')?.textContent).toBe('1 message queued');
-    expect((win.document.activeElement as unknown) === nextDelete).toBe(true);
-  });
-
-  test('deleting the last row focuses the previous delete; deleting the only row focuses the field', async () => {
-    await renderDock();
-    await setDraft('first');
-    await clickQueue();
-    await setDraft('second');
-    await clickQueue();
-
-    const previousDelete = deleteButtons()[0];
-    await clickDelete(1);
-    expect(host.querySelectorAll('li')).toHaveLength(1);
-    expect((win.document.activeElement as unknown) === previousDelete).toBe(true);
-
-    await clickDelete(0);
-    expect(host.querySelector('ul')).toBeNull();
-    expect(host.textContent).not.toContain('queued ·');
-    expect((win.document.activeElement as unknown) === field()).toBe(true);
-  });
-
-  test('a 409 refusal keeps the row and focus on its delete control and shows the alert', async () => {
-    nextWithdraw = async (): Promise<WithdrawWorkflowNodeResponse> => {
-      throw new SteeringSendError(409, 'node_finished', 'Workflow node is finished');
+  test('a pending withdraw guards every delete while Queue/send stays usable', async () => {
+    const pending = deferred<WithdrawWorkflowNodeResponse>();
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return pending.promise;
     };
     await renderDock();
-    await setDraft('keep me');
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
     await clickQueue();
 
-    const button = deleteButtons()[0];
     await act(async () => {
-      button.focus();
-    });
-    await act(async () => {
-      button.click();
+      deleteButtons()[0]?.click();
     });
     await flush();
+    expect(withdrawCalls).toHaveLength(1);
+    for (const button of deleteButtons()) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('disabled')).toBeNull();
+    }
+    await act(async () => {
+      deleteButtons()[1]?.click();
+    });
+    await flush();
+    expect(withdrawCalls).toHaveLength(1);
 
-    expect(host.querySelectorAll('li')).toHaveLength(1);
-    expect(button.getAttribute('aria-disabled')).toBeNull();
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
-    expect((win.document.activeElement as unknown) === button).toBe(true);
-    expect(win.document.activeElement).not.toBe(win.document.body);
-  });
-
-  test('a 422 refusal follows the detached disclosure and focuses its alert', async () => {
-    nextWithdraw = async (): Promise<WithdrawWorkflowNodeResponse> => {
-      throw new SteeringSendError(
-        422,
-        'not_steerable_here',
-        'No live steering session for this node in this process'
-      );
-    };
-    await renderDock();
-    await setDraft('first');
+    await setDraft('third');
     await clickQueue();
-    await clickDelete(0);
+    expect(calls).toHaveLength(3);
+    expect(host.textContent).toContain('queued · 3');
 
-    expect(host.textContent).toBe(DETACHED);
-    expect(host.querySelector('ul')).toBeNull();
-    const alert = host.querySelector('[role="alert"]');
-    expect(alert).not.toBeNull();
-    expect((win.document.activeElement as unknown) === alert).toBe(true);
+    await act(async () => {
+      pending.resolve({ success: true, message_id: calls[0].body.message_id });
+    });
+    await flush();
+    expect(host.textContent).toContain('queued · 2');
+    const items = [...host.querySelectorAll('li')].map(li => li.textContent ?? '');
+    expect(items[0]).toContain('second');
+    expect(items[1]).toContain('third');
   });
-
   test('blocked by a pending ask still withdraws and removes the parked item', async () => {
     await renderDock();
     await setDraft('parked one');
@@ -803,7 +1173,56 @@ describe('ComposerDock', () => {
     expect(host.querySelectorAll('li')).toHaveLength(0);
     expect(host.querySelector('ul')).toBeNull();
   });
+  test('clicking a row delete issues exactly one withdraw for run, node, and row id', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
 
+    await clickDelete(0);
+    expect(withdrawCalls).toEqual([
+      { runId: 'run-1', nodeId: 'grp.body', messageId: calls[0].body.message_id },
+    ]);
+  });
+  test('deleting the last row focuses the previous delete; deleting the only row focuses the field', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    const previousDelete = deleteButtons()[0];
+    await clickDelete(1);
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect((win.document.activeElement as unknown) === previousDelete).toBe(true);
+
+    await clickDelete(0);
+    expect(host.querySelector('ul')).toBeNull();
+    expect(host.textContent).not.toContain('queued ·');
+    expect((win.document.activeElement as unknown) === field()).toBe(true);
+  });
+  test('each queued row exposes a native delete control named for its message', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    const buttons = deleteButtons();
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button.textContent?.trim()).toBe('delete');
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.className).toContain('min-h-[24px]');
+      expect(button.className).toContain('min-w-[24px]');
+      expect(button.className).toContain('focus-visible:outline-accent-bright');
+      expect(button.className).toContain('focus-visible:-outline-offset-2');
+      expect(button.className).not.toContain('transition');
+    }
+    expect(buttons[0].getAttribute('aria-label')).toBe('delete · first');
+    expect(buttons[1].getAttribute('aria-label')).toBe('delete · second');
+  });
   test('empty, generating, and hidden states expose no delete control', async () => {
     await renderDock();
     expect(deleteButtons()).toHaveLength(0);
@@ -812,85 +1231,71 @@ describe('ComposerDock', () => {
     await renderDock({ live: false });
     expect(deleteButtons()).toHaveLength(0);
   });
-
-  // ---------------------------------------------------------------------------
-  // Story 2.9 (#189) — hydrate/reconcile the shared queue via serial poll.
-  // ---------------------------------------------------------------------------
-
-  function okQueue(rows: { message_id: string; message: string }[]): ReadWorkflowNodeQueueResponse {
-    return { success: true, queued: rows };
-  }
-
-  function controllableRead(): {
-    read: ReadNodeGuidanceQueue;
-    resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
-    rejectNext: (reason?: unknown) => void;
-    pendingCount: () => number;
-  } {
-    const pending: ReturnType<typeof deferred<ReadWorkflowNodeQueueResponse>>[] = [];
-    const read: ReadNodeGuidanceQueue = async (runId, nodeId, options) => {
-      readCalls.push({ runId, nodeId, signal: options?.signal });
-      const d = deferred<ReadWorkflowNodeQueueResponse>();
-      pending.push(d);
-      return d.promise;
-    };
-    return {
-      read,
-      resolveNext: (value): void => {
-        const d = pending.shift();
-        if (d === undefined) throw new Error('no pending read to resolve');
-        d.resolve(value);
-      },
-      rejectNext: (reason): void => {
-        const d = pending.shift();
-        if (d === undefined) throw new Error('no pending read to reject');
-        d.reject(reason);
-      },
-      pendingCount: (): number => pending.length,
-    };
-  }
-
-  async function waitForPending(ctrl: { pendingCount: () => number }, min = 1): Promise<void> {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (ctrl.pendingCount() >= min) return;
-      await act(async () => {
-        await new Promise(resolve => setTimeout(resolve, 2));
-      });
-      await flush();
-    }
-    throw new Error(
-      `pending read never reached ${String(min)} (have ${String(ctrl.pendingCount())})`
+  test('focused remote removal moves focus next then to textarea, never body', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+        { message_id: 'id-c', message: 'gamma' },
+      ])
     );
-  }
 
-  async function settleSnapshot(
-    ctrl: {
-      resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
-      pendingCount: () => number;
-    },
-    value: ReadWorkflowNodeQueueResponse
-  ): Promise<void> {
-    await waitForPending(ctrl);
+    const firstDelete = deleteButtons()[0];
     await act(async () => {
-      ctrl.resolveNext(value);
+      firstDelete.focus();
+    });
+    expect((win.document.activeElement as unknown) === firstDelete).toBe(true);
+
+    // Multi-row removal: drop focused id-a and sibling id-b; skip to id-c.
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-c', message: 'gamma' }]));
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-c');
+    expect((win.document.activeElement as unknown) === deleteButtons()[0]).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+
+    await act(async () => {
+      deleteButtons()[0].focus();
+    });
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('ul')).toBeNull();
+    expect((win.document.activeElement as unknown) === field()).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+  test('hidden and detached modes never read; detached preserves disclosure', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ live: false, readQueue: ctrl.read });
+    expect(readCalls).toHaveLength(0);
+    expect(host.querySelector('textarea')).toBeNull();
+
+    nextSend = async (): Promise<SendWorkflowNodeResponse> => {
+      throw new SteeringRequestError(
+        422,
+        'not_steerable_here',
+        'No live steering session for this node in this process'
+      );
+    };
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    const readsBeforeDetach = readCalls.length;
+    expect(readsBeforeDetach).toBeGreaterThanOrEqual(1);
+    await settleSnapshot(ctrl, okQueue([]));
+    await setDraft('kept for later');
+    await clickQueue();
+    await flush();
+    expect(host.textContent).toBe(DETACHED);
+    const afterDetach = readCalls.length;
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
     });
     await flush();
-  }
-
-  async function settleRejection(
-    ctrl: {
-      rejectNext: (reason?: unknown) => void;
-      pendingCount: () => number;
-    },
-    reason: unknown
-  ): Promise<void> {
-    await waitForPending(ctrl);
-    await act(async () => {
-      ctrl.rejectNext(reason);
-    });
-    await flush();
-  }
-
+    expect(readCalls.length).toBe(afterDetach);
+    expect(host.textContent).toBe(DETACHED);
+  });
   test('hydrates on mount with two rows in exact server order and data-message-id', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
@@ -935,7 +1340,24 @@ describe('ComposerDock', () => {
     expect(calls).toHaveLength(0);
     expect(withdrawCalls).toHaveLength(0);
   });
+  test('permanent 409 read stops further reads leaving UI unchanged', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
 
+    await settleRejection(ctrl, new SteeringRequestError(409, 'node_finished', 'done'));
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
+    const afterStop = readCalls.length;
+    expect(afterStop).toBeGreaterThanOrEqual(2);
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    await flush();
+    expect(readCalls.length).toBe(afterStop);
+    expect(ctrl.pendingCount()).toBe(0);
+  });
   test('remote convergence adds then removes rows without observer DELETE', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
@@ -961,95 +1383,6 @@ describe('ComposerDock', () => {
     expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
     expect(withdrawCalls).toHaveLength(0);
   });
-
-  test('stale read after local send keeps the local row', async () => {
-    const ctrl = controllableRead();
-    nextRead = ctrl.read;
-    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
-    await settleSnapshot(ctrl, okQueue([]));
-    await waitForPending(ctrl);
-
-    await setDraft('local only');
-    await clickQueue();
-    expect(host.querySelector('li')?.textContent).toContain('local only');
-    const localId = calls[0].body.message_id;
-
-    // Resolve the pre-send snapshot without the local row — generation guard
-    // must keep the local receipt.
-    await act(async () => {
-      ctrl.resolveNext(okQueue([]));
-    });
-    await flush();
-    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe(localId);
-    expect(host.textContent).toContain('queued · 1');
-  });
-
-  test('stale read after local withdraw does not resurrect the row', async () => {
-    const ctrl = controllableRead();
-    nextRead = ctrl.read;
-    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
-    await settleSnapshot(
-      ctrl,
-      okQueue([
-        { message_id: 'id-a', message: 'alpha' },
-        { message_id: 'id-b', message: 'beta' },
-      ])
-    );
-    await waitForPending(ctrl);
-
-    await clickDelete(0);
-    expect(withdrawCalls).toHaveLength(1);
-    expect(host.querySelectorAll('li')).toHaveLength(1);
-    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
-
-    await act(async () => {
-      ctrl.resolveNext(
-        okQueue([
-          { message_id: 'id-a', message: 'alpha' },
-          { message_id: 'id-b', message: 'beta' },
-        ])
-      );
-    });
-    await flush();
-    expect(host.querySelectorAll('li')).toHaveLength(1);
-    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
-  });
-
-  test('focused remote removal moves focus next then to textarea, never body', async () => {
-    const ctrl = controllableRead();
-    nextRead = ctrl.read;
-    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
-    await settleSnapshot(
-      ctrl,
-      okQueue([
-        { message_id: 'id-a', message: 'alpha' },
-        { message_id: 'id-b', message: 'beta' },
-        { message_id: 'id-c', message: 'gamma' },
-      ])
-    );
-
-    const firstDelete = deleteButtons()[0];
-    await act(async () => {
-      firstDelete.focus();
-    });
-    expect((win.document.activeElement as unknown) === firstDelete).toBe(true);
-
-    // Multi-row removal: drop focused id-a and sibling id-b; skip to id-c.
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-c', message: 'gamma' }]));
-    expect(host.querySelectorAll('li')).toHaveLength(1);
-    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-c');
-    expect((win.document.activeElement as unknown) === deleteButtons()[0]).toBe(true);
-    expect(win.document.activeElement).not.toBe(win.document.body);
-
-    await act(async () => {
-      deleteButtons()[0].focus();
-    });
-    await settleSnapshot(ctrl, okQueue([]));
-    expect(host.querySelector('ul')).toBeNull();
-    expect((win.document.activeElement as unknown) === field()).toBe(true);
-    expect(win.document.activeElement).not.toBe(win.document.body);
-  });
-
   test('remote snapshot leaves draft, pending retry, and sessionStorage byte-for-byte unchanged', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
@@ -1081,7 +1414,76 @@ describe('ComposerDock', () => {
     expect(field().value).toBe('unsent draft · keep me');
     expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBe(before);
   });
+  test('stale read after local send keeps the local row', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([]));
+    await waitForPending(ctrl);
 
+    await setDraft('local only');
+    await clickQueue();
+    expect(host.querySelector('li')?.textContent).toContain('local only');
+    const localId = calls[0].body.message_id;
+
+    // Resolve the pre-send snapshot without the local row — generation guard
+    // must keep the local receipt.
+    await act(async () => {
+      ctrl.resolveNext(okQueue([]));
+    });
+    await flush();
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe(localId);
+    expect(host.textContent).toContain('queued · 1');
+  });
+  test('stale read after local withdraw does not resurrect the row', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+    await waitForPending(ctrl);
+
+    await clickDelete(0);
+    expect(withdrawCalls).toHaveLength(1);
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
+
+    await act(async () => {
+      ctrl.resolveNext(
+        okQueue([
+          { message_id: 'id-a', message: 'alpha' },
+          { message_id: 'id-b', message: 'beta' },
+        ])
+      );
+    });
+    await flush();
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
+  });
+  test('success removes only the selected row, updates wording, and focuses the next delete', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    const nextDelete = deleteButtons()[1];
+    await clickDelete(0);
+
+    const items = [...host.querySelectorAll('li')];
+    expect(items).toHaveLength(1);
+    expect(items[0].textContent).toContain('second');
+    expect(items[0].textContent).not.toContain('first');
+    expect(host.textContent).toContain('queued · 1');
+    expect(host.querySelector('ul[aria-label="Queued messages, 1"]')).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('1 message queued');
+    expect((win.document.activeElement as unknown) === nextDelete).toBe(true);
+  });
   test('transient 422/0/500 read failures preserve queue+refusal and reschedule', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
@@ -1092,7 +1494,7 @@ describe('ComposerDock', () => {
     // Re-render so the dock picks up the failing send prop (props are not live
     // bindings to nextSend).
     const failingSend: SendNodeGuidance = async (): Promise<SendWorkflowNodeResponse> => {
-      throw new SteeringSendError(409, 'node_finished', 'Workflow node is finished');
+      throw new SteeringRequestError(409, 'node_finished', 'Workflow node is finished');
     };
     await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read, send: failingSend });
     await waitForPending(ctrl);
@@ -1103,9 +1505,9 @@ describe('ComposerDock', () => {
 
     const beforeReads = readCalls.length;
     for (const err of [
-      new SteeringSendError(422, 'not_steerable_here', 'window'),
-      new SteeringSendError(0, null, 'offline'),
-      new SteeringSendError(500, 'internal_error', 'boom'),
+      new SteeringRequestError(422, 'not_steerable_here', 'window'),
+      new SteeringRequestError(0, null, 'offline'),
+      new SteeringRequestError(500, 'internal_error', 'boom'),
     ]) {
       await settleRejection(ctrl, err);
       expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
@@ -1114,26 +1516,6 @@ describe('ComposerDock', () => {
     }
     expect(readCalls.length).toBeGreaterThan(beforeReads);
   });
-
-  test('permanent 409 read stops further reads leaving UI unchanged', async () => {
-    const ctrl = controllableRead();
-    nextRead = ctrl.read;
-    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
-
-    await settleRejection(ctrl, new SteeringSendError(409, 'node_finished', 'done'));
-    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
-    const afterStop = readCalls.length;
-    expect(afterStop).toBeGreaterThanOrEqual(2);
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 20));
-    });
-    await flush();
-    expect(readCalls.length).toBe(afterStop);
-    expect(ctrl.pendingCount()).toBe(0);
-  });
-
   test('unmount or scope change with pending read produces no late update', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
@@ -1182,37 +1564,5 @@ describe('ComposerDock', () => {
     await flush();
     expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
     expect(host.textContent ?? '').toContain('from scope b');
-  });
-
-  test('hidden and detached modes never read; detached preserves disclosure', async () => {
-    const ctrl = controllableRead();
-    nextRead = ctrl.read;
-    await renderDock({ live: false, readQueue: ctrl.read });
-    expect(readCalls).toHaveLength(0);
-    expect(host.querySelector('textarea')).toBeNull();
-
-    nextSend = async (): Promise<SendWorkflowNodeResponse> => {
-      throw new SteeringSendError(
-        422,
-        'not_steerable_here',
-        'No live steering session for this node in this process'
-      );
-    };
-    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
-    const readsBeforeDetach = readCalls.length;
-    expect(readsBeforeDetach).toBeGreaterThanOrEqual(1);
-    await settleSnapshot(ctrl, okQueue([]));
-    await setDraft('kept for later');
-    await clickQueue();
-    await flush();
-    expect(host.textContent).toBe(DETACHED);
-    const afterDetach = readCalls.length;
-
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 20));
-    });
-    await flush();
-    expect(readCalls.length).toBe(afterDetach);
-    expect(host.textContent).toBe(DETACHED);
   });
 });

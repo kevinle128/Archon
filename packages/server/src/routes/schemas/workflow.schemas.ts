@@ -172,6 +172,14 @@ export const workflowNodeStateSchema = z
     modelReasoningEffort: z.string().min(1).optional(),
     effort: effortLevelSchema.optional(),
     thinking: thinkingConfigSchema.optional(),
+    /**
+     * Live steering sub-state (#183), joined from the in-process registry
+     * AFTER terminal-settling persisted states — only on a still-running node
+     * whose handle is live, interrupt-capable, and projecting. Never persisted
+     * and never synthesized from transcript rows; `interrupting` is never
+     * projected (that badge is UI-local).
+     */
+    steeringSubState: z.enum(['generating', 'idle-after-interrupt']).optional(),
   })
   .openapi('WorkflowNodeState');
 
@@ -560,6 +568,23 @@ export const sendWorkflowNodeResponseSchema = z
   .openapi('SendWorkflowNodeResponse');
 
 export type SendWorkflowNodeResponse = z.infer<typeof sendWorkflowNodeResponseSchema>;
+
+/**
+ * Interrupt success receipt (#183). `sub_state` is the executor's ACTUAL
+ * classified outcome — `idle-after-interrupt` (the turn stopped and the node
+ * idles on the same provider session awaiting Send now) or `generating` (the
+ * turn already ended naturally or queued guidance drained it before Stop took
+ * effect). Never a timing-based guess.
+ */
+export const interruptWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    sub_state: z.enum(['idle-after-interrupt', 'generating']),
+  })
+  .strict()
+  .openapi('InterruptWorkflowNodeResponse');
+
+export type InterruptWorkflowNodeResponse = z.infer<typeof interruptWorkflowNodeResponseSchema>;
 
 /**
  * Shared steering-route error shape — consumers classify by `error.code`,
