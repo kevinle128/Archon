@@ -1,310 +1,248 @@
 ---
-title: 'Phase 1: Record the reachability decision and add the shared dock core'
-status: todo
+title: 'Phase 1: Ratify authority and build the shared execution and dock core'
+status: blocked
 priority: P1
-effort: '3h'
+effort: '4h after the decision gates clear'
 dependencies: []
+gate: 'B1 and B2 approved and recorded in plan.md'
 ---
 
-# Phase 1: Record the reachability decision and add the shared dock core
+# Phase 1: Ratify authority and build the shared execution and dock core
 
 ## Goal
 
-Record decision D1 in its canonical homes, then add the framework-free mode,
-copy, and resolver to `lib/steering-dock.ts` so both shells can render the
-finished-iteration dock from one contract.
+Resolve the two contradictions that determine the feature's behavior, align the
+canonical product/design records, then add the framework-free execution-lineage
+resolver and steering-dock primitives used by both UI shells.
 
-## Context links
+Do not write implementation code or implementation tests until both B1 and B2 are
+approved in [plan.md](./plan.md)'s Validation Log. A rejected or materially changed
+decision requires this plan to be revised first.
 
-- Plan index: [plan.md](./plan.md) — D1–D4.
-- Story 2.10: `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:704-728`.
-- Dock state spec: `_bmad-output/specs/spec-agent-node-room/control-states.md:50-58`.
-- AD-7 amendment (the blocker text this phase resolves):
-  `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md:133`.
-- Existing core: `packages/web/src/lib/steering-dock.ts:50-80` (`SteeringDockMode`,
-  `steeringDockMode`), `:283-322` (`QueueSnapshot`, `applyQueueSnapshot`),
-  `:380-445` (`startQueuePolling`).
-- Row shapes: `packages/web/src/components/workflows/build-log-rows.ts:14-40` and
-  the Console copy `packages/web/src/experiments/console/components/inspect/build-log-rows.ts:13-40`
-  (identical `LogRowSelection`; `occurrence.iteration` comes from the last
-  `loop_ancestry` entry).
-- Live-row preference precedent: `packages/web/src/lib/execution-room-model.ts:132-148`
-  (`chooseExecutionForNode`: awaiting → running → latest by `order`).
+## Verified context
 
-## Scout pass before execution (deep mode)
+- Story 2.10 lives in
+  `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`.
+- CAP-6 in `_bmad-output/specs/spec-agent-node-room/SPEC.md` and
+  `control-states.md` call the entry point a Story 1.7 iteration selector and say
+  the finished view makes no steering-route call.
+- AD-7 in the readable-transcript architecture spine and shipped code establish
+  that Story 1.7 `Jump to` is scroll-only and absent from modern occurrence rooms.
+  `EXPERIENCE.md` separately assigns occurrence filtering to the `Execution`
+  controls.
+- AD-13 is already occupied. The next free number was AD-16 when this plan was
+  reviewed; re-scan all `## AD-` headings immediately before adding a decision.
+- The final steering mockup has no finished-iteration state. `DESIGN.md` requires
+  the 460px authority width but does not decide how the long disclosure and button
+  fit there.
+- Server occurrences retain `retry_epoch`, full `loop_ancestry`, and
+  `route_activation_seq`. Both web `build-log-rows.ts` copies currently discard
+  all ancestry except the final iteration number.
+- Event-fallback rows cannot prove retry, route, or nested-loop identity and must
+  remain readable without gaining this dock state.
+- `startQueuePolling()` already serializes queue reads and applies the correct
+  retry/stop classification, but has no error callback for a read-only renderer.
 
-- Confirm how a `loop_group:` body node's rows reach the browser: the executor tags
-  body lifecycle rows with the iteration (`dag-executor.ts:1983` comment); verify in
-  `workflow-execution-history.ts` and `build-log-rows.ts:99-112` that they arrive as
-  `selection.kind === 'occurrence'` with `iteration`, and record the finding beside
-  the `loop_group` test fixture. <!-- Red team 2026-09-20: Finding 5 -->
+## Required decisions and documentation gate
 
-## Key insights (scouted)
+1. Record B1's approved entry point and request semantics:
+   - add a new readable-transcript AD using the next free number and back-reference
+     it from AD-7;
+   - name `Execution` selection (header select, Logs row, or graph occurrence) as
+     the occurrence-switching entry point, leaving Story 1.7 `Jump to` scroll-only;
+   - define “no steering request” as no send, withdraw, or interrupt **mutation**;
+     the existing authenticated node-scoped `GET .../queue` is allowed;
+   - describe the band as the node's shared pending queue across operators/tabs,
+     matching Story 2.9, rather than implying it contains only this viewer's rows;
+   - update the same rule in `epics.md`, `SPEC.md`, `control-states.md`, and
+     `EXPERIENCE.md` so no canonical source retains the contradicted wording.
+2. Record B2's approved 460px arrangement in `DESIGN.md` and `EXPERIENCE.md`.
+   Recommended: full visible disclosure may wrap, Go button remains fully visible
+   and at least 32px high, no horizontal overflow, queue band below. If elision is
+   chosen instead, document the exact visible string and complete accessible name.
+3. Record approval, date, approver, and final wording in `plan.md`'s Validation Log.
 
-- `steeringDockMode()` hides the dock whenever `rowStatus` is terminal
-  (`steering-dock.ts:76`). A finished iteration's `LogRow.status` is `completed`,
-  so today the whole dock disappears — the story's dock state is unreachable
-  until the mode function learns about the node-level live status.
-- The node-level live status is already available at both mount points:
-  Legacy passes `nodeState` (`LegacyGraphLogsPane.tsx:508-512` →
-  `NodeTranscriptPane` prop `nodeState`); Console has `nodeStates`
-  (`ConsoleNodeRoom.tsx:708-709`).
-- A running `loop:` node has an **outer** occurrence row with no `iteration` plus
-  one row per iteration (the #180 plan observed 7 occurrences for 6 iterations).
-  The resolver must prefer rows that carry `iteration`, or `Go to iteration N`
-  would target the outer lifecycle row.
-- The statuses come from `workflow-execution-history.ts:77-81`
-  (`loop_iteration_completed` → `completed`, `loop_iteration_started` → `running`),
-  so a finished iteration and the live iteration are distinguishable from
-  `LogRow.status` alone.
-- `startQueuePolling` treats `422`/network/5xx as retryable and `409` as terminal
-  (`steering-dock.ts:403-408`) and today swallows the error; the read-only mode
-  needs the small `onRefusal` hook (Doc records item 4) so a `422` is visible.
-- The Story 1.7 `Jump to` navigator (`NodeTranscriptPane.tsx:473-497`,
-  `ConsoleNodeRoom.tsx:960-984`) renders only on historical/fallback node-scoped rows
-  that carry several occurrences — never on a modern loop's occurrence rows (AD-7
-  B1). Where it renders it scrolls and focuses a heading and never changes `row`, so
-  that path keeps the live composer (regression case, not a loop case).
+These are product/design changes, not incidental implementation notes. Update the
+authorities together before code so tests can assert one unambiguous contract.
 
-## Requirements
+## Implementation contract
 
-- [ ] **GATE — owner ratification of D1.** Do not write the AD-7 amendment, the
-      `control-states.md` edit, or any Phase 2 code until the plan owner has answered
-      validation question 1 in `plan.md` with an explicit approval recorded under
-      `## Validation Log`. If D1 is rejected, this phase stops after the core tests
-      and the plan is revised; Phases 2–3 do not start.
-- [ ] D1 recorded as a **new AD** (AD-13, readable-transcript spine) naming the
-      Execution selection as the entry point and the navigator as scroll-only, with a
-      one-line back-reference appended to AD-7's B1 amendment. <!-- Red team 2026-09-20: Finding 7 -->
-- [ ] `control-states.md` "Viewing a finished iteration of a live loop node" gains one
-      sentence naming the entry point and the mutation-free client contract
-      (`GET …/queue` allowed).
-- [ ] `SteeringDockMode` includes `'finished-iteration'`; `steeringDockMode()` returns
-      it only under the D1 predicate and keeps every existing row of its visibility
-      table unchanged.
-- [ ] `resolveFinishedIterationView()` (pure) returns `{ liveRowId, liveIteration }`
-      or `null` from a structural row list, the selected row, the node live status,
-      and the run-live flag.
-- [ ] Copy constants exported: disclosure line and `Go to iteration N` label, exact
-      to `control-states.md:54`.
-- [ ] No server, API type, or schema change.
+### 1. Preserve execution lineage on both row projections
 
-## Architecture
+Add the shared structural type beside `ExecutionRowSelection` in
+`packages/web/src/lib/execution-room-model.ts`:
 
 ```ts
-// lib/steering-dock.ts (additions)
-export type SteeringDockMode =
-  | 'hidden' | 'blocked' | 'detached' | 'composer' | 'finished-iteration';
+export interface ExecutionLoopAncestryEntry {
+  readonly nodeId: string;
+  readonly iteration: number;
+}
+```
 
+Add `loopAncestry?: readonly ExecutionLoopAncestryEntry[]` to the `occurrence` arm
+of `ExecutionRowSelection` and both local `LogRowSelection` copies. Map every wire
+`loop_ancestry` entry from `{ node_id, iteration }` to `{ nodeId, iteration }` in:
+
+- `packages/web/src/components/workflows/build-log-rows.ts`
+- `packages/web/src/experiments/console/components/inspect/build-log-rows.ts`
+
+Keep the existing final `iteration` field and labels for compatibility. Do not
+change the server schema, OpenAPI output, old event fallback, or row ids.
+
+### 2. Resolve a finished iteration only from proven identity
+
+Add `resolveFinishedIterationView()` beside `chooseExecutionForNode()` in
+`execution-room-model.ts`; execution selection and lineage belong there, not in
+`steering-dock.ts`.
+
+```ts
 export interface FinishedIterationView {
-  /** LogRow id of the live iteration — the `Go to iteration N` target. */
   readonly liveRowId: string;
   readonly liveIteration: number;
 }
-
-/** Minimal structural row both shells' LogRow types satisfy without casts. */
-export interface IterationRowLike {
-  readonly id: string;
-  readonly nodeId: string;
-  readonly status: string;
-  readonly order: number;
-  readonly selection:
-    | { readonly kind: 'occurrence'; readonly iteration?: number; readonly retryEpoch?: number }
-    | { readonly kind: 'loop_iteration'; readonly iteration: number }
-    | { readonly kind: string };
-}
-
-export function resolveFinishedIterationView(input: {
-  rows: readonly IterationRowLike[];
-  selectedRow: IterationRowLike | null;
-  nodeStatus: string | undefined;   // WorkflowNodeStateResponse['status']
-  live: boolean;
-}): FinishedIterationView | null;
-
-export function steeringDockMode(input: {
-  rowStatus: string;
-  live: boolean;
-  hasPendingAsk: boolean;
-  refusal: SteeringRefusal | null;
-  finishedIteration?: FinishedIterationView | null;
-}): SteeringDockMode;
-
-export function finishedIterationDisclosure(liveIteration: number): string;
-// 'reading a finished iteration · the agent is working in iteration N'
-export function goToIterationLabel(liveIteration: number): string;
-// 'Go to iteration N'
 ```
 
-Predicate order inside `resolveFinishedIterationView`:
+The pure resolver receives all rows, selected row, current node status, and run
+liveness. It returns non-null only when:
 
-1. `live === false` → `null`.
-2. `selectedRow === null` or `iterationOf(selectedRow) === undefined` → `null`
-   (retry attempts, plain node rows, route iterations never qualify).
-3. `selectedRow.status` not in `completed | failed | skipped` → `null`.
-4. `nodeStatus` not in `running | awaiting` → `null`.
-5. Candidates = rows with the same `nodeId`, the **same `retryEpoch`** as the
-   selected row (both `undefined`, or equal — a retried loop node's new epoch is a
-   different execution and never a target; `build-log-rows.ts:104-110` populates the
-   field), an iteration number, and status `awaiting` or `running`; pick `awaiting`
-   first, else `running`, latest by `order`. This borrows only the
-   awaiting-then-running preference of `chooseExecutionForNode`
-   (`execution-room-model.ts:132-148`); it deliberately does **not** copy that
-   function's unconditional `latestByOrder` fallback — with no non-terminal candidate
-   the resolver returns `null` (iteration boundary, D4), never a terminal row.
-   Provisional pending validation question 4. <!-- Red team 2026-09-20: Findings 13, 15, 16 -->
-6. Candidate id equals the selected row id → `null` (defensive; step 3 already
-   excludes it).
+1. the run is live and the projected node status is `running` or `awaiting`;
+2. the selected row is a server `occurrence`, has non-empty full ancestry, is
+   known-scope and `completed`, and its displayed iteration equals its final
+   ancestry iteration;
+3. a known-scope candidate for the same `nodeId` is `running` or `awaiting`, has
+   non-empty full ancestry whose final iteration agrees with its displayed
+   iteration, and has an iteration greater than the selected iteration;
+4. selected and candidate have the same normalized retry epoch (`retryEpoch ?? 0`),
+   exactly the same optional route activation (including both being absent), the
+   same final ancestry `nodeId`, and the same ancestry prefix before the final
+   entry (both `nodeId` and `iteration` for every prefix entry).
 
-Mode precedence inside `steeringDockMode`:
+Prefer `awaiting`, then `running`, then greatest `order` inside the chosen status,
+matching the existing live-row preference. Never fall back to a terminal row.
+This permits top-level `loop:` rows and a repeated body node inside `loop_group:`
+without crossing an outer-loop invocation, retry, or route activation.
+
+Fail closed for `node`, `loop_iteration`, `route_iteration`, selected or candidate
+unknown-scope, empty ancestry, malformed ancestry/final-iteration disagreement,
+same/earlier iteration, terminal node/run, and old event-fallback rows.
+
+### 3. Add the shared dock mode and exact copy
+
+In `packages/web/src/lib/steering-dock.ts`:
+
+- add `finished-iteration` to `SteeringDockMode`;
+- export exact disclosure and Go-label helpers from the ratified copy;
+- accept `finishedIteration?: FinishedIterationView | null` in
+  `steeringDockMode()` with this precedence:
 
 ```ts
 if (!input.live) return 'hidden';
-if (input.finishedIteration) return 'finished-iteration';   // before the rowStatus check
+if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
+  return 'finished-iteration';
+}
 if (input.rowStatus !== 'running' && input.rowStatus !== 'awaiting') return 'hidden';
-… existing blocked / detached / composer …
+// Existing blocked -> detached -> composer behavior is unchanged.
 ```
 
-A stored send/withdraw `refusal` never changes the finished-iteration **mode** (no
-mutation is issued from it). A **read** refusal (`onRefusal`, Doc records item 4) is
-stored separately and only adds the `not steerable here` line under the disclosure;
-it does not switch the mode to `detached`.
+The resolver, not the mode function, proves whether the descriptor is valid.
 
-## Related code files
+### 4. Surface only actionable polling failures
 
-- Modify: `packages/web/src/lib/steering-dock.ts`
-- Modify: `packages/web/src/lib/steering-dock.test.ts`
-- Modify: `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md` (new AD-13 + one-line back-reference on AD-7)
-- Modify: `_bmad-output/specs/spec-agent-node-room/control-states.md` (lines 50-58)
+Extend `QueuePollingOptions` with an optional callback receiving the normalized
+`SteeringSendError`. Call it once per failed read before the existing retry/stop
+decision; callers that omit it behave exactly as today.
 
-## Tests before (TDD — write first, watch them fail)
+- 422 `not_steerable_here`: the finished renderer may show the existing detached
+  disclosure and must clear its displayed read-only snapshot; polling continues.
+- the next 200 clears the read error and replaces the snapshot.
+- network/transport and 5xx: keep retrying silently in the UI; the last successful
+  snapshot may remain visible.
+- 409: notify then stop as today, clear the read-only snapshot, never call it
+  detached; the normal run refresh removes the dock when terminal state arrives.
+- other non-retryable 4xx: notify and stop; do not invent new user copy in this
+  story.
 
-Add to `packages/web/src/lib/steering-dock.test.ts`, after the
-`describe('steeringDockMode visibility table', …)` block:
+Do not alter send/withdraw refusal state, draft persistence, queue generation, or
+the polling cadence.
 
-```ts
-describe('resolveFinishedIterationView', () => {
-  const outer = { id: 'exec:loop:outer', nodeId: 'loop', status: 'running', order: 0, selection: { kind: 'occurrence' } };
-  const it1   = { id: 'exec:loop:1', nodeId: 'loop', status: 'completed', order: 1, selection: { kind: 'occurrence', iteration: 1 } };
-  const it2   = { id: 'exec:loop:2', nodeId: 'loop', status: 'running',   order: 2, selection: { kind: 'occurrence', iteration: 2 } };
+## Test-first matrix
 
-  test('finished iteration of a running loop node resolves to the live iteration row', …); // → { liveRowId: 'exec:loop:2', liveIteration: 2 }
-  test('the live iteration itself resolves to null', …);
-  test('non-live run resolves to null', …);
-  test('retry attempt rows (no iteration) resolve to null', …);            // selection { kind:'occurrence', retryEpoch: 0 }
-  test('plain node row (historical node-scoped path) resolves to null', …);  // selection { kind:'node' }
-  test('second run / retry attempt of the same node resolves to null (AC 5)', …); // selection { kind:'occurrence', retryEpoch: 1 }, no iteration
-  test('awaiting live iteration is preferred over a running one', …);
-  test('outer occurrence row (no iteration) is never the target', …);      // only `outer` non-terminal → null
-  test('event-fallback loop_iteration rows qualify the same way', …);
-  test('terminal node status resolves to null even with a finished iteration selected', …);
-  test('candidates are scoped to the selected nodeId', …);                 // other node's running iteration ignored
-  test('candidates are scoped to the selected retryEpoch', …);             // epoch 0 ×2 completed selected; epoch 1 ×1 running → null
-  test('only terminal or pending rows for the node resolve to null, never the latest row', …); // guards against porting chooseExecutionForNode's fallback
-  test('loop_group body rows tagged with an iteration qualify like loop rows', …); // fixture from a loop_group body node; scout confirms the row shape first
-});
+Write focused failing tests before each implementation slice.
 
-describe('startQueuePolling onRefusal', () => {
-  test('a 422 read invokes onRefusal with code not_steerable_here and keeps polling', …);
-  test('a 409 read invokes onRefusal and stops', …);
-  test('a network failure invokes onRefusal with code null and keeps polling', …);
-});
+### Both build-log-row suites
 
-describe('steeringDockMode finished-iteration precedence', () => {
-  test('finishedIteration on a completed row yields finished-iteration, not hidden', …);
-  test('finishedIteration on a non-live run still hides', …);
-  test('a stored detached refusal does not override finished-iteration', …);
-  test('existing table rows are unchanged when finishedIteration is null or omitted', …);
-});
+- full one-entry and nested `loop_ancestry` map to camel case without losing order;
+- existing final iteration, route, retry, id, status, and label stay unchanged;
+- event-fallback rows do not fabricate ancestry.
 
-describe('finished-iteration copy', () => {
-  test('disclosure and control copy match control-states.md verbatim', () => {
-    expect(finishedIterationDisclosure(3)).toBe('reading a finished iteration · the agent is working in iteration 3');
-    expect(goToIterationLabel(3)).toBe('Go to iteration 3');
-  });
-});
-```
+### `execution-room-model.test.ts`
 
-Run: `cd packages/web && bun test src/lib/steering-dock.test.ts` — expect the new
-cases to fail on missing exports.
+- completed ×1 + live ×2 in the same top-level lineage resolves ×2;
+- a `loop_group` body row with the same parent ancestry resolves its later row;
+- selected live row, non-live run, terminal node, no later live candidate, and
+  only-terminal candidates return null;
+- `node`, event-fallback `loop_iteration`, route-only, outer occurrence, retry-only,
+  selected/candidate unknown scope, empty ancestry, malformed selected/candidate
+  final iteration, and earlier candidate return null;
+- different retry epoch, route activation, final loop node, or nested ancestry
+  prefix returns null;
+- `undefined` and retry epoch 0 compare as the same initial retry; route activation
+  absence does not compare equal to a numeric value;
+- awaiting is preferred to running, then latest `order`; no terminal fallback.
 
-## Refactor (protected changes)
+### `steering-dock.test.ts`
 
-1. Extend `SteeringDockMode` and `steeringDockMode()` exactly as in Architecture;
-   update the docblock's precedence sentence with the new first clause.
-2. Add `FinishedIterationView`, `IterationRowLike`, `resolveFinishedIterationView`,
-   `finishedIterationDisclosure`, `goToIterationLabel`. Keep them beside the
-   visibility helpers (`:50-96`) so the mode contract reads top-down.
-3. Add the optional `onRefusal` hook to `startQueuePolling` (Doc records item 4);
-   do not otherwise touch `applyQueueSnapshot`, draft persistence, or the refusal
-   helpers.
+- a valid descriptor on a completed row selects `finished-iteration` before the
+  terminal-row hide check;
+- non-live still hides and all existing visibility-table rows are unchanged when
+  the descriptor is absent;
+- copy is verbatim to the updated authority;
+- 422, 409, network, 5xx, success-after-422, cleanup, and non-overlap retain the
+  documented callback/retry semantics.
 
-## Tests after (new behaviour)
+## Files
 
-- All new cases green; the pre-existing visibility-table cases untouched and green.
-- `bun test src/lib/steering-dock.test.ts` shows no skipped tests.
+- `packages/web/src/lib/execution-room-model.ts`
+- `packages/web/src/lib/execution-room-model.test.ts`
+- both `build-log-rows.ts` files and their existing tests
+- `packages/web/src/lib/steering-dock.ts`
+- `packages/web/src/lib/steering-dock.test.ts`
+- the six canonical documents named in the gate above
 
-## Doc records (part of this phase, before Phase 2 starts)
+No server route, generated API declaration, workflow schema, database, migration,
+provider, or executor file changes belong to this phase.
 
-1. Add a new AD after the last one in the readable-transcript spine — "AD-13 —
-   Finished-iteration reachability for steering (2026-09-2x, issue #190 decision D1)"
-   — with Binds (Story 2.10 / CAP-8), Prevents (a second entry-point invented per
-   shell), and Rule: "Story 2.10's finished iteration is reached through the Execution
-   selection (header select, Logs list, graph occurrence rows) switching the room to a
-   terminal iteration-scoped row while the node's live projection is
-   `running`/`awaiting`; this reinterprets the AC's 'selected through Story 1.7' —
-   the navigator is scroll-only, never renders for modern loop occurrence rows (AD-7
-   B1), and is not an entry point. The steering dock's mode function, not the
-   transcript, owns the resulting read-only state." Append to AD-7's B1 amendment:
-   "Resolved by AD-13 (2026-09-2x)." <!-- Red team 2026-09-20: Finding 7 -->
-2. In `control-states.md:50-58` add, after the first bullet: "Entry point: the
-   Execution selection (the `Jump to` navigator scrolls within a node-scoped transcript
-   and never switches iteration). The client issues no send/withdraw/interrupt request
-   here; the band's `GET …/queue` read is the one request it makes."
-3. In the same section correct the pre-Story-2.9 phrase "the operator's still-pending
-   messages" to "every operator's still-pending messages for this node (the shared
-   registry queue of Story 2.9)" — the band exposes the cross-operator, cross-tab
-   queue, and the spec must say so. <!-- Red team 2026-09-20: Finding 2 -->
-4. Read-failure signal: extend `QueuePollingOptions` with an optional
-   `onRefusal?: (refusal: SteeringRefusal) => void` invoked from `settle()` before the
-   retry decision; the finished-iteration dock stores a `422 not_steerable_here`
-   refusal from a **read** and renders `STEERING_DETACHED_DISCLOSURE` under the
-   disclosure line instead of an indistinguishable empty band. Composer/blocked
-   modes ignore `onRefusal` (their detached transition stays send-triggered).
-   <!-- Red team 2026-09-20: Finding 4 -->
+## Validation
 
-## Todo
-
-- [ ] Write the failing tests listed above.
-- [ ] Implement the core additions.
-- [ ] GATE: D1 approval recorded under `## Validation Log` in `plan.md` (stop here if absent).
-- [ ] Record D1 as AD-13 in the spine and update `control-states.md`.
-- [ ] `cd packages/web && bun test src/lib/` green; `bun run lint` and
-      `bun run type-check` green for `@archon/web`.
-
-## Success criteria
-
-- `steeringDockMode` and `resolveFinishedIterationView` cover every row of the plan's
-  test matrix tagged Phase 1.
-- D1 text is present in both canonical documents and cites Story 2.10 / issue #190.
-
-## Regression gate
+Run the narrowest suites first, from `packages/web`:
 
 ```bash
-cd packages/web && bun test src/lib/steering-dock.test.ts
-bun run type-check && bun run lint
+bun test src/lib/execution-room-model.test.ts
+bun test src/lib/steering-dock.test.ts
+bun test src/components/workflows/build-log-rows.test.ts
+bun test src/experiments/console/components/inspect/build-log-rows.test.ts
 ```
 
-## Risk assessment
+Then run the web package's configured type-check, lint, and test scripts from the
+repository root. Use the actual `package.json` scripts rather than inventing a
+filter command. Verify all changed document claims and links against source.
 
-- Structural `IterationRowLike` too loose → a Console `LogRow` with `kind:'loop_iteration'`
-  satisfies it by shape; the union keeps `iteration` typed on both qualifying kinds.
-- Preferring `awaiting` over `running` could target an iteration blocked on an Ask;
-  that is the live iteration by definition and matches `chooseExecutionForNode`.
+## Exit criteria
 
-## Security considerations
+- B1/B2 are ratified in every owning authority with no residual contradiction.
+- Both row projections retain full lineage.
+- The resolver fails closed unless same-lineage liveness is proven.
+- The new mode and poll callback preserve every existing steering behavior.
+- Focused tests, web type-check, lint, and package tests pass.
 
-None new: read-only client logic; no credentials or request bodies.
+## Risks and rollback
 
-## Next steps
+- The main safety risk is steering context confusion; exact lineage comparison and
+  failure-closed fallbacks are the mitigation.
+- The callback is optional, so rollback can remove the new resolver/mode/mapping
+  without changing the queue endpoint or persisted state.
 
-Phase 2 threads the resolver output through both shells and renders the mode.
+## Next phase
+
+Phase 2 threads the verified descriptor through Legacy and Console and implements
+the approved visual/focus behavior.

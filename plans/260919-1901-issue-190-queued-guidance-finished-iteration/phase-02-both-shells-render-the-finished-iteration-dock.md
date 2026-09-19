@@ -1,263 +1,216 @@
 ---
-title: 'Phase 2: Both shells render the finished-iteration dock'
-status: todo
+title: 'Phase 2: Render and wire the finished-iteration dock in both shells'
+status: pending
 priority: P1
 effort: '5h'
 dependencies: [1]
-gate: 'D1 approval recorded in plan.md Validation Log'
+gate: 'Phase 1 complete with B1/B2 reflected in canonical authority'
 ---
 
-# Phase 2: Both shells render the finished-iteration dock
+# Phase 2: Render and wire the finished-iteration dock in both shells
 
 ## Goal
 
-Thread the Phase 1 resolver output from the parents that own the row list into
-both composer docks and render the collapsed disclosure, the `Go to iteration N`
-control, and the read-only queue band, on Legacy and Console, with no steering
-mutation reachable from that state.
+Use the shared descriptor to render the same safe, read-only state in Legacy and
+Console, switch back through the existing execution-selection path, and preserve
+queue order, the tab-local draft, focus, and all pre-existing dock states.
 
-## Context links
+## Verified component paths
 
-- [plan.md](./plan.md) D2–D4; [Phase 1](./phase-01-start.md) exports.
-- Legacy chain: `LegacyGraphLogsPane.tsx:246-263` (`rows`, `selectedRow`,
-  `visibleNodeStates`) → `:493-527` (`LegacyNodeRoom` props incl. `nodeState`,
-  `onSelectRow={onSelectExecution}`) → `LegacyNodeRoom.tsx:176-195`
-  (`NodeTranscriptPane` mount) → `NodeTranscriptPane.tsx:524-534` (`ComposerDock`
-  mount keyed `steering:${resolvedScopeKey}`).
-- Console chain: `ConsoleInspectPane.tsx:218-240` (`logEntries`, `selectedRow`,
-  `headerOptions`) → `:318-345` (`ConsoleNodeRoom` mount, `nodeStates`,
-  `onSelectRow` → `onSelectNode(selectedNodeId, rowId)`) → `ConsoleNodeRoom.tsx:1022-1031`
-  (`ConsoleComposerDock` mount, gated by `agentActive`).
-- Dock renderers: `ComposerDock.tsx:148-156` (mode + `pollingEnabled`), `:246-262`
-  (detached branch — the one-line disclosure pattern to mirror), `:272-321`
-  (queue band markup to reuse minus the delete button);
-  `ConsoleComposerDock.tsx:151-189` and its matching band.
-- Focus rule: `EXPERIENCE.md:241` — focus never lands on `<body>`; `control-states.md`
-  — `aria-disabled`, never `disabled`.
+```text
+LegacyGraphLogsPane (rows + selected row + node states)
+  -> LegacyNodeRoom -> NodeTranscriptPane -> ComposerDock
 
-## Scout pass before execution (deep mode)
-
-Re-read the six files above on the refreshed branch and confirm:
-
-1. `ConsoleInspectPane` still owns `logEntries` (rows are `entry.row`) — the resolver
-   input is `logEntries.map(e => e.row)`.
-2. `LegacyNodeRoom` still forwards `nodeState`; the new prop rides next to it.
-3. No third `ComposerDock` mount exists (`grep -rn "<ComposerDock\|<ConsoleComposerDock" packages/web/src`).
-4. `WorkflowExecution.tsx:1041` passes `headerOptions` to `LegacyGraphLogsPane`; it
-   does not need the resolver because `LegacyGraphLogsPane` already has `rows`.
-
-## Requirements
-
-- [ ] Both parents compute `finishedIteration` with `resolveFinishedIterationView`
-      and pass it plus a `goToIteration(rowId)` callback down to the dock.
-- [ ] In `'finished-iteration'` mode each dock renders, in DOM order: a `<p>` with
-      `finishedIterationDisclosure(N)` (programmatically focusable, `tabIndex={-1}`),
-      a `<button type="button">` labelled `goToIterationLabel(N)`, then the read-only
-      band (`<section aria-labelledby>` + `<h3>` `queueBandHeader(n)` + `<ul aria-label>`
-      `queueListLabel(n)` + `<li>` message text + `sent`) rendered only when `n > 0`.
-- [ ] No `<textarea>`, no `Queue` button, no `delete` button, no send hint in that mode.
-- [ ] `pollingEnabled` includes `'finished-iteration'`; the dock issues only
-      `readQueue` calls — `send`/`withdraw` are unreachable (no handler bound).
-- [ ] A `422 not_steerable_here` from `readQueue` in this mode renders
-      `STEERING_DETACHED_DISCLOSURE` under the disclosure line (via the Phase 1
-      `onRefusal` hook) so "no live handle" is distinguishable from "empty queue".
-      <!-- Red team 2026-09-20: Finding 4 -->
-- [ ] `Go to iteration N` calls `goToIteration(liveRowId)`; after the remount the
-      composer field receives focus (never `<body>`).
-- [ ] Retry-attempt rows, non-live runs, and node-scoped rows render exactly as today.
-- [ ] Copy and classes follow the existing dock: `font-mono text-[10.5px]` disclosure
-      line, `min-h-[32px]` button with the existing focus-visible outline, band inside
-      `max-h-[33vh] overflow-y-auto`.
-
-## Architecture
-
-Prop additions (both docks, both shells):
-
-```ts
-export interface ComposerDockProps {
-  …existing…
-  /** Phase 1 resolver output; null on every non-finished-iteration room. */
-  finishedIteration?: FinishedIterationView | null;
-  /** Switches the room to the live iteration row; owned by the parent. */
-  onGoToIteration?: (rowId: string) => void;
-  /** Focus the field on mount — set by the parent right after Go to iteration. */
-  autoFocusField?: boolean;
-}
+ConsoleInspectPane (logEntries + selected row + node states)
+  -> ConsoleNodeRoom -> ConsoleComposerDock
 ```
 
-`NodeTranscriptPane` gains `finishedIteration` and `onGoToIteration` (pass-through)
-plus `focusComposerOnMount` derived from a ref the parent flips when the switch
-originated from the dock. `LegacyNodeRoom` forwards them. `ConsoleNodeRoom` receives
-`finishedIteration` and `onGoToIteration` beside `selectedRow`.
+- `LegacyGraphLogsPane` and `ConsoleInspectPane` are the first points with the full
+  row list and current selection; compute the descriptor there once.
+- `LegacyNodeRoom` is a typed pass-through. `NodeTranscriptPane` survives same-node
+  execution changes while its keyed `ComposerDock` remounts.
+- `ConsoleNodeRoom` already owns transcript scroll/focus and survives same-node row
+  changes while its keyed `ConsoleComposerDock` remounts.
+- There is one dock mount per shell and no third mount.
+- The draft storage key is `(runId, nodeId)`, so switching iteration does not need a
+  new persistence mechanism.
 
-Render branch (inserted before `if (mode === 'detached')`):
+## Implementation sequence
 
-```tsx
-if (mode === 'finished-iteration' && finishedIteration && onGoToIteration) {
-  return (
-    <>
-      <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
-        <div className="flex items-center gap-3">
-          <p ref={disclosureRef} tabIndex={-1} className="min-w-0 flex-1 font-mono text-[10.5px] leading-[1.45] text-text-secondary">
-            {finishedIterationDisclosure(finishedIteration.liveIteration)}
-          </p>
-          <button type="button" onClick={() => onGoToIteration(finishedIteration.liveRowId)} className={…existing button classes…}>
-            {goToIterationLabel(finishedIteration.liveIteration)}
-          </button>
-        </div>
-      </div>
-      {dock.sent.length === 0 ? null : <ReadOnlyQueueBand … />}   // provisional: validation question 2
-    </>
-  );
-}
-```
+### 1. Compute and thread the descriptor
 
-Extract the `<li>` body of the existing band into a small local render so the
-read-only variant is the same markup minus the `<button>` — no new file unless
-both docks would otherwise duplicate more than ~40 lines (Rule of Three does not
-yet apply; Legacy and Console already mirror each other deliberately).
+- In `LegacyGraphLogsPane`, call `resolveFinishedIterationView()` with `rows`,
+  `selectedRow`, the selected node's visible state, and run liveness. Pass the
+  descriptor through `LegacyNodeRoom` to `NodeTranscriptPane`.
+- In `ConsoleInspectPane`, call it with `logEntries.map(entry => entry.row)`,
+  `selectedRow`, the selected node state, and `isInspectRunLive(run.status)`. Pass it
+  to `ConsoleNodeRoom`.
+- Reuse or export the existing run-liveness helper instead of creating subtly
+  different status lists.
+- Keep the existing `onSelectExecution` / `onSelectNode(nodeId, rowId)` paths as the
+  only state transition. Do not add iteration-specific selection state.
+- When a host has no usable row-selection callback, pass no descriptor and render
+  no finished dock; never expose an enabled Go control with no action.
 
-Focus handoff (consume-once): the parent sets `focusAfterGoTo.current = true` when
-`onGoToIteration` fires. `NodeTranscriptPane` reads it in a `useEffect` keyed on
-`resolvedScopeKey`: if `true`, it clears the ref **before** focusing, then focuses the
-dock's field (via a `focusField()` imperative handle or `autoFocusField` prop on the
-freshly keyed dock) — falling back to the transcript scroller (`scrollRef`,
-`NodeTranscriptPane.tsx:256-258`) when no field mounted. Because the ref is cleared
-in the same effect that consumes it, a later unrelated remount of the same scope
-(live refetch, filter change) reads `false` and never steals focus — mirroring the
-clear-on-settle discipline of `pendingFocusRef` in `ComposerDock.tsx:187-201`.
-<!-- Red team 2026-09-20: Finding 10 -->
+Add only the props required for `{ liveRowId, liveIteration }` and the existing row
+selection callback. Do not pass the entire row list into a dock.
 
-Stale target: `finishedIteration` is recomputed on every run-data refetch (1 s while
-running). If the live iteration advances between render and click, the click lands on
-a now-finished row; the resolver then yields the new live N and the dock re-renders as
-finished-iteration for it. No composer flashes in between, because the row's terminal
-status is known at the same render. This is accepted and tested rather than guarded.
-<!-- Red team 2026-09-20: Finding 11 -->
+### 2. Render a mutation-free branch in each dock
 
-## Related code files
+When the mode is `finished-iteration`, render in this DOM/reading order:
 
-- Modify: `packages/web/src/components/workflows/ComposerDock.tsx`
-- Modify: `packages/web/src/components/workflows/ComposerDock.test.tsx`
-- Modify: `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`
-- Modify: `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx`
-- Modify: `packages/web/src/components/workflows/NodeTranscriptPane.tsx` (+ `.test.tsx`)
-- Modify: `packages/web/src/components/workflows/LegacyNodeRoom.tsx` (+ `.test.tsx`)
-- Modify: `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` (+ `.test.tsx`)
-- Modify: `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` (+ `.test.tsx`)
-- Modify: `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` (+ `.test.tsx`)
+1. the exact disclosure;
+2. the native `Go to iteration N` button;
+3. a 422 detached alert, when present;
+4. the existing full-width queue band only when its count is greater than zero.
 
-## Tests before (TDD)
+The band reuses `queueBandHeader()`, `queueListLabel()`, server order, message text,
+and the `sent` state label. It has the same `max-h-[33vh] overflow-y-auto` behavior
+as the live band but no delete control.
 
-`ComposerDock.test.tsx` and `ConsoleComposerDock.test.tsx` (use the existing
-`renderDock` helper with `readQueue` + `pollIntervalMs` overrides; add
-`finishedIteration` / `onGoToIteration` to its overrides):
+The branch must contain no textarea, send hint, Queue/Send button, delete button,
+or bound send/withdraw/interrupt handler. Include `finished-iteration` in polling
+enablement so only `readQueue` runs. A successful snapshot clears a prior read
+error. Apply the Phase 1 failure rules without replacing send/withdraw refusal
+state.
 
-- `renders the collapsed disclosure and Go to iteration N for a finished iteration`
-  — exact copy for N = 3; no textarea, no `Queue`, no `delete` in the DOM.
-- `mirrors the polled queue read-only in server order` — `readQueue` resolves two
-  rows; `<ul aria-label="Queued messages, 2">` lists them in order with `sent`; no
-  `<button>` inside the list.
-- `issues no send, withdraw, or interrupt request` — spies on `send`/`withdraw`
-  stay uncalled after clicking everywhere in the dock and pressing Cmd+Enter;
-  `readQueue` was called at least once.
-- `empty queue renders no band` — only the disclosure line + button.
-- `Go to iteration N invokes the parent with the live row id`.
-- `a 422 from readQueue adds the not-steerable disclosure under the finished-iteration line and keeps polling`; a later `200` clears it.
-- `a stored draft for this node is not shown in finished-iteration mode and is
-  preserved for the composer` — seed sessionStorage, render finished mode, then
-  re-render as `composer`: textarea holds the draft.
+Keep Legacy and Console as separate thin renderers with their surface-specific
+focus classes. A small local render helper is acceptable inside each component;
+do not introduce a cross-surface UI abstraction for two deliberately parallel
+components.
 
-`NodeTranscriptPane.test.tsx` (after `mounts the composer dock after the transcript
-scroller for a live running row`):
+### 3. Hand off focus once across the keyed dock remount
 
-- `a later unrelated remount of the same scope does not refocus the field` — after
-  the handoff above, re-render with a changed `scopeKey`-neutral prop; the active
-  element is unchanged.
-- `Go to iteration N whose target completed before the click re-renders as finished-iteration for the new live N` — rows advance between render and click; no textarea appears in between.
-- `passes finishedIteration through and focuses the field after Go to iteration` —
-  first render with a completed iteration row + `finishedIteration`, click the button,
-  assert the callback, re-render with the live row + `autoFocusField`, assert
-  `document.activeElement` is the textarea.
+The room component that survives the row change owns a consume-once ref:
 
-`LegacyGraphLogsPane.test.tsx` and `ConsoleInspectPane.test.tsx`:
+- Legacy: `NodeTranscriptPane`;
+- Console: `ConsoleNodeRoom`.
 
-- `computes finishedIteration from rows, selected row, and node live status` —
-  rows `[outer running, ×1 completed, ×2 running]`, node `running`, select `×1`:
-  the dock receives `{ liveRowId: <×2 id>, liveIteration: 2 }`; selecting `×2`
-  yields `null`; a retry-attempt fixture yields `null`.
-- `Go to iteration switches the Execution selection to the live row` — after the
-  click the header `<select aria-label="Execution">` value is the live row id and the
-  composer textarea is present.
+On Go activation, store the intended `liveRowId`, then invoke the existing selection
+callback. After the selected row commits, clear the pending target **before** moving
+focus:
 
-`ConsoleNodeRoom.test.tsx` (after the Story 2.9 case at `:1538`):
+- if the target is now the live composer or blocked composer, focus its textarea;
+- if the loop advanced and that target is now another finished iteration, focus the
+  newly rendered Go button;
+- if the run/node became terminal and the dock disappeared, focus the transcript
+  scroller.
 
-- `renders the finished-iteration dock when the selected row is a completed
-  iteration of a running node` — read-only band, no `Queue`.
+Expose the minimum dock ref/auto-focus prop needed to reach its textarea or Go
+button. Never use document-wide querying, never focus `<body>`, and never leave the
+pending target set after it is consumed. An unrelated refresh/remount must not
+steal focus.
 
-Run each file to see the new cases fail before implementing.
+### 4. Apply the approved visual contract
 
-## Refactor (protected changes)
+Until B2 is approved, do not guess the markup. Under the recommended wrapping
+decision, acceptance is:
 
-1. Docks: add props, extend `pollingEnabled`, add the render branch, keep every other
-   branch byte-identical. Add the `autoFocusField` mount effect.
-2. `NodeTranscriptPane` / `LegacyNodeRoom` / `ConsoleNodeRoom`: pass-through props only.
-3. `LegacyGraphLogsPane`: compute
-   `resolveFinishedIterationView({ rows, selectedRow, nodeStatus: visibleNodeStates.find(...)?.status, live: isLiveRunStatus(runStatus) })`
-   beside `ownsUnscopedInteractions`; pass `onGoToIteration={rowId => { focusAfterGoTo.current = true; onSelectExecution?.(rowId); }}`.
-4. `ConsoleInspectPane`: same with `logEntries.map(e => e.row)`, `nodeStates`, and
-   `isInspectRunLive(run.status)`; `onGoToIteration` calls `onSelectNode(selectedNodeId, rowId)`.
-5. `isLiveRunStatus` is a private helper in `NodeTranscriptPane.tsx:60`; either export
-   it or compute `live` where `runStatus` is already known in `LegacyGraphLogsPane`
-   (prefer exporting the existing helper over a second copy).
+- the dock remains one structural flex/control row; complete disclosure remains
+  visibly readable and may wrap inside its flexible cell at 460px;
+- Go button is fully visible, does not shrink below its content, has at least a
+  32px height, and carries the existing surface-specific focus ring;
+- no horizontal scrollbar or clipped text at 460×900 or 1440×900;
+- the queue band spans the room below the control row, caps at 33vh, and scrolls
+  internally without covering a focused transcript row;
+- at wider desktop width the state remains compact and aligned to the existing
+  dock tokens;
+- zoom/reflow and long queued text do not create horizontal overflow.
 
-## Tests after
+If B2 selects elision, replace only the text-specific criteria with its recorded
+visible/accessibility rule; all sizing, order, overflow, and band criteria remain.
 
-- All new renderer cases green on both shells; the Story 2.1/2.2/2.9 dock suites
-  unchanged and green.
-- `NODE_ENV=development bun test src/components/` and
-  `NODE_ENV=development bun test src/experiments/console/` from `packages/web` green.
+## Test-first matrix
 
-## Todo
+### `ComposerDock.test.tsx` and `ConsoleComposerDock.test.tsx`
 
-- [ ] Scout pass confirmed (four checks above).
-- [ ] Failing tests written for both docks, both parents, both rooms.
-- [ ] Props threaded; render branch added; polling enabled in the new mode.
-- [ ] Focus handoff implemented and tested.
-- [ ] `bun run type-check`, `bun run lint`, and the web test script green.
+- exact disclosure and Go label render for a valid descriptor;
+- two queue entries render in server order with `sent`, no delete buttons, and the
+  queue list's existing accessible name;
+- empty queue renders no band;
+- no textarea, send hint, Queue/Send control, or steering mutation is reachable;
+- `readQueue` fires; send and withdraw spies remain untouched after pointer and
+  keyboard interaction;
+- Go calls the parent with `liveRowId`;
+- a stored node draft is hidden here and restored unchanged when live mode returns;
+- 422 displays the detached alert and clears stale band rows; a later 200 clears the
+  alert and restores the authoritative snapshot;
+- network/5xx do not show detached copy; 409 does not show detached copy and does
+  not continue polling;
+- normal composer, blocked, detached, and hidden renderer behavior remains green.
 
-## Success criteria
+### Parent/room integration tests
 
-- Selecting a finished iteration of a running loop node in either shell shows the
-  disclosure, the control, and the read-only band; the network sees only `GET …/queue`.
-- Selecting the live iteration again shows the composer with the same ordered queue.
-- Retry attempts and non-live runs still hide the dock; node-scoped rows still show
-  the live composer.
+Test at the ownership boundaries rather than every pass-through component:
 
-## Regression gate
+- each parent produces the same descriptor from same-lineage rows and no descriptor
+  for retry/route/nested-lineage mismatches;
+- Go changes the existing `Execution` selection to the resolved row;
+- after commit, the correct live/blocked textarea is focused and the same ordered
+  queue and draft return;
+- an advanced target focuses the new Go control without a composer flash;
+- terminal state focuses the transcript scroller and removes the dock;
+- later neutral refetches do not refocus anything.
 
-```bash
-cd packages/web && NODE_ENV=development bun test src/components/workflows/ComposerDock.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx src/components/workflows/LegacyGraphLogsPane.test.tsx
-cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleComposerDock.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/components/ConsoleInspectPane.test.tsx
-bun run type-check && bun run lint
-```
+Add a narrow pass-through assertion only where TypeScript coverage cannot prove a
+prop reaches the room. Do not create a test in every intermediate component merely
+to repeat the same assertion.
 
-## Risk assessment
+### Accessibility and visual component assertions
 
-- The dock is keyed by `resolvedScopeKey`, so `Go to iteration N` remounts it; the
-  focus handoff must survive the remount — hence the parent-owned ref rather than
-  dock-local state.
-- `agentActive` gating in `ConsoleNodeRoom.tsx:1022` already excludes non-agent rooms;
-  the finished-iteration dock inherits that gate.
-- Double polling if a finished-iteration dock and a live dock of the same node were
-  ever mounted together — impossible today (one room per pane), noted for the record.
+- DOM order and accessible names match the ratified documents;
+- Go activates with Enter and Space through native button behavior;
+- alert/status roles are not duplicated;
+- the approved wrap/elision classes and non-shrinking button are present on both
+  surfaces.
 
-## Security considerations
+## Files
 
-No mutation handlers are bound in the new mode, so a misrouted click cannot send,
-withdraw, or interrupt; the only request is the existing authenticated, no-store
-`GET …/queue`.
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx`
+- `packages/web/src/components/workflows/LegacyNodeRoom.tsx`
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx`
+- `packages/web/src/components/workflows/ComposerDock.tsx`
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx`
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`
+- the focused existing test files at the parent, room, and dock boundaries
 
-## Next steps
+No server, workflow engine, generated API, database, or migration files.
 
-Phase 3 proves the behaviour end to end on the real loop fixture and syncs docs.
+## Validation
+
+Run each changed test file first. Then run the Legacy and Console component suites
+through the web package's configured test command, followed by web type-check and
+lint. Do not run root `bun test`; repository rules require `bun run test` for the
+isolated full suite.
+
+Manual verification before E2E:
+
+- same-node switch and stale-target race on both shells;
+- keyboard-only Go activation and visible focus;
+- 0, 1, and many queued messages;
+- 422 then recovery, 409 then terminal refresh, and temporary network loss;
+- 460px and wide room widths with long disclosure/message text.
+
+## Exit criteria
+
+- Both shells expose identical behavior and copy through their existing selection
+  paths.
+- The finished state can read but cannot mutate the node queue.
+- Draft, queue order, focus, and all existing dock modes survive the round trip.
+- Approved visual states pass at every required width.
+- Focused tests, web package tests, type-check, and lint pass.
+
+## Risks and rollback
+
+- A stale Go target can advance before activation; recomputation plus the
+  consume-once focus rule handles it without steering the stale iteration.
+- A read failure can leave misleading data; 422/409 clear the read-only snapshot,
+  while transient failures retain the last known snapshot and retry.
+- Rollback removes the props/render branch and restores the previous terminal-row
+  hide behavior without persisted-data cleanup.
+
+## Next phase
+
+Phase 3 proves the real loop journey in both shells and closes Story 2.10 only after
+Story 2.8 supplies operator transcript rows.

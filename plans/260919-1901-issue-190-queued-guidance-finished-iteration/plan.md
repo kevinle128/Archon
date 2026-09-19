@@ -1,15 +1,19 @@
 ---
-title: 'Issue 190 see queued guidance while viewing a finished iteration'
-description: 'Implementation-ready plan for the read-only steering dock shown when an operator views a finished iteration of a still-live loop node, on both node-room shells, with a recorded reachability decision.'
-status: pending
+title: 'Issue 190: see queued guidance while viewing a finished iteration'
+description: 'Verified delivery plan for the read-only steering dock shown when an operator views a finished iteration of a still-live loop execution.'
+status: blocked
 priority: P1
-effort: '3 phases'
+effort: '3 phases after the decision gates clear'
 issue: 'https://github.com/kevinle128/Archon/issues/190'
 branch: archon/thread-177b5b5d
 tags: [issue-190, agent-node-room, web, e2e, tdd, feature, frontend]
-blockedBy: []
+blockedBy:
+  - 'Owner ratification of the reachability contract (new readable-transcript AD; next free number is currently AD-16)'
+  - 'Approved narrow-layout treatment for the long disclosure plus Go control at the 460px authority width'
+  - 'Issue #188 / Story 2.8 before Story 2.10 can close, because AC 4 requires operator transcript rows'
 blocks: []
 created: 2026-09-19
+reviewed: 2026-09-20
 mode: deep
 ---
 
@@ -17,291 +21,391 @@ mode: deep
 
 ## Goal and user outcome
 
-Story 2.10 (ANR, Epic 2). When an operator opens an **earlier, finished iteration**
-of a loop node that is **still running**, the node room must keep them oriented
-without letting them steer the wrong thing:
+When an operator selects an earlier, completed iteration of a loop execution whose
+current iteration is still live, keep the operator oriented without exposing a
+mutation that could steer the wrong context:
 
-- the dock collapses to one line — `reading a finished iteration · the agent is
-  working in iteration N` — plus a `Go to iteration N` control that returns to the
-  live iteration;
-- below it, a **read-only band** mirrors the node's live registry queue (the same
-  `queued · n` list every tab converges on since Story 2.9), with no composer, no
-  `Queue`/`Send now`, and no `delete`;
-- the client issues **no steering mutation** (no `POST …/send`, `DELETE …/queue/:id`,
-  `POST …/interrupt`) for the finished iteration — only the existing `GET …/queue`
-  read that the band needs;
-- returning to the live iteration restores the normal composer, and the queue keeps
-  its server order;
-- an operator message already delivered during that iteration is read from the
-  transcript's occurrence group, never duplicated in the band;
-- viewing a **different non-live execution** (a retry attempt, a different run)
-  keeps today's behaviour: the dock is absent.
+- show `reading a finished iteration · the agent is working in iteration N` and a
+  `Go to iteration N` control;
+- mirror the live node's server queue in the existing full-width `queued · n` band,
+  but without a composer, send control, or per-message delete action;
+- issue only the authenticated node-scoped queue **read** needed to mirror that band;
+  issue no send, withdraw, or interrupt mutation while the finished iteration is
+  selected;
+- return to the actual live iteration and restore the normal composer without
+  changing queue order or the tab-local unsent draft;
+- continue hiding the dock for a different run, retry epoch, route activation,
+  nested-loop invocation, unknown-scope historical row, or terminal node/run; and
+- once Story 2.8 is present, show guidance delivered during the selected iteration
+  as an operator transcript row and never duplicate that delivered message in the
+  pending queue band.
 
-No server change is required: `GET /api/workflows/runs/:runId/nodes/:nodeId/queue`
-is keyed `(runId, nodeId)`, is not iteration-aware, and already returns the live
-queue for a running or parked loop handle
-(`packages/server/src/routes/api.ts:5487-5555`).
+This is the actual Story 2.10 outcome in `epics.md`. The dock-only subset is useful
+but is not the complete story: the fourth acceptance criterion cannot pass until
+Story 2.8 writes and renders operator rows.
 
-## Authority inspected
+## Verified authority and evidence
 
-- Issue #190 and its blockers #180 (Story 1.7, merged as PR #206) and #189
-  (Story 2.9, merged as PR #213).
-- Story 2.10 acceptance criteria:
-  `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:704-728`.
-- `_bmad-output/specs/spec-agent-node-room/control-states.md:50-58` — the only
-  spec prose for this dock state (copy, band semantics, "no steering route call").
-- `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:183`
-  — the states table row "Viewing an execution that is not the live one" places the
-  finished-iteration dock under the Execution `<select>` and names Story 2.10.
-- `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md:121-133`
-  — AD-7 and its 2026-09-19 B1 amendment, which records Story 2.10 as "blocked on a
-  future reachability decision, which would be a new AD if it is ever taken".
-- `plans/260918-1711-issue-180-navigate-occurrences-and-loop-iterations/plan.md:104-120`
-  — the B1 record and the reachability table.
-- Current code: `packages/web/src/lib/steering-dock.ts`,
-  `packages/web/src/components/workflows/{ComposerDock,NodeTranscriptPane,LegacyNodeRoom,LegacyGraphLogsPane,build-log-rows,resolve-graph-room-row}.tsx|ts`,
-  `packages/web/src/experiments/console/components/{ConsoleComposerDock,ConsoleNodeRoom,ConsoleInspectPane}.tsx`,
-  `packages/web/src/lib/execution-room-model.ts`,
-  `packages/server/src/routes/workflow-execution-history.ts`,
-  `e2e/fixtures/workflows/e2e-queue-guidance-loop.yaml`, `e2e/ui/agent-queue-convergence.spec.ts`.
+### Product and design authority
 
-## Recorded decisions
+- GitHub issues #190, #180, #189, and #188 were read with `gh`. Issues #180 and
+  #189 are closed by PRs #206 and #213; #188 is open with no closing PR.
+- Story 2.10: `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`
+  under `Story 2.10`.
+- Capability contract: `_bmad-output/specs/spec-agent-node-room/SPEC.md`, CAP-6
+  finished-iteration clause and CAP-8/CAP-11.
+- Dock states: `_bmad-output/specs/spec-agent-node-room/control-states.md`,
+  `Viewing a finished iteration of a live loop node`.
+- Queue wire contract: `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md`.
+- UX: `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md`, especially the Information Architecture distinction between
+  `Execution` filtering and `Jump to` scrolling, the non-live-execution state, and
+  the focus/accessibility floor.
+- Visual system: the same directory's `DESIGN.md` and final
+  `mockups/key-steering-dock.html`. They define the full-width queue band, hide an
+  empty queue shell, cap it at `33vh`, require a 460px verification width, and use
+  the existing dock typography/surfaces. The mockup does **not** contain the
+  finished-iteration state, so it does not settle that state's narrow arrangement.
+- Architecture:
+  `_bmad-output/planning-artifacts/architecture/architecture-Archon-readable-agent-transcript-2026-09-12/ARCHITECTURE-SPINE.md`, AD-7 amendment and AD-12.
+  AD-13 already exists; the next free number is currently AD-16.
 
-### D1 — Reachability: the Execution selection is the entry point (needs owner ratification)
+### Current code and tests
 
-The B1 amendment on AD-7 left Story 2.10 blocked because the Story 1.7 **navigator**
-(`Jump to` select) only scrolls within one node-scoped transcript; it never changes
-the selected row, so it cannot put the room "on" a finished iteration. The room does,
-however, already reach that state through the **Execution selection**: the header
-`<select aria-label="Execution">` (`NodeRoomHeader.tsx:64-76`, `ConsoleRoomHeader`),
-the Legacy Logs list (`NodeRunList`), and graph occurrence rows all switch
-`selectedRow` to an iteration-scoped `LogRow` (`selection.kind === 'occurrence'`
-carrying `iteration`, built from server `nodeExecutions` in `build-log-rows.ts:99-112`).
-`EXPERIENCE.md:183` already describes this dock state under exactly that control.
+- Execution identity and selection:
+  `packages/web/src/lib/execution-room-model.ts`, both copies of
+  `build-log-rows.ts`, `packages/server/src/routes/workflow-execution-history.ts`,
+  and `packages/workflows/src/transcript-execution-scope.ts`.
+- Legacy flow:
+  `LegacyGraphLogsPane` → `LegacyNodeRoom` → `NodeTranscriptPane` →
+  `ComposerDock`.
+- Console flow:
+  `ConsoleInspectPane` → `ConsoleNodeRoom` → `ConsoleComposerDock`.
+- Shared queue/mode logic: `packages/web/src/lib/steering-dock.ts` and its test.
+- Queue endpoint and route tests: `packages/server/src/routes/api.ts` and
+  `api.workflow-runs.test.ts`.
+- Executor behavior: direct and loop guidance drains in
+  `packages/workflows/src/dag-executor.ts`; the drain currently forwards only
+  `item.message` to the provider and does not append operator transcript rows.
+- Transcript projection: `packages/web/src/lib/agent-history.ts` currently emits
+  only `assistant | tool | lifecycle`, so an operator row is not yet renderable.
+- E2E precedents: `agent-queue-guidance.spec.ts`,
+  `agent-queue-convergence.spec.ts`, `occurrence-navigation.spec.ts`, the existing
+  `e2e-queue-guidance-loop.yaml`, and the Playwright runtime helpers.
 
-This plan adopts that reading as the reachability decision. It is a **reinterpretation**
-of the AC's phrase "selected through Story 1.7" (the navigator cannot select an
-iteration), and per the amendment's own rule it is recorded as a **new AD** in the
-readable-transcript spine (next free number, "AD-13 — Finished-iteration reachability
-for steering"), cross-linked from AD-7, not as another amendment:
+## Verified current behavior
 
-> A **finished iteration of a live loop node** is a room whose selected row carries an
-> iteration number (`selection.kind === 'occurrence'` with `iteration`, or the
-> event-fallback `loop_iteration`), whose row `status` is terminal
-> (`completed` | `failed` | `skipped`), while the node's live projection
-> (`WorkflowNodeStateResponse.status` for that `nodeId`) is `running` | `awaiting`,
-> the run is live, and a non-terminal iteration row exists for the same node (the
-> `Go to iteration N` target). The Story 1.7 `Jump to` navigator is **not** an entry
-> point and is untouched.
+1. A selected terminal row makes `steeringDockMode()` return `hidden`; Story 2.10
+   has no rendered state today.
+2. The header `Execution` select, Legacy Logs list, and graph occurrence selection
+   change the selected `LogRow`. The Story 1.7 `Jump to` control only scrolls among
+   groups already loaded into one node-scoped transcript and never changes the row.
+3. Modern loop occurrence rooms receive one server-filtered occurrence, so their
+   Story 1.7 navigator is absent by the recorded AD-7 contract.
+4. Server `nodeExecutions` preserve `retry_epoch`, the complete `loop_ancestry`,
+   and `route_activation_seq`, but both `LogRowSelection` copies currently discard
+   all but the final iteration number. Matching only `(nodeId, retryEpoch)` can jump
+   across a different route activation or nested-loop parent invocation.
+5. Old event-fallback `loop_iteration` rows do not carry enough identity to prove
+   retry, route, or nested-loop equivalence. They must fail closed rather than
+   expose a potentially wrong `Go to` target.
+6. `GET /api/workflows/runs/:runId/nodes/:nodeId/queue` is the authoritative,
+   ordered, no-store queue snapshot. It is a hot-path registry read when the live
+   handle is local, returns 422 for a detached live node, and returns 409 for a
+   terminal run/node. No server or generated API change is needed.
+7. `startQueuePolling()` already serializes reads, aborts on unmount/scope change,
+   retries 422/network/5xx, and stops on other 4xx. Existing callers receive no
+   read-error signal.
+8. The draft key is `(runId, nodeId)`, not iteration-scoped, so the unsent draft
+   already survives switching between iterations.
+9. Story 2.8 is genuinely absent, not merely stale tracker data: no operator
+   metadata exists in `nodeTranscriptMetadataSchema`, executor drains do not write
+   receipts, and `AgentHistoryItem` has no operator kind.
 
-Note on the node-scoped path: modern loop nodes opened through their occurrence rows
-never show the Story 1.7 navigator (AD-7 B1); the navigator appears only on
-historical/fallback **node-scoped** rows that carry several occurrences. That row
-type keeps the live composer and is covered as a regression case, not as a loop case.
+## Blocking decisions and dependencies
 
-Today that path returns `steeringDockMode() === 'hidden'`
-(`steering-dock.ts:68-80` — a terminal `rowStatus` hides the dock), so selecting
-iteration 1 while iteration 3 runs removes the dock entirely. Phase 1 records the
-decision as new AD-13 (back-referenced from AD-7) and in `control-states.md`, only
-after the owner ratifies it; the decision is the first validation question. **Nothing here claims 2.10 is unblocked until that record
-exists.**
+### B1 — Reachability contract (owner decision required before code)
 
-### D2 — One new dock mode, computed by the shared core
+There is a normative conflict:
 
-`SteeringDockMode` gains `'finished-iteration'`. The predicate and the
-`Go to iteration N` target resolver are pure functions in `lib/steering-dock.ts`
-(framework-free, shared by both shells per the existing pattern). The parent that
-already owns the row list computes the target once and passes one prop down; the
-dock never re-derives it from DOM or from the transcript.
+- Story 2.10 and CAP-6 say the finished iteration is selected through the Story 1.7
+  iteration selector.
+- AD-7 and the shipped implementation say that selector is scroll-only and absent
+  for modern loop occurrence rows.
+- `EXPERIENCE.md` separately establishes the header `Execution` select as the
+  filtering control that can select those occurrence rows.
 
-### D3 — Band semantics reuse Story 2.9 verbatim
+Recommended resolution: make the **Execution selection** the Story 2.10 entry point
+while retaining `Jump to` as scroll-only. Record this as a new readable-transcript
+decision (the next free number is currently AD-16, but recheck immediately before
+editing) and back-reference it from AD-7. Do not write tests or production code for
+this interpretation before the owner records approval in the Validation Log below.
 
-The read-only band is the existing `queued · n` band (`queueBandHeader`,
-`queueListLabel`, `applyQueueSnapshot`, `startQueuePolling`) rendered **without** the
-delete button, textarea, hint, or `Queue` control. It shows only server-pending items,
-which is what makes the "delivered message is not repeated in the band" criterion
-hold by construction. `GET …/queue` polling is enabled in the new mode; a `422`
-(detached run) keeps polling silently as today (`steering-dock.ts:400-410`) and the
-band never renders (a band renders only when it holds something); the new mode also
-surfaces the read refusal as a `not steerable here` line (red-team Finding 4).
+The decision must also define “no steering request” precisely: the finished view
+performs the existing node-scoped `GET …/queue` read, but exposes and invokes no
+send, withdraw, or interrupt mutation. Update all conflicting authority together:
+`epics.md`, `SPEC.md`, `control-states.md`, `EXPERIENCE.md`, and the architecture
+spine.
 
-### D4 — Scope boundaries stated so no reviewer re-derives them
+### B2 — Narrow visual arrangement (design decision required before markup)
 
-- "Client sends no steering request" is read as **no mutation** (`send`,
-  `queue/:id` delete, `interrupt`). The `GET …/queue` read is required by the band and
-  is asserted, not forbidden.
-- The inline half of the fourth acceptance criterion ("the delivered message appears
-  inline in its occurrence group") is Story 2.8's operator row (`origin='operator'`),
-  which `sprint-status.yaml` still lists as `backlog` and the issue does not list as
-  a blocker. This plan guarantees the band side (pending-only) and records the inline
-  side as verified once 2.8 lands; it adds no operator-row rendering.
-- A retry attempt (`Run 1` while `Run 2` runs) carries no `iteration`, so it stays
-  `hidden` per `EXPERIENCE.md:183`. A different run is `live === false` and stays
-  hidden. Both are negative tests.
-- The unsent draft is already node-scoped (`steeringDraftStorageKey(runId, nodeId)`),
-  so it survives switching iterations without new work; the finished-iteration dock
-  never renders it.
-- At the exact iteration boundary (iteration N finished, N+1 not yet started) no
-  non-terminal iteration row exists; the resolver returns `null` and the dock stays
-  hidden for that window, exactly as today, then re-renders on the next run-data
-  refetch. Accepted and documented; no timer or guess is added.
+The canonical disclosure is too long to remain fully visible beside the Go button
+on one visual line at the authoritative 460px room width. `EXPERIENCE.md` says the
+dock remains one structural control row under pressure, while `DESIGN.md` and the
+final mockup do not contain this state or say whether disclosure text may wrap
+inside that row. The repository therefore does not resolve wrapping versus visual
+elision for the required complete copy.
+
+Recommended resolution: retain one flex/control row but allow the disclosure text
+to wrap inside its flexible cell while the button remains fully visible and at
+least 32px high; preserve the complete copy in visible text, avoid horizontal
+overflow, and keep the queue band below it. If the owner interprets the generic
+one-row rule as one visual text line, the design authority must specify the approved
+elision and accessible-name treatment. Record the chosen interpretation in
+`DESIGN.md`/`EXPERIENCE.md` before Phase 2.
+
+### B3 — Story 2.8 is a closure dependency, not deferrable scope
+
+Issue #190 may implement and merge the read-only dock before #188, but it must not
+claim every Story 2.10 criterion, move the sprint entry to `done`, or close #190
+until #188 has landed and AC 4 passes end to end. Do not open a follow-up to waive
+the criterion: #188 is already the owning issue.
+
+## Proposed technical decisions (conditional on B1/B2)
+
+### D1 — Resolve live targets in the execution model
+
+Add `resolveFinishedIterationView()` to
+`packages/web/src/lib/execution-room-model.ts`, beside the existing execution-row
+selection functions. `steering-dock.ts` should consume its small result but should
+not own execution-lineage reasoning.
+
+Preserve full ancestry on both local row shapes:
+
+```ts
+export interface ExecutionLoopAncestryEntry {
+  readonly nodeId: string;
+  readonly iteration: number;
+}
+
+// Add to the `occurrence` arm in ExecutionRowSelection and both LogRowSelection copies.
+readonly loopAncestry?: readonly ExecutionLoopAncestryEntry[];
+
+export interface FinishedIterationView {
+  readonly liveRowId: string;
+  readonly liveIteration: number;
+}
+```
+
+Both `build-log-rows.ts` copies map the complete wire `loop_ancestry` into this
+camel-case shape while retaining the existing final `iteration` field and labels.
+
+The resolver returns non-null only when all conditions hold:
+
+1. The run is live and the projected node state is `running` or `awaiting`.
+2. The selected row is a known-scope server-occurrence row
+   (`selection.kind === 'occurrence'`) with non-empty full ancestry; event-fallback,
+   node, outer-loop, retry-only, route-only, and `unknownScope` rows fail closed.
+3. The selected row is `completed`; its final ancestry entry agrees with the
+   selection's displayed iteration.
+4. A known-scope candidate for the same `nodeId` is `running` or `awaiting`, carries
+   full ancestry whose final entry agrees with its displayed iteration, has the same
+   normalized retry epoch, the same route activation, the same final ancestry
+   `nodeId`, and the same ancestry prefix excluding the final iteration entry.
+5. The candidate iteration is greater than the selected iteration. Prefer
+   `awaiting`, then `running`, and latest `order` within that status. Never fall
+   back to a terminal row.
+
+This identity prevents crossing retry epochs, route activations, or outer nested-loop
+iterations while still supporting a top-level `loop:` and an agent body row repeated
+by a `loop_group:`.
+
+### D2 — One explicit dock mode, two thin renderers
+
+Extend `SteeringDockMode` with `finished-iteration`. Its precedence is:
+
+```ts
+if (!live) return 'hidden';
+if (finishedIteration !== null) return 'finished-iteration';
+if (rowStatus !== 'running' && rowStatus !== 'awaiting') return 'hidden';
+// existing blocked → detached → composer order remains unchanged
+```
+
+The parents that already own the complete row list compute the descriptor once:
+`LegacyGraphLogsPane` from `rows`, and `ConsoleInspectPane` from
+`logEntries.map(entry => entry.row)`. The result and an existing selection callback
+flow through the room chain. The docks render the same content with their existing
+surface-specific classes; Console still imports no Legacy component. If a host has
+no usable execution-selection callback, it passes no descriptor and exposes no dead
+Go button.
+
+### D3 — Read-only band reuses the Story 2.9 queue contract
+
+- Poll in `finished-iteration` mode with the existing 1-second serial loop.
+- Render the full-width band only when `sent.length > 0`, as required by the final
+  `DESIGN.md` rule against empty queue shells.
+- Reuse `queueBandHeader`, `queueListLabel`, server order, message text, and `sent`.
+- Omit the textarea, hint, Queue/Send control, and every delete button.
+- Bind no mutation handler in this branch. Renderer and E2E tests must observe zero
+  send/withdraw/interrupt calls while it is selected.
+- Add an optional `onError` callback receiving the normalized `SteeringSendError`.
+  Existing callers remain unchanged when it is omitted. The finished mode stores
+  read failure separately from send/withdraw refusal: a 422
+  `not_steerable_here` clears the displayed read-only snapshot and renders the
+  existing `STEERING_DETACHED_DISCLOSURE` as an alert below the finished-iteration
+  disclosure; the next successful snapshot clears it. Network/5xx retain silent
+  retry and may retain the last successful snapshot. A 409 clears the displayed
+  snapshot and stops polling while the normal run refresh removes the dock; never
+  label it “detached.”
+
+### D4 — Focus follows the state transition once
+
+The room component that survives the row switch owns a consume-once target ref:
+`NodeTranscriptPane` for Legacy and `ConsoleNodeRoom` for Console.
+
+- Clicking Go records `liveRowId`, invokes the existing selection callback, and does
+  not mutate queue state.
+- After the selected row commits, focus the composer textarea when that row is still
+  live; if the target became finished because the loop advanced, focus the new Go
+  button; if the dock disappeared because the run ended, focus the transcript
+  scroller. Focus never falls to `<body>`.
+- Clear the target before focusing so unrelated refetches/remounts never steal focus.
+
+## Scope
+
+### In scope
+
+- Shared execution-lineage resolver and row-shape preservation.
+- Shared dock mode/copy/poll error seam.
+- Legacy and Console renderers and selection/focus wiring.
+- Canonical decision/design records after owner approval.
+- Focused unit/renderer tests and one real-loop E2E journey per shell.
+- Story 2.10 closure evidence after Story 2.8 lands.
+
+### Out of scope
+
+- Server route, OpenAPI, generated API type, database, or migration changes.
+- Implementing Story 2.8 inside this issue.
+- An aggregate “all iterations” transcript, changes to the Story 1.7 `Jump to`
+  navigator, or client-side fetching across occurrence pages.
+- New polling cadence, caching layer, feature flag, or queue endpoint.
+- Provider or executor steering behavior changes.
 
 ## Architecture
 
 ```text
-LegacyGraphLogsPane (rows, selectedRow, onSelectExecution)        ConsoleInspectPane (logEntries, selectedRow, onSelectNode)
-        │ resolveFinishedIterationView(rows, selectedRow, nodeStatus, live)   │
-        ▼                                                                      ▼
-LegacyNodeRoom ──► NodeTranscriptPane ──► ComposerDock            ConsoleNodeRoom ──► ConsoleComposerDock
-        finishedIteration: { liveRowId, liveIteration } | null + onGoToIteration(rowId)
-                                   │
-                                   ▼
-                  steeringDockMode({ live, rowStatus, hasPendingAsk, refusal, finishedIteration })
-                                   │
-              'finished-iteration' ─┴─► one-line disclosure + `Go to iteration N` + read-only queue band
-                                        polling: GET /queue only; no textarea, no Queue, no delete
+nodeExecutions (retry + full loop ancestry + route activation)
+        │
+        ├─ Legacy buildLogRows ──► LegacyGraphLogsPane
+        └─ Console buildLogRows ─► ConsoleInspectPane
+                                      │
+                 resolveFinishedIterationView (execution-room-model)
+                                      │
+                  { liveRowId, liveIteration } | null
+                         ┌────────────┴────────────┐
+                         ▼                         ▼
+             NodeTranscriptPane            ConsoleNodeRoom
+                         │                         │
+                         ▼                         ▼
+                    ComposerDock          ConsoleComposerDock
+                         └──── finished-iteration ────┘
+                             disclosure + Go + GET-only band
 ```
 
 ## Phases
 
-| # | Phase | Status |
-|---|-------|--------|
-| 1 | [Record the reachability decision and build the shared dock core](./phase-01-start.md) | Pending |
-| 2 | [Both shells render the finished-iteration dock](./phase-02-both-shells-render-the-finished-iteration-dock.md) | Pending |
-| 3 | [End-to-end evidence and doc sync](./phase-03-end-to-end-evidence-and-doc-sync.md) | Pending |
-
-Deep mode: Phase 1 is fully scouted and detailed; Phases 2 and 3 are outlined with
-their file ownership and test matrices and receive a dedicated scout pass before
-execution (`/ak:cook` runs it per phase).
-
-## Dependency map
-
-- Phase 1 → Phase 2: gated on the D1 approval record; the mode, copy constants, and resolver exported from
-  `lib/steering-dock.ts` are consumed by both docks and both parents.
-- Phase 2 → Phase 3: E2E drives the rendered controls; doc sync cites the shipped
-  markup.
-- External: Story 2.8 (operator rows) for the inline half of AC 4 — recorded, not
-  blocking.
+| # | Phase | Status | Gate |
+|---|-------|--------|------|
+| 1 | [Ratify authority and build the shared execution/dock core](./phase-01-start.md) | Blocked | B1 and B2 recorded |
+| 2 | [Render and wire both shells](./phase-02-both-shells-render-the-finished-iteration-dock.md) | Pending | Phase 1 |
+| 3 | [Prove the real flow and close only after Story 2.8](./phase-03-end-to-end-evidence-and-doc-sync.md) | Pending | Phase 2 and #188 for closure |
 
 ## File inventory
 
-| File | Action | Size | Test impact |
-|------|--------|------|-------------|
-| `packages/web/src/lib/steering-dock.ts` | modify | +80 lines | `steering-dock.test.ts` (Phase 1) |
-| `packages/web/src/lib/steering-dock.test.ts` | modify | +150 lines | new mode/resolver cases |
-| `packages/web/src/components/workflows/ComposerDock.tsx` | modify | +70 lines | `ComposerDock.test.tsx` |
-| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` | modify | +70 lines | `ConsoleComposerDock.test.tsx` |
-| `packages/web/src/components/workflows/NodeTranscriptPane.tsx` | modify | +10 lines | `NodeTranscriptPane.test.tsx` |
-| `packages/web/src/components/workflows/LegacyNodeRoom.tsx` | modify | +6 lines | `LegacyNodeRoom.test.tsx` |
-| `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` | modify | +12 lines | `LegacyGraphLogsPane.test.tsx` |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` | modify | +10 lines | `ConsoleNodeRoom.test.tsx` |
-| `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` | modify | +12 lines | `ConsoleInspectPane.test.tsx` |
-| `e2e/ui/agent-finished-iteration.spec.ts` | create | ~400 lines | Playwright, both shells |
-| `e2e/fixtures/workflows/e2e-finished-iteration-loop.yaml` + `archon-runtime.ts` wiring | create/modify | ~20 lines | E2E fixture with a 60 s iteration window |
-| `_bmad-output/.../ARCHITECTURE-SPINE.md` (readable-transcript) | modify | new AD-13 + back-reference on AD-7 | doc |
-| `_bmad-output/specs/spec-agent-node-room/control-states.md` | modify | +3 lines | doc |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify | 1 line | issue AC |
+| File | Planned action |
+|------|----------------|
+| `packages/web/src/lib/execution-room-model.ts` + test | Add full-lineage resolver and matrix |
+| Both `components/.../build-log-rows.ts` copies + tests | Preserve full camel-case loop ancestry |
+| `packages/web/src/lib/steering-dock.ts` + test | Add mode/copy and optional polling-error callback |
+| `ComposerDock.tsx` + test | Legacy read-only mode, poll, error, focus target |
+| `ConsoleComposerDock.tsx` + test | Console-equivalent markup/behavior |
+| `LegacyGraphLogsPane.tsx`, `LegacyNodeRoom.tsx`, `NodeTranscriptPane.tsx` + focused tests | Resolve, pass through, select, consume focus |
+| `ConsoleInspectPane.tsx`, `ConsoleNodeRoom.tsx` + focused tests | Resolve, pass through, select, consume focus |
+| `epics.md`, `SPEC.md`, `control-states.md`, `EXPERIENCE.md`, `DESIGN.md`, readable-transcript spine | Reconcile ratified entry/read/layout contract |
+| `steering-test-plan.md` | Add Story 2.10 verification IDs |
+| `e2e/ui/agent-finished-iteration.spec.ts` | Real loop journey on both shells; reuse existing loop fixture/runtime constants |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | Set Story 2.10 to done only after all ACs, including #188-backed AC 4, pass |
 
-## Test scenario matrix
+## Test matrix
 
-| Path | Scenario | Level | Phase |
-|------|----------|-------|-------|
-| Critical | Finished iteration of a live loop node → `'finished-iteration'` mode; disclosure copy names live iteration N | unit + renderer | 1, 2 |
-| Critical | Read-only band lists the polled queue in server order; no delete/textarea/Queue in the DOM | renderer | 2 |
-| Critical | Zero mutation requests while viewing the finished iteration; `GET …/queue` observed | renderer (fake API) + E2E | 2, 3 |
-| Critical | `Go to iteration N` selects the live row; composer + queue return; order unchanged; focus not on `<body>` | renderer + E2E | 2, 3 |
-| High | Retry attempt of a live node (no `iteration`) → `hidden` | unit + renderer | 1, 2 |
-| High | Finished iteration of a **non-live** run → `hidden` | unit + E2E | 1, 3 |
-| High | Historical/fallback node-scoped row with several occurrences (the only place the Story 1.7 navigator renders) → unchanged live composer | unit + renderer | 1, 2 |
-| High | A retry attempt or second run (`Run 2` live, `Run 1` selected) → dock absent (AC 5 proper) | unit + E2E | 1, 3 |
-| Medium | Live iteration advances between render and click of `Go to iteration N` → lands on a now-finished row and re-renders as finished-iteration for the new live N; no intermediate composer flash | renderer | 2 |
-| Medium | Unrelated remount of the same scope after a completed `Go to iteration N` does not steal focus (consume-once ref) | renderer | 2 |
-| High | Live loop node is `awaiting` (ask pending on live iteration) → still `'finished-iteration'`; band read-only | unit | 1 |
-| Medium | Iteration boundary: no non-terminal iteration row → resolver `null` → `hidden` | unit | 1 |
-| Medium | Poll `422` in finished-iteration mode → no disclosure change, band stays empty | renderer | 2 |
-| Medium | Draft typed on the live iteration survives a visit to a finished iteration and back | renderer | 2 |
-| Medium | Both shells at 460px: single-line disclosure, band scrolls within `max-h-[33vh]` | E2E screenshot | 3 |
+| Priority | Scenario | Evidence |
+|----------|----------|----------|
+| Critical | Completed iteration and later live iteration in the same lineage resolve to the new mode | execution-model unit + shell renderer |
+| Critical | Different retry epoch, route activation, or outer ancestry prefix fails closed | execution-model unit |
+| Critical | Node/event-fallback/outer occurrence/route-only row and non-live run fail closed | execution-model unit |
+| Critical | Full ancestry survives both `buildLogRows` implementations | both build-log-row unit suites |
+| Critical | Read-only band preserves server order and contains no mutation controls | both dock renderer suites |
+| Critical | Finished view performs GET reads and zero send/withdraw/interrupt mutations | renderer spies + E2E network recorder |
+| Critical | Go selects the resolved live row; queue order and tab-local draft survive | parent integration + E2E |
+| Critical | Delivered operator row is inline in the selected occurrence and absent from pending band | Story 2.8-backed E2E; closure gate |
+| High | Awaiting live iteration is a valid target and returns to the blocked composer | unit + renderer |
+| High | 422 read shows existing detached disclosure; later 200 clears it; 409 is not called detached | polling unit + renderer |
+| High | Target advances before click: no composer flash; focus moves to the new Go button | room renderer |
+| High | Run ends during click: dock disappears and focus moves to transcript scroller | room renderer |
+| High | Empty queue shows disclosure + Go only, with no empty band | both dock renderers |
+| High | Normal composer, blocked, detached, and hidden visibility rows stay unchanged | shared dock regression table |
+| Visual | Approved layout at 460×900 and 1440×900 has no horizontal overflow; band caps at 33vh | E2E measurements/screenshots on both shells |
+| Accessibility | DOM order is disclosure → Go → band; exact accessible names; visible focus; activation by keyboard; never `<body>` | renderer + E2E |
 
-## Success criteria
+## Acceptance criteria
 
-- [ ] D1 is ratified and recorded in AD-7 and `control-states.md` before Phase 2 markup lands.
-- [ ] Story 2.10 acceptance criteria in `epics.md:704-728` are satisfied on Legacy and Console, with the AC-4 inline half explicitly deferred to Story 2.8.
-- [ ] Unit, renderer, and E2E evidence recorded under `plans/260919-1901-issue-190-queued-guidance-finished-iteration/reports/`.
-- [ ] `bun run validate` passes; `sprint-status.yaml` entry moved to `done` in the PR that closes #190.
+- [ ] B1 and B2 are explicitly approved and recorded in the Validation Log and
+      canonical authorities before implementation begins.
+- [ ] A finished iteration is recognized only with proven same-execution lineage;
+      uncertain or different execution identities hide the dock.
+- [ ] Both shells show the same copy, controls, band semantics, failure state, and
+      focus behavior.
+- [ ] No steering mutation is reachable or observed from the finished view; the
+      existing GET queue read is the only request added by that mode.
+- [ ] Returning live restores the correct composer/blocked state, ordered queue, and
+      tab-local draft.
+- [ ] The approved layout and queue scrolling behavior pass measurable visual
+      assertions without overflow at 460×900 and 1440×900.
+- [ ] Story 2.8 is merged and the delivered-message inline/no-duplicate criterion
+      passes before #190 closes or its sprint entry moves to `done`.
+- [ ] Focused tests, affected steering/occurrence E2E specs, and `bun run validate`
+      pass; evidence is recorded under `plans/reports/`.
 
-## Risks
+## Operations, compatibility, and rollback
 
-| Risk | Mitigation |
-|------|------------|
-| Owner rejects D1 (wants a different entry point) | Phase 1 stops at the record; no markup is written against an unratified path. |
-| Two `LogRow` types (Legacy and Console copies) drift | The resolver takes a minimal structural row type; both parents satisfy it without casts. |
-| Band polling doubles request volume when both a live and a finished view are open | Same 1 s cadence as Story 2.9 per mounted dock; one dock per room; no new endpoint. |
-| Focus lands on `<body>` after `Go to iteration N` remounts the dock | Explicit focus handoff to the composer field on mount (Phase 2), covered by renderer test. |
+- No persisted data, API shape, deployment setting, or migration changes.
+- Added polling has the existing one-request-at-a-time, 1-second cadence and uses
+  the server's O(queued items) snapshot hot path. One room mounts one dock; no new
+  background process exists.
+- Old/unknown-scope rows remain readable but do not gain the new dock because their
+  lineage cannot be proven.
+- Rollback is a focused revert of web and canonical-doc changes; the prior behavior
+  (dock hidden on completed rows) returns immediately.
+- Do not change the sprint tracker to `done`, close #190, or use a follow-up issue to
+  waive AC 4 while #188 is open.
 
-## Rollback
+## Validation Log
 
-All changes are additive web-only code plus doc text. Reverting the PR restores the
-`hidden` behaviour with no data or API impact.
+- 2026-09-20 plan verification: repository, canonical docs, final mockup, current
+  issues, code paths, tests, queue route, executor drains, and E2E harness inspected.
+- Existing execution-model, steering-dock, and both build-log-row baseline suites:
+  **134 passed, 0 failed** on 2026-09-20.
+- All named existing source/test/doc paths were checked; the agent-node-room sprint
+  tracker path was corrected to its actual package-specific location.
+- B1: **unresolved** — owner has not ratified the Execution-selection reinterpretation.
+- B2: **unresolved** — no artifact chooses wrap versus elision at 460px.
+- B3: **verified blocker for closure** — issue #188 is open and operator rows are
+  absent from current code.
 
-## Unresolved questions (for the validation gate)
+## Unresolved questions
 
-1. Ratify D1 — the Execution selection is the entry point for "finished iteration selected through Story 1.7"; the Jump-to navigator stays scroll-only.
-2. Band visibility — render the read-only band only when the queue is non-empty (mirrors the existing draft-box rule) versus always rendering an empty `queued · 0` shell.
-3. `Go to iteration N` focus target — composer field (recommended) versus the room scroller.
-4. Iteration-boundary window — accept the brief `hidden` dock (recommended) versus targeting the outer loop occurrence row with generic copy.
-5. Story closure with AC-4's inline half deferred to Story 2.8 — mark `done` plus a tracked follow-up issue (recommended) versus holding the story in an intermediate status until 2.8 ships.
-
-Gate state as of 2026-09-20: the red-team session below is recorded and applied; the
-validation interview (questions 1–5) was offered and **deferred by the operator** in
-the planning session, so it is deliberately unanswered — run `/ak:plan validate` on
-this directory (or answer the five questions) before cooking. D1 is unratified until
-question 1 is answered; Phase 1 stops at the record if it is rejected.
-
-## Red Team Review
-
-### Session — 2026-09-20 (Security Adversary, Failure Mode Analyst, Assumption Destroyer)
-**Findings:** 16 (14 accepted, 2 duplicates)
-**Severity breakdown:** 2 Critical, 6 High, 8 Medium
-
-| # | Finding | Severity | Disposition | Applied To |
-|---|---------|----------|-------------|------------|
-| 1 | D1 ratification was a checklist item, not a blocking gate | Critical | Accept | Phase 1 Requirements (GATE), Phase 2 frontmatter `gate` |
-| 2 | `control-states.md` still says "the operator's" queue; band is cross-operator since 2.9 | Medium | Accept | Phase 1 Doc records item 3 |
-| 3 | Closing the story with AC-4's inline half unmet | High | Accept | Validation question 5; Phase 3 sprint-status step |
-| 4 | Empty band indistinguishable from failing reads (422) in the new mode | Medium | Accept | Phase 1 `onRefusal` hook; Phase 2 requirement + test |
-| 5 | `loop_group` body rows never exercised by the resolver tests | Medium | Accept | Phase 1 scout pass + fixture |
-| 6 | `sprint-status.yaml` known-stale for 1.7/2.1 yet used as the done marker | Medium | Accept | Phase 3: name stale entries in the PR description |
-| 7 | D1 must be a new AD (spine rule) and is a reinterpretation of the AC; navigator never renders for modern loops | Critical | Accept | plan.md D1; Phase 1 Doc records; matrix row relabelled |
-| 8 | 25 s loop fixture leaves no E2E margin for screenshots + network capture | High | Accept | Phase 3: dedicated 60 s fixture |
-| 9 | No enforced gate between Phase 1 and Phase 2 | High | Duplicate of #1 (already applied) | — |
-| 10 | Focus-handoff ref has no specified reset point | Medium | Accept | Phase 2 focus handoff: consume-once effect + test |
-| 11 | `Go to iteration N` target can go stale between render and click | Medium | Accept | Phase 2 requirement + matrix row |
-| 12 | Phase 3 step 8 mislabels a same-run revisit as AC 5 | Medium | Accept | Phase 3 Journey A: second-run case added; step 8 relabelled |
-| 13 | Resolver cannot exclude a different retry epoch of the same loop node | High | Accept | Phase 1 `IterationRowLike.retryEpoch` + candidate rule + test |
-| 14 | E2E drain window measured from iteration start, tighter than stated | High | Duplicate of #8; elapsed-time annotations added | Phase 3 step 9 |
-| 15 | "Mirrors `chooseExecutionForNode`" invites porting its terminal-row fallback | High | Accept | Phase 1 step 5 reworded + null test |
-| 16 | Questions 2 and 4 are pre-encoded in pseudocode without a gate | Medium | Accept | Phase 1 step 5 and Phase 2 render branch marked provisional |
-
-Contract verification: all six changed contracts (`steeringDockMode`, both dock
-mounts, `NodeTranscriptPane`, `LegacyNodeRoom`, `ConsoleNodeRoom`) have exactly one
-production caller each; all accounted for. Flow traces (dock remount on iteration
-switch, `GET …/queue` 200 for a live/parked loop handle, 422 retry / 409 stop, loop
-node status stays `running` across iterations) all hold.
-
-### Whole-Plan Consistency Sweep — 2026-09-20
-Decision deltas applied across all files: D1 is a new AD (AD-13) not an amendment;
-the Story 1.7 navigator is a regression case, not a loop entry point; the read-only
-mode surfaces read refusals via `onRefusal`; the resolver scopes candidates by
-`retryEpoch` and never falls back to a terminal row; the E2E uses a dedicated 60 s
-fixture; AC 5 has its own second-run case; story closure is validation question 5.
-Searched all four files for the superseded terms ("dated amendment on AD-7",
-"mirrors `chooseExecutionForNode`", "25 s window", "(AC 5)" on step 8,
-"no change is needed for the read-only mode"); none remain. No contradictions
-outstanding. The validation interview (questions 1–5) is still the open gate.
-
-Fact-check: 22 citations sampled, all verified (minor line offsets on three). One
-framing correction folded into D3: the existing `detached` mode does not poll; the
-"422 keeps polling" behaviour belongs to composer/blocked polling, which the new mode
-extends.
+1. Approve B1: should the header/Logs/graph **Execution selection** be the entry point
+   while Story 1.7 `Jump to` remains scroll-only?
+2. Approve B2: at 460px, may the full disclosure wrap (recommended), or must the
+   design define a one-row elision treatment?
 
 <!-- slug: issue-190-queued-guidance-finished-iteration -->
