@@ -193,13 +193,14 @@ function storagePathsForRootFake(root: string): {
 
 const mockCaptureApprovalResolved = mock(() => undefined);
 const mockApiLogError = mock(() => undefined);
+const mockApiLogWarn = mock(() => undefined);
 
 mock.module('@archon/paths', () => ({
   captureApprovalResolved: mockCaptureApprovalResolved,
   createLogger: () => ({
     fatal: mock(() => undefined),
     error: mockApiLogError,
-    warn: mock(() => undefined),
+    warn: mockApiLogWarn,
     info: mock(() => undefined),
     debug: mock(() => undefined),
     trace: mock(() => undefined),
@@ -708,6 +709,10 @@ type MockUserRow = {
 
 const mockGetUserById = mock(async (_id: string) => null as null | MockUserRow);
 
+const mockGetUserDisplayNamesByIds = mock(
+  async (_ids: readonly string[]) => [] as Array<{ id: string; display_name: string | null }>
+);
+
 const mockFindOrCreateUserByPlatformIdentity = mock(
   async (_platform: string, platformUserId: string, _displayName?: string) => ({
     id: platformUserId,
@@ -722,6 +727,7 @@ const mockFindOrCreateUserByPlatformIdentity = mock(
 mock.module('@archon/core/db/users', () => ({
   findOrCreateUserByPlatformIdentity: mockFindOrCreateUserByPlatformIdentity,
   getUserById: mockGetUserById,
+  getUserDisplayNamesByIds: mockGetUserDisplayNamesByIds,
 }));
 
 mock.module('@archon/core/db/workflow-envs', () => ({
@@ -2926,6 +2932,9 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/messages', () => {
     mockGetNodeMessage.mockReset();
     mockGetNodeMessageHighWatermark.mockReset();
     mockApiLogError.mockReset();
+    mockApiLogWarn.mockReset();
+    mockGetUserDisplayNamesByIds.mockReset();
+    mockGetUserDisplayNamesByIds.mockImplementation(async () => []);
     mockListNodeMessages.mockImplementation(async () => []);
     mockGetNodeMessage.mockImplementation(async () => null);
     mockGetNodeMessageHighWatermark.mockImplementation(async () => 0);
@@ -3320,6 +3329,393 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/messages', () => {
     expect(badUuid.status).toBe(400);
 
     expect(mockListNodeMessages).not.toHaveBeenCalled();
+  });
+
+  test('trims operator display names and falls back to short ids', async () => {
+    mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
+    mockListNodeMessages.mockImplementationOnce(async () => [
+      {
+        id: 'msg-named',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 1,
+        kind: 'text',
+        payload: { text: 'named guidance' },
+        created_at: '2026-01-01T00:00:00.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-alice-long',
+          message_id: 'caller-msg-1',
+        },
+      },
+      {
+        id: 'msg-blank',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'blank name guidance' },
+        created_at: '2026-01-01T00:00:01.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-blank-name',
+          message_id: 'caller-msg-2',
+        },
+      },
+      {
+        id: 'msg-missing',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 3,
+        kind: 'text',
+        payload: { text: 'missing user guidance' },
+        created_at: '2026-01-01T00:00:02.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-missing-1',
+          message_id: 'caller-msg-3',
+        },
+      },
+      {
+        id: 'msg-null-identity',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 4,
+        kind: 'text',
+        payload: { text: 'identity-less guidance' },
+        created_at: '2026-01-01T00:00:03.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: null,
+          message_id: 'caller-msg-4',
+        },
+      },
+      {
+        id: 'msg-assistant',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 5,
+        kind: 'text',
+        payload: { text: 'assistant prose' },
+        created_at: '2026-01-01T00:00:04.000Z',
+        metadata: { stream_id: 'stream-1' },
+      },
+      {
+        id: 'msg-tool',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 6,
+        kind: 'tool',
+        payload: { name: 'Read', id: 'tool-1' },
+        created_at: '2026-01-01T00:00:05.000Z',
+      },
+    ]);
+    mockGetUserDisplayNamesByIds.mockImplementationOnce(async ids => {
+      expect([...ids].sort()).toEqual(
+        ['user-alice-long', 'user-blank-name', 'user-missing-1'].sort()
+      );
+      return [
+        { id: 'user-alice-long', display_name: '  Alice  ' },
+        { id: 'user-blank-name', display_name: '   ' },
+      ];
+    });
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/runs/run-uuid-1/nodes/plan/messages');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      messages: Array<Record<string, unknown>>;
+    };
+    expect(body.messages).toEqual([
+      {
+        id: 'msg-named',
+        seq: 1,
+        kind: 'text',
+        payload: { text: 'named guidance' },
+        created_at: '2026-01-01T00:00:00.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-alice-long',
+          message_id: 'caller-msg-1',
+        },
+        operator_display_name: 'Alice',
+      },
+      {
+        id: 'msg-blank',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'blank name guidance' },
+        created_at: '2026-01-01T00:00:01.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-blank-name',
+          message_id: 'caller-msg-2',
+        },
+        operator_display_name: 'user-bla',
+      },
+      {
+        id: 'msg-missing',
+        seq: 3,
+        kind: 'text',
+        payload: { text: 'missing user guidance' },
+        created_at: '2026-01-01T00:00:02.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-missing-1',
+          message_id: 'caller-msg-3',
+        },
+        operator_display_name: 'user-mis',
+      },
+      {
+        id: 'msg-null-identity',
+        seq: 4,
+        kind: 'text',
+        payload: { text: 'identity-less guidance' },
+        created_at: '2026-01-01T00:00:03.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: null,
+          message_id: 'caller-msg-4',
+        },
+        operator_display_name: null,
+      },
+      {
+        id: 'msg-assistant',
+        seq: 5,
+        kind: 'text',
+        payload: { text: 'assistant prose' },
+        created_at: '2026-01-01T00:00:04.000Z',
+        metadata: { stream_id: 'stream-1' },
+      },
+      {
+        id: 'msg-tool',
+        seq: 6,
+        kind: 'tool',
+        payload: { name: 'Read', id: 'tool-1' },
+        created_at: '2026-01-01T00:00:05.000Z',
+      },
+    ]);
+    expect(mockGetUserDisplayNamesByIds).toHaveBeenCalledTimes(1);
+  });
+
+  test('batches two distinct sender ids across three operator rows once', async () => {
+    mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
+    mockListNodeMessages.mockImplementationOnce(async () => [
+      {
+        id: 'msg-a1',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 1,
+        kind: 'text',
+        payload: { text: 'a1' },
+        created_at: '2026-01-01T00:00:00.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-a',
+          message_id: 'm1',
+        },
+      },
+      {
+        id: 'msg-b1',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'b1' },
+        created_at: '2026-01-01T00:00:01.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-b',
+          message_id: 'm2',
+        },
+      },
+      {
+        id: 'msg-a2',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 3,
+        kind: 'text',
+        payload: { text: 'a2' },
+        created_at: '2026-01-01T00:00:02.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-a',
+          message_id: 'm3',
+        },
+      },
+    ]);
+    mockGetUserDisplayNamesByIds.mockImplementationOnce(async ids => {
+      expect([...ids].sort()).toEqual(['user-a', 'user-b']);
+      return [
+        { id: 'user-a', display_name: 'A' },
+        { id: 'user-b', display_name: 'B' },
+      ];
+    });
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/runs/run-uuid-1/nodes/plan/messages');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      messages: Array<{ operator_display_name?: string | null }>;
+    };
+    expect(body.messages.map(row => row.operator_display_name)).toEqual(['A', 'B', 'A']);
+    expect(mockGetUserDisplayNamesByIds).toHaveBeenCalledTimes(1);
+  });
+
+  test('cursor mode excludes overflow row from operator name lookup', async () => {
+    mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
+    mockGetNodeMessageHighWatermark.mockImplementationOnce(async () => 3);
+    mockListNodeMessages.mockImplementationOnce(async () => [
+      {
+        id: 'msg-page',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 1,
+        kind: 'text',
+        payload: { text: 'on page' },
+        created_at: '2026-01-01T00:00:00.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-page',
+          message_id: 'm-page',
+        },
+      },
+      {
+        id: 'msg-overflow',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'overflow only' },
+        created_at: '2026-01-01T00:00:01.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-overflow',
+          message_id: 'm-overflow',
+        },
+      },
+    ]);
+    mockGetUserDisplayNamesByIds.mockImplementationOnce(async ids => {
+      expect(ids).toEqual(['user-page']);
+      return [{ id: 'user-page', display_name: 'Page User' }];
+    });
+
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/workflows/runs/run-uuid-1/nodes/plan/messages?limit=1&afterSeq=0'
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      messages: Array<Record<string, unknown>>;
+      hasMore?: boolean;
+    };
+    expect(body.hasMore).toBe(true);
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0]?.operator_display_name).toBe('Page User');
+    expect(mockGetUserDisplayNamesByIds).toHaveBeenCalledTimes(1);
+    expect(mockGetUserDisplayNamesByIds.mock.calls[0]?.[0]).toEqual(['user-page']);
+  });
+
+  test('detail route projects operator display name', async () => {
+    mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
+    mockGetNodeMessage.mockImplementationOnce(async () => ({
+      id: 'msg-detail',
+      workflow_run_id: 'run-uuid-1',
+      node_id: 'plan',
+      seq: 9,
+      kind: 'text',
+      payload: { text: 'detail guidance' },
+      created_at: '2026-01-01T00:00:00.000Z',
+      metadata: {
+        origin: 'operator',
+        operator_user_id: 'user-detail-1',
+        message_id: 'caller-detail',
+      },
+    }));
+    mockGetUserDisplayNamesByIds.mockImplementationOnce(async ids => {
+      expect(ids).toEqual(['user-detail-1']);
+      return [{ id: 'user-detail-1', display_name: 'Detail Operator' }];
+    });
+
+    const { app } = makeApp();
+    const response = await app.request(
+      '/api/workflows/runs/run-uuid-1/nodes/plan/messages/msg-detail'
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(body).toEqual({
+      id: 'msg-detail',
+      seq: 9,
+      kind: 'text',
+      payload: { text: 'detail guidance' },
+      created_at: '2026-01-01T00:00:00.000Z',
+      metadata: {
+        origin: 'operator',
+        operator_user_id: 'user-detail-1',
+        message_id: 'caller-detail',
+      },
+      operator_display_name: 'Detail Operator',
+    });
+    expect(mockGetUserDisplayNamesByIds).toHaveBeenCalledTimes(1);
+  });
+
+  test('lookup rejection still returns 200 with short-id fallback and one safe warning', async () => {
+    mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
+    mockListNodeMessages.mockImplementationOnce(async () => [
+      {
+        id: 'msg-fail',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 1,
+        kind: 'text',
+        payload: { text: 'secret-operator-body' },
+        created_at: '2026-01-01T00:00:00.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-fail-abc',
+          message_id: 'caller-fail',
+        },
+      },
+      {
+        id: 'msg-fail-2',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'second' },
+        created_at: '2026-01-01T00:00:01.000Z',
+        metadata: {
+          origin: 'operator',
+          operator_user_id: 'user-fail-xyz',
+          message_id: 'caller-fail-2',
+        },
+      },
+    ]);
+    mockGetUserDisplayNamesByIds.mockImplementationOnce(async () => {
+      throw new Error('DO_NOT_LOG db failure with secret-operator-body');
+    });
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/runs/run-uuid-1/nodes/plan/messages');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      messages: Array<{ operator_display_name?: string | null }>;
+    };
+    expect(body.messages.map(row => row.operator_display_name)).toEqual(['user-fai', 'user-fai']);
+
+    expect(mockApiLogWarn).toHaveBeenCalledTimes(1);
+    expect(mockApiLogWarn.mock.calls[0]?.[1]).toBe('workflow_node_operator_names_lookup_failed');
+    expect(mockApiLogWarn.mock.calls[0]?.[0]).toEqual({
+      runId: 'run-uuid-1',
+      nodeId: 'plan',
+      distinctSenderCount: 2,
+      errorType: 'Error',
+    });
+    const logged = JSON.stringify(mockApiLogWarn.mock.calls);
+    expect(logged).not.toContain('DO_NOT_LOG');
+    expect(logged).not.toContain('secret-operator-body');
+    expect(logged).not.toContain('user-fail-abc');
+    expect(logged).not.toContain('user-fail-xyz');
   });
 
   test('OpenAPI documents the nested messages path and required pending_interactions', async () => {

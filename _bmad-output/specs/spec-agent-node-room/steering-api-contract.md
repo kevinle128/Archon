@@ -71,6 +71,22 @@ Reusing 409 for both would conflate two conditions a machine consumer must tell 
 - **Read racing a send/withdraw** — a queue read reflects the registry at the snapshot tick: it may include a message whose send response is still in flight, or omit one whose withdraw landed first. The initiating client never loses its own mutation — the dock tags each read with its local mutation generation and discards any snapshot captured before its own successful send/withdraw (`queueGeneration` in `steering-dock.ts`).
 - **Reads never mutate or log contents** — the queue read performs no run, event, message, or pending-interaction write; the hot path is one run lookup plus one in-memory handle snapshot. Operator message text is never logged.
 
+## Transcript operator row (read model)
+
+Stored operator receipt (written by the **executor**, never by a steering route — AD-6):
+
+- ordinary `text` row
+- strict metadata triple: `origin: 'operator'`, `operator_user_id: string | null`, `message_id`
+- no fourth persisted identity/name field
+
+Response-only derived field on the text variant of the node-message read API:
+
+- `operator_display_name: string | null` (optional on non-operator rows — omitted entirely)
+- non-null sender → trimmed current `users.display_name`, else first 8 characters of the id
+- `null` only when `operator_user_id` is null (identity-less)
+- lookup failure fails open to the short-id map; transcript list/detail still return 200
+- the web never fetches users for this field (compat short-id guard only)
+
 ## Boundary notes
 
 - `@archon/web` consumes these types through `api.generated.d.ts` / `lib/api.ts`; it never imports server or workflow packages.

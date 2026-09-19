@@ -193,7 +193,10 @@ export const pendingInteractionResponseSchema = pendingInteractionSchema
 const nodeMessageWireShape = { created_at: z.string() };
 export const workflowNodeMessageTextResponseSchema = nodeMessageTextSchema
   .omit({ workflow_run_id: true, node_id: true })
-  .safeExtend(nodeMessageWireShape);
+  .safeExtend({
+    ...nodeMessageWireShape,
+    operator_display_name: z.string().nullable().optional(),
+  });
 export const workflowNodeMessageToolResponseSchema = nodeMessageToolSchema
   .omit({ workflow_run_id: true, node_id: true })
   .safeExtend(nodeMessageWireShape);
