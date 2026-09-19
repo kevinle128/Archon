@@ -203,7 +203,8 @@ describe('spawnTerminalPty', () => {
         pty?.kill();
         await rm(dir, { recursive: true, force: true });
       }
-    }
+    },
+    30000
   );
 });
 

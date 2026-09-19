@@ -129,7 +129,11 @@ describe('transformWorkflowEventBody', () => {
   test('returns exact JSONata serialization and UTF-8 byte length', async () => {
     const result = await transformWorkflowEventBody(
       envelope,
-      transform('{ "eventType": eventType, "value": "é" }')
+      normalizeProviderBindingTransform({
+        engine: 'jsonata',
+        expression: '{ "eventType": eventType, "value": "é" }',
+        timeoutMs: 200,
+      })
     );
     expect(result.body).toBe('{"eventType":"workflow.run.started","value":"é"}');
     expect(result.outputBytes).toBe(new TextEncoder().encode(result.body).length);
