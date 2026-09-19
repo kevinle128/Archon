@@ -1,0 +1,88 @@
+## Codebase Patterns
+
+### Operator display-name projection stays local to api.ts
+- **Where**: `packages/server/src/routes/api.ts` (`buildOperatorDisplayNameById`, `toWorkflowNodeMessageResponse`)
+- **Pattern**: Collect operator text senders from the returned page only (cursor overflow excluded), one `getUserDisplayNamesByIds` call, attach trimmed name / 8-char fallback / explicit null; omit field on non-operator rows. Lookup rejection logs one payload-free warning and still returns 200.
+- **Example**: `operator_display_name: resolveOperatorDisplayName(operatorSenderId(row), map)`
+
+### Batch user display-name lookup
+- **Where**: `packages/core/src/db/users.ts:getUserDisplayNamesByIds`
+- **Pattern**: Dedupe with Set, empty → no query, sequential chunks of 500, positional `IN ($1…)` only.
+- **Example**: `SELECT id, display_name FROM remote_agent_users WHERE id IN (${placeholders})`
+
+
+### Operator history item is plain text, not assistant
+- **Where**: `packages/web/src/lib/agent-history.ts` (`buildAgentHistory`)
+- **Pattern**: Branch on `kind === 'text' && metadata?.origin === 'operator'` after tool cards and before generic text. Verbatim payload text; display name = trimmed response field else 8-char sender id else null; `delivery: 'sent'` literal. Never `presentedText` / Markdown / todo fold.
+- **Example**: `items.push({ kind: 'operator', text: message.payload.text, delivery: 'sent', ... })`
+
+### Local OperatorHistory on both shells
+- **Where**: `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`
+- **Pattern**: Thin duplicate DOM (no shared component). Role line lowercase + CSS uppercase; body plain `{item.text}`; assistant corrected to 12.5px/1.55 text-secondary. `historyItemRowVisible` already shows non-tool/lifecycle kinds — do not special-case operator.
+- **Example**: `<div data-operator-body ...>{item.text}</div>`
+
+---
+
+## 2026-09-19T20:29:24Z — US-001: Contract and server read model
+
+**Status**: PASSED
+**Files changed**:
+- packages/workflows/src/schemas/node-execution.ts — optional origin + nullable operator_user_id
+- packages/workflows/src/schemas/node-execution.test.ts — operator triple / null / strict rejection tests
+- packages/core/src/db/users.ts — getUserDisplayNamesByIds chunked helper
+- packages/core/src/db/users.test.ts — empty/dedupe/params/501-id coverage
+- packages/server/src/routes/schemas/workflow.schemas.ts — text-only operator_display_name
+- packages/server/src/routes/api.ts — list/cursor/detail projection + fail-open warn
+- packages/server/src/routes/api.workflow-runs.test.ts — mock batch + projection/failure cases
+- packages/web/src/lib/api.generated.d.ts — regenerated contract fields only
+- ARCHITECTURE-SPINE.md AD-12, steering-test-plan.md, steering-api-contract.md — Story 2.8 alignment
+
+**Acceptance criteria verified**:
+- [x] nodeTranscriptMetadataSchema accepts operator triple / null sender; rejects assistant origin and unknown keys
+- [x] getUserDisplayNamesByIds dedupes, empty short-circuit, positional params, 500-id chunks
+- [x] workflowNodeMessageTextResponseSchema gains nullable optional operator_display_name
+- [x] list/cursor/detail enrich only operator text rows; one batch lookup; overflow excluded
+- [x] lookup rejection → 200 + short ids + one safe warning
+- [x] api.workflow-runs.test.ts covers projection matrix
+- [x] api.generated.d.ts only origin/operator_user_id/operator_display_name
+- [x] AD-12 + steering docs match Story 2.8
+- [x] focused tests + type-check + lint + server package tests pass
+- [x] no executor writer / migration / new helper module
+
+**Learnings**:
+- openapi-typescript may reorder unrelated optional fields; keep only contract-derived hunks after regen against the worktree server
+- users module is mocked in several server test invocations — add getUserDisplayNamesByIds only to factories that this suite owns (api.workflow-runs.test.ts)
+
+---
+
+## 2026-09-19T20:39:22Z — US-002: Web read model and both shell renderers
+
+**Status**: PASSED
+**Files changed**:
+- packages/web/src/lib/agent-history.ts — operator AgentHistoryItem + buildAgentHistory branch
+- packages/web/src/lib/agent-history.test.ts — verbatim/fallback/envelope/order/todo isolation
+- packages/web/src/components/workflows/NodeRoom.tsx — OperatorHistory + assistant correction
+- packages/web/src/components/workflows/LegacyNodeRoom.test.tsx — DOM/token/order/last-row proofs
+- packages/web/src/components/workflows/NodeRoom.test.tsx — lowercase assistant + markup anchors
+- packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx — Console parity renderer
+- packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx — parity + filter visibility/focus
+- packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx — lowercase assistant
+
+**Acceptance criteria verified**:
+- [x] AgentHistoryItem gains operator member with delivery 'sent'
+- [x] buildAgentHistory operator branch before generic text; verbatim + display-name fallback
+- [x] agent-history.test.ts covers AC matrix
+- [x] Legacy OperatorHistory DOM contract + assistant correction
+- [x] LegacyNodeRoom.test.tsx proves tokens/order/escaping/last-row
+- [x] Console OperatorHistory parity; historyItemRowVisible unchanged; filter visibility asserted
+- [x] ConsoleNodeRoom.test.tsx independent DOM + focus-marker under hidden filters
+- [x] no project-text/pair-tool/occurrence-groups/steering-dock changes; no cross-shell component
+- [x] rejected draft styling absent; focused + package web tests, type-check, lint pass
+
+**Learnings**:
+- project-text-transcript still coalesces same-key deltas across a complete operator row; operator-between-delta tests must use distinct message/block ids
+- happy-dom normalizes `margin: 0 2px 6px` to `0px 2px 6px`
+- assistant label source is now lowercase `assistant` (CSS uppercase); update textContent assertions that expected `ASSISTANT`
+
+---
+
