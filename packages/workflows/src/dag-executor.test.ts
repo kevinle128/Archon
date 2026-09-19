@@ -26823,3 +26823,738 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-body-1');
   });
 });
+
+describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
+  const RUN_ID = 'interrupt-run-1';
+
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `dag-int-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    getSteeringRegistry().clearForTests();
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    getSteeringRegistry().clearForTests();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  function liveHandle(runId: string, stepName: string): NodeSteeringHandle {
+    const handle = getSteeringRegistry().get(runId, stepName);
+    if (!handle) throw new Error(`expected live steering handle for ${runId}/${stepName}`);
+    return handle;
+  }
+
+  function steeringMessage(messageId: string, message: string) {
+    return {
+      messageId,
+      message,
+      operatorUserId: 'op-1',
+      receivedAt: new Date().toISOString(),
+    };
+  }
+
+  function enqueue(runId: string, stepName: string, messageId: string, message: string): void {
+    const result = liveHandle(runId, stepName).enqueue(steeringMessage(messageId, message));
+    if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+  }
+
+  function sendNow(runId: string, stepName: string, messageId: string, message: string): void {
+    const result = liveHandle(runId, stepName).accept(
+      steeringMessage(messageId, message),
+      'send_now'
+    );
+    if (!result.ok) throw new Error(`send_now refused: ${result.reason}`);
+  }
+
+  /** Poll until the handle projects the idle sub-state (or give up loudly). */
+  async function awaitIdle(runId: string, stepName: string): Promise<NodeSteeringHandle> {
+    for (let i = 0; i < 2000; i++) {
+      const handle = getSteeringRegistry().get(runId, stepName);
+      if (handle?.steeringSubState() === 'idle-after-interrupt') return handle;
+      await Bun.sleep(1);
+    }
+    throw new Error(`handle ${runId}/${stepName} never reached idle-after-interrupt`);
+  }
+
+  function storedEventTypes(store: IWorkflowStore): string[] {
+    return (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+      call => (call[0] as { event_type: string }).event_type
+    );
+  }
+
+  function nodeFailedError(store: IWorkflowStore, stepName: string): string {
+    const failed = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+      call =>
+        (call[0] as { event_type: string }).event_type === 'node_failed' &&
+        (call[0] as { step_name: string }).step_name === stepName
+    );
+    if (!failed) throw new Error(`expected node_failed for ${stepName}`);
+    return ((failed[0] as { data: { error: string } }).data.error ?? '') as string;
+  }
+
+  function toolCompletedOutcomes(store: IWorkflowStore): Map<string, string[]> {
+    const outcomes = new Map<string, string[]>();
+    for (const call of (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls) {
+      const arg = call[0] as { event_type: string; data: Record<string, unknown> };
+      if (arg.event_type !== 'tool_completed') continue;
+      const id = arg.data.tool_call_id as string;
+      const list = outcomes.get(id) ?? [];
+      list.push(arg.data.tool_outcome as string);
+      outcomes.set(id, list);
+    }
+    return outcomes;
+  }
+
+  async function transcriptStates(
+    store: IWorkflowStore,
+    runId: string,
+    stepName: string
+  ): Promise<string[]> {
+    const rows = await store.listNodeMessages(runId, stepName);
+    return rows.map(row => (row.kind === 'status' ? row.payload.state : row.kind));
+  }
+
+  async function invokeDag(
+    store: IWorkflowStore,
+    nodes: DagNode[],
+    opts?: { runId?: string; assistant?: 'claude' | 'pi' }
+  ): Promise<IWorkflowPlatform> {
+    const assistant = opts?.assistant ?? 'claude';
+    const config =
+      assistant === 'pi'
+        ? {
+            ...minimalConfig,
+            assistant: 'pi' as const,
+            assistants: { ...minimalConfig.assistants, pi: {} },
+          }
+        : minimalConfig;
+    const platform = createMockPlatform();
+    await executeDagWorkflow(
+      createMockDeps(store),
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'interrupt-test', nodes },
+      makeWorkflowRun(opts?.runId ?? RUN_ID),
+      assistant,
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      config
+    );
+    return platform;
+  }
+
+  function sendQueryArg<T>(callIndex: number, argIndex: number): T {
+    return mockSendQueryDag.mock.calls[callIndex][argIndex] as T;
+  }
+
+  it('interrupt parks an abort-marked result in idle and Send now drains old + new receipts in order on the same session', async () => {
+    let calls = 0;
+    let interruptOutcome: Promise<string> | undefined;
+    const seenInterruptSignals: (AbortSignal | undefined)[] = [];
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      seenInterruptSignals.push(options?.interruptSignal);
+      if (calls === 1) {
+        interruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
+        yield { type: 'assistant', content: 'partial output' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected output' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    const idle = await awaitIdle(RUN_ID, 'review');
+    expect(await interruptOutcome).toBe('idle-after-interrupt');
+    // One committed 'interrupted' status row precedes the idle projection.
+    const states = await transcriptStates(store, RUN_ID, 'review');
+    expect(states.filter(s => s === 'interrupted').length).toBe(1);
+    expect(states).not.toContain('failed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+
+    // Two queue-intent rows land as awaiting_send_now; send_now drains all
+    // three in receipt order into ONE redirect turn.
+    enqueue(RUN_ID, 'review', 'm-old-1', 'old note one');
+    enqueue(RUN_ID, 'review', 'm-old-2', 'old note two');
+    expect(idle.snapshot().queued.length).toBe(2);
+    sendNow(RUN_ID, 'review', 'm-new', 'new instruction');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('old note one\n\nold note two\n\nnew instruction');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(sendQueryArg<SendQueryOptions>(1, 3).forkSession).toBe(false);
+    // Each provider pass got its own fresh interrupt signal.
+    expect(seenInterruptSignals[0]).toBeDefined();
+    expect(seenInterruptSignals[1]).toBeDefined();
+    expect(seenInterruptSignals[0]).not.toBe(seenInterruptSignals[1]);
+    expect(seenInterruptSignals[0]!.aborted).toBe(true);
+    expect(seenInterruptSignals[1]!.aborted).toBe(false);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+  });
+
+  it('interrupt marker wins over an isError/errorSubtype result — idles instead of failing', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield {
+          type: 'result',
+          sessionId: 'sess-1',
+          terminalReason: 'aborted_tools',
+          isError: true,
+          errorSubtype: 'error_during_execution',
+        };
+        return;
+      }
+      yield { type: 'assistant', content: 'resumed' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    await awaitIdle(RUN_ID, 'review');
+    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt classifies an abort-like throw as an interrupted end, not dag_node_failed', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        // Live background tasks keep the stream open past the result, so the
+        // SDK's trailing abort throw reaches the consumer — the realistic
+        // shape of an interrupted stream (US-001 spike).
+        yield {
+          type: 'background_tasks',
+          tasks: [{ taskId: 'task-1', description: 'still running' }],
+        };
+        yield { type: 'result', sessionId: 'sess-1' };
+        const err = new Error('The operation was aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+      yield { type: 'assistant', content: 'resumed' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    await awaitIdle(RUN_ID, 'review');
+    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt does not convert an unrelated throw racing Stop into an interrupted end', async () => {
+    mockSendQueryDag.mockImplementation(async function* () {
+      void liveHandle(RUN_ID, 'review').interrupt();
+      yield { type: 'assistant', content: 'partial' };
+      throw new Error('provider exploded for a different reason');
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toBe('provider exploded for a different reason');
+  });
+
+  it('interrupt racing a natural unmarked result still drains queued guidance and settles generating', async () => {
+    let calls = 0;
+    let interruptOutcome: Promise<string> | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(RUN_ID, 'review', 'm-1', 'queued steer');
+        interruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(await interruptOutcome).toBe('generating');
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('queued steer');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt racing a natural unmarked result on an empty queue settles node_finished', async () => {
+    let interruptOutcome: Promise<string> | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      interruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
+      yield { type: 'assistant', content: 'all done' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(await interruptOutcome).toBe('node_finished');
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+  });
+
+  it('interrupt losing to node Cancel keeps the existing Cancel failure — no idle', async () => {
+    let cancelled = false;
+    let interruptOutcome: Promise<string> | undefined;
+    const store = createMockStore();
+    store.getWorkflowRunStatus = mock(async () => (cancelled ? 'cancelled' : 'running'));
+    mockSendQueryDag.mockImplementation(async function* () {
+      interruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
+      cancelled = true; // terminal status lands before the first chunk's poll
+      yield { type: 'assistant', content: 'partial' };
+      yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+    });
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(nodeFailedError(store, 'review')).toBe('Cancelled by user');
+    expect(await interruptOutcome).toBe('node_finished');
+    expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+  });
+
+  it('interrupt discards the idle waiter into the existing Cancel path', async () => {
+    mockSendQueryDag.mockImplementation(async function* () {
+      void liveHandle(RUN_ID, 'review').interrupt();
+      yield { type: 'assistant', content: 'partial' };
+      yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    await awaitIdle(RUN_ID, 'review');
+    getSteeringRegistry().discardRun(RUN_ID);
+    await run;
+
+    expect(nodeFailedError(store, 'review')).toBe('Cancelled by user');
+    expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+  });
+
+  it('interrupt skips structured-output validation and the re-ask on an abort-marked result', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'classify').interrupt();
+        // Abort-marked result with NO structuredOutput — validation would
+        // re-ask a natural miss; an interrupted end must not.
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'result', sessionId: 'sess-2', structuredOutput: { verdict: 'ok' } };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      {
+        id: 'classify',
+        prompt: 'decide',
+        output_format: {
+          type: 'object',
+          properties: { verdict: { type: 'string' } },
+          required: ['verdict'],
+        },
+      },
+    ]);
+
+    await awaitIdle(RUN_ID, 'classify');
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    sendNow(RUN_ID, 'classify', 'm-1', 'retry properly');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('retry properly');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt flag blocks a re-ask after Stop raced an invalid natural result', async () => {
+    let interruptOutcome: Promise<string> | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      interruptOutcome = liveHandle(RUN_ID, 'classify').interrupt() as Promise<string>;
+      // UNMARKED result wins the race — but the Stop flag must prevent a
+      // re-ask pass from claiming the turn slot; the miss fails normally.
+      yield { type: 'result', sessionId: 'sess-1', structuredOutput: { wrong: true } };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'classify',
+        prompt: 'decide',
+        output_format: {
+          type: 'object',
+          properties: { verdict: { type: 'string' } },
+          required: ['verdict'],
+        },
+      },
+    ]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'classify')).toContain('structured output');
+    expect(await interruptOutcome).toBe('node_finished');
+  });
+
+  it('interrupt settles an outstanding tool interrupted and leaves a settled one untouched — one status row', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'tool', toolName: 'Read', toolCallId: 'tool-done', toolInput: {} };
+        yield {
+          type: 'tool_result',
+          toolName: 'Read',
+          toolCallId: 'tool-done',
+          toolOutcome: 'success',
+        };
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'tool-open', toolInput: {} };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_tools' };
+        return;
+      }
+      yield { type: 'assistant', content: 'resumed' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    await awaitIdle(RUN_ID, 'review');
+    const outcomes = toolCompletedOutcomes(store);
+    expect(outcomes.get('tool-done')).toEqual(['success']);
+    expect(outcomes.get('tool-open')).toEqual(['interrupted']);
+    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    await run;
+
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt suppresses the live-background-task wait and the incomplete warning', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        yield {
+          type: 'background_tasks',
+          tasks: [{ taskId: 'task-1', description: 'still running' }],
+        };
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'assistant', content: 'resumed' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const platform = createMockPlatform();
+    const config = minimalConfig;
+    const run = executeDagWorkflow(
+      createMockDeps(store),
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'interrupt-test', nodes: [{ id: 'review', prompt: 'do work' }] },
+      makeWorkflowRun(RUN_ID),
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      config
+    );
+
+    await awaitIdle(RUN_ID, 'review');
+    const sent = (platform.sendMessage as ReturnType<typeof mock>).mock.calls.map(
+      call => call[1] as string
+    );
+    expect(sent.some(text => text.includes('background agent task'))).toBe(false);
+    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    await run;
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt preserves usage and cost exactly once across the redirect turn', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield {
+          type: 'result',
+          sessionId: 'sess-1',
+          terminalReason: 'aborted_streaming',
+          tokens: { input: 10, output: 5 },
+          cost: 0.01,
+        };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected' };
+      yield { type: 'result', sessionId: 'sess-2', tokens: { input: 20, output: 7 }, cost: 0.02 };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    await awaitIdle(RUN_ID, 'review');
+    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    await run;
+
+    const completedCall = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+      call => (call[0] as { event_type: string }).event_type === 'node_completed'
+    );
+    const data = (completedCall![0] as { data: Record<string, unknown> }).data;
+    expect(data.tokens).toEqual({ input: 30, output: 12 });
+    expect(data.cost_usd).toBeCloseTo(0.03, 5);
+  });
+
+  it('interrupt without a session id fails explicitly instead of losing resumability', async () => {
+    let handleRef: NodeSteeringHandle | undefined;
+    mockSendQueryDag.mockImplementation(async function* () {
+      handleRef = liveHandle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'stranded');
+      void handleRef.interrupt();
+      yield { type: 'assistant', content: 'partial' };
+      yield { type: 'result', terminalReason: 'aborted_streaming' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toContain('no session id');
+    expect(handleRef!.snapshot().queued.length).toBe(1);
+  });
+
+  it('interrupt twice uses a fresh token and controller per turn with no stale-flag contamination', async () => {
+    let calls = 0;
+    const outcomes: Promise<string>[] = [];
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls <= 2) {
+        outcomes.push(liveHandle(RUN_ID, 'review').interrupt() as Promise<string>);
+        yield { type: 'assistant', content: `partial ${String(calls)}` };
+        yield {
+          type: 'result',
+          sessionId: `sess-${String(calls)}`,
+          terminalReason: 'aborted_streaming',
+        };
+        return;
+      }
+      yield { type: 'assistant', content: 'final' };
+      yield { type: 'result', sessionId: 'sess-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    await awaitIdle(RUN_ID, 'review');
+    expect(await outcomes[0]).toBe('idle-after-interrupt');
+    sendNow(RUN_ID, 'review', 'm-1', 'first redirect');
+    await awaitIdle(RUN_ID, 'review');
+    expect(await outcomes[1]).toBe('idle-after-interrupt');
+    sendNow(RUN_ID, 'review', 'm-2', 'second redirect');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('sess-2');
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt stays unavailable on a queue-only provider', async () => {
+    let observed: { subState: unknown; interruptSignal: unknown; outcome?: string } | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      const handle = getSteeringRegistry().get(RUN_ID, 'review');
+      observed = {
+        subState: handle?.steeringSubState(),
+        interruptSignal: options?.interruptSignal,
+      };
+      if (handle) {
+        observed.outcome = await handle.interrupt();
+      }
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-pi' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work', provider: 'pi' }], {
+      assistant: 'pi',
+    });
+
+    expect(observed).toBeDefined();
+    expect(observed!.subState).toBeUndefined();
+    expect(observed!.interruptSignal).toBeUndefined();
+    expect(observed!.outcome).toBe('not_steerable_here');
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('interrupt in an AI loop idles inside the iteration and Send now resumes without consuming one', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'my-loop').interrupt();
+        yield { type: 'assistant', content: 'iteration work' };
+        yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    await awaitIdle(RUN_ID, 'my-loop');
+    const states = await transcriptStates(store, RUN_ID, 'my-loop');
+    expect(states).toContain('interrupted');
+    sendNow(RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('redirect the loop');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+    // The redirect ran inside iteration 1 — only one iteration ran at all.
+    const iterationCompleted = (
+      store.createWorkflowEvent as ReturnType<typeof mock>
+    ).mock.calls.filter(
+      call =>
+        (call[0] as { event_type: string }).event_type === 'loop_iteration_completed' ||
+        (call[0] as { event_type: string }).event_type === 'node_completed'
+    );
+    expect(iterationCompleted.length).toBeGreaterThan(0);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+  });
+
+  it('interrupt throw in an AI loop resumes the threaded session, not the dead pass', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        // Iteration 1 completes naturally — its session threads iteration 2.
+        yield { type: 'assistant', content: 'iteration one, no signal' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      if (calls === 2) {
+        void liveHandle(RUN_ID, 'my-loop').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        throw new Error('Query interrupted');
+      }
+      yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    await awaitIdle(RUN_ID, 'my-loop');
+    sendNow(RUN_ID, 'my-loop', 'm-1', 'redirect');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    // The aborted pass emitted no result — the redirect resumed the loop's
+    // threaded conversation (loop-sess-1), never a fresh session.
+    expect(sendQueryArg<string>(2, 0)).toBe('redirect');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('loop-sess-1');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+  });
+
+  it('interrupt of a loop-group body node parks under the namespaced step name', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'grp.body').interrupt();
+        yield { type: 'assistant', content: 'body partial' };
+        yield { type: 'result', sessionId: 'sess-body-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'assistant', content: 'body done COMPLETE' };
+      yield { type: 'result', sessionId: 'sess-body-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      {
+        id: 'grp',
+        loop_group: {
+          until: 'COMPLETE',
+          max_iterations: 1,
+          nodes: [{ id: 'body', prompt: 'emit COMPLETE' }],
+        },
+      },
+    ]);
+
+    const idle = await awaitIdle(RUN_ID, 'grp.body');
+    expect(idle.steeringSubState()).toBe('idle-after-interrupt');
+    sendNow(RUN_ID, 'grp.body', 'm-1', 'redirect the body');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('redirect the body');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-body-1');
+    expect(getSteeringRegistry().get(RUN_ID, 'grp.body')).toBeUndefined();
+  });
+});
