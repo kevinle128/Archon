@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type Locator, type Page, type TestInfo } from '@playwright/test';
+import { type Locator, type Page, type Request, type TestInfo } from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
@@ -70,12 +70,13 @@ const EDIT_OLD_MIN = 'min(31)';
 const EDIT_OLD_SECS = 'secs + 1';
 const EDIT_NEW_MIN = 'min(30)';
 const EDIT_NEW_SECS = 'from_secs(secs)';
-const EDIT_OUTPUT = 'applied 2 line changes';
-const FAILED_OUTPUT = 'old_string not found in file';
+const EDIT_OUTPUT = `The file ${EDIT_PATH} has been updated successfully.`;
+const FAILED_OUTPUT = 'String to replace not found in file.';
 const WRITE_TOOL_NAME = 'Write';
-const WRITE_PATH = 'e2e/tmp/fake-write.txt';
-const WRITE_OUTPUT = 'wrote 47 bytes';
-const BARE_OUTPUT = 'e2e-fake bare tool output';
+const WRITE_PATH = 'notes/summary.md';
+const WRITE_OUTPUT = 'File created successfully at: notes/summary.md';
+const BARE_TOOL_NAME = 'edit';
+const BARE_OUTPUT = 'edited notes/summary.md';
 // Unicode minus U+2212, not an ASCII hyphen.
 const MINUS = '−';
 
@@ -454,10 +455,14 @@ for (const surface of ['console', 'legacy'] as const) {
     const started = await archon.runFileEditWorkflow();
     const evidence: Record<string, unknown> = { surface };
 
-    // Request ledger: opening, toggling, and Raw must never leave the app origin.
+    // Request ledger: opening, toggling, and Raw must never leave the app
+    // origin. The ledger attaches only around those interactions — page
+    // navigations themselves legitimately fetch the app's declared webfonts.
     const appHost = new URL(archon.baseURL).host;
     const requests: string[] = [];
-    page.on('request', request => requests.push(request.url()));
+    const recordRequest = (request: Request): void => {
+      requests.push(request.url());
+    };
 
     // ---- file-edit node: the qualified edit -------------------------------
     let room = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
@@ -487,9 +492,13 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     await captureEvidence(sizedRow, `${surface}-file-edit-closed.png`, testInfo);
 
-    // Keyboard-open: bar, path, then the one bounded unified table.
+    // Keyboard-open: bar, path, then the one bounded unified table. The
+    // native `open` flag flips before React mounts the body, so wait for the
+    // body box before reading the bar text.
+    page.on('request', recordRequest);
     await sizedSummary.press('Enter');
     await expect(sizedRow).toHaveJSProperty('open', true);
+    await expect(sizedRow.locator(BODY_BOX).first()).toBeVisible({ timeout: T.medium });
     const bar = await bodyBarText(sizedRow);
     expect(
       bar.startsWith('file · 1 hunk · replace_all: false'),
@@ -570,6 +579,7 @@ for (const surface of ['console', 'legacy'] as const) {
     const restored = await diffLineFacts(bodyBox.locator(DIFF_TABLE));
     expect(restored.codeClasses).toEqual(facts.codeClasses);
     expect(restored.numbers).toEqual(facts.numbers);
+    page.off('request', recordRequest);
 
     await expectNoDiffBodyOverflow(room, sizedRow, 'edit row at reference width');
     const geometry = await expectDiffGeometry(sizedRow, 'edit row at reference width');
@@ -614,11 +624,12 @@ for (const surface of ['console', 'legacy'] as const) {
       WRITE_TOOL_NAME
     );
     const writeSummary = writeRow.locator('> summary');
-    await expect(writeSummary).toContainText('fake-write.txt');
+    await expect(writeSummary).toContainText('summary.md');
     const writeSummaryText = (await writeSummary.textContent()) ?? '';
     expect(writeSummaryText, 'write summary carries no fabricated diff badge').not.toContain(
       `${MINUS}2`
     );
+    page.on('request', recordRequest);
     await writeSummary.press('Enter');
     await expect(writeRow).toHaveJSProperty('open', true);
     await expect(writeRow.locator(DIFF_TABLE)).toHaveCount(0);
@@ -627,6 +638,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(writeBox).toContainText(WRITE_OUTPUT);
     await expectNoDiffBodyOverflow(writeRoom, writeRow, 'write row at reference width');
     await captureEvidence(writeRow, `${surface}-file-edit-write.png`, testInfo);
+    page.off('request', recordRequest);
 
     // ---- file-edit-bare node: generic no-input fallback --------------------
     const bareRoom = await openEditRoom(page, surface, started.runId, FILE_EDIT_BARE_NODE);
@@ -635,19 +647,21 @@ for (const surface of ['console', 'legacy'] as const) {
       bareRoom,
       started.runId,
       FILE_EDIT_BARE_NODE,
-      EDIT_TOOL_NAME
+      BARE_TOOL_NAME
     );
     const bareSummary = bareRow.locator('> summary');
-    await expect(bareSummary).toContainText(EDIT_TOOL_NAME);
+    await expect(bareSummary).toContainText(BARE_TOOL_NAME);
+    page.on('request', recordRequest);
     await bareSummary.press('Enter');
     await expect(bareRow).toHaveJSProperty('open', true);
     await expect(bareRow.locator(DIFF_TABLE)).toHaveCount(0);
     const bareBox = bareRow.locator(BODY_BOX).first();
     // No input was stored, so the salient-name fallback labels the path slot.
-    await expect(bareBox.locator('.text-node-command').first()).toHaveText(EDIT_TOOL_NAME);
+    await expect(bareBox.locator('.text-node-command').first()).toHaveText(BARE_TOOL_NAME);
     await expect(bareBox).toContainText(BARE_OUTPUT);
     await expectNoDiffBodyOverflow(bareRoom, bareRow, 'bare row at reference width');
     await captureEvidence(bareRow, `${surface}-file-edit-bare.png`, testInfo);
+    page.off('request', recordRequest);
 
     // ---- network quietness --------------------------------------------------
     const external = requests.filter(url => {
@@ -659,7 +673,7 @@ for (const surface of ['console', 'legacy'] as const) {
         return false;
       }
     });
-    expect(external, 'no request ever left the app origin').toEqual([]);
+    expect(external, 'no open/toggle request left the app origin').toEqual([]);
 
     evidence.edit = {
       toolUseId,
@@ -746,6 +760,9 @@ for (const surface of ['console', 'legacy'] as const) {
   });
 }
 
+// "Both themes": the app ships dark-only (EXPERIENCE.md); the theme axis is
+// the two token sources — Legacy resolves index.css, Console resolves
+// experiments/console/theme.css — so each surface's pass covers its theme.
 test('[P1] file-edit: diff text, markers, numbers, and badges resolve to >=4.5:1 on both themes', async ({
   page,
   archon,

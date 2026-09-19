@@ -130,3 +130,38 @@ BLOCKER US-002 | gate=bun run format:check | cause=pre-existing prettier drift i
 - `renderGutter`'s `renderDefault()` returns '' for inserts in unified mode; `computeNewLineNumber(change)` from `/esm/index.js` supplies the insert-side number so all six rows carry a number.
 
 ---
+
+## 2026-09-19 — US-004: Deterministic full-stack proof and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts` — `fileEdit: z.enum(['edit','failed','write','bare']).optional()` mutually exclusive with all existing variant fields (`delayMs` may coexist); pinned constants `E2E_FAKE_EDIT_*` / `E2E_FAKE_WRITE_*` / `E2E_FAKE_BARE_EDIT_*`; each variant emits one paired call/result with cloned inputs — edit two-sided success, failed same input + `String to replace not found in file.` + `toolOutcome 'error'`, write one-sided Write, bare lowercase `edit` with absent (not undefined) `toolInput`
+- `packages/providers/src/e2e-fake/provider.test.ts` — event order, tool names, paired ids/results, input shapes, absent bare toolInput, every exclusivity rejection
+- `e2e/fixtures/workflows/e2e-file-edit.yaml` — `mutates_checkout: false`, four chained e2e-fake nodes (edit/failed/write/bare)
+- `e2e/lib/playwright/archon-runtime.ts` — fixture registration + typed `runFileEditWorkflow()`
+- `e2e/ui/file-edit-diff.spec.ts` — `[P1] file-edit:` both-surface proof: badges `+2`/`−2` (U+2212), body bar `file · 1 hunk · replace_all: false`, path-first anatomy, jsdiff-order cells/markers/numbers, zero `tbody.diff-decoration`, Raw swap/restore, failed second inset box, write/bare fallbacks (bare labeled generic no-input fallback), request ledger proving no off-origin traffic during open/toggle, geometry + tab-order + measured-contrast matrix
+- `packages/web/src/index.css` — `--tool-diff-delete-fg: color-mix(in oklch, var(--error) 85%, var(--text-primary))` (pure --error measured 4.32:1 on Legacy; mix clears 4.5:1 on both surfaces, floor unchanged)
+- `plans/.../reports/implementation-evidence.md`, `visual-acceptance.md`, `captures/` — full state×surface×viewport×theme matrix, every measured ratio with resolved colors, mockup comparison, documented deviations
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — `1-4-view-a-file-edit-as-an-inline-diff: done`
+- `plans/.../prd.json` — US-004 passes
+
+**Acceptance criteria verified**:
+- [x] `fileEdit` enum + exclusivity + pinned constants; provider tests green (37 e2e-fake tests)
+- [x] Fixture with 4 chained nodes + `runFileEditWorkflow()` typed helper
+- [x] Spec assertions all green: badges, bar, anatomy, Raw cycle, failed box, fallbacks, zero off-origin requests — 5/5 tests pass
+- [x] Viewport/theme matrix: Legacy 460px + Console 520px at 1440×1000, shared 460px, 390×844 — both dark token sources measured as the theme axis
+- [x] Geometry: table width = body content within 2px (0.3px max delta), no h-overflow, one-line summary, wrap `pre-wrap`/`anywhere`, 27.6px marker+3ch gutter
+- [x] A11y: native details/summary, 0 focusable descendants, Tab summary → Raw → next control; every measured pair ≥4.5:1 (Legacy min 5.35, Console min 6.83)
+- [x] Reports record gate resolution, commands, results, captures, deviations (snippet-relative numbering, grouped jsdiff ordering), component evidence for identical/refused/multi-hunk/malicious-control
+- [x] Validation in order: providers ✅ → web legs (880/539/1002) ✅ → web full ✅ → e2e typecheck ✅ → file-edit spec ✅ → HITL (38 pass, 0 flaky) ✅ → `bun run validate` ✅
+- [x] sprint-status 1.4 done after line-by-line AC→evidence mapping; PR deferred to parent workflow (hard rule)
+
+**Learnings**:
+- The e2e runtime's `waitFor`/`details.open` resolves before React mounts the body — wait for `.tool-family-body` visibility before reading body-bar text.
+- The request-quietness window must be scoped to the open/toggle/Raw interactions; page navigation legitimately fetches the app's declared Google Fonts, which are outside the contract.
+- Pure `--error` (oklch 0.6) on Legacy's 12% delete tint measures ~4.32:1 — a scoped `color-mix(in oklch, var(--error) 85%, var(--text-primary))` clears the floor on both surfaces while keeping the error hue.
+- "Both themes" resolves to the two dark token sources (index.css vs experiments/console/theme.css) — the app is dark-only by design (EXPERIENCE.md:38).
+- Playwright suite regenerates tracked captures in other plan dirs — `git checkout` them before staging to keep the diff scoped.
+- Pre-existing breakage this story unblocked in separate commits: OMP session-usage 8MiB I/O test needed 60s under suite load (`9992e724`); PR #202 left stale HITL contracts — dropped Raw `focus-visible:` classes, a `.tool-family-body` raw `pre` selector that never matched, `aria-expanded` count expectations against the lazy-mount contract, and a count-0 tail assertion from before family bodies existed (`a04d8db9`, `5a28e621` folded in).
+
+---

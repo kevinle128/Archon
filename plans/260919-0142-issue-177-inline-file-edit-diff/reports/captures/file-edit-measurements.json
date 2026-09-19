@@ -1,0 +1,272 @@
+{
+  "geometry-console": {
+    "surface": "console",
+    "reference": {
+      "tableWidth": 433,
+      "tableScroll": 0,
+      "boxContentWidth": 433,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    },
+    "shared": {
+      "tableWidth": 373,
+      "tableScroll": 0,
+      "boxContentWidth": 373,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    },
+    "narrow": {
+      "tableWidth": 303,
+      "tableScroll": 0,
+      "boxContentWidth": 303,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    }
+  },
+  "geometry-legacy": {
+    "surface": "legacy",
+    "reference": {
+      "tableWidth": 372.671875,
+      "tableScroll": 0,
+      "boxContentWidth": 373,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    },
+    "shared": {
+      "tableWidth": 372.671875,
+      "tableScroll": 0,
+      "boxContentWidth": 373,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    },
+    "narrow": {
+      "tableWidth": 303,
+      "tableScroll": 0,
+      "boxContentWidth": 303,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    }
+  },
+  "behavior-console": {
+    "surface": "console",
+    "edit": {
+      "toolUseId": "e2e-fake-tool-e2e-fake-2682d1f7-c76d-484b-8a85-8ab3788ba330",
+      "closedRow": {
+        "height": 28.5,
+        "width": 440
+      },
+      "sizedClosed": {
+        "height": 28.5,
+        "width": 496
+      },
+      "bar": "file · 1 hunk · replace_all: false · 16ms",
+      "facts": {
+        "codeClasses": [
+          "diff-code diff-code-normal",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-normal"
+        ],
+        "markers": ["", "−", "−", "+", "+", ""],
+        "numbers": ["1", "2", "3", "2", "3", "4"]
+      },
+      "focusableInDiff": 0,
+      "afterRaw": {
+        "tag": "BUTTON",
+        "text": "Re-run",
+        "insideDiff": false
+      },
+      "geometry": {
+        "tableWidth": 433,
+        "tableScroll": 0,
+        "boxContentWidth": 433,
+        "codeWhiteSpace": "pre-wrap",
+        "codeOverflowWrap": "anywhere",
+        "markerWidth": 6.890625,
+        "numberWidth": 20.6875,
+        "gutterWidth": 27.59375,
+        "cellsFit": true
+      }
+    },
+    "failed": {
+      "mountedOpen": true,
+      "boxCount": 2,
+      "facts": {
+        "codeClasses": [
+          "diff-code diff-code-normal",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-normal"
+        ],
+        "markers": ["", "−", "−", "+", "+", ""],
+        "numbers": ["1", "2", "3", "2", "3", "4"]
+      }
+    }
+  },
+  "behavior-legacy": {
+    "surface": "legacy",
+    "edit": {
+      "toolUseId": "e2e-fake-tool-e2e-fake-245d8e91-7031-4e61-a3dc-862af569647e",
+      "closedRow": {
+        "height": 28.5,
+        "width": 551.59375
+      },
+      "sizedClosed": {
+        "height": 28.5,
+        "width": 435.671875
+      },
+      "bar": "file · 1 hunk · replace_all: false · 30ms",
+      "facts": {
+        "codeClasses": [
+          "diff-code diff-code-normal",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-normal"
+        ],
+        "markers": ["", "−", "−", "+", "+", ""],
+        "numbers": ["1", "2", "3", "2", "3", "4"]
+      },
+      "focusableInDiff": 0,
+      "afterRaw": {
+        "tag": "BODY",
+        "text": "AArchonChatDashboardWorkflowsSettingsTry the new console UI→",
+        "insideDiff": false
+      },
+      "geometry": {
+        "tableWidth": 372.671875,
+        "tableScroll": 0,
+        "boxContentWidth": 373,
+        "codeWhiteSpace": "pre-wrap",
+        "codeOverflowWrap": "anywhere",
+        "markerWidth": 6.890625,
+        "numberWidth": 20.6875,
+        "gutterWidth": 27.59375,
+        "cellsFit": true
+      }
+    },
+    "failed": {
+      "mountedOpen": true,
+      "boxCount": 2,
+      "facts": {
+        "codeClasses": [
+          "diff-code diff-code-normal",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-delete",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-insert",
+          "diff-code diff-code-normal"
+        ],
+        "markers": ["", "−", "−", "+", "+", ""],
+        "numbers": ["1", "2", "3", "2", "3", "4"]
+      }
+    }
+  },
+  "contrast": {
+    "console": {
+      "summary background": "oklch(0.175 0.007 265)",
+      "insert code background": "oklch(0.205 0.02508 253.36)",
+      "delete code background": "oklch(0.196 0.03108 278.56)",
+      "normal code background": "oklch(0.13 0.006 265)",
+      "insert gutter background": "oklch(0.205 0.02508 253.36)",
+      "delete gutter background": "oklch(0.196 0.03108 278.56)",
+      "normal gutter background": "oklch(0.13 0.006 265)",
+      "+2 badge at rest resolved": "oklch(0.755 0.165 168)",
+      "+2 badge at rest ratio": 9.5,
+      "−2 badge at rest resolved": "oklch(0.75375 0.16225 349.75)",
+      "−2 badge at rest ratio": 8.02,
+      "inserted code resolved": "oklch(0.755 0.165 168)",
+      "inserted code ratio": 8.94,
+      "deleted code resolved": "oklch(0.72425 0.18335 1.04999)",
+      "deleted code ratio": 6.83,
+      "context code resolved": "oklch(0.975 0.004 265)",
+      "context code ratio": 18.77,
+      "insert marker resolved": "oklch(0.755 0.165 168)",
+      "insert marker ratio": 8.94,
+      "delete marker resolved": "oklch(0.72425 0.18335 1.04999)",
+      "delete marker ratio": 6.83,
+      "insert line number resolved": "oklch(0.745 0.014 265)",
+      "insert line number ratio": 7.87,
+      "delete line number resolved": "oklch(0.745 0.014 265)",
+      "delete line number ratio": 8.04,
+      "context line number resolved": "oklch(0.745 0.014 265)",
+      "context line number ratio": 8.86,
+      "summary hover background": "oklch(0.225 0.01 265)",
+      "+2 badge on hover resolved": "oklch(0.755 0.165 168)",
+      "+2 badge on hover ratio": 8.54,
+      "−2 badge on hover resolved": "oklch(0.75375 0.16225 349.75)",
+      "−2 badge on hover ratio": 7.21,
+      "--success": "oklch(0.755 0.165 168)",
+      "--error": "oklch(0.68 0.215 18)",
+      "--text-secondary": "oklch(0.745 0.014 265)",
+      "--text-primary": "oklch(0.975 0.004 265)"
+    },
+    "legacy": {
+      "summary background": "oklch(0.14 0.005 260)",
+      "insert code background": "oklch(0.1836 0.0248 247.4)",
+      "delete code background": "oklch(0.1776 0.0284 275)",
+      "normal code background": "oklch(0.12 0.005 260)",
+      "insert gutter background": "oklch(0.1836 0.0248 247.4)",
+      "delete gutter background": "oklch(0.1776 0.0284 275)",
+      "normal gutter background": "oklch(0.12 0.005 260)",
+      "+2 badge at rest resolved": "oklch(0.65 0.17 155)",
+      "+2 badge at rest ratio": 6.7,
+      "−2 badge at rest resolved": "oklch(0.6825 0.15125 353.75)",
+      "−2 badge at rest ratio": 6.45,
+      "inserted code resolved": "oklch(0.65 0.17 155)",
+      "inserted code ratio": 6.3,
+      "deleted code resolved": "oklch(0.6495 0.17075 6.25)",
+      "deleted code ratio": 5.37,
+      "context code resolved": "oklch(0.93 0.005 260)",
+      "context code ratio": 16.52,
+      "insert marker resolved": "oklch(0.65 0.17 155)",
+      "insert marker ratio": 6.3,
+      "delete marker resolved": "oklch(0.6495 0.17075 6.25)",
+      "delete marker ratio": 5.37,
+      "insert line number resolved": "oklch(0.65 0.01 260)",
+      "insert line number ratio": 5.77,
+      "delete line number resolved": "oklch(0.65 0.01 260)",
+      "delete line number ratio": 5.84,
+      "context line number resolved": "oklch(0.65 0.01 260)",
+      "context line number ratio": 6.26,
+      "summary hover background": "oklch(0.24 0.01 260)",
+      "+2 badge on hover resolved": "oklch(0.65 0.17 155)",
+      "+2 badge on hover ratio": 5.56,
+      "−2 badge on hover resolved": "oklch(0.6825 0.15125 353.75)",
+      "−2 badge on hover ratio": 5.35,
+      "--success": "oklch(0.65 0.17 155)",
+      "--error": "oklch(0.6 0.2 25)",
+      "--text-secondary": "oklch(0.65 0.01 260)",
+      "--text-primary": "oklch(0.93 0.005 260)"
+    }
+  }
+}

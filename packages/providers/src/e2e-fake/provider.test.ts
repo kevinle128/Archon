@@ -5,9 +5,9 @@ import { E2E_FAKE_CAPABILITIES } from './capabilities';
 import {
   E2E_FAKE_AGENT_INPUT,
   E2E_FAKE_AGENT_TOOL_NAME,
-  E2E_FAKE_BARE_OUTPUT,
-  E2E_FAKE_BARE_TOOL_NAME,
-  E2E_FAKE_EDIT_FAILED_OUTPUT,
+  E2E_FAKE_BARE_EDIT_OUTPUT,
+  E2E_FAKE_BARE_EDIT_TOOL_NAME,
+  E2E_FAKE_EDIT_FAILURE_OUTPUT,
   E2E_FAKE_EDIT_INPUT,
   E2E_FAKE_EDIT_OUTPUT,
   E2E_FAKE_EDIT_PATH,
@@ -23,7 +23,6 @@ import {
   E2E_FAKE_TOOL_PASS_TEXT,
   E2E_FAKE_WRITE_INPUT,
   E2E_FAKE_WRITE_OUTPUT,
-  E2E_FAKE_WRITE_PATH,
   E2E_FAKE_WRITE_TOOL_NAME,
   E2eFakeProvider,
 } from './provider';
@@ -265,7 +264,7 @@ describe('E2eFakeProvider', () => {
     expect(tool.toolName).toBe(E2E_FAKE_EDIT_TOOL_NAME);
     expect(tool.toolInput).toEqual(E2E_FAKE_EDIT_INPUT);
     expect(result.toolCallId).toBe(tool.toolCallId);
-    expect(result.toolOutput).toBe(E2E_FAKE_EDIT_FAILED_OUTPUT);
+    expect(result.toolOutput).toBe(E2E_FAKE_EDIT_FAILURE_OUTPUT);
     expect(result.toolOutcome).toBe('error');
   });
 
@@ -279,7 +278,7 @@ describe('E2eFakeProvider', () => {
     }
     expect(tool.toolName).toBe(E2E_FAKE_WRITE_TOOL_NAME);
     expect(tool.toolInput).toEqual(E2E_FAKE_WRITE_INPUT);
-    expect(E2E_FAKE_WRITE_INPUT.path).toBe(E2E_FAKE_WRITE_PATH);
+    expect(E2E_FAKE_WRITE_INPUT.file_path).toBe('notes/summary.md');
     expect('old_string' in E2E_FAKE_WRITE_INPUT).toBe(false);
     expect('new_string' in E2E_FAKE_WRITE_INPUT).toBe(false);
     expect(result.toolName).toBe(E2E_FAKE_WRITE_TOOL_NAME);
@@ -296,11 +295,11 @@ describe('E2eFakeProvider', () => {
     if (tool?.type !== 'tool' || result?.type !== 'tool_result') {
       throw new Error('expected tool pair');
     }
-    expect(tool.toolName).toBe(E2E_FAKE_BARE_TOOL_NAME);
+    expect(tool.toolName).toBe(E2E_FAKE_BARE_EDIT_TOOL_NAME);
     expect('toolInput' in tool).toBe(false);
-    expect(result.toolName).toBe(E2E_FAKE_BARE_TOOL_NAME);
+    expect(result.toolName).toBe(E2E_FAKE_BARE_EDIT_TOOL_NAME);
     expect(result.toolCallId).toBe(tool.toolCallId);
-    expect(result.toolOutput).toBe(E2E_FAKE_BARE_OUTPUT);
+    expect(result.toolOutput).toBe(E2E_FAKE_BARE_EDIT_OUTPUT);
     expect(result.toolOutcome).toBe('success');
   });
 

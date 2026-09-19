@@ -83,8 +83,8 @@
       "technicalNotes": "Follow phase-03-verification-and-closeout.md. Reuse room-opening, panel-resize, capture, color-resolution, contrast, and request-listener helpers from e2e/ui/task-dispatch-body.spec.ts and adjacent room specs. Failure handling per plan: one-surface failure → fix local renderer + retain component assertion; wrong counts/order → inspect Phase 1 conversion, never massage DOM order; contrast → scoped mix + remeasure; overflow → scoped table/gutter/code rules, no panel scrollbar or new breakpoint; near-5s tests → JUnit timings, no timeout raises. e2e stays standalone (bun run --cwd e2e ...).",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Deterministic proof landed: e2e-fake fileEdit variants + pinned constants, e2e-file-edit.yaml fixture, file-edit-diff.spec.ts green on both surfaces (5 tests), contrast fix via --tool-diff-delete-fg mix, HITL suite green (38 pass) after a04d8db9 unblock, reports + captures + measurements recorded, sprint-status 1.4 done. PR deferred to parent workflow per hard rule."
     }
   ]
 }

@@ -83,33 +83,30 @@ export const E2E_FAKE_EDIT_TOOL_NAME = 'Edit';
 export const E2E_FAKE_EDIT_PATH = 'crates/gigo-harness-worker/src/auto_retry.rs';
 export const E2E_FAKE_EDIT_INPUT = {
   file_path: E2E_FAKE_EDIT_PATH,
-  target_file: E2E_FAKE_EDIT_PATH,
   old_string: [
-    '  pub fn backoff(attempt: u32) -> Duration {',
+    'pub fn backoff(attempt: u32) -> Duration {',
     '    let secs = 2u64.pow(attempt).min(31);',
     '    Duration::from_secs(secs + 1)',
-    '  }',
+    '}',
   ].join('\n'),
   new_string: [
-    '  pub fn backoff(attempt: u32) -> Duration {',
+    'pub fn backoff(attempt: u32) -> Duration {',
     '    let secs = 2u64.pow(attempt).min(30);',
     '    Duration::from_secs(secs)',
-    '  }',
+    '}',
   ].join('\n'),
   replace_all: false,
-  expect_exists: true,
 } as const;
-export const E2E_FAKE_EDIT_OUTPUT = 'applied 2 line changes';
-export const E2E_FAKE_EDIT_FAILED_OUTPUT = 'old_string not found in file';
+export const E2E_FAKE_EDIT_OUTPUT = `The file ${E2E_FAKE_EDIT_PATH} has been updated successfully.`;
+export const E2E_FAKE_EDIT_FAILURE_OUTPUT = 'String to replace not found in file.';
 export const E2E_FAKE_WRITE_TOOL_NAME = 'Write';
-export const E2E_FAKE_WRITE_PATH = 'e2e/tmp/fake-write.txt';
 export const E2E_FAKE_WRITE_INPUT = {
-  path: E2E_FAKE_WRITE_PATH,
-  content: 'fn main() { println!("e2e fake write"); }\n',
+  file_path: 'notes/summary.md',
+  content: '# Summary\n\nOne line.\n',
 } as const;
-export const E2E_FAKE_WRITE_OUTPUT = 'wrote 47 bytes';
-export const E2E_FAKE_BARE_TOOL_NAME = 'Edit';
-export const E2E_FAKE_BARE_OUTPUT = 'e2e-fake bare tool output';
+export const E2E_FAKE_WRITE_OUTPUT = 'File created successfully at: notes/summary.md';
+export const E2E_FAKE_BARE_EDIT_TOOL_NAME = 'edit';
+export const E2E_FAKE_BARE_EDIT_OUTPUT = 'edited notes/summary.md';
 
 /**
  * Deterministic todo-call sequence for the pinned-strip e2e fixture. Folding
@@ -556,7 +553,7 @@ export class E2eFakeProvider implements IAgentProvider {
           yield {
             type: 'tool_result',
             toolName: E2E_FAKE_EDIT_TOOL_NAME,
-            toolOutput: failed ? E2E_FAKE_EDIT_FAILED_OUTPUT : E2E_FAKE_EDIT_OUTPUT,
+            toolOutput: failed ? E2E_FAKE_EDIT_FAILURE_OUTPUT : E2E_FAKE_EDIT_OUTPUT,
             toolCallId,
             toolOutcome: failed ? 'error' : 'success',
           };
@@ -579,11 +576,11 @@ export class E2eFakeProvider implements IAgentProvider {
           break;
         }
         case 'bare': {
-          yield { type: 'tool', toolName: E2E_FAKE_BARE_TOOL_NAME, toolCallId };
+          yield { type: 'tool', toolName: E2E_FAKE_BARE_EDIT_TOOL_NAME, toolCallId };
           yield {
             type: 'tool_result',
-            toolName: E2E_FAKE_BARE_TOOL_NAME,
-            toolOutput: E2E_FAKE_BARE_OUTPUT,
+            toolName: E2E_FAKE_BARE_EDIT_TOOL_NAME,
+            toolOutput: E2E_FAKE_BARE_EDIT_OUTPUT,
             toolCallId,
             toolOutcome: 'success',
           };

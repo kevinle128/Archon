@@ -217,7 +217,10 @@ body {
   --diff-font-family: var(--font-mono);
   --diff-selection-background-color: color-mix(in oklch, var(--ring) 35%, transparent);
   --tool-diff-insert-fg: var(--success);
-  --tool-diff-delete-fg: var(--error);
+  /* Pure --error measures ~4.3:1 on the 12% delete tint over --surface-inset;
+     mixing 15% toward --text-primary clears the 4.5:1 floor while the hue
+     stays on the error axis. */
+  --tool-diff-delete-fg: color-mix(in oklch, var(--error) 85%, var(--text-primary));
   --diff-gutter-insert-background-color: color-mix(
     in oklch,
     var(--success) 12%,
