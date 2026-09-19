@@ -246,6 +246,7 @@ describe('ConsoleNodeRoom', () => {
   let host: Element;
   let root: Root;
   let closed = 0;
+  let queueFetchSpy: { mockRestore: () => void } | undefined;
 
   beforeEach(() => {
     closed = 0;
@@ -254,6 +255,30 @@ describe('ConsoleNodeRoom', () => {
     win.document.body.appendChild(el);
     host = el as unknown as Element;
     root = createRoot(host);
+    // Production docks default-read the shared queue. Stub GET .../queue only;
+    // every other URL/method fails loudly so undeclared I/O cannot hide.
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, queued: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
   });
 
   afterEach(async () => {
@@ -262,6 +287,8 @@ describe('ConsoleNodeRoom', () => {
     });
     invalidate('run-node-messages');
     invalidate('console-node-room:idle');
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = undefined;
     win.close();
     restoreHappyDom();
   });

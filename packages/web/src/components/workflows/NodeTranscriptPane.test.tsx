@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'development';
 
-import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 
 import type {
@@ -306,6 +306,7 @@ describe('NodeTranscriptPane', () => {
   let root: Root;
   let queryClient: InstanceType<typeof reactQuery.QueryClient>;
   let nodeTranscriptPane: typeof import('./NodeTranscriptPane');
+  let queueFetchSpy: { mockRestore: () => void } | undefined;
 
   beforeEach(async () => {
     notifyManager.setScheduler((cb: () => void): void => {
@@ -325,6 +326,30 @@ describe('NodeTranscriptPane', () => {
       },
     });
     nodeTranscriptPane = await loadNodeTranscriptPaneModule();
+    // Production docks default-read the shared queue. Stub GET .../queue only;
+    // every other URL/method fails loudly so undeclared I/O cannot hide.
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, queued: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
   });
 
   afterEach(async () => {
@@ -333,6 +358,8 @@ describe('NodeTranscriptPane', () => {
       root.unmount();
     });
     queryClient.clear();
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = undefined;
     win.close();
     restoreGlobals();
     notifyManager.setScheduler((cb: () => void): void => {

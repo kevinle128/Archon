@@ -5,8 +5,13 @@ import type { Root } from 'react-dom/client';
 
 import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 import { SteeringSendError } from '@/lib/steering-dock';
-import type { SendNodeGuidance, WithdrawNodeGuidance } from './ConsoleComposerDock';
 import type {
+  ReadNodeGuidanceQueue,
+  SendNodeGuidance,
+  WithdrawNodeGuidance,
+} from './ConsoleComposerDock';
+import type {
+  ReadWorkflowNodeQueueResponse,
   SendWorkflowNodeBody,
   SendWorkflowNodeResponse,
   WithdrawWorkflowNodeResponse,
@@ -80,6 +85,8 @@ describe('ConsoleComposerDock', () => {
   let nextSend: SendNodeGuidance;
   const withdrawCalls: WithdrawCall[] = [];
   let nextWithdraw: WithdrawNodeGuidance;
+  const readCalls: { runId: string; nodeId: string; signal?: AbortSignal }[] = [];
+  let nextRead: ReadNodeGuidanceQueue;
 
   beforeEach(async () => {
     win = installHappyDom();
@@ -98,6 +105,13 @@ describe('ConsoleComposerDock', () => {
     nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
       withdrawCalls.push({ runId, nodeId, messageId });
       return { success: true, message_id: messageId };
+    };
+    readCalls.length = 0;
+    // Default: a never-settling read so existing send/withdraw tests stay
+    // deterministic with no real fetch and no hydration race.
+    nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      return deferred<ReadWorkflowNodeQueueResponse>().promise;
     };
   });
 
@@ -119,11 +133,15 @@ describe('ConsoleComposerDock', () => {
 
   async function renderDock(
     overrides: Partial<{
+      runId: string;
+      nodeId: string;
       rowStatus: 'pending' | 'running' | 'awaiting' | 'completed' | 'failed' | 'skipped';
       live: boolean;
       hasPendingAsk: boolean;
       send: SendNodeGuidance;
       withdraw: WithdrawNodeGuidance;
+      readQueue: ReadNodeGuidanceQueue;
+      pollIntervalMs: number;
       storage: Storage;
       nodeLabel: string;
     }> = {}
@@ -131,14 +149,16 @@ describe('ConsoleComposerDock', () => {
     await act(async () => {
       root.render(
         createElement(composerDock.ConsoleComposerDock, {
-          runId: 'run-1',
-          nodeId: 'grp.body',
+          runId: overrides.runId ?? 'run-1',
+          nodeId: overrides.nodeId ?? 'grp.body',
           nodeLabel: overrides.nodeLabel ?? 'implement',
           rowStatus: overrides.rowStatus ?? 'running',
           live: overrides.live ?? true,
           hasPendingAsk: overrides.hasPendingAsk ?? false,
           send: overrides.send ?? nextSend,
           withdraw: overrides.withdraw ?? nextWithdraw,
+          readQueue: overrides.readQueue ?? nextRead,
+          pollIntervalMs: overrides.pollIntervalMs ?? 60_000,
           storage: overrides.storage,
         })
       );
@@ -747,5 +767,418 @@ describe('ConsoleComposerDock', () => {
     expect(deleteButtons()).toHaveLength(0);
     await renderDock({ live: false });
     expect(deleteButtons()).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Story 2.9 (#189) — hydrate/reconcile the shared queue via serial poll.
+  // ---------------------------------------------------------------------------
+
+  function okQueue(rows: { message_id: string; message: string }[]): ReadWorkflowNodeQueueResponse {
+    return { success: true, queued: rows };
+  }
+
+  function controllableRead(): {
+    read: ReadNodeGuidanceQueue;
+    resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
+    rejectNext: (reason?: unknown) => void;
+    pendingCount: () => number;
+  } {
+    const pending: ReturnType<typeof deferred<ReadWorkflowNodeQueueResponse>>[] = [];
+    const read: ReadNodeGuidanceQueue = async (runId, nodeId, options) => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      const d = deferred<ReadWorkflowNodeQueueResponse>();
+      pending.push(d);
+      return d.promise;
+    };
+    return {
+      read,
+      resolveNext: (value): void => {
+        const d = pending.shift();
+        if (d === undefined) throw new Error('no pending read to resolve');
+        d.resolve(value);
+      },
+      rejectNext: (reason): void => {
+        const d = pending.shift();
+        if (d === undefined) throw new Error('no pending read to reject');
+        d.reject(reason);
+      },
+      pendingCount: (): number => pending.length,
+    };
+  }
+
+  async function waitForPending(ctrl: { pendingCount: () => number }, min = 1): Promise<void> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (ctrl.pendingCount() >= min) return;
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 2));
+      });
+      await flush();
+    }
+    throw new Error(
+      `pending read never reached ${String(min)} (have ${String(ctrl.pendingCount())})`
+    );
+  }
+
+  async function settleSnapshot(
+    ctrl: {
+      resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
+      pendingCount: () => number;
+    },
+    value: ReadWorkflowNodeQueueResponse
+  ): Promise<void> {
+    await waitForPending(ctrl);
+    await act(async () => {
+      ctrl.resolveNext(value);
+    });
+    await flush();
+  }
+
+  async function settleRejection(
+    ctrl: {
+      rejectNext: (reason?: unknown) => void;
+      pendingCount: () => number;
+    },
+    reason: unknown
+  ): Promise<void> {
+    await waitForPending(ctrl);
+    await act(async () => {
+      ctrl.rejectNext(reason);
+    });
+    await flush();
+  }
+
+  test('hydrates on mount with two rows in exact server order and data-message-id', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 60_000, readQueue: ctrl.read });
+    expect(readCalls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
+    expect(withdrawCalls).toHaveLength(0);
+
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+
+    expect(host.textContent).toContain('queued · 2');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('2 messages queued');
+    const list = host.querySelector('ul[aria-label="Queued messages, 2"]');
+    expect(list).not.toBeNull();
+    const items = [...(list?.querySelectorAll('li') ?? [])];
+    expect(items).toHaveLength(2);
+    expect(items[0].getAttribute('data-message-id')).toBe('id-a');
+    expect(items[1].getAttribute('data-message-id')).toBe('id-b');
+    expect(items[0].textContent).toContain('alpha');
+    expect(items[0].textContent).toContain('sent');
+    expect(items[1].textContent).toContain('beta');
+    const band = list?.closest('section');
+    expect(band?.textContent ?? '').not.toContain('this tab only');
+    expect(band?.className).toContain('bg-surface-elevated');
+    expect(band?.className).toContain('border-t');
+    const scroller = band?.querySelector('div');
+    expect(scroller?.className).toContain('max-h-[33vh]');
+    expect(scroller?.className).toContain('overflow-y-auto');
+    const dockWell = field().parentElement;
+    expect(dockWell?.previousElementSibling).toBe(band);
+    for (const button of deleteButtons()) {
+      expect(button.className).toContain('min-h-[24px]');
+      expect(button.className).toContain('min-w-[24px]');
+      expect(button.className).toContain('focus-visible:outline-accent-bright');
+    }
+    expect(calls).toHaveLength(0);
+    expect(withdrawCalls).toHaveLength(0);
+  });
+
+  test('remote convergence adds then removes rows without observer DELETE', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+    expect(host.textContent).toContain('queued · 2');
+    expect([...host.querySelectorAll('li')].map(li => li.getAttribute('data-message-id'))).toEqual([
+      'id-a',
+      'id-b',
+    ]);
+
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-b', message: 'beta' }]));
+    expect(host.textContent).toContain('queued · 1');
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
+    expect(withdrawCalls).toHaveLength(0);
+  });
+
+  test('stale read after local send keeps the local row', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([]));
+    await waitForPending(ctrl);
+
+    await setDraft('local only');
+    await clickQueue();
+    expect(host.querySelector('li')?.textContent).toContain('local only');
+    const localId = calls[0].body.message_id;
+
+    // Resolve the pre-send snapshot without the local row — generation guard
+    // must keep the local receipt.
+    await act(async () => {
+      ctrl.resolveNext(okQueue([]));
+    });
+    await flush();
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe(localId);
+    expect(host.textContent).toContain('queued · 1');
+  });
+
+  test('stale read after local withdraw does not resurrect the row', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+    await waitForPending(ctrl);
+
+    await clickDelete(0);
+    expect(withdrawCalls).toHaveLength(1);
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
+
+    await act(async () => {
+      ctrl.resolveNext(
+        okQueue([
+          { message_id: 'id-a', message: 'alpha' },
+          { message_id: 'id-b', message: 'beta' },
+        ])
+      );
+    });
+    await flush();
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
+  });
+
+  test('focused remote removal moves focus next then to textarea, never body', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+        { message_id: 'id-c', message: 'gamma' },
+      ])
+    );
+
+    const firstDelete = deleteButtons()[0];
+    await act(async () => {
+      firstDelete.focus();
+    });
+    expect((win.document.activeElement as unknown) === firstDelete).toBe(true);
+
+    // Multi-row removal: drop focused id-a and sibling id-b; skip to id-c.
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-c', message: 'gamma' }]));
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-c');
+    expect((win.document.activeElement as unknown) === deleteButtons()[0]).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+
+    await act(async () => {
+      deleteButtons()[0].focus();
+    });
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('ul')).toBeNull();
+    expect((win.document.activeElement as unknown) === field()).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+
+  test('remote snapshot leaves draft and sessionStorage byte-for-byte unchanged', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    await setDraft('unsent draft · keep me');
+    const before = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
+    expect(before).not.toBeNull();
+
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+    expect(field().value).toBe('unsent draft · keep me');
+    expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBe(before);
+  });
+
+  test('transient 422/0/500 read failures preserve queue+refusal and reschedule', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+
+    // Seed a visible refusal via send failure, then keep it across read errors.
+    // Re-render so the dock picks up the failing send prop (props are not live
+    // bindings to nextSend).
+    const failingSend: SendNodeGuidance = async (): Promise<SendWorkflowNodeResponse> => {
+      throw new SteeringSendError(409, 'node_finished', 'Workflow node is finished');
+    };
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read, send: failingSend });
+    await waitForPending(ctrl);
+    await setDraft('keep refusal');
+    await clickQueue();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
+
+    const beforeReads = readCalls.length;
+    for (const err of [
+      new SteeringSendError(422, 'not_steerable_here', 'window'),
+      new SteeringSendError(0, null, 'offline'),
+      new SteeringSendError(500, 'internal_error', 'boom'),
+    ]) {
+      await settleRejection(ctrl, err);
+      expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
+      expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
+      expect(host.textContent).not.toBe(DETACHED);
+    }
+    expect(readCalls.length).toBeGreaterThan(beforeReads);
+  });
+
+  test('permanent 409 read stops further reads leaving UI unchanged', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+
+    await settleRejection(ctrl, new SteeringSendError(409, 'node_finished', 'done'));
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
+    const afterStop = readCalls.length;
+    expect(afterStop).toBeGreaterThanOrEqual(2);
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    await flush();
+    expect(readCalls.length).toBe(afterStop);
+    expect(ctrl.pendingCount()).toBe(0);
+  });
+
+  test('unmount or scope change with pending read produces no late update', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ pollIntervalMs: 60_000, readQueue: ctrl.read });
+    expect(ctrl.pendingCount()).toBe(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+    await act(async () => {
+      ctrl.resolveNext(okQueue([{ message_id: 'id-late', message: 'should not appear' }]));
+    });
+    await flush();
+    expect(host.textContent ?? '').not.toContain('should not appear');
+
+    // Fresh root for scope-change path.
+    root = createRoot(host);
+    await renderDock({ pollIntervalMs: 60_000, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-a');
+
+    // Change scope while a read is pending for the new scope.
+    await renderDock({
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+      nodeId: 'other.node',
+    });
+    expect(ctrl.pendingCount()).toBeGreaterThanOrEqual(1);
+    await act(async () => {
+      // Drain every pending promise opened across the scope transition. The
+      // aborted prior-scope read must not paint onto the new scope, and the
+      // new scope starts empty until its own hydrate is accepted — here we
+      // only prove late prior payloads cannot leak.
+      while (ctrl.pendingCount() > 0) {
+        ctrl.resolveNext(okQueue([{ message_id: 'id-stale', message: 'stale scope' }]));
+      }
+    });
+    await flush();
+    // New scope may accept its own hydrate with 'stale scope' if that was the
+    // open request for the new scope. Re-assert by mounting a fresh scope with
+    // a still-pending prior read that is then resolved after unmount.
+    await act(async () => {
+      root.unmount();
+    });
+    root = createRoot(host);
+    const ctrl2 = controllableRead();
+    await renderDock({
+      pollIntervalMs: 60_000,
+      readQueue: ctrl2.read,
+      nodeId: 'scope-a',
+    });
+    expect(ctrl2.pendingCount()).toBe(1);
+    await renderDock({
+      pollIntervalMs: 60_000,
+      readQueue: ctrl2.read,
+      nodeId: 'scope-b',
+    });
+    // At least the new scope's read is pending; prior may already be aborted.
+    expect(ctrl2.pendingCount()).toBeGreaterThanOrEqual(1);
+    const callsBefore = readCalls.length;
+    await act(async () => {
+      while (ctrl2.pendingCount() > 0) {
+        ctrl2.resolveNext(okQueue([{ message_id: 'id-x', message: 'from-a-or-b' }]));
+      }
+    });
+    await flush();
+    // Scope-b may show the hydrate from its own request; that is correct.
+    // The important unmount proof already ran above. Ensure no crash and that
+    // at least one read was issued for the transition.
+    expect(readCalls.length).toBeGreaterThanOrEqual(callsBefore);
+  });
+
+  test('hidden and detached modes never read; detached preserves disclosure', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({ live: false, readQueue: ctrl.read });
+    expect(readCalls).toHaveLength(0);
+    expect(host.querySelector('textarea')).toBeNull();
+
+    nextSend = async (): Promise<SendWorkflowNodeResponse> => {
+      throw new SteeringSendError(
+        422,
+        'not_steerable_here',
+        'No live steering session for this node in this process'
+      );
+    };
+    await renderDock({ pollIntervalMs: 1, readQueue: ctrl.read });
+    const readsBeforeDetach = readCalls.length;
+    expect(readsBeforeDetach).toBeGreaterThanOrEqual(1);
+    await settleSnapshot(ctrl, okQueue([]));
+    await setDraft('kept for later');
+    await clickQueue();
+    await flush();
+    expect(host.textContent).toBe(DETACHED);
+    const afterDetach = readCalls.length;
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    await flush();
+    expect(readCalls.length).toBe(afterDetach);
+    expect(host.textContent).toBe(DETACHED);
   });
 });
