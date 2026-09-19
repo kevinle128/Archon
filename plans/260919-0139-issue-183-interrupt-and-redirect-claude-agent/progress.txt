@@ -1,0 +1,97 @@
+## Codebase Patterns
+
+### Claude interrupt seam (US-001)
+- **Where**: `packages/providers/src/claude/provider.ts` (`singleTurnInput`, `raceInterruptFailure`, `sendQuery`)
+- **Pattern**: interrupt-capable calls send `prompt` as a one-message `AsyncIterable<SDKUserMessage>` held open by a provider-owned deferred (`releaseInput`). `interruptSignal` abort → bound `query.interrupt()` exactly once — never `controller.abort()`/`query.close()` (those remain `abortSignal`'s Cancel teardown). An abort landing before the query binds sets `interruptRequested`, flushed right after `currentInterrupt` is assigned.
+- **Gotchas proven against SDK 0.3.209** (`reports/claude-interrupt-resume-spike.md`):
+  - `await stream.interrupt()` inside `for await` DEADLOCKS — the ack is serviced by the same stream pump; fire unawaited.
+  - Held-open input keeps the stream open AFTER the terminal result — resolve the input gate when the result chunk is observed, or the subprocess never exits.
+  - Real SDK yields the abort-marked result (`terminal_reason='aborted_streaming'`, `subtype='error_during_execution'`, `is_error=true`) AND THEN throws `Claude Code returned an error result: [ede_diagnostic] result_type=user` — consumers see result chunk + trailing throw; executor must classify on the result it already saw.
+  - `Query.interrupt()` exists only on streaming-input queries; string prompts expose no `interrupt()`.
+- **Iterator pitfall**: `iterator.return()` awaited while the inner iterator is parked at a pending `next()` queues behind that read and never resolves — skip `return()` in the read-failed path and keep abandoned `next()` promises observed with `.catch(() => undefined)`.
+
+### Environmental flakes (this worktree)
+- `bun test src/community/omp/session-usage.test.ts` — 'oversized line omits all hidden enrichment' times out at the 5s default on the external WD_BLACK drive; passes with `--timeout 30000`. Pre-existing, unrelated to provider capabilities.
+- Root `bun run type-check` fails on PRE-EXISTING `@archon/web` error: `src/experiments/console/components/ConsoleNodeRoom.test.tsx(2966,7)` — `execution?: ... | undefined` vs required `execution: ... | null`. packages/web does not depend on @archon/providers; untouched by US-001. Package-scoped `type-check` in packages/providers is clean.
+
+### Steering handle turn lifecycle (US-002)
+- **Where**: `packages/workflows/src/steering-registry.ts` (`NodeSteeringHandle`), executor integration in `dag-executor.ts` (~line 3196 direct register, ~5960 loop register).
+- **Pattern**: one ACTIVE turn per handle, tokenized by `beginTurn(controller)` immediately before each `sendQuery`. `endTurnStream(token)` in the stream `finally` clears ONLY the matching controller (a late `interrupt()` then waits on classification instead of aborting a dead stream). `settleTurn(token, outcome)` is classification's write — resolves that token's shared pending interrupt once. `enterIdle(token)` settles as `idle-after-interrupt` and returns ONE waiter for `send_now`/`terminated`. Server route (US-003) calls `interrupt()` → shared promise resolves to the classified outcome; `accept(msg, 'queue'|'send_now')` is the ONLY route-side mutation.
+- **Gotchas**:
+  - `wasOperatorInterrupted(token)` gates ALL interrupt classification — a natural `terminalReason`-less result that raced a Stop stays natural (settles `generating` or `node_finished` at the boundary); the flag only reclassifies abort-marked ends (`aborted_streaming|aborted_tools`) and abort-shaped throws.
+  - Interrupt resume id = `newSessionId ?? turnResumeId` (direct) / `settledTurnSessionId ?? currentSessionId` (loop) — a throw can interrupt before any result chunk, and a loop re-ask's throwaway session is never a redirect target.
+  - The 'interrupted' transcript status row is AWAITED before `enterIdle` — the interrupt request only resolves once the committed outcome exists (agent-history fold overrides the preceding tool card).
+  - `raceIdleWake` polls `getWorkflowRunStatus` with `CANCEL_CHECK_INTERVAL_MS` but its FIRST tick is immediate — idle tests can't wait 10s, and a pre-terminal run must not linger.
+  - `interrupt()` while already idle resolves `idle-after-interrupt` immediately (idempotent Stop); `send_now` while generating queues like a normal enqueue — no wake.
+  - Mock-store `getWorkflowRunStatus` reads a captured flag — flip it inside the generator to simulate mid-stream cancel (first chunk always polls; throttle map starts at 0).
+
+---
+
+## 2026-02-19 — US-001: Claude native interrupt seam and real-SDK gate
+
+**Status**: PASSED
+**Files changed** (commit e476d59a):
+- `packages/providers/src/types.ts` — `AgentRequestOptions.interruptSignal?: AbortSignal`; `ProviderCapabilities.interrupt: 'native' | 'stream-abort' | false` (required); result `MessageChunk.terminalReason?: string`
+- `packages/providers/src/claude/provider.ts` — streaming-input path when interruptSignal present; native interrupt() binding exactly once; pending-flush for pre-bind aborts; no controller abort / no query close; interrupt rejection surfaced through stream; no retry when interrupted; listeners removed in finally; input gate resolved on terminal result + finally
+- `packages/providers/src/claude/provider.test.ts` — 14 interrupt tests (string-prompt preservation, AsyncIterable shape, gate lifetime, exactly-once, no-abort/no-close, terminalReason, error-result metadata, pre-aborted, no-retry, rejection propagation, listener cleanup, pending-flush)
+- `packages/providers/src/claude/interrupt-resume-spike.ts` + `spike:interrupt:claude` script — real-SDK gate
+- `reports/claude-interrupt-resume-spike.md` — sanitized evidence (no prompts/credentials/model content)
+- `packages/providers/src/{claude,e2e-fake}/capabilities.ts` — `interrupt: 'native'`; 9 other providers `interrupt: false`; `codex/provider.test.ts` fixture updated
+- `scripts/generate-capability-matrix.ts` + regenerated `provider-capabilities.md` — Interrupt row
+- `packages/providers/src/registry.test.ts` — capability totality assertions
+
+**Acceptance criteria verified**:
+- [x] `interruptSignal?: AbortSignal` on AgentRequestOptions
+- [x] required `interrupt` axis; Claude+e2e-fake='native', others=false
+- [x] `terminalReason?: string` on result chunk
+- [x] string-prompt path preserved without interruptSignal
+- [x] one-message AsyncIterable held open via provider-owned deferred
+- [x] interrupt() exactly once; no controller abort/close; listeners removed in finally
+- [x] pre-aborted checked before every retry; interrupted attempt never retried; rejection surfaced
+- [x] Interrupt row in capability matrix; generate+check pass
+- [x] spike + script + sanitized report — `protocol: "interrupt-turn-resume"`, sessionIdConsistent=true on SDK 0.3.209
+- [x] all phase-1 tests-first items covered
+- [x] focused validation: `bun test src/claude/provider.test.ts -t 'interrupt'` (14 pass), registry/observability/e2e-fake green, `type-check` clean, capability-matrix generate+check OK
+
+**Learnings**:
+- See Codebase Patterns — the four real-SDK behaviors above are load-bearing for US-002+ executor classification.
+- The trailing post-result throw (`result_type=user`) means the executor sees result-chunk-then-throw on a real interrupt, not just a clean result.
+- Capability axis additions require updating EVERY provider's capabilities.ts literal plus `toEqual` test fixtures (codex fixture was caught by the suite, not type-check — tests are excluded from tsc).
+- lint-staged runs on commit (eslint --fix + prettier); stage precisely, it only touches staged files.
+
+---
+
+## 2026-02-19 — US-002: Registry tokenized turns, executor classification, and idle-await
+
+**Status**: PASSED
+**Files changed** (commit 7cd601fe):
+- `packages/workflows/src/steering-registry.ts` — `{ interruptible }` on `register()` with fail-fast mismatch; monotonic `beginTurn`/`endTurnStream`/`settleTurn`/`wasOperatorInterrupted`; `interrupt()` shared settlement promise; `accept(message, intent)` atomic mutation (`queued` | `awaiting_send_now` immutable receipts); `enterIdle` one-waiter; `steeringSubState` on live interruptible handles only; `seal()` resolves pending interrupt + idle waiter exactly once on every phase exit
+- `packages/workflows/src/dag-executor.ts` — `settleRunningToolsOutcome` helper ('unknown'|'interrupted'); `INTERRUPT_TERMINAL_REASONS` (aborted_streaming|aborted_tools only); `isAbortLikeStreamError` narrow throw helper; `raceIdleWake` first-wins idle poll (immediate first tick, CANCEL_CHECK_INTERVAL_MS re-checks, torn down on wake); `PassTurn` per-pass classification carrier; `finishCancelled` shared cancel finalizer; direct path: interruptSignal per pass, five-case classification, idle+send_now same-session redirect; loop path: same inside attempts/turns, redirect before until/gate/max-iteration without consuming an iteration
+- `packages/workflows/src/steering-registry.test.ts` — +19 tests (capability-aware register, token monotonicity, stale no-ops, shared promise, post-stream interrupt, idle waiter wake sources, accept receipts/order, non-interruptible refusal)
+- `packages/workflows/src/dag-executor.test.ts` — +19 executor-matrix tests (all 15 phase-2 scenarios plus loop-group namespaced body, queue-only provider pin, unrelated-throw-races-Stop, double-interrupt fresh token)
+
+**Acceptance criteria verified**:
+- [x] `register(runId, nodeId, { interruptible })` — reuse only when interruptibility agrees, fail fast otherwise; all prior handle semantics preserved
+- [x] monotonic tokens; beginTurn fails on unsettled prior; endTurnStream/settleTurn stale-safe
+- [x] interrupt() sync-aborts stored controller once, shared promise, idle→idle, post-stream→classification wait, flag cleared on settle
+- [x] settlements: idle-after-interrupt/generating/node_finished/not_steerable_here; close/park/discard/clear settle waiters once
+- [x] accept() atomic; dup replay; queue-vs-send_now receipt states; send_now drains in receipt order same tick; receipts immutable
+- [x] enterIdle projection + waiter; first of send_now/discard/cancel-poll wins; subState only live+interruptible
+- [x] fresh interruptSignal per provider pass (re-ask + guidance + iteration included); direct/loop/loop-group identical
+- [x] five-case positional classification; Cancel first; marker before isError guard; flag joins canReask; narrow throw helper
+- [x] marker = aborted_streaming|aborted_tools only — no prefix/prose/presence inference
+- [x] accounting: usage recorder in finally, cost/tokens fold once, no partial batch/credit/empty/completion on interrupt, background-wait overridden, redirect retains totals
+- [x] tool settlement 'interrupted' vs provider-emitted retained; exactly ONE awaited 'interrupted' status row before enterIdle; no failed/completion/validation events
+- [x] boundaries: queue+natural→drain+generating; empty+natural→closeIfEmpty+node_finished; interrupted→resumable-id-required idle; send_now→double-newline+same session; missing id→fail-fast queue intact
+- [x] loop redirect inside same iteration, no count increment
+- [x] idle exits: send_now / discardRun / cancel-status timer only — no inactivity timer
+- [x] all tests: registry 57, interrupt matrix 19, queued guidance 18, full dag-executor file 644, full @archon/workflows package green
+- [x] validation commands: `bun test src/steering-registry.test.ts` (57 pass), `-t 'interrupt'` (19 pass), `-t 'queued guidance'` (18 pass), `bun run type-check` (clean), `bun --filter @archon/workflows test` (all pass); eslint + prettier clean
+
+**Learnings**:
+- The registry rewrite had to PRESERVE the existing API exactly (`operatorUserId`, `receivedAt`, `snapshot()`, two-level runs map, `discardRun()` → `{handles, queued}`, `createSteeringRegistry()`) — server route tests pin `snapshot().queued`/`acceptedCount`. Search all callers before extending a shared API.
+- `settledTurnSessionId` (loop) is attempt-0-only by #2563 design — an interrupted re-ask pass must fall back to `currentSessionId`, not the throwaway re-ask session. Direct path equivalent: `newSessionId ?? turnResumeId` (a throw interrupts before any result).
+- The mid-stream cancel poll fires on the FIRST chunk (throttle map starts empty) — flipping the mock status inside the generator reliably simulates a cancel co-fire without timers.
+- Prettier reformats whole files — run it before the lint-staged commit anyway; eslint `prefer-optional-chain` flags `x !== undefined && x.y !== undefined` and `return-await` flags returns inside try/finally.
+
+---
