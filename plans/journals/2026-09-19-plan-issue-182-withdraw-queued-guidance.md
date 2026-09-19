@@ -1,7 +1,7 @@
 ---
 title: Plan issue 182 withdraw queued guidance
 date: 2026-09-19
-summary: "Deep+TDD plan for Story 2.2: registry withdraw primitive, typed DELETE route, delete control in both shells"
+summary: 'Deep+TDD plan for Story 2.2: registry withdraw primitive, typed DELETE route, delete control in both shells'
 ---
 
 # Plan issue 182 withdraw queued guidance

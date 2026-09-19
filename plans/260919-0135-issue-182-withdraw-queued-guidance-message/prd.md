@@ -31,7 +31,7 @@ Three increments, in dependency order:
    `NodeSteeringHandle.withdraw(messageId)` that removes only `pending` items
    (never accepted-id memory). Register a bodyless DELETE route that mirrors
    the send route's target ladder, re-reads the run, and — critically —
-   re-checks `handle.snapshot().phase` *after* the final await so a handle
+   re-checks `handle.snapshot().phase` _after_ the final await so a handle
    closing during that await returns 409 instead of mutating. Regenerate web
    OpenAPI types from a server owned by this worktree.
 2. **Delete control in both web shells.** Extend shared
@@ -60,7 +60,7 @@ Three increments, in dependency order:
   dock, remove only the selected row on 200, retain it on ordinary failure, and
   preserve concurrent send.
 - Every row has a native `button[type=button]` named `delete · <trimmed
-  message>` with a ≥24×24 target, shell-correct focus ring, honest
+message>` with a ≥24×24 target, shell-correct focus ring, honest
   `aria-disabled` pending state, and no overflow at required viewports.
 - Focus follows next → previous → field after success, stays on the row after
   ordinary failure, and moves to the detached `role=alert` after 422. No path
@@ -88,7 +88,7 @@ Three increments, in dependency order:
 ### Key files (Phase 1)
 
 - `packages/workflows/src/steering-registry.ts` — add `withdraw(messageId):
-  boolean` after `drain()`: return false when `phase === 'closed'` or id not in
+boolean` after `drain()`: return false when `phase === 'closed'` or id not in
   `pending`; `splice` and return true otherwise. Synchronous (same event-loop
   ordering requirement as `enqueue`/`closeIfEmpty`/`drain`). Never deletes from
   `accepted`, never closes an emptied handle, never resumes parked, never logs
@@ -101,14 +101,14 @@ Three increments, in dependency order:
   `withdrawWorkflowNodeParamsSchema` (`runId`/`nodeId` min(1), `messageId`
   uuid, `.strict()`) and `withdrawWorkflowNodeResponseSchema`
   (`success: z.literal(true)`, `message_id` uuid, `.strict().openapi(
-  'WithdrawWorkflowNodeResponse')`); derive
+'WithdrawWorkflowNodeResponse')`); derive
   `WithdrawWorkflowNodeResponse` via `z.infer`. `z` comes from
   `@hono/zod-openapi`.
 - `packages/server/src/routes/api.ts` — `withdrawWorkflowNodeRoute` next to
   `sendWorkflowNodeRoute`: method `delete`, path
   `/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}`, all errors via
   `steeringJsonError(...)` including declared 500. DELETE-only auth middleware
-  at the colon-param path registered *before* the OpenAPI route (gated
+  at the colon-param path registered _before_ the OpenAPI route (gated
   identity → nested 401 wins over UUID validation; do NOT widen the POST
   middleware, do NOT parse a body). Handler order is the correctness contract:
   auth → validated params → run load (null=404) → events/pending/projection +
@@ -118,15 +118,15 @@ Three increments, in dependency order:
   **post-await** `handle.snapshot().phase` recheck (closed=409) → synchronous
   `handle.withdraw(messageId)` with no intervening await → log
   `api.workflow_node_withdraw_completed` with `{ runId, nodeId, messageId,
-  operatorUserId, removed }` only → return exact `{ success: true, message_id
-  }`. Exceptions log `api.workflow_node_withdraw_failed` and return nested 500
+operatorUserId, removed }` only → return exact `{ success: true, message_id
+}`. Exceptions log `api.workflow_node_withdraw_failed` and return nested 500
   `internal_error`.
 - `packages/server/src/routes/openapi-defaults.ts` — broaden the
   `steeringValidationErrorHook` comment to all steering routes; no behavior
   change.
 - `packages/server/src/routes/api.workflow-runs.test.ts` — new block
   `DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
-  queued guidance`; add `deleteNodeQueue` helper beside `postNodeSend`; lift
+queued guidance`; add `deleteNodeQueue` helper beside `postNodeSend`; lift
   shared steering fixtures verbatim; 19 test cases across
   auth/validation/target ladder/idempotency, including the critical
   handle-closes-during-final-await race → 409 with item still queued.
@@ -155,7 +155,7 @@ Three increments, in dependency order:
 - `packages/web/src/lib/api.ts` and
   `packages/web/src/experiments/console/skills/runs.ts` — export generated
   `WithdrawWorkflowNodeResponse` type and `withdrawNodeGuidance(runId, nodeId,
-  messageId)`: DELETE with encoded path params, no body/no synthetic content
+messageId)`: DELETE with encoded path params, no body/no synthetic content
   type, no retry, failures normalized through existing `toSteeringSendError`.
 - `packages/web/src/components/workflows/ComposerDock.tsx` and
   `.../console/components/ConsoleComposerDock.tsx` — optional `withdraw?:`
@@ -165,10 +165,10 @@ Three increments, in dependency order:
   renders after `sent` text: `aria-label` from `deleteButtonAccessibleName`,
   `aria-disabled` (never native `disabled`), `min-h-[24px] min-w-[24px]` +
   padding, flex-none right edge; message span stays `min-w-0 flex-1
-  overflow-hidden text-ellipsis whitespace-nowrap`. Focus rings: Legacy
+overflow-hidden text-ellipsis whitespace-nowrap`. Focus rings: Legacy
   `focus-visible:outline-2 focus-visible:outline-accent-bright
-  focus-visible:-outline-offset-2`; Console `...outline-accent-bright!
-  focus-visible:outline-offset-2`. Available in `composer` and `blocked` modes;
+focus-visible:-outline-offset-2`; Console `...outline-accent-bright!
+focus-visible:outline-offset-2`. Available in `composer` and `blocked` modes;
   `hidden` unchanged. Effect keyed to `dock.sent` consumes pending focus →
   mapped button else textarea. 422 follows existing detached disclosure and
   focuses its alert (same rule for send-triggered 422).
@@ -220,8 +220,8 @@ Three increments, in dependency order:
 
 ## Story overview
 
-| ID     | Title                                              | Depends on | Phase |
-| ------ | -------------------------------------------------- | ---------- | ----- |
-| US-001 | Registry withdraw primitive + typed DELETE route   | —          | 1     |
-| US-002 | Delete control in Legacy + Console docks           | US-001     | 2     |
-| US-003 | E2E evidence, acceptance report, sprint closeout   | US-001, 002| 3     |
+| ID     | Title                                            | Depends on  | Phase |
+| ------ | ------------------------------------------------ | ----------- | ----- |
+| US-001 | Registry withdraw primitive + typed DELETE route | —           | 1     |
+| US-002 | Delete control in Legacy + Console docks         | US-001      | 2     |
+| US-003 | E2E evidence, acceptance report, sprint closeout | US-001, 002 | 3     |

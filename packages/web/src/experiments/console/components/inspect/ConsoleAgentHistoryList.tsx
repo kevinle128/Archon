@@ -2,7 +2,15 @@
  * Console-owned agent history renderer. Uses AgentHistoryItem only as data and
  * never imports Legacy React components.
  */
-import { Fragment, useEffect, useId, useMemo, useState, type ReactElement, type ReactNode } from 'react';
+import {
+  Fragment,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
