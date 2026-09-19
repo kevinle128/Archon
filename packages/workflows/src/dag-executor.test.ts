@@ -24180,23 +24180,24 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
   async function runNodes(
     store: IWorkflowStore,
     nodes: DagNode[],
-    workflowRun: WorkflowRun = makeWorkflowRun()
+    workflowRun: WorkflowRun = makeWorkflowRun(),
+    provider = 'claude'
   ): Promise<WorkflowRun> {
     await executeDagWorkflow(
       createMockDeps(store),
       createMockPlatform(),
       'conv-dag',
       testDir,
-      { name: 'transcript-test', nodes },
+      { name: 'transcript-test', provider, nodes },
       workflowRun,
-      'claude',
+      provider,
       undefined,
       join(testDir, 'artifacts'),
       join(testDir, 'state'),
       join(testDir, 'logs'),
       'main',
       'docs/',
-      minimalConfig
+      { ...minimalConfig, assistant: provider }
     );
     return workflowRun;
   }
@@ -24674,6 +24675,153 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(await store.listNodeMessages(workflowRun.id, 'grp')).toEqual([]);
     const bodyRows = await store.listNodeMessages(workflowRun.id, 'grp.body');
     expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'completed']);
+  });
+
+  it('persists provider-declared text_mode on direct node text rows and leaves untagged text untagged', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'Hel', textMode: 'delta' };
+      yield { type: 'assistant', content: 'lo', textMode: 'delta' };
+      yield { type: 'assistant', content: 'whole' };
+      yield { type: 'result', sessionId: 'delta-session' };
+    });
+
+    const store = createMockStore();
+    const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Hi' }]);
+    const textRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
+      row => row.kind === 'text'
+    );
+
+    expect(textRows.map(row => row.payload)).toEqual([
+      { text: 'Hel' },
+      { text: 'lo' },
+      { text: 'whole' },
+    ]);
+    expect(textRows[0]?.metadata?.text_mode).toBe('delta');
+    expect(textRows[1]?.metadata?.text_mode).toBe('delta');
+    // A chunk the provider did not label stays unlabelled — no inferred text_mode.
+    expect(textRows[2]?.metadata?.text_mode).toBeUndefined();
+  });
+
+  it('persists provider-declared text_mode on loop node text rows', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield {
+        type: 'assistant',
+        content: 'Iterated. <promise>DONE</promise>',
+        textMode: 'delta',
+      };
+      yield { type: 'result', sessionId: 'loop-delta-session' };
+    });
+
+    const store = createMockStore();
+    const workflowRun = await runNodes(store, [
+      { id: 'refine', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
+    ]);
+    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+      row => row.kind === 'text'
+    );
+
+    expect(textRows).toHaveLength(1);
+    expect(textRows[0]?.payload).toEqual({ text: 'Iterated.' });
+    expect(textRows[0]?.metadata?.text_mode).toBe('delta');
+  });
+
+  it('isolates an invalid-output loop re-ask pass in a distinct transcript attempt', async () => {
+    let call = 0;
+    mockSendQueryDag.mockImplementation(function* () {
+      call++;
+      if (call === 1) {
+        yield { type: 'assistant', content: 'bad pass', textMode: 'delta' };
+        yield { type: 'result', sessionId: 's1', structuredOutput: { wrong: 'shape' } };
+      } else {
+        yield { type: 'assistant', content: 'good pass', textMode: 'delta' };
+        yield {
+          type: 'result',
+          sessionId: 's2',
+          structuredOutput: { verdict: 'review', done: true },
+        };
+      }
+    });
+
+    const store = createMockStore();
+    const workflowRun = await runNodes(
+      store,
+      [
+        {
+          id: 'refine',
+          loop: { prompt: 'Iterate.', until_field: 'done', max_iterations: 3 },
+          output_format: {
+            type: 'object',
+            properties: { verdict: { type: 'string' }, done: { type: 'boolean' } },
+            required: ['verdict', 'done'],
+          },
+        },
+      ],
+      makeWorkflowRun(),
+      'pi'
+    );
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+      row => row.kind === 'text'
+    );
+    expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
+    expect(textRows[0]?.metadata?.text_mode).toBe('delta');
+    expect(textRows[1]?.metadata?.text_mode).toBe('delta');
+    const firstScope = textRows[0]?.metadata?.execution;
+    const secondScope = textRows[1]?.metadata?.execution;
+    expect(firstScope?.occurrence_id).toBe(secondScope?.occurrence_id);
+    expect(firstScope?.attempt_id).not.toBe(secondScope?.attempt_id);
+  });
+
+  it('isolates a missing-output loop re-ask pass in a distinct transcript attempt', async () => {
+    let call = 0;
+    mockSendQueryDag.mockImplementation(function* () {
+      call++;
+      if (call === 1) {
+        yield { type: 'assistant', content: 'prose pass', textMode: 'delta' };
+        yield { type: 'result', sessionId: 's1' };
+      } else {
+        yield { type: 'assistant', content: 'fixed pass', textMode: 'delta' };
+        yield {
+          type: 'result',
+          sessionId: 's2',
+          structuredOutput: { verdict: 'review', done: true },
+        };
+      }
+    });
+
+    const store = createMockStore();
+    const workflowRun = await runNodes(
+      store,
+      [
+        {
+          id: 'refine',
+          loop: { prompt: 'Iterate.', until_field: 'done', max_iterations: 3 },
+          output_format: {
+            type: 'object',
+            properties: { verdict: { type: 'string' }, done: { type: 'boolean' } },
+            required: ['verdict', 'done'],
+          },
+        },
+      ],
+      makeWorkflowRun(),
+      'pi'
+    );
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+      row => row.kind === 'text'
+    );
+    expect(textRows.map(row => row.payload)).toEqual([
+      { text: 'prose pass' },
+      { text: 'fixed pass' },
+    ]);
+    expect(textRows[0]?.metadata?.text_mode).toBe('delta');
+    expect(textRows[1]?.metadata?.text_mode).toBe('delta');
+    const firstScope = textRows[0]?.metadata?.execution;
+    const secondScope = textRows[1]?.metadata?.execution;
+    expect(firstScope?.occurrence_id).toBe(secondScope?.occurrence_id);
+    expect(firstScope?.attempt_id).not.toBe(secondScope?.attempt_id);
   });
 });
 

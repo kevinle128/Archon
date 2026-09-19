@@ -409,7 +409,10 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first).toEqual({ done: false, value: { type: 'assistant', content: 'streaming' } });
+    expect(first).toEqual({
+      done: false,
+      value: { type: 'assistant', content: 'streaming', textMode: 'delta' },
+    });
     expect(promptSettled).toBe(false);
     hold.resolve();
     const rest = await collect(gen);
@@ -568,7 +571,7 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first.value).toEqual({ type: 'assistant', content: 'partial' });
+    expect(first.value).toEqual({ type: 'assistant', content: 'partial', textMode: 'delta' });
     await gen.return(undefined);
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     hold.resolve();
@@ -609,6 +612,40 @@ describe('runDeepseekAcpTurn', () => {
       env: input.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+  });
+
+  test('two message chunks stream as two ordered delta chunks before the terminal result', async () => {
+    const fake = createFakeDsh({
+      promptUpdates: [
+        {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'Hel' },
+        } as SessionUpdate,
+        {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'lo' },
+        } as SessionUpdate,
+      ],
+    });
+    const child = new FakeChild();
+    const spawnImpl = (() => {
+      attachAgent(child, fake);
+      return child as unknown as ChildProcess;
+    }) as unknown as typeof spawn;
+    const chunks = await collect(
+      runDeepseekAcpTurn(processInput(), { spawn: spawnImpl, terminateGraceMs: 0 })
+    );
+    expect(chunks.slice(0, 2)).toEqual([
+      { type: 'assistant', content: 'Hel', textMode: 'delta' },
+      { type: 'assistant', content: 'lo', textMode: 'delta' },
+    ]);
+    expect(
+      chunks
+        .filter(chunk => chunk.type === 'assistant')
+        .map(chunk => (chunk as { content: string }).content)
+        .join('')
+    ).toBe('Hello');
+    expect(chunks.at(-1)).toMatchObject({ type: 'result', stopReason: 'end_turn' });
   });
 
   test('success, protocol failure, abort, and consumer return all send SIGTERM and await exit', async () => {

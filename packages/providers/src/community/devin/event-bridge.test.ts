@@ -12,7 +12,7 @@ describe('mapDevinSessionUpdate', () => {
   test('maps message and thought chunks; drops user chunks and housekeeping updates', () => {
     const state = createDevinEventState();
     expect(mapDevinSessionUpdate(text('agent_message_chunk', 'hi'), state)).toEqual([
-      { type: 'assistant', content: 'hi' },
+      { type: 'assistant', content: 'hi', textMode: 'delta' },
     ]);
     expect(mapDevinSessionUpdate(text('agent_thought_chunk', 'hmm'), state)).toEqual([
       { type: 'thinking', content: 'hmm' },
@@ -42,7 +42,7 @@ describe('mapDevinSessionUpdate', () => {
     expect(state.tools.size).toBe(0);
     state.replaying = false;
     expect(mapDevinSessionUpdate(text('agent_message_chunk', 'new'), state)).toEqual([
-      { type: 'assistant', content: 'new' },
+      { type: 'assistant', content: 'new', textMode: 'delta' },
     ]);
   });
 
