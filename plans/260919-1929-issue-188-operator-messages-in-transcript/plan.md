@@ -1,406 +1,368 @@
 ---
-title: 'Issue 188 see operator messages in the transcript'
-description: 'Implementation-ready plan for recording delivered operator guidance as additive-metadata text rows, projecting a server-side display name, and rendering operator rows in both node-room shells.'
+title: 'Issue 188: show operator messages in the node transcript'
+description: 'Verified implementation plan for durable operator-guidance rows, server-side sender projection, and distinct rendering in both node-room shells.'
 status: ready
 priority: P1
 effort: '4 phases'
 issue: 'https://github.com/kevinle128/Archon/issues/188'
 branch: archon/thread-74969958
-tags: [issue-188, agent-node-room, workflows, server, web, e2e, tdd]
+tags: [issue-188, agent-node-room, workflows, core, server, web, e2e]
 blockedBy: []
 blocks: []
 created: 2026-09-20
 revised: 2026-09-20
-mode: deep
 ---
 
-# Issue 188: see operator messages in the transcript
+# Issue 188: show operator messages in the node transcript
 
-## Goal and user outcome
+## Outcome
 
-When queued or `Send now` operator guidance is delivered to a running agent
-node, the executor must record it in the node transcript so the steering
-exchange becomes part of the permanent audit trail. Anyone reading the
-transcript later — in the Legacy node room or the Console node room — sees the
-operator's own words, in `seq` order, between the agent call that was
-interrupted (or that the guidance followed) and the call the guidance caused.
-An operator row is visibly the operator's: it carries an `operator · <name>`
-role label, full-strength unedited text, and a `sent` badge, and it can never
-be mistaken for assistant prose.
+When queued or `Send now` guidance actually becomes the next provider turn,
+the permanent node transcript must show each delivered message as the
+operator's own words. In both Legacy and Console, a later reader must see this
+order:
 
-After implementation:
+1. the agent turn the guidance followed, or the tool call marked
+   `interrupted`;
+2. one attributed operator row per delivered message, in registry receipt
+   order; and
+3. the agent turn caused by that guidance.
 
-- every delivered operator message becomes one ordinary `text` row in
-  `workflow_node_messages`, with `origin: 'operator'`, `operator_user_id`, and
-  the caller-stamped `message_id` in the existing strict `metadata` JSON — no
-  new table, migration, column, or row kind;
-- the rows land in the transcript attempt of the turn they caused, so both the
-  flat `seq` ordering and the `?attemptId=` filtered view read "operator said X
-  → agent did Y";
-- the server projects a read-time `operator_display_name` on those rows from
-  the `users` table, falling back to a short user id when no display name
-  exists, so neither web shell performs a user fetch;
-- both shells render a distinct `operator` history item with the `sent` badge as
-  a constant — no provider advances a row to `delivered` before gate G1;
-- executor, server, shared web read model, both component shells, and an
-  outside-in Playwright proof are all test-first (`--tdd`).
+Each row remains an ordinary stored `text` row. Its strict metadata carries
+`origin: 'operator'`, the nullable acting `operator_user_id`, and the existing
+caller-stamped `message_id`. The API derives the current display label without
+persisting it or requiring another client request. Both shells render the
+message as plain, full-strength operator prose with a permanent `sent` status.
 
-## Repository and design authority inspected
+This is the need described by issue #188 and Story 2.8. The current product
+delivers guidance to the provider but records only the resulting agent output,
+so the audit trail loses who steered the agent and what they said.
 
-- Issue #188 and the merged prerequisite PRs #207 (queue guidance), #210
-  (withdraw), #213 (shared live queue, Story 2.9), and #214 (interrupt and
-  redirect, Story 2.3).
-- Story 2.8 in
-  `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:642-674` and
-  the sprint tracker
-  `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml:75`.
-- Section 4 "An operator row needs a speaker" of
-  `_bmad-output/specs/spec-agent-node-room/engine-integration.md` — the
-  decision that the row is an ordinary `text` row with three additive metadata
-  fields, written by the executor as the sole `seq` writer.
-- `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md:78` ("no
-  route is a delivery vehicle for the record — the executor writes the operator
-  row").
-- The UX authority
-  `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md`:
-  Component Patterns → Operator text (line 128), "the operator's prose is theirs
-  and is not edited" (line 96), the `sent` floor for every v1 provider (lines
-  187 and 397), and the accessibility build requirements — the role label names
-  the sender by `users` display name with a short id as fallback (line 262) and
-  role labels are lowercase DOM text under CSS `text-transform: uppercase`
-  (line 263).
-- Transcript schemas `packages/workflows/src/schemas/node-execution.ts` and
-  `packages/workflows/src/schemas/node-message.ts`; the fail-open writer
-  `packages/workflows/src/node-transcript.ts`; the scope helpers in
-  `packages/workflows/src/transcript-execution-scope.ts`.
-- The four guidance drain sites and the two `turns:` loop heads in
-  `packages/workflows/src/dag-executor.ts` (direct node: `:3258-3286`,
-  `:3480-3521`, `:3617-3648`; loop node: `:6131-6160`, `:7060-7105`,
-  `:7310-7360`), plus the #181/#183 executor test harness in
-  `packages/workflows/src/dag-executor.test.ts:26509-27800`.
-- `QueuedOperatorMessage` in `packages/workflows/src/steering-registry.ts:34-39`
-  (`operatorUserId: string | null`, set by the send route from
-  `resolveAuthContext`).
-- The transcript read routes and `toWorkflowNodeMessageResponse` in
-  `packages/server/src/routes/api.ts:5827-5960`, the wire schemas in
-  `packages/server/src/routes/schemas/workflow.schemas.ts:193-240`, the
-  `starter_display_name` precedent at `api.ts:6020-6021`, and the route tests
-  in `packages/server/src/routes/api.workflow-runs.test.ts:2919+` (the
-  `@archon/core/db/users` mock factory at `:722` already exposes
-  `getUserById`).
-- The DB read path `packages/core/src/db/workflow-node-messages.ts:68-89`,
-  which parses every row's metadata against the strict schema and throws on an
-  unknown key.
-- The shared web read model `packages/web/src/lib/agent-history.ts`, the text
-  projector `packages/web/src/lib/project-text-transcript.ts` (complete-mode
-  rows are never coalesced), `occurrence-groups.ts:155` (only reads
-  `lifecycle`), and both shells: `packages/web/src/components/workflows/NodeRoom.tsx`
-  (`AssistantHistory` `:246`, `renderItem` `:1053`) and
-  `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx`
-  (`historyItemRowVisible` `:53`, `AssistantHistory` `:195`, `renderItem` `:1005`).
-- The e2e harness: `e2e/ui/agent-interrupt-redirect.spec.ts`, the identity seed
-  in `e2e/lib/playwright/archon-runtime.ts:370-390` (web identity display name
-  `e2e-starter`), and `listNodeMessages` in `e2e/lib/playwright/run-detail.ts:47`.
-- Root/package test scripts, `packages/web/package.json` `generate:types`, the
-  sprint tracker, and the PR template.
+## Verified authority and conflict resolution
+
+The plan was checked against the repository at `873495f6`, not against the
+previous draft's assertions.
+
+Authority, in order:
+
+1. Issue #188 names Story 2.8 in
+   `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` as its
+   acceptance authority. Story 2.8 was updated after the older architecture
+   wording and requires the **server** to fall back to a short user id when the
+   display-name join fails.
+2. The final UI authority is
+   `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md`
+   (`status: final`, updated 2026-09-19), together with `EXPERIENCE.md` and the
+   canonical `mockups/key-steering-dock.html`. The high-fidelity handoff in
+   `claude-design/design_handoff_node_room_transcript_steering/` was also
+   checked; its README explicitly says `DESIGN.md` wins on disagreement.
+3. The live-steering architecture and engine/API companions establish the
+   storage and ownership invariants: the executor is the sole writer; the row
+   is `kind: text`; exactly the three metadata fields identify an operator
+   receipt; no route writes it; no migration or new row kind is introduced.
+
+Two older statements conflict with Story 2.8:
+
+- live-steering `ARCHITECTURE-SPINE.md` AD-12 says a failed join yields `null`
+  and the web core derives the short id;
+- `steering-test-plan.md` repeats that behavior.
+
+The later Story 2.8 requirement wins: for a non-null `operator_user_id`, the
+server response always contains either the trimmed current display name or the
+first eight id characters. The web keeps the same short-id derivation only as
+a compatibility guard for an older/partial response; it performs no user
+fetch. An identity-less row (`operator_user_id: null`) projects
+`operator_display_name: null` and renders the bare `operator` label. Phase 1
+updates the stale architecture and test-plan wording so the repository has one
+contract.
+
+No unresolved design conflict remains and there is no implementation blocker.
+
+## Current behavior traced end to end
+
+- `sendWorkflowNodeBodySchema` accepts a non-blank message without trimming it
+  and a UUID `message_id`. The send route puts that exact text, id, and
+  `resolveAuthContext(...).userId ?? null` into `QueuedOperatorMessage`.
+- `SteeringHandle` owns FIFO receipt order. The direct and loop executors drain
+  the batch at a natural boundary or after `Send now`, join the text with the
+  existing double newline, and start another turn on the same provider
+  session. They discard the per-message id and sender at the join.
+- `workflow_node_messages` is immutable and assigns per-node `seq` in the
+  executor's store. Its JSON metadata is parsed through the strict
+  `nodeTranscriptMetadataSchema`; the existing `message_id` key is already
+  available, but `origin` and `operator_user_id` are not.
+- The direct and loop `turns:` heads already rotate to a new transcript
+  `attempt_id` for a guidance turn. Provider output for that turn is recorded
+  only after the rotation.
+- The transcript list route has an unpaged compatibility branch and a cursor
+  branch (`limit <= 500`, fetched as `limit + 1`), plus a detail route. All map
+  rows through `toWorkflowNodeMessageResponse`; none currently joins users.
+- `buildAgentHistory` currently maps every projected text row to `assistant`.
+  Both shells have a three-way assistant/tool/lifecycle renderer; their
+  current assistant treatment is also behind the final design contract
+  (literal uppercase DOM text, primary rather than secondary prose, and the
+  wrong size).
+- Existing Playwright journeys already exercise natural drain and
+  Stop-to-`Send now` in both shells. The natural-drain spec currently asserts
+  that standalone operator rows do **not** exist; that inverse assertion must
+  be replaced.
 
 ## Scope
 
 Included:
 
-- three additive optional keys on the strict transcript metadata schema:
-  `origin`, `operator_user_id`, and the reuse of the existing `message_id`;
-- a shared `appendOperatorTranscript` writer and its call from the head of the
-  guidance turn in both the direct-node and loop-node executor paths, carrying
-  the drained `QueuedOperatorMessage[]` across the `continue turns` boundary;
-- a read-time `operator_display_name` projection on operator text rows in the
-  list and detail transcript routes, with a pure short-id fallback;
-- regenerated `packages/web/src/lib/api.generated.d.ts`;
-- a new `operator` `AgentHistoryItem` kind and an `OperatorHistory` renderer in
-  both shells, with the `sent` badge as a literal;
-- executor, schema, server, shared-library, and component coverage written
-  before the code they prove, plus one outside-in Playwright spec per surface
-  and the Story 2.8 closeout.
+- add the two missing optional keys to the strict transcript metadata schema
+  and reuse the existing `message_id`;
+- add a bounded batch user-display lookup in `@archon/core` and enrich operator
+  text rows in the existing list and detail responses;
+- regenerate `packages/web/src/lib/api.generated.d.ts` from the changed
+  OpenAPI schema;
+- add a render-neutral `operator` history item before any executor can emit a
+  live operator row;
+- render the exact final operator/assistant treatments in both node-room
+  shells, including narrow and wide visual acceptance;
+- carry drained message objects to the caused turn and append one operator row
+  per message from both direct and loop execution paths;
+- update focused unit, route, component, and existing outside-in Playwright
+  coverage, then update the Story 2.8 tracker and durable contract docs.
 
-Excluded (later stories or explicitly out of scope):
+Excluded:
 
-- terminal `NEVER SENT` reconciliation of unmatched `sent` receipts (Story
-  2.11) — this story only guarantees the `message_id` those rows will match;
-- finished-iteration read-only queue UI (Story 2.10) and queue attribution in
-  the dock (Story 2.13);
-- any `delivered` state, provider echo, or delivery-ack field (gate G1);
-- SSE or any live push of transcript rows — rows keep arriving through the
-  existing messages poll;
-- registry, send/interrupt/withdraw/queue route, or drain-order changes;
-- retrofitting the existing literal-caps `ASSISTANT` label to the lowercase-DOM
-  rule (a separate a11y fix);
-- database schema or migration work of any kind;
-- fixing the unrelated stale `2-1-queue-guidance-for-a-running-agent: backlog`
-  tracker entry (left alone by the #189 plan as well).
+- `delivered` state or provider acknowledgement before gate G1;
+- terminal `NEVER SENT` reconciliation (Story 2.11);
+- queue collaboration/attribution UI (Stories 2.9/2.13) beyond preserving the
+  already-defined FIFO sender data;
+- changes to send, queue, withdraw, interrupt, registry semantics, or provider
+  interfaces;
+- SSE or another transcript transport; the existing poll discovers the rows;
+- a new table, column, migration, row kind, endpoint, user-fetching client, or
+  shared cross-shell component abstraction.
 
-## Required design
+## Design and technical decisions
 
-### D1. Additive metadata, no new kind
+### 1. Stored row contract
 
-`nodeTranscriptMetadataSchema` (`packages/workflows/src/schemas/node-execution.ts:29-43`)
-gains two optional keys and reuses one:
+`nodeTranscriptMetadataSchema` remains strict and gains:
 
 ```ts
-origin: z.enum(['operator']).optional(),
+origin: z.literal('operator').optional(),
 operator_user_id: z.string().min(1).nullable().optional(),
-// message_id already exists — an operator row stores the caller-stamped
-// send-route `message_id` (a UUID) there.
 ```
 
-The schema stays `.strict()`. `kind` stays `text | tool | status`. `origin`
-is an enum rather than a literal so a future speaker can extend it without a
-shape change. `operator_user_id` is `nullable` because the send route stores
-`requester?.userId ?? null` — a solo install has no identity, and the row must
-record "no identity" explicitly rather than "unknown". Because
-`packages/core/src/db/workflow-node-messages.ts:87` parses every stored row
-against this strict schema on read, the schema change must land before any
-executor write (Phase 1 orders it that way and the schema test proves the
-round trip).
+`message_id` stays the existing `z.string().min(1).optional()` because other
+writers may use non-UUID provider ids; the steering route already validates
+its own ids as UUIDs. Every newly written operator row contains all three
+fields, with `operator_user_id: null` present explicitly when the route had no
+acting identity. A literal is sufficient for the only accepted origin; no
+future-origin abstraction is added.
 
-### D2. The executor writes one text row per delivered message, at the head of the caused turn
+The row is:
 
-Both executor paths already rotate the transcript attempt when a guidance turn
-begins (`dag-executor.ts:3271-3275` and `:6148-6154`). The operator rows are
-written immediately after that rotation and before `sendQuery`, so they carry
-the **caused** turn's `attempt_id`. This is the load-bearing placement
-decision:
-
-- flat `seq` order is satisfied by construction — the executor is the sole
-  writer and awaits every append, so the last row of turn N (the awaited
-  `interrupted` status row or the final agent row) precedes the operator rows,
-  which precede the first row of turn N+1;
-- the `?attemptId=` filtered view of the redirect turn shows the cause
-  ("operator said X") together with its effect, whereas writing at the drain
-  site would strand the row in the interrupted turn's attempt.
-
-To make this possible the four drain sites stop joining the batch into a
-string and instead carry the drained `readonly QueuedOperatorMessage[]` in a
-per-path variable (`turnGuidanceMessages`); the head of each `turns:` loop
-derives the prompt with the unchanged `#181` double-newline join and writes the
-rows. Prompt bytes handed to the provider do not change.
-
-One row per message, in receipt order. Each row is
-`{ kind: 'text', payload: { text: message }, metadata: transcriptMetadata(scope, { origin: 'operator', operator_user_id, message_id }) }`
-with no `text_mode`, `stream_id`, or `block_id`, so `projectTextTranscript`
-treats it as a complete block and never coalesces it with neighbouring agent
-deltas.
-
-The writer is fail-open through `appendNodeTranscript` like every other
-transcript write: a persistence failure logs identity and error type only
-(never message content) and does not fail the node. A lost row surfaces on the
-client as an unmatched `sent` receipt — Story 2.11's terminal reconciliation,
-not this story.
-
-Loop-group bodies are covered for free: the direct-node path runs with the
-namespaced `stepName`, and the executor test asserts the namespaced `node_id`.
-
-### D3. Display name is a read-time join, never persisted
-
-Rows are immutable and names change, so the server projects the label at read
-time. `toWorkflowNodeMessageResponse` (`api.ts:5833`) receives a resolver
-built once per request: collect the distinct non-null `operator_user_id`s
-across the page, look each one up with the existing `userDb.getUserById`
-(no new export, so no `mock.module` factory drift), and map to
-
-```ts
-user?.display_name?.trim() || shortOperatorId(operatorUserId)  // first 8 chars
+```text
+kind: text
+payload: { text: <verbatim queued message> }
+metadata: {
+  execution: <caused turn scope>,
+  origin: operator,
+  operator_user_id: <uuid or null>,
+  message_id: <caller UUID>
+}
 ```
 
-The result rides a wire-only `operator_display_name?: string` on
-`workflowNodeMessageTextResponseSchema` — it is not a metadata key, so the
-stored strict schema stays an honest record. Rows whose `operator_user_id` is
-`null` carry no `operator_display_name` and render a bare `operator` label.
-Both the list route (compatibility and cursor modes) and the detail route
-project it.
+It has no `stream_id`, `block_id`, or `text_mode`, so the existing text
+projector treats it as one complete block and cannot coalesce it with adjacent
+assistant deltas.
 
-### D4. A fourth history item kind, rendered by both shells
+### 2. Server-owned display projection, with bounded database work
 
-`AgentHistoryItem` gains:
+The response-only field is
+`operator_display_name?: string | null` on the text response variant:
 
-```ts
-| {
-    kind: 'operator';
-    id: string;
-    seq: number;
-    role: 'operator';
-    text: string;                 // verbatim — never through presentedText()
-    operatorUserId: string | null;
-    operatorDisplayName: string | null;
-    messageId: string | null;     // the caller-stamped send id
-    delivery: 'sent';             // literal until G1
-    execution: TranscriptExecution | null;
-  }
-```
+- non-null sender + non-blank current `users.display_name` -> trimmed name;
+- non-null sender + missing user, blank name, or lookup failure -> the first
+  eight characters of `operator_user_id`;
+- null sender -> explicit `null`;
+- non-operator row -> field omitted, preserving the existing wire shape.
 
-`buildAgentHistory` branches a `text` row on `metadata.origin === 'operator'`
-before the assistant push. `OperatorHistory` renders in each shell:
+The value is never added to stored metadata. The server collects distinct
+non-null sender ids for only the rows it will return, calls one core helper,
+and maps the results. The helper deduplicates and queries `id, display_name`
+with parameterized `IN` lists in chunks of at most 500, so the unbounded legacy
+list cannot exceed SQLite parameter limits and cursor pages remain one query.
+There is no per-row/N+1 lookup. A batch failure fails open to short ids and
+logs one payload-free warning containing run/node context, sender count, and
+error type—not message text or display names.
 
-- label line: `<span class="uppercase">operator</span>`, then ` · <name>` when
-  a display name exists (name casing preserved), then a `sent` badge whose DOM
-  text is lowercase under CSS uppercase — the same rule as the dock headers;
-- body: the operator's text as plain `whitespace-pre-wrap` — not Markdown,
-  because the prose is theirs and rendering it would edit it — at one strength
-  above assistant prose (`font-medium text-text-primary`);
-- `data-operator-row` on the wrapper so tests and e2e can target it.
+### 3. One functional history kind, two exact shell renderers
 
-Console's `historyItemRowVisible` returns `true` for the new kind through an
-explicit branch (operator rows are never filtered by the tool/system toggles).
+`buildAgentHistory` branches on `kind === 'text'` and
+`metadata.origin === 'operator'` before the assistant branch. The new item
+carries the verbatim text, nullable sender, projected display value, nullable
+message id for later reconciliation, execution scope, and literal
+`delivery: 'sent'`. It never passes through `presentedText`, Markdown, todo
+folding, or tool pairing. A defensive short-id fallback handles responses
+from a server that supplies the sender id but not the derived field; it makes
+no request.
 
-### D5. Cross-half invariant
+Both local shell renderers follow the final design and canonical mockup:
 
-The spec forbids an operator `text` row reaching a live transcript before the
-reader recognises `origin`. All four phases ship in one PR; inside it the
-read-model test (Phase 3) is written before the executor write is enabled and
-the phases are ordered so a reviewer can verify the reader landed with the
-writer.
+- role line: inherited mono, 10px, tracking `0.07em`, text-secondary, lowercase
+  DOM source under CSS uppercase, with `10px 2px 3px` margins;
+- content: inherited sans, 12.5px, line-height 1.55, normal weight,
+  text-primary, plain `white-space: pre-wrap`, safe wrapping, and
+  `0 2px 6px` margins;
+- `sent`: 11px, text-secondary, lowercase, right-aligned on the same role
+  line; no border, pill, dot, or success color;
+- label source: `operator · <projected name>` when available, otherwise
+  `operator`; React escaping applies to both the name and message;
+- assistant anatomy is corrected in the same two renderers to the paired
+  final treatment: lowercase DOM `assistant`, the same 10px role line, and
+  12.5px/1.55 text-secondary prose. This second non-color channel is required
+  for the operator row not to look like agent output.
+
+`data-operator-row`, `data-operator-label`, `data-operator-delivery`, and
+`data-operator-body` provide stable behavioral targets, not styling hooks.
+Console's existing visibility fallthrough already keeps the new kind visible;
+no filter change is needed.
+
+### 4. Executor placement and ordering
+
+The four drain sites retain `readonly QueuedOperatorMessage[]` rather than
+immediately discarding their metadata into a string. At the next `turns:`
+head, and only when `turnIsGuidance` is true, the executor rotates scope and
+derives the unchanged prompt. It then carries a pending receipt context into
+the first provider pass:
+
+1. rotate to `newTranscriptAttempt`;
+2. derive the provider prompt using the unchanged `message.join('\n\n')` rule;
+3. register/start the existing provider stream; and
+4. when that stream first yields—or completes normally without a chunk—append
+   each operator row sequentially under the rotated scope before processing
+   any provider chunk into the transcript.
+
+This places the row after the settled/interrupted prior turn and before any
+row from the caused turn, while an `attemptId`-filtered read keeps cause and
+effect together. It also avoids claiming a delivered receipt when a provider
+generator fails during startup before producing or normally completing a
+stream. The append happens once on the guidance turn's first pass, so re-asks
+cannot duplicate it. Direct nodes, loop nodes, and loop-group bodies all use
+the same writer; the latter already pass a namespaced `stepName` through the
+direct path.
+
+The shared helper awaits the existing fail-open `appendNodeTranscript` once
+per message. A failed audit append neither changes the provider prompt nor
+fails the node, and later messages are still attempted. This is consistent
+with current transcript reliability, while tests make the loss observable.
+
+### 5. Reader-before-writer delivery order
+
+The read contract and both renderers are implemented and tested before the
+executor begins writing operator rows. All changes ship in one release unit;
+the phase order is also the safe commit/cherry-pick order. The server/UI must
+not be deployed as a writer-only subset because an old web reader maps an
+operator text row to assistant prose.
 
 ## Phases
 
-| # | Phase | Status |
-|---|-------|--------|
-| 1 | [Phase 1: Transcript metadata and executor operator rows](./phase-01-start.md) | Pending |
-| 2 | [Phase 2: Server read model and generated types](./phase-02-server-read-model-and-generated-types.md) | Pending |
-| 3 | [Phase 3: Web operator rows in both shells](./phase-03-web-operator-rows-in-both-shells.md) | Pending |
-| 4 | [Phase 4: Verification and closeout](./phase-04-verification-and-closeout.md) | Pending |
+| #   | Phase                                                                                   | Depends on |
+| --- | --------------------------------------------------------------------------------------- | ---------- |
+| 1   | [Contract and server read model](./phase-01-contract-and-server-read-model.md)          | —          |
+| 2   | [Web read model and both shell renderers](./phase-02-web-read-model-and-both-shells.md) | 1          |
+| 3   | [Executor persistence and ordering](./phase-03-executor-persistence.md)                 | 1, 2       |
+| 4   | [Integration, rollout, and closeout](./phase-04-integration-rollout-and-closeout.md)    | 1–3        |
 
-Dependencies: 2 needs 1 (the metadata keys exist); 3 needs 2 (the regenerated
-`api.generated.d.ts` exposes `metadata.origin` and `operator_display_name`);
-4 needs 1–3.
+## Acceptance criteria
 
-Deep-mode contract: Phase 1 is planned to line level from this session's
-scouting. Phases 2–4 are fully specified but each begins with a bounded scout
-pass (listed under "Scout before executing") to re-anchor line numbers that
-earlier phases move.
+- [ ] Every message in a delivered FIFO batch produces exactly one ordinary
+      `text` row with verbatim text and the complete operator metadata triple;
+      an undrained/discarded message produces no row.
+- [ ] `seq` orders operator rows after the prior agent/interrupted row and
+      before the caused agent row on direct natural drain, direct redirect,
+      loop natural drain, loop redirect, and a namespaced loop-group body.
+- [ ] Operator rows use the caused turn's attempt and existing occurrence; a
+      re-ask does not write them again; provider prompt bytes remain unchanged.
+- [ ] Null and multiple acting identities retain correct per-message
+      attribution and FIFO order.
+- [ ] An operator-row append failure is payload-safe and fail-open: remaining
+      rows are attempted and the complete guidance prompt still runs.
+- [ ] List compatibility mode, cursor mode, and detail responses enrich only
+      operator text rows. Non-null ids always receive a trimmed display name
+      or eight-character fallback; null ids receive `null`; all other rows
+      retain their prior response shape.
+- [ ] Display lookup is deduplicated and chunk-bounded, does not look up the
+      cursor overflow row, and falls back without leaking transcript content
+      when the users query fails.
+- [ ] `buildAgentHistory` creates a distinct operator item with verbatim text,
+      `messageId`, sender, execution scope, and literal `sent`, without
+      Markdown/envelope/todo transforms.
+- [ ] Legacy and Console match the final design: operator label/body/status and
+      assistant label/body use the exact anatomy, typography, strength, DOM
+      casing, and existing tokens described above.
+- [ ] At 460x900 and 1440x900, long multi-line operator text wraps without
+      room-driven horizontal overflow; `sent` stays visible at the right; row
+      order is tool/interrupted -> operator -> resumed agent; Console filters
+      never hide the operator row.
+- [ ] Existing natural and interrupt Playwright journeys prove the stored
+      triple, message-id correlation, attempt placement, display name
+      `e2e-starter`, DOM order, and both shell presentations.
+- [ ] Contract docs agree on server-side fallback, generated API types are
+      current, focused tests and `bun run validate` pass, and no schema-upgrade
+      check is required because no SQL schema changes.
 
-## Success criteria
+## Compatibility, operations, and rollback
 
-- [ ] `nodeTranscriptMetadataSchema` accepts `origin`, nullable
-      `operator_user_id`, and `message_id` together and still rejects unknown
-      keys.
-- [ ] Executor matrix proves one operator text row per delivered message, in
-      receipt order, under the redirect turn's `attempt_id`, positioned by `seq`
-      after the `interrupted` status row (or last agent row) and before the
-      first row of the guidance turn — on direct natural drain, direct
-      interrupt→`Send now`, loop natural drain, loop interrupt→`Send now`, and a
-      loop-group body node.
-- [ ] Prompt bytes sent to the provider on a guidance turn are unchanged.
-- [ ] A transcript append failure on an operator row does not fail the node and
-      logs no message content.
-- [ ] List (both modes) and detail routes carry `operator_display_name` from
-      `users.display_name`, falling back to the first 8 characters of the id;
-      rows without `operator_user_id` carry none; non-operator rows are
-      byte-identical to today.
-- [ ] `buildAgentHistory` yields an `operator` item with verbatim text,
-      `delivery: 'sent'`, `messageId`, and execution scope; assistant items are
-      unchanged.
-- [ ] Both shells render `operator · <name>`, a `sent` badge, and the text at
-      full strength; the row is visible under every Console filter combination;
-      the DOM role text is lowercase.
-- [ ] Playwright proves, on Legacy and Console, that after Stop → `Send now`
-      the operator row sits between the interrupted tool row and the resumed
-      echo row, reads `operator · e2e-starter`, shows `sent`, and the API row
-      carries `origin`, `message_id`, and `operator_display_name`.
-- [ ] `bun run validate` passes; `sprint-status.yaml` marks
-      `2-8-see-operator-messages-in-the-transcript: done`; the PR uses the
-      template with `Closes #188`.
+- The API change is additive: the new top-level field is optional and nullable;
+  old rows and non-operator rows remain valid. Display names are mutable by
+  design and therefore reflect the current user record at read time.
+- There is no SQL migration, backfill, or data rewrite. Historical operator
+  rows do not exist; only guidance delivered after the writer is deployed is
+  recorded.
+- Strict JSON parsing creates a real downgrade boundary: once a new operator
+  row exists, a binary that predates `origin`/`operator_user_id` will reject
+  that row and can make the node transcript routes return 500. Therefore an
+  exact full-version rollback is unsafe after first write. Roll back the
+  executor/UI behavior only while retaining the widened metadata reader, or
+  forward-fix; never delete audit rows as a rollback mechanism.
+- Coordinate the single-tenant deployment: drain active steering turns, deploy
+  the complete reader+writer build, and reload open node-room tabs before new
+  guidance is accepted. There is no client/server capability handshake, so a
+  pre-deploy tab can otherwise temporarily interpret a new row with its old
+  bundle. Adding a feature flag solely for this rollout is out of scope.
+- The existing unpaged transcript endpoint remains unbounded; this change does
+  not enlarge its row payload materially, and display lookup chunks avoid a
+  new parameter-limit or N+1 failure. Cursor clients stay capped at 500 rows.
 
 ## Risks and mitigations
 
-| Risk | Mitigation |
-|------|------------|
-| An older Archon binary on `PATH` reads a new operator row and its strict metadata parse throws `row_schema`. | Blast radius is the **whole node transcript**, not one row: `listNodeMessages`/`getNodeMessage` map every row through `parseNodeMessageRow` (`workflow-node-messages.ts:68-89,196,226`) and no caller catches `WorkflowNodeMessageCorruptRowError`, so both transcript routes return 500 for any node that ever received guidance until the binary is upgraded. Same exposure every previous additive metadata key (`outcome`, `exit_code`, `output_state`) already carries; hardening the reader to skip unparseable rows is a separate change and out of this story's scope. Accepted and documented. |
-| The awaited operator-row writes widen the between-turns window in which a Stop resolves `'generating'` (registry `:243-248`) from a microtask to DB-write latency. | Accepted: the outcome is the already-specified, visible boundary race (#183), the press is spent rather than lost, and `seq` ordering forbids fire-and-forget. Phase 1 adds a test pinning the behaviour; a registry pre-turn interrupt slot is the follow-up if it proves user-visible. |
-| Writing the rows at the head of the caused turn means an operator whose redirect never starts (idle-await terminated by Cancel or the 30-minute fail) leaves no row. | Correct by spec: the row is a receipt for delivery, and nothing was delivered. Story 2.11 surfaces those as `NEVER SENT`. |
-| `presentedText` envelope unwrapping or todo folding accidentally touches operator rows. | The operator branch returns before either; tests assert verbatim text with an `output_format` supplied. |
-| Regenerating `api.generated.d.ts` requires a running server; the worktree port is not 3090. | Phase 2 gives the exact `openapi-typescript` invocation against the worktree's logged port and a `git diff` sanity check. |
-| The Console occurrence-group navigator or Legacy last-row focus logic enumerates item kinds. | Scouting shows both key off `item.id`/`lifecycle` only; Phase 3 tests render an operator row as the last item and assert focus marker placement. |
+| Risk                                                                                | Mitigation / proof                                                                                                                                                                                                                            |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Providers expose a stream, not a universal prompt-acceptance acknowledgement.       | Use the first successful stream yield (or normal empty completion) as the common delivery seam, append before processing that chunk, and test that startup failure writes no receipt. Do not invent a provider acknowledgement in this story. |
+| The process stops after the registry drain but before the stream reaches that seam. | Existing in-memory steering already has this process-loss boundary and no operator row is claimed. Terminal unmatched-receipt work belongs to Story 2.11.                                                                                     |
+| A users-table lookup fails or a user was deleted.                                   | Fail open to the short id on the server, warn once without content, and keep transcript retrieval successful.                                                                                                                                 |
+| User-controlled display names or prose inject markup.                               | Render both as React text; operator prose never enters Markdown or `dangerouslySetInnerHTML`.                                                                                                                                                 |
+| A partial deployment or exact binary downgrade misclassifies/rejects rows.          | Reader-before-writer phase order, one release unit, coordinated tab reload, and the rollback constraint above.                                                                                                                                |
+| New item kind falls through the final lifecycle branch.                             | Add explicit operator branches in both shells and component tests with the operator as the final focus row.                                                                                                                                   |
 
-## Red Team Review
+## Final review gates
 
-Three hostile reviewers (Assumption Destroyer, Failure Mode Analyst, Security
-& Scope Adversary) were dispatched against the five plan files with a
-`file:line` evidence requirement. The plan was first handed off before their
-reports landed (unattended invocation with a structured-output deadline); all
-three then arrived, were adjudicated below, and the whole-plan consistency
-sweep closed the gate. The strongest-model advisor also reviewed the plan
-twice (design-time and post-draft); its six post-draft findings were applied:
+Before marking the work done, re-check the implementation against these nine
+lenses:
 
-| # | Finding | Disposition | Where applied |
-|---|---------|-------------|---------------|
-| 1 | Cursor-mode resolver must resolve over `page`, per branch, not once over `rows` | Accept | Phase 2, Step 3 item 3 |
-| 2 | `textRow` fixture takes only `metadata`; wire-level `operator_display_name` needs a hand-built row | Accept (scout note) | Phase 3, Step 1 |
-| 3 | Fail-open executor test could pass trivially; assert N−1 rows + full prompt bytes | Accept | Phase 1, test 8 |
-| 4 | Operator-row write must stay inside the guidance block before `reaskPrompt = turnPrompt` | Accept | Phase 1, Step 4 item 3 |
-| 5 | e2e identity header may be fixture-only; UI send POST could record `null` | Accept (scout item) | Phase 4, scout list |
-| 6 | Loop-group executor test listed under `#181` but uses a `#183` fixture | Accept | Phase 1, test 5 |
-
-### Security & Scope Adversary (landed after handoff; adjudicated)
-
-| # | Finding | Evidence | Disposition | Where applied |
-|---|---------|----------|-------------|---------------|
-| S1 | Explicit `historyItemRowVisible` operator branch is dead code — the fallthrough already returns `true` | `ConsoleAgentHistoryList.tsx:53-59` | Accept | Phase 3: branch and standalone matrix test removed; visibility kept as a render assertion |
-| S2 | Rollback note wrong: an un-branched operator item falls into `LifecycleHistory`, not assistant text | `NodeRoom.tsx:1070-1075` | Accept | Phase 3 Risks rewritten |
-| S3 | Display-name lookup failure had no log line | plan Phase 2 sketch | Accept | Phase 2: `server.operator_display_name_lookup_failed` warn + test assertion |
-| S4 | Raw `operator_user_id` on the transcript wire is spec-sanctioned (`engine-integration.md` §4); the queue route's exclusion is a different endpoint | `api.ts:6021` precedent | Verified non-issue | — |
-
-### Assumption Destroyer (landed after handoff; adjudicated)
-
-| # | Finding | Evidence | Disposition | Where applied |
-|---|---------|----------|-------------|---------------|
-| A1 | `agent-history.ts` push anchor `:388-398` out of file bounds | `agent-history.ts:330` | Accept (already corrected in the self fact-check) | Phase 3 scout list |
-| A2 | `AgentHistoryItem` union range `:28-68` overruns into other aliases | `agent-history.ts:27-61` | Accept | Phase 3 scout list |
-| A3 | Test helper's boolean `.filter` does not narrow `r.payload` for `.map` | `node-execution.ts:29-43` shared metadata shape | Accept | Phase 1 `operatorRows` uses a type predicate |
-| A4 | Four sibling server test factories omit `getUserById` (latent, not triggered here) | `api.auth.test.ts:55` et al. | Accept as a note | Phase 2 mock-isolation paragraph |
-
-### Failure Mode Analyst (landed after handoff; adjudicated)
-
-| # | Finding | Evidence | Disposition | Where applied |
-|---|---------|----------|-------------|---------------|
-| F1 | Awaited operator-row writes at the turn head widen the between-turns window where `interrupt()` resolves `'generating'` | `steering-registry.ts:205-210,243-248`; executor `:3269-3303` synchronous today | Accept (modified): documented as an accepted boundary race with a pinning test; fire-and-forget rejected (breaks `seq` ordering) | Phase 1 Step 4 note + new test; Risks table |
-| F2 | Old-binary risk understated — one unparseable row 500s the whole node transcript | `workflow-node-messages.ts:68-89,196,226` | Accept | Risks table corrected |
-
-All other angles (empty batches, re-ask double writes, AskHuman re-entry,
-concurrent writers, `message_id` coalescing, e2e identity header) were traced
-by that reviewer and found handled by the plan text.
-
-### Whole-Plan Consistency Sweep
-
-All three lenses are adjudicated (S1–S4, A1–A4, F1–F2). After applying them,
-`plan.md` and the four phase files were re-read: the removed
-`historyItemRowVisible` branch no longer appears in the Phase 3 file table,
-steps, or success criteria; the corrected anchors (`:27-61`, `:103-119`,
-`:330-339`, `:1000`) match the code; the lookup-failure log, the type
-predicate, and the boundary-race test are each referenced in exactly one
-phase and summarised here. No contradictions remain. The gate is closed.
-
-## Validation Log
-
-### Verification Results (self, Standard tier)
-
-- Claims checked: 20 (11 executor anchors, 3 web anchors, 2 server anchors,
-  2 test-harness anchors, 2 e2e anchors)
-- Verified: 17 | Failed: 3 (corrected in place) | Unverified: 1
-- Failures corrected: `agent-history.ts` `presentedText` (`:105-121` →
-  `:103-119`) and the text push (`:388-398` → `:330-339`); Console
-  `renderItem` (`:1005` → `:1000`).
-- Unverified (left as a Phase 4 scout item): whether the interrupt spec's
-  `page` context carries `X-Archon-User` on browser-originated fetches.
-- The user interview was not run: the invocation is unattended and asked for
-  advisor review in its place. Decisions D1–D5 stand on cited source, spec,
-  and UX authority; none requires a business call.
-
-### Whole-Plan Consistency Sweep
-
-After the six advisor edits, `plan.md` and all four phase files were re-read
-for stale terms: the four drain-site join replacements, the `turnGuidanceMessages`
-name, the `operator_display_name` wire key, the `delivery: 'sent'` literal,
-and the `#181`/`#183` test placement are consistent across files. No
-contradictions remain from this session's edits; the red-team gate above is the
-one open item.
+1. Product: the permanent record answers who said what and what happened next.
+2. Architecture: only the executor assigns transcript order; the server owns
+   enrichment; the web core owns meaning; shells own DOM.
+3. Contracts: strict stored metadata, additive OpenAPI response, generated web
+   types, and old-row behavior all agree.
+4. Security/reliability/data: parameterized lookup, escaped text, no content in
+   logs, explicit null identity, and fail-open transcript writes.
+5. Performance: no N+1 user reads; chunk bound covers the legacy endpoint.
+6. Completeness: direct, loop, loop-group, natural, interrupted, null identity,
+   failure, re-ask, and both shells are covered.
+7. Verification: tests assert stored/API/functional-core/DOM/visual layers,
+   not merely screenshot presence.
+8. Operations: generated types, active processes, client reload, downgrade
+   boundary, and rollback path are recorded.
+9. Maintainability: no new storage kind, endpoint, feature flag, client fetch,
+   or speculative abstraction.
 
 <!-- slug: issue-188-operator-messages-in-transcript -->
