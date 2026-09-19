@@ -749,6 +749,7 @@ export async function getWorkflowNodeMessage(
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
 export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkflowNodeResponse'];
+export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowNodeQueueResponse'];
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send:
@@ -801,6 +802,35 @@ export async function withdrawNodeGuidance(
     encodeURIComponent(messageId);
   try {
     return await fetchJSON<WithdrawWorkflowNodeResponse>(url, { method: 'DELETE' });
+  } catch (error) {
+    throw toSteeringSendError(error);
+  }
+}
+
+/**
+ * GET /api/workflows/runs/:runId/nodes/:nodeId/queue — read the node's
+ * still-pending queue snapshot so a mounted dock converges on the shared
+ * registry queue. Bodyless GET with `cache: 'no-store'`, optional
+ * AbortSignal, no auto-retry — failures normalize through the same
+ * SteeringSendError surface as the send/withdraw helpers.
+ */
+export async function readNodeGuidanceQueue(
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+): Promise<ReadWorkflowNodeQueueResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/queue';
+  try {
+    return await fetchJSON<ReadWorkflowNodeQueueResponse>(url, {
+      method: 'GET',
+      cache: 'no-store',
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
   } catch (error) {
     throw toSteeringSendError(error);
   }

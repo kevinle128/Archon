@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  applyQueueSnapshot,
   beginGuidanceSubmission,
   beginWithdraw,
   canSubmitGuidance,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  focusTargetAfterSnapshot,
   isQueueShortcut,
   loadSteeringDraft,
   nextFocusAfterRemoval,
@@ -18,6 +20,7 @@ import {
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   saveSteeringDraft,
+  startQueuePolling,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
@@ -30,6 +33,7 @@ import {
   toSteeringRefusal,
   toSteeringSendError,
   type LocalSentReceipt,
+  type QueuedGuidanceRow,
   type SteeringDockState,
 } from './steering-dock';
 
@@ -477,5 +481,489 @@ describe('toSteeringRefusal', () => {
       code: null,
       message: STEERING_SEND_FAILED_MESSAGE,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 2.9 (#189) — shared queue reconciliation: queueGeneration,
+// applyQueueSnapshot, focusTargetAfterSnapshot, startQueuePolling.
+// ---------------------------------------------------------------------------
+
+function receipt(messageId: string, message: string): LocalSentReceipt {
+  return { messageId, message, state: 'queued' };
+}
+
+function stateWith(
+  sent: readonly LocalSentReceipt[],
+  overrides?: Partial<SteeringDockState>
+): SteeringDockState {
+  return { ...createSteeringDockState(), sent, ...overrides };
+}
+
+describe('queueGeneration', () => {
+  test('starts at 0', () => {
+    expect(createSteeringDockState().queueGeneration).toBe(0);
+  });
+
+  test('every resolved send increments, including an idempotent receipt replay', () => {
+    const begun = beginGuidanceSubmission(createSteeringDockState(), 'one');
+    const first = resolveGuidanceSuccess(begun.state, { message_id: begun.messageId });
+    expect(first.queueGeneration).toBe(1);
+    // A replayed 200 for the same id dedupes the row but still bumps — the
+    // server confirmed the mutation again.
+    const replayed = resolveGuidanceSuccess(
+      { ...first, pendingRetry: { messageId: begun.messageId, message: 'one' } },
+      { message_id: begun.messageId }
+    );
+    expect(replayed.queueGeneration).toBe(2);
+    expect(replayed.sent).toHaveLength(1);
+  });
+
+  test('a matching withdraw success increments even when a snapshot already removed the row', () => {
+    const state = stateWith([receipt('a', 'alpha')], { withdrawingMessageId: 'a' });
+    // A snapshot removed 'a' while the withdraw was in flight — sent is
+    // already empty but the resolved mutation still counts.
+    const afterSnapshot = { ...state, sent: [] as readonly LocalSentReceipt[] };
+    const resolved = resolveWithdrawSuccess(afterSnapshot, 'a');
+    expect(resolved.queueGeneration).toBe(state.queueGeneration + 1);
+    expect(resolved.sent).toEqual([]);
+  });
+
+  test('begin, failure, and stale no-op transitions never increment', () => {
+    const begun = beginGuidanceSubmission(createSteeringDockState(), 'one');
+    expect(begun.state.queueGeneration).toBe(0);
+
+    const failed = resolveGuidanceFailure(begun.state, { code: null, message: 'lost' });
+    expect(failed.queueGeneration).toBe(0);
+
+    const withdrawBegun = beginWithdraw(stateWith([receipt('a', 'alpha')]), 'a');
+    expect(withdrawBegun.queueGeneration).toBe(0);
+
+    const withdrawFailed = resolveWithdrawFailure(withdrawBegun, 'a', {
+      code: 'node_finished',
+      message: 'done',
+    });
+    expect(withdrawFailed.queueGeneration).toBe(0);
+
+    // Stale/mismatched completions are no-ops returning the same object.
+    const idle = stateWith([receipt('a', 'alpha')]);
+    expect(resolveWithdrawSuccess(idle, 'a')).toBe(idle);
+  });
+});
+describe('applyQueueSnapshot', () => {
+  test('replaces sent wholesale with the server-ordered receipts, including one this tab did not send', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')]);
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'b', message: 'beta' },
+          { message_id: 'c', message: 'gamma-remote' },
+        ],
+      },
+      0
+    );
+    expect(next.sent).toEqual([receipt('b', 'beta'), receipt('c', 'gamma-remote')]);
+  });
+
+  test('returns the identical state object when the snapshot is identical', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      inFlight: true,
+      pendingRetry: { messageId: 'p', message: 'wip' },
+      refusal: { code: 'stale', message: 'old' },
+      withdrawingMessageId: 'a',
+    });
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'a', message: 'alpha' },
+          { message_id: 'b', message: 'beta' },
+        ],
+      },
+      0
+    );
+    expect(next).toBe(state);
+  });
+
+  test('a stale generation returns the identical state and preserves the queue', () => {
+    const state = stateWith([receipt('a', 'alpha')], { queueGeneration: 3 });
+    // The snapshot was captured at generation 2 — a local mutation resolved
+    // since, so the read must not resurrect 'b' or drop 'a'.
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'b', message: 'beta' },
+          { message_id: 'a', message: 'alpha' },
+        ],
+      },
+      2
+    );
+    expect(next).toBe(state);
+    expect(next.sent).toEqual([receipt('a', 'alpha')]);
+  });
+
+  test('preserves in-flight send, pending retry, refusal, and the active withdraw id', () => {
+    const state = stateWith([receipt('a', 'alpha')], {
+      inFlight: true,
+      pendingRetry: { messageId: 'p', message: 'wip' },
+      refusal: { code: 'node_finished', message: 'done' },
+      withdrawingMessageId: 'a',
+      queueGeneration: 5,
+    });
+    const next = applyQueueSnapshot(state, { queued: [{ message_id: 'b', message: 'beta' }] }, 5);
+    expect(next.sent).toEqual([receipt('b', 'beta')]);
+    expect(next.inFlight).toBe(true);
+    expect(next.pendingRetry).toEqual({ messageId: 'p', message: 'wip' });
+    expect(next.refusal).toEqual({ code: 'node_finished', message: 'done' });
+    expect(next.withdrawingMessageId).toBe('a');
+    expect(next.queueGeneration).toBe(5);
+  });
+
+  test('a snapshot that removes the actively-withdrawing row keeps the id so its success still resolves safely', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      withdrawingMessageId: 'a',
+    });
+    const afterSnapshot = applyQueueSnapshot(
+      state,
+      { queued: [{ message_id: 'b', message: 'beta' }] },
+      0
+    );
+    expect(afterSnapshot.sent).toEqual([receipt('b', 'beta')]);
+    expect(afterSnapshot.withdrawingMessageId).toBe('a');
+    // The withdraw 200 lands after the row already vanished — still a clean
+    // resolution: clears the id and bumps the generation.
+    const resolved = resolveWithdrawSuccess(afterSnapshot, 'a');
+    expect(resolved.withdrawingMessageId).toBeNull();
+    expect(resolved.queueGeneration).toBe(1);
+    expect(resolved.sent).toEqual([receipt('b', 'beta')]);
+  });
+
+  test('a snapshot containing the in-flight send id dedupes with its later resolution', () => {
+    const state = stateWith([receipt('a', 'alpha')], {
+      inFlight: true,
+      pendingRetry: { messageId: 'p', message: 'pending' },
+    });
+    // The server already accepted the send; its row arrives via the snapshot
+    // before the POST response.
+    const afterSnapshot = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'a', message: 'alpha' },
+          { message_id: 'p', message: 'pending' },
+        ],
+      },
+      0
+    );
+    expect(afterSnapshot.sent).toEqual([receipt('a', 'alpha'), receipt('p', 'pending')]);
+    const resolved = resolveGuidanceSuccess(afterSnapshot, { message_id: 'p' });
+    expect(resolved.sent).toHaveLength(2);
+    expect(resolved.sent.filter(entry => entry.messageId === 'p')).toHaveLength(1);
+  });
+});
+
+describe('focusTargetAfterSnapshot', () => {
+  test('returns null when nothing is focused or the focused row survived', () => {
+    expect(focusTargetAfterSnapshot(['a', 'b'], ['a', 'b'], 'b')).toBeNull();
+    // Reordered but still present — focus stays put, no DOM move needed.
+    expect(focusTargetAfterSnapshot(['a', 'b'], ['b', 'a'], 'b')).toBeNull();
+    expect(focusTargetAfterSnapshot(['a'], [], null)).toBeNull();
+  });
+
+  test('a removed row moves focus to the next surviving row, else the previous', () => {
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c'], ['a', 'c'], 'b')).toEqual({
+      kind: 'delete',
+      messageId: 'c',
+    });
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c'], ['a', 'b'], 'c')).toEqual({
+      kind: 'delete',
+      messageId: 'b',
+    });
+  });
+
+  test('multiple removals scan to the nearest survivor in each direction', () => {
+    // Focused 'b'; 'b' and 'c' both gone — next survivor is 'd'.
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c', 'd'], ['a', 'd'], 'b')).toEqual({
+      kind: 'delete',
+      messageId: 'd',
+    });
+    // Focused 'c'; everything after gone — previous survivor is 'a'.
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c'], ['a'], 'c')).toEqual({
+      kind: 'delete',
+      messageId: 'a',
+    });
+  });
+
+  test('an only-row removal and an unknown focused id resolve to the field — never body', () => {
+    expect(focusTargetAfterSnapshot(['a'], [], 'a')).toEqual({ kind: 'field' });
+    expect(focusTargetAfterSnapshot(['a', 'b'], ['a'], 'missing')).toEqual({ kind: 'field' });
+  });
+});
+
+describe('startQueuePolling', () => {
+  interface Deferred<T> {
+    promise: Promise<T>;
+    resolve: (value: T) => void;
+    reject: (error: unknown) => void;
+  }
+
+  function deferred<T>(): Deferred<T> {
+    let resolve!: (value: T) => void;
+    let reject!: (error: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  interface FakeClock {
+    setTimer: typeof setTimeout;
+    clearTimer: typeof clearTimeout;
+    pending: Map<number, { fn: () => void; ms: number }>;
+    runNext: () => void;
+  }
+
+  function fakeClock(): FakeClock {
+    let nextHandle = 0;
+    const pending = new Map<number, { fn: () => void; ms: number }>();
+    const setTimer = ((handler: TimerHandler, timeout?: number): number => {
+      const handle = ++nextHandle;
+      const fn: () => void =
+        typeof handler === 'function' ? (handler as () => void) : (): void => undefined;
+      pending.set(handle, { fn, ms: timeout ?? 0 });
+      return handle;
+    }) as typeof setTimeout;
+    const clearTimer = ((handle: unknown): void => {
+      pending.delete(handle as number);
+    }) as typeof clearTimeout;
+    const runNext = (): void => {
+      const handle = pending.keys().next().value;
+      if (handle === undefined) throw new Error('no scheduled timer');
+      const entry = pending.get(handle);
+      if (entry === undefined) throw new Error('no scheduled timer');
+      pending.delete(handle);
+      entry.fn();
+    };
+    return { setTimer, clearTimer, pending, runNext };
+  }
+
+  const flush = async (): Promise<void> => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  };
+
+  function pollHarness(clock: FakeClock, onSnapshot: (gen: number) => void, initialGeneration = 0) {
+    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    let generation = initialGeneration;
+    const stop = startQueuePolling({
+      read: () => {
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        reads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => generation,
+      onSnapshot: (_snapshot, generationAtRequest) => {
+        onSnapshot(generationAtRequest);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    return {
+      reads,
+      stop,
+      setGeneration: (g: number): void => {
+        generation = g;
+      },
+    };
+  }
+
+  test('fires the first read immediately and schedules the next only after it settles', async () => {
+    const clock = fakeClock();
+    const snapshots: number[] = [];
+    const { reads, stop, setGeneration } = pollHarness(
+      clock,
+      gen => {
+        snapshots.push(gen);
+      },
+      7
+    );
+    try {
+      // Immediate first read — before any timer could have fired.
+      expect(reads).toHaveLength(1);
+      expect(clock.pending.size).toBe(0);
+
+      reads[0].resolve({ queued: [{ message_id: 'a', message: 'alpha' }] });
+      await flush();
+      expect(snapshots).toEqual([7]);
+      expect(clock.pending.size).toBe(1);
+
+      // The scheduled tick fires the second read; it carries whatever the
+      // generation is at fire time.
+      setGeneration(9);
+      clock.runNext();
+      expect(reads).toHaveLength(2);
+      // While the request is in flight nothing new is scheduled: no overlap.
+      expect(clock.pending.size).toBe(0);
+      reads[1].resolve({ queued: [] });
+      await flush();
+      expect(snapshots).toEqual([7, 9]);
+    } finally {
+      stop();
+    }
+  });
+
+  test('retries 422, transport (0), and 5xx failures without calling onSnapshot', async () => {
+    const clock = fakeClock();
+    const snapshots: unknown[] = [];
+    const { reads, stop } = pollHarness(clock, gen => {
+      snapshots.push(gen);
+    });
+    try {
+      for (const error of [
+        new SteeringSendError(422, 'not_steerable_here', 'detached'),
+        new Error('offline'),
+        new SteeringSendError(500, 'internal_error', 'oops'),
+        new SteeringSendError(503, 'internal_error', 'busy'),
+      ]) {
+        const attempt = reads.length;
+        reads[attempt - 1].reject(error);
+        await flush();
+        expect(snapshots).toHaveLength(0);
+        // Retryable: the poll rescheduled instead of stopping.
+        expect(clock.pending.size).toBe(1);
+        clock.runNext();
+        expect(reads.length).toBe(attempt + 1);
+      }
+    } finally {
+      stop();
+    }
+  });
+
+  test('a synchronous throw from read is normalized and retried like a rejection', () => {
+    const clock = fakeClock();
+    const snapshots: unknown[] = [];
+    let calls = 0;
+    const stop = startQueuePolling({
+      read: () => {
+        calls++;
+        throw new SteeringSendError(422, 'not_steerable_here', 'detached');
+      },
+      currentGeneration: () => 0,
+      onSnapshot: snapshot => {
+        snapshots.push(snapshot);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      expect(calls).toBe(1);
+      expect(snapshots).toHaveLength(0);
+      expect(clock.pending.size).toBe(1);
+      clock.runNext();
+      expect(calls).toBe(2);
+    } finally {
+      stop();
+    }
+  });
+
+  test('stops on 400, 401, 403, 404, and 409 — no reschedule, no snapshot', async () => {
+    for (const status of [400, 401, 403, 404, 409]) {
+      const clock = fakeClock();
+      const snapshots: unknown[] = [];
+      const { reads, stop } = pollHarness(clock, gen => {
+        snapshots.push(gen);
+      });
+      reads[0].reject(new SteeringSendError(status, 'code', 'msg'));
+      await flush();
+      expect(snapshots).toHaveLength(0);
+      expect(clock.pending.size).toBe(0);
+      stop();
+    }
+  });
+
+  test('cleanup aborts the in-flight request, clears the timer, and suppresses late settles', async () => {
+    // First prove cleanup removes a timer that is waiting between reads.
+    const timerClock = fakeClock();
+    const timerReads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    const stopBetweenReads = startQueuePolling({
+      read: () => {
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        timerReads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      intervalMs: 1000,
+      setTimer: timerClock.setTimer,
+      clearTimer: timerClock.clearTimer,
+    });
+    timerReads[0].resolve({ queued: [] });
+    await flush();
+    expect(timerClock.pending.size).toBe(1);
+    stopBetweenReads();
+    expect(timerClock.pending.size).toBe(0);
+
+    // Then prove cleanup aborts an active read and suppresses late settlement.
+    const clock = fakeClock();
+    const signals: AbortSignal[] = [];
+    const snapshots: unknown[] = [];
+    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    const stop = startQueuePolling({
+      read: signal => {
+        signals.push(signal);
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        reads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => 0,
+      onSnapshot: snapshot => {
+        snapshots.push(snapshot);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+
+    // Settle the first read so a timer is pending, then stop mid-second-read.
+    reads[0].resolve({ queued: [] });
+    await flush();
+    clock.runNext();
+    expect(reads).toHaveLength(2);
+    stop();
+    expect(signals[1].aborted).toBe(true);
+
+    // A late resolve is fully suppressed — no snapshot, no reschedule.
+    reads[1].resolve({ queued: [{ message_id: 'a', message: 'alpha' }] });
+    await flush();
+    expect(snapshots).toHaveLength(1);
+    expect(clock.pending.size).toBe(0);
+    expect(reads).toHaveLength(2);
+
+    // A late reject is suppressed the same way — no retry after abort.
+    const clock2 = fakeClock();
+    const reads2: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    const stop2 = startQueuePolling({
+      read: () => {
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        reads2.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      intervalMs: 1000,
+      setTimer: clock2.setTimer,
+      clearTimer: clock2.clearTimer,
+    });
+    stop2();
+    reads2[0].reject(new SteeringSendError(500, 'internal_error', 'oops'));
+    await flush();
+    expect(clock2.pending.size).toBe(0);
+    expect(reads2).toHaveLength(1);
   });
 });

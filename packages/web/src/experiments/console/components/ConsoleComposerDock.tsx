@@ -1,24 +1,24 @@
 /**
- * Story 2.1 queue composer dock for the Console node room: guarded send into
- * the run's process-local steering queue while the selected agent node is
- * generating. Mirrors the Legacy ComposerDock semantics through console-owned
- * seams — the POST response is the only queue evidence (no polling, no queue
- * read, no rehydration). Sent receipts are in-memory only; the unsent draft
- * and ambiguous retry id persist in sessionStorage scoped by run + node id.
+ * Story 2.1/2.9 queue composer dock for the Console node room: guarded send
+ * into the run's process-local steering queue while the selected agent node
+ * is generating. Story 2.9 hydrates and reconciles the shared registry queue
+ * via a serial abortable poll; local POST/DELETE responses still update
+ * immediately. Sent receipts are in-memory; the unsent draft and ambiguous
+ * retry id persist in sessionStorage scoped by run + namespaced node id.
  *
- * The console-wide `.console-root :focus-visible` ring (--accent-ring at 0.3
- * alpha) composites to ~2:1 on the dock surfaces — under the 3:1 non-text
- * floor — so the dock's focusables declare the explicit accent-bright ring
- * used by ConsoleTodoStrip and other high-contrast console controls.
+ * Mirrors Legacy `ComposerDock` through the Console-owned API layer
+ * (`../skills/runs`) — never imports `@/lib/api`.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
 import {
+  applyQueueSnapshot,
   beginGuidanceSubmission,
   beginWithdraw,
   canSubmitGuidance,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  focusTargetAfterSnapshot,
   isQueueShortcut,
   loadSteeringDraft,
   nextFocusAfterRemoval,
@@ -31,6 +31,7 @@ import {
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   saveSteeringDraft,
+  startQueuePolling,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
@@ -43,8 +44,10 @@ import {
 } from '@/lib/steering-dock';
 
 import {
+  readNodeGuidanceQueue,
   sendNodeGuidance,
   withdrawNodeGuidance,
+  type ReadWorkflowNodeQueueResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
   type WithdrawWorkflowNodeResponse,
@@ -63,6 +66,12 @@ export type WithdrawNodeGuidance = (
   messageId: string
 ) => Promise<WithdrawWorkflowNodeResponse>;
 
+export type ReadNodeGuidanceQueue = (
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+) => Promise<ReadWorkflowNodeQueueResponse>;
+
 export interface ConsoleComposerDockProps {
   runId: string;
   /** Namespaced node id — the send route segment and draft scope key. */
@@ -76,6 +85,10 @@ export interface ConsoleComposerDockProps {
   hasPendingAsk: boolean;
   send?: SendNodeGuidance;
   withdraw?: WithdrawNodeGuidance;
+  /** Queue snapshot reader; defaults to the Console API helper. */
+  readQueue?: ReadNodeGuidanceQueue;
+  /** Poll cadence in ms; production default 1000, narrow test seam only. */
+  pollIntervalMs?: number;
   storage?: Storage;
 }
 
@@ -98,6 +111,8 @@ export function ConsoleComposerDock({
   hasPendingAsk,
   send = sendNodeGuidance,
   withdraw = withdrawNodeGuidance,
+  readQueue = readNodeGuidanceQueue,
+  pollIntervalMs = 1000,
   storage,
 }: ConsoleComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
@@ -109,12 +124,14 @@ export function ConsoleComposerDock({
   const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
   const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
   const detachedAlertRef = useRef<HTMLParagraphElement>(null);
+  const dockRef = useRef<SteeringDockState>(createSteeringDockState());
 
   const [dock, setDock] = useState<SteeringDockState>(() => ({
     ...createSteeringDockState(),
     pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
   }));
   const [draft, setDraft] = useState<string>(() => loadSteeringDraft(store, storageKey).draft);
+  dockRef.current = dock;
 
   // Receipts live for the mounted execution only; a scope change resets them
   // while the persisted draft for the new scope hydrates from storage.
@@ -133,6 +150,43 @@ export function ConsoleComposerDock({
 
   const mode = steeringDockMode({ rowStatus, live, hasPendingAsk, refusal: dock.refusal });
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
+  // Shared-queue reads only while the composer/blocked surfaces are mounted.
+  // Hidden historical/terminal rooms and send-triggered detached disclosures
+  // never poll — Story 2.9 gives queue reads no capability-state transition.
+  const pollingEnabled = mode === 'composer' || mode === 'blocked';
+
+  useEffect(() => {
+    if (!pollingEnabled) return;
+    return startQueuePolling({
+      read: signal => readQueue(runId, nodeId, { signal }),
+      currentGeneration: () => dockRef.current.queueGeneration,
+      onSnapshot: (snapshot, generationAtRequest): void => {
+        let focusedId: string | null = null;
+        for (const [messageId, button] of deleteButtonsRef.current) {
+          if (button === document.activeElement) {
+            focusedId = messageId;
+            break;
+          }
+        }
+        setDock(current => {
+          const previousIds = current.sent.map(receipt => receipt.messageId);
+          const next = applyQueueSnapshot(current, snapshot, generationAtRequest);
+          if (next === current) return current;
+          const nextIds = next.sent.map(receipt => receipt.messageId);
+          if (
+            focusedId !== null &&
+            previousIds.includes(focusedId) &&
+            !nextIds.includes(focusedId) &&
+            pendingFocusRef.current === null
+          ) {
+            pendingFocusRef.current = focusTargetAfterSnapshot(previousIds, nextIds, focusedId);
+          }
+          return next;
+        });
+      },
+      intervalMs: pollIntervalMs,
+    });
+  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled]);
 
   // A stored 422 replaces the dock with the detached disclosure — move focus
   // to it instead of returning keyboard users to <body>. Send- and
@@ -142,7 +196,8 @@ export function ConsoleComposerDock({
   }, [mode]);
 
   // After a successful withdraw removes its row, move focus to the target
-  // captured at activation time (next row → previous row → field).
+  // captured at activation time (next row → previous row → field). The same
+  // path restores focus after a remote snapshot removes the focused row.
   useEffect(() => {
     const target = pendingFocusRef.current;
     // A concurrent send also changes `sent`. Keep the target pending until the
@@ -241,6 +296,7 @@ export function ConsoleComposerDock({
               {dock.sent.map(receipt => (
                 <li
                   key={receipt.messageId}
+                  data-message-id={receipt.messageId}
                   className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
                 >
                   <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">

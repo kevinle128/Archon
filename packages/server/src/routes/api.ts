@@ -481,6 +481,8 @@ import {
   sendWorkflowNodeBodySchema,
   sendWorkflowNodeResponseSchema,
   steeringErrorSchema,
+  readWorkflowNodeQueueParamsSchema,
+  readWorkflowNodeQueueResponseSchema,
   withdrawWorkflowNodeParamsSchema,
   withdrawWorkflowNodeResponseSchema,
 } from './schemas/workflow.schemas';
@@ -1637,6 +1639,39 @@ const withdrawWorkflowNodeRoute = createRoute({
   },
 });
 
+const readWorkflowNodeQueueRoute = createRoute({
+  method: 'get',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/queue',
+  tags: ['Workflows'],
+  summary: "Read a running workflow node's queued guidance snapshot",
+  description:
+    "Returns the node's in-process steering queue — only still-pending " +
+    'operator messages, in receipt order. Bodyless and mutation-free: no ' +
+    'request body, no query parameters, and the read never changes the run, ' +
+    'queue, or transcript. Every outcome carries `Cache-Control: no-store`. ' +
+    'Live and parked handles read normally; a closed handle or terminal ' +
+    'run/node is 409, and a known non-terminal node with no in-process ' +
+    'handle is 422.',
+  request: {
+    params: readWorkflowNodeQueueParamsSchema,
+  },
+  responses: {
+    200: {
+      content: {
+        'application/json': { schema: readWorkflowNodeQueueResponseSchema },
+      },
+      description: 'Still-pending queued guidance in receipt order',
+    },
+    400: steeringJsonError('Malformed or schema-invalid request'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
 const deleteWorkflowRunRoute = createRoute({
   method: 'delete',
   path: '/api/workflows/runs/{runId}',
@@ -2297,6 +2332,27 @@ export function registerApiRoutes(
   // the send middleware stays POST-only and nothing here parses a body.
   app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId', async (c, next) => {
     if (c.req.method !== 'DELETE') return next();
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    return next();
+  });
+
+  // Steering queue-read authentication + no-store run before the install-wide
+  // API gate and before OpenAPI parameter validation, so a gated
+  // unauthenticated caller receives the nested steering 401 rather than the
+  // generic API gate shape. `Cache-Control: no-store` is set before either
+  // the early 401 or the handler runs, so EVERY route outcome (200/401/404/
+  // 409/422/500) carries it — snapshots of a live queue must never be served
+  // from a shared cache. GET-only and bodyless: this middleware pattern also
+  // matches the withdraw path's /queue/:messageId shape, so the method guard
+  // is what keeps DELETE requests (and their responses) unaffected.
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue', async (c, next) => {
+    if (c.req.method !== 'GET') return next();
+    c.header('Cache-Control', 'no-store');
     if (isWebAuthEnabled() || isApiGateEnabled()) {
       const requester = await resolveAuthContext(c);
       if (!requester) {
@@ -5423,6 +5479,76 @@ export function registerApiRoutes(
           'api.workflow_node_withdraw_failed'
         );
         return steeringError(c, 500, 'internal_error', 'Failed to withdraw guidance');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // GET /api/workflows/runs/:runId/nodes/:nodeId/queue - Read queued guidance
+  // Authentication was already enforced by the pre-gate middleware above —
+  // the read needs no requester (no attribution), so it is not resolved again.
+  registerOpenApiRoute(
+    readWorkflowNodeQueueRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        // Hot path: one synchronous registry get + one snapshot() in the same
+        // tick — deliberately NO workflow-event, message, or pending-
+        // interaction reads. The executor seals a direct-node handle before
+        // the first awaited terminal write (dag-executor.ts ~3290-3568; loop
+        // registration/drain/cleanup ~5669-5674 and ~6868-7119), so a live or
+        // parked handle's pending list is already truthful. Do not
+        // reintroduce per-poll event-history reads here.
+        const handle = getSteeringRegistry().get(runId, nodeId);
+        if (handle !== undefined) {
+          const snapshot = handle.snapshot();
+          if (snapshot.phase === 'closed') {
+            return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+          }
+          return c.json(
+            {
+              success: true as const,
+              queued: snapshot.queued.map(item => ({
+                message_id: item.messageId,
+                message: item.message,
+              })),
+            },
+            200
+          );
+        }
+
+        // Cold path: no in-process handle — classify the node from the event
+        // projection alone (no pending-interaction read; this route never
+        // steers, so ask/permission state is irrelevant to the snapshot).
+        const events = await workflowEventDb.listWorkflowEvents(runId);
+        const nodeState = projectApiWorkflowNodeStates(events).find(
+          state => state.nodeId === nodeId
+        );
+        if (nodeState === undefined) {
+          return steeringError(c, 404, 'not_found', 'Workflow node not found');
+        }
+        if (TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        return steeringError(
+          c,
+          422,
+          'not_steerable_here',
+          'No live steering session for this node in this process'
+        );
+      } catch (error) {
+        // Content-free: the err object carries no queued-message text.
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_queue_read_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to read queued guidance');
       }
     },
     steeringValidationErrorHook
