@@ -1,0 +1,18 @@
+name: e2e-queue-guidance-pair
+description: "E2E — two independent delayed direct nodes for multi-view queue convergence."
+mutates_checkout: false
+
+nodes:
+  - id: steer-a
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"delayMs":45000}<</E2E_SCENARIO>>
+      $ARGUMENTS
+
+  - id: steer-b
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"delayMs":45000}<</E2E_SCENARIO>>
+      $ARGUMENTS

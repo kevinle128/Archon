@@ -9,7 +9,8 @@
     "e2e/",
     "_bmad-output/specs/spec-workflow-run-view-hitl/",
     "_bmad-output/specs/spec-agent-node-room/",
-    "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/"
+    "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/",
+    ".agents/skills/verify-archon/"
   ],
   "behaviors": [
     {
@@ -51,6 +52,35 @@
       ],
       "scenarios": [
         "ui.ask",
+        "ui.visual"
+      ]
+    },
+    {
+      "id": "ui.transcript-display",
+      "description": "Streamed ACP text groups into one answer per execution attempt, a canonical one-string report renders unwrapped in every transcript mount, the Legacy transcript stays inside the run shell, and the runtime graph has no minimap.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/providers/src/community/",
+        "packages/workflows/src/dag-executor.ts",
+        "packages/web/src/components/workflows/NodeTranscriptPane.tsx",
+        "packages/web/src/components/workflows/NodeRoom.tsx",
+        "packages/web/src/components/workflows/LegacyNodeRoom.tsx",
+        "packages/web/src/components/workflows/LegacyGraphLogsPane.tsx",
+        "packages/web/src/components/workflows/WorkflowExecution.tsx",
+        "packages/web/src/components/workflows/WorkflowDagViewer.tsx",
+        "packages/web/src/lib/agent-history.ts",
+        "packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx",
+        "packages/web/src/experiments/console/components/ConsoleInspectPane.tsx",
+        "packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx",
+        "packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx",
+        "e2e/ui/workflow-transcript-display.spec.ts",
+        "e2e/ui/workflow-run-hitl-room.spec.ts",
+        "e2e/lib/playwright/archon-runtime.ts",
+        "e2e/fixtures/workflows/e2e-transcript-display.yaml",
+        "plans/260919-0843-fix-workflow-transcript-display/"
+      ],
+      "scenarios": [
+        "ui.transcript-display",
         "ui.visual"
       ]
     }
@@ -104,10 +134,26 @@
       ]
     },
     {
+      "id": "ui.transcript-display",
+      "runner": {
+        "kind": "browser",
+        "id": "ui.transcript-display"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "Each mapped transcript-display test executes exactly once and passes",
+        "Structured unwrap, viewport containment, and graph checks run against real seeded runs",
+        "Fresh browser evidence is retained"
+      ]
+    },
+    {
       "id": "ui.visual",
       "runner": {
         "kind": "browser",
-        "id": "visual-92fb1a48e9fe9ec94641409ec0e04ec0d35a050e06da1dda3b86081e3648bfbf"
+        "id": "visual-f5a2bcb3d86c8d6a0d428b789b197517beeb964e0aebc2d0ec562dc45ec629f0"
       },
       "prerequisites": [
         "Bun and installed target dependencies",

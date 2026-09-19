@@ -83,7 +83,7 @@ export async function prove(
     });
     if (ids.some(id => id.startsWith('ui.') || id === 'http.lifecycle')) {
       // Build the exact target for each public proof; do not trust an ambient dist.
-      const build = await command(['bun', 'run', 'build:web'], repo, isolatedEnvironment(evidence), 180_000);
+      const build = await command(['bun', 'run', 'build:web'], repo, isolatedEnvironment(evidence), 900_000);
       await writeJson(join(evidence, 'build.json'), build);
       if (build.exit !== 0) throw new Error(`Target Web build failed (setup): ${build.stderr}`);
     }

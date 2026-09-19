@@ -72,6 +72,43 @@ export const E2E_FAKE_AGENT_INPUT = {
 } as const;
 
 /**
+ * Deterministic file-edit payloads for the inline-diff e2e proof. `edit` and
+ * `failed` share one qualified old/new pair (2 deletes + 2 inserts + 2 context
+ * lines in a single hunk, mirroring the ux mockup's auto_retry.rs backoff
+ * change); `failed` reports the error outcome through the same row. `write`
+ * carries a path + content but no before/after pair; `bare` omits `toolInput`
+ * entirely to exercise the generic no-input fallback.
+ */
+export const E2E_FAKE_EDIT_TOOL_NAME = 'Edit';
+export const E2E_FAKE_EDIT_PATH = 'crates/gigo-harness-worker/src/auto_retry.rs';
+export const E2E_FAKE_EDIT_INPUT = {
+  file_path: E2E_FAKE_EDIT_PATH,
+  old_string: [
+    'pub fn backoff(attempt: u32) -> Duration {',
+    '    let secs = 2u64.pow(attempt).min(31);',
+    '    Duration::from_secs(secs + 1)',
+    '}',
+  ].join('\n'),
+  new_string: [
+    'pub fn backoff(attempt: u32) -> Duration {',
+    '    let secs = 2u64.pow(attempt).min(30);',
+    '    Duration::from_secs(secs)',
+    '}',
+  ].join('\n'),
+  replace_all: false,
+} as const;
+export const E2E_FAKE_EDIT_OUTPUT = `The file ${E2E_FAKE_EDIT_PATH} has been updated successfully.`;
+export const E2E_FAKE_EDIT_FAILURE_OUTPUT = 'String to replace not found in file.';
+export const E2E_FAKE_WRITE_TOOL_NAME = 'Write';
+export const E2E_FAKE_WRITE_INPUT = {
+  file_path: 'notes/summary.md',
+  content: '# Summary\n\nOne line.\n',
+} as const;
+export const E2E_FAKE_WRITE_OUTPUT = 'File created successfully at: notes/summary.md';
+export const E2E_FAKE_BARE_EDIT_TOOL_NAME = 'edit';
+export const E2E_FAKE_BARE_EDIT_OUTPUT = 'edited notes/summary.md';
+
+/**
  * Deterministic todo-call sequence for the pinned-strip e2e fixture. Folding
  * the four calls yields 12 items across `Research`/`Implement` exercising all
  * five statuses: `Read the spec` completed, `Map the message path`
@@ -136,19 +173,42 @@ const scenarioSchema = z
     largeLastToolOutput: z.boolean().optional(),
     taskDispatch: z.enum(['omp', 'claude']).optional(),
     echoPrompt: z.boolean().optional(),
+    fileEdit: z.enum(['edit', 'failed', 'write', 'bare']).optional(),
   })
   .strict()
   .superRefine((scenario, ctx) => {
-    if (scenario.taskDispatch === undefined) return;
-    // taskDispatch emits its own fixed tool pair; the emitTool family of keys
-    // would be dead or contradictory config, so the combination is invalid.
-    for (const key of ['emitTool', 'repeatTool', 'largeLastToolOutput'] as const) {
-      if (scenario[key] !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [key],
-          message: `task_dispatch_mutually_exclusive_with_${key}`,
-        });
+    if (scenario.taskDispatch !== undefined) {
+      // taskDispatch emits its own fixed tool pair; the emitTool family of keys
+      // would be dead or contradictory config, so the combination is invalid.
+      for (const key of ['emitTool', 'repeatTool', 'largeLastToolOutput', 'fileEdit'] as const) {
+        if (scenario[key] !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `task_dispatch_mutually_exclusive_with_${key}`,
+          });
+        }
+      }
+    }
+    if (scenario.fileEdit !== undefined) {
+      // fileEdit emits its own fixed tool pair per variant; every other
+      // scenario key except delayMs would be dead or contradictory config.
+      for (const key of [
+        'emitTool',
+        'emitTodo',
+        'askHuman',
+        'doneWhenPromptIncludes',
+        'repeatTool',
+        'largeLastToolOutput',
+        'echoPrompt',
+      ] as const) {
+        if (scenario[key] !== undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `file_edit_mutually_exclusive_with_${key}`,
+          });
+        }
       }
     }
   });
@@ -477,6 +537,56 @@ export class E2eFakeProvider implements IAgentProvider {
         toolCallId,
         toolOutcome: 'success',
       };
+    } else if (scenario.fileEdit !== undefined) {
+      yield { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT };
+      const toolCallId = `e2e-fake-tool-${sessionId}`;
+      switch (scenario.fileEdit) {
+        case 'edit':
+        case 'failed': {
+          const failed = scenario.fileEdit === 'failed';
+          yield {
+            type: 'tool',
+            toolName: E2E_FAKE_EDIT_TOOL_NAME,
+            toolInput: { ...E2E_FAKE_EDIT_INPUT },
+            toolCallId,
+          };
+          yield {
+            type: 'tool_result',
+            toolName: E2E_FAKE_EDIT_TOOL_NAME,
+            toolOutput: failed ? E2E_FAKE_EDIT_FAILURE_OUTPUT : E2E_FAKE_EDIT_OUTPUT,
+            toolCallId,
+            toolOutcome: failed ? 'error' : 'success',
+          };
+          break;
+        }
+        case 'write': {
+          yield {
+            type: 'tool',
+            toolName: E2E_FAKE_WRITE_TOOL_NAME,
+            toolInput: { ...E2E_FAKE_WRITE_INPUT },
+            toolCallId,
+          };
+          yield {
+            type: 'tool_result',
+            toolName: E2E_FAKE_WRITE_TOOL_NAME,
+            toolOutput: E2E_FAKE_WRITE_OUTPUT,
+            toolCallId,
+            toolOutcome: 'success',
+          };
+          break;
+        }
+        case 'bare': {
+          yield { type: 'tool', toolName: E2E_FAKE_BARE_EDIT_TOOL_NAME, toolCallId };
+          yield {
+            type: 'tool_result',
+            toolName: E2E_FAKE_BARE_EDIT_TOOL_NAME,
+            toolOutput: E2E_FAKE_BARE_EDIT_OUTPUT,
+            toolCallId,
+            toolOutcome: 'success',
+          };
+          break;
+        }
+      }
     } else {
       yield { type: 'assistant', content: '[e2e-fake] deterministic response' };
     }

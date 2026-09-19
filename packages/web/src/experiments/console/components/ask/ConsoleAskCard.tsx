@@ -233,9 +233,12 @@ export function ConsoleAskCard(props: ConsoleAskCardProps): React.ReactElement {
       aria-label={`question from agent, ${String(questions.length)} questions`}
       onSubmit={handleSubmit}
     >
-      <div className="rounded-lg border border-warning bg-surface-elevated shadow-sm">
+      <div
+        data-ask-card=""
+        className="rounded-lg border border-warning bg-surface-elevated shadow-sm"
+      >
         <div className="p-4">
-          <p className="text-sm font-medium text-text-primary">{`${agentDisplayName} is asking`}</p>
+          <p className="text-sm font-medium text-warning">{`${agentDisplayName} is asking`}</p>
           <p className="flex flex-wrap items-center gap-2 text-xs">
             <span>{nodeId}</span>
             <span>{formatDurationMs(elapsedWaitingMs(interaction.created_at, nowMs))}</span>

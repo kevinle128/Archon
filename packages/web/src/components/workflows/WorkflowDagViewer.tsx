@@ -5,18 +5,13 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MiniMap,
 } from '@xyflow/react';
 import type { EdgeTypes, NodeTypes } from '@xyflow/react';
-import type { DagNodeState, RuntimeNodeMetadata, WorkflowStepStatus } from '@/lib/types';
+import type { DagNodeState, RuntimeNodeMetadata } from '@/lib/types';
 import type { DagNode } from '@/lib/api';
 import { formatDurationMs } from '@/lib/format';
 import { buildWorkflowDagViewModel } from './build-workflow-dag-view-model';
-import {
-  executionDagNode,
-  formatRuntimeMetadata,
-  type ExecutionNodeData,
-} from './ExecutionDagNode';
+import { executionDagNode, formatRuntimeMetadata } from './ExecutionDagNode';
 import { RunGraphRouteEdge } from './RunGraphRouteEdge';
 
 import '@xyflow/react/dist/style.css';
@@ -24,14 +19,6 @@ import '@xyflow/react/dist/style.css';
 // Defined at module scope — prevents ReactFlow from remounting nodes/edges on every render
 const nodeTypes: NodeTypes = { executionNode: executionDagNode };
 const edgeTypes: EdgeTypes = { runGraphRoute: RunGraphRouteEdge };
-
-const STATUS_MINIMAP_COLORS: Partial<Record<WorkflowStepStatus, string>> = {
-  completed: 'var(--success)',
-  running: 'var(--accent-bright)',
-  failed: 'var(--error)',
-  skipped: 'var(--text-tertiary)',
-};
-const DEFAULT_MINIMAP_COLOR = 'var(--surface-elevated)';
 
 interface WorkflowDagViewerProps {
   dagNodes: readonly DagNode[];
@@ -103,14 +90,6 @@ export function WorkflowDagViewer({
         >
           <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
           <Controls showInteractive={false} className="!bg-surface !border-border" />
-          <MiniMap
-            nodeColor={(node): string => {
-              const data = node.data as ExecutionNodeData;
-              return (data.status && STATUS_MINIMAP_COLORS[data.status]) ?? DEFAULT_MINIMAP_COLOR;
-            }}
-            className="!bg-surface !border-border"
-            maskColor="rgba(0, 0, 0, 0.6)"
-          />
         </ReactFlow>
       </ReactFlowProvider>
     </div>

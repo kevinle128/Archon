@@ -696,8 +696,8 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   ).sort();
   expect(visibleIds).toEqual(storedIds);
   // The full-output action is offered on the expanded row before Raw is ever
-  // opened; the fetched tail stays out of the DOM until Raw is opened, then
-  // renders inside the wrapping panel without sideways scroll.
+  // opened; the fetched tail then renders readably in the normalized family
+  // body, and the verbatim payload lands in Raw without sideways scroll.
   const lastRow = room.locator('details[data-tool-id]').last();
   await lastRow.locator('summary').first().click();
   const rawToggle = lastRow.getByRole('button', { name: 'Raw', exact: true });
@@ -714,7 +714,9 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
   );
   await viewFullOutput.click();
   expect((await detailResponse).status()).toBe(200);
-  await expect(room.getByText('[e2e-fake] full output tail', { exact: false })).toHaveCount(0);
+  await expect(lastRow.locator('.tool-family-body').first()).toContainText(
+    '[e2e-fake] full output tail'
+  );
   await rawToggle.click();
   const rawPanel = lastRow.locator('pre');
   await expect(rawPanel).toContainText('[e2e-fake] full output tail', { timeout: T.medium });
@@ -813,4 +815,195 @@ test('[P1] [V:hitl.artifacts-room] Console Artifacts keeps the room docked', asy
     timeout: T.medium,
   });
   await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
+});
+
+/**
+ * The document must never become the scroller for a Legacy run room: the root
+ * keeps scrollTop 0 and no more than 2px of scroll slack while the transcript
+ * scroller owns all vertical overflow.
+ */
+async function expectDocumentContained(page: Page, label: string): Promise<void> {
+  const metrics = await page.evaluate(() => {
+    const clientHeight = document.documentElement.clientHeight;
+    const offenders = Array.from(document.querySelectorAll('*'))
+      .map(el => {
+        const rect = el.getBoundingClientRect();
+        return { el, bottom: rect.bottom, top: rect.top, height: rect.height };
+      })
+      .filter(entry => entry.bottom > clientHeight + 2 || entry.top < -2)
+      .sort((a, b) => b.bottom - a.bottom)
+      .slice(0, 12)
+      .map(entry => {
+        const el = entry.el as HTMLElement;
+        const cls = (el.getAttribute('class') ?? '').slice(0, 80);
+        const id = el.id ? `#${el.id}` : '';
+        const testid = el.getAttribute('data-testid') ?? '';
+        const inRoom = el.closest('#legacy-run-room') !== null;
+        const inView = el.closest('#legacy-run-view') !== null;
+        const scope = inRoom ? 'room' : inView ? 'view' : 'document';
+        return `${scope}:${el.tagName}${id}${testid ? `[${testid}]` : ''}.${cls.split(' ').join('.')} top=${String(Math.round(entry.top))} bottom=${String(Math.round(entry.bottom))} h=${String(Math.round(entry.height))}`;
+      });
+    const measure = (selector: string): string => {
+      const el = document.querySelector(selector) as HTMLElement | null;
+      if (el === null) return `${selector}=missing`;
+      const r = el.getBoundingClientRect();
+      const style = getComputedStyle(el);
+      return `${selector} top=${String(Math.round(r.top))} h=${String(Math.round(r.height))} sh=${String(el.scrollHeight)} ch=${String(el.clientHeight)} ov=${style.overflowY}`;
+    };
+    const chain = [
+      measure('html'),
+      measure('body'),
+      measure('#legacy-run-room'),
+      measure('#legacy-run-room > div'),
+      measure('[data-testid="node-transcript-scroll"]'),
+    ];
+    return {
+      scrollTop: document.scrollingElement?.scrollTop ?? Number.NaN,
+      slack: document.documentElement.scrollHeight - clientHeight,
+      slackX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      offenders,
+      chain,
+    };
+  });
+  expect(metrics.scrollTop, `${label}: document scroll position`).toBe(0);
+  expect(
+    metrics.slack,
+    `${label}: root scroll height slack; chain: ${metrics.chain.join(' | ')}; offenders: ${metrics.offenders.join(' | ')}`
+  ).toBeLessThanOrEqual(2);
+  expect(metrics.slackX, `${label}: root scroll width slack`).toBeLessThanOrEqual(2);
+}
+
+/**
+ * Every direct `sr-only` status label must stay inside the geometry of its own
+ * visible summary; an escaped absolutely positioned label stretches the root
+ * scroll height below the fixed run shell.
+ */
+async function expectStatusLabelsInsideSummaries(room: Locator): Promise<void> {
+  const escaped = await room.locator('details[data-tool-id] > summary > .sr-only').evaluateAll(
+    labels =>
+      labels.filter(label => {
+        const summary = label.parentElement;
+        if (summary === null) return true;
+        const labelBox = label.getBoundingClientRect();
+        const summaryBox = summary.getBoundingClientRect();
+        return (
+          labelBox.top < summaryBox.top - 1 ||
+          labelBox.bottom > summaryBox.bottom + 1 ||
+          labelBox.left < summaryBox.left - 1 ||
+          labelBox.right > summaryBox.right + 1
+        );
+      }).length
+  );
+  expect(escaped, 'sr-only status labels escape their visible summary').toBe(0);
+}
+
+async function wheelOver(locator: Locator, page: Page, deltaY: number): Promise<void> {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('missing wheel target geometry');
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, deltaY);
+}
+
+test('[P1] [V:transcript-display.legacy-scroll-desktop] Legacy long-history room keeps the document fixed', async ({
+  page,
+  archon,
+}) => {
+  test.setTimeout(T.xlong);
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  const started = await requireLongHistoryFixture(page, archon);
+  await openLegacyRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-long-history');
+  await openLegacyLogRow(page, HITL_LONG_NODE);
+  const room = await waitForRoom(page, HITL_LONG_NODE);
+  await expect
+    .poll(async () => room.locator('[data-tool-id]').count(), { timeout: T.xlong })
+    .toBeGreaterThan(100);
+
+  const scroller = room.getByTestId('node-transcript-scroll');
+  await expect(scroller).toBeVisible();
+  expect(
+    await scroller.evaluate(el => el.scrollHeight - el.clientHeight),
+    'long transcript overflows its own scroll owner'
+  ).toBeGreaterThan(0);
+  await expectDocumentContained(page, 'room open');
+  await expectStatusLabelsInsideSummaries(room);
+
+  // Pointer-exit scrolling at the transcript boundary must not chain to the
+  // document: wheel to the tail, then back past the top.
+  await wheelOver(scroller, page, 60000);
+  await expect
+    .poll(async () => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThanOrEqual(2);
+  await expect(room.locator('details[data-tool-id]').last()).toBeVisible();
+  await expectDocumentContained(page, 'transcript tail wheel');
+  await wheelOver(scroller, page, -60000);
+  await expect.poll(async () => scroller.evaluate(el => el.scrollTop)).toBeLessThanOrEqual(2);
+  await expectDocumentContained(page, 'transcript top wheel');
+
+  // The room header and the non-node graph area never scroll the document.
+  await wheelOver(page.locator('#legacy-run-room header').first(), page, 60000);
+  await expectDocumentContained(page, 'room header wheel');
+  const pane = page.locator('.react-flow__pane');
+  if ((await pane.count()) > 0) {
+    await wheelOver(pane, page, 2000);
+    await expectDocumentContained(page, 'graph pane wheel');
+  }
+
+  // Keyboard scrolling still works on the transcript scroller.
+  await scroller.evaluate(el => (el as HTMLElement).focus());
+  await page.keyboard.press('End');
+  await expect
+    .poll(async () => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThanOrEqual(2);
+  await expectDocumentContained(page, 'keyboard transcript scroll');
+
+  // Applicable controls survive: header close and the resize handle.
+  await expect(page.getByRole('button', { name: 'Close' })).toBeVisible();
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toBeVisible();
+});
+
+test('[P1] [V:transcript-display.legacy-scroll-narrow] Legacy narrow room keeps the document fixed', async ({
+  browser,
+  archon,
+}) => {
+  test.setTimeout(T.xlong);
+  await pageWaitStarter(browser, archon, async page => {
+    await page.setViewportSize(NARROW_VIEWPORT);
+    const started = await requireLongHistoryFixture(page, archon);
+    await openLegacyRunDetail(page, started.runId);
+    await waitForRunTitle(page, 'e2e-hitl-long-history');
+    await openLegacyLogRow(page, HITL_LONG_NODE);
+    const room = await waitForRoom(page, HITL_LONG_NODE);
+    await expect
+      .poll(async () => room.locator('[data-tool-id]').count(), { timeout: T.xlong })
+      .toBeGreaterThan(100);
+
+    const scroller = room.getByTestId('node-transcript-scroll');
+    await expect(scroller).toBeVisible();
+    expect(
+      await scroller.evaluate(el => el.scrollHeight - el.clientHeight),
+      'long transcript overflows its own scroll owner'
+    ).toBeGreaterThan(0);
+    await expectDocumentContained(page, 'narrow room open');
+    await expectStatusLabelsInsideSummaries(room);
+
+    await wheelOver(scroller, page, 60000);
+    await expect
+      .poll(async () => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight))
+      .toBeLessThanOrEqual(2);
+    await expect(room.locator('details[data-tool-id]').last()).toBeVisible();
+    await expectDocumentContained(page, 'narrow transcript tail wheel');
+
+    // Keyboard scrolling still works on the transcript scroller at narrow width.
+    await scroller.evaluate(el => (el as HTMLElement).focus());
+    await page.keyboard.press('Home');
+    await expect.poll(async () => scroller.evaluate(el => el.scrollTop)).toBeLessThanOrEqual(2);
+    await page.keyboard.press('End');
+    await expect
+      .poll(async () => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight))
+      .toBeLessThanOrEqual(2);
+    await expectDocumentContained(page, 'narrow keyboard transcript scroll');
+
+    await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();
+  });
 });

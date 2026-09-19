@@ -1,6 +1,9 @@
 import type { ChangeData, HunkData } from 'react-diff-view';
 
-import type { GitDiffChange, GitDiffHunk } from '@/lib/api';
+import type { components } from '@/lib/api.generated';
+
+type GitDiffChange = components['schemas']['GitDiffChange'];
+type GitDiffHunk = components['schemas']['GitDiffHunk'];
 
 function requiredLine(value: number | undefined): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {

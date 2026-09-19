@@ -12,6 +12,7 @@ description: |
 
 nodes:
   - id: resolve
-    provider: devin
-    model: swe-2-max
+    provider: omp
+    model: cursor/cursor-grok-4.5 
+    effort: high
     command: archon-resolve-merge-conflicts

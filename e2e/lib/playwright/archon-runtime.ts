@@ -49,6 +49,14 @@ const TODO_STRIP_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-todo-strip.yaml'
 );
+const FILE_EDIT_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-file-edit.yaml'
+);
 const QUEUE_GUIDANCE_WORKFLOW_FIXTURE = join(
   HERE,
   '..',
@@ -64,6 +72,22 @@ const QUEUE_GUIDANCE_LOOP_WORKFLOW_FIXTURE = join(
   'fixtures',
   'workflows',
   'e2e-queue-guidance-loop.yaml'
+);
+const TRANSCRIPT_DISPLAY_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-transcript-display.yaml'
+);
+const QUEUE_GUIDANCE_PAIR_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-queue-guidance-pair.yaml'
 );
 
 /** Name of the seeded workflow whose single AI node runs on the fake provider. */
@@ -87,10 +111,53 @@ export const HITL_ASK_DECLINE_NODE = 'ask-decline';
 export const E2E_TASK_DISPATCH_WORKFLOW_NAME = 'e2e-task-dispatch';
 export const TASK_DISPATCH_OMP_NODE = 'omp-dispatch';
 export const TASK_DISPATCH_CLAUDE_NODE = 'claude-dispatch';
+export const E2E_FILE_EDIT_WORKFLOW_NAME = 'e2e-file-edit';
+export const FILE_EDIT_NODE = 'file-edit';
+export const FILE_EDIT_FAILED_NODE = 'file-edit-failed';
+export const FILE_EDIT_WRITE_NODE = 'file-edit-write';
+export const FILE_EDIT_BARE_NODE = 'file-edit-bare';
 export const E2E_QUEUE_GUIDANCE_WORKFLOW_NAME = 'e2e-queue-guidance';
 export const E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME = 'e2e-queue-guidance-loop';
 export const QUEUE_GUIDANCE_NODE = 'steer-me';
 export const QUEUE_GUIDANCE_LOOP_NODE = 'steer-loop';
+export const E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME = 'e2e-queue-guidance-pair';
+export const QUEUE_GUIDANCE_PAIR_NODE_A = 'steer-a';
+export const QUEUE_GUIDANCE_PAIR_NODE_B = 'steer-b';
+export const E2E_TRANSCRIPT_DISPLAY_WORKFLOW_NAME = 'e2e-transcript-display';
+/** `loop_group` child carrying the one-string `output_format` — exercises nested definition resolution. */
+export const TRANSCRIPT_STRUCTURED_NODE = 'group.structured';
+/** Definition sibling with no `output_format` — its seeded envelope must stay serialized. */
+export const TRANSCRIPT_PLAIN_NODE = 'plain';
+/** Node absent from the definition entirely — the deleted-definition fallback. */
+export const TRANSCRIPT_GHOST_NODE = 'ghost';
+export const TRANSCRIPT_STRUCTURED_TEXT = 'E2E structured report body';
+export const TRANSCRIPT_PLAIN_TEXT = 'E2E plain raw envelope';
+export const TRANSCRIPT_GHOST_TEXT = 'E2E ghost raw envelope';
+/**
+ * Delta fragments persisted for the structured node: they assemble to exactly
+ * `transcriptReportEnvelope(TRANSCRIPT_STRUCTURED_TEXT)`, so projection merges
+ * them and the one-string unwrap renders the inner string.
+ */
+export const TRANSCRIPT_FRAGMENT_A = '{"report":"E2E structured';
+export const TRANSCRIPT_FRAGMENT_B = ' report body"}';
+/**
+ * Ineligible payloads seeded under the SAME `output_format` node — every one
+ * must render byte-for-byte: malformed JSON, an extra key beside `report`,
+ * multiple non-`report` fields, a duplicate key, a noncanonical escape, and a
+ * whitespace variant.
+ */
+export const TRANSCRIPT_INELIGIBLE_TEXTS = [
+  '{"report":"E2E malformed report',
+  '{"report":"E2E extra-key stays raw","extra":1}',
+  '{"a":"E2E multi-field stays raw","b":2}',
+  '{"report":"first","report":"E2E dup-key stays raw"}',
+  '{"report":"E2E escape\\u0020stays raw"}',
+  '{ "report": "E2E spacing stays raw" }',
+] as const;
+/** Canonical serialization of the one-string `{report}` envelope, matching `presentedText`. */
+export function transcriptReportEnvelope(text: string): string {
+  return JSON.stringify({ report: text });
+}
 
 /**
  * The one model the seeded config prices. A usage entry for
@@ -164,10 +231,27 @@ export interface ArchonRuntime {
   /** Run the two-node task-dispatch fixture (OMP batch + Claude single) to completion. */
   runTaskDispatchWorkflow(): Promise<CliRunResult>;
   /**
+   * Run the four-node file-edit fixture: `file-edit` emits a qualified edit
+   * pair, `file-edit-failed` the same pair with an error outcome,
+   * `file-edit-write` a path+content write, and `file-edit-bare` a tool call
+   * with no input — one persisted row per node for the inline-diff proof.
+   */
+  runFileEditWorkflow(): Promise<CliRunResult>;
+  /**
    * Run the todo-strip fixture: `todo-plan` emits four folded todo calls plus a
    * long Read transcript; `no-todo` emits ordinary tool calls only.
    */
   runTodoStripWorkflow(): Promise<CliRunResult>;
+  /**
+   * Run the transcript-display fixture: `seed` (bash) completes while
+   * `group.structured` and `plain` skip via an unsatisfiable `when:` guard, then
+   * seeds each skipped node's durable `{report}` envelope transcript row under
+   * its minted execution scope plus one `ghost` node absent from the definition
+   * (deleted-definition fallback). The e2e-fake provider has no structuredOutput
+   * support, so the persisted shape is seeded rather than executed — the same
+   * modeling rationale as occurrence-navigation.spec.ts.
+   */
+  prepareTranscriptDisplayRun(): Promise<CliRunResult>;
   /**
    * Start the HITL fixture without waiting for CLI exit. `runId` resolves as
    * soon as the run row exists. Use only while work is still running.
@@ -415,6 +499,11 @@ async function startArchonRuntime(
   );
 
   writeFileSync(
+    join(home, 'workflows', `${E2E_FILE_EDIT_WORKFLOW_NAME}.yaml`),
+    readFileSync(FILE_EDIT_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
     join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_WORKFLOW_NAME}.yaml`),
     readFileSync(QUEUE_GUIDANCE_WORKFLOW_FIXTURE)
   );
@@ -422,6 +511,16 @@ async function startArchonRuntime(
   writeFileSync(
     join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME}.yaml`),
     readFileSync(QUEUE_GUIDANCE_LOOP_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_TRANSCRIPT_DISPLAY_WORKFLOW_NAME}.yaml`),
+    readFileSync(TRANSCRIPT_DISPLAY_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME}.yaml`),
+    readFileSync(QUEUE_GUIDANCE_PAIR_WORKFLOW_FIXTURE)
   );
 
   writeFileSync(
@@ -575,6 +674,17 @@ async function startArchonRuntime(
     ]);
   };
 
+  const runFileEditWorkflow = async (): Promise<CliRunResult> => {
+    return runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_FILE_EDIT_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+  };
+
   const runTodoStripWorkflow = async (): Promise<CliRunResult> => {
     try {
       return await runCli([
@@ -599,6 +709,127 @@ async function startArchonRuntime(
       }
       throw error;
     }
+  };
+
+  /**
+   * Single SQLite entry point for the transcript-display fixture: one
+   * `{report}` envelope text row per skipped node, scoped to the occurrence +
+   * attempt the executor minted on its `node_skipped` event (read back from the
+   * events table so the seeded `metadata.execution` matches), plus an unscoped
+   * `node_started`/`node_completed` pair and one raw text row for `ghost`, the
+   * node absent from the definition.
+   */
+  const seedTranscriptDisplayRows = (runId: string): void => {
+    const script = `
+      import { Database } from 'bun:sqlite';
+      const db = new Database(process.env.E2E_DB_PATH);
+      const runId = process.env.E2E_RUN_ID;
+      const scoped = JSON.parse(process.env.E2E_SCOPED ?? '[]');
+      const ghost = JSON.parse(process.env.E2E_GHOST ?? '{}');
+      const baseMs = Date.now();
+      db.run('BEGIN');
+      try {
+        for (const item of scoped) {
+          const row = db
+            .query(
+              "SELECT data FROM remote_agent_workflow_events WHERE workflow_run_id = ? AND step_name = ? AND event_type = 'node_skipped' ORDER BY created_at DESC LIMIT 1"
+            )
+            .get(runId, item.nodeId);
+          if (!row) throw new Error('no node_skipped event for ' + item.nodeId);
+          const data = JSON.parse(row.data);
+          const execution = { occurrence_id: data.occurrence_id, attempt_id: data.attempt_id };
+          item.rows.forEach((text, index) => {
+            const metadata = {
+              execution,
+              ...(item.deltas.includes(index) ? { text_mode: 'delta' } : {}),
+            };
+            db.run(
+              'INSERT INTO remote_agent_workflow_node_messages (id, workflow_run_id, node_id, seq, kind, payload, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [
+                crypto.randomUUID(),
+                runId,
+                item.nodeId,
+                index + 1,
+                'text',
+                JSON.stringify({ text }),
+                JSON.stringify(metadata),
+              ]
+            );
+          });
+        }
+        if (ghost.nodeId) {
+          ['node_started', 'node_completed'].forEach((eventType, index) => {
+            db.run(
+              'INSERT INTO remote_agent_workflow_events (id, workflow_run_id, event_type, step_name, data, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+              [
+                crypto.randomUUID(),
+                runId,
+                eventType,
+                ghost.nodeId,
+                '{}',
+                new Date(baseMs + index * 1000).toISOString(),
+              ]
+            );
+          });
+          db.run(
+            'INSERT INTO remote_agent_workflow_node_messages (id, workflow_run_id, node_id, seq, kind, payload, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [
+              crypto.randomUUID(),
+              runId,
+              ghost.nodeId,
+              1,
+              'text',
+              JSON.stringify({ text: ghost.text }),
+              null,
+            ]
+          );
+        }
+        db.run('COMMIT');
+      } catch (error) {
+        db.run('ROLLBACK');
+        throw error;
+      }
+    `;
+    const result = spawnSync('bun', ['-e', script], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        E2E_DB_PATH: dbPath,
+        E2E_RUN_ID: runId,
+        E2E_SCOPED: JSON.stringify([
+          {
+            nodeId: TRANSCRIPT_STRUCTURED_NODE,
+            rows: [TRANSCRIPT_FRAGMENT_A, TRANSCRIPT_FRAGMENT_B, ...TRANSCRIPT_INELIGIBLE_TEXTS],
+            deltas: [0, 1],
+          },
+          {
+            nodeId: TRANSCRIPT_PLAIN_NODE,
+            rows: [transcriptReportEnvelope(TRANSCRIPT_PLAIN_TEXT)],
+            deltas: [],
+          },
+        ]),
+        E2E_GHOST: JSON.stringify({
+          nodeId: TRANSCRIPT_GHOST_NODE,
+          text: transcriptReportEnvelope(TRANSCRIPT_GHOST_TEXT),
+        }),
+      },
+    });
+    if (result.status !== 0) {
+      throw new Error(`transcript-display seed failed:\n${result.stderr}\n${result.stdout}`);
+    }
+  };
+
+  const prepareTranscriptDisplayRun = async (): Promise<CliRunResult> => {
+    const result = await runCli([
+      CLI_ENTRY,
+      'workflow',
+      'run',
+      E2E_TRANSCRIPT_DISPLAY_WORKFLOW_NAME,
+      '--folder',
+      '--json',
+    ]);
+    seedTranscriptDisplayRows(result.runId);
+    return result;
   };
 
   const listWorkflowRunIds = async (workflowName: string): Promise<string[]> => {
@@ -800,7 +1031,9 @@ async function startArchonRuntime(
     runHitlLongHistoryWorkflow,
     runHitlTwoAsksWorkflow,
     runTaskDispatchWorkflow,
+    runFileEditWorkflow,
     runTodoStripWorkflow,
+    prepareTranscriptDisplayRun,
     startHitlWorkflow,
     resumeWorkflow,
     runHitlWorkflowViaWeb,

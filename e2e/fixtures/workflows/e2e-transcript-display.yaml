@@ -1,0 +1,35 @@
+name: e2e-transcript-display
+description: "E2E — deterministic structured-transcript display. An output_format node nested in a loop_group plus a plain sibling are both skipped by an unsatisfiable when: guard, so no provider call runs; the durable structured transcript shape is seeded by prepareTranscriptDisplayRun (the e2e-fake provider cannot emit structured output)."
+mutates_checkout: false
+
+nodes:
+  - id: seed
+    bash: echo e2e-seed-output
+  - id: group
+    depends_on: [seed]
+    loop_group:
+      max_iterations: 1
+      fresh_context: false
+      until_bash: exit 0
+      nodes:
+        - id: structured
+          provider: e2e-fake
+          model: e2e-fake-model
+          when: $seed.output == 'sentinel-never-produced-e2e'
+          output_format:
+            type: object
+            properties:
+              report:
+                type: string
+            required:
+              - report
+            additionalProperties: false
+          prompt: |
+            Unused — the when: guard skips this node deterministically.
+  - id: plain
+    depends_on: [seed]
+    provider: e2e-fake
+    model: e2e-fake-model
+    when: $seed.output == 'sentinel-never-produced-e2e'
+    prompt: |
+      Unused — the when: guard skips this node deterministically.

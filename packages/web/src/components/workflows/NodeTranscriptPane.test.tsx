@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'development';
 
-import { afterEach, beforeEach, describe, expect, jest, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 
 import type {
@@ -89,6 +89,59 @@ const ITERATION_TWO_ROW: LogRow = {
   sourceIndex: 0,
   selection: { kind: 'loop_iteration', iteration: 2 },
 };
+
+const REPORT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { report: { type: 'string' } },
+  required: ['report'],
+  additionalProperties: false,
+};
+const REPORT_TEXT = 'Readable report body';
+const REPORT_ENVELOPE = `{"report":"${REPORT_TEXT}"}`;
+const REPORT_MESSAGES: readonly WorkflowNodeMessageResponse[] = [
+  {
+    id: 'r1',
+    seq: 1,
+    kind: 'text',
+    payload: { text: '{"report":"Readable ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r2',
+    seq: 2,
+    kind: 'text',
+    payload: { text: 'report ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r3',
+    seq: 3,
+    kind: 'text',
+    payload: { text: 'body"}' },
+    metadata: {
+      text_mode: 'delta',
+      execution: {
+        occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attempt_id: '11111111-1111-4111-8111-111111111111',
+      },
+    },
+    created_at: CREATED_AT,
+  },
+];
 
 const INSTALLED_GLOBAL_KEYS = [
   'window',
@@ -253,6 +306,7 @@ describe('NodeTranscriptPane', () => {
   let root: Root;
   let queryClient: InstanceType<typeof reactQuery.QueryClient>;
   let nodeTranscriptPane: typeof import('./NodeTranscriptPane');
+  let queueFetchSpy: { mockRestore: () => void } | undefined;
 
   beforeEach(async () => {
     notifyManager.setScheduler((cb: () => void): void => {
@@ -272,6 +326,30 @@ describe('NodeTranscriptPane', () => {
       },
     });
     nodeTranscriptPane = await loadNodeTranscriptPaneModule();
+    // Production docks default-read the shared queue. Stub GET .../queue only;
+    // every other URL/method fails loudly so undeclared I/O cannot hide.
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, queued: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
   });
 
   afterEach(async () => {
@@ -280,6 +358,8 @@ describe('NodeTranscriptPane', () => {
       root.unmount();
     });
     queryClient.clear();
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = undefined;
     win.close();
     restoreGlobals();
     notifyManager.setScheduler((cb: () => void): void => {
@@ -300,6 +380,7 @@ describe('NodeTranscriptPane', () => {
     starterDisplayName?: string | null;
     actionStates?: Record<string, { phase: 'sending' } | undefined>;
     nodeState?: WorkflowNodeStateResponse;
+    outputFormat?: Record<string, unknown> | null;
     onSubmitAsk?: (requestId: string, body: AskAnswerBody) => Promise<void>;
     events?: readonly WorkflowEventResponse[];
     scopeKey?: string;
@@ -331,6 +412,7 @@ describe('NodeTranscriptPane', () => {
             args.starterDisplayName === undefined ? 'Avery' : args.starterDisplayName,
           actionStates: args.actionStates ?? {},
           nodeState: args.nodeState,
+          outputFormat: args.outputFormat,
           onSubmitAsk: args.onSubmitAsk ?? (async (): Promise<void> => undefined),
           events: args.events ?? [],
           scopeKey:
@@ -367,6 +449,27 @@ describe('NodeTranscriptPane', () => {
     expect(calls).toEqual([['run-1', 'review']]);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
+  });
+
+  test('unwraps an exact one-string envelope only when the definition schema is supplied', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, loadMessages });
+    });
+    await flushUntil(host, 'serialized envelope', () =>
+      (host.textContent ?? '').includes('{"report"')
+    );
+    expect(host.textContent).toContain(REPORT_ENVELOPE);
+
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, loadMessages, outputFormat: REPORT_SCHEMA });
+    });
+    await flushUntil(host, 'readable report', () => (host.textContent ?? '').includes(REPORT_TEXT));
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
   });
 
   test('re-slices the same-node cache when the selected iteration changes', async () => {
@@ -1127,6 +1230,7 @@ describe('NodeTranscriptPane', () => {
     // The scroller owns scrolling; the region does not scroll.
     const scrollerClass = scroller.getAttribute('class') ?? '';
     expect(scrollerClass).toContain('overflow-y-auto');
+    expect(scrollerClass).toContain('overscroll-y-contain');
     expect(scrollerClass).toContain('flex');
     expect(scrollerClass).toContain('flex-col');
     expect(region.getAttribute('class')).toContain('overflow-hidden');

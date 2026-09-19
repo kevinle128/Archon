@@ -28,6 +28,49 @@ const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const ATTEMPT_A = '11111111-1111-4111-8111-111111111111';
 const ATTEMPT_B = '22222222-2222-4222-8222-222222222222';
 
+const REPORT_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: { report: { type: 'string' } },
+  required: ['report'],
+  additionalProperties: false,
+};
+const REPORT_TEXT = 'Readable report body';
+const REPORT_MESSAGES: readonly WorkflowNodeMessage[] = [
+  {
+    id: 'r1',
+    seq: 1,
+    kind: 'text',
+    payload: { text: '{"report":"Readable ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r2',
+    seq: 2,
+    kind: 'text',
+    payload: { text: 'report ' },
+    metadata: {
+      text_mode: 'delta',
+      execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B },
+    },
+    created_at: CREATED_AT,
+  },
+  {
+    id: 'r3',
+    seq: 3,
+    kind: 'text',
+    payload: { text: 'body"}' },
+    metadata: {
+      text_mode: 'delta',
+      execution: { occurrence_id: OCC_B, attempt_id: ATTEMPT_B },
+    },
+    created_at: CREATED_AT,
+  },
+];
+
 function occurrenceEntry(
   id: string,
   occurrenceId: string,
@@ -229,6 +272,20 @@ describe('ConsoleExecutionHistory', () => {
     expect(host.textContent).toContain('ASSISTANT');
     expect(host.textContent).toContain('Bash');
     expect(host.textContent).not.toContain('occ-a-assistant');
+  });
+
+  test('unwraps the structured envelope once outputFormat arrives', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...REPORT_MESSAGES],
+    });
+    renderHistory({ loadMessages });
+    await flushUntil('raw history', () => (host.textContent ?? '').includes('{"report"'));
+    expect(host.textContent).toContain('{"report"');
+
+    renderHistory({ loadMessages, outputFormat: REPORT_SCHEMA });
+    await flushUntil('unwrapped history', () => (host.textContent ?? '').includes(REPORT_TEXT));
+    expect(host.textContent).toContain(REPORT_TEXT);
+    expect(host.textContent).not.toContain('{"report"');
   });
 
   test('an OMP task dispatch renders context and one card per subtask inside the owning row', async () => {
@@ -579,6 +636,109 @@ describe('ConsoleExecutionHistory', () => {
       JSON.stringify({ name: 'Read', input: { path: 'a.ts' }, output: 'chunk' }, null, 2)
     );
     expect(row.open).toBe(true);
+  });
+
+  test('a persisted Edit row renders the same inline diff anatomy in history', async () => {
+    const before =
+      '  pub fn backoff(attempt: u32) -> Duration {\n' +
+      '     let secs = 2u64.pow(attempt).min(31);\n' +
+      '     Duration::from_secs(secs + 1)\n' +
+      '  }';
+    const after =
+      '  pub fn backoff(attempt: u32) -> Duration {\n' +
+      '     let secs = 2u64.pow(attempt).min(30);\n' +
+      '     Duration::from_secs(secs)\n' +
+      '  }';
+    const input: Record<string, unknown> = {
+      file_path: 'src/auto_retry.rs',
+      old_string: before,
+      new_string: after,
+      replace_all: false,
+    };
+    renderHistory({
+      loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [
+          {
+            id: 'call-e-1',
+            seq: 1,
+            kind: 'tool',
+            payload: { name: 'Edit', id: 'e-1', input },
+            metadata: { tool_phase: 'call' },
+            created_at: CREATED_AT,
+          },
+          {
+            id: 'result-e-1',
+            seq: 2,
+            kind: 'tool',
+            payload: {
+              name: 'Edit',
+              id: 'e-1',
+              input,
+              output: 'File updated successfully',
+            },
+            metadata: { tool_phase: 'result', outcome: 'success' },
+            created_at: CREATED_AT,
+          },
+        ],
+      }),
+    });
+    await flushUntil('edit row', () => host.querySelector('details[data-tool-id="e-1"]') !== null);
+    const rowEl = host.querySelector('details[data-tool-id="e-1"]');
+    if (rowEl === null) throw new Error('edit row missing');
+    const row = rowEl as Element & { open: boolean };
+    // Collapsed: the summary already carries the diff count badges.
+    const summaryEl = row.querySelector('summary');
+    if (summaryEl === null) throw new Error('summary missing');
+    const summary = summaryEl as unknown as HTMLElement;
+    expect(summary.textContent).toContain('+2');
+    expect(summary.textContent).toContain('−2');
+    expect(row.querySelector('.tool-diff')).toBeNull();
+
+    await act(async () => {
+      summary.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(row.open).toBe(true);
+    const body = row.querySelector('.tool-family-body');
+    if (body === null) throw new Error('family body missing');
+    // Path first, then the unified table with the same hooks as the room.
+    expect(body.querySelector('.text-node-command')?.textContent).toBe('src/auto_retry.rs');
+    const table = body.querySelector('.tool-diff');
+    if (table === null) throw new Error('diff table missing');
+    expect(table.className).toContain('diff-unified');
+    const codes = Array.from(table.querySelectorAll('.diff-code')).map(td => td.className);
+    expect(codes).toEqual([
+      'diff-code diff-code-normal',
+      'diff-code diff-code-delete',
+      'diff-code diff-code-delete',
+      'diff-code diff-code-insert',
+      'diff-code diff-code-insert',
+      'diff-code diff-code-normal',
+    ]);
+    expect(
+      Array.from(table.querySelectorAll('.tool-diff-marker')).map(el => el.textContent)
+    ).toEqual(['', '−', '−', '+', '+', '']);
+    expect(
+      Array.from(table.querySelectorAll('.tool-diff-line-number')).map(el => el.textContent)
+    ).toEqual(['1', '2', '3', '2', '3', '4']);
+    // Success prose stays behind Raw.
+    expect(body.textContent).not.toContain('File updated successfully');
+
+    // Raw swaps the table for the exact payload and back.
+    const rawEl = row.querySelector('button[aria-expanded]');
+    if (rawEl === null) throw new Error('Raw toggle missing');
+    await act(async () => {
+      rawEl.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(row.querySelector('.tool-diff')).toBeNull();
+    const panelId = rawEl.getAttribute('aria-controls');
+    if (panelId === null) throw new Error('aria-controls missing');
+    expect(win.document.getElementById(panelId)?.textContent).toBe(
+      JSON.stringify({ name: 'Edit', input, output: 'File updated successfully' }, null, 2)
+    );
+    await act(async () => {
+      rawEl.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+    });
+    expect(row.querySelector('.tool-diff')).not.toBeNull();
   });
 
   test('renders no Todo strip section for todo tool input', async () => {

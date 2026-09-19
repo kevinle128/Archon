@@ -2747,6 +2747,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/queue": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a running workflow node's queued guidance snapshot
+         * @description Returns the node's in-process steering queue — only still-pending operator messages, in receipt order. Bodyless and mutation-free: no request body, no query parameters, and the read never changes the run, queue, or transcript. Every outcome carries `Cache-Control: no-store`. Live and parked handles read normally; a closed handle or terminal run/node is 409, and a known non-terminal node with no in-process handle is 422.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Still-pending queued guidance in receipt order */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReadWorkflowNodeQueueResponse"];
+                    };
+                };
+                /** @description Malformed or schema-invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run or node */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Node no longer running */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description No live steering session in this process */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/runs/{runId}": {
         parameters: {
             query?: never;
@@ -5401,6 +5506,16 @@ export interface components {
             success: true;
             /** Format: uuid */
             message_id: string;
+        };
+        ReadWorkflowNodeQueueResponse: {
+            /** @enum {boolean} */
+            success: true;
+            queued: components["schemas"]["QueuedGuidanceMessage"][];
+        };
+        QueuedGuidanceMessage: {
+            /** Format: uuid */
+            message_id: string;
+            message: string;
         };
         ResetWorkflowNodeSessionsResponse: {
             success: boolean;

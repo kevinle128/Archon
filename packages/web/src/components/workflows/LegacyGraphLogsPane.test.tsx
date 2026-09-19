@@ -627,6 +627,17 @@ describe('LegacyGraphLogsPane', () => {
     expect(
       roomPanel?.getAttribute('data-panel-size') ?? roomPanel?.getAttribute('style') ?? ''
     ).toMatch(/40/);
+    // The right panel's content wrapper is a shrinkable overflow boundary —
+    // without it a long transcript stretches the document below the fixed run
+    // shell. react-resizable-panels puts className/style on the wrapper inside
+    // the #legacy-run-room panel element, and the inline overflow must win over
+    // the library's default `overflow: auto` so the transcript scroller stays
+    // the sole vertical scroll owner.
+    const roomContent = roomPanel?.firstElementChild as HTMLElement | null;
+    const roomContentClass = roomContent?.getAttribute('class') ?? '';
+    expect(roomContentClass).toContain('min-h-0');
+    expect(roomContentClass).toContain('overflow-hidden');
+    expect(roomContent?.style.overflow).toBe('hidden');
 
     await act(async () => {
       root.render(

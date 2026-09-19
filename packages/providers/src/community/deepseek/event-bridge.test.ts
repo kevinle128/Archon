@@ -10,7 +10,7 @@ describe('mapDeepseekSessionUpdate', () => {
       content: { type: 'text', text: 'hello from dsh' },
     } satisfies SessionUpdate;
     expect(mapDeepseekSessionUpdate(update, createDeepseekEventState())).toEqual([
-      { type: 'assistant', content: 'hello from dsh' },
+      { type: 'assistant', content: 'hello from dsh', textMode: 'delta' },
     ]);
   });
 

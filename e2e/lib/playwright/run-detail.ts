@@ -48,13 +48,23 @@ export async function listNodeMessages(
   page: Page,
   runId: string,
   nodeId: string
-): Promise<{ kind: string; payload: Record<string, unknown> }[]> {
+): Promise<
+  {
+    kind: string;
+    payload: Record<string, unknown>;
+    metadata?: { execution?: { occurrence_id?: string; attempt_id?: string } };
+  }[]
+> {
   const res = await page.request.get(
     `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/messages`
   );
   expect(res.ok(), `node messages for ${nodeId} responded ${res.status()}`).toBeTruthy();
   const body = (await res.json()) as {
-    messages?: { kind: string; payload: Record<string, unknown> }[];
+    messages?: {
+      kind: string;
+      payload: Record<string, unknown>;
+      metadata?: { execution?: { occurrence_id?: string; attempt_id?: string } };
+    }[];
   };
   return body.messages ?? [];
 }

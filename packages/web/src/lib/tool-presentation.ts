@@ -10,6 +10,7 @@
  * family, so polling never pays for output normalization. The input is
  * structural so the chat card can adopt it later without a rewrite.
  */
+import { diffHunks, type DiffHunksResult } from './diff-hunks';
 import { formatDurationMs } from './format';
 import { normalizeTaskDispatch, taskPromptExcerpt, type TaskSubtask } from './task-normalize';
 import {
@@ -60,8 +61,12 @@ export type ToolRowBadgeKind =
   | 'language'
   | 'operation'
   | 'output-state'
+  | 'diff'
   | 'placeholder';
-export type ToolRowBadgeTone = 'neutral' | 'danger' | 'warning' | 'running' | 'muted';
+export type ToolRowBadgeTone = 'neutral' | 'danger' | 'warning' | 'running' | 'muted' | 'success';
+
+/** The diff a qualified file row carries; renderers consume this type, never the differ. */
+export type FileDiff = DiffHunksResult;
 
 export interface ToolPresentationInput {
   name: string;
@@ -231,6 +236,58 @@ function boundedString(value: string | null): string | null {
 
 function hasOwn(record: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
+}
+
+/**
+ * Own-property before/after pair for a resolved `file` row. Both keys must be
+ * own properties before either value is read, `''` is a valid side, and a
+ * throwing accessor is a non-qualifying pair — never a reason to reclassify
+ * the row or block the transcript. Runs only after family resolves to `file`;
+ * alias-shaped keys on any other family never reach this helper.
+ */
+function fileEditPair(record: Record<string, unknown>): { before: string; after: string } | null {
+  try {
+    for (const [before, after] of BEFORE_AFTER_PAIRS) {
+      if (!hasOwn(record, before) || !hasOwn(record, after)) continue;
+      const beforeValue = record[before];
+      const afterValue = record[after];
+      if (typeof beforeValue === 'string' && typeof afterValue === 'string') {
+        return { before: beforeValue, after: afterValue };
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** `replace_all: true|false` — only when the input carries it as an own boolean. */
+function replaceAllFact(record: Record<string, unknown>): string | null {
+  try {
+    if (!hasOwn(record, 'replace_all')) return null;
+    const value = record.replace_all;
+    return typeof value === 'boolean' ? `replace_all: ${String(value)}` : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Row-level diff cache keyed by the input record object. The summary and the
+ * file body arm see the same record, so the bounded differ runs once per
+ * record; equal strings on a freshly parsed object reuse the differ's pair
+ * cache. `null` covers both a non-qualifying pair and a refusal — either way
+ * the row keeps the path-plus-preview fallback.
+ */
+const fileDiffCache = new WeakMap<object, DiffHunksResult | null>();
+
+function fileDiffFor(record: Record<string, unknown>): DiffHunksResult | null {
+  const cached = fileDiffCache.get(record);
+  if (cached !== undefined) return cached;
+  const pair = fileEditPair(record);
+  const result = pair === null ? null : diffHunks(pair.before, pair.after);
+  fileDiffCache.set(record, result);
+  return result;
 }
 
 /** True when a bounded scan finds an own enumerable key. */
@@ -565,10 +622,25 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
     case 'shell':
       headline = shellHeadline(name, record);
       break;
-    case 'file':
+    case 'file': {
       headline = boundedString(firstStringField(record, PATH_KEYS));
       headlineKind = 'path';
+      const diff = record === null ? null : fileDiffFor(record);
+      if (diff !== null) {
+        if (diff.added > 0) {
+          contentBadges.push({ kind: 'diff', text: `+${String(diff.added)}`, tone: 'success' });
+        }
+        if (diff.deleted > 0) {
+          contentBadges.push({ kind: 'diff', text: `−${String(diff.deleted)}`, tone: 'danger' });
+        }
+        bodyFacts.push(
+          diff.hunks.length === 0 ? 'no changes' : singularOrPlural(diff.hunks.length, 'hunk')
+        );
+        const replaceAll = record === null ? null : replaceAllFact(record);
+        if (replaceAll !== null) bodyFacts.push(replaceAll);
+      }
       break;
+    }
     case 'search': {
       headline = searchHeadline(record);
       const count = countBadge(input.output);
@@ -797,8 +869,9 @@ export function toolRowPresentation(
   }
 
   // The core owns the complete body bar: a normalized task leads with its
-  // bodyFacts and drops the redundant subagent count badge; every other row
-  // maps non-placeholder badges exactly as the renderers used to compose them.
+  // bodyFacts and drops the redundant subagent count badge; a file row leads
+  // with its hunk/no-changes fact and keeps its `+n −m` badges out of the bar;
+  // every other family composes identically since only these two set facts.
   // The chip prints the sent name only when it is chip-worthy; when it fell
   // back the body bar carries the full name instead (a Codex wrapped command,
   // an over-long tool name), so it stays readable and selectable.
@@ -807,12 +880,12 @@ export function toolRowPresentation(
   const barName =
     content.label !== sentName ? sanitizeBounded(sentName, MAX_ALIAS_NAME_CODE_UNITS).text : null;
   const barBadges = badges
-    .filter(badge => badge.kind !== 'placeholder')
+    .filter(badge => badge.kind !== 'placeholder' && badge.kind !== 'diff')
     .filter(badge => !(isTaskBody && badge.kind === 'count'))
     .map(badge => badge.text);
   const bodyBarText = [
     content.family,
-    ...(isTaskBody ? content.bodyFacts : []),
+    ...content.bodyFacts,
     ...(barName !== null && barName.length > 0 ? [barName] : []),
     ...barBadges,
   ].join(' · ');
@@ -844,7 +917,14 @@ export type ToolField = ToolOutputField;
 export type ToolBody =
   | { kind: 'task'; context: string; subtasks: TaskSubtaskCard[] }
   | { kind: 'terminal'; command: string; output: string | null; unreadable: boolean }
-  | { kind: 'file'; path: string; preview: string | null; unreadable: boolean }
+  | {
+      kind: 'file';
+      path: string;
+      preview: string | null;
+      unreadable: boolean;
+      /** The qualified before/after diff, or null when the row keeps the preview fallback. */
+      diff: FileDiff | null;
+    }
   | {
       kind: 'matches';
       pattern: string;
@@ -1114,6 +1194,7 @@ function resolveToolBody(
         path: salientField(record, PATH_KEYS, name, 'file'),
         preview,
         unreadable: normalized.unreadable,
+        diff: record === null ? null : fileDiffFor(record),
       };
     }
     case 'search': {
