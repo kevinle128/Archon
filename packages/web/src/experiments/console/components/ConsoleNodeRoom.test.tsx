@@ -2961,6 +2961,7 @@ describe('ConsoleNodeRoom', () => {
         canLoadFullOutput: true,
         outputState: 'truncated' as const,
         messageId: 'msg-tool-1',
+        execution: null,
         ...overrides,
       };
       return {
