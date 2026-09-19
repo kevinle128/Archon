@@ -1,0 +1,57 @@
+## Codebase Patterns
+
+### Queue snapshot hot path trusts close-before-terminal
+- **Where**: `packages/server/src/routes/api.ts` (readWorkflowNodeQueue handler)
+- **Pattern**: Live/parked handle → one `getWorkflowRun` + `registry.get` + `handle.snapshot()`; never list events on the 200 path. Cold path only when handle absent: project events for 404/409/422. Comment cites dag-executor close-before-terminal (~3290-3568, ~5669-5674, ~6868-7119).
+- **Example**: `const handle = getSteeringRegistry().get(runId, nodeId); if (handle) { const snapshot = handle.snapshot(); ... }`
+
+### queueGeneration guards stale snapshot application
+- **Where**: `packages/web/src/lib/steering-dock.ts`
+- **Pattern**: Bump on every resolved send/withdraw (including idempotent replay and already-removed withdraw). `applyQueueSnapshot` returns identical object when `generationAtRequest !== state.queueGeneration`. Poller samples generation at request fire time.
+- **Example**: `if (generationAtRequest !== state.queueGeneration) return state;`
+
+### Method-guarded pre-gate for GET queue no-store + nested 401
+- **Where**: `packages/server/src/routes/api.ts` middleware on `/api/workflows/runs/:runId/nodes/:nodeId/queue`
+- **Pattern**: Set `Cache-Control: no-store` before success or early error; nested 401 when auth required and no identity; `next()` for non-GET so DELETE is untouched. Handler does not re-resolve requester.
+
+### Dual-shell read helpers
+- **Where**: `packages/web/src/lib/api.ts`, `packages/web/src/experiments/console/skills/runs.ts`
+- **Pattern**: Both export `readNodeGuidanceQueue(runId, nodeId, { signal? })` with URL-encoded segments, GET + `cache: 'no-store'`, failures via `toSteeringSendError()`, no auto-retry. Console uses `requestJson` only — never imports `@/lib/api`.
+
+---
+
+## 2026-09-20 — US-001: Queue snapshot route and shared reconciliation primitives
+
+**Status**: PASSED
+**Files changed** (already in commit aeb87838; this iteration validated + marked passes):
+- `packages/server/src/routes/schemas/workflow.schemas.ts` — read params/row/response schemas
+- `packages/server/src/routes/api.ts` — GET route, pre-gate middleware, hot/cold handler
+- `packages/server/src/routes/api.workflow-runs.test.ts` — GET contract/auth/lifecycle/hot-path tests
+- `packages/web/src/lib/api.generated.d.ts` — regenerated OpenAPI types (additive)
+- `packages/web/src/lib/api.ts` — Legacy `readNodeGuidanceQueue`
+- `packages/web/src/experiments/console/skills/runs.ts` — Console `readNodeGuidanceQueue`
+- `packages/web/src/lib/steering-dock.ts` — queueGeneration, applyQueueSnapshot, focusTargetAfterSnapshot, startQueuePolling
+- `packages/web/src/lib/steering-dock.test.ts` — shared-library cases
+- `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md` — GET contract docs
+
+**Acceptance criteria verified**:
+- [x] GET returns 200 pending-only rows in receipt order for live and parked handles
+- [x] Cache-Control: no-store on all outcomes via method-guarded pre-gate; nested 401; next() for non-GET
+- [x] Hot path = one run lookup + registry get + snapshot(); close-before-terminal comment present
+- [x] Error ladder 404/409/422/500 + content-free error log covered by tests
+- [x] Actor matrix starter/member/solo 200; gated unauth nested 401; steeringValidationErrorHook registered
+- [x] Schemas after withdraw; contract doc updated
+- [x] api.generated.d.ts regenerated; both shell helpers with signal + no-store
+- [x] queueGeneration init/increment rules
+- [x] applyQueueSnapshot generation guard + wholesale replace + identity preserve
+- [x] focusTargetAfterSnapshot next → previous → field
+- [x] startQueuePolling serial/abort/retry/stop policy
+- [x] Focused tests: server workflow-runs 265 pass; steering-dock 77 pass
+- [x] Full gates: type-check, lint --max-warnings 0, @archon/server test, @archon/web test
+
+**Learnings**:
+- Implementation landed in prior commit aeb87838 before this Ralph iteration; iteration duty was validate gates + flip `passes`.
+- First `@archon/web test` run hit a flaky happy-dom/radix focus-scope teardown error in AskCard (0 fail, 1 unhandled error); re-run was fully green — not a US-001 regression.
+- Empty path segments never reach the Hono route; assert validation hook registration instead of fabricating empty-param cases.
+
+---

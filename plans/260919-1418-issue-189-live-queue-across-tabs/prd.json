@@ -23,8 +23,8 @@
       "technicalNotes": "Follow phase-01-start.md exactly. Route registration beside send/withdraw in packages/server/src/routes/api.ts; reuse mockSteerableRun/steerEvent/queueSteerItem test fixtures. Generated types: check port 3090 ownership first, never kill another session's process, verify /api/openapi.json contains the GET path + both named schemas before regenerating, then release only the recorded PID. Do not modify registry, executor, DB, OpenAPI validation hook, send/withdraw wire behavior, or deps. Note: empty path segments do not match the router — assert the validation hook is registered rather than fabricating an unreachable params test.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1 (commit aeb87838). Files: packages/server/src/routes/api.ts, packages/server/src/routes/schemas/workflow.schemas.ts, packages/server/src/routes/api.workflow-runs.test.ts, packages/web/src/lib/steering-dock.ts, packages/web/src/lib/steering-dock.test.ts, packages/web/src/lib/api.ts, packages/web/src/experiments/console/skills/runs.ts, packages/web/src/lib/api.generated.d.ts, _bmad-output/specs/spec-agent-node-room/steering-api-contract.md. Gates: server workflow-runs + steering-dock focused tests, type-check, lint --max-warnings 0, @archon/server test, @archon/web test."
     },
     {
       "id": "US-002",
