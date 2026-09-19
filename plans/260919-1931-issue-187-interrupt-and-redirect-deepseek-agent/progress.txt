@@ -98,6 +98,4 @@ BLOCKER US-003 | gate=plans/reports/deepseek-interrupt-resume-spike.md must reco
 **Learnings**:
 - US-003 has no honor-Block closeout path: every ship criterion is gated on Proceed + capability native.
 - Partial docs/matrix without flip would diverge generated docs from runtime capabilities and violate D5/D6.
-
 ---
-

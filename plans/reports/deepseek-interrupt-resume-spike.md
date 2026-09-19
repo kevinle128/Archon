@@ -1,7 +1,7 @@
 # DeepSeek interrupt → close → resume spike
 
-**Story:** US-001 / Issue #187 / Agent Node Room 2.7  
-**Date:** 2026-09-20  
+**Story:** US-001 / Issue #187 / Agent Node Room 2.7
+**Date:** 2026-09-20
 **Pins:** `@deepseek-ai/dsh@0.1.2-rc.1`, `@agentclientprotocol/sdk@1.4.0`
 
 ## Operator command
@@ -15,7 +15,7 @@ DEEPSEEK_LIVE_MODEL=… \
 bun run spike:interrupt:deepseek
 ```
 
-Script: `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`  
+Script: `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`
 Package script: `spike:interrupt:deepseek` (not exported, not wired into CI)
 
 ## Dependency pin check

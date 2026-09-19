@@ -15,11 +15,11 @@ Make generated capability documentation and the DeepSeek guide match the verifie
 
 ## File inventory
 
-| File | Action | Purpose |
-| --- | --- | --- |
-| `packages/docs-web/src/content/docs/reference/provider-capabilities.md` | regenerate only | DeepSeek Turn interrupt cell becomes `**native**`. |
-| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` | modify | Explain Stop, idle, same-id resume in a fresh child, Queue, and no-undo behavior. |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify last | Change Story 2.7 from `backlog` to `done`. |
+| File                                                                       | Action          | Purpose                                                                           |
+| -------------------------------------------------------------------------- | --------------- | --------------------------------------------------------------------------------- |
+| `packages/docs-web/src/content/docs/reference/provider-capabilities.md`    | regenerate only | DeepSeek Turn interrupt cell becomes `**native**`.                                |
+| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md`      | modify          | Explain Stop, idle, same-id resume in a fresh child, Queue, and no-undo behavior. |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify last     | Change Story 2.7 from `backlog` to `done`.                                        |
 
 Do not hand-edit the generated matrix. `scripts/generate-capability-matrix.ts` already renders the interrupt axis from the registry and needs no code change for this story.
 

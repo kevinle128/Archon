@@ -92,15 +92,15 @@ A diagnostic script exercises the pinned DSH/ACP pair in a disposable directory 
 
 ## Scope and affected files
 
-| Area | Files | Change |
-| --- | --- | --- |
-| Provider seam | `packages/providers/src/community/deepseek/acp-client.ts`, `packages/providers/src/community/deepseek/provider.ts` | Forward the turn signal; exactly-once cause-aware ACP cancellation; listener/outcome race handling; bounded local cancel drain. |
-| Provider tests | `packages/providers/src/community/deepseek/acp-client.test.ts`, `packages/providers/src/community/deepseek/provider.test.ts` | Exact signal, cleanup, race, ignored-cancel, and unchanged-result coverage. |
-| Optional tool normalization | `packages/providers/src/community/deepseek/event-bridge.ts`, `packages/providers/src/community/deepseek/event-bridge.test.ts` | Only if pinned live evidence observes `failed` for an operator-cancelled in-flight tool. |
-| Live diagnostic | `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`, `packages/providers/package.json`, `plans/reports/deepseek-interrupt-resume-spike.md` | Bounded cancel/resume/continuation evidence; script is not exported or run in CI. |
-| Engine contract | `packages/workflows/src/dag-executor.ts`, `packages/workflows/src/dag-executor.test.ts` | Exact normalized DeepSeek result predicate on direct and loop paths; DeepSeek conformance fixture. |
-| Capability contract | `packages/providers/src/community/deepseek/capabilities.ts`, `packages/providers/src/community/deepseek/config.test.ts`, `packages/providers/src/registry.test.ts`, `packages/providers/src/types.ts` | Advertise native interrupt, update pinned fixtures and capability documentation. |
-| User docs/status | `packages/docs-web/src/content/docs/reference/provider-capabilities.md`, `packages/docs-web/src/content/docs/getting-started/ai-assistants.md`, `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | Document behavior, regenerate the canonical matrix, close only after all gates. |
+| Area                        | Files                                                                                                                                                                                                                      | Change                                                                                                                          |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| Provider seam               | `packages/providers/src/community/deepseek/acp-client.ts`, `packages/providers/src/community/deepseek/provider.ts`                                                                                                         | Forward the turn signal; exactly-once cause-aware ACP cancellation; listener/outcome race handling; bounded local cancel drain. |
+| Provider tests              | `packages/providers/src/community/deepseek/acp-client.test.ts`, `packages/providers/src/community/deepseek/provider.test.ts`                                                                                               | Exact signal, cleanup, race, ignored-cancel, and unchanged-result coverage.                                                     |
+| Optional tool normalization | `packages/providers/src/community/deepseek/event-bridge.ts`, `packages/providers/src/community/deepseek/event-bridge.test.ts`                                                                                              | Only if pinned live evidence observes `failed` for an operator-cancelled in-flight tool.                                        |
+| Live diagnostic             | `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`, `packages/providers/package.json`, `plans/reports/deepseek-interrupt-resume-spike.md`                                                               | Bounded cancel/resume/continuation evidence; script is not exported or run in CI.                                               |
+| Engine contract             | `packages/workflows/src/dag-executor.ts`, `packages/workflows/src/dag-executor.test.ts`                                                                                                                                    | Exact normalized DeepSeek result predicate on direct and loop paths; DeepSeek conformance fixture.                              |
+| Capability contract         | `packages/providers/src/community/deepseek/capabilities.ts`, `packages/providers/src/community/deepseek/config.test.ts`, `packages/providers/src/registry.test.ts`, `packages/providers/src/types.ts`                      | Advertise native interrupt, update pinned fixtures and capability documentation.                                                |
+| User docs/status            | `packages/docs-web/src/content/docs/reference/provider-capabilities.md`, `packages/docs-web/src/content/docs/getting-started/ai-assistants.md`, `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | Document behavior, regenerate the canonical matrix, close only after all gates.                                                 |
 
 Out of scope:
 
@@ -111,11 +111,11 @@ Out of scope:
 
 ## Implementation phases
 
-| # | Phase | Depends on | Exit condition |
-| --- | --- | --- | --- |
-| 1 | [DeepSeek ACP interrupt seam and pinned-runtime gate](./phase-01-deepseek-acp-interrupt-seam.md) | — | Provider tests pass and sanitized live evidence proves cancel, retained id, close, and resume. |
-| 2 | [Executor discriminator, capability, and conformance fixture](./phase-02-executor-marker-and-conformance-fixture.md) | Phase 1 proceed result | Exact result is handled on direct and loop paths; capability fixtures agree. |
-| 3 | [Generated matrix, provider docs, and closeout](./phase-03-matrix-docs-and-closeout.md) | Phases 1-2 | Full validation passes; evidence is linked; sprint status changes last. |
+| #   | Phase                                                                                                                | Depends on             | Exit condition                                                                                 |
+| --- | -------------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| 1   | [DeepSeek ACP interrupt seam and pinned-runtime gate](./phase-01-deepseek-acp-interrupt-seam.md)                     | —                      | Provider tests pass and sanitized live evidence proves cancel, retained id, close, and resume. |
+| 2   | [Executor discriminator, capability, and conformance fixture](./phase-02-executor-marker-and-conformance-fixture.md) | Phase 1 proceed result | Exact result is handled on direct and loop paths; capability fixtures agree.                   |
+| 3   | [Generated matrix, provider docs, and closeout](./phase-03-matrix-docs-and-closeout.md)                              | Phases 1-2             | Full validation passes; evidence is linked; sprint status changes last.                        |
 
 ## Acceptance criteria
 

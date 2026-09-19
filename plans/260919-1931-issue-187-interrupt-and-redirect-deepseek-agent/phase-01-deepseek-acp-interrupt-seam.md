@@ -23,16 +23,16 @@ Teach the DeepSeek provider to receive the executor's turn-scoped `interruptSign
 
 ## File inventory
 
-| File | Action | Purpose |
-| --- | --- | --- |
-| `packages/providers/src/community/deepseek/acp-client.ts` | modify | Add the signal, cause-aware exactly-once cancel, listener cleanup, natural-result race protection, and bounded local cancellation drain. |
-| `packages/providers/src/community/deepseek/provider.ts` | modify | Forward `requestOptions.interruptSignal`. |
-| `packages/providers/src/community/deepseek/acp-client.test.ts` | modify | Deterministic ACP protocol, race, cleanup, and ignored-cancel tests. |
-| `packages/providers/src/community/deepseek/provider.test.ts` | modify | Verify signal forwarding without changing existing pre-aborted node-Cancel behavior. |
-| `packages/providers/src/community/deepseek/interrupt-resume-spike.ts` | create | Bounded, sanitized pinned-runtime diagnostic; never exported or run by CI. |
-| `packages/providers/package.json` | modify | Add `spike:interrupt:deepseek`. |
-| `plans/reports/deepseek-interrupt-resume-spike.md` | create during execution | Sanitized operator evidence in the configured reports tree. |
-| `packages/providers/src/community/deepseek/event-bridge.ts`, `packages/providers/src/community/deepseek/event-bridge.test.ts` | conditional modify | Only if the live evidence proves cancelled in-flight tools arrive as `status:'failed'`. |
+| File                                                                                                                          | Action                  | Purpose                                                                                                                                  |
+| ----------------------------------------------------------------------------------------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/providers/src/community/deepseek/acp-client.ts`                                                                     | modify                  | Add the signal, cause-aware exactly-once cancel, listener cleanup, natural-result race protection, and bounded local cancellation drain. |
+| `packages/providers/src/community/deepseek/provider.ts`                                                                       | modify                  | Forward `requestOptions.interruptSignal`.                                                                                                |
+| `packages/providers/src/community/deepseek/acp-client.test.ts`                                                                | modify                  | Deterministic ACP protocol, race, cleanup, and ignored-cancel tests.                                                                     |
+| `packages/providers/src/community/deepseek/provider.test.ts`                                                                  | modify                  | Verify signal forwarding without changing existing pre-aborted node-Cancel behavior.                                                     |
+| `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`                                                         | create                  | Bounded, sanitized pinned-runtime diagnostic; never exported or run by CI.                                                               |
+| `packages/providers/package.json`                                                                                             | modify                  | Add `spike:interrupt:deepseek`.                                                                                                          |
+| `plans/reports/deepseek-interrupt-resume-spike.md`                                                                            | create during execution | Sanitized operator evidence in the configured reports tree.                                                                              |
+| `packages/providers/src/community/deepseek/event-bridge.ts`, `packages/providers/src/community/deepseek/event-bridge.test.ts` | conditional modify      | Only if the live evidence proves cancelled in-flight tools arrive as `status:'failed'`.                                                  |
 
 ## Tests first
 

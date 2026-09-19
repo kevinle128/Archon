@@ -59,14 +59,14 @@ Story 2.3 already built the whole provider-neutral stack: steering registry, fre
 
 ### File map
 
-| Area | Files |
-| --- | --- |
-| Provider seam | `packages/providers/src/community/deepseek/acp-client.ts`, `provider.ts` |
-| Provider tests | `acp-client.test.ts`, `provider.test.ts`, (conditional) `event-bridge.ts` + `.test.ts` |
-| Live diagnostic | `interrupt-resume-spike.ts` (new), `packages/providers/package.json`, `plans/reports/deepseek-interrupt-resume-spike.md` |
-| Engine | `packages/workflows/src/dag-executor.ts`, `dag-executor.test.ts` |
-| Capability | `capabilities.ts`, `config.test.ts`, `registry.test.ts`, `types.ts` |
-| Docs/closeout | `packages/docs-web/.../provider-capabilities.md` (regenerate), `.../ai-assistants.md`, `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` |
+| Area            | Files                                                                                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider seam   | `packages/providers/src/community/deepseek/acp-client.ts`, `provider.ts`                                                                                          |
+| Provider tests  | `acp-client.test.ts`, `provider.test.ts`, (conditional) `event-bridge.ts` + `.test.ts`                                                                            |
+| Live diagnostic | `interrupt-resume-spike.ts` (new), `packages/providers/package.json`, `plans/reports/deepseek-interrupt-resume-spike.md`                                          |
+| Engine          | `packages/workflows/src/dag-executor.ts`, `dag-executor.test.ts`                                                                                                  |
+| Capability      | `capabilities.ts`, `config.test.ts`, `registry.test.ts`, `types.ts`                                                                                               |
+| Docs/closeout   | `packages/docs-web/.../provider-capabilities.md` (regenerate), `.../ai-assistants.md`, `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` |
 
 ### Validation commands
 
@@ -95,10 +95,10 @@ bun run validate
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-| --- | --- | --- | --- |
-| US-001 | DeepSeek ACP interrupt seam + pinned-runtime spike | 1 | — |
-| US-002 | Executor interrupt predicate, capability flip, conformance fixture | 2 | US-001 |
-| US-003 | Capability matrix, provider docs, evidence + sprint closeout | 3 | US-001, US-002 |
+| ID     | Title                                                              | Phase | Depends on     |
+| ------ | ------------------------------------------------------------------ | ----- | -------------- |
+| US-001 | DeepSeek ACP interrupt seam + pinned-runtime spike                 | 1     | —              |
+| US-002 | Executor interrupt predicate, capability flip, conformance fixture | 2     | US-001         |
+| US-003 | Capability matrix, provider docs, evidence + sprint closeout       | 3     | US-001, US-002 |
 
 Stories run in priority order (1 → 3). Each is completable in one fresh-context iteration; TDD ordering inside each story: write the listed failing tests first, implement, then run the regression gate.

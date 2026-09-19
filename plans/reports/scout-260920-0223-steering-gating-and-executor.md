@@ -117,9 +117,9 @@ const interruptMarked =
               }
 ```
 
-(Order in source: the `interruptMarked` block at 2771 appears textually *before* the generic isError-throw at 2800 in file order within the same `if/else` chain — the `break` at the interrupt block exits the loop before the isError check is ever reached for an interrupted result.) **If `terminalReason` is missing from `INTERRUPT_TERMINAL_REASONS`, DeepSeek's `isError:true` abort marker will hit the generic "Fail loudly on any other SDK error result" guard and the node will be recorded as `node_failed` instead of `interrupted`.** This is exactly the risk the task's premise called out, confirmed by reading the code path — not merely inferred.
+(Order in source: the `interruptMarked` block at 2771 appears textually _before_ the generic isError-throw at 2800 in file order within the same `if/else` chain — the `break` at the interrupt block exits the loop before the isError check is ever reached for an interrupted result.) **If `terminalReason` is missing from `INTERRUPT_TERMINAL_REASONS`, DeepSeek's `isError:true` abort marker will hit the generic "Fail loudly on any other SDK error result" guard and the node will be recorded as `node_failed` instead of `interrupted`.** This is exactly the risk the task's premise called out, confirmed by reading the code path — not merely inferred.
 
-**Nothing else in the direct path behaves differently for DeepSeek vs Claude**, because every other field consumed from the `result` message (`sessionId`, `resumed`, `tokens`, `cost`, `stopReason`, `numTurns`, `resolvedModel`, `structuredOutput`, `usageBreakdown`) is read generically off `msg.*` with no provider-id branch (`packages/workflows/src/dag-executor.ts:2705-2764`). The empty-output guard (`dag-executor.ts:3574`, `nodeOutputText.trim() === '' && structuredOutput === undefined`) sits *after* the turn-interrupted early-return/continue block (3477-3510), so an interrupted turn never reaches it regardless of provider. `passTerminalError`/`passErrorSubtype` capture (`dag-executor.ts:2758-2763`) also runs before the `interruptMarked` branch and is provider-neutral.
+**Nothing else in the direct path behaves differently for DeepSeek vs Claude**, because every other field consumed from the `result` message (`sessionId`, `resumed`, `tokens`, `cost`, `stopReason`, `numTurns`, `resolvedModel`, `structuredOutput`, `usageBreakdown`) is read generically off `msg.*` with no provider-id branch (`packages/workflows/src/dag-executor.ts:2705-2764`). The empty-output guard (`dag-executor.ts:3574`, `nodeOutputText.trim() === '' && structuredOutput === undefined`) sits _after_ the turn-interrupted early-return/continue block (3477-3510), so an interrupted turn never reaches it regardless of provider. `passTerminalError`/`passErrorSubtype` capture (`dag-executor.ts:2758-2763`) also runs before the `interruptMarked` branch and is provider-neutral.
 
 **Redirect resume id — confirmed by direct read, direct path** (`packages/workflows/src/dag-executor.ts:3477-3510`, exact line `3488`):
 
@@ -172,7 +172,7 @@ const interruptMarked =
              continue turns;
 ```
 
-Same `isInterruptTerminalReason`/capability-gated logic, same redirect-resume-id pattern (`settledTurnSessionId ?? currentSessionId` instead of `newSessionId ?? turnResumeId` — the loop path threads attempt-0's session per #2563 re-ask semantics, but the *mechanism* is identical). No provider-id branch anywhere in this path either.
+Same `isInterruptTerminalReason`/capability-gated logic, same redirect-resume-id pattern (`settledTurnSessionId ?? currentSessionId` instead of `newSessionId ?? turnResumeId` — the loop path threads attempt-0's session per #2563 re-ask semantics, but the _mechanism_ is identical). No provider-id branch anywhere in this path either.
 
 **Throw-path (`isAbortLikeStreamError`) direct path** at `packages/workflows/src/dag-executor.ts:2683-2695` catch block, and loop-path mirror at `6785-6800` — quoted above in the tool-call excerpts — both gate on `wasOperatorInterrupted(token)` + `controller?.signal.aborted` + `isAbortLikeStreamError(err)`, none of which are provider-id-specific. `isAbortLikeStreamError` checks `err.name === 'AbortError'` and two more shape checks (not fully re-quoted here; defined at `dag-executor.ts:2691-2695+`) — again shape-based, not provider-id-based.
 
@@ -204,7 +204,7 @@ const mockClaudeCapabilities = () => ({
 });
 ```
 
-Note: this literal **omits** `nativeTools`/`containerExec`/`askHuman`/`interrupt` (a subset cast, presumably satisfying a `Partial`/structurally-compatible mock type or `as any`) — it is *not* what feeds `getProviderCapabilities('claude')`; that call reads the **real registered `CLAUDE_CAPABILITIES`** from `packages/providers/src/registry.ts`, independent of this mock object. `mockClaudeCapabilities` only feeds the mocked `aiClient.getCapabilities()` used elsewhere in the executor (e.g. `sessionResume` gating the steering-handle registration itself at `dag-executor.ts:3197`).
+Note: this literal **omits** `nativeTools`/`containerExec`/`askHuman`/`interrupt` (a subset cast, presumably satisfying a `Partial`/structurally-compatible mock type or `as any`) — it is _not_ what feeds `getProviderCapabilities('claude')`; that call reads the **real registered `CLAUDE_CAPABILITIES`** from `packages/providers/src/registry.ts`, independent of this mock object. `mockClaudeCapabilities` only feeds the mocked `aiClient.getCapabilities()` used elsewhere in the executor (e.g. `sessionResume` gating the steering-handle registration itself at `dag-executor.ts:3197`).
 
 **`mockSendQueryDag`** — `dag-executor.test.ts:336-339`:
 
@@ -500,6 +500,7 @@ grep -rln "steering\|Send now\|send_now\|interrupt" packages/docs-web/src/conten
 ```
 
 Hits:
+
 - `packages/docs-web/src/content/docs/guides/approval-nodes.md:184` — "...for the full semantics, `signal_completes`, and the AI-approver steering pattern." (unrelated — approval-node steering, not turn-interrupt.)
 - `packages/docs-web/src/content/docs/guides/hooks.md:199` — `### Inject steering instructions after every tool call` (unrelated — hook-based prompt injection, not operator Stop.)
 - `packages/docs-web/src/content/docs/guides/loop-nodes.md:564` — "**AI approvers / relay steering.** An orchestrating agent can steer another run's gate:" (unrelated — cross-run approval steering.)
@@ -535,6 +536,7 @@ export function steeringAgentMode(input: {
 Consumed identically by both dock components:
 
 `packages/web/src/components/workflows/ComposerDock.tsx:306,415`:
+
 ```ts
 const agentMode = steeringAgentMode(dock);
 ...

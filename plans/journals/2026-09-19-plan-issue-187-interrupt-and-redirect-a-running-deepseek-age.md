@@ -1,5 +1,5 @@
 ---
-title: "Plan: issue 187 interrupt and redirect a running DeepSeek agent"
+title: 'Plan: issue 187 interrupt and redirect a running DeepSeek agent'
 date: 2026-09-19
 summary: Deep+TDD plan for Story 2.7; provider-seam change over the Story 2.3 steering machinery
 ---

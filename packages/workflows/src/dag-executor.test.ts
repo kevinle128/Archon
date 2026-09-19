@@ -80,6 +80,7 @@ import {
   DEVIN_CAPABILITIES,
   DEEPSEEK_CAPABILITIES,
   clearRegistry,
+  getRegistration,
 } from '@archon/providers';
 clearRegistry();
 registerBuiltinProviders();
@@ -27829,10 +27830,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
    * DeepSeek interrupt conformance (#187 / US-002).
    *
    * Phase 1 spike recorded Block (missing-env), so product
-   * `DEEPSEEK_CAPABILITIES.interrupt` stays `false`. The fake provider opts
-   * into `'native'` only for this fixture so the executor predicate + idle
-   * path can be proven without advertising native in production until a
-   * Proceed spike re-run flips the product constant.
+   * `DEEPSEEK_CAPABILITIES.interrupt` stays `false`. This fixture temporarily
+   * replaces only the registered test capability so it can exercise the
+   * native path without adding a production capability override.
    */
   describe('deepseek conformance', () => {
     const DEEPSEEK_RUN = 'deepseek-interrupt-run';
@@ -27848,24 +27848,25 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       };
     }
 
-    /**
-     * Test-local native interrupt: product capability remains false under
-     * Block. Spread keeps every other DeepSeek flag real.
-     */
+    /** Test-local native interrupt; product capability remains false under Block. */
     const deepseekTestCapabilities = {
       ...DEEPSEEK_CAPABILITIES,
       interrupt: 'native' as const,
     };
 
     beforeEach(() => {
+      const registered = getRegistration('deepseek');
+      Reflect.set(registered, 'capabilities', deepseekTestCapabilities);
       mockGetAgentProviderDag.mockImplementation(() => ({
         sendQuery: mockSendQueryDag,
         getType: () => 'deepseek',
-        getCapabilities: () => deepseekTestCapabilities,
+        getCapabilities: () => DEEPSEEK_CAPABILITIES,
       }));
     });
 
     afterEach(() => {
+      const registered = getRegistration('deepseek');
+      Reflect.set(registered, 'capabilities', DEEPSEEK_CAPABILITIES);
       mockGetAgentProviderDag.mockImplementation(() => ({
         sendQuery: mockSendQueryDag,
         getType: () => 'claude',

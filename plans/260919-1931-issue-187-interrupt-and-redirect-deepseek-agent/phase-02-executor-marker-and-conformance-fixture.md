@@ -17,14 +17,14 @@ Do not begin until Phase 1's pinned-runtime report says `Proceed` and records th
 
 ## File inventory
 
-| File | Action | Purpose |
-| --- | --- | --- |
-| `packages/workflows/src/dag-executor.ts` | modify | Replace terminal-reason-only classification with one exact provider-normalized result predicate used by both paths. |
-| `packages/workflows/src/dag-executor.test.ts` | modify | Register DeepSeek and add its exact direct/loop conformance fixture and false-positive guards. |
-| `packages/providers/src/community/deepseek/capabilities.ts` | modify | Change `interrupt` from `false` to `'native'`. |
-| `packages/providers/src/community/deepseek/config.test.ts` | modify | Update exact capability literal. |
-| `packages/providers/src/registry.test.ts` | modify | Expect Claude and DeepSeek as native interrupt providers. |
-| `packages/providers/src/types.ts` | modify | Clarify that ACP `session/cancel` + same-id resume is a native interrupt example; do not change the union or result shape. |
+| File                                                        | Action | Purpose                                                                                                                    |
+| ----------------------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `packages/workflows/src/dag-executor.ts`                    | modify | Replace terminal-reason-only classification with one exact provider-normalized result predicate used by both paths.        |
+| `packages/workflows/src/dag-executor.test.ts`               | modify | Register DeepSeek and add its exact direct/loop conformance fixture and false-positive guards.                             |
+| `packages/providers/src/community/deepseek/capabilities.ts` | modify | Change `interrupt` from `false` to `'native'`.                                                                             |
+| `packages/providers/src/community/deepseek/config.test.ts`  | modify | Update exact capability literal.                                                                                           |
+| `packages/providers/src/registry.test.ts`                   | modify | Expect Claude and DeepSeek as native interrupt providers.                                                                  |
+| `packages/providers/src/types.ts`                           | modify | Clarify that ACP `session/cancel` + same-id resume is a native interrupt example; do not change the union or result shape. |
 
 ## Executor contract
 
