@@ -673,6 +673,8 @@ describe('NodeRoom tool rows', () => {
     expect(raw?.[1]).toContain('text-text-secondary');
     expect(raw?.[1]).toContain('hover:border-border-bright');
     expect(raw?.[1]).toContain('hover:text-text-primary');
+    expect(raw?.[1]).toContain('focus-visible:border-border-bright');
+    expect(raw?.[1]).toContain('focus-visible:text-text-primary');
     expect(raw?.[1]).toContain('focus-visible:outline-accent-bright');
     expect(body.match(/<button[^>]*>Raw[\s\S]*?<\/button>/g)).toHaveLength(1);
 
