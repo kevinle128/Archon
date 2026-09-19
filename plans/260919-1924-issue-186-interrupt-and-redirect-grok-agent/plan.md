@@ -1,12 +1,12 @@
 ---
 title: 'Issue 186 interrupt and redirect a running Grok agent'
-description: 'Implementation-ready plan for Agent Node Room Story 2.6: stream-abort the active Grok turn without cancelling the node, keep the Grok session resumable, and continue on that session with the queued guidance on Send now.'
+description: 'Implementation plan for ending one Grok CLI turn without cancelling the workflow node, then continuing the same Grok session with operator guidance.'
 status: pending
 priority: P1
 effort: '4 phases'
 issue: 'https://github.com/kevinle128/Archon/issues/186'
 branch: archon/thread-e5318172
-tags: [issue-186, agent-node-room, providers, workflows, grok, tdd, deep]
+tags: [issue-186, agent-node-room, providers, workflows, grok, tdd]
 blockedBy: []
 blocks: []
 created: 2026-09-20
@@ -16,175 +16,144 @@ created: 2026-09-20
 
 ## Goal and user outcome
 
-An operator watching a live Grok-backed node can press `Stop`, see the current Grok turn end, and press `Send now` to continue the same Grok session with the queued guidance followed by the new message. The workflow node stays `running`, no `dag_node_failed` is written, the interrupted tool call renders `⚠ interrupted`, and node Cancel keeps its existing behaviour.
+When a Grok-backed workflow node is generating, an operator can press `Stop` to end only the current Grok turn. The node remains `running` and enters `idle-after-interrupt`; an open tool is recorded as `interrupted`, not failed. `Send now` then sends queued guidance followed by the newly typed message on the **same Grok session**. Node-level Cancel retains its existing terminal behaviour.
 
-The successful flow is:
+The implementation is complete only if this works for direct AI nodes, AI loops, and provider-calling loop-group body nodes. A fresh session, an unresumable early interrupt, or a forced-kill result presented as successfully interrupted does not meet the story.
 
-1. `Stop` aborts the fresh per-turn `interruptSignal` the executor already hands to interrupt-capable providers (#183 / #214). The Grok provider terminates its `grok --single` subprocess, keeps the session id, and yields one abort-marked terminal `result`.
-2. The existing executor classification (five-case rule, `dag-executor.ts:452-483`) reads the abort marker plus the operator-interrupt flag, settles the in-flight tool as `interrupted`, writes one `interrupted` status row, and enters `idle-after-interrupt` on the same session id — no executor logic change is expected for this story.
-3. The existing dock (both shells) shows `Send now`; the route, registry, and UI are provider-blind and already shipped for Claude.
-4. `Send now` drains queued receipts plus the new message as the next `grok --single … --resume <sessionId>` turn.
+## Verified starting point
 
-This story is **interrupt-then-continue only**. Hook-based soft-inject (`pre_tool_use`) stays gated by G3 and is not built here.
-
-## Authority and resolved conflicts
-
-Authority order for this story:
-
-1. Issue #186 and Story 2.6 acceptance criteria in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` (lines 585-609).
-2. `_bmad-output/specs/spec-agent-node-room/provider-steering-matrix.md` (Grok row: stream-abort; `x.ai/interject` unreachable), `engine-integration.md`, and `steering-test-plan.md` ("grok — stream-abort; fixture pins its abort terminal shape").
-3. The shipped #183 contract in source: `packages/providers/src/types.ts` (`interruptSignal`, `ProviderCapabilities.interrupt`, `result.terminalReason`), `packages/workflows/src/dag-executor.ts`, `packages/workflows/src/steering-registry.ts`, and their tests.
-4. The installed Grok CLI (`grok 1.0.34`) and its shipped docs (`~/.grok/docs/user-guide/14-headless-mode.md`, `17-sessions.md`).
-
-Conflicts resolved explicitly:
-
-- `provider-steering-matrix.md` and `engine-integration.md` describe stream-abort as riding "the executor's `AbortController`" / `AbortSignal.any(...)`. #183 shipped a **distinct** `interruptSignal` beside `abortSignal` (`types.ts:602-609`) and never combines them. This plan follows the shipped seam: Grok listens on `interruptSignal` separately; `abortSignal` (Cancel) is untouched.
-- `INTERRUPT_TERMINAL_REASONS` in `dag-executor.ts:452-461` is documented as "the Claude SDK's two abort markers", yet e2e-fake already emits the same strings (`e2e-fake/provider.ts:511-533`). This plan treats `aborted_streaming` / `aborted_tools` as Archon's normalized cross-provider abort vocabulary and Grok emits them too; the comment is corrected in Phase 3. No Grok-specific reason string is added.
-- Grok's session id is only observed on the `end` event (`grok/event-parser.ts:290-292`), and stream-abort kills the process that would emit it. Grok's docs say `-s/--session-id <UUID>` creates a new session with a caller-chosen id (`14-headless-mode.md:25`, verified: `--single … --session-id not-a-uuid` fails before any model call with "must be a valid UUID"). This plan pre-assigns the session id for interrupt-capable new turns so resumability never depends on a flushed `end` line. Whether a killed session is actually resumable is spike-gated in Phase 1.
+- Story 2.6 in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` requires stream-abort, same-session continuation, `⚠ interrupted`, direct/loop parity, and no node failure. Issue #186 matches that outcome and is still open.
+- `_bmad-output/specs/spec-agent-node-room/provider-steering-matrix.md` selects stream-abort for Grok because `x.ai/interject` is unreachable. Grok hook-based soft injection remains unverified and outside this story.
+- Story 2.3 / PR #214 already shipped the provider-blind route, registry, executor turn loop, transcript projection, and Legacy/Console dock states. Source confirms that any provider whose capability is not `false` receives a distinct per-turn `interruptSignal`; Cancel continues to use `abortSignal`.
+- `packages/workflows/src/dag-executor.test.ts` already contains 19 generic interrupt cases covering queue order, same-session continuation, natural-end races, Cancel dominance, missing session IDs, repeated interrupts, structured-output handling, usage, AI loops, and loop-group namespacing. This plan adds only Grok-shape conformance cases.
+- `packages/providers/src/grok/provider.ts` currently listens only to `abortSignal`, sends SIGTERM followed by SIGKILL after five seconds, and treats missing `end` as a provider error. `packages/providers/src/grok/event-parser.ts` closes open tools as `unknown` and learns the session ID only from `end`.
+- The installed Grok CLI reports `grok 1.0.34`. Its bundled headless-mode docs state that SIGINT/SIGTERM save the session up to the last completed tool call and exit 130/143, and that `--session-id <UUID>` assigns a new session ID. The bundled session docs identify `updates.jsonl` as authoritative and say `--session-id` may accompany `--resume` only when forking.
+- Archon's Grok resolver explicitly supports Windows, and the current `.cmd`/`.bat` path is launched through `cmd.exe`. Node documents that SIGTERM/SIGINT/SIGKILL are forceful on Windows, while Bun documents detached process groups without promising a graceful Windows signal path. Therefore Windows same-session persistence is unverified and is a release gate, not an accepted limitation: [Node child processes](https://nodejs.org/api/child_process.html), [Bun spawn](https://bun.sh/reference/bun/spawn).
+- No mockup, wireframe, or prototype is co-located with this plan. The referenced Agent Node Room `DESIGN.md`, `EXPERIENCE.md`, reconciliation/validation records, and key steering/transcript/Legacy/Console mockups were inspected. `reconcile-live-steering.md` supersedes the older header placement and puts Stop on the bottom dock; the later provider contract also supersedes the stale transcript-mock note that only Claude can produce `⚠ interrupted`. The shipped UI is capability/data-driven, so no new UI work is required.
 
 ## Scope
 
-In scope:
+### In scope
 
-- `GROK_CAPABILITIES.interrupt = 'stream-abort'` — the first declarer of the reserved value;
-- Grok provider honours `interruptSignal`: SIGTERM (existing SIGKILL grace) on abort, outstanding tools settled `interrupted`, one abort-marked non-error `result` carrying the session id, Cancel still dominant;
-- pre-assigned `--session-id` for interrupt-capable new and forked Grok turns;
-- a real-CLI spike proving SIGTERM shape, exit code, and same-session resume after a mid-turn kill, with a sanitized report;
-- Grok-shaped conformance scenarios in the #183 executor matrix for direct, AI loop, and loop-group body paths;
-- capability matrix regeneration, docstring updates, sprint-status closeout.
+- prove the Grok CLI's interruption, session persistence, child-process, timing, version, and platform behaviour before advertising the capability;
+- pre-assign a UUID for interrupt-capable new/forked Grok workflow turns so a missing `end` cannot erase the session identity;
+- make the Grok provider honour the distinct `interruptSignal`, settle open tools as `interrupted`, and return Archon's existing normalized abort marker only after graceful termination;
+- preserve natural results, real protocol/transport failures, and Cancel precedence under races;
+- set `GROK_CAPABILITIES.interrupt` to `'stream-abort'` only after every Phase 1 release gate passes;
+- add focused provider/parser tests and three Grok-shaped executor conformance tests;
+- regenerate the capability matrix, document operation and compatibility, record acceptance evidence, and close the sprint item last.
 
-Out of scope, owners preserved:
+### Out of scope
 
-- hook-based soft-inject through Grok `pre_tool_use` (G3) and any ACP / `grok agent stdio` transport migration;
-- new server routes, schema changes, dock or web changes (Story 2.3 shipped them provider-blind — Phase 3 proves they apply);
-- Codex / OMP / DeepSeek interrupt (Stories 2.4, 2.5, 2.7);
-- partial-spend capture from Grok's per-response `usage` lines on an interrupted turn (the parser ignores them today; spend is recorded only if Grok still emits `end`);
-- the 30-minute idle expiry, keepalive, withdraw, cross-tab sync (Stories 2.2, 2.8-2.12);
-- Playwright/E2E: the e2e-fake provider already exercises the interrupt branch end-to-end; Grok cannot run in CI.
+- Grok `pre_tool_use` hooks, `x.ai/interject`, leader sockets, ACP, or another transport;
+- new routes, database changes, workflow-language changes, or new dock/reader UI;
+- changes to Codex, OMP, DeepSeek, or other providers;
+- changing the 30-minute idle-after-interrupt lifecycle or cross-process steering boundary;
+- inventing partial cost: without an authoritative `end`, Grok's standalone `usage` events contain tokens but not spend. Phase 1 records their presence; this story does not fabricate USD or introduce an unverified aggregation rule.
 
-## Repository evidence inspected
+## Design and invariants
 
-| Area | Evidence and verified implication |
-| --- | --- |
-| Product contract | Issue #186; Story 2.6 (`epics.md:585-609`); `provider-steering-matrix.md:19,51-57`; `steering-test-plan.md:33-41,75`. Stream-abort, same-session continue, `⚠` on the interrupted call, direct+loop parity, no node failure. |
-| Grok provider | `packages/providers/src/grok/provider.ts` — `sendQuery` (line 264+) spawns `grok --single … --output-format streaming-json`, listens only on `abortSignal` (`onAbort → terminate()`, SIGTERM then SIGKILL after `TERMINATION_GRACE_MS = 5000`), throws `'Query aborted'` after stream end when Cancel fired, then routes late I/O / protocol / non-zero exit into `isError` results. `buildGrokArgs` (line 110) already emits `--resume` / `--fork-session`; no `--session-id`. |
-| Grok parser | `packages/providers/src/grok/event-parser.ts` — `closeOutstandingTools()` (line 97) hard-codes `toolOutcome: 'unknown'`; `buildResult()` (line 113) returns `grok_incomplete_output` when no `end` was seen; `sessionId` is set only by `consumeEnd` (line 290-292). |
-| Grok CLI | `grok 1.0.34` installed at `~/.grok/bin/grok`, logged in. `14-headless-mode.md`: `end` is always last, `end.stopReason` includes `cancelled`; on SIGTERM "session state saved up to the last completed tool call", exit code 143; resume with `--resume <id>`. `-s/--session-id` creates a new session (UUID required; with `--resume` only alongside `--fork-session`). Session dirs live at `~/.grok/sessions/<encoded-cwd>/<id>/`; the docs (`17-sessions.md:27-36`) name `updates.jsonl` as the authoritative log that drives resume, while a local session created by `grok 1.0.30` showed `summary.json`, `chat_history.jsonl`, `events.jsonl` — the spike records the layout the pinned 1.0.34 actually writes. Grok's sandbox is off by default (`18-sandbox.md:5`); the provider never passes `--sandbox`. |
-| Contract layer | `packages/providers/src/types.ts:602-609` (`interruptSignal`), `:839-847` (`interrupt: 'native' \| 'stream-abort' \| false`, docstring still says stream-abort is "reserved; no provider declares it yet"), `result.terminalReason`. |
-| Engine | `dag-executor.ts:3196-3205` and `:5964-5973` gate everything on `interrupt !== false`, so `'stream-abort'` is already interruptible. Classification: `:452-483` (markers + abort-like throws), direct result path `:2684-2777`, throw path `:3099-3133`, idle entry `:3482-3511` (`interruptedSessionId = newSessionId ?? turnResumeId`, explicit failure when neither exists); loop path `:6319-6325`, `:6407-6421`, `:7065-7102`. Tool results forwarded with `toolOutcome` (`:2639-2664`), so a provider-emitted `interrupted` tool_result becomes the `⚠` row. |
-| Registry | `steering-registry.ts` has no `=== 'native'` branch; `interruptible` is a boolean option. |
-| Existing tests | `dag-executor.test.ts:27068-27800` — 19 #183 scenarios with a mocked provider (`getType: () => 'claude'`); helpers `liveHandle`, `awaitIdle`, `sendNow`, `toolCompletedOutcomes`, `transcriptStates`. `grok/provider.test.ts` — fake `GrokSpawner` with `processFor()` (stdout closes immediately; `kill` is a no-op). `registry.test.ts:190-201` — total axis check plus "only Claude advertises native interrupt" (still true). |
-| Docs/generation | `scripts/generate-capability-matrix.ts:70,153` renders the Interrupt row; `provider-capabilities.md:60` currently shows ❌ for grok. `bun run check:capability-matrix` fails on drift. |
+### 1. Keep interrupt and Cancel separate
 
-## Technical decisions
+Grok listens to `requestOptions.interruptSignal` in addition to the existing `abortSignal`. A spent Cancel signal fails before spawn as today. A spent interrupt signal fails before spawn with `Query interrupted`. After the subprocess exists, listeners are installed and both signals are immediately rechecked so an abort during binary resolution/spawn cannot be missed. Cancel is checked first after shutdown and remains dominant if both signals fire.
 
-### D1 — Stream-abort through the shipped `interruptSignal`, Cancel untouched
+Do not combine signals with `AbortSignal.any()`: the shipped engine intentionally passes two signals so the provider and executor can distinguish a node Cancel from an operator Stop.
 
-The Grok provider attaches a second listener for `requestOptions.interruptSignal`. On abort while the process is still alive it records `interruptedInFlight = true` and calls the existing `terminate()` (SIGTERM, SIGKILL after 5 s). The `abortSignal` listener and the post-stream `if (abortSignal?.aborted) throw new Error('Query aborted')` check stay byte-for-byte, and that check runs **before** the interrupt branch so a co-firing Cancel wins (five-case rule, case 5). A spent `interruptSignal` at entry throws `'Query interrupted'` before spawning, mirroring Claude (`claude/provider.ts:1730`).
+### 2. Assign the session ID before interruptible new/forked turns
 
-If the interrupt signal fires after the process already exited, the turn ended naturally: no abort marker is emitted (case 1 — a natural result even when Stop raced it).
+When `interruptSignal` is present:
 
-### D2 — One abort-marked, non-error terminal result
+- new session: generate a UUID and pass `--session-id <uuid>`;
+- resumed session without fork: use `resumeSessionId`; do not pass `--session-id` because Grok rejects that combination;
+- resumed session with `forkSession: true`: generate a UUID and pass it with `--resume … --fork-session`.
 
-After the stream closes on an in-flight interrupt, the provider yields, in order:
+Calls without `interruptSignal` keep their argv unchanged. Once the capability flips, every new Grok **workflow** turn receives an interrupt signal, so caller-assigned IDs apply to all new Grok workflow sessions, not only sessions that are eventually interrupted. Session IDs are opaque to engine consumers.
 
-1. `closeOutstandingTools('interrupted')` — each still-open tool becomes a `tool_result` with `toolOutcome: 'interrupted'` (this is what the reader fold renders as `⚠`); the parser's default outcome stays `'unknown'` for every other path.
-2. One `result` with `terminalReason: 'aborted_tools'` when a tool was open at the kill, else `'aborted_streaming'`; `sessionId` (D3); `resumed` as today; any spend the parser captured if Grok did flush an `end`; **no** `isError`/`errorSubtype`. The interrupt branch returns before the late-I/O, protocol-error, and non-zero-exit branches so exit 143 (or a stdout read error after kill) is never reported as `grok_exit_nonzero` / a genuine failure.
+The CLI-reported `end.sessionId` is the authoritative persisted ID. If it differs from the assigned ID, use the reported ID and write a structured warning; do not emit a user-facing `system` chunk because the loop path does not forward those chunks consistently. An abort-marked result is never emitted without a concrete assigned, resumed, or reported session ID.
 
-The existing unconditional `closeOutstandingTools()` call (`provider.ts:352-354`) must become the single outcome-parameterised call above, or the map is already emptied as `unknown` before the interrupt branch runs and no `⚠` row is ever written.
+### 3. Classify shutdown by the first real cause
 
-The parser gains `buildInterruptedResult(sessionId, terminalReason, resumed)` beside `buildResult` so the interrupted shape never inherits `grok_incomplete_output`.
+Track enough state to distinguish:
 
-### D3 — Pre-assigned session id for interrupt-capable turns
+1. natural completion (`end` consumed before Stop): return the natural result;
+2. Cancel: keep the current `Query aborted` path;
+3. operator interrupt claimed while the process is alive and before `end`: graceful stream-abort;
+4. protocol/transport failure claimed before Stop: retain the real failure;
+5. forced SIGKILL: fail with a distinct non-abort error because session durability is no longer proven.
 
-When `interruptSignal` is present and the call starts a new session (no `resumeSessionId`) or forks (`forkSession: true`), `buildGrokArgs` adds `--session-id <crypto.randomUUID()>`. Calls without `interruptSignal` (direct chat, non-steering callers) keep today's argv exactly. Note the real blast radius: because the executor attaches `interruptSignal` on every pass of an interruptible provider, every new Grok **workflow-node** session gets an Archon-minted id once the capability flips — not only interrupted turns. Session ids are opaque strings everywhere in Archon, so this is a provenance change, not a contract change. The interrupted result's `sessionId` is `parser.getSessionId() ?? preAssignedSessionId ?? resumeSessionId`; when `end` did arrive its id must equal the pre-assigned one (asserted in tests, verified by the spike). The provider never invents an id outside this rule; if none exists the executor's existing explicit failure applies.
+An interrupt-induced stdout/stderr closure after case 3 must not be reclassified as a transport error. Conversely, a protocol/transport failure observed first must not be hidden merely because Stop arrives later. Add an explicit `hasEnded()` parser query; absence of a session ID is not a valid proxy because an invalid `end` may omit one.
 
-### D4 — Spike-gated, three outcomes
+### 4. Normalize only a proven graceful interrupt
 
-Phase 1 runs a real `grok` spike (no CI) and records a sanitized report. Outcomes:
+For case 3, after the process exits within the evidence-backed grace period:
 
-- **A** — SIGTERM mid-turn flushes `end` (`stopReason: 'cancelled'`, session id) before exit 143 and `--resume <id>` continues: proceed; D2 keeps the flushed spend.
-- **B** — no `end` on SIGTERM but `--resume <pre-assigned id>` continues with prior context: proceed; D3 is the id source.
-- **C** — a session killed mid-turn is not resumable (resume errors or starts empty): **blocker**. Stop, record evidence, do not fabricate an id, do not downgrade to Cancel, do not fall back to a fresh session. If only a kill *before the first completed tool call* is unresumable (docs: "saved up to the last completed tool call"), proceed with an explicit provider error naming that limitation on the redirect turn and record it as a known limitation in the report and plan.
+1. close each still-open parser tool exactly once with `toolOutcome: 'interrupted'`;
+2. yield one non-error result with `terminalReason: 'aborted_tools'` if a tool was open, otherwise `'aborted_streaming'`;
+3. include the concrete session ID and any authoritative aggregate usage already received in `end`;
+4. return before non-zero-exit handling, because a graceful SIGTERM exit of 143 is expected.
 
-### D5 — Executor and registry unchanged; conformance proves it
+The existing unconditional `closeOutstandingTools()` call must be replaced, not followed by a second close, or the persisted tool outcome will remain `unknown`. Normal/error paths retain `unknown`.
 
-No branch, marker, or option is added to the executor for Grok. Phase 3 adds Grok-shaped scenarios to the existing #183 matrix (`getType: () => 'grok'`, `GROK_CAPABILITIES`, mocked `sendQuery` yielding the D2 shape) for the direct, AI-loop, and loop-group-body paths and asserts the shared contract: one `interrupted` status row, `tool_completed.tool_outcome === 'interrupted'`, no `node_failed`, redirect on the same session id with `forkSession: false`, queued + new guidance joined in receipt order. The only executor edit is the comment on `INTERRUPT_TERMINAL_REASONS` and the `terminalReason` docstring, which must stop claiming the vocabulary is Claude-only.
+### 5. Fail closed on process and platform uncertainty
 
-### D6 — Tests first, fake spawner extended
+The Phase 1 spike sets the grace period. A normal interrupted run must exit on SIGTERM within it. The runtime may retain SIGKILL as cleanup, but if escalation occurs the provider reports a real failure and never claims the session is resumable.
 
-Provider tests use the existing fake `GrokSpawner`, extended with a controllable process whose stdout stays open until `kill()` is invoked and whose `exited` then resolves (143 for the SIGTERM path, and a variant where `end` is flushed before close). Every new behaviour is written as a failing test first (`--tdd`), and the regression set (existing `grok/provider.test.ts`, `event-parser.test.ts`, `registry.test.ts`) must stay green throughout.
+If a tool child survives the parent, the provider must own a POSIX process group and terminate that group; the fake process interface and tests must cover this. Do not copy the Claude container implementation blindly because Grok's local process topology is different.
 
-## Phases
+The capability is static and generated into public docs. It must not be flipped if native Windows cannot preserve and resume the same session under the actual `cmd.exe`/Grok launch path. If Windows fails, stop for an explicit product/architecture decision; this plan does not silently create an undocumented POSIX-only capability.
 
-Deep mode: Phase 1 is fully detailed. Phases 2-4 are outlined with real file paths, test matrices, and verification commands; each gets a dedicated scout pass before execution (`/ak:cook` runs it), and Phase 2 must not start until the Phase 1 gate reports outcome A or B.
+### 6. Reuse the engine contract
 
-| # | Phase | Depends on |
+`'stream-abort'` already passes the engine's `interrupt !== false` gate, and the engine already recognizes `aborted_streaming` / `aborted_tools`. No Grok branch belongs in the executor or registry. Only provider-neutral comments/docstrings that incorrectly say “Claude-only” should change.
+
+## Delivery phases
+
+| # | Phase | Gate |
 | --- | --- | --- |
-| 1 | [Grok stream-abort spike gate](./phase-01-grok-stream-abort-spike-gate.md) | — |
-| 2 | [Grok provider stream-abort seam](./phase-02-grok-provider-stream-abort-seam.md) | 1 (outcome A or B) |
-| 3 | [Engine conformance: direct, loop, loop-group](./phase-03-engine-conformance-direct-loop-loop-group.md) | 2 |
-| 4 | [Capability matrix, docs, and closeout](./phase-04-capability-matrix-docs-and-closeout.md) | 1-3 |
+| 1 | [Protocol, process, version, and platform spike](./phase-01-grok-stream-abort-spike-gate.md) | All release gates pass; otherwise stop |
+| 2 | [Grok provider stream-abort seam](./phase-02-grok-provider-stream-abort-seam.md) | Phase 1 evidence recorded |
+| 3 | [Engine conformance: direct, loop, loop-group](./phase-03-engine-conformance-direct-loop-loop-group.md) | Provider shape complete |
+| 4 | [Capability matrix, docs, validation, and closeout](./phase-04-capability-matrix-docs-and-closeout.md) | Phases 1-3 green |
 
 ## Acceptance criteria
 
-- [ ] AC1 (Story: Stop) — With Grok generating, aborting the per-turn `interruptSignal` terminates only the current `grok` subprocess; the node stays `running`, `abortSignal` is never aborted by the provider, and the handle projects `idle-after-interrupt`.
-- [ ] AC2 (Story: Send now) — After `send_now`, the next Grok call receives `resumeSessionId` equal to the interrupted turn's session id, `forkSession: false`, and a prompt of the queued messages then the new message joined by `\n\n` in receipt order.
-- [ ] AC3 (Story: `⚠`) — A tool open at the kill produces exactly one `tool_completed` row with `tool_outcome: 'interrupted'` and no duplicate `unknown` row; the interrupted status row count is exactly one.
-- [ ] AC4 (Story: direct + loop parity) — Grok-shaped scenarios pass for a direct AI node, an AI loop node (idles inside the iteration, Send now does not consume an iteration), and a provider-calling loop-group body node (namespaced step name) with no `node_failed` and no `dag_node_failed`.
-- [ ] AC5 (Story: G3 boundary) — No hook, `pre_tool_use`, or ACP code is introduced; `GROK_CAPABILITIES.hooks` stays `false`.
-- [ ] AC6 (Cancel dominance) — Cancel and Stop firing on the same turn still throw `'Query aborted'` and take the existing Cancel failure path; a Stop that lands after the process exited naturally yields an unmarked result.
-- [ ] AC7 (No regression) — Calls without `interruptSignal` build byte-identical argv and behave exactly as before; all existing Grok, registry, observability, and #183 executor tests pass unchanged except for the corrected comments.
-- [ ] AC8 (Evidence) — `reports/grok-interrupt-resume-spike.md` records the sanitized spike outcome (A or B) against `grok 1.0.34`; `provider-capabilities.md` shows `stream-abort` for grok; `bun run check:capability-matrix` and `bun run validate` pass; `sprint-status.yaml` entry `2-6-interrupt-and-redirect-a-running-grok-agent` is moved to `done` last.
+- [ ] **Stop affects one turn:** aborting Grok's per-turn `interruptSignal` gracefully ends only that CLI turn; the workflow node remains `running`, reaches `idle-after-interrupt`, and writes no `node_failed` / `dag_node_failed` event.
+- [ ] **Same-session redirect:** `Send now` makes the next provider call with `resumeSessionId` equal to the interrupted turn's concrete session ID, `forkSession: false`, and queued messages followed by the new message in receipt order.
+- [ ] **Interrupted tool:** a tool open at Stop produces exactly one `tool_completed` event with `tool_outcome: 'interrupted'`; no duplicate `unknown` or failed outcome is written.
+- [ ] **All provider-calling paths:** the exact Grok result shape passes direct AI, AI-loop, and loop-group-body conformance; the interrupted AI-loop iteration is resumed rather than consumed.
+- [ ] **Races are causal:** natural completion remains natural; Cancel remains terminal; interrupt-induced I/O/exit 143 remains interrupted; a pre-existing protocol/transport failure remains a failure; a missed-listener window is covered.
+- [ ] **Stop is responsive:** on each supported native platform, the Phase 1 signal-to-exit measurement for ordinary S1/S2 interruption is below one second, matching the ratified `Stopping…` transient; the longer grace exists only as cleanup protection.
+- [ ] **Failure is honest:** missing session identity, unsuccessful resume, surviving child process, or SIGKILL escalation cannot produce an abort-marked success result.
+- [ ] **Compatibility is explicit:** the tested CLI version and minimum supported version for this feature are documented; `archon doctor` reports an actionable failure for an older configured Grok CLI; non-workflow calls without `interruptSignal` keep their existing argv.
+- [ ] **Platform support is proved:** the same-session interruption gate passes on every advertised native platform, including Windows, or implementation stops for an explicit scope decision before capability publication.
+- [ ] **No UI regression:** the existing provider-blind dock remains unchanged and the conformance tests prove the data that drives `Stop` → `Stopping…` → `Send now` and `⚠ interrupted`. If implementation unexpectedly touches UI, stop and add visual checks at the Legacy 460 px panel and the Console mock's 520 px panel against `control-states.md` before proceeding.
+- [ ] **Evidence and gates:** the sanitized spike and acceptance reports exist under `plans/reports/`; focused tests, capability-matrix check, and `bun run validate` pass; the sprint row changes to `done` only after final review.
 
-## Compatibility, operations, and rollback
+## Compatibility, rollout, operations, and rollback
 
-- Additive only: one capability value, one optional argv flag gated on `interruptSignal`, one parser method, one parser parameter. No schema, route, or UI change.
-- Pre-assigned session ids are fresh UUIDs; Grok rejects a duplicate id under the same session directory, which surfaces as an ordinary provider error rather than silent reuse.
-- A stream-abort leaves the worktree exactly as Grok's own SIGTERM would ("file modifications by tools are not rolled back") — the same hazard the existing Cancel path already has; the dock's written-work disclosure (Story 2.3) already states it.
-- Rollback: revert `capabilities.ts` to `interrupt: false` and the executor stops handing Grok an `interruptSignal`; the provider code then never enters the interrupt branch. No data rollback.
+- This is a capability rollout, not a data migration. There are no schema, API, route, or workflow-YAML changes.
+- Phase 1 establishes a conservative minimum Grok CLI version. If vendor history cannot prove an earlier floor, the exact version tested is the floor. The guide and doctor surface it; a CLI that rejects `--session-id` does so during argument parsing before a billable query, and Archon never falls back to a fresh session.
+- Interruption does not roll back files already changed by Grok tools. Preserve the existing UI disclosure and document the behaviour in the Grok guide.
+- Real-CLI evidence is sanitized: no credentials, prompt/model output, home paths, or session contents. The spike deletes only the exact session UUIDs it created and always cleans up any spike-owned child process.
+- Structured logs distinguish `query_interrupted`, session-ID mismatch, graceful-timeout escalation, and real transport/protocol failures without leaking prompt content.
+- Rollback is code-only: restore `GROK_CAPABILITIES.interrupt` to `false`. The executor then stops issuing Grok interrupt signals; assigned session IDs already stored remain valid opaque IDs and need no cleanup.
 
-## Red Team Review
+## Evidence inspected
 
-### Session — 2026-09-20
-**Findings:** 13 (10 accepted, 1 accepted-modified, 2 rejected)
-**Severity breakdown:** 3 Critical (all the same defect), 6 High, 4 Medium
+- Product and design: issue #186; Story 2.6 in `epics.md`; `SPEC.md`; `control-states.md`; `engine-integration.md`; `provider-steering-matrix.md`; `steering-test-plan.md`; sprint status.
+- Provider and contracts: Grok provider, event parser, capabilities, usage-contract fixture/tests, binary resolver, provider registry, `AgentRequestOptions`, `ProviderCapabilities`, and `MessageChunk` types.
+- Engine end to end: steering registry; direct and loop executor paths; transcript/tool outcome persistence; all existing #183 interrupt tests; e2e-fake and Claude interrupt precedents.
+- User/operational surfaces: capability generator and generated matrix; Grok assistant guide; setup/doctor implementation and tests; provider package scripts; Agent Node Room `DESIGN.md`, `EXPERIENCE.md`, reconciliation/validation records, and steering/transcript/Legacy/Console HTML mockups.
+- Runtime evidence: installed Grok 1.0.34 help and bundled headless/session/sandbox docs; official Node and Bun process/signal documentation.
+- Plan directory: all four draft phases; no co-located design artifacts or reports.
 
-| # | Finding | Severity | Disposition | Applied To |
-|---|---------|----------|-------------|------------|
-| 1 | Existing unconditional `closeOutstandingTools()` (`provider.ts:352-354`) empties the tool map before the interrupt branch — no `⚠` row (raised by all three reviewers and the advisor) | Critical | Accept | Phase 2 step 3, D2 |
-| 2 | T15 session-id mismatch had no implementation spec | High | Accept | Phase 2 step 3b |
-| 3 | 5 s grace tuned for Cancel; truncated persist not attributable | High | Accept | Phase 2 steps 3c, 4; T17 |
-| 4 | Capability flip pre-assigns ids for every Grok workflow session, not only interrupted turns | Medium | Accept | D3, Phase 2 risks |
-| 5 | Loop-group token scoping asserted, not cited | Medium | Reject — `dag-executor.test.ts:27781` already proves namespaced parking; G8 mirrors it | — |
-| 6 | Killed `grok` may orphan tool children (`container-spawn.ts:99-119` precedent) | High | Accept | Phase 1 E7, Phase 2 step 3d, T16 |
-| 7 | Spike isolation overstated — sandbox off by default, `--cwd` is no boundary | High | Accept | Phase 1 experiments + security |
-| 8 | Session dir layout cited `events.jsonl`; docs name `updates.jsonl` | Medium | Accept (modified) — local 1.0.30 session did contain `events.jsonl`; plan now records both and defers to the spike | plan.md evidence |
-| 9 | `onInterrupt` snippet contradicted the "no `end` consumed" prose | High | Accept | Phase 2 step 3 |
-| 10 | E7 remediation not carried into Phase 2 | High | Accept (already added as step 3d; T16 added) | Phase 2 |
-| 11 | No spike experiment for a Stop before any event | High | Accept | Phase 1 E8, C-partial |
-| 12 | Grace widening was discretionary prose | Medium | Accept | Phase 2 step 4, Todo, T17 |
-| 13 | e2e-fake marks interrupted results `isError: true`; Grok shape does not | Medium | Reject — executor's marker check wins over `isError` (`dag-executor.test.ts:27269`); the non-error shape is deliberate (D2) | — |
+## Remaining decisions owned by Phase 1
 
-### Whole-Plan Consistency Sweep
-Re-read all five files after applying: experiment ranges updated to E1-E8, test ranges to T1-T17, C-partial covers E3 and E8, D2/D3 and Phase 2 agree on the single outcome-parameterised close and on the `getSessionId() === undefined` gate. No contradictions remain.
+These are implementation blockers, not assumptions an engineer may waive:
 
-## Gates pending
+1. Does SIGTERM preserve a resumable session when Stop arrives immediately after spawn, before any output?
+2. Does the actual native Windows launch path exit gracefully and preserve the same session?
+3. Does Grok reap a long-running tool child, and what grace interval reliably permits session persistence?
+4. What minimum CLI version can be supported and diagnosed honestly?
 
-- The validation interview (`/ak:plan validate <this dir>`), task hydration, and the journal entry did not run in the planning session; run validate before Phase 2 starts.
-- Cited line numbers were fact-checked against the worktree at planning time (`provider.ts`, `event-parser.ts`, `dag-executor.ts`).
-
-## Validation sequence
-
-Run the focused commands in each phase, then:
-
-```bash
-cd packages/providers && bun test src/grok/event-parser.test.ts && bun test src/grok/provider.test.ts && bun test src/registry.test.ts && bun test src/observability.test.ts
-cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt'
-bun run generate:capability-matrix && bun run check:capability-matrix
-bun run validate
-```
-
-Never run root `bun test`. Do not move `sprint-status.yaml` to `done` before Phase 4's evidence list is complete.
-
-<!-- slug: issue-186-interrupt-and-redirect-grok-agent -->
+Phase 2 starts only when the spike report answers all four and records a pass. An evidence failure changes the design or blocks the story; it is not converted into a “known limitation.”

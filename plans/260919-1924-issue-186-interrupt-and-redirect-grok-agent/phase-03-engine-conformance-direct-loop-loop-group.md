@@ -3,7 +3,7 @@ phase: 3
 title: 'Engine conformance: direct, loop, loop-group'
 status: pending
 priority: P1
-effort: '0.5d'
+effort: '0.25-0.5d'
 dependencies: [2]
 ---
 
@@ -11,77 +11,66 @@ dependencies: [2]
 
 ## Goal
 
-Prove that the shipped #183 executor, registry, and transcript projection handle the Grok stream-abort shape identically to Claude on all three provider-calling paths, without adding Grok-specific executor logic — and correct the two comments that currently claim the abort vocabulary is Claude-only.
+Prove that the shipped provider-neutral executor contract accepts Grok's exact stream-abort chunk sequence on all provider-calling paths. Avoid duplicating the 19 generic #183 cases already in `packages/workflows/src/dag-executor.test.ts`.
 
-## Context links
+## Files
 
-- Decision D5 in [plan.md](./plan.md).
-- `packages/workflows/src/dag-executor.test.ts:27068-27800` — the #183 matrix and its helpers (`liveHandle`, `awaitIdle`, `enqueue`, `sendNow`, `toolCompletedOutcomes`, `transcriptStates`, `invokeDag`, `mockGetAgentProviderDag`).
-- `packages/workflows/src/dag-executor.ts:452-483` (`INTERRUPT_TERMINAL_REASONS`, `isAbortLikeStreamError`), `:3196-3205` and `:5964-5973` (interruptible gate), `:3482-3511` and `:7065-7102` (idle entry).
-- `packages/providers/src/types.ts` — `terminalReason` docstring ("forwarded verbatim from the SDK").
+| File | Action | Purpose |
+| --- | --- | --- |
+| `packages/workflows/src/dag-executor.test.ts` | modify | Add three Grok-shape conformance scenarios using existing steering helpers |
+| `packages/workflows/src/dag-executor.ts` | comments only | Describe normalized cross-provider abort reasons rather than Claude-only reasons |
 
-## Key insights
+`packages/providers/src/types.ts` is owned by Phase 2; do not edit it again here. `packages/workflows/src/steering-registry.ts`, routes, stores, and UI should not change.
 
-- `providerInterruptible = getProviderCapabilities(provider).interrupt !== false` already admits `'stream-abort'`; a Grok-typed mock provider with `GROK_CAPABILITIES` therefore gets a token and an `interruptSignal` with no executor change.
-- The reader fold that renders `⚠` reads `tool_completed.tool_outcome === 'interrupted'`; asserting the persisted row is the provider-blind proof the story asks for, so no Playwright run is needed.
+## Existing coverage to reuse
 
-## File inventory
+The #183 block already proves the engine's queue ordering, same-session `forkSession: false`, status projection, repeated interrupt, natural and Cancel races, abort-like throws, unrelated errors, missing session IDs, structured output, usage, AI-loop iteration handling, and loop-group namespacing. Use its `liveHandle`, `awaitIdle`, `sendNow`, event helpers, and provider mock seams rather than building a second harness.
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/workflows/src/dag-executor.test.ts` | modify | ~250 lines, new `describe('… Grok stream-abort conformance (#186)')` | reuses #183 helpers; may need `mockGetAgentProviderDag` to accept `getType: () => 'grok'` and `GROK_CAPABILITIES` |
-| `packages/workflows/src/dag-executor.ts` | modify | comments only (`:448-461`) | none |
-| `packages/providers/src/types.ts` | modify | `terminalReason` docstring | none |
+## Conformance scenarios
 
-## Tests before (TDD)
+The mock identifies as Grok, returns `GROK_CAPABILITIES`, and yields the Phase 2 provider shape: optional `tool`, interrupted `tool_result`, then a non-error `result` with the assigned/resumed ID and normalized terminal reason.
 
-These scenarios are the Grok conformance fixture. Mock `sendQuery` yields exactly the Phase 2 chunk shapes (a `tool` chunk, then on interrupt a `tool_result{toolOutcome:'interrupted'}` and a `result{terminalReason, sessionId}` with no `isError`).
+| ID | Path | Required assertions |
+| --- | --- | --- |
+| G1 | direct AI node, mid-tool | one `interrupted` status; exactly one `tool_completed` with `tool_outcome: 'interrupted'`; no node failure; idle state reached; `Send now` resumes the same ID with `forkSession: false`; two queued messages plus new message arrive in receipt order; node can complete |
+| G2 | AI loop, mid-text | interrupt parks inside the current iteration; `Send now` resumes the same ID; the interrupted pass does not consume an iteration or trigger output validation; loop completes without node failure |
+| G3 | provider-calling loop-group body, mid-tool | the namespaced step parks and resumes; interrupted tool outcome persists once; no parent/body node failure; group continues normally |
 
-| # | Path | Scenario | Assertions |
-| --- | --- | --- | --- |
-| G1 | direct | interrupt mid-tool (outcome B shape), two queued receipts, then `send_now` | one `interrupted` status row; `tool_completed` outcomes for the cut tool `=== ['interrupted']` (no `unknown`); no `node_failed`; second call gets `resumeSessionId === <pre-assigned>` and `forkSession === false`; prompt `'old one\n\nold two\n\nnew'`; `node_completed` |
-| G2 | direct | interrupt mid-text (`aborted_streaming`, no tool) | idle reached; no `tool_completed` rows; same-session redirect |
-| G3 | direct | outcome A shape: interrupted result carries `usage`/`cost` | usage and cost recorded once; interrupted row still exactly one |
-| G4 | direct | interrupt on a resumed turn: result `sessionId` equals the resumed id | redirect resumes that id |
-| G5 | direct | Cancel racing Stop: mock throws `'Query aborted'` with `abortSignal` aborted | existing Cancel failure path; no idle |
-| G6 | direct | natural end racing Stop: unmarked result, empty queue | interrupt route promise resolves `node_finished`; no interrupted row |
-| G7 | AI loop | interrupt inside iteration 1, `send_now` | idles inside the iteration, redirect resumes the same session, iteration counter not consumed, loop completes normally |
-| G8 | loop-group body | provider-calling body node interrupted | parks under the namespaced step name; same assertions as G1 |
-| G9 | direct | `interrupt: 'stream-abort'` provider with `sessionResume: true` but mock `sendQuery` ignoring the signal and ending naturally | registry settles `generating`/`node_finished`; proves the executor never relies on provider cooperation for termination |
+G1 proves the transcript data that both existing readers render as `⚠ interrupted`; no new browser test is needed because Story 2.3 already tests the shared dock/read model. G2 and G3 are required because those are separate executor paths.
 
-## Refactor (protected changes)
+If any scenario fails, diagnose the shared engine contract. Do not weaken the assertion or add a provider-name branch. A non-comment executor change is a plan change and requires rechecking all generic #183 cases.
 
-1. Rewrite the `INTERRUPT_TERMINAL_REASONS` comment: these are Archon's normalized abort markers, originally named after the Claude SDK and emitted by Claude, e2e-fake, and Grok's stream-abort; the set is still closed and prose-free.
-2. Rewrite the `terminalReason` docstring in `types.ts`: forwarded verbatim by Claude; synthesized by providers that stream-abort.
-3. If `mockGetAgentProviderDag` or `minimalConfig` needs a `grok` assistant entry, add it in the test file only.
+## Implementation steps
 
-## Tests after
-
-G1-G9 green; the existing 19 #183 scenarios untouched and green.
+1. Reuse or minimally parameterize the existing mock-provider helper to expose Grok type/capabilities and the exact Phase 2 chunks.
+2. Add G1-G3 adjacent to the existing #183 interrupt suite.
+3. Correct the `INTERRUPT_TERMINAL_REASONS` comment: the two strings are Archon's closed normalized vocabulary, forwarded by Claude and synthesized by stream-abort providers.
+4. Run the focused interrupt selection, then the complete workflow package test script because all three executor paths share this file.
 
 ## Verification
 
 ```bash
-cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt'
-cd packages/workflows && bun test src/steering-registry.test.ts
-bun run type-check && bun run lint
+cd packages/workflows
+bun test src/dag-executor.test.ts -t 'interrupt'
+bun run test
+cd ../..
+bun run type-check
+bun run lint --max-warnings 0
 ```
 
-## Todo
+## Completion checklist
 
-- [ ] G1-G9 written against the Phase 2 chunk shapes and failing only for the reasons expected (none should fail once Phase 2 is merged — if one fails, it is a real executor defect to fix, not a test to weaken)
-- [ ] Comments in `dag-executor.ts` and `types.ts` corrected
-- [ ] Full `-t 'interrupt'` selection green
+- [ ] G1-G3 use the real Phase 2 terminal shape
+- [ ] Same-session ID and queue order are asserted, not inferred
+- [ ] Tool outcome and no-failure persistence are asserted
+- [ ] AI-loop iteration and loop-group namespace behaviour are asserted
+- [ ] Existing generic #183 suite remains unchanged and green
+- [ ] No Grok-specific engine/registry branch was introduced
 
-## Success criteria
+## UI/design acceptance boundary
 
-- No non-comment change in `dag-executor.ts` or `steering-registry.ts` is required; if one is, record why in this phase and in the plan's D5 before making it.
-- Persisted evidence for `⚠`: `tool_outcome: 'interrupted'` rows for Grok on all three paths.
+No UI file is in scope. Existing design authority requires these already-shipped states on both shells: `Stop`/`Queue` while generating, transient `Stopping…` with `aria-disabled`, `Send now` while idle-after-interrupt, then generating again; the interrupted tool uses `⚠`, not the failure glyph. G1-G3 prove the provider-side events that drive those states. If implementation reveals a UI change is necessary, pause this phase and add visual assertions for Legacy at its 460 px panel and Console at the mock's 520 px panel against `_bmad-output/specs/spec-agent-node-room/control-states.md` and the reconciled Agent Node Room UX artifacts.
 
-## Risk assessment
+## Rollback
 
-- The direct path's idle entry uses `newSessionId ?? turnResumeId`; if a scenario ever yields no session id the executor fails explicitly — G-scenarios must always carry one, matching Phase 2's guarantee.
-
-## Next steps
-
-Phase 4 regenerates the capability matrix and closes the story.
+Conformance tests and comment changes revert cleanly. A need for production executor changes means the provider contract was not actually reusable and must be brought back to plan review rather than rolled into this phase.

@@ -3,138 +3,152 @@ phase: 2
 title: 'Grok provider stream-abort seam'
 status: pending
 priority: P1
-effort: '1d'
+effort: '1-1.5d'
 dependencies: [1]
 ---
 
 # Phase 2: Grok provider stream-abort seam
 
-> Spike outcome (fill from Phase 1 before starting): **A / B / C-partial** — `reports/grok-interrupt-resume-spike.md`.
+## Entry gate
+
+Copy the Phase 1 report's exact CLI version, minimum-version decision, graceful-exit bound, process-group decision, and Windows result into this phase before editing production code. If any release gate is not `PASS`, stop.
 
 ## Goal
 
-Make the Grok provider end only its current turn when the executor's per-turn `interruptSignal` fires: terminate the subprocess, settle open tools as `interrupted`, and yield one abort-marked terminal `result` that carries a resumable session id — while calls without `interruptSignal` and the node-level Cancel path stay byte-identical.
+Make Grok end only its current CLI turn when `interruptSignal` fires, return a resumable provider-normalized interrupt result, and preserve open-tool outcome, Cancel semantics, natural completion, and genuine failure causality.
 
-## Context links
+## Files
 
-- Decisions D1-D3, D6 in [plan.md](./plan.md); Phase 1 report.
-- `packages/providers/src/grok/provider.ts` — `buildGrokArgs` (line 110), `sendQuery` (line 264), `terminate`/`scheduleKill`, post-stream branch order (lines 352-403).
-- `packages/providers/src/grok/event-parser.ts` — `closeOutstandingTools` (line 97), `buildResult` (line 113), `observedResult`.
-- Reference implementations: `packages/providers/src/e2e-fake/provider.ts:405-535` (`waitForBoundary`, `interruptedResult`), `packages/providers/src/claude/provider.ts:1681-1731,1961` (listener lifecycle, spent-signal preflight).
-- Contract: `packages/providers/src/types.ts:602-609,839-847`.
-
-## Key insights
-
-- The executor already passes a fresh `interruptSignal` per pass to any provider whose `interrupt !== false` (`dag-executor.ts:2428-2435`, `:6319-6325`); declaring `'stream-abort'` is what switches Grok on.
-- Branch order after the stream closes matters: Cancel throw → interrupt result → late I/O → protocol error → non-zero exit. Exit 143 must never reach `exitError()` on an interrupted turn.
-- A tool result emitted by the provider with `toolOutcome: 'interrupted'` removes the tool from the executor's running map and persists `tool_outcome: 'interrupted'` (`dag-executor.ts:2639-2664`); the executor's own `settleRunningToolsOutcome` then finds nothing to double-write.
-
-## File inventory
-
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/providers/src/grok/capabilities.ts` | modify | 1 line: `interrupt: 'stream-abort'` | `registry.test.ts` total-axis test keeps passing; "only Claude native" keeps passing |
-| `packages/providers/src/grok/provider.ts` | modify | ~60 lines | new interrupt tests; existing tests unchanged |
-| `packages/providers/src/grok/event-parser.ts` | modify | ~25 lines | new parser tests |
-| `packages/providers/src/grok/provider.test.ts` | modify | ~200 lines | new describe block + controllable fake process |
-| `packages/providers/src/grok/event-parser.test.ts` | modify | ~40 lines | `closeOutstandingTools(outcome)`, `buildInterruptedResult` |
-| `packages/providers/src/types.ts` | modify | docstring only | none |
-
-## Tests before (TDD)
-
-Write these first; they must fail before the implementation and pass after.
-
-### `event-parser.test.ts`
-
-| # | Scenario | Assertion |
+| File | Action | Responsibility |
 | --- | --- | --- |
-| P1 | `closeOutstandingTools('interrupted')` with one open tool | one `tool_result` with `toolOutcome: 'interrupted'`, `outputState: 'unknown'`, map cleared |
-| P2 | `closeOutstandingTools()` default | unchanged: `toolOutcome: 'unknown'` (regression pin) |
-| P3 | `buildInterruptedResult('sid', 'aborted_streaming', undefined)` without `end` | `{type:'result', sessionId:'sid', terminalReason:'aborted_streaming'}`, no `isError`, no `errorSubtype` |
-| P4 | same after an `end` with usage and `stopReason: 'cancelled'` | spend fields present, `stopReason: 'cancelled'`, `sessionId` from `end` |
-| P5 | `buildResult` after no `end` (regression) | still `grok_incomplete_output` |
+| `packages/providers/src/grok/capabilities.ts` | modify last | Advertise `'stream-abort'` after implementation/tests and Phase 1 gates pass |
+| `packages/providers/src/grok/provider.ts` | modify | Assigned IDs, interrupt listener, shutdown cause, graceful/forced termination, structured logs |
+| `packages/providers/src/grok/event-parser.ts` | modify | End-state query, parameterized tool closure, interrupted result builder |
+| `packages/providers/src/grok/provider.test.ts` | modify | Controllable-process and race tests |
+| `packages/providers/src/grok/event-parser.test.ts` | modify | Parser/result tests |
+| `packages/providers/src/types.ts` | modify | Provider-neutral interrupt/terminal-reason documentation |
+| `packages/providers/src/grok/usage-contract.test.ts` | modify only if needed | Pin that no-end interrupt does not fabricate aggregate spend |
 
-### `provider.test.ts` (fake spawner)
+If Phase 1 proves group termination is required, the same provider/test files also extend `GrokProcess` with the minimum PID/group information and `GrokSpawnOptions` with explicit POSIX group ownership. Do not add those fields when the evidence says the child is already reaped.
 
-Add a `controllableProcess()` helper: stdout is a `ReadableStream` fed by a test-held controller; `kill(signal)` records the signal and, on the first `SIGTERM`, optionally flushes an `end` line (outcome A shape) then closes stdout and resolves `exited` (default 143). Pin the argv/session assertions with `buildGrokArgs` directly where possible.
+## TDD matrix
 
-| # | Scenario | Assertion |
+### Parser tests
+
+| ID | Scenario | Required assertion |
 | --- | --- | --- |
-| T1 | `buildGrokArgs` with `interruptSignal`, no resume | argv contains `--session-id <uuid v4>`; the returned `sessionId` equals it |
-| T2 | `buildGrokArgs` without `interruptSignal` | argv byte-identical to today (no `--session-id`); regression pin for direct chat |
-| T3 | `buildGrokArgs` with `interruptSignal` + resume + `forkSession: true` | `--resume X --fork-session --session-id <uuid>` |
-| T4 | `buildGrokArgs` with `interruptSignal` + resume, no fork | no `--session-id` (Grok rejects it) |
-| T5 | interrupt mid-tool (outcome B shape: no `end`) | chunks: `tool` → `tool_result{toolOutcome:'interrupted'}` → `result{terminalReason:'aborted_tools', sessionId: pre-assigned}`; `kill` called with `SIGTERM` once; no throw; no `system` error chunk |
-| T6 | interrupt mid-text, no open tool | `result{terminalReason:'aborted_streaming'}`, no `tool_result` |
-| T7 | interrupt mid-tool, Grok flushes `end{stopReason:'cancelled', sessionId: same uuid, usage}` (outcome A) | `result` carries `terminalReason:'aborted_tools'`, spend, `sessionId === pre-assigned` |
-| T8 | interrupt on a resumed turn (`resumeSessionId: 'sess-1'`) with no `end` | `result.sessionId === 'sess-1'`, `resumed: true` |
-| T9 | Cancel and interrupt abort in the same tick | throws `'Query aborted'`; no abort-marked result yielded (Cancel dominates) |
-| T10 | interrupt fires after `exited` resolved 0 and `end` already parsed | plain natural result, **no** `terminalReason` (five-case rule case 1) |
-| T10b | interrupt fires after `end` was parsed but before `exited` resolved | plain natural result, no `terminalReason` |
-| T10c | interrupt-capable turn with `persistSession: false` (new session) then redirect | decide once and pin: the redirect turn must fail loudly at `buildGrokArgs` (`provider.ts:111-113` throws on resume + `persistSession: false`) with a message naming `persist_session`, never silently start a fresh session |
-| T16 | (only if Phase 1 E7 found a surviving child) interrupt mid-tool | the fake spawner records a process-group signal (negative pid) before the pid signal |
-| T17 | interrupt-path grace constant | `scheduleKill` on the interrupt path uses the named interrupt grace constant (value fixed from E6: at least 2× the slowest observed SIGTERM exit, minimum 5000 ms); Cancel keeps `TERMINATION_GRACE_MS` |
-| T11 | spent `interruptSignal` at entry | throws `'Query interrupted'` before `spawn` is called |
-| T12 | interrupt, then stdout errors after kill | still the abort-marked result — never `grok_transport_error` |
-| T13 | interrupt, exit code 143 | never `grok_exit_nonzero`; result is abort-marked |
-| T14 | listeners removed in `finally` for both signals; SIGKILL timer cleared when the process exits within grace | `removeEventListener` observed on both signals; no dangling timer (use fake timers or assert `kill` not called with `SIGKILL`) |
-| T15 | `end.sessionId` differs from the pre-assigned id | provider yields a `system` chunk naming the mismatch and uses the `end` id (log + surface; do not silently prefer either) |
+| P1 | open tool then `closeOutstandingTools('interrupted')` | one interrupted `tool_result`; second close is empty |
+| P2 | default `closeOutstandingTools()` | remains `unknown` |
+| P3 | any validly parsed `end`, including one with no session ID | `hasEnded()` is true; this is independent of `getSessionId()` |
+| P4 | `buildInterruptedResult` with concrete ID and no `end` | non-error result, correct terminal reason/session/resumed state, no incomplete-output error |
+| P5 | interrupted result after an `end` | retains authoritative aggregate usage/cost and reported ID |
+| P6 | ordinary `buildResult` without `end` | remains `grok_incomplete_output` |
 
-## Refactor (protected changes)
+`buildInterruptedResult` accepts a required `string` session ID. Do not make it optional and defer a broken invariant to the executor.
 
-1. `capabilities.ts`: `interrupt: 'stream-abort'`.
-2. `buildGrokArgs`: accept `interruptCapable: boolean` (derived from `requestOptions?.interruptSignal !== undefined`); when true and (`!resumeSessionId` or `forkSession === true`) push `--session-id <uuid>` and return `sessionId`. Import `randomUUID` from `node:crypto`.
-3. `sendQuery`:
-   - preflight: `if (requestOptions?.interruptSignal?.aborted) throw new Error('Query interrupted')` after the existing Cancel preflight;
-   - `let interruptedInFlight = false; const onInterrupt = () => { if (!processExited && parser.getSessionId() === undefined) { interruptedInFlight = true; terminate(); } };` attached with `{ once: true }`;
-   - after `Promise.all([exitOutcome, stderrOutcome])`: **replace** the existing unconditional `closeOutstandingTools()` call (`provider.ts:352-354`, which today runs before the Cancel check and would empty the tool map as `'unknown'` before the interrupt branch could settle it) with a single `parser.closeOutstandingTools(interruptedInFlight ? 'interrupted' : 'unknown')`, executed after computing `hadOpenTool` and before the Cancel throw; then keep the Cancel throw; then `if (interruptedInFlight) { yield parser.buildInterruptedResult(sessionId, hadOpenTool ? 'aborted_tools' : 'aborted_streaming', resumed); log 'grok.query_interrupted'; return; }`;
-   - `interruptedInFlight` is set only when the signal fires while the process is alive **and** no `end` event has been consumed yet (`parser.getSessionId() === undefined` at fire time); otherwise the turn is treated as natural (case 1);
-   - `finally`: remove the interrupt listener beside the abort listener.
-3b. Session-id reconciliation (drives T15): `const endId = parser.getSessionId(); const sessionId = endId ?? preAssignedSessionId ?? resumeSessionId;` — when `endId !== undefined && preAssignedSessionId !== undefined && endId !== preAssignedSessionId`, yield `{ type: 'system', content: 'Grok reported session <endId> for a turn Archon started as <preAssignedSessionId>; resuming the reported id.' }` before the result and log `grok.session_id_mismatch` at warn. The reported id wins because it is what Grok persisted.
-3c. SIGKILL attribution: when the grace timer escalates to SIGKILL on an interrupted turn, yield a `system` chunk stating that Grok did not exit within the grace window and the session may be truncated, and log `grok.query_interrupt_killed`. A later resume failure is then attributable to the termination race rather than an opaque CLI error.
-3d. If Phase 1 E7 showed a surviving tool child, `terminate()` on the interrupt path must signal the process group (spawn with `detached`/own group, then `process.kill(-pid, signal)` — mirror `claude/container-spawn.ts:99-119`), with a test asserting the group signal; otherwise leave `terminate()` unchanged and cite E7 in the report.
-4. Grace decision (mandatory, drives T17): introduce `INTERRUPT_TERMINATION_GRACE_MS`, set from E6 to at least twice the slowest observed SIGTERM→exit time and never below 5000 ms, used only by the interrupt-path `terminate()`; leave `TERMINATION_GRACE_MS` for Cancel unchanged. Record the E6 numbers in the constant's comment.
-5. `event-parser.ts`: `closeOutstandingTools(outcome: 'unknown' | 'interrupted' = 'unknown')`; new `buildInterruptedResult(sessionId: string | undefined, terminalReason: 'aborted_streaming' | 'aborted_tools', resumed: boolean | undefined)` built on `observedResult` with `terminalReason` added and no error fields. Keep `getSessionId()`.
-6. `types.ts`: update the `interrupt` docstring — `'stream-abort'` is declared by Grok (SIGTERM on the CLI subprocess, session resumed with `--resume`); update the `interruptSignal` docstring to say native **and** stream-abort providers honour it.
+### Provider tests
 
-## Tests after
+Extend the current fake spawner with a controllable process whose stdout can remain open, flush an optional `end`, resolve with a chosen exit code, and record SIGTERM/SIGKILL. Keep all tests offline.
 
-The T1-T17 and P1-P5 matrix above is the "after" set; additionally assert in T5 that `abortSignal` was never aborted by the provider (pass a spy `AbortController`).
+| ID | Scenario | Required assertion |
+| --- | --- | --- |
+| T1 | new/forked interrupt-capable turns | new UUID passed through `--session-id`; resumed non-fork turn uses the old ID and adds no new flag |
+| T2 | no `interruptSignal` | argv remains byte-for-byte compatible and has no assigned ID |
+| T3 | interrupt already spent initially or during binary resolution | no query process spawned; `Query interrupted` |
+| T4 | signal fires after spawn but before/while listener installation | immediate post-registration recheck catches it exactly once |
+| T5 | mid-tool, no `end`, graceful exit 143 | tool → interrupted tool result → non-error `aborted_tools` result with assigned ID; one SIGTERM, no SIGKILL |
+| T6 | mid-text, no open tool | non-error `aborted_streaming`; no synthetic tool result |
+| T7 | SIGTERM flushes matching `end` | reported ID and aggregate usage/cost retained; still normalized as interrupted |
+| T8 | interrupted resumed turn | result carries the existing ID and `resumed: true` |
+| T9 | `end` parsed before Stop | natural unmarked result; no termination signal |
+| T10 | Cancel alone or racing Stop | existing `Query aborted` path wins; no interrupt result |
+| T11 | Stop claimed first, then induced stdout/stderr error or exit 143 | remains interrupted, not a transport/non-zero-exit failure |
+| T12 | protocol/transport failure recorded first, then Stop | real failure retained; Stop cannot relabel it as interrupted |
+| T13 | graceful timer expires and SIGKILL is sent | distinct non-abort failure; no resumable result; structured escalation log |
+| T14 | `end.sessionId` differs from assigned ID | use reported ID, structured warning, no user-facing `system` chunk |
+| T15 | no assigned/resumed/reported ID at interrupt settlement | fail fast; never emit an abort marker without a resumable ID |
+| T16 | normal/error/interrupted cleanup | both listeners removed, timers cleared, process awaited once, no extra kill after exit |
+| T17 | Phase 1 required group termination | own and signal the POSIX group; retain explicit Windows behaviour proved by S4 |
+
+Also retain every existing Grok provider, parser, and usage-contract test unchanged unless the asserted public contract intentionally changes above.
+
+## Implementation design
+
+### Assigned session identity
+
+- Extend `buildGrokArgs` to return the optional assigned session ID as well as args/model/effort.
+- Generate with `node:crypto.randomUUID()` only for interrupt-capable new or forked turns.
+- Resolve effective ID as `parser.getSessionId() ?? assignedSessionId ?? resumeSessionId` after the process ends. A reported mismatch logs a warning and the reported ID wins because it names what Grok persisted.
+
+### Race-free listener lifecycle
+
+1. Check Cancel, then interrupt, before binary resolution.
+2. Resolve configuration/binary; recheck both before spawning so a signal during setup does not launch a new process.
+3. Spawn and create parser/state.
+4. Install both listeners; immediately call the corresponding handler if a signal is already aborted.
+5. Remove both listeners and clear the escalation timer in `finally`; await the process streams once.
+
+Handlers are idempotent. They must not create multiple timers or send duplicate signals.
+
+### Causal shutdown state
+
+Use an explicit internal shutdown cause (for example `none | interrupt | fault`) plus the existing Cancel signal and a `forcedKill` flag. The first interrupt/fault claimant wins; Cancel remains a final dominant check. Parser failures and stream failures claim `fault` before terminating. Stop claims `interrupt` only while the process is alive, before `parser.hasEnded()`, and when no fault already owns shutdown.
+
+This ordering yields:
+
+1. Cancel check;
+2. forced-kill failure;
+3. graceful interrupt result;
+4. late I/O / protocol / non-zero-exit handling;
+5. normal result.
+
+Do not use `getSessionId() === undefined` as “not ended,” and do not let a late Stop suppress an earlier failure.
+
+### Tool and result settlement
+
+- Change `closeOutstandingTools` to accept `'unknown' | 'interrupted'` with `'unknown'` default and return the emitted list; its length determines `aborted_tools` versus `aborted_streaming` without exposing parser internals.
+- Add `buildInterruptedResult(sessionId: string, terminalReason, resumed)` using the parser's observed result fields but removing incomplete/error fields. Preserve aggregate usage only when `end` supplied it.
+- Close tools once, after shutdown cause is known. Interrupted cause uses `interrupted`; all other paths use `unknown`.
+- Do not emit a `system` warning for session reconciliation or escalation. A forced escalation is a failure; a mismatch is a structured log. This keeps direct and loop behaviour identical.
+
+### Process termination
+
+- Keep Cancel's current five-second behaviour unless Phase 1 independently disproves it.
+- Use the Phase 1 grace for interrupt-driven SIGTERM. Name and comment the constant with its evidence report, but do not encode sample math such as “2× slowest” as runtime policy.
+- Track whether the escalation callback fired. SIGKILL always changes an operator interrupt into a real provider failure because the session cannot be claimed durable.
+- Add process-group mechanics only if S1 found a surviving child. On POSIX, use an owned group and signal the group without broad matching; on Windows use only the launch/termination path S4 proved.
+
+### Capability and contract docs
+
+- Change `GROK_CAPABILITIES.interrupt` from `false` to `'stream-abort'` only after all Phase 2 tests pass.
+- Update `AgentRequestOptions.interruptSignal`, `ProviderCapabilities.interrupt`, and result `terminalReason` comments so they describe native and stream-abort providers rather than Claude alone.
+- Do not change executor/registry behaviour or add a Grok-specific terminal reason.
 
 ## Verification
 
 ```bash
-cd packages/providers && bun test src/grok/event-parser.test.ts && bun test src/grok/provider.test.ts && bun test src/registry.test.ts && bun test src/observability.test.ts
-bun run type-check && bun run lint
+cd packages/providers
+bun test src/grok/event-parser.test.ts
+bun test src/grok/provider.test.ts
+bun test src/grok/usage-contract.test.ts
+bun test src/registry.test.ts
+bun test src/observability.test.ts
+cd ../..
+bun run type-check
+bun run lint --max-warnings 0
 ```
 
-## Todo
+## Completion checklist
 
-- [ ] P1-P5 and T1-T17 written and failing
-- [ ] Capability, argv, listener, branch order, parser changes implemented; matrix green
-- [ ] `INTERRUPT_TERMINATION_GRACE_MS` fixed from E6 and pinned by T17; E7 outcome applied (T16 or a cited no-op)
-- [ ] Docstrings in `types.ts` updated
-- [ ] Existing Grok/registry/observability tests unchanged and green
+- [ ] Phase 1 gate values copied here and still valid for the binary under test
+- [ ] P1-P6 and T1-T16 pass; T17 included when required by evidence
+- [ ] Cancel/natural/fault/interrupt/forced-kill causality is explicit and tested
+- [ ] No interrupted result can omit a concrete session ID
+- [ ] Open tools close exactly once with the correct outcome
+- [ ] No-end interruption fabricates neither aggregate tokens nor USD
+- [ ] Capability flips only after tests and platform gate pass
+- [ ] Focused provider/type/lint gates pass
 
-## Success criteria
+## Rollback
 
-- All scenarios in the two matrices pass; `bun test src/grok/provider.test.ts` runs without opening a real process.
-- Argv for non-interrupt callers is byte-identical (T2).
-- No `isError` result and no throw on an operator interrupt; Cancel still throws `'Query aborted'`.
-
-## Risk assessment
-
-- The 5 s grace was tuned by Cancel, not by session persistence; E6 samples a handful of short turns. Step 3c makes a truncated persist attributable; if E6 shows any exit above ~2.5 s, prefer a larger interrupt-path grace (documented constant) over trusting the margin.
-- Flipping the capability makes the executor hand every Grok workflow pass an `interruptSignal` (`dag-executor.ts:2427-2435`, `:6319-6325`), so `--session-id` pre-assignment applies to **every new Grok workflow-node session**, not only interrupted ones; direct chat is unaffected. No code reads Grok-generated ids specially (grep `sessionId` consumers in `packages/core` and `packages/workflows` — ids are opaque strings), but T1/T2 pin the boundary.
-- On Windows the `cmd.exe` wrapper (`buildSpawnCommand`) receives the SIGTERM, not the real `grok` child — inherited from the Cancel path, out of scope here; do not assume stream-abort fixes it.
-
-- Grok may exit with a signal rather than 143 under SIGKILL; classification never reads the exit code on the interrupt path, so this is cosmetic but must be logged.
-- A Stop during the pre-tool phase may leave an unresumable session (C-partial); the redirect turn then fails with Grok's verbatim resume error — documented, never masked.
-
-## Security considerations
-
-- The pre-assigned id is a random UUID, never derived from user input; it is passed as argv exactly like `--resume` today.
-
-## Next steps
-
-Phase 3 proves the executor contract with the exact chunk shapes T5-T8 produce.
+Set the capability back to `false` first. The provider changes are then dormant because workflows stop receiving Grok `interruptSignal`; caller-assigned session IDs already persisted remain valid.
