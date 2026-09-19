@@ -59,6 +59,7 @@ Reusing 409 for both would conflate two conditions a machine consumer must tell 
 - **Duplicate `message_id`** — the send is idempotent: it replays the original receipt (same `state`), never a second queue entry.
 - **Repeated interrupt while already `idle-after-interrupt`** — an idempotent no-op returning the current `sub_state`; no second interrupt fires.
 - **Withdraw of an already-drained or unknown `message_id`** — an idempotent success no-op; there is no message-level 404 (404 is only an unknown `runId`/`nodeId`).
+- **Withdraw from a parked retained queue** — DELETE may remove an already-accepted item from a parked retained queue because it manages the queue, not the live provider session; new sends remain refused while parked, and a closed handle still returns `node_finished`.
 - **Send while an interrupt is in flight** — the message lands in the registry queue and waits for `Send now`; the queue absorbs the race with no 409 (AD-11).
 - **Node goes terminal mid-request** — the route returns 409 `node_finished`; the teardown queue check is the last gate (AD-11).
 - **Every rejected request leaves the node, queue, and transcript unchanged** — a refusal is never a partial mutation.

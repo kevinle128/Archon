@@ -4,9 +4,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
 import { installHappyDom, restoreHappyDom } from '@/experiments/console/test/install-happy-dom';
-import type { SendWorkflowNodeBody, SendWorkflowNodeResponse } from '@/lib/api';
+import type {
+  SendWorkflowNodeBody,
+  SendWorkflowNodeResponse,
+  WithdrawWorkflowNodeResponse,
+} from '@/lib/api';
 import { SteeringSendError } from '@/lib/steering-dock';
-import type { SendNodeGuidance } from './ComposerDock';
+import type { SendNodeGuidance, WithdrawNodeGuidance } from './ComposerDock';
 
 const react = await import('react');
 const reactDomClient = await import('react-dom/client');
@@ -43,6 +47,12 @@ interface SendCall {
   body: SendWorkflowNodeBody;
 }
 
+interface WithdrawCall {
+  runId: string;
+  nodeId: string;
+  messageId: string;
+}
+
 function deferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -68,6 +78,8 @@ describe('ComposerDock', () => {
   let composerDock: typeof import('./ComposerDock');
   const calls: SendCall[] = [];
   let nextSend: SendNodeGuidance;
+  const withdrawCalls: WithdrawCall[] = [];
+  let nextWithdraw: WithdrawNodeGuidance;
 
   beforeEach(async () => {
     win = installHappyDom();
@@ -81,6 +93,11 @@ describe('ComposerDock', () => {
     nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
       calls.push({ runId, nodeId, body });
       return okReceipt(body.message_id);
+    };
+    withdrawCalls.length = 0;
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return { success: true, message_id: messageId };
     };
   });
 
@@ -106,6 +123,7 @@ describe('ComposerDock', () => {
       live: boolean;
       hasPendingAsk: boolean;
       send: SendNodeGuidance;
+      withdraw: WithdrawNodeGuidance;
       storage: Storage;
       nodeLabel: string;
     }> = {}
@@ -120,6 +138,7 @@ describe('ComposerDock', () => {
           live: overrides.live ?? true,
           hasPendingAsk: overrides.hasPendingAsk ?? false,
           send: overrides.send ?? nextSend,
+          withdraw: overrides.withdraw ?? nextWithdraw,
           storage: overrides.storage,
         })
       );
@@ -193,6 +212,19 @@ describe('ComposerDock', () => {
   async function clickQueue(): Promise<void> {
     await act(async () => {
       queueButton().click();
+    });
+    await flush();
+  }
+
+  function deleteButtons(): HTMLButtonElement[] {
+    return [...host.querySelectorAll('button')].filter(
+      button => (button.textContent ?? '').trim() === 'delete'
+    ) as unknown as HTMLButtonElement[];
+  }
+
+  async function clickDelete(index: number): Promise<void> {
+    await act(async () => {
+      deleteButtons()[index]?.click();
     });
     await flush();
   }
@@ -509,6 +541,10 @@ describe('ComposerDock', () => {
     expect(host.querySelector('button')).toBeNull();
     expect(host.querySelector('ul')).toBeNull();
 
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect((win.document.activeElement as unknown) === alert).toBe(true);
+
     const stored = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored ?? '{}') as { draft?: string; pendingRetry?: unknown };
@@ -525,5 +561,239 @@ describe('ComposerDock', () => {
     expect(field().value).toBe('from storage');
     await clickQueue();
     expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBeNull();
+  });
+
+  test('each queued row exposes a native delete control named for its message', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    const buttons = deleteButtons();
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button.textContent?.trim()).toBe('delete');
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.className).toContain('min-h-[24px]');
+      expect(button.className).toContain('min-w-[24px]');
+      expect(button.className).toContain('focus-visible:outline-accent-bright');
+      expect(button.className).toContain('focus-visible:-outline-offset-2');
+      expect(button.className).not.toContain('transition');
+    }
+    expect(buttons[0].getAttribute('aria-label')).toBe('delete · first');
+    expect(buttons[1].getAttribute('aria-label')).toBe('delete · second');
+  });
+
+  test('clicking a row delete issues exactly one withdraw for run, node, and row id', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    await clickDelete(0);
+    expect(withdrawCalls).toEqual([
+      { runId: 'run-1', nodeId: 'grp.body', messageId: calls[0].body.message_id },
+    ]);
+  });
+
+  test('a pending withdraw guards every delete while Queue/send stays usable', async () => {
+    const pending = deferred<WithdrawWorkflowNodeResponse>();
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return pending.promise;
+    };
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    await act(async () => {
+      deleteButtons()[0]?.click();
+    });
+    await flush();
+    expect(withdrawCalls).toHaveLength(1);
+    for (const button of deleteButtons()) {
+      expect(button.getAttribute('aria-disabled')).toBe('true');
+      expect(button.getAttribute('disabled')).toBeNull();
+    }
+    await act(async () => {
+      deleteButtons()[1]?.click();
+    });
+    await flush();
+    expect(withdrawCalls).toHaveLength(1);
+
+    await setDraft('third');
+    await clickQueue();
+    expect(calls).toHaveLength(3);
+    expect(host.textContent).toContain('queued · 3');
+
+    await act(async () => {
+      pending.resolve({ success: true, message_id: calls[0].body.message_id });
+    });
+    await flush();
+    expect(host.textContent).toContain('queued · 2');
+    const items = [...host.querySelectorAll('li')].map(li => li.textContent ?? '');
+    expect(items[0]).toContain('second');
+    expect(items[1]).toContain('third');
+  });
+
+  test('a concurrent send append does not consume focus reserved for withdraw success', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+    const nextDelete = deleteButtons()[1];
+
+    const pendingSend = deferred<SendWorkflowNodeResponse>();
+    const pendingWithdraw = deferred<WithdrawWorkflowNodeResponse>();
+    const send: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return pendingSend.promise;
+    };
+    const withdraw: WithdrawNodeGuidance = async (runId, nodeId, messageId) => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return pendingWithdraw.promise;
+    };
+    await renderDock({ send, withdraw });
+
+    await setDraft('third');
+    await clickQueue();
+    const selectedDelete = deleteButtons()[0];
+    await act(async () => {
+      selectedDelete.focus();
+      selectedDelete.click();
+    });
+    await flush();
+
+    await act(async () => {
+      pendingSend.resolve(okReceipt(calls[2].body.message_id));
+    });
+    await flush();
+    expect(host.textContent).toContain('queued · 3');
+
+    await act(async () => {
+      queueButton().focus();
+      pendingWithdraw.resolve({ success: true, message_id: calls[0].body.message_id });
+    });
+    await flush();
+
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+    expect((win.document.activeElement as unknown) === nextDelete).toBe(true);
+  });
+
+  test('success removes only the selected row, updates wording, and focuses the next delete', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    const nextDelete = deleteButtons()[1];
+    await clickDelete(0);
+
+    const items = [...host.querySelectorAll('li')];
+    expect(items).toHaveLength(1);
+    expect(items[0].textContent).toContain('second');
+    expect(items[0].textContent).not.toContain('first');
+    expect(host.textContent).toContain('queued · 1');
+    expect(host.querySelector('ul[aria-label="Queued messages, 1"]')).not.toBeNull();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('1 message queued');
+    expect((win.document.activeElement as unknown) === nextDelete).toBe(true);
+  });
+
+  test('deleting the last row focuses the previous delete; deleting the only row focuses the field', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+
+    const previousDelete = deleteButtons()[0];
+    await clickDelete(1);
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect((win.document.activeElement as unknown) === previousDelete).toBe(true);
+
+    await clickDelete(0);
+    expect(host.querySelector('ul')).toBeNull();
+    expect(host.textContent).not.toContain('queued ·');
+    expect((win.document.activeElement as unknown) === field()).toBe(true);
+  });
+
+  test('a 409 refusal keeps the row and focus on its delete control and shows the alert', async () => {
+    nextWithdraw = async (): Promise<WithdrawWorkflowNodeResponse> => {
+      throw new SteeringSendError(409, 'node_finished', 'Workflow node is finished');
+    };
+    await renderDock();
+    await setDraft('keep me');
+    await clickQueue();
+
+    const button = deleteButtons()[0];
+    await act(async () => {
+      button.focus();
+    });
+    await act(async () => {
+      button.click();
+    });
+    await flush();
+
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+    expect(button.getAttribute('aria-disabled')).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Workflow node is finished');
+    expect((win.document.activeElement as unknown) === button).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+
+  test('a 422 refusal follows the detached disclosure and focuses its alert', async () => {
+    nextWithdraw = async (): Promise<WithdrawWorkflowNodeResponse> => {
+      throw new SteeringSendError(
+        422,
+        'not_steerable_here',
+        'No live steering session for this node in this process'
+      );
+    };
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await clickDelete(0);
+
+    expect(host.textContent).toBe(DETACHED);
+    expect(host.querySelector('ul')).toBeNull();
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert).not.toBeNull();
+    expect((win.document.activeElement as unknown) === alert).toBe(true);
+  });
+
+  test('blocked by a pending ask still withdraws and removes the parked item', async () => {
+    await renderDock();
+    await setDraft('parked one');
+    await clickQueue();
+    expect(host.querySelectorAll('li')).toHaveLength(1);
+
+    await renderDock({ hasPendingAsk: true });
+    expect(queueButton().getAttribute('aria-disabled')).toBe('true');
+    await clickQueue();
+    expect(calls).toHaveLength(1);
+
+    const buttons = deleteButtons();
+    expect(buttons).toHaveLength(1);
+    await clickDelete(0);
+    expect(withdrawCalls).toEqual([
+      { runId: 'run-1', nodeId: 'grp.body', messageId: calls[0].body.message_id },
+    ]);
+    expect(host.querySelectorAll('li')).toHaveLength(0);
+    expect(host.querySelector('ul')).toBeNull();
+  });
+
+  test('empty, generating, and hidden states expose no delete control', async () => {
+    await renderDock();
+    expect(deleteButtons()).toHaveLength(0);
+    await renderDock({ rowStatus: 'completed' });
+    expect(deleteButtons()).toHaveLength(0);
+    await renderDock({ live: false });
+    expect(deleteButtons()).toHaveLength(0);
   });
 });

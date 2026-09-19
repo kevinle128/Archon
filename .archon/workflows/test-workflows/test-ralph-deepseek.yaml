@@ -1,0 +1,165 @@
+name: test-ralph-deepseek
+description: 'Build a Ralph PRD from an existing plan under ./plans, then implement it with DeepSeek.'
+provider: omp
+model: alibaba-token-plan/deepseek-v4.1-flash
+
+nodes:
+  - id: resolve-plan
+    description: Resolve the existing local plan and its Ralph PRD directory.
+    bash: |
+      set -euo pipefail
+
+      ROOT=$(git rev-parse --show-toplevel)
+      PLANS_ROOT="$ROOT/plans"
+      RAW="${ARGUMENTS:-}"
+      RAW="${RAW#"${RAW%%[![:space:]]*}"}"
+      RAW="${RAW%"${RAW##*[![:space:]]}"}"
+      RAW="${RAW#\`}"; RAW="${RAW%\`}"
+
+      if [ -z "$RAW" ]; then
+        echo "ERROR: pass a plan directory or Markdown file under ./plans." >&2
+        exit 1
+      fi
+
+      if [ -d "$RAW" ]; then
+        PLAN_PATH=$(cd "$RAW" && pwd -P)
+        PRD_DIR="$PLAN_PATH"
+      elif [ -f "$RAW" ]; then
+        case "$RAW" in
+          *.md) : ;;
+          *) echo "ERROR: a plan file must be Markdown: $RAW" >&2; exit 1 ;;
+        esac
+        DIR=$(cd "$(dirname "$RAW")" && pwd -P)
+        BASE=$(basename "$RAW")
+        if [ "$BASE" = "plan.md" ]; then
+          PLAN_PATH="$DIR"
+          PRD_DIR="$DIR"
+        else
+          PLAN_PATH="$DIR/$BASE"
+          PRD_DIR="$(dirname "$DIR")/ralph/${BASE%.md}"
+        fi
+      else
+        echo "ERROR: plan does not exist: $RAW" >&2
+        exit 1
+      fi
+
+      case "$PLAN_PATH" in
+        "$PLANS_ROOT"|"$PLANS_ROOT"/*) ;;
+        *) echo "ERROR: plan must be under $PLANS_ROOT: $PLAN_PATH" >&2; exit 1 ;;
+      esac
+
+      mkdir -p "$PRD_DIR"
+      PRD_DIR=$(cd "$PRD_DIR" && pwd -P)
+      jq -cn --arg plan_path "$PLAN_PATH" --arg prd_dir "$PRD_DIR" \
+        '{plan_path: $plan_path, prd_dir: $prd_dir}'
+
+  - id: build-ralph-prd
+    description: Convert the complete plan into a Ralph PRD.
+    depends_on: [resolve-plan]
+    provider: devin
+    model: swe-2-max
+    context: fresh
+    prompt: |
+      Convert the complete existing plan at `$resolve-plan.output.plan_path` into
+      a Ralph PRD in `$resolve-plan.output.prd_dir`.
+
+      If the plan path is a directory, read `plan.md`, every `phase-*.md`, and
+      `verification-report.md` when present. If it is a file, read that file.
+      Do not revise the plan and do not implement production code in this node.
+
+      Create `prd.md` as the self-contained context for fresh Ralph iterations.
+      Create `prd.json` with this exact story shape:
+
+      ```json
+      {
+        "feature": "<feature name>",
+        "userStories": [
+          {
+            "id": "US-001",
+            "title": "<short title>",
+            "description": "As a..., I want..., so that...",
+            "acceptanceCriteria": ["<verifiable criterion>"],
+            "technicalNotes": "<real files, patterns, and plan references>",
+            "dependsOn": [],
+            "priority": 1,
+            "passes": false,
+            "notes": ""
+          }
+        ]
+      }
+      ```
+
+      Make each story small enough for one fresh-context iteration. Order stories
+      by dependency. Every `dependsOn` entry must refer only to an earlier story.
+      Keep all acceptance criteria from the plan measurable and unchanged in intent.
+      Verify that both files exist and that every story starts with `passes: false`.
+
+      Return the PRD directory and story count as structured output.
+    output_format:
+      type: object
+      properties:
+        prd_dir:
+          type: string
+        story_count:
+          type: number
+      required: [prd_dir, story_count]
+
+  - id: ralph-native-preflight
+    description: Validate the generated PRD before implementation.
+    depends_on: [build-ralph-prd]
+    bash: |
+      set -euo pipefail
+
+      PRD_DIR=$build-ralph-prd.output.prd_dir
+      [ -f "$PRD_DIR/prd.md" ] || { echo "Missing $PRD_DIR/prd.md" >&2; exit 1; }
+      [ -f "$PRD_DIR/prd.json" ] || { echo "Missing $PRD_DIR/prd.json" >&2; exit 1; }
+      jq -e '
+        type == "object" and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+          (.id | type == "string" and length > 0) and
+          (.passes == false) and
+          (.dependsOn | type == "array") and
+          all(.dependsOn[]; type == "string")
+        )
+      ' "$PRD_DIR/prd.json" >/dev/null || {
+        echo "Invalid Ralph PRD: $PRD_DIR/prd.json" >&2
+        exit 1
+      }
+
+      mkdir -p "$ARTIFACTS_DIR/superpowers"
+      printf '%s\n' "$PRD_DIR" > "$ARTIFACTS_DIR/superpowers/prd-dir.txt"
+
+  - id: ralph-loop-run
+    description: Implement one validated Ralph story per fresh DeepSeek iteration.
+    depends_on: [ralph-native-preflight]
+    provider: omp
+    model: alibaba-token-plan/deepseek-v4.1-flash
+    effort: max
+    idle_timeout: 3600000
+    output_format:
+      type: object
+      properties:
+        terminal:
+          type: boolean
+        done:
+          type: boolean
+        mode:
+          type: string
+        story_id:
+          type: string
+        note:
+          type: string
+      required: [terminal, done]
+    loop:
+      command: archon-ralph-project-aware-iteration
+      fresh_context: true
+      max_iterations: 100
+      until_field: terminal
+      until_bash: |
+        set -euo pipefail
+        PRD_FILE="$ARTIFACTS_DIR/superpowers/prd-dir.txt"
+        [ -f "$PRD_FILE" ] || exit 1
+        PRD_DIR=$(cat "$PRD_FILE")
+        [ -f "$PRD_DIR/prd.json" ] || exit 1
+        jq -e '.userStories | type == "array" and length > 0 and all(.[]; .passes == true)' "$PRD_DIR/prd.json" >/dev/null

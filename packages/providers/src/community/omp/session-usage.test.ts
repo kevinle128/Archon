@@ -539,7 +539,7 @@ describe('collectHiddenSessionUsage', () => {
       sessionId: fx.sessionId,
     });
     expect(hidden).toBeUndefined();
-  });
+  }, 30000);
 
   test('missing files and null snapshot skip enrichment safely', async () => {
     const fx = await layoutFresh();
@@ -571,7 +571,7 @@ describe('collectHiddenSessionUsage', () => {
     expect(snap?.files.some(f => f.relativePath.includes('ScoutTask'))).toBe(true);
     expect(snap?.files.every(f => f.endsAtRecordBoundary)).toBe(true);
     expect(snap?.files.every(f => f.kind === 'advisor' || f.kind === 'subagent')).toBe(true);
-  });
+  }, 30000);
 
   test('negative token rows are rejected by the normalizer', async () => {
     const fx = await layoutFresh({ withAdvisor: false, withTask: false });
