@@ -94,8 +94,8 @@
       "technicalNotes": "Follow phase-04-web-stop-send-now-dock-both-shells.md and plan decision D8. Design authority: _bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/ DESIGN.md + EXPERIENCE.md + mockups/key-steering-dock.html. 460px is the only authoritative room-panel width (520px/300px crops are illustrative). control-states.md keeps Queue usable during interrupting \u2014 overrides EXPERIENCE.md's generic no-op sentence. Files: steering-dock.ts(+test), lib/api.ts (typed interruptNode), experiments/console/skills/runs.ts (Console-owned helper), ComposerDock.tsx, NodeTranscriptPane.tsx, NodeRoom.tsx (last-row ref/marker), ConsoleComposerDock.tsx, ConsoleNodeRoom.tsx, inspect/ConsoleAgentHistoryList.tsx. Cross-tab sync is out of scope (Story 2.9); no steering SSE event.",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4 (commit 181ae601). Files: packages/web/src/lib/steering-dock.ts(+test), lib/api.ts, experiments/console/skills/runs.ts, components/workflows/ComposerDock.tsx(+test), NodeTranscriptPane.tsx(+test), NodeRoom.tsx(+test), experiments/console/components/ConsoleComposerDock.tsx(+test), ConsoleNodeRoom.tsx(+test), inspect/ConsoleAgentHistoryList.tsx."
     },
     {
       "id": "US-005",

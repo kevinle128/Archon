@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Dock-removal focus fallback (US-004)
+- **Where**: `packages/web/src/components/workflows/ComposerDock.tsx` (mirrored in `experiments/console/components/ConsoleComposerDock.tsx`); pane-side target in `NodeTranscriptPane.tsx`/`ConsoleNodeRoom.tsx` (`focusLastRow`); row marker in `NodeRoom.tsx`/`ConsoleAgentHistoryList.tsx` (`data-last-row` + `tabIndex={-1}` on the last rendered item only).
+- **Pattern**: when a removable control region can own focus, latch `focusInsideRef` on `focusCapture` (cleared on blurCapture leaving the region) and track `controlsMountedRef` across mode transitions. On the mounted→unmounted transition (or full unmount while focus was inside), call an injected `focusLastRow()` that focuses `[data-last-row]` else the transcript scroller with `preventScroll` — never let focus fall to `<body>`. The latch is what makes React 19 StrictMode mount replay safe: cleanup fires on a dock that never owned focus and must not steal it.
+- **Test seam**: pane/room tests drive the fallback by flipping `runStatus`/`isLive` live→terminal with focus inside the dock — no network needed. The polling/isolation tests are timing-bound under this host's ~100 load; treat 5s per-test timeouts as environmental and re-run (see US-004 learnings).
+
 ### Cross-worktree shared stash list (US-003 hazard)
 - **Where**: `git stash` — the stash list is repo-wide, shared across ALL worktrees of this checkout.
 - **Pattern**: NEVER bare `git stash pop` here. Another ralph worktree (e.g. `archon/thread-5da49924` holding `ralph-unblock:US-004`) can push a stash between your `git stash push` and `pop` — bare pop then applies THEIR stash and conflicts. Always `git stash list` first and `git stash pop stash@{N}` with the exact index of your `ralph-unblock:<story>` entry; leave foreign entries untouched. lint-staged also briefly creates its own backup stash during commits.
@@ -131,5 +136,40 @@
 - `bun --filter @archon/server dev` cannot detect the worktree (cwd is packages/server) → always sets port 3090; use `PORT=` explicitly (see patterns).
 - **Blocker Ledger**: BLOCKER US-003 | gate=`cd packages/web && bun run type-check` | cause=pre-existing TS2322 at ConsoleNodeRoom.test.tsx:2966 (`execution?: ...|undefined` vs required `execution: ...|null`), identical fingerprint on clean base with story stashed, culprit file outside story diff | action=fixed via `execution: null` default in toolItem() base, separate `chore(unblock)` commit 2b9f1e52 | 2026-09-19
 - git stash list is shared across worktrees — a foreign `ralph-unblock:US-004` stash (worktree thread-5da49924) was left untouched; always pop by exact index (see patterns).
+
+---
+
+## 2026-09-19 — US-004: Both web docks, accessibility, and visual states
+
+**Status**: PASSED (commit 181ae601)
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — `SteeringSubState`, `SteeringAgentMode`, separate `sendInFlight`/`interruptInFlight`, `inFlightBatch` snapshot/restore, intent-aware receipts (`queued`/`awaiting_send_now`), `syncProjectedSubState`, `beginInterrupt`/`resolveInterruptOutcome`/`resolveInterruptError`, `beginSendNow`/`resolveSendNowSuccess`/`resolveSendNowFailure`, Send-now/Queue accessible-name + band/list label helpers, exact copy constants, `SteeringRequestError` rename + `toSteeringRequestError`/`toSteeringRefusal` normalizers
+- `packages/web/src/lib/steering-dock.test.ts` — +30 shared-logic tests covering mode derivation, projection sync, every interrupt resolution, Queue-during-interrupting, Send-now non-blank gate, batch success/failure/retry-id stability, duplicate-receipt dedupe, exact strings
+- `packages/web/src/lib/api.ts` — `interruptNode` typed helper (POST …/interrupt, SteeringRequestError normalization); sendNodeGuidance re-pointed at renamed normalizer
+- `packages/web/src/experiments/console/skills/runs.ts` — console-owned `interruptNode` via `requestJson`, same normalization
+- `packages/web/src/components/workflows/ComposerDock.tsx` — Stop/Stopping + Queue/Send-now control row (aria-disabled only, 32px targets, 84px send min-width, bordered transparent, motion-reduce), queue-during-interrupting, optimistic Send-now batch with failure restore + stable retry id, idle disclosure, single role=status + role=alert split, StrictMode-safe focus-ownership tracking (focusInsideRef/controlsMountedRef) so unmount/mode-transition moves focus via injected `focusLastRow` without mount-replay stealing it
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — +15 dock tests incl. deferred-interrupt/send races, refusals (409/422/network), Send-now batch restore + retry-id reuse
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` + test — same anatomy/behavior on console-owned seams (`!`-important accent rings per console token rules), 32 dock tests
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `data-last-row` + `tabIndex={-1}` marker on the actual last rendered history item (never Tab order)
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — same marker, last *rendered* item computed across visibility filters + after-content rows (`afterById` memo so renderAfterItem runs once per item)
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx`, `ConsoleNodeRoom.tsx` — pass `subState` projection + `focusLastRow` (last `[data-last-row]` else scroller, `preventScroll`)
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`, `NodeRoom.test.tsx`, `ConsoleNodeRoom.test.tsx` — projection wiring (Stop / Send-now / disclosure), dock-removal focus → last row, empty-transcript focus → scroller, last-row marker markup, sibling-ask draft-aware aria-disabled
+
+**Acceptance criteria verified**:
+- [x] shared state machine: sub-state, split in-flight flags, interrupting transient, intent receipts, reversible batch, exact copy, SteeringRequestError rename through both request layers
+- [x] derived modes: absent projection → queue-only (not detached); generating → Stop+Queue; interrupting → focusable Stopping… + usable Queue; idle → Send-now + disclosure + will-send band
+- [x] interrupt flow: one announcement, suppressed repeats, idle→focus last row, generating→composite announcement no fake row, 409/422/network refusal paths with draft retained
+- [x] Queue during interrupting guarded only by shared predicate; receipts re-label on idle resolution
+- [x] Send now: non-blank gate, batch snapshot/optimistic clear, only-new-draft POST + stable retry id, success discard/generating announce, failure restore-front + `couldn't send · back in the queue` role=alert, retry reuses id
+- [x] anatomy + styling identical both shells; band headers lowercase-DOM/uppercase-CSS; list labels; no third dock; console-isolation green
+- [x] focus: one polite status per transition; failure via role=alert; last-row programmatic focus, scroller fallback, never <body>
+- [x] gate commands: `bun test src/lib/steering-dock.test.ts` (69 pass), legacy trio (136 pass), console trio (141 pass), `bun run type-check` (clean); eslint + prettier clean on all touched files
+
+**Learnings**:
+- React 19 runs deletion cleanups before DOM removal — `el.contains(document.activeElement)` still works in unmount cleanups; pair it with a `focusInsideRef` latch (set on focusCapture) or StrictMode mount replay steals focus the dock never owned.
+- `renderToStaticMarkup` pins exact wrapper markup — adding `data-last-row`/`tabIndex` to the last item's div breaks sibling markup assertions; scope tabindex counts to the tag (`/<h3[^>]*tabindex/`).
+- The shared submit predicate (non-blank draft) means `aria-disabled` is true on a blank-draft Queue — tests asserting "not blocked" must type a draft first, otherwise they can't distinguish ask-block from empty-draft.
+- **Environmental**: this host runs at load ~100 (other worktrees' rustc/Chrome/stale bun-test processes). `ConsoleNodeRoom > polls live agent rooms` and `console-isolation` are I/O/timing-bound and exceed bun's default 5s per-test budget under load — both pass with `--timeout 60000` and passed in the final full-suite run once stale `bun test` processes (139+ CPU-min each) were killed. Not a regression: measured 12.9s test-internal on the clean base.
+- lint-staged creates a backup stash during commit — the shared-stash-list hazard from US-003 applies here too.
 
 ---
