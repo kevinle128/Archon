@@ -285,14 +285,8 @@ export interface QueuedGuidanceRow {
   readonly message: string;
 }
 
-/**
- * A queue snapshot tagged with the `queueGeneration` captured when its
- * request fired. `applyQueueSnapshot` discards it unless the generation still
- * matches — a local send/withdraw that resolved mid-flight wins over a stale
- * read.
- */
+/** The queue-read wire payload: only still-pending rows in receipt order. */
 export interface QueueSnapshot {
-  readonly generation: number;
   readonly queued: readonly QueuedGuidanceRow[];
 }
 
@@ -302,16 +296,17 @@ export interface QueueSnapshot {
  * predates this tab's latest resolved mutation and must not resurrect or
  * drop rows. On match, `sent` is replaced wholesale with the server-ordered
  * queued receipts; `inFlight`, `pendingRetry`, `refusal`,
- * `withdrawingMessageId`, and `queueGeneration` are preserved. An identical
- * snapshot returns the identical state object so React skips a render. The
- * draft, sessionStorage, and a stored refusal are never touched — the server
- * has no opinion on any of them.
+ * `withdrawingMessageId`, and `queueGeneration` are preserved exactly.
+ * Identical ids, text, and order return the identical state object so React
+ * skips a render. The draft, sessionStorage, and a stored refusal are never
+ * touched — the server has no opinion on any of them.
  */
 export function applyQueueSnapshot(
   state: SteeringDockState,
-  snapshot: QueueSnapshot
+  snapshot: QueueSnapshot,
+  generationAtRequest: number
 ): SteeringDockState {
-  if (snapshot.generation !== state.queueGeneration) return state;
+  if (generationAtRequest !== state.queueGeneration) return state;
   const nextSent: LocalSentReceipt[] = snapshot.queued.map(row => ({
     messageId: row.message_id,
     message: row.message,
@@ -327,26 +322,22 @@ export function applyQueueSnapshot(
 }
 
 /**
- * Where focus goes after a snapshot replaces the queue: when the focused
- * row's delete button vanished because another operator/tab withdrew the
- * message, move to the next surviving row's delete button in the
- * pre-snapshot order, else the previous surviving one, else the composer
- * field. A surviving row keeps focus; an unknown focused id resolves to the
- * field. Never returns a `<body>` target — there is always an explicit
- * destination.
+ * Where focus goes after a snapshot replaces the queue. Returns null when
+ * nothing was focused or the focused row survived — no DOM move is needed.
+ * When another operator/tab withdrew the focused row, pick the nearest
+ * surviving next id in the pre-snapshot order, then the nearest surviving
+ * previous id, then the composer field — skipping siblings removed by the
+ * same snapshot. Never returns a `<body>` target: a moved focus always
+ * lands on an explicit destination.
  */
-export function focusTargetAfterSnapshot(input: {
-  /** Queue order before the snapshot was applied. */
-  readonly previousIds: readonly string[];
-  /** Queue order after the snapshot was applied. */
-  readonly nextIds: readonly string[];
-  /** The row whose delete button held focus, or null when focus was elsewhere. */
-  readonly focusedId: string | null;
-}): RemovalFocusTarget {
-  const { previousIds, nextIds, focusedId } = input;
-  if (focusedId === null) return { kind: 'field' };
-  if (nextIds.includes(focusedId)) return { kind: 'delete', messageId: focusedId };
-  const index = previousIds.indexOf(focusedId);
+export function focusTargetAfterSnapshot(
+  previousIds: readonly string[],
+  nextIds: readonly string[],
+  focusedMessageId: string | null
+): RemovalFocusTarget | null {
+  if (focusedMessageId === null) return null;
+  if (nextIds.includes(focusedMessageId)) return null;
+  const index = previousIds.indexOf(focusedMessageId);
   if (index === -1) return { kind: 'field' };
   for (let i = index + 1; i < previousIds.length; i++) {
     if (nextIds.includes(previousIds[i])) return { kind: 'delete', messageId: previousIds[i] };
@@ -357,79 +348,83 @@ export function focusTargetAfterSnapshot(input: {
   return { kind: 'field' };
 }
 
-/** Timer seams so tests can drive the poll deterministically. */
-export interface QueuePollingTimers {
-  readonly setTimeout: (fn: () => void, ms: number) => unknown;
-  readonly clearTimeout: (handle: unknown) => void;
-}
-
-export interface StartQueuePollingOptions {
+export interface QueuePollingOptions {
   /** One queue read; resolves with the wire payload, rejects on any failure. */
-  readonly read: (
-    signal: AbortSignal
-  ) => Promise<{ readonly queued: readonly QueuedGuidanceRow[] }>;
+  readonly read: (signal: AbortSignal) => Promise<QueueSnapshot>;
   /** The dock's current `queueGeneration`, sampled as each request fires. */
-  readonly generation: () => number;
-  /** Receives the generation-tagged snapshot for each 200. */
-  readonly onSnapshot: (snapshot: QueueSnapshot) => void;
-  /** Reconcile cadence; defaults to ~1s. */
-  readonly intervalMs?: number;
-  readonly timers?: QueuePollingTimers;
+  readonly currentGeneration: () => number;
+  /**
+   * Receives each 200 payload plus the generation captured when its request
+   * fired — the pair `applyQueueSnapshot` needs to discard a stale read.
+   */
+  readonly onSnapshot: (snapshot: QueueSnapshot, generationAtRequest: number) => void;
+  /** Reconcile cadence (~1s in the docks). */
+  readonly intervalMs: number;
+  readonly setTimer?: typeof setTimeout;
+  readonly clearTimer?: typeof clearTimeout;
 }
-
-const QUEUE_POLL_INTERVAL_MS = 1000;
-// Statuses that end the poll: malformed, refused, gone, or finished — the
-// dock only learns these through the read, so retrying would spin forever.
-// Everything else (422 detached, 0 transport, 500 server) retries.
-const QUEUE_POLL_STOP_STATUSES: ReadonlySet<number> = new Set([400, 401, 403, 404, 409]);
 
 /**
  * Framework-free queue reconcile loop: fires one read immediately, then
- * schedules the next read only after the current one settles — requests
- * never overlap. Each request tags its snapshot with the generation sampled
- * at fire time; retryable failures reschedule silently; stop statuses end
- * the loop. The returned cleanup aborts the in-flight request, clears the
- * pending timer, and suppresses any late settle.
+ * schedules the next read only after the current promise settles — requests
+ * never overlap. Each request samples `currentGeneration` at fire time and
+ * hands it to `onSnapshot` so the caller can discard a stale read.
+ * Synchronous throws and rejections both normalize through
+ * `toSteeringSendError`: 422, transport (0), and 5xx reschedule silently;
+ * any other 4xx stops the loop without a snapshot callback. The returned
+ * cleanup aborts the in-flight request, clears the pending timer, and
+ * suppresses every late settle — an abort caused by stop() never schedules
+ * a retry. No read-error callback exists because Story 2.9 adds no
+ * read-specific UI.
  */
-export function startQueuePolling(options: StartQueuePollingOptions): () => void {
-  const intervalMs = options.intervalMs ?? QUEUE_POLL_INTERVAL_MS;
-  const timers: QueuePollingTimers = options.timers ?? {
-    setTimeout: (fn, ms): unknown => setTimeout(fn, ms),
-    clearTimeout: (handle): void => {
-      clearTimeout(handle as Parameters<typeof clearTimeout>[0]);
-    },
-  };
+export function startQueuePolling(options: QueuePollingOptions): () => void {
+  const setTimer = options.setTimer ?? setTimeout;
+  const clearTimer = options.clearTimer ?? clearTimeout;
   let stopped = false;
   let epoch = 0;
   let controller: AbortController | null = null;
-  let timer: unknown = null;
+  let timer: ReturnType<typeof setTimeout> | null = null;
 
   const schedule = (): void => {
     if (stopped) return;
-    timer = timers.setTimeout(tick, intervalMs);
+    timer = setTimer(tick, options.intervalMs);
   };
 
   const tick = (): void => {
     if (stopped) return;
     const myEpoch = ++epoch;
-    const generation = options.generation();
+    const generationAtRequest = options.currentGeneration();
     const request = new AbortController();
     controller = request;
-    void options.read(request.signal).then(
-      payload => {
+
+    const settle = (error: unknown): void => {
+      if (stopped || epoch !== myEpoch) return;
+      controller = null;
+      const status = toSteeringSendError(error).status;
+      const retryable = status === 422 || status === 0 || status >= 500;
+      if (!retryable) {
+        stopped = true;
+        return;
+      }
+      schedule();
+    };
+
+    let payload: Promise<QueueSnapshot>;
+    try {
+      payload = options.read(request.signal);
+    } catch (error: unknown) {
+      settle(error);
+      return;
+    }
+    void payload.then(
+      snapshot => {
         if (stopped || epoch !== myEpoch) return;
         controller = null;
-        options.onSnapshot({ generation, queued: payload.queued });
+        options.onSnapshot(snapshot, generationAtRequest);
         schedule();
       },
       (error: unknown) => {
-        if (stopped || epoch !== myEpoch) return;
-        controller = null;
-        if (QUEUE_POLL_STOP_STATUSES.has(toSteeringSendError(error).status)) {
-          stopped = true;
-          return;
-        }
-        schedule();
+        settle(error);
       }
     );
   };
@@ -442,7 +437,7 @@ export function startQueuePolling(options: StartQueuePollingOptions): () => void
     controller?.abort();
     controller = null;
     if (timer !== null) {
-      timers.clearTimeout(timer);
+      clearTimer(timer);
       timer = null;
     }
   };

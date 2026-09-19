@@ -33,7 +33,6 @@ import {
   toSteeringRefusal,
   toSteeringSendError,
   type LocalSentReceipt,
-  type QueuePollingTimers,
   type QueuedGuidanceRow,
   type SteeringDockState,
 } from './steering-dock';
@@ -551,20 +550,18 @@ describe('queueGeneration', () => {
     expect(resolveWithdrawSuccess(idle, 'a')).toBe(idle);
   });
 });
-
 describe('applyQueueSnapshot', () => {
-  function snapshot(generation: number, rows: readonly QueuedGuidanceRow[]) {
-    return { generation, queued: rows };
-  }
-
-  test('replaces sent wholesale with the server-ordered receipts', () => {
+  test('replaces sent wholesale with the server-ordered receipts, including one this tab did not send', () => {
     const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')]);
     const next = applyQueueSnapshot(
       state,
-      snapshot(0, [
-        { message_id: 'b', message: 'beta' },
-        { message_id: 'c', message: 'gamma-remote' },
-      ])
+      {
+        queued: [
+          { message_id: 'b', message: 'beta' },
+          { message_id: 'c', message: 'gamma-remote' },
+        ],
+      },
+      0
     );
     expect(next.sent).toEqual([receipt('b', 'beta'), receipt('c', 'gamma-remote')]);
   });
@@ -578,10 +575,13 @@ describe('applyQueueSnapshot', () => {
     });
     const next = applyQueueSnapshot(
       state,
-      snapshot(0, [
-        { message_id: 'a', message: 'alpha' },
-        { message_id: 'b', message: 'beta' },
-      ])
+      {
+        queued: [
+          { message_id: 'a', message: 'alpha' },
+          { message_id: 'b', message: 'beta' },
+        ],
+      },
+      0
     );
     expect(next).toBe(state);
   });
@@ -592,10 +592,13 @@ describe('applyQueueSnapshot', () => {
     // since, so the read must not resurrect 'b' or drop 'a'.
     const next = applyQueueSnapshot(
       state,
-      snapshot(2, [
-        { message_id: 'b', message: 'beta' },
-        { message_id: 'a', message: 'alpha' },
-      ])
+      {
+        queued: [
+          { message_id: 'b', message: 'beta' },
+          { message_id: 'a', message: 'alpha' },
+        ],
+      },
+      2
     );
     expect(next).toBe(state);
     expect(next.sent).toEqual([receipt('a', 'alpha')]);
@@ -609,7 +612,7 @@ describe('applyQueueSnapshot', () => {
       withdrawingMessageId: 'a',
       queueGeneration: 5,
     });
-    const next = applyQueueSnapshot(state, snapshot(5, [{ message_id: 'b', message: 'beta' }]));
+    const next = applyQueueSnapshot(state, { queued: [{ message_id: 'b', message: 'beta' }] }, 5);
     expect(next.sent).toEqual([receipt('b', 'beta')]);
     expect(next.inFlight).toBe(true);
     expect(next.pendingRetry).toEqual({ messageId: 'p', message: 'wip' });
@@ -624,7 +627,8 @@ describe('applyQueueSnapshot', () => {
     });
     const afterSnapshot = applyQueueSnapshot(
       state,
-      snapshot(0, [{ message_id: 'b', message: 'beta' }])
+      { queued: [{ message_id: 'b', message: 'beta' }] },
+      0
     );
     expect(afterSnapshot.sent).toEqual([receipt('b', 'beta')]);
     expect(afterSnapshot.withdrawingMessageId).toBe('a');
@@ -645,10 +649,13 @@ describe('applyQueueSnapshot', () => {
     // before the POST response.
     const afterSnapshot = applyQueueSnapshot(
       state,
-      snapshot(0, [
-        { message_id: 'a', message: 'alpha' },
-        { message_id: 'p', message: 'pending' },
-      ])
+      {
+        queued: [
+          { message_id: 'a', message: 'alpha' },
+          { message_id: 'p', message: 'pending' },
+        ],
+      },
+      0
     );
     expect(afterSnapshot.sent).toEqual([receipt('a', 'alpha'), receipt('p', 'pending')]);
     const resolved = resolveGuidanceSuccess(afterSnapshot, { message_id: 'p' });
@@ -658,66 +665,40 @@ describe('applyQueueSnapshot', () => {
 });
 
 describe('focusTargetAfterSnapshot', () => {
-  test('a surviving focused row keeps its delete button', () => {
-    expect(
-      focusTargetAfterSnapshot({ previousIds: ['a', 'b'], nextIds: ['a', 'b'], focusedId: 'b' })
-    ).toEqual({ kind: 'delete', messageId: 'b' });
-    // Reordered but still present — focus stays on the same row's button.
-    expect(
-      focusTargetAfterSnapshot({ previousIds: ['a', 'b'], nextIds: ['b', 'a'], focusedId: 'b' })
-    ).toEqual({ kind: 'delete', messageId: 'b' });
+  test('returns null when nothing is focused or the focused row survived', () => {
+    expect(focusTargetAfterSnapshot(['a', 'b'], ['a', 'b'], 'b')).toBeNull();
+    // Reordered but still present — focus stays put, no DOM move needed.
+    expect(focusTargetAfterSnapshot(['a', 'b'], ['b', 'a'], 'b')).toBeNull();
+    expect(focusTargetAfterSnapshot(['a'], [], null)).toBeNull();
   });
 
   test('a removed row moves focus to the next surviving row, else the previous', () => {
-    expect(
-      focusTargetAfterSnapshot({
-        previousIds: ['a', 'b', 'c'],
-        nextIds: ['a', 'c'],
-        focusedId: 'b',
-      })
-    ).toEqual({ kind: 'delete', messageId: 'c' });
-    expect(
-      focusTargetAfterSnapshot({
-        previousIds: ['a', 'b', 'c'],
-        nextIds: ['a', 'b'],
-        focusedId: 'c',
-      })
-    ).toEqual({ kind: 'delete', messageId: 'b' });
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c'], ['a', 'c'], 'b')).toEqual({
+      kind: 'delete',
+      messageId: 'c',
+    });
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c'], ['a', 'b'], 'c')).toEqual({
+      kind: 'delete',
+      messageId: 'b',
+    });
   });
 
   test('multiple removals scan to the nearest survivor in each direction', () => {
     // Focused 'b'; 'b' and 'c' both gone — next survivor is 'd'.
-    expect(
-      focusTargetAfterSnapshot({
-        previousIds: ['a', 'b', 'c', 'd'],
-        nextIds: ['a', 'd'],
-        focusedId: 'b',
-      })
-    ).toEqual({ kind: 'delete', messageId: 'd' });
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c', 'd'], ['a', 'd'], 'b')).toEqual({
+      kind: 'delete',
+      messageId: 'd',
+    });
     // Focused 'c'; everything after gone — previous survivor is 'a'.
-    expect(
-      focusTargetAfterSnapshot({
-        previousIds: ['a', 'b', 'c'],
-        nextIds: ['a'],
-        focusedId: 'c',
-      })
-    ).toEqual({ kind: 'delete', messageId: 'a' });
+    expect(focusTargetAfterSnapshot(['a', 'b', 'c'], ['a'], 'c')).toEqual({
+      kind: 'delete',
+      messageId: 'a',
+    });
   });
 
-  test('an only-row removal, an unknown focused id, and no focus resolve to the field — never body', () => {
-    expect(focusTargetAfterSnapshot({ previousIds: ['a'], nextIds: [], focusedId: 'a' })).toEqual({
-      kind: 'field',
-    });
-    expect(
-      focusTargetAfterSnapshot({
-        previousIds: ['a', 'b'],
-        nextIds: ['a'],
-        focusedId: 'missing',
-      })
-    ).toEqual({ kind: 'field' });
-    expect(focusTargetAfterSnapshot({ previousIds: ['a'], nextIds: [], focusedId: null })).toEqual({
-      kind: 'field',
-    });
+  test('an only-row removal and an unknown focused id resolve to the field — never body', () => {
+    expect(focusTargetAfterSnapshot(['a'], [], 'a')).toEqual({ kind: 'field' });
+    expect(focusTargetAfterSnapshot(['a', 'b'], ['a'], 'missing')).toEqual({ kind: 'field' });
   });
 });
 
@@ -739,7 +720,8 @@ describe('startQueuePolling', () => {
   }
 
   interface FakeClock {
-    timers: QueuePollingTimers;
+    setTimer: typeof setTimeout;
+    clearTimer: typeof clearTimeout;
     pending: Map<number, { fn: () => void; ms: number }>;
     runNext: () => void;
   }
@@ -747,16 +729,16 @@ describe('startQueuePolling', () => {
   function fakeClock(): FakeClock {
     let nextHandle = 0;
     const pending = new Map<number, { fn: () => void; ms: number }>();
-    const timers: QueuePollingTimers = {
-      setTimeout: (fn, ms) => {
-        const handle = ++nextHandle;
-        pending.set(handle, { fn, ms });
-        return handle;
-      },
-      clearTimeout: handle => {
-        pending.delete(handle as number);
-      },
-    };
+    const setTimer = ((handler: TimerHandler, timeout?: number): number => {
+      const handle = ++nextHandle;
+      const fn: () => void =
+        typeof handler === 'function' ? (handler as () => void) : (): void => undefined;
+      pending.set(handle, { fn, ms: timeout ?? 0 });
+      return handle;
+    }) as typeof setTimeout;
+    const clearTimer = ((handle: unknown): void => {
+      pending.delete(handle as number);
+    }) as typeof clearTimeout;
     const runNext = (): void => {
       const handle = pending.keys().next().value;
       if (handle === undefined) throw new Error('no scheduled timer');
@@ -765,7 +747,7 @@ describe('startQueuePolling', () => {
       pending.delete(handle);
       entry.fn();
     };
-    return { timers, pending, runNext };
+    return { setTimer, clearTimer, pending, runNext };
   }
 
   const flush = async (): Promise<void> => {
@@ -774,29 +756,45 @@ describe('startQueuePolling', () => {
     await Promise.resolve();
   };
 
-  test('fires the first read immediately and schedules the next only after it settles', async () => {
-    const clock = fakeClock();
+  function pollHarness(clock: FakeClock, onSnapshot: (gen: number) => void, initialGeneration = 0) {
     const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
-    const snapshots: number[] = [];
-    let generation = 7;
+    let generation = initialGeneration;
     const stop = startQueuePolling({
       read: () => {
         const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
         reads.push(d);
         return d.promise;
       },
-      generation: () => generation,
-      onSnapshot: snapshot => {
-        snapshots.push(snapshot.generation);
+      currentGeneration: () => generation,
+      onSnapshot: (_snapshot, generationAtRequest) => {
+        onSnapshot(generationAtRequest);
       },
-      timers: clock.timers,
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
     });
+    return {
+      reads,
+      stop,
+      setGeneration: (g: number): void => {
+        generation = g;
+      },
+    };
+  }
+
+  test('fires the first read immediately and schedules the next only after it settles', async () => {
+    const clock = fakeClock();
+    const snapshots: number[] = [];
+    const { reads, stop, setGeneration } = pollHarness(
+      clock,
+      gen => {
+        snapshots.push(gen);
+      },
+      7
+    );
     try {
       // Immediate first read — before any timer could have fired.
       expect(reads).toHaveLength(1);
-      expect(clock.pending.size).toBe(0);
-
-      // While the request is in flight nothing is scheduled: no overlap.
       expect(clock.pending.size).toBe(0);
 
       reads[0].resolve({ queued: [{ message_id: 'a', message: 'alpha' }] });
@@ -806,9 +804,11 @@ describe('startQueuePolling', () => {
 
       // The scheduled tick fires the second read; it carries whatever the
       // generation is at fire time.
-      generation = 9;
+      setGeneration(9);
       clock.runNext();
       expect(reads).toHaveLength(2);
+      // While the request is in flight nothing new is scheduled: no overlap.
+      expect(clock.pending.size).toBe(0);
       reads[1].resolve({ queued: [] });
       await flush();
       expect(snapshots).toEqual([7, 9]);
@@ -817,27 +817,18 @@ describe('startQueuePolling', () => {
     }
   });
 
-  test('retries 422, transport (0), and 500 failures without calling onSnapshot', async () => {
+  test('retries 422, transport (0), and 5xx failures without calling onSnapshot', async () => {
     const clock = fakeClock();
-    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
     const snapshots: unknown[] = [];
-    const stop = startQueuePolling({
-      read: () => {
-        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
-        reads.push(d);
-        return d.promise;
-      },
-      generation: () => 0,
-      onSnapshot: snapshot => {
-        snapshots.push(snapshot);
-      },
-      timers: clock.timers,
+    const { reads, stop } = pollHarness(clock, gen => {
+      snapshots.push(gen);
     });
     try {
       for (const error of [
         new SteeringSendError(422, 'not_steerable_here', 'detached'),
         new Error('offline'),
         new SteeringSendError(500, 'internal_error', 'oops'),
+        new SteeringSendError(503, 'internal_error', 'busy'),
       ]) {
         const attempt = reads.length;
         reads[attempt - 1].reject(error);
@@ -853,22 +844,40 @@ describe('startQueuePolling', () => {
     }
   });
 
+  test('a synchronous throw from read is normalized and retried like a rejection', () => {
+    const clock = fakeClock();
+    const snapshots: unknown[] = [];
+    let calls = 0;
+    const stop = startQueuePolling({
+      read: () => {
+        calls++;
+        throw new SteeringSendError(422, 'not_steerable_here', 'detached');
+      },
+      currentGeneration: () => 0,
+      onSnapshot: snapshot => {
+        snapshots.push(snapshot);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      expect(calls).toBe(1);
+      expect(snapshots).toHaveLength(0);
+      expect(clock.pending.size).toBe(1);
+      clock.runNext();
+      expect(calls).toBe(2);
+    } finally {
+      stop();
+    }
+  });
+
   test('stops on 400, 401, 403, 404, and 409 — no reschedule, no snapshot', async () => {
     for (const status of [400, 401, 403, 404, 409]) {
       const clock = fakeClock();
-      const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
       const snapshots: unknown[] = [];
-      const stop = startQueuePolling({
-        read: () => {
-          const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
-          reads.push(d);
-          return d.promise;
-        },
-        generation: () => 0,
-        onSnapshot: snapshot => {
-          snapshots.push(snapshot);
-        },
-        timers: clock.timers,
+      const { reads, stop } = pollHarness(clock, gen => {
+        snapshots.push(gen);
       });
       reads[0].reject(new SteeringSendError(status, 'code', 'msg'));
       await flush();
@@ -880,9 +889,9 @@ describe('startQueuePolling', () => {
 
   test('cleanup aborts the in-flight request, clears the timer, and suppresses late settles', async () => {
     const clock = fakeClock();
-    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
     const signals: AbortSignal[] = [];
     const snapshots: unknown[] = [];
+    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
     const stop = startQueuePolling({
       read: signal => {
         signals.push(signal);
@@ -890,11 +899,13 @@ describe('startQueuePolling', () => {
         reads.push(d);
         return d.promise;
       },
-      generation: () => 0,
+      currentGeneration: () => 0,
       onSnapshot: snapshot => {
         snapshots.push(snapshot);
       },
-      timers: clock.timers,
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
     });
 
     // Settle the first read so a timer is pending, then stop mid-second-read.
@@ -912,7 +923,7 @@ describe('startQueuePolling', () => {
     expect(clock.pending.size).toBe(0);
     expect(reads).toHaveLength(2);
 
-    // A late reject is suppressed the same way.
+    // A late reject is suppressed the same way — no retry after abort.
     const clock2 = fakeClock();
     const reads2: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
     const stop2 = startQueuePolling({
@@ -921,9 +932,11 @@ describe('startQueuePolling', () => {
         reads2.push(d);
         return d.promise;
       },
-      generation: () => 0,
+      currentGeneration: () => 0,
       onSnapshot: () => undefined,
-      timers: clock2.timers,
+      intervalMs: 1000,
+      setTimer: clock2.setTimer,
+      clearTimer: clock2.clearTimer,
     });
     stop2();
     reads2[0].reject(new SteeringSendError(500, 'internal_error', 'oops'));
