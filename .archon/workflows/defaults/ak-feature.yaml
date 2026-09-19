@@ -305,7 +305,7 @@ nodes:
   - id: codex-final-fix
     description: Repair and verify the implementation produced by the Ralph loop.
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-5.6-terra 
     effort: xhigh
     context: fresh
     idle_timeout: 3600000
