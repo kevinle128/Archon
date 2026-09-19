@@ -189,24 +189,24 @@ Leave a comment citing it so nobody reintroduces full event-history reads.
 
 ### Key files
 
-| File | Role |
-| --- | --- |
-| `packages/workflows/src/steering-registry.ts` | `QueuedOperatorMessage`, `NodeSteeringHandle.snapshot()`, `withdraw()`, `drain()`, `SteeringRegistry.get()` — read only |
-| `packages/server/src/routes/api.ts` | send/withdraw route configs, `steeringError()`, pre-gate DELETE middleware — add GET route + middleware + handler |
-| `packages/server/src/routes/schemas/workflow.schemas.ts` | add params/row/response schemas after withdraw schemas |
-| `packages/server/src/routes/api.workflow-runs.test.ts` | `mockSteerableRun`, `steerEvent`, `queueSteerItem`, auth-gate setup — add GET describe block |
-| `packages/web/src/lib/api.ts` / `packages/web/src/experiments/console/skills/runs.ts` | `readNodeGuidanceQueue(runId, nodeId, { signal })` helpers; Console uses `requestJson`, never `@/lib/api` |
-| `packages/web/src/lib/api.generated.d.ts` | regenerate via `openapi-typescript` from live server; never hand-edit |
-| `packages/web/src/lib/steering-dock.ts` + `.test.ts` | generation, `applyQueueSnapshot`, `focusTargetAfterSnapshot`, `startQueuePolling` |
-| `packages/web/src/components/workflows/ComposerDock.tsx` + `.test.tsx` | Legacy wiring |
-| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` + `.test.tsx` | Console mirror |
-| `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`, `.../ConsoleNodeRoom.test.tsx` | strict queue-GET fetch stubs |
-| `e2e/fixtures/workflows/e2e-queue-guidance-pair.yaml`, `e2e/lib/playwright/archon-runtime.ts`, `e2e/ui/agent-queue-convergence.spec.ts` | new fixture, seed/exports, spec |
+| File                                                                                                                                    | Role                                                                                                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `packages/workflows/src/steering-registry.ts`                                                                                           | `QueuedOperatorMessage`, `NodeSteeringHandle.snapshot()`, `withdraw()`, `drain()`, `SteeringRegistry.get()` — read only |
+| `packages/server/src/routes/api.ts`                                                                                                     | send/withdraw route configs, `steeringError()`, pre-gate DELETE middleware — add GET route + middleware + handler       |
+| `packages/server/src/routes/schemas/workflow.schemas.ts`                                                                                | add params/row/response schemas after withdraw schemas                                                                  |
+| `packages/server/src/routes/api.workflow-runs.test.ts`                                                                                  | `mockSteerableRun`, `steerEvent`, `queueSteerItem`, auth-gate setup — add GET describe block                            |
+| `packages/web/src/lib/api.ts` / `packages/web/src/experiments/console/skills/runs.ts`                                                   | `readNodeGuidanceQueue(runId, nodeId, { signal })` helpers; Console uses `requestJson`, never `@/lib/api`               |
+| `packages/web/src/lib/api.generated.d.ts`                                                                                               | regenerate via `openapi-typescript` from live server; never hand-edit                                                   |
+| `packages/web/src/lib/steering-dock.ts` + `.test.ts`                                                                                    | generation, `applyQueueSnapshot`, `focusTargetAfterSnapshot`, `startQueuePolling`                                       |
+| `packages/web/src/components/workflows/ComposerDock.tsx` + `.test.tsx`                                                                  | Legacy wiring                                                                                                           |
+| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` + `.test.tsx`                                                 | Console mirror                                                                                                          |
+| `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`, `.../ConsoleNodeRoom.test.tsx`                                     | strict queue-GET fetch stubs                                                                                            |
+| `e2e/fixtures/workflows/e2e-queue-guidance-pair.yaml`, `e2e/lib/playwright/archon-runtime.ts`, `e2e/ui/agent-queue-convergence.spec.ts` | new fixture, seed/exports, spec                                                                                         |
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-| --- | --- | --- | --- |
-| US-001 | Queue snapshot route + shared reconciliation primitives | 1 | — |
-| US-002 | Both docks hydrate and reconcile the shared queue | 2 | US-001 |
-| US-003 | Multi-view E2E evidence and Story 2.9 closeout | 3 | US-001, US-002 |
+| ID     | Title                                                   | Phase | Depends on     |
+| ------ | ------------------------------------------------------- | ----- | -------------- |
+| US-001 | Queue snapshot route + shared reconciliation primitives | 1     | —              |
+| US-002 | Both docks hydrate and reconcile the shared queue       | 2     | US-001         |
+| US-003 | Multi-view E2E evidence and Story 2.9 closeout          | 3     | US-001, US-002 |

@@ -1,0 +1,91 @@
+{
+  "surface": "legacy",
+  "tag": "e42d1a585c24",
+  "nodeId": "steer-a",
+  "viewport": {
+    "width": 460,
+    "height": 900
+  },
+  "runId": "4ddcb28608bfec21a88b86a0eda65a38",
+  "identities": {
+    "starterA": true,
+    "starterB": true,
+    "teammate": false
+  },
+  "draftsBefore": {
+    "starterBField": "draft-alpha-e42d1a585c24",
+    "starterBStorage": "{\"draft\":\"draft-alpha-e42d1a585c24\",\"pendingRetry\":null}",
+    "teammateField": "draft-beta-e42d1a585c24",
+    "teammateStorage": "{\"draft\":\"draft-beta-e42d1a585c24\",\"pendingRetry\":null}"
+  },
+  "twoRow": {
+    "starterId": "34b9fce7-7404-480f-97db-83e55edd3d34",
+    "teammateId": "b5e970f4-c2fe-4ed9-a7fa-e9ca2bd6a343",
+    "orderedIds": ["34b9fce7-7404-480f-97db-83e55edd3d34", "b5e970f4-c2fe-4ed9-a7fa-e9ca2bd6a343"],
+    "visual": {
+      "starterA": {
+        "expectedCount": 2,
+        "geometry": {
+          "hasMaxH33vh": true,
+          "maxHeight": "297px",
+          "overflowY": "auto",
+          "bandText": "queued · 2starter-one-e42d1a585c24sentdeletedraft-beta-e42d1a585c24sentdelete",
+          "hasThisTabOnlyInBand": false
+        }
+      },
+      "starterB": {
+        "expectedCount": 2,
+        "geometry": {
+          "hasMaxH33vh": true,
+          "maxHeight": "297px",
+          "overflowY": "auto",
+          "bandText": "queued · 2starter-one-e42d1a585c24sentdeletedraft-beta-e42d1a585c24sentdelete",
+          "hasThisTabOnlyInBand": false
+        }
+      },
+      "teammate": {
+        "expectedCount": 2,
+        "geometry": {
+          "hasMaxH33vh": true,
+          "maxHeight": "297px",
+          "overflowY": "auto",
+          "bandText": "queued · 2starter-one-e42d1a585c24sentdeletedraft-beta-e42d1a585c24sentdelete",
+          "hasThisTabOnlyInBand": false
+        }
+      }
+    }
+  },
+  "activeBeforeFirstRemoval": "button:delete · starter-one-e42d1a585c24",
+  "activeAfterFirstRemoval": "button:delete · draft-beta-e42d1a585c24",
+  "oneRow": {
+    "orderedIds": ["b5e970f4-c2fe-4ed9-a7fa-e9ca2bd6a343"],
+    "visual": {
+      "expectedCount": 1,
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "bandText": "queued · 1draft-beta-e42d1a585c24sentdelete",
+        "hasThisTabOnlyInBand": false
+      }
+    },
+    "starterBDeleteCount": 0,
+    "teammateDeleteCount": 0
+  },
+  "activeAfterEmpty": "textarea",
+  "final": {
+    "orderedIds": [],
+    "drafts": {
+      "starterBField": "draft-alpha-e42d1a585c24",
+      "starterBStorage": "{\"draft\":\"draft-alpha-e42d1a585c24\",\"pendingRetry\":null}",
+      "teammateField": ""
+    },
+    "requestCounts": {
+      "starterAGets": 4,
+      "starterBGets": 4,
+      "teammateGets": 4,
+      "starterBDeletes": 0,
+      "teammateDeletes": 1
+    }
+  }
+}

@@ -1,7 +1,7 @@
 ---
-title: "Plan issue 189: live queue across tabs and operators"
+title: 'Plan issue 189: live queue across tabs and operators'
 date: 2026-09-19
-summary: "Deep/TDD plan for the steering queue read route, snapshot reconciliation in both docks, and two-tab E2E; advisor review changed 422 handling to self-healing."
+summary: 'Deep/TDD plan for the steering queue read route, snapshot reconciliation in both docks, and two-tab E2E; advisor review changed 422 handling to self-healing.'
 ---
 
 # Plan issue 189: live queue across tabs and operators

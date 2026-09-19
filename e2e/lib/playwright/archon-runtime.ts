@@ -81,6 +81,14 @@ const TRANSCRIPT_DISPLAY_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-transcript-display.yaml'
 );
+const QUEUE_GUIDANCE_PAIR_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-queue-guidance-pair.yaml'
+);
 
 /** Name of the seeded workflow whose single AI node runs on the fake provider. */
 export const E2E_WORKFLOW_NAME = 'e2e-usage-record';
@@ -112,6 +120,9 @@ export const E2E_QUEUE_GUIDANCE_WORKFLOW_NAME = 'e2e-queue-guidance';
 export const E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME = 'e2e-queue-guidance-loop';
 export const QUEUE_GUIDANCE_NODE = 'steer-me';
 export const QUEUE_GUIDANCE_LOOP_NODE = 'steer-loop';
+export const E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME = 'e2e-queue-guidance-pair';
+export const QUEUE_GUIDANCE_PAIR_NODE_A = 'steer-a';
+export const QUEUE_GUIDANCE_PAIR_NODE_B = 'steer-b';
 export const E2E_TRANSCRIPT_DISPLAY_WORKFLOW_NAME = 'e2e-transcript-display';
 /** `loop_group` child carrying the one-string `output_format` — exercises nested definition resolution. */
 export const TRANSCRIPT_STRUCTURED_NODE = 'group.structured';
@@ -505,6 +516,11 @@ async function startArchonRuntime(
   writeFileSync(
     join(home, 'workflows', `${E2E_TRANSCRIPT_DISPLAY_WORKFLOW_NAME}.yaml`),
     readFileSync(TRANSCRIPT_DISPLAY_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME}.yaml`),
+    readFileSync(QUEUE_GUIDANCE_PAIR_WORKFLOW_FIXTURE)
   );
 
   writeFileSync(

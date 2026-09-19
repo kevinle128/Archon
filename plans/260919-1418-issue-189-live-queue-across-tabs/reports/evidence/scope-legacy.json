@@ -1,0 +1,28 @@
+{
+  "surface": "legacy",
+  "tag": "ad64bbc86587",
+  "nodeA": "steer-a",
+  "nodeB": "steer-b",
+  "viewport": {
+    "width": 460,
+    "height": 900
+  },
+  "runId": "283181bf6bbe35263db643e1005ca3fa",
+  "split": {
+    "aId": "985eb060-2ae8-4870-91db-71e2941ff4ff",
+    "bId": "b88ef6be-d109-445a-ba81-c600cdf90c4c",
+    "roomA": ["985eb060-2ae8-4870-91db-71e2941ff4ff"],
+    "roomB": ["b88ef6be-d109-445a-ba81-c600cdf90c4c"],
+    "serverA": ["985eb060-2ae8-4870-91db-71e2941ff4ff"],
+    "serverB": ["b88ef6be-d109-445a-ba81-c600cdf90c4c"]
+  },
+  "rehydrate": {
+    "pageAOnB": [],
+    "pageABack": ["985eb060-2ae8-4870-91db-71e2941ff4ff"],
+    "pageBThroughout": ["b88ef6be-d109-445a-ba81-c600cdf90c4c"],
+    "requestCounts": {
+      "pageAGetsNodeA": 1,
+      "pageBGetsNodeB": 0
+    }
+  }
+}

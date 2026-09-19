@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Dock poll effect samples generation via dockRef
+- **Where**: `ComposerDock.tsx` / `ConsoleComposerDock.tsx`
+- **Pattern**: `dockRef.current = dock` during render; poll effect deps are `runId,nodeId,readQueue,pollIntervalMs,pollingEnabled` only; `currentGeneration: () => dockRef.current.queueGeneration`; acceptance inside functional `setDock`.
+- **Example**: `return startQueuePolling({ read: signal => readQueue(runId, nodeId, { signal }), currentGeneration: () => dockRef.current.queueGeneration, onSnapshot, intervalMs: pollIntervalMs })`
+
 ### Queue snapshot hot path trusts close-before-terminal
 - **Where**: `packages/server/src/routes/api.ts` (readWorkflowNodeQueue handler)
 - **Pattern**: Live/parked handle → one `getWorkflowRun` + `registry.get` + `handle.snapshot()`; never list events on the 200 path. Cold path only when handle absent: project events for 404/409/422. Comment cites dag-executor close-before-terminal (~3290-3568, ~5669-5674, ~6868-7119).
@@ -55,3 +60,65 @@
 - Empty path segments never reach the Hono route; assert validation hook registration instead of fabricating empty-param cases.
 
 ---
+
+## 2026-09-19 — US-002: Both docks hydrate and reconcile the shared queue
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/ComposerDock.tsx` — readQueue/pollIntervalMs props, dockRef, startQueuePolling effect, data-message-id, focus scheduling via applyQueueSnapshot
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — Console mirror via ../skills/runs helper
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — default non-settling read + ten shared-queue cases
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` — mirrored ten cases
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — strict GET .../queue fetch stub
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — strict GET .../queue fetch stub
+
+**Acceptance criteria verified**:
+- [x] Both docks export ReadNodeGuidanceQueue and accept readQueue/pollIntervalMs defaults
+- [x] dockRef + pollingEnabled only for composer/blocked; effect deps exclude dock object
+- [x] onSnapshot captures focused delete id, applyQueueSnapshot in setDock, pendingFocus only on applied removal when ref null
+- [x] data-message-id on rows; copy/layout/hint unchanged
+- [x] Ten mirrored cases in both dock suites
+- [x] Test helpers default non-settling read
+- [x] Parent tests install strict queue-only fetch spy
+- [x] Markup contract (surface-elevated, 33vh, 24px delete targets) asserted
+- [x] Send/withdraw/detached/blocked/refusal behavior unchanged
+- [x] console-isolation green
+- [x] Validation: focused tests, @archon/web test, type-check, lint --max-warnings 0, build:web, playwright detached
+
+**Learnings**:
+- Controllable deferred reads need wait-for-pending before multi-snapshot resolves; pollIntervalMs:1 + settle helpers keep component tests deterministic.
+- Re-assigning nextSend without re-render does not change the dock prop — re-render with an explicit send override when seeding a refusal for read-error cases.
+- Parent production docks hit the default read helper; spy GET pathname ending /queue only and reject everything else.
+
+---
+
+## 2026-09-20 — US-003: Multi-view E2E evidence and Story 2.9 closeout
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/fixtures/workflows/e2e-queue-guidance-pair.yaml` — two parallel 45s e2e-fake nodes steer-a/steer-b
+- `e2e/lib/playwright/archon-runtime.ts` — fixture path, E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME + node ids, seed write
+- `e2e/ui/agent-queue-convergence.spec.ts` — converge + scope journeys for console/legacy
+- `plans/260919-1418-issue-189-live-queue-across-tabs/reports/acceptance.md` — Story 2.9 G/W/T → evidence map
+- `plans/260919-1418-issue-189-live-queue-across-tabs/reports/evidence/*` — per-surface JSON + named screenshots
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — only 2-9 backlog→done
+
+**Acceptance criteria verified**:
+- [x] Pair fixture + runtime seed/exports; existing fixtures untouched
+- [x] Parameterized converge journey: 3 views, identity proof, draft locality, ordered id convergence, remote withdraw DELETE=0, focus next→field
+- [x] Parameterized scope journey: A/B isolation + A→B→A keyed rehydrate
+- [x] expect.poll on DOM/server id arrays; POST/DELETE waiters armed before action
+- [x] Adapted helpers + geometry max-h-[33vh] assertion
+- [x] Visual evidence 460×900 both shells + Console 1440×900; unique measurement JSON files
+- [x] acceptance.md maps four Story 2.9 groups
+- [x] build:web, e2e typecheck, new spec 4/4, steering|withdraw 20/20, bun run validate
+- [x] sprint-status 2-9 only → done
+- [x] PR not opened here — parent Ralph workflow owns PR (hard rule)
+
+**Learnings**:
+- Never wait on the “next” GET during continuous polling; poll complete id arrays.
+- Worker-scoped archon runtime requires unique run/message/evidence names + explicit context/listener cleanup.
+- Running the full steering grep rewrites unrelated prior-plan evidence PNGs; stage only this story’s paths.
+
+---
+
