@@ -15,7 +15,18 @@
  */
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  accessSync,
+  constants,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { createRequire } from 'node:module';
 import { homedir, platform as osPlatform, tmpdir, arch as osArch } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +36,6 @@ const EXPECTED_SDK_VERSION = '0.144.5';
 const DECLARED_SDK_RANGE = '^0.144.5';
 const SETTLEMENT_TIMEOUT_MS = 60_000;
 const RESUME_TIMEOUT_MS = 90_000;
-const CASE_TIMEOUT_MS = 180_000;
 const CLEANUP_WAIT_MS = 2_000;
 const SURVIVOR_TERM_WAIT_MS = 1_000;
 const LONG_COMMAND_SECONDS = 120;
@@ -129,6 +139,12 @@ interface UnhandledRecorder {
   rejections: number;
   exceptions: number;
   restore: () => void;
+}
+
+interface RecordedHostSection {
+  content: string;
+  overall: 'PASS' | 'BLOCKED';
+  terminalSummary: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -250,12 +266,25 @@ function sleep(ms: number): Promise<void> {
   return promise;
 }
 
-function withTimeout<T>(ms: number, label: string, work: Promise<T>): Promise<T> {
+function withTimeout<T>(args: {
+  ms: number;
+  label: string;
+  work: Promise<T>;
+  onTimeout?: () => void;
+}): Promise<T> {
   const { promise, resolve, reject } = Promise.withResolvers<T>();
   const timer = setTimeout(() => {
-    reject(new Error(`TimeoutError: ${label} exceeded ${ms}ms`));
-  }, ms);
-  work.then(
+    try {
+      args.onTimeout?.();
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    // The work promise remains observed below. Its later rejection cannot
+    // become an unhandled rejection after this diagnostic timeout fires.
+    reject(new Error(`TimeoutError: ${args.label} exceeded ${args.ms}ms`));
+  }, args.ms);
+  args.work.then(
     value => {
       clearTimeout(timer);
       resolve(value);
@@ -317,9 +346,11 @@ function sanitizeErrorMessage(message: string): string {
 
 function extractStableFragments(sanitized: string): string[] {
   const fragments: string[] = [];
-  // Exact SDK abort throw shape from @openai/codex-sdk 0.144.5:
-  //   `Codex Exec exited with signal ${signal}: ${stderr}`
-  //   `Codex Exec exited with code ${code}: ${stderr}`
+  if (sanitized === 'The operation was aborted.') {
+    fragments.push('The operation was aborted.');
+  }
+  // The Codex launcher can include stderr after these stable prefixes. Keep
+  // only the discriminant; its trailing text may contain workspace details.
   const signalMatch = /Codex Exec exited with signal ([A-Za-z0-9_]+)/.exec(sanitized);
   if (signalMatch) {
     fragments.push('Codex Exec exited with signal');
@@ -332,11 +363,14 @@ function extractStableFragments(sanitized: string): string[] {
   }
   if (/AbortError/i.test(sanitized)) fragments.push('AbortError');
   if (/Query aborted/i.test(sanitized)) fragments.push('Query aborted');
-  if (fragments.length === 0 && sanitized.length > 0) {
-    // Keep a short head as a last-resort discriminant (already sanitized).
-    fragments.push(sanitized.slice(0, 80));
-  }
   return [...new Set(fragments)];
+}
+
+function safeTerminalMessage(sanitized: string): string | null {
+  if (sanitized === 'The operation was aborted.' || sanitized === 'Query aborted') {
+    return sanitized;
+  }
+  return null;
 }
 
 function terminalFromError(error: unknown): TerminalEvidence {
@@ -351,12 +385,15 @@ function terminalFromError(error: unknown): TerminalEvidence {
   }
   if (error instanceof Error) {
     const sanitized = sanitizeErrorMessage(error.message);
+    const messageFragments = extractStableFragments(sanitized);
     return {
       kind: 'throw',
       errorName: error.name,
       errorConstructor: error.constructor?.name ?? 'Error',
-      messageFragments: extractStableFragments(sanitized),
-      rawMessageSanitized: sanitized,
+      messageFragments,
+      // Never serialize an arbitrary SDK error. The known fragments above
+      // are sufficient Phase-2 evidence and cannot expose stderr contents.
+      rawMessageSanitized: safeTerminalMessage(sanitized),
     };
   }
   const sanitized = sanitizeErrorMessage(String(error));
@@ -365,8 +402,15 @@ function terminalFromError(error: unknown): TerminalEvidence {
     errorName: null,
     errorConstructor: null,
     messageFragments: extractStableFragments(sanitized),
-    rawMessageSanitized: sanitized,
+    rawMessageSanitized: safeTerminalMessage(sanitized),
   };
+}
+
+function errorSummaryForReport(error: unknown): string | null {
+  const terminal = terminalFromError(error);
+  if (terminal.rawMessageSanitized) return terminal.rawMessageSanitized;
+  if (terminal.messageFragments.length > 0) return terminal.messageFragments.join('; ');
+  return 'unrecognized error (redacted)';
 }
 
 function sameTerminalClass(a: TerminalEvidence, b: TerminalEvidence): boolean {
@@ -438,16 +482,71 @@ function createCodexClient(): Codex {
   });
 }
 
-function binaryResolvable(): boolean {
+function codexTargetTriple(): string | null {
+  const targets: Record<string, Record<string, string>> = {
+    linux: {
+      x64: 'x86_64-unknown-linux-musl',
+      arm64: 'aarch64-unknown-linux-musl',
+    },
+    darwin: {
+      x64: 'x86_64-apple-darwin',
+      arm64: 'aarch64-apple-darwin',
+    },
+    win32: {
+      x64: 'x86_64-pc-windows-msvc',
+      arm64: 'aarch64-pc-windows-msvc',
+    },
+  };
+  return targets[process.platform]?.[process.arch] ?? null;
+}
+
+function isUsableExplicitBinary(path: string): boolean {
   try {
-    if (process.env.CODEX_BIN_PATH && existsSync(process.env.CODEX_BIN_PATH)) return true;
-    // The SDK resolves @openai/codex platform package; try to locate it the same way.
-    const entry = Bun.resolveSync('@openai/codex-sdk', import.meta.dir);
-    // Heuristic: presence of the SDK entry is enough; spawn will fail loudly later if binary missing.
-    return typeof entry === 'string' && entry.length > 0;
+    if (!statSync(path).isFile()) return false;
+    if (process.platform !== 'win32') accessSync(path, constants.X_OK);
+    return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Resolve the same vendored platform executable that @openai/codex's launcher
+ * will spawn. Merely resolving the SDK entry is not enough: its optional
+ * platform package can be absent or its executable can be non-runnable.
+ */
+function resolveBundledCodexBinary(): string | null {
+  const targetTriple = codexTargetTriple();
+  if (!targetTriple) return null;
+
+  try {
+    const sdkEntry = Bun.resolveSync('@openai/codex-sdk', import.meta.dir);
+    const sdkRequire = createRequire(sdkEntry);
+    const launcher = sdkRequire.resolve('@openai/codex/bin/codex.js');
+    const launcherRequire = createRequire(launcher);
+    const packageName = `@openai/codex-${process.platform}-${process.arch}`;
+    let vendorRoot: string;
+    try {
+      const platformManifest = launcherRequire.resolve(`${packageName}/package.json`);
+      vendorRoot = join(dirname(platformManifest), 'vendor');
+    } catch {
+      vendorRoot = join(dirname(launcher), '..', 'vendor');
+    }
+    const executable = join(
+      vendorRoot,
+      targetTriple,
+      'bin',
+      process.platform === 'win32' ? 'codex.exe' : 'codex'
+    );
+    return isUsableExplicitBinary(executable) ? executable : null;
+  } catch {
+    return null;
+  }
+}
+
+function binaryResolvable(): boolean {
+  const override = process.env.CODEX_BIN_PATH?.trim();
+  return override ? isUsableExplicitBinary(override) : resolveBundledCodexBinary() !== null;
 }
 
 // ─── Process table (POSIX + Windows) ─────────────────────────────────────
@@ -458,6 +557,7 @@ function listProcessTablePosix(): ProcessFingerprint[] {
   const result = spawnSync('ps', ['-axo', 'pid=,ppid=,lstart=,command='], {
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
+    env: { ...process.env, LC_ALL: 'C', LANG: 'C' },
   });
   if (result.status !== 0 || typeof result.stdout !== 'string') {
     throw new Error(`ps failed: ${result.stderr || result.status}`);
@@ -533,6 +633,16 @@ function captureDescendants(rootPid: number): ProcessFingerprint[] {
     }
   }
   return out;
+}
+
+function mergeCapturedDescendants(...groups: ProcessFingerprint[][]): ProcessFingerprint[] {
+  const unique = new Map<string, ProcessFingerprint>();
+  for (const group of groups) {
+    for (const process of group) {
+      unique.set(`${process.pid}:${process.start}`, process);
+    }
+  }
+  return [...unique.values()];
 }
 
 function processStillMatches(fp: ProcessFingerprint): boolean {
@@ -714,21 +824,48 @@ async function consumeWithAbortStrategy(args: {
 async function runCaseA(codex: Codex, cwd: string, nonce: string): Promise<CaseAEvidence> {
   const controller = new AbortController();
   const thread = codex.startThread(threadOptionsFor(cwd));
-  const result = await withTimeout(
-    CASE_TIMEOUT_MS,
-    'caseA',
-    consumeWithAbortStrategy({
-      thread,
-      prompt: midToolPrompt(nonce),
-      signal: controller.signal,
-      controller,
-      strategy: 'mid-tool',
-      onBeforeAbort: () => captureDescendants(process.pid),
-    })
-  );
+  let timeoutDescendants: ProcessFingerprint[] = [];
+  let result: StreamConsumeResult & { descendantsAtAbort: ProcessFingerprint[] };
+  try {
+    result = await withTimeout({
+      ms: SETTLEMENT_TIMEOUT_MS,
+      label: 'caseA iterator settlement',
+      work: consumeWithAbortStrategy({
+        thread,
+        prompt: midToolPrompt(nonce),
+        signal: controller.signal,
+        controller,
+        strategy: 'mid-tool',
+        onBeforeAbort: () => captureDescendants(process.pid),
+      }),
+      onTimeout: () => {
+        timeoutDescendants = captureDescendants(process.pid);
+        controller.abort();
+      },
+    });
+  } catch (error) {
+    const descendants = mergeCapturedDescendants(
+      timeoutDescendants,
+      captureDescendants(process.pid)
+    );
+    const cleanup = await ensureDescendantsGone(descendants);
+    return {
+      ran: true,
+      threadIdRetained: false,
+      abortedWhileCommandActive: false,
+      eventOrder: emptyEventOrder(),
+      terminal: terminalFromError(error),
+      settlementMs: null,
+      settlementWithinBound: false,
+      descendantsCaptured: descendants.length,
+      descendantsSurvivingAfterCleanup: cleanup.surviving,
+      cleanupElapsedMs: cleanup.elapsedMs,
+    };
+  }
 
   // Keep draining is already done inside consume; now cleanup descendants.
-  const cleanup = await ensureDescendantsGone(result.descendantsAtAbort);
+  const descendants = mergeCapturedDescendants(result.descendantsAtAbort, timeoutDescendants);
+  const cleanup = await ensureDescendantsGone(descendants);
 
   return {
     ran: true,
@@ -739,7 +876,7 @@ async function runCaseA(codex: Codex, cwd: string, nonce: string): Promise<CaseA
     settlementMs: result.settlementMs,
     settlementWithinBound:
       result.settlementMs <= SETTLEMENT_TIMEOUT_MS && result.terminal.kind !== 'timeout',
-    descendantsCaptured: result.descendantsAtAbort.length,
+    descendantsCaptured: descendants.length,
     descendantsSurvivingAfterCleanup: cleanup.surviving,
     cleanupElapsedMs: cleanup.elapsedMs,
   };
@@ -756,17 +893,45 @@ async function runCaseB(
   // Mark operator intent BEFORE runStreamed / before any event.
   const intentMarkedBeforeThreadStarted = true;
   // Do not abort yet — deferral is inside the consumer on thread.started.
-  const result = await withTimeout(
-    CASE_TIMEOUT_MS,
-    'caseB',
-    consumeWithAbortStrategy({
-      thread,
-      prompt: midToolPrompt(`${nonce}-B`),
-      signal: controller.signal,
-      controller,
-      strategy: 'defer-until-id',
-      intentMarkedBeforeStart: true,
-    })
+  let timeoutDescendants: ProcessFingerprint[] = [];
+  let result: StreamConsumeResult & { descendantsAtAbort: ProcessFingerprint[] };
+  try {
+    result = await withTimeout({
+      ms: SETTLEMENT_TIMEOUT_MS,
+      label: 'caseB iterator settlement',
+      work: consumeWithAbortStrategy({
+        thread,
+        prompt: midToolPrompt(`${nonce}-B`),
+        signal: controller.signal,
+        controller,
+        strategy: 'defer-until-id',
+        intentMarkedBeforeStart: true,
+        onBeforeAbort: () => captureDescendants(process.pid),
+      }),
+      onTimeout: () => {
+        timeoutDescendants = captureDescendants(process.pid);
+        controller.abort();
+      },
+    });
+  } catch (error) {
+    await ensureDescendantsGone(
+      mergeCapturedDescendants(timeoutDescendants, captureDescendants(process.pid))
+    );
+    return {
+      ran: true,
+      intentMarkedBeforeThreadStarted,
+      abortDeferredUntilId: false,
+      threadIdRetained: false,
+      eventOrder: emptyEventOrder(),
+      terminal: terminalFromError(error),
+      settlementMs: null,
+      settlementWithinBound: false,
+      sameTerminalClassAsA: false,
+    };
+  }
+
+  await ensureDescendantsGone(
+    mergeCapturedDescendants(result.descendantsAtAbort, timeoutDescendants)
   );
 
   const terminalClassMatches =
@@ -804,20 +969,45 @@ async function runInterruptedThenResumeCycle(args: {
   // Interrupt a fresh (or conceptually "current") turn to obtain an id.
   const interruptController = new AbortController();
   const fresh = codex.startThread(threadOptionsFor(cwd));
-  const interrupted = await withTimeout(
-    CASE_TIMEOUT_MS,
-    `resume-cycle-${index}-interrupt`,
-    consumeWithAbortStrategy({
-      thread: fresh,
-      prompt: midToolPrompt(`${nonce}-C${index}`),
-      signal: interruptController.signal,
-      controller: interruptController,
-      strategy: 'mid-tool',
-      onBeforeAbort: () => captureDescendants(process.pid),
-    })
-  );
+  let interruptTimeoutDescendants: ProcessFingerprint[] = [];
+  let interrupted: StreamConsumeResult & { descendantsAtAbort: ProcessFingerprint[] };
+  try {
+    interrupted = await withTimeout({
+      ms: SETTLEMENT_TIMEOUT_MS,
+      label: `resume-cycle-${index} interrupt iterator settlement`,
+      work: consumeWithAbortStrategy({
+        thread: fresh,
+        prompt: midToolPrompt(`${nonce}-C${index}`),
+        signal: interruptController.signal,
+        controller: interruptController,
+        strategy: 'mid-tool',
+        onBeforeAbort: () => captureDescendants(process.pid),
+      }),
+      onTimeout: () => {
+        interruptTimeoutDescendants = captureDescendants(process.pid);
+        interruptController.abort();
+      },
+    });
+  } catch (error) {
+    await ensureDescendantsGone(
+      mergeCapturedDescendants(interruptTimeoutDescendants, captureDescendants(process.pid))
+    );
+    return {
+      index,
+      usedResumeThread: false,
+      usedStartThreadFallback: false,
+      completedNaturally: false,
+      priorContextDemonstrated: false,
+      settlementMs: null,
+      settlementWithinBound: false,
+      terminal: terminalFromError(error),
+      errorSanitized: errorSummaryForReport(error),
+    };
+  }
   // Best-effort cleanup of this cycle's descendants.
-  await ensureDescendantsGone(interrupted.descendantsAtAbort);
+  await ensureDescendantsGone(
+    mergeCapturedDescendants(interrupted.descendantsAtAbort, interruptTimeoutDescendants)
+  );
 
   const interruptedId = interrupted.threadId;
   if (!interruptedId) {
@@ -849,7 +1039,7 @@ async function runInterruptedThenResumeCycle(args: {
       settlementMs: null,
       settlementWithinBound: false,
       terminal: terminalFromError(error),
-      errorSanitized: sanitizeErrorMessage(error instanceof Error ? error.message : String(error)),
+      errorSanitized: errorSummaryForReport(error),
     };
   }
 
@@ -859,12 +1049,13 @@ async function runInterruptedThenResumeCycle(args: {
   let priorContextDemonstrated = false;
   let terminal = emptyTerminal();
   let agentText = '';
+  let resumeTimeoutDescendants: ProcessFingerprint[] = [];
 
   try {
-    await withTimeout(
-      RESUME_TIMEOUT_MS,
-      `resume-cycle-${index}-resume`,
-      (async (): Promise<void> => {
+    await withTimeout({
+      ms: RESUME_TIMEOUT_MS,
+      label: `resume-cycle-${index} resume settlement`,
+      work: (async (): Promise<void> => {
         const streamed = await resumeThread.runStreamed(resumePrompt(followUp), {
           signal: resumeController.signal,
         });
@@ -896,11 +1087,18 @@ async function runInterruptedThenResumeCycle(args: {
             rawMessageSanitized: null,
           };
         }
-      })()
-    );
+      })(),
+      onTimeout: () => {
+        resumeTimeoutDescendants = captureDescendants(process.pid);
+        resumeController.abort();
+      },
+    });
   } catch (error) {
     terminal = terminalFromError(error);
   }
+  await ensureDescendantsGone(
+    mergeCapturedDescendants(resumeTimeoutDescendants, captureDescendants(process.pid))
+  );
 
   // Prior context: nonce from the disposable repo + the follow-up value.
   const normalized = agentText.replace(/\s+/g, ' ').trim();
@@ -960,8 +1158,8 @@ function evaluateGate(doc: SpikeHostDocument): void {
   );
   pass(
     'caseA_descendants_gone',
-    a?.descendantsSurvivingAfterCleanup === 0,
-    `surviving=${a?.descendantsSurvivingAfterCleanup ?? 'n/a'}`
+    a !== null && a.descendantsCaptured > 0 && a.descendantsSurvivingAfterCleanup === 0,
+    `captured=${a?.descendantsCaptured ?? 'n/a'} surviving=${a?.descendantsSurvivingAfterCleanup ?? 'n/a'}`
   );
 
   const b = doc.caseB;
@@ -1138,8 +1336,76 @@ function renderOsSection(doc: SpikeHostDocument): string {
   return lines.join('\n');
 }
 
-function renderFullReport(args: { host: SpikeHostDocument; missingFamilies: OsFamily[] }): string {
-  const { host, missingFamilies } = args;
+const REQUIRED_OS_FAMILIES = ['linux', 'macos', 'windows'] as const;
+
+function extractRecordedHostSections(reportPath: string): Map<OsFamily, RecordedHostSection> {
+  const sections = new Map<OsFamily, RecordedHostSection>();
+  if (!existsSync(reportPath)) return sections;
+
+  let report: string;
+  try {
+    report = readFileSync(reportPath, 'utf8');
+  } catch {
+    return sections;
+  }
+  for (const family of REQUIRED_OS_FAMILIES) {
+    const heading = new RegExp(`^## ${family}(?:\\s|$)`, 'm').exec(report);
+    if (heading?.index === undefined) continue;
+    const start = heading.index;
+    const nextHeading = report.indexOf('\n## ', start + heading[0].length);
+    const content = report.slice(start, nextHeading === -1 ? undefined : nextHeading).trim();
+    const overall = /- \*\*Overall\*\*: \*\*(PASS|BLOCKED)\*\*/.exec(content)?.[1];
+    const requiredFields = [
+      '- **Date**:',
+      '- **OS release**:',
+      '- **Bun**:',
+      '- **Declared SDK range**:',
+      '- **Locked version (bun.lock / expected)**:',
+      '- **Resolved runtime version**:',
+      '### Case A — mid-tool interrupt',
+      '### Case B — early operator intent (deferred abort)',
+      '### Case C — resume continuity (3 cycles)',
+      '### Case D — runtime safety',
+      '### Gate checklist',
+    ];
+    if (
+      (overall !== 'PASS' && overall !== 'BLOCKED') ||
+      !requiredFields.every(f => content.includes(f))
+    ) {
+      continue;
+    }
+    const terminalLine = /- Terminal fragments: ([^\n]+)/.exec(content)?.[1] ?? null;
+    sections.set(family, { content, overall, terminalSummary: terminalLine });
+  }
+  return sections;
+}
+
+function withCurrentHostSection(
+  host: SpikeHostDocument,
+  priorSections: Map<OsFamily, RecordedHostSection>
+): Map<OsFamily, RecordedHostSection> {
+  const sections = new Map(priorSections);
+  sections.set(host.osFamily, {
+    content: renderOsSection(host),
+    overall: host.overall,
+    terminalSummary:
+      host.caseA?.terminal.messageFragments.map(fragment => `\`${fragment}\``).join(', ') ?? null,
+  });
+  return sections;
+}
+
+function requiredFamiliesPass(sections: Map<OsFamily, RecordedHostSection>): boolean {
+  return REQUIRED_OS_FAMILIES.every(family => sections.get(family)?.overall === 'PASS');
+}
+
+function renderFullReport(args: {
+  host: SpikeHostDocument;
+  priorSections: Map<OsFamily, RecordedHostSection>;
+}): string {
+  const { host, priorSections } = args;
+  const sections = withCurrentHostSection(host, priorSections);
+  const missingFamilies = REQUIRED_OS_FAMILIES.filter(family => !sections.has(family));
+  const allRequiredFamiliesPass = requiredFamiliesPass(sections);
   const lines: string[] = [];
   lines.push('# Codex interrupt + resume spike report');
   lines.push('');
@@ -1167,25 +1433,30 @@ function renderFullReport(args: { host: SpikeHostDocument; missingFamilies: OsFa
   lines.push('');
   lines.push('| OS family | Status | Notes |');
   lines.push('| --- | --- | --- |');
-  lines.push(
-    `| ${host.osFamily} | **${host.overall}** | ran on this host (${host.osPlatform}/${host.osArch}) |`
-  );
-  for (const fam of missingFamilies) {
-    lines.push(`| ${fam} | **BLOCKED** | not executed in this spike run (no usable host) |`);
+  for (const family of REQUIRED_OS_FAMILIES) {
+    const section = sections.get(family);
+    if (!section) {
+      lines.push(`| ${family} | **BLOCKED** | no usable host evidence recorded |`);
+    } else if (family === host.osFamily) {
+      lines.push(
+        `| ${family} | **${section.overall}** | ran on this host (${host.osPlatform}/${host.osArch}) |`
+      );
+    } else {
+      lines.push(`| ${family} | **${section.overall}** | retained from its native host run |`);
+    }
   }
   lines.push('');
 
-  const matrixBlocked = missingFamilies.length > 0 || host.overall !== 'PASS';
   lines.push('## Outcome');
   lines.push('');
   lines.push(
-    matrixBlocked
-      ? `**BLOCKED** — ${
+    allRequiredFamiliesPass
+      ? '**PASS** — every required field passed on every required OS family.'
+      : `**BLOCKED** — ${
           missingFamilies.length > 0
             ? `untested OS families: ${missingFamilies.join(', ')}`
-            : 'host gate failed'
-        }${host.blockReasons.length > 0 ? `; host reasons: ${host.blockReasons.length}` : ''}.`
-      : '**PASS** — every required field passed on every required OS family.'
+            : 'at least one native-host gate failed'
+        }${host.blockReasons.length > 0 ? `; current-host reasons: ${host.blockReasons.length}` : ''}.`
   );
   lines.push('');
   lines.push(
@@ -1193,10 +1464,14 @@ function renderFullReport(args: { host: SpikeHostDocument; missingFamilies: OsFa
   );
   lines.push('');
 
-  lines.push(renderOsSection(host));
-
-  for (const fam of missingFamilies) {
-    lines.push(`## ${fam}`);
+  for (const family of REQUIRED_OS_FAMILIES) {
+    const section = sections.get(family);
+    if (section) {
+      lines.push(section.content);
+      lines.push('');
+      continue;
+    }
+    lines.push(`## ${family}`);
     lines.push('');
     lines.push(
       '_No evidence collected. Recorded as BLOCKED per Phase 1 gate (untested OS family). WSL evidence would file under Linux, never Windows._'
@@ -1204,23 +1479,16 @@ function renderFullReport(args: { host: SpikeHostDocument; missingFamilies: OsFa
     lines.push('');
   }
 
-  lines.push('## Phase 2 terminal predicate (from measured host variants)');
+  lines.push('## Phase 2 terminal predicate (from measured native-host variants)');
   lines.push('');
-  if (host.caseA && host.caseA.terminal.messageFragments.length > 0) {
+  lines.push(
+    'Narrow per-OS discriminants (do **not** broaden to generic `killed` / `signal` / `SUBPROCESS_CRASH_PATTERNS`):'
+  );
+  lines.push('');
+  for (const family of REQUIRED_OS_FAMILIES) {
+    const terminalSummary = sections.get(family)?.terminalSummary;
     lines.push(
-      'Narrow discriminants observed on this host (do **not** broaden to generic `killed` / `signal` / `SUBPROCESS_CRASH_PATTERNS`):'
-    );
-    lines.push('');
-    for (const f of host.caseA.terminal.messageFragments) {
-      lines.push(`- \`${f}\``);
-    }
-    lines.push('');
-    lines.push(
-      `Constructor/name: \`${host.caseA.terminal.errorConstructor ?? 'n/a'}\` / \`${host.caseA.terminal.errorName ?? 'n/a'}\`; kind: \`${host.caseA.terminal.kind}\`.`
-    );
-  } else {
-    lines.push(
-      '_No stable terminal fragments measured on this host — Phase 2 must not invent a matcher._'
+      `- ${family}: ${terminalSummary ?? '_No stable terminal fragments measured; Phase 2 must not invent a matcher._'}`
     );
   }
   lines.push('');
@@ -1267,9 +1535,10 @@ async function runHostProtocol(sdkVersion: string): Promise<SpikeHostDocument> {
 
   const recorder = installUnhandledRecorders();
   const nonce = `N${randomBytes(8).toString('hex')}`;
-  const cwd = createDisposableRepo(nonce);
+  let cwd: string | undefined;
 
   try {
+    cwd = createDisposableRepo(nonce);
     const codex = createCodexClient();
 
     // Case A
@@ -1322,9 +1591,7 @@ async function runHostProtocol(sdkVersion: string): Promise<SpikeHostDocument> {
           settlementMs: null,
           settlementWithinBound: false,
           terminal: terminalFromError(error),
-          errorSanitized: sanitizeErrorMessage(
-            error instanceof Error ? error.message : String(error)
-          ),
+          errorSanitized: errorSummaryForReport(error),
         });
       }
     }
@@ -1334,12 +1601,31 @@ async function runHostProtocol(sdkVersion: string): Promise<SpikeHostDocument> {
       unhandledRejections: recorder.rejections,
       uncaughtExceptions: recorder.exceptions,
     };
+  } catch (error) {
+    doc.caseA ??= {
+      ran: false,
+      threadIdRetained: false,
+      abortedWhileCommandActive: false,
+      eventOrder: emptyEventOrder(),
+      terminal: terminalFromError(error),
+      settlementMs: null,
+      settlementWithinBound: false,
+      descendantsCaptured: 0,
+      descendantsSurvivingAfterCleanup: 0,
+      cleanupElapsedMs: null,
+    };
+    doc.safety = {
+      unhandledRejections: recorder.rejections,
+      uncaughtExceptions: recorder.exceptions,
+    };
   } finally {
     recorder.restore();
-    try {
-      rmSync(cwd, { recursive: true, force: true });
-    } catch {
-      // best-effort temp cleanup
+    if (cwd) {
+      try {
+        rmSync(cwd, { recursive: true, force: true });
+      } catch {
+        // best-effort temp cleanup
+      }
     }
   }
 
@@ -1347,12 +1633,9 @@ async function runHostProtocol(sdkVersion: string): Promise<SpikeHostDocument> {
   return doc;
 }
 
-function requiredMissingFamilies(ran: OsFamily): OsFamily[] {
-  const required: OsFamily[] = ['linux', 'macos', 'windows'];
-  return required.filter(f => f !== ran);
-}
-
 async function main(): Promise<void> {
+  const outPath = join(repoRootFromSpike(), REPORT_RELATIVE);
+  const priorSections = extractRecordedHostSections(outPath);
   let sdkVersion: string;
   try {
     sdkVersion = readInstalledCodexSdkVersion(
@@ -1388,9 +1671,8 @@ async function main(): Promise<void> {
     evaluateGate(blockedHost);
     const report = renderFullReport({
       host: blockedHost,
-      missingFamilies: requiredMissingFamilies(blockedHost.osFamily),
+      priorSections,
     });
-    const outPath = join(repoRootFromSpike(), REPORT_RELATIVE);
     mkdirSync(dirname(outPath), { recursive: true });
     writeFileSync(outPath, report, 'utf8');
     process.stdout.write(
@@ -1404,12 +1686,10 @@ async function main(): Promise<void> {
   );
 
   const host = await runHostProtocol(sdkVersion);
-  const missing = requiredMissingFamilies(host.osFamily);
-  // Overall report is BLOCKED if any required family is missing OR host failed.
-  const reportOverall = missing.length > 0 || host.overall !== 'PASS' ? 'BLOCKED' : 'PASS';
+  const sections = withCurrentHostSection(host, priorSections);
+  const reportOverall = requiredFamiliesPass(sections) ? 'PASS' : 'BLOCKED';
 
-  const report = renderFullReport({ host, missingFamilies: missing });
-  const outPath = join(repoRootFromSpike(), REPORT_RELATIVE);
+  const report = renderFullReport({ host, priorSections });
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, report, 'utf8');
 
@@ -1420,10 +1700,12 @@ async function main(): Promise<void> {
       overall: reportOverall,
       hostFamily: host.osFamily,
       hostOverall: host.overall,
-      missingFamilies: missing,
+      missingFamilies: REQUIRED_OS_FAMILIES.filter(family => !sections.has(family)),
       terminalFragments: host.caseA?.terminal.messageFragments ?? [],
       terminalKind: host.caseA?.terminal.kind ?? null,
-      blockReasonCount: host.blockReasons.length + missing.length,
+      blockReasonCount:
+        host.blockReasons.length +
+        REQUIRED_OS_FAMILIES.filter(family => sections.get(family)?.overall !== 'PASS').length,
       report: REPORT_RELATIVE,
     }) + '\n'
   );

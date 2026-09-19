@@ -10,6 +10,7 @@ guidance on the **same Codex thread**, in receipt order, without silently
 starting a fresh conversation.
 
 Authority:
+
 - Issue: https://github.com/kevinle128/Archon/issues/184
 - Story 2.4 in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`
 - Canonical spec: `_bmad-output/specs/spec-agent-node-room/SPEC.md` + companions
@@ -114,7 +115,7 @@ Key files (from the plan):
 - `packages/providers/src/codex/capabilities.ts` — `interrupt: false` →
   `'stream-abort'` (atomic with executor recognition).
 - `packages/providers/src/types.ts` — export `STREAM_ABORT_TERMINAL_REASON =
-  'stream_aborted'`; doc updates for `terminalReason`, `interruptSignal`,
+'stream_aborted'`; doc updates for `terminalReason`, `interruptSignal`,
   `forkSession: false`. No new request field.
 - `packages/providers/src/codex/interrupt-resume-spike.ts` — new spike (US-001).
 - `packages/providers/src/codex/provider.test.ts` — 12 focused test cases using
@@ -131,7 +132,7 @@ Key files (from the plan):
 - Canonical copy authorities: `_bmad-output/specs/spec-agent-node-room/SPEC.md`,
   `control-states.md`, `steering-test-plan.md`, `provider-steering-matrix.md`;
   `.../ux-Archon-agent-node-room-2026-09-09/{EXPERIENCE.md,DESIGN.md,
-  mockups/key-steering-dock.html}`;
+mockups/key-steering-dock.html}`;
   `claude-design/design_handoff_node_room_transcript_steering/README.md` +
   3 `.dc.html` prototypes.
 - Reports live under `plans/260920-0216-issue-184-interrupt-and-redirect-codex-agent/reports/`.
@@ -151,10 +152,10 @@ Design invariants:
   Phase-1-measured variant (enumerate OS variants if they differ; never a broad
   `killed`/`signal`/`SUBPROCESS_CRASH_PATTERNS` match).
 - Normalized chunk is minimal: `{type:'result', sessionId: knownThreadId,
-  terminalReason: STREAM_ABORT_TERMINAL_REASON}` — no invented usage,
+terminalReason: STREAM_ABORT_TERMINAL_REASON}` — no invented usage,
   `stopReason`, or error subtype.
 - `strictInPlaceResume = resumeSessionId !== undefined &&
-  requestOptions?.forkSession === false`: sync `resumeThread` failure throws
+requestOptions?.forkSession === false`: sync `resumeThread` failure throws
   enriched (no `startThread`, no "Starting fresh conversation"); compat-client
   recreation must resume same id or fail; retryable crash fails instead of the
   attempt>0 `startThread` branch.
@@ -165,12 +166,12 @@ Design invariants:
 
 ## Story overview
 
-| ID | Title | Phase | Depends on | Core deliverable |
-| --- | --- | --- | --- | --- |
-| US-001 | Codex SDK abort/resume spike + gate report | 1 | — | `interrupt-resume-spike.ts`, `spike:interrupt:codex` script, sanitized PASS/BLOCKED report on Linux+macOS+Windows |
-| US-002 | Provider/executor slice + conformance | 2 | US-001 | marker export, provider signal/terminal/retry/strict-resume logic, executor recognition, `interrupt:'stream-abort'`, all focused tests green |
-| US-003 | Truthful stop disclosure everywhere | 3 | US-002 | new disclosure literal across canonical UX authority, shared web constant, both shells' tests, updated+passing Playwright evidence |
-| US-004 | Docs, acceptance record, sprint closeout | 3 | US-003 | steering test plan + provider matrix, regenerated capability matrix, `reports/acceptance.md`, `bun run validate`, sprint status `done` last |
+| ID     | Title                                      | Phase | Depends on | Core deliverable                                                                                                                             |
+| ------ | ------------------------------------------ | ----- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| US-001 | Codex SDK abort/resume spike + gate report | 1     | —          | `interrupt-resume-spike.ts`, `spike:interrupt:codex` script, sanitized PASS/BLOCKED report on Linux+macOS+Windows                            |
+| US-002 | Provider/executor slice + conformance      | 2     | US-001     | marker export, provider signal/terminal/retry/strict-resume logic, executor recognition, `interrupt:'stream-abort'`, all focused tests green |
+| US-003 | Truthful stop disclosure everywhere        | 3     | US-002     | new disclosure literal across canonical UX authority, shared web constant, both shells' tests, updated+passing Playwright evidence           |
+| US-004 | Docs, acceptance record, sprint closeout   | 3     | US-003     | steering test plan + provider matrix, regenerated capability matrix, `reports/acceptance.md`, `bun run validate`, sprint status `done` last  |
 
 ## Working agreements for the implementing agent
 
