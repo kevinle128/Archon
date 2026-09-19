@@ -22,4 +22,5 @@ export const CODEX_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false, // no in-container spawn path yet (fail-fast source of truth)
   askHuman: false,
+  interrupt: false,
 };

@@ -25,4 +25,5 @@ export const DEVIN_CAPABILITIES = {
   nativeTools: false,
   containerExec: false,
   askHuman: true,
+  interrupt: false,
 } as const satisfies ProviderCapabilities;

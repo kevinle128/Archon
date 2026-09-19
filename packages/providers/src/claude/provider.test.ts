@@ -164,6 +164,7 @@ describe('ClaudeProvider', () => {
         settingSources: true,
         nativeTools: true,
         askHuman: true,
+        interrupt: 'native',
       });
     });
 
@@ -2755,6 +2756,536 @@ describe('sendQuery decomposition behaviors', () => {
       expect(options.tools).toEqual(['Read']);
       expect(options.allowedTools ?? []).not.toContain('Skill');
     });
+  });
+});
+
+// ─── Turn interrupt (native seam) ────────────────────────────────────────
+// Operator "Stop" ends only the current Claude turn via Query.interrupt();
+// the workflow node stays running. interruptSignal is the turn-scoped signal;
+// abortSignal remains the node-level Cancel that still aborts the SDK
+// controller and closes the query.
+
+/** Fake SDK Query: the test pushes events/results/errors, interrupt() and
+ *  close() are observable mocks. Mirrors the streaming-input Query surface. */
+class FakeQuery {
+  private queue: Array<
+    { kind: 'result'; value: IteratorResult<unknown> } | { kind: 'error'; error: unknown }
+  > = [];
+  private waiter:
+    | {
+        resolve: (value: IteratorResult<unknown>) => void;
+        reject: (error: unknown) => void;
+      }
+    | undefined;
+  interrupt = mock(async (): Promise<{ still_queued: string[] }> => ({ still_queued: [] }));
+  close = mock((): void => {
+    this.push({ done: true, value: undefined });
+  });
+
+  push(value: IteratorResult<unknown>): void {
+    this.deliver({ kind: 'result', value });
+  }
+  pushError(error: unknown): void {
+    this.deliver({ kind: 'error', error });
+  }
+  private deliver(
+    item: { kind: 'result'; value: IteratorResult<unknown> } | { kind: 'error'; error: unknown }
+  ): void {
+    const waiter = this.waiter;
+    this.waiter = undefined;
+    if (waiter) {
+      if (item.kind === 'error') waiter.reject(item.error);
+      else waiter.resolve(item.value);
+    } else {
+      this.queue.push(item);
+    }
+  }
+
+  next = (): Promise<IteratorResult<unknown>> => {
+    const item = this.queue.shift();
+    if (item) {
+      return item.kind === 'error' ? Promise.reject(item.error) : Promise.resolve(item.value);
+    }
+    return new Promise<IteratorResult<unknown>>((resolve, reject) => {
+      this.waiter = { resolve, reject };
+    });
+  };
+  return = async (): Promise<IteratorResult<unknown>> => {
+    this.push({ done: true, value: undefined });
+    return { done: true, value: undefined };
+  };
+  throw = async (err?: unknown): Promise<IteratorResult<unknown>> => {
+    throw err;
+  };
+  [Symbol.asyncIterator]() {
+    return this;
+  }
+}
+
+async function flushMicrotasks(rounds = 5): Promise<void> {
+  for (let i = 0; i < rounds; i++) await Promise.resolve();
+}
+
+describe('turn interrupt (native seam)', () => {
+  let client: ClaudeProvider;
+
+  beforeEach(() => {
+    client = new ClaudeProvider({ retryBaseDelayMs: 1 });
+    mockQuery.mockClear();
+    mockLogger.info.mockClear();
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    mockLogger.debug.mockClear();
+  });
+
+  test('without interruptSignal the SDK receives the existing string prompt', async () => {
+    let capturedPrompt: unknown;
+    mockQuery.mockImplementation((args: { prompt: unknown }) => {
+      capturedPrompt = args.prompt;
+      return (async function* () {
+        yield { type: 'result', session_id: 'sid-string' };
+      })();
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace')) {
+      // consume
+    }
+
+    expect(capturedPrompt).toBe('test prompt');
+  });
+
+  test('with interruptSignal the SDK receives a one-message AsyncIterable<SDKUserMessage> held open for the query lifetime', async () => {
+    const interruptController = new AbortController();
+    let capturedPrompt: unknown;
+    let secondNextObservedPending = false;
+    let inputIterator: AsyncIterator<unknown> | undefined;
+
+    mockQuery.mockImplementation((args: { prompt: unknown }) => {
+      capturedPrompt = args.prompt;
+      inputIterator = (capturedPrompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+      const fake = new FakeQuery();
+      // Simulate the SDK consuming the single user message, then check the
+      // iterator stays open while the query is still live.
+      void (async () => {
+        await inputIterator!.next();
+        const second = inputIterator!.next();
+        secondNextObservedPending =
+          (await Promise.race([second.then(() => 'settled'), Promise.resolve('pending')])) ===
+          'pending';
+      })();
+      fake.push({ done: false, value: { type: 'result', session_id: 'sid-stream' } });
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(typeof capturedPrompt).not.toBe('string');
+    expect(chunks[0]).toMatchObject({ type: 'result', sessionId: 'sid-stream' });
+    // Provider released the deferred gate in finally → iterator now completes.
+    const tail = await inputIterator!.next();
+    expect(tail).toEqual({ done: true, value: undefined });
+    expect(secondNextObservedPending).toBe(true);
+  });
+
+  test('the streamed user message carries the typed SDKUserMessage shape', async () => {
+    const interruptController = new AbortController();
+    let inputIterator: AsyncIterator<unknown> | undefined;
+    mockQuery.mockImplementation((args: { prompt: unknown }) => {
+      inputIterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+      const fake = new FakeQuery();
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      // consume
+    }
+
+    const first = await inputIterator!.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toEqual({
+      type: 'user',
+      message: { role: 'user', content: 'test prompt' },
+      parent_tool_use_id: null,
+    });
+  });
+
+  test('interrupt abort calls native interrupt() exactly once and never aborts the SDK controller or closes the query', async () => {
+    const interruptController = new AbortController();
+    const fake = new FakeQuery();
+    let sdkController: AbortController | undefined;
+    mockQuery.mockImplementation((args: { options: { abortController: AbortController } }) => {
+      sdkController = args.options.abortController;
+      fake.push({
+        done: false,
+        value: { type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } },
+      });
+      return fake;
+    });
+
+    const chunks = [];
+    const consuming = (async (): Promise<void> => {
+      for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+        interruptSignal: interruptController.signal,
+      })) {
+        chunks.push(chunk);
+      }
+    })();
+    for (let i = 0; i < 50 && chunks.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(chunks).toHaveLength(1);
+
+    interruptController.abort();
+    await flushMicrotasks();
+    // Repeated abort notification must not invoke interrupt() again.
+    interruptController.signal.dispatchEvent(new Event('abort'));
+    await flushMicrotasks();
+
+    expect(fake.interrupt).toHaveBeenCalledTimes(1);
+    expect(sdkController?.signal.aborted).toBe(false);
+    expect(fake.close).not.toHaveBeenCalled();
+
+    fake.push({
+      done: false,
+      value: {
+        type: 'result',
+        session_id: 'sid-interrupted',
+        subtype: 'success',
+        is_error: false,
+        terminal_reason: 'aborted_streaming',
+      },
+    });
+    fake.push({ done: true, value: undefined });
+    await consuming;
+
+    expect(chunks[1]).toMatchObject({
+      type: 'result',
+      sessionId: 'sid-interrupted',
+      terminalReason: 'aborted_streaming',
+    });
+    expect(chunks[1]).not.toHaveProperty('isError');
+  });
+
+  test('node Cancel still aborts the SDK controller and closes the query without calling native interrupt', async () => {
+    const nodeCancel = new AbortController();
+    const interruptController = new AbortController();
+    const fake = new FakeQuery();
+    let sdkController: AbortController | undefined;
+    mockQuery.mockImplementation((args: { options: { abortController: AbortController } }) => {
+      sdkController = args.options.abortController;
+      fake.push({
+        done: false,
+        value: { type: 'assistant', message: { content: [{ type: 'text', text: 'first' }] } },
+      });
+      return fake;
+    });
+
+    const chunks = [];
+    const consuming = (async (): Promise<void> => {
+      for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+        abortSignal: nodeCancel.signal,
+        interruptSignal: interruptController.signal,
+      })) {
+        chunks.push(chunk);
+      }
+    })();
+    for (let i = 0; i < 50 && chunks.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    nodeCancel.abort();
+    await consuming;
+
+    expect(chunks).toEqual([{ type: 'assistant', content: 'first', textMode: 'complete' }]);
+    expect(sdkController?.signal.aborted).toBe(true);
+    expect(fake.close).toHaveBeenCalledTimes(1);
+    expect(fake.interrupt).not.toHaveBeenCalled();
+  });
+
+  test('an error-marked interrupted result preserves error/subtype/session/usage shape alongside terminalReason', async () => {
+    const interruptController = new AbortController();
+    const fake = new FakeQuery();
+    mockQuery.mockImplementation(() => {
+      fake.push({
+        done: false,
+        value: {
+          type: 'result',
+          session_id: 'sid-interrupted-err',
+          is_error: true,
+          subtype: 'error_during_execution',
+          errors: ['turn aborted by operator'],
+          terminal_reason: 'aborted_tools',
+          usage: { input_tokens: 10, output_tokens: 20 },
+          modelUsage: {
+            'claude-haiku-4-5': {
+              inputTokens: 10,
+              outputTokens: 20,
+            },
+          },
+        },
+      });
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks[0]).toMatchObject({
+      type: 'result',
+      sessionId: 'sid-interrupted-err',
+      isError: true,
+      errorSubtype: 'error_during_execution',
+      errors: ['turn aborted by operator'],
+      terminalReason: 'aborted_tools',
+      tokens: { input: 10, output: 20 },
+    });
+    expect(chunks[0]).toHaveProperty('usageBreakdown');
+  });
+
+  test('a pre-aborted interruptSignal starts no query', async () => {
+    const interruptController = new AbortController();
+    interruptController.abort();
+    mockQuery.mockImplementation(() => new FakeQuery());
+
+    await expect(
+      (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+          interruptSignal: interruptController.signal,
+        })) {
+          // consume
+        }
+      })()
+    ).rejects.toThrow('Query interrupted');
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
+  test('a rejected native interrupt promise is surfaced to the stream consumer', async () => {
+    const interruptController = new AbortController();
+    const fake = new FakeQuery();
+    fake.interrupt = mock(async () => {
+      throw new Error('interrupt control request failed');
+    });
+    mockQuery.mockImplementation(() => {
+      fake.push({
+        done: false,
+        value: { type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } },
+      });
+      return fake;
+    });
+
+    const chunks = [];
+    const consuming = (async (): Promise<void> => {
+      for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+        interruptSignal: interruptController.signal,
+      })) {
+        chunks.push(chunk);
+      }
+    })();
+    for (let i = 0; i < 50 && chunks.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    interruptController.abort();
+    await expect(consuming).rejects.toThrow('interrupt control request failed');
+    expect(fake.interrupt).toHaveBeenCalledTimes(1);
+  });
+
+  test('an interrupted attempt is never retried even when the stream throws a retryable error', async () => {
+    const interruptController = new AbortController();
+    let callCount = 0;
+    const fake = new FakeQuery();
+    mockQuery.mockImplementation(() => {
+      callCount++;
+      fake.push({
+        done: false,
+        value: { type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } },
+      });
+      return fake;
+    });
+
+    const chunks = [];
+    const consuming = (async (): Promise<void> => {
+      for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+        interruptSignal: interruptController.signal,
+      })) {
+        chunks.push(chunk);
+      }
+    })();
+    for (let i = 0; i < 50 && chunks.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    interruptController.abort();
+    await flushMicrotasks();
+    // A crash racing the operator's Stop must not restart the turn.
+    fake.pushError(new Error('process exited with code 1'));
+    await expect(consuming).rejects.toThrow('process exited with code 1');
+    expect(callCount).toBe(1);
+  });
+
+  test('without interruptSignal a crash retains the existing retry behavior', async () => {
+    let callCount = 0;
+    mockQuery.mockImplementation(async function* () {
+      callCount++;
+      throw new Error('process exited with code 1');
+    });
+
+    await expect(
+      (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test', '/workspace')) {
+          // consume
+        }
+      })()
+    ).rejects.toThrow('process exited with code 1');
+    expect(callCount).toBe(4); // 1 initial + MAX_SUBPROCESS_RETRIES retries
+  });
+
+  test('early consumer return removes the interrupt listener and settles the input iterator', async () => {
+    const interruptController = new AbortController();
+    const removeListener = spyOn(interruptController.signal, 'removeEventListener');
+    const fake = new FakeQuery();
+    let inputIterator: AsyncIterator<unknown> | undefined;
+    mockQuery.mockImplementation((args: { prompt: unknown }) => {
+      inputIterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+      fake.push({
+        done: false,
+        value: { type: 'assistant', message: { content: [{ type: 'text', text: 'first' }] } },
+      });
+      return fake;
+    });
+
+    try {
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        interruptSignal: interruptController.signal,
+      })) {
+        break; // early consumer return
+      }
+
+      expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+      // A later abort cannot reach the detached listener.
+      interruptController.abort();
+      await flushMicrotasks();
+      expect(fake.interrupt).not.toHaveBeenCalled();
+      // The provider-owned input gate was settled → after the single user
+      // message, the iterator completes.
+      await inputIterator!.next();
+      expect(await inputIterator!.next()).toEqual({ done: true, value: undefined });
+    } finally {
+      removeListener.mockRestore();
+    }
+  });
+
+  test('normal completion and error paths remove the interrupt listener', async () => {
+    const interruptController = new AbortController();
+    const removeListener = spyOn(interruptController.signal, 'removeEventListener');
+    const fake = new FakeQuery();
+    mockQuery.mockImplementation(() => {
+      fake.push({ done: false, value: { type: 'result', session_id: 'sid-done' } });
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    try {
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        interruptSignal: interruptController.signal,
+      })) {
+        // consume
+      }
+      expect(removeListener).toHaveBeenCalledWith('abort', expect.any(Function));
+    } finally {
+      removeListener.mockRestore();
+    }
+
+    const interruptController2 = new AbortController();
+    const removeListener2 = spyOn(interruptController2.signal, 'removeEventListener');
+    const fake2 = new FakeQuery();
+    mockQuery.mockImplementation(() => {
+      fake2.pushError(new Error('unknown failure'));
+      return fake2;
+    });
+    try {
+      await expect(
+        (async (): Promise<void> => {
+          for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+            interruptSignal: interruptController2.signal,
+          })) {
+            // consume
+          }
+        })()
+      ).rejects.toThrow('unknown failure');
+      expect(removeListener2).toHaveBeenCalledWith('abort', expect.any(Function));
+    } finally {
+      removeListener2.mockRestore();
+    }
+  });
+
+  test('an abort landing during per-attempt setup is delivered once the query binds', async () => {
+    const interruptController = new AbortController();
+    const fake = new FakeQuery();
+    let queryCreated = false;
+    mockQuery.mockImplementation(() => {
+      queryCreated = true;
+      return fake;
+    });
+
+    const it = client.sendQuery('test', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+      // A workflow node declaring a skill that exists on no root emits a
+      // warning chunk before the retry loop, so the first read parks the
+      // generator before its listeners are attached and the second read parks
+      // it at the per-attempt applyNodeConfig await — after the interrupt
+      // listener is attached but before any query exists.
+      nodeConfig: { nodeId: 'n1', skills: ['archon-test-no-such-skill-zzz'] },
+    });
+
+    const warning = await it.next();
+    expect(warning.value).toMatchObject({ type: 'system' });
+    expect(queryCreated).toBe(false);
+
+    const nextChunk = it.next();
+    // Abort while the generator is parked in per-attempt setup — the request
+    // must be remembered and delivered to the query once it binds, not dropped.
+    interruptController.abort();
+
+    for (let i = 0; i < 50 && !queryCreated; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    for (let i = 0; i < 50 && fake.interrupt.mock.calls.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    expect(fake.interrupt).toHaveBeenCalledTimes(1);
+
+    fake.push({
+      done: false,
+      value: {
+        type: 'result',
+        session_id: 'sid-pending',
+        terminal_reason: 'aborted_streaming',
+      },
+    });
+    fake.push({ done: true, value: undefined });
+
+    const chunk = await nextChunk;
+    expect(chunk.value).toMatchObject({
+      type: 'result',
+      sessionId: 'sid-pending',
+      terminalReason: 'aborted_streaming',
+    });
+    expect((await it.next()).done).toBe(true);
   });
 });
 

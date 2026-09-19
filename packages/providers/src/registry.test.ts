@@ -44,6 +44,7 @@ function makeMockProvider(id: string): IAgentProvider {
       nativeTools: false,
       containerExec: false,
       askHuman: false,
+      interrupt: false,
     }),
     async *sendQuery() {
       yield { type: 'result' as const };
@@ -184,6 +185,23 @@ describe('registry', () => {
         .map(info => info.id)
         .sort();
       expect(capable).toEqual(['claude', 'devin', 'pi']);
+    });
+
+    test('every registered provider declares a total interrupt axis value', () => {
+      registerCommunityProviders();
+      for (const info of getProviderInfoList()) {
+        expect(['native', 'stream-abort', false]).toContainEqual(info.capabilities.interrupt);
+      }
+    });
+
+    test('only Claude advertises native interrupt', () => {
+      registerCommunityProviders();
+      const capable = getProviderInfoList()
+        .filter(info => info.capabilities.interrupt === 'native')
+        .map(info => info.id)
+        .sort();
+      // e2e-fake stays unregistered here (ARCHON_E2E_FAKE_PROVIDER unset).
+      expect(capable).toEqual(['claude']);
     });
 
     test('throws UnknownProviderError for unknown type', () => {

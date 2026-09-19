@@ -22,4 +22,5 @@ export const DEEPSEEK_CAPABILITIES = {
   nativeTools: false,
   containerExec: false,
   askHuman: false,
+  interrupt: false,
 } as const satisfies ProviderCapabilities;

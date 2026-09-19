@@ -67,6 +67,7 @@ const AXES: readonly { key: keyof ProviderCapabilities; label: string }[] = [
   { key: 'nativeTools', label: 'In-process native tools' },
   { key: 'containerExec', label: 'Container exec (folder-project container backend)' },
   { key: 'askHuman', label: 'AskHuman mid-turn questions' },
+  { key: 'interrupt', label: 'Turn interrupt (operator Stop)' },
 ];
 
 /**
@@ -147,6 +148,11 @@ function renderCell(caps: ProviderCapabilities, key: keyof ProviderCapabilities)
     const tier = caps.structuredOutput;
     if (tier === 'enforced') return '**enforced**';
     if (tier === 'best-effort') return 'best-effort';
+    return '❌';
+  }
+  if (key === 'interrupt') {
+    const mode = caps.interrupt;
+    if (mode === 'native' || mode === 'stream-abort') return `**${mode}**`;
     return '❌';
   }
   return caps[key] ? '✅' : '❌';
@@ -273,6 +279,10 @@ function buildMarkdown(providers: ProviderInfo[], caveats: ResolvedCaveat[]): st
     '  or ❌ (unsupported). See [AI Assistants → Structured output guarantees](/getting-started/ai-assistants/#structured-output-guarantees).',
     '- **In-process native tools** — the provider can register Archon `NativeTool`s for a',
     "  turn (gates auto-injection of Archon's `manage_run` tool into project-scoped chat).",
+    '- **Turn interrupt** — `native` (the provider can end only the current turn',
+    '  in-process, keeping the session resumable on the same id — e.g. Claude',
+    "  `Query.interrupt()`), `stream-abort` (the turn ends by aborting the provider's",
+    '  stream), or ❌ (no turn interrupt; operator guidance queues for the next turn).',
     '',
     'For per-provider field-level notes (YAML syntax, caveats), see the',
     '[AI Assistants guide](/getting-started/ai-assistants/).',

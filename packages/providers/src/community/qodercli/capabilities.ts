@@ -22,4 +22,5 @@ export const QODERCLI_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false,
   askHuman: false,
+  interrupt: false,
 };

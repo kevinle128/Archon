@@ -102,6 +102,7 @@ describe('CodexProvider', () => {
         nativeTools: false,
         containerExec: false,
         askHuman: false,
+        interrupt: false,
       });
     });
   });

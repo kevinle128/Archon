@@ -548,6 +548,7 @@ describe('E2eFakeProvider', () => {
     expect(E2E_FAKE_CAPABILITIES.nativeTools).toBe(true);
     expect(E2E_FAKE_CAPABILITIES.askHuman).toBe(true);
     expect(E2E_FAKE_CAPABILITIES.sessionResume).toBe(true);
+    expect(E2E_FAKE_CAPABILITIES.interrupt).toBe('native');
     expect(E2E_FAKE_CAPABILITIES.mcp).toBe(false);
   });
 });
