@@ -610,6 +610,10 @@ describe('NodeRoom tool rows', () => {
     expect(summary).toContain('hover:bg-surface-hover');
     expect(summary).toContain('focus-visible:outline-accent-bright');
     expect(summary).toContain('-outline-offset-2');
+    // The summary is the containing block for its absolutely-positioned
+    // sr-only status label; without `relative` the label escapes into the
+    // document's overflow and grows the root scroll height.
+    expect(summary).toContain('relative');
     // Chevron: fixed 9px column, 90°/120ms rotation, reduced-motion opt out.
     const chevron = /<span aria-hidden="true" class="([^"]*)">▶<\/span>/.exec(summary);
     expect(chevron?.[1]).toContain('w-[9px]');

@@ -439,7 +439,7 @@ export function NodeTranscriptPane({
       ref={scrollRef}
       data-testid="node-transcript-scroll"
       tabIndex={-1}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
       style={{ overflowWrap: 'anywhere' }}
       onScroll={handleScroll}
     >

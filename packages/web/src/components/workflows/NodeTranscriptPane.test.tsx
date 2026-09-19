@@ -1203,6 +1203,7 @@ describe('NodeTranscriptPane', () => {
     // The scroller owns scrolling; the region does not scroll.
     const scrollerClass = scroller.getAttribute('class') ?? '';
     expect(scrollerClass).toContain('overflow-y-auto');
+    expect(scrollerClass).toContain('overscroll-y-contain');
     expect(scrollerClass).toContain('flex');
     expect(scrollerClass).toContain('flex-col');
     expect(region.getAttribute('class')).toContain('overflow-hidden');

@@ -761,6 +761,21 @@ describe('WorkflowExecution room visit', () => {
     );
   });
 
+  test('runtime graph drops the minimap but keeps controls and node selection', async () => {
+    await renderVisit();
+    await flushUntil('graph mounted', () => host.querySelector('.react-flow') !== null);
+    // The runtime graph has no minimap; pan/zoom controls and node click stay.
+    expect(host.querySelector('.react-flow__minimap')).toBeNull();
+    expect(host.querySelector('.react-flow__controls')).not.toBeNull();
+    expect(host.querySelector('.react-flow__controls-fitview')).not.toBeNull();
+    await clickGraphNode('review');
+    await flushUntil(
+      'room opened from graph node',
+      () => host.querySelector('[data-testid="legacy-node-room"]') !== null
+    );
+    expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).toContain('Review');
+  });
+
   test('deep-link node query applies once per entry and reopens after leaving', async () => {
     await renderVisit('?node=review');
     await flushUntil(

@@ -249,3 +249,66 @@ test('[P1] [V:transcript.fallback] No-schema and deleted-definition nodes keep t
     'Legacy room (deleted definition)'
   );
 });
+
+test('[P1] [V:transcript-display.graph] Legacy runtime graph drops the minimap; controls, pan, zoom, fit, and selection remain', async ({
+  page,
+  archon,
+}) => {
+  const started = await archon.prepareTranscriptDisplayRun();
+  await openLegacyRunDetail(page, started.runId);
+  await waitForRunTitle(page);
+
+  const graph = page.locator('.react-flow');
+  await expect(graph).toBeVisible({ timeout: T.medium });
+  await expect(page.locator('.react-flow__minimap')).toHaveCount(0);
+  const controls = page.locator('.react-flow__controls');
+  await expect(controls).toBeVisible();
+  const zoomOut = controls.locator('.react-flow__controls-zoomout');
+  const fitView = controls.locator('.react-flow__controls-fitview');
+  await expect(zoomOut).toBeVisible();
+  await expect(fitView).toBeVisible();
+
+  const viewport = page.locator('.react-flow__viewport');
+  const transform = async (): Promise<string> =>
+    viewport.evaluate(el => getComputedStyle(el).transform);
+  const fitted = await transform();
+
+  // Zoom changes the viewport transform; fit restores it.
+  await zoomOut.click();
+  await expect.poll(transform, { timeout: T.medium }).not.toBe(fitted);
+  await fitView.click();
+  await expect.poll(transform, { timeout: T.medium }).toBe(fitted);
+
+  // Dragging the pane pans the viewport. The drag must start on empty pane —
+  // starting on a node selects it instead of panning.
+  const pane = page.locator('.react-flow__pane');
+  const panStart = await pane.evaluate(el => {
+    const rect = el.getBoundingClientRect();
+    for (const fx of [0.15, 0.85, 0.5, 0.3, 0.7]) {
+      for (const fy of [0.15, 0.85, 0.5, 0.3, 0.7]) {
+        const x = rect.x + rect.width * fx;
+        const y = rect.y + rect.height * fy;
+        if (document.elementFromPoint(x, y) === el) return { x, y };
+      }
+    }
+    return null;
+  });
+  if (panStart === null) throw new Error('no empty graph pane point found');
+  await page.mouse.move(panStart.x, panStart.y);
+  await page.mouse.down();
+  await page.mouse.move(panStart.x - 60, panStart.y - 40, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(transform, { timeout: T.medium }).not.toBe(fitted);
+
+  // Node selection still opens the node room.
+  const node = page.locator('.react-flow__node[data-id="plain"]');
+  await expect(node).toBeVisible();
+  await node.click();
+  await waitForRoom(page, TRANSCRIPT_PLAIN_NODE);
+
+  // The Legacy builder canvas keeps its minimap — only the runtime graph lost it.
+  await page.goto('/legacy/workflows/builder?edit=e2e-transcript-display');
+  await expect(page.locator('.react-flow')).toBeVisible({ timeout: T.medium });
+  await expect(page.locator('.react-flow__minimap')).toBeVisible({ timeout: T.medium });
+  await expect(page.locator('.react-flow__controls')).toBeVisible();
+});

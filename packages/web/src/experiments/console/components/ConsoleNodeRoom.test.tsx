@@ -1560,6 +1560,9 @@ describe('ConsoleNodeRoom', () => {
       expect(summary.className).toContain('focus-visible:outline-offset-2');
       expect(summary.className).not.toContain('focus-visible:-outline-offset-2');
       expect(summary.className).toContain('focus-visible:outline-accent-bright');
+      // The summary is the containing block for its absolutely-positioned
+      // sr-only status label — same geometry contract as the Legacy row.
+      expect(summary.className).toContain('relative');
       // The expanded region is unmounted while collapsed — no Raw toggle, no
       // family body, no serialized payload anywhere in the DOM.
       expect(row.querySelectorAll('details')).toHaveLength(0);
