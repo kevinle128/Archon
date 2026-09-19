@@ -1,114 +1,234 @@
 ---
 phase: 3
-title: 'E2E evidence and closeout'
+title: 'End-to-end evidence and closeout'
 status: pending
 priority: P1
 effort: '1 session'
 dependencies: [1, 2]
 ---
 
-# Phase 3: E2E evidence and closeout
+# Phase 3: End-to-end evidence and closeout
 
 ## Goal
 
-Prove end to end, on both shells, that a withdrawn message never reaches the agent while a sibling still drains; exercise the withdraw route ladder against the live server; capture the accessibility evidence the story asks for; then close the issue through a `develop`-targeted PR and the sprint-status move.
+Prove through the real server and both UI shells that DELETE removes a pending
+item from delivery, that an already-drained/unknown id remains idempotent, and
+that the delete control meets the story's keyboard, focus, geometry, and
+responsive requirements. Record only evidence actually produced, run final
+validation, include the sprint-status change in the same branch, and open the
+`develop` PR.
 
-> Deep mode: scout before executing. Re-read `e2e/ui/agent-queue-guidance.spec.ts` (helpers `trackSendRequests`, `queueList`, `guidanceField`, `waitForNodeStarted`, `listNodeMessages`, `sendPathname`, evidence writer) and `e2e/lib/playwright/archon-runtime.ts` (`startWorkflowViaWeb`, `startDetachedWorkflow`, `starterFetch`, `waitForRunStatus`) at cook time.
+## Source anchors
 
-## Context links
+- `e2e/ui/agent-queue-guidance.spec.ts` for workflow dispatch, room opening,
+  response waits, route smoke, screenshots, and both-surface loops.
+- `e2e/fixtures/workflows/e2e-queue-guidance.yaml` for the bounded 30-second
+  first-turn delay.
+- `packages/providers/src/e2e-fake/provider.ts` for the opt-in
+  `echoPrompt` resumed-turn proof.
+- `e2e/lib/playwright/archon-runtime.ts` and
+  `e2e/lib/playwright/run-detail.ts` for tracked web/detached runs, authenticated
+  fetch, run-state waits, and node messages.
+- `.github/pull_request_template.md` and
+  `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`
+  for closeout.
 
-- Story AC (all four groups) and `steering-test-plan.md:54,73`.
-- `e2e/ui/agent-queue-guidance.spec.ts` (Story 2.1 spec — the withdraw spec mirrors its structure and reuses its helpers).
-- `e2e/fixtures/workflows/e2e-queue-guidance.yaml` (30 s fake-provider delay — the withdraw window).
-- `packages/providers/src/e2e-fake/provider.ts` (`echoPrompt` scenario: the resumed-echo chunk reveals exactly which text drained).
-- `.github/pull_request_template.md`; `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml:69`.
+## Files
 
-## File inventory
+| File                                                                                 | Change                                                                                                    |
+| ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `e2e/ui/agent-withdraw-guidance.spec.ts`                                             | New focused Playwright spec: two both-surface delivery/focus tests and one live-server route-ladder test. |
+| `plans/260919-0135-issue-182-withdraw-queued-guidance-message/reports/evidence/`     | Generated screenshots and compact measurements JSON.                                                      |
+| `plans/260919-0135-issue-182-withdraw-queued-guidance-message/reports/acceptance.md` | Criterion-to-test/result report with exact commands and limitations.                                      |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`           | Change only `2-2-withdraw-a-queued-guidance-message` from backlog to done after all gates pass.           |
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `e2e/ui/agent-withdraw-guidance.spec.ts` | create | ~350 lines | new Playwright spec: per-surface drain proof + a11y, one route-ladder test |
-| `e2e/ui/agent-queue-guidance.spec.ts` | modify (only if needed) | export `trackSendRequests`, `queueList`, `guidanceField`, `waitForNodeStarted`, `listNodeMessages`, `sendPathname` — or move them to `e2e/lib/steering-helpers.ts` | none behaviorally |
-| `plans/260919-0135-issue-182-withdraw-queued-guidance-message/reports/evidence/` | create | screenshots + `measurements.json` | evidence only |
-| `plans/260919-0135-issue-182-withdraw-queued-guidance-message/reports/acceptance.md` | create | short acceptance report mapping each AC to its test id | none |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify | one line: `2-2-… : done` | none |
+Do not refactor `agent-queue-guidance.spec.ts` merely to share two callers'
+small locators. Under the repository rule of three, keep the new spec
+self-contained with local versions of the few required helpers
+(`openGuidanceRoom`, field/list locators, route path, node-start poll, and
+transcript text projection). Do not copy its large general-purpose contrast
+suite; this story needs only action-specific geometry/focus/overflow evidence.
 
-No fixture or fake-provider changes are expected; if the drain proof needs a second delayed turn, add a fixture rather than editing `e2e-queue-guidance.yaml`.
+No new fixture, fake-provider option, Playwright dependency, or runtime helper
+is expected.
 
-## Tests before (Playwright, `[P1]` tags, both surfaces where marked)
+## Test design
 
-1. `[V:withdraw.drain-${surface}]` — start `e2e-queue-guidance` via web; wait for `node_started`; queue `first correction` and `second correction` (band reads `queued · 2`); activate the first row's `delete` (accessible name `delete · first correction`); assert the DELETE request for that `message_id` returned 200 `{ success: true, message_id }`; band reads `queued · 1`, the remaining row is `second correction`, focus is on its delete button; wait for the run to complete; `listNodeMessages` shows one resumed echo containing `second correction` and none containing `first correction`; the node has exactly one execution row.
-2. `[V:withdraw.last-${surface}]` — queue one, delete it: band disappears, focus lands on the textarea, status region reads no count; the run completes with **no** resumed echo (withdraw emptied the queue before the boundary, so `closeIfEmpty()` sealed it).
-3. `[V:withdraw.a11y-${surface}]` — with two rows: each delete has `aria-label` starting with `delete · `; each is a `<button type="button">` ≥ 24×24 CSS px; `Tab` reaches it; `Enter` activates it; `axe` (or the suite's existing a11y check) reports no new violations on the band; screenshot at 460 px (Legacy) and the Console panel width, plus a reduced-motion variant.
-4. `[V:withdraw.route-ladder]` (single test, `starterFetch`):
-   - live queued id → 200 `{ success: true, message_id }`;
-   - same id again → 200 identical body;
-   - random never-queued UUID → 200 with that id echoed;
-   - `not-a-uuid` → 400 `invalid_request`;
-   - unknown node → 404 `not_found`; unknown run → 404;
-   - detached run (`startDetachedWorkflow`) → 422 `not_steerable_here`;
-   - after the run completes → 409 `node_finished`; `listNodeMessages` count unchanged before/after every refusal.
-5. `[V:withdraw.blocked-${surface}]` — on the HITL ask fixture used by Story 2.1's blocked test: queue one message before the ask parks the node (or via `starterFetch`), then with the dock in its blocked mode activate delete → 200 and the row is gone (decision 3: parked handle withdraws). **Timing-dependent:** at scout time check whether the fixture's node generates long enough before the ask to accept a send. If there is no reliable pre-ask window, skip this E2E — decision 3 is already proven by route test 22 and registry test 6 — rather than add a fixture or loosen assertions.
+Use `[P1]` and stable `[V:withdraw.*]` ids. Every workflow is started through
+the tracked runtime fixture and every state transition waits on an event,
+response, DOM assertion, or run status—not a fixed sleep.
 
-## Refactor
+### 1. Two-message delivery exclusion, both surfaces
 
-- Create `e2e/ui/agent-withdraw-guidance.spec.ts` mirroring the 2.1 spec's surface loop, evidence directory convention (`plans/<this plan>/reports/evidence/`), and `T` timeouts. Add a `trackWithdrawRequests(page, runId, nodeId)` helper that records DELETE requests and their responses keyed by `message_id`.
-- If the 2.1 spec's helpers are module-private, lift them into `e2e/lib/steering-helpers.ts` and import them from both specs; do not copy them.
+`[V:withdraw.drain-console]` and `[V:withdraw.drain-legacy]`:
 
-## Tests after
+1. Start a fresh web-dispatched `e2e-queue-guidance` run and wait for
+   `node_started`.
+2. Queue a deliberately long obsolete first instruction and capture its POST
+   200 `message_id`.
+3. Queue a second instruction carrying the fake provider's `echoPrompt: true`
+   directive and capture its different id.
+4. Assert `queued · 2`, ordered list rows, full message-specific accessible
+   names, native button types, and no horizontal overflow.
+5. At Legacy's 460px viewport and Console's normal 1440×900 run-detail layout
+   (plus the existing 460px overflow guard), assert the first message visibly
+   elides rather than wrapping and the delete target measures at least 24×24.
+   Focus it and verify a nonzero computed outline; capture the two-row evidence.
+6. Activate the first row from the keyboard (use Enter on one surface and Space
+   on the other so both native activation paths are exercised). Await the
+   matching DELETE response, assert no request body, exact path id, and exact
+   200 `{ success: true, message_id: firstId }`.
+7. Assert `queued · 1`, only the second row remains, and focus is on that row's
+   delete control. Capture the post-delete evidence.
+8. Wait for completion. Node messages contain exactly one resumed echo of the
+   second stripped prompt and contain neither the first text nor an echo that
+   includes it. The node still has one execution and one `node_started` event.
 
-`bun run --cwd e2e test:ui -- --grep 'withdraw'` green on both surfaces; `--grep 'queue guidance'` still green; `npm run typecheck` in `e2e` green.
+This is the primary product proof: UI removal alone is insufficient.
 
-## Test scenario matrix
+### 2. Last-row removal, both surfaces
 
-| Priority | Scenario | Test |
-| --- | --- | --- |
-| Critical | withdrawn message never drains; sibling does | 1 |
-| Critical | route ladder incl. idempotent 200s and mutation-free refusals | 4 |
-| High | last-row delete empties the queue and the node finishes without a guidance turn | 2 |
-| High | accessible name, target size, keyboard activation, focus after removal | 3 |
-| Medium | parked-handle withdraw through the blocked dock | 5 |
+`[V:withdraw.last-console]` and `[V:withdraw.last-legacy]`:
 
-## Closeout steps
+1. Start a fresh delayed run and queue one uniquely marked message with
+   `echoPrompt: true`. The directive is required—without it, absence of an
+   echo would not prove non-delivery.
+2. Focus and keyboard-activate its delete control; assert the exact DELETE 200.
+3. Assert the band/list disappear, focus lands on the labelled textarea, and
+   `document.activeElement` is not `body`.
+4. Emulate reduced motion and confirm the same final DOM/focus state. No new
+   animation should exist; record this as parity, not as an animation test.
+5. Wait for completion and assert no resumed echo contains the unique marker.
 
-1. `bun run validate` from the repo root (never bare `bun test`).
-2. Write `reports/acceptance.md`: AC → test id → result, with evidence file names.
-3. Commit with conventional messages (no AI references); the PR body copies `.github/pull_request_template.md` verbatim, keeps Problem and outcome / Review guidance / Solution / Validation, deletes unused conditional sections, and ends with `Closes #182`.
-4. `gh pr create --base develop`.
-5. After all gates pass, change `sprint-status.yaml:69` to `2-2-withdraw-a-queued-guidance-message: done`. Leave `2-1` (`backlog` at HEAD despite #207) untouched; note it in the PR's Review guidance so the owner can decide.
-6. Stop any server or Playwright process started during this phase by its recorded PID.
+### 3. Live-server route ladder
 
-## Regression gate
+`[V:withdraw.route-ladder]`, once via `archon.starterFetch`:
 
-```bash
-(cd e2e && npm run typecheck)
-bun run --cwd e2e test:ui -- --grep 'withdraw|queue guidance'
-bun run validate
-```
+1. On a live delayed node, POST one message and retain its id.
+2. DELETE it → exact 200. Repeat the same DELETE → identical 200.
+3. DELETE a random never-queued UUID → exact 200 echoing that id.
+4. DELETE `not-a-uuid` → nested 400 `invalid_request`.
+5. Valid id against an unknown node → nested 404 `not_found`; valid id against
+   an unknown run → nested 404.
+6. Start a tracked detached run, wait for `running` and `node_started`, then
+   DELETE a valid id → nested 422 `not_steerable_here`.
+7. After the web run completes, DELETE a valid id → nested 409
+   `node_finished`.
+8. Compare node-message counts before and after refusal requests on real runs
+   where a node exists. Unit route tests remain the proof of queue and mocked
+   writer immutability; do not claim E2E can inspect the process-local queue.
 
-## Todo
+The actor matrix, parked handle, internal 500, and handle-close race remain
+focused server/registry tests; repeating them through Playwright adds cost
+without stronger evidence.
 
-- [ ] Scout pass over the 2.1 spec and `archon-runtime.ts`.
-- [ ] Lift shared helpers if needed; write tests 1–5 (red where the UI is missing, then green).
-- [ ] Capture evidence and measurements; write `reports/acceptance.md`.
-- [ ] `bun run validate` green.
-- [ ] PR to `develop` with `Closes #182`; sprint-status `2-2` → `done`.
+## Action-specific visual and accessibility evidence
 
-## Success criteria
+Record per surface:
 
-- Every story AC maps to at least one green test id in `reports/acceptance.md`.
-- The E2E proves delivery exclusion, not just UI removal.
-- No orphaned server or browser processes remain.
+- two-row state before deletion and one-row state after deletion;
+- accessible names and DOM button type;
+- target width/height;
+- computed overflow/wrapping facts for the long message;
+- active element before and after removal;
+- visible outline width/color when focused;
+- viewport and room width;
+- reduced-motion final-state parity.
 
-## Risk assessment
+Required viewports/states:
 
-- **30 s fake delay is too short on a slow CI runner for queue → delete → assert** — the 2.1 spec already completes two sends inside it; if flaky, add a fixture with a longer `delayMs` rather than shortening assertions.
-- **Detached-run 422 test needs the CLI child alive** — reuse the exact sequence from the 2.1 route-smoke test (`startDetachedWorkflow` → `waitForRunStatus('running')` → `waitForNodeStarted`).
+| Surface | Viewport/state                                                                                                                          |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy  | 460px-wide node room, two rows with long first message; focused delete; one row after success; empty band after last-row success.       |
+| Console | Normal 1440×900 run-detail panel plus the same 460px overflow guard; the same interaction states and Console focus ring.                |
+| Both    | Pending semantics are covered in component tests; refusal and blocked-with-row states are structural tests, not fabricated screenshots. |
 
-## Security considerations
+The current E2E package has no axe dependency. Do not add one for this story and
+do not say an axe or live screen-reader audit passed. The acceptance report may
+state that native semantics, accessible-name computation, keyboard activation,
+focus transfer, geometry, and computed styles were automated.
 
-- Evidence screenshots contain only fixture text; no credentials or user data.
+## Validation order
 
-## Next steps
+1. Run the new spec alone while developing:
 
-Story 2.9 (shared queue reads) depends on this story and 2.1; it will replace local `sent` rows with the authoritative projection and reuse the injectable `withdraw` prop.
+   ```bash
+   (cd e2e && npm run typecheck)
+   bun run --cwd e2e test:ui -- --grep 'withdraw'
+   ```
+
+2. Rerun Story 2.1's E2E and all focused package suites from the main plan:
+
+   ```bash
+   bun run --cwd e2e test:ui -- --grep 'withdraw|queue guidance'
+   ```
+
+3. Run `bun run validate` against the completed production/test changes.
+4. Write `reports/acceptance.md` from the observed command results, test ids,
+   screenshots, measurements, and explicit unrun checks. Only now—after every
+   behavioral gate is green—change the `2-2` sprint-status line to `done`.
+   Leave `2-1` untouched.
+5. Run `bun run format:check` and `git diff --check` against the final
+   report/status diff. If either edit touches anything outside markdown/YAML,
+   rerun `bun run validate`.
+6. Inspect `git status --short` and process ownership.
+   Stop only servers/browser processes started by this worktree.
+
+## Acceptance report contents
+
+The report maps each Story 2.2 criterion to:
+
+- registry/server/component/E2E test names;
+- exact result counts and commands;
+- evidence filenames and measured values;
+- the delivery-exclusion assertion;
+- the route race/refusal assertions;
+- known v1 limitations (drain race ambiguity, local-only UI, process-local
+  queue);
+- checks not run (axe/live screen reader, if still not run).
+
+Do not pre-create passing claims. The report is written from observed results.
+
+## Commit and PR closeout
+
+After all validation and the final status edit:
+
+1. Commit focused conventional changes without issue/phase/audit labels or AI
+   references.
+2. Build the PR body from `.github/pull_request_template.md`: keep Problem and
+   outcome, Review guidance, Solution, and Validation; remove instructional
+   comments and conditional sections that add no information.
+3. Include `Closes #182`, target `develop`, and call out the final phase-check
+   race and delivery-exclusion test for reviewers.
+4. Create the PR with `gh pr create --base develop` and the explicit prepared
+   body.
+
+The sprint-status edit must be committed before the PR is opened; the original
+draft's order would have left the required closeout change outside the PR.
+
+## Phase completion criteria
+
+- Both shells prove the withdrawn item does not reach the provider while a
+  sibling does.
+- Both shells prove last-row focus restoration and no resumed echo.
+- Live server proves 200/400/404/409/422 wire behavior; unit tests prove
+  actor/parked/500/race details and mutation safety.
+- Required viewports and interaction states have honest screenshots and
+  measurements.
+- E2E typecheck, focused E2E, Story 2.1 regression E2E, `bun run validate`,
+  and final formatting all pass.
+- Acceptance report and `2-2: done` are in the committed PR diff.
+- No process started for the work remains orphaned.
+
+## Risks and rollback
+
+- **30-second window:** attach response promises before each action and use
+  event/status waits. If this is empirically insufficient, add a separate
+  longer-delay withdraw fixture; do not modify Story 2.1's fixture or hide the
+  problem with arbitrary sleeps.
+- **False delivery proof:** every absence assertion uses an echo-enabled unique
+  marker. A plain prompt with no echo directive is not evidence.
+- **Detached child cleanup:** use the tracked
+  `startDetachedWorkflow` helper so runtime teardown owns the child.
+- E2E/evidence/status changes are additive and revert with the feature PR; no
+  external data or deployment rollback is required.

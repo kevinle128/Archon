@@ -1,227 +1,288 @@
 ---
 phase: 1
-title: 'Registry withdraw primitive and typed DELETE route'
+title: 'Registry primitive, contract clarification, and typed DELETE route'
 status: pending
 priority: P1
 effort: '1 session'
 dependencies: []
 ---
 
-# Phase 1: Registry withdraw primitive and typed DELETE route
+# Phase 1: Registry primitive, contract clarification, and typed DELETE route
 
 ## Goal
 
-Add one synchronous `withdraw(messageId)` primitive to `NodeSteeringHandle` and implement the ratified `DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId` route on top of it, with the same actor grant, nested error shape, and no-mutation-on-refusal guarantee as the send route.
+Implement the idempotent bodyless withdraw route on top of one synchronous
+registry primitive. Preserve accepted-id memory, allow removal from live and
+parked retained queues, prevent mutation of closed handles, and close both
+terminal races before regenerating the web OpenAPI types.
 
-## Context links
+## Source anchors
 
-- Contract: `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md` (routes table, withdraw request/response, error ladder, idempotency).
-- Story: `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:444-470`.
-- Precedent: send route in `packages/server/src/routes/api.ts:1574-1608` (route definition), `:5173-5290` (middleware + handler), `openapi-defaults.ts:59-73` (hook), tests at `api.workflow-runs.test.ts:6162-6660`.
-- Registry: `packages/workflows/src/steering-registry.ts`, tests `steering-registry.test.ts`.
+- Public contract:
+  `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md`.
+- Story:
+  `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`, Story 2.2.
+- Registry:
+  `packages/workflows/src/steering-registry.ts` and
+  `steering-registry.test.ts`.
+- Route precedent:
+  `sendWorkflowNodeRoute`, its route-scoped middleware and handler in
+  `packages/server/src/routes/api.ts`;
+  `steeringValidationErrorHook` in `openapi-defaults.ts`.
+- Route tests:
+  the Story 2.1 queued-guidance block in
+  `packages/server/src/routes/api.workflow-runs.test.ts`, especially
+  `returns 409 when the handle closes between inspection and enqueue`.
+- Drain/lifecycle proof:
+  direct-node and loop-node steering boundary blocks plus parked cleanup in
+  `packages/workflows/src/dag-executor.ts`.
 
-## Key insights (scouted)
+## Files
 
-- `NodeSteeringHandle` has `pending: QueuedOperatorMessage[]` (the queue) and `accepted: Map<id, {receipt, message}>` (idempotency memory). `drain()` swaps `pending` for `[]` and keeps `accepted`. Withdraw must follow the same split: remove from `pending`, keep `accepted`.
-- Both executor drain sites (`dag-executor.ts:3336-3351` direct, `:6883-6910` loop) run `closeIfEmpty()`/`pendingCount()` and `drain()` with no `await` in between. A synchronous withdraw therefore either lands before the gate (queue may become empty → `closeIfEmpty()` seals and the node finishes normally) or after `drain()` (no-op). No executor change.
-- `closeIfEmpty()` can now return `true` because of a withdraw that emptied the queue — that is the correct outcome (nothing to deliver, node completes) and is already covered by the executor's existing empty-queue path.
-- The send route's `app.use` middleware also pre-parses JSON; the withdraw route has no body, so its middleware does auth only. Do not widen the send middleware's path pattern.
-- No existing route matches `/nodes/:nodeId/queue/*`; the `messages/{messageId}` routes are sibling paths and do not shadow it.
-- `steeringError()` accepts `400 | 401 | 403 | 404 | 409 | 422 | 500` — reuse as is. `steeringValidationErrorHook` maps param validation failures to the nested 400 body.
+| File                                                               | Change                                                                                                          |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `packages/workflows/src/steering-registry.ts`                      | Add closed-safe `withdraw(messageId): boolean` and document the pending-only invariant.                         |
+| `packages/workflows/src/steering-registry.test.ts`                 | Add ordering, phase, idempotency-memory, closed-safety, and drain-exclusion tests.                              |
+| `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md` | Clarify that a parked retained queue is withdrawable, while send remains refused and closed handles remain 409. |
+| `packages/server/src/routes/schemas/workflow.schemas.ts`           | Add withdraw params/response schemas and the derived response type.                                             |
+| `packages/server/src/routes/openapi-defaults.ts`                   | Broaden the validation-hook doc comment to all steering routes; no behavior change.                             |
+| `packages/server/src/routes/api.ts`                                | Add route config, DELETE-only auth middleware, lifecycle ladder, final phase recheck, and handler.              |
+| `packages/server/src/routes/api.workflow-runs.test.ts`             | Add the complete route suite; share existing steering fixtures where that reduces duplication.                  |
+| `packages/web/src/lib/api.generated.d.ts`                          | Regenerate from this worktree's OpenAPI server.                                                                 |
 
-## File inventory
+Do not edit `dag-executor.ts`, the send route's behavior, database code, or
+the validation hook's behavior.
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/workflows/src/steering-registry.ts` | modify | +~20 lines: `withdraw(messageId): boolean` on `NodeSteeringHandle` | `steering-registry.test.ts` +1 describe |
-| `packages/workflows/src/steering-registry.test.ts` | modify | +~70 lines | new `describe('withdraw')` |
-| `packages/server/src/routes/schemas/workflow.schemas.ts` | modify | +~20 lines: `withdrawWorkflowNodeParamsSchema`, `withdrawWorkflowNodeResponseSchema` + types | schema unit coverage via route tests |
-| `packages/server/src/routes/api.ts` | modify | +~90 lines: `withdrawWorkflowNodeRoute`, auth middleware, handler | `api.workflow-runs.test.ts` +1 describe |
-| `packages/server/src/routes/api.workflow-runs.test.ts` | modify | +~250 lines | new `describe('DELETE …/queue/:messageId — withdraw queued guidance')` |
-| `packages/web/src/lib/api.generated.d.ts` | regenerate | +~60 lines | none (type-only); Phase 2 consumes |
+## Registry contract
 
-Do not edit `steering-api-contract.md`, the send route, `dag-executor.ts`, or `openapi-defaults.ts`.
-
-## Tests before (write first, watch them fail)
-
-### Registry — `steering-registry.test.ts`, new `describe('withdraw')`
-
-1. `removes the matching pending item and preserves order of the rest` — enqueue ids A, B, C; `withdraw(B)` → `true`; `snapshot().queued` is `[A, C]`; `pendingCount()` is 2.
-2. `returns false for an id never accepted` — no mutation to snapshot.
-3. `returns false for an id already drained` — enqueue A; `drain()`; `withdraw(A)` → `false`; snapshot unchanged.
-4. `returns false on a repeated withdraw of the same id` — second call is `false`, queue unchanged.
-5. `keeps accepted-id memory: a replayed enqueue of a withdrawn id returns the original receipt and does not re-queue` — after `withdraw(A)`, `enqueue({messageId: A, …})` → `{ ok: true, duplicate: true }`; `pendingCount()` stays 0; `acceptedCount` unchanged. **This is the decision-1 test.**
-6. `removes from a parked handle` — `park()`, `withdraw(A)` → `true`; phase stays `parked`.
-7. `removes from a closed handle without changing phase` — `close()`, `withdraw(A)` → `true`; phase stays `closed` (the route guards this; the primitive is phase-agnostic).
-8. `does not change phase on a live handle` — after withdraw of the last item the handle remains `live`, not `closed` (only `closeIfEmpty()` seals).
-9. `a withdrawn message is absent from a later drain` — enqueue A, B; `withdraw(A)`; `drain()` returns `[B]`.
-
-### Route — `api.workflow-runs.test.ts`, new `describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw queued guidance')`
-
-Add a `deleteNodeQueue(app, messageId, headers?, runId?, nodeId?)` helper beside `postNodeSend`, and reuse `liveSetup`, `mockSteerableRun`, `steerEvent`, `expectNoSteeringMutation`, `expectSteeringError` (lift them out of the send `describe` into module scope if they are currently closure-local).
-
-Actor matrix (each with a queued `STEER_MESSAGE_ID` on a live handle):
-
-10. run starter → 200 `{ success: true, message_id }`; queue empty afterwards.
-11. another authenticated member → 200.
-12. admin not owning the run → 200.
-13. identity-less install (no header) → 200.
-14. gated web-auth with no identity **and a non-UUID `messageId`** → nested 401, not 400 (same env-flip pattern as the send test at `:6315`). This is the test that justifies the DELETE-only `app.use`: without it the param hook answers 400 before the handler's auth check runs. Queue unchanged.
-
-Validation:
-
-15. non-UUID `messageId` → nested 400 `invalid_request`; queue unchanged.
-
-Target ladder (assert `expectNoSteeringMutation` on every refusal):
-
-16. unknown run → 404 `not_found`.
-17. unknown node (no projection, no handle) → 404 `not_found`.
-18. terminal run with stale live handle holding the id → 409 `node_finished`; item still present.
-19. each terminal node state (`completed`, `failed`, `cancelled`, `skipped` — mirror the send test's list) → 409; item still present.
-20. closed handle holding the id → 409 `node_finished`; item still present.
-21. running node with no handle → 422 `not_steerable_here`.
-22. **parked handle holding the id → 200 and the item is removed** (decision 3; differs from send).
-23. run turns terminal between lookup and the final re-read (`mockResolvedValueOnce` running, then terminal) → 409; item still present.
-
-Idempotency:
-
-24. live handle, id queued → 200, `snapshot().queued` no longer contains it, `acceptedCount` unchanged.
-25. repeat the same withdraw → 200, identical body.
-26. id already drained (`handle.drain()` first) → 200.
-27. id never seen → 200 with the requested `message_id` echoed.
-28. withdrawing B from `[A, B, C]` leaves `[A, C]` in order.
-
-Response shape:
-
-29. success body is exactly `{ success: true, message_id }` with no extra keys.
-
-## Refactor (protected code changes)
-
-### `steering-registry.ts`
-
-Add to `NodeSteeringHandle`, after `drain()`:
+Add the method after `drain()`:
 
 ```ts
-  /**
-   * Synchronously removes one still-pending message by id. Returns true when
-   * an item was removed. Accepted-id memory is never touched, so a replayed
-   * enqueue of a withdrawn id still returns its original receipt without
-   * re-queueing. Phase-agnostic: lifecycle refusals (closed handle → 409)
-   * belong to the route, not to this primitive.
-   */
-  withdraw(messageId: string): boolean {
-    const index = this.pending.findIndex(item => item.messageId === messageId);
-    if (index === -1) return false;
-    this.pending.splice(index, 1);
-    return true;
-  }
+/**
+ * Removes one still-pending message from a live or parked queue. Accepted-id
+ * memory and handle phase are preserved. Closed handles are immutable.
+ */
+withdraw(messageId: string): boolean {
+  if (this.phase === 'closed') return false;
+  const index = this.pending.findIndex(item => item.messageId === messageId);
+  if (index === -1) return false;
+  this.pending.splice(index, 1);
+  return true;
+}
 ```
 
-Update the module docblock's design bullets with one line naming withdraw as a pending-only, synchronous operation.
+This method is synchronous for the same reason as `enqueue`, `closeIfEmpty`,
+and `drain`: route and executor operations must have a total event-loop order.
+It does not delete from `accepted`, close an emptied handle, resume a parked
+handle, log content, or distinguish drained from never-seen ids.
 
-### `workflow.schemas.ts`
+### Registry tests
 
-Beside the send schemas:
+Write these tests before the method:
+
+1. Removing B from pending A/B/C returns `true`, leaves A/C in order, keeps the
+   phase live, and decrements only `pendingCount`.
+2. Never-seen and already-drained ids return `false` without changing the
+   snapshot.
+3. Repeating a successful withdraw returns `false` and is mutation-free.
+4. Accepted memory survives: replaying `enqueue(A)` after withdrawing A returns
+   the original duplicate receipt, does not requeue A, and leaves
+   `acceptedCount` unchanged.
+5. A parked handle can remove A while remaining parked; resume later drains only
+   the retained siblings.
+6. A closed handle containing A returns `false` and keeps the full snapshot
+   unchanged.
+7. Removing the last live item does not close the handle; only
+   `closeIfEmpty()` owns the terminal seal.
+8. A later `drain()` cannot return a previously withdrawn item.
+
+## Wire schemas and documentation
+
+Place the schemas beside the existing send steering schemas and derive types
+with `z.infer`:
 
 ```ts
-export const withdrawWorkflowNodeParamsSchema = z.object({
-  runId: z.string().min(1),
-  nodeId: z.string().min(1),
-  messageId: z.string().uuid(),
-});
+export const withdrawWorkflowNodeParamsSchema = z
+  .object({
+    runId: z.string().min(1),
+    nodeId: z.string().min(1),
+    messageId: z.string().uuid(),
+  })
+  .strict();
+
 export const withdrawWorkflowNodeResponseSchema = z
-  .object({ success: z.literal(true), message_id: z.string().uuid() })
+  .object({
+    success: z.literal(true),
+    message_id: z.string().uuid(),
+  })
   .strict()
   .openapi('WithdrawWorkflowNodeResponse');
+
 export type WithdrawWorkflowNodeResponse = z.infer<typeof withdrawWorkflowNodeResponseSchema>;
 ```
 
-Match the exact `z.string().uuid()` form the send body schema uses so both routes agree on the id shape.
+The path id uses the same UUID validator as send's `message_id`. Add one short
+contract sentence under idempotency/boundary notes: DELETE may remove an
+already-accepted item from a parked retained queue because it manages the queue,
+not the live provider session; new sends remain refused while parked, and a
+closed handle still returns `node_finished`.
 
-### `api.ts`
+Update the existing `steeringValidationErrorHook` comment to describe the
+shared steering-route error contract rather than naming only send/interrupt.
+The function and response shape stay unchanged.
 
-1. Import the two new schemas beside `sendWorkflowNodeBodySchema`.
-2. Define `withdrawWorkflowNodeRoute` after `sendWorkflowNodeRoute`: `method: 'delete'`, `path: '/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}'`, `request: { params: withdrawWorkflowNodeParamsSchema }`, responses 200 (`withdrawWorkflowNodeResponseSchema`), 400/401/403/404/409/422 via `steeringJsonError(...)`. Description: idempotent, no body, drained/unknown id is a success no-op.
-3. Add a second `app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId', …)` gated to `DELETE` that does the auth check only (copy the identity branch of the send middleware; no JSON pre-parse). **Register it before `registerOpenApiRoute(withdrawWorkflowNodeRoute, …)`** — Hono runs middleware in registration order, which is why the send middleware at `:5179` precedes its route at `:5198`; the order is what makes 401 win over the param validator's 400.
-4. Register with `registerOpenApiRoute(withdrawWorkflowNodeRoute, handler, steeringValidationErrorHook)`. Handler order (a correctness requirement):
-   1. `resolveAuthContext` → 401 when gated and unresolved.
-   2. Read `runId`, `nodeId`, `messageId` with `c.req.param(...)` as the send handler does — `app.openapi` has already validated `request.params` against `withdrawWorkflowNodeParamsSchema`, and `steeringValidationErrorHook` has returned the nested 400 for a non-UUID id before the handler runs. (There is no `getValidatedParams` helper; do not add one.)
-   3. `workflowDb.getWorkflowRun(runId)` → 404 when null.
-   4. Project node state from `listWorkflowEvents` + `listPendingInteractions`; look up the handle.
-   5. No projection and no handle → 404; terminal run → 409; terminal node → 409; closed handle → 409; no handle → 422. **Duplicate the ladder inline** with the same messages as the send handler — two callers do not meet the rule of three (AGENTS.md, DRY + Rule of Three), and the ladders already differ on parked handles. Do not extract a shared helper or touch the send handler. A parked handle is **not** refused here.
-   6. Re-read the run; null → 404, terminal → 409. No `await` after this line.
-   7. `const removed = handle.withdraw(messageId);`
-   8. `getLog().info({ runId, nodeId, messageId, removed }, 'api.workflow_node_withdraw_completed');`
-   9. `return c.json({ success: true as const, message_id: messageId }, 200);`
-   10. `catch` → log `api.workflow_node_withdraw_failed` with `err`, return 500 `internal_error`.
+## Route definition and ordering
 
-### Type regeneration
+Define `withdrawWorkflowNodeRoute` next to `sendWorkflowNodeRoute`:
 
-`generate:types` is hardcoded to `http://localhost:3090`, but this is a worktree: without `PORT`, `resolvePort()` in `packages/core/src/utils/port-allocation.ts` hashes the path into 3190–4089. Starting `dev:server` bare would either leave 3090 empty (the command fails) or — if the main checkout's server happens to be up on 3090 — regenerate the file from a build that lacks the withdraw route, silently. Therefore:
+- method `delete`;
+- path
+  `/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}`;
+- params `withdrawWorkflowNodeParamsSchema`;
+- 200 `withdrawWorkflowNodeResponseSchema`;
+- 400, 401, 403, 404, 409, 422, and 500 through
+  `steeringJsonError(...)`;
+- description states bodyless, idempotent for drained/unknown ids, and
+  mutation-free on rejection.
 
-1. `lsof -i :3090` — if a process is bound, it is not yours; stop and report rather than picking another port.
-2. `PORT=3090 bun run dev:server` in the background (`PORT` is an explicit override, validated in `port-allocation.ts:31-38`); record its PID and confirm the startup log names port 3090.
-3. `bun --filter @archon/web generate:types`.
-4. `git diff packages/web/src/lib/api.generated.d.ts` must contain `WithdrawWorkflowNodeResponse` and the `/queue/{messageId}` DELETE path — if it does not, the spec came from the wrong server; do not commit it.
-5. Stop only the recorded PID.
+Before registering the route, add DELETE-only middleware at the colon-param
+path. It performs only the gated identity check and returns nested 401. It must
+be registered before the OpenAPI route so auth wins over UUID parameter
+validation. Do not widen or reuse the POST middleware, and do not parse a body.
 
-## Tests after (new behavior)
+Register with
+`registerOpenApiRoute(withdrawWorkflowNodeRoute, handler, steeringValidationErrorHook)`.
+The handler order is part of the correctness contract:
 
-All 29 cases above pass. Re-run the full send `describe` unchanged; it must not be touched by this phase.
+1. Resolve auth and return nested 401 when a configured gate has no identity.
+2. Read the already-validated `runId`, `nodeId`, and `messageId`.
+3. Load the run; null is 404.
+4. Load workflow events and pending interactions, project the node state, and
+   fetch the registry handle.
+5. Apply the same initial precedence as send:
+   no projection plus no handle → 404; terminal run → 409; projected
+   `completed`/`failed`/`skipped` node → 409; closed handle → 409; no
+   handle → 422. A parked handle is intentionally allowed.
+6. Re-read the run. Null → 404; terminal → 409.
+7. **After that await**, re-read `handle.snapshot().phase`. Closed → 409.
+8. With no await after step 7, call `handle.withdraw(messageId)`.
+9. Log only `{ runId, nodeId, messageId, operatorUserId, removed }` under
+   `api.workflow_node_withdraw_completed`, and return exact
+   `{ success: true, message_id: messageId }`.
+10. Unexpected exceptions log `err` and ids under
+    `api.workflow_node_withdraw_failed`, then return nested 500
+    `internal_error`.
 
-## Test scenario matrix
+Do not extract the target ladder yet. Send and withdraw are only two callers and
+already differ for parked handles. The final phase check must not be omitted:
+the send test proves a handle can close while the last run read is pending, and
+`withdraw` otherwise cannot provide the required 409 response by boolean
+alone.
 
-| Priority | Scenario | Suite |
-| --- | --- | --- |
-| Critical | live removal preserves order; accepted memory intact; replayed send does not re-queue | registry 1, 5, 9 |
-| Critical | terminal run/node/closed handle → 409 with no mutation; terminal race → 409 | route 18–20, 23 |
-| Critical | drained/unknown/repeated id → 200 identical body | route 25–27 |
-| High | actor matrix incl. gated 401 | route 10–14 |
-| High | parked handle withdraws (divergence from send) | registry 6, route 22 |
-| High | non-UUID id → 400; unknown run/node → 404; no handle → 422 | route 15–17, 21 |
-| Medium | withdraw does not change phase; closed-handle primitive | registry 7, 8 |
-| Medium | exact success shape, log line has ids only | route 29 |
+## Route tests
 
-## Regression gate
+Add `deleteNodeQueue(app, messageId, headers?, runId?, nodeId?)` beside
+`postNodeSend`. Lift only the steering setup/assertion helpers that both
+route blocks need, preserving the existing reset behavior. Name the block
+`DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw queued guidance`
+so the documented focused command selects it.
+
+### Authorization and validation
+
+1. Run starter, another authenticated member, an admin, and identity-less mode
+   each receive exact 200 and remove the queued id.
+2. With web auth gated, no identity plus a non-UUID path id returns nested 401
+   before 400; no database/queue/transcript mutation occurs.
+3. An authenticated non-UUID path id returns nested 400 `invalid_request`
+   before any run lookup or mutation.
+
+### Target/refusal ladder
+
+For every case with a handle, snapshot it before the request and use the
+existing mutation assertion to prove phase, pending items, accepted count, and
+transcript/run writers did not change:
+
+4. Unknown run → 404; unknown node with no projection/handle → 404.
+5. Terminal run with a deliberately stale queued handle → 409.
+6. Projected `node_completed`, `node_failed`, and `node_skipped` with stale
+   queued handles → 409. Do not add a nonexistent cancelled node state.
+7. Closed queued handle → 409.
+8. Running projected node with no handle → 422.
+9. Live handle with no projected node yet → 200 and removes the item; a handle
+   proves the node exists during the event-projection race.
+10. Parked AskHuman handle with a retained queued id → 200 and only that item is
+    removed; phase remains parked.
+11. The run disappears on the final re-read → 404 with no mutation.
+12. Run changes from running to cancelled on the final re-read → 409.
+13. Final run read still returns running but closes the handle during its await
+    → 409 and the item remains queued. This is the critical missed race.
+14. An injected event-store exception → nested 500 `internal_error` and no
+    mutation.
+
+### Idempotency and response
+
+15. Live queued id → 200, row absent, sibling order preserved, accepted count
+    unchanged.
+16. Repeat the same DELETE → identical 200 response.
+17. Already-drained id and never-seen valid UUID → identical 200 response.
+18. Response has exactly `success` and `message_id`; no `removed` or extra
+    field leaks onto the wire.
+19. Replaying send after withdraw returns the original receipt and does not
+    requeue, either here or in the registry test (one strong assertion is
+    sufficient; do not duplicate a large setup).
+
+## Generated type procedure
+
+The checked-in generator script always reads port 3090, while this worktree's
+server normally hashes to another port. Generate only from a server whose PID
+and worktree are known:
+
+1. Check the intended TCP port with `lsof`. If another session owns 3090, do
+   not stop it and do not consume its OpenAPI document.
+2. Choose a checked free port, start this worktree's server with explicit
+   `PORT`, and record its PID/startup log. If 3090 is free, the existing
+   `bun --filter @archon/web generate:types` command may be used. Otherwise run
+   the installed `openapi-typescript` CLI in `packages/web` against the
+   explicit alternate URL and the same output path.
+3. Before and after generation, verify this server's
+   `/api/openapi.json` contains the DELETE path and
+   `WithdrawWorkflowNodeResponse`.
+4. Inspect the generated diff for only the expected additive path/schema.
+5. Stop only the recorded server PID and confirm the port is released.
+
+## Validation
 
 ```bash
 (cd packages/workflows && bun test src/steering-registry.test.ts)
-(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'guidance')
+(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'withdraw queued guidance')
+(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'queued guidance')
 bun run type-check
 bun run lint
 ```
 
-All three must be green before Phase 2 starts; the `-t 'guidance'` filter covers both the send and withdraw describes.
+The second server filter reruns the unchanged send block and proves the new
+middleware/fixtures did not regress Story 2.1.
 
-## Todo
+## Phase completion criteria
 
-- [ ] Write registry tests 1–9 (red).
-- [ ] Implement `withdraw()`; registry green.
-- [ ] Write route tests 10–29 (red); lift shared fixtures to module scope if needed.
-- [ ] Add schemas, route definition, DELETE-only auth middleware, handler.
-- [ ] Route green; send describe still green unchanged.
-- [ ] Regenerate `api.generated.d.ts` with a tracked server PID; stop it.
-- [ ] Regression gate green.
+- Registry tests prove pending-only removal, parked behavior, closed
+  immutability, accepted-memory replay, and drain exclusion.
+- The OpenAPI document and generated web declaration contain the exact DELETE
+  path and response schema, including declared 500.
+- Both terminal races return 409 without mutation.
+- All refusal paths use the nested error body and write no transcript/event/run
+  state.
+- The contract clarification, code, and tests agree on parked versus closed
+  behavior.
+- No executor, database, send behavior, or package export was changed.
 
-## Success criteria
+## Risks and rollback
 
-- `NodeSteeringHandle.withdraw` exists, is synchronous, touches only `pending`, and is exported through the existing `./steering-registry` subpath only.
-- The DELETE route appears in `/api/openapi.json` with the nested steering error responses and the `WithdrawWorkflowNodeResponse` schema.
-- Every refusal path is proven mutation-free by `expectNoSteeringMutation`.
-- No change to send behavior, executor, or `openapi-defaults.ts`.
-
-## Risk assessment
-
-- **Fixture lifting breaks the send describe** — mitigate by moving helpers verbatim and running the send filter before adding new tests.
-- **Regenerating types from the wrong server** — step 4 of type regeneration is the guard; a diff without the withdraw schema is never committed.
-- **`z.string().uuid()` strictness differs from the send schema** — copy the exact expression from `sendWorkflowNodeBodySchema`.
-
-## Security considerations
-
-- Same actor grant as send (any authenticated identity; identity-less install allowed); no new role logic.
-- Never log message content; the log line carries ids and the boolean only.
-- The route cannot reach a handle in another process — 422 keeps detached runs untouched.
-
-## Next steps
-
-Phase 2 consumes `WithdrawWorkflowNodeResponse` from the regenerated types and the route's URL shape.
+- **Wrong-server type generation:** guarded by explicit port ownership and
+  checking the served OpenAPI path before accepting the generated diff.
+- **Fixture movement regresses send tests:** lift helpers verbatim and rerun the
+  full queued-guidance route block.
+- **Terminal mutation race:** guarded at both primitive (closed is immutable)
+  and route (post-await phase recheck) layers.
+- Rollback is deletion of the additive method/route/schemas/docs and
+  regeneration of the prior OpenAPI declaration; no data rollback exists.
