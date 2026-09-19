@@ -1,173 +1,188 @@
 ---
 title: 'Issue 183 interrupt and redirect a running Claude agent'
-description: 'Implementation-ready plan for ANR Story 2.3: Stop ends the current Claude turn through native interrupt() on a fresh per-turn seam, the node stays running in idle-after-interrupt, and Send now flushes queued plus new guidance as the next turn on the same session.'
-status: pending
+description: 'Implementation-ready plan for Agent Node Room Story 2.3: interrupt the active Claude turn without cancelling the node, wait for an explicit redirect, then continue on the same session.'
+status: ready
 priority: P1
 effort: '5 phases'
 issue: 'https://github.com/kevinle128/Archon/issues/183'
 branch: archon/thread-dffdf57a
-tags: [issue-183, agent-node-room, providers, workflows, server, web, tdd, deep]
+tags: [issue-183, agent-node-room, providers, workflows, server, web, tdd]
 blockedBy: []
 blocks: []
 created: 2026-09-19
-mode: deep
+revised: 2026-09-19
 ---
 
-# Issue 183 interrupt and redirect a running Claude agent
+# Issue 183: interrupt and redirect a running Claude agent
 
-## Outcome
+## Goal and user outcome
 
-While a Claude node runs in the current server process, the operator can press `Stop`. The interrupt route calls Claude's native `interrupt()` through a fresh per-turn seam; the node-level Cancel controller is never touched, the node stays `running`, and the provider session stays alive. The executor classifies the turn end: an interrupted end skips validation and re-ask, writes exactly one `interrupted` status transcript row, never emits `node_failed`, and enters `idle-after-interrupt`. The dock then shows `Send now`, header `WILL SEND · n`, no `Stop`, and the stop disclosure. `Send now` delivers already-queued messages plus the new one, in receipt order, as the next turn on the same Claude session, and the dock returns to generating. The same behavior applies to direct AI nodes, AI loop nodes, and provider-calling nodes inside loop groups. The interrupt route reports the actual end state (`idle-after-interrupt`, `generating` after an auto-drain, or 409 `node_finished`) and never loses an accepted message. Accessibility: serialized transition announcements, `Stopping…` with `aria-disabled`, `role="alert"` on delivery failure, and focus never lands on `<body>`.
+An operator watching a live Claude-backed node can stop only Claude's current turn, inspect the partial outcome, add a correction, and send the pending guidance as the next turn on the same provider session. The workflow node remains `running`; node Cancel, sibling execution, and normal DAG progression are not repurposed.
 
-## Scope boundary
+The successful flow is:
 
-In scope (Story 2.3 acceptance criteria, `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md:472-516`):
+1. `Stop` reaches the current in-process Claude query through its native `interrupt()` control.
+2. The executor classifies the turn as interrupted, does not validate/re-ask/complete/fail it, settles any in-flight tool card as interrupted, writes one interrupted status row, and enters `idle-after-interrupt`.
+3. The dock removes Stop, shows `Send now`, `WILL SEND · n`, and the written-work disclosure.
+4. `Send now` drains previously accepted guidance followed by the new non-blank message, in registry receipt order, and starts the next turn with the same session id.
 
-- per-turn interrupt seam on `IAgentProvider` options and the Claude provider's native `interrupt()` (streaming-input mode), with a typed abort marker on the normalized result;
-- registry live-turn tracking, projected sub-state (`generating` | `idle-after-interrupt`), idle-await, and `Send now` drain, on both executor AI paths and loop-group bodies;
-- `POST …/interrupt` route, `intent: 'send_now'` flush, sub-state on node state, regenerated web types;
-- Stop / `Stopping…` / `Send now` / `WILL SEND` / stop-disclosure dock states in both shells with the a11y contract;
-- deterministic e2e-fake interrupt path, Playwright evidence, sprint-status closeout.
+This is the actual project need recorded by issue #183 and Story 2.3 in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`. It is not a node stop/resume feature and does not create durable steering state.
 
-Deliberately excluded (owned by other accepted stories):
+## Authority and resolved conflicts
 
-- 30-minute inactivity timer, keepalive route, and the 30-minute disclosure copy (Story 2.12) — this plan does ship the idle-await cancel poll so `/workflow cancel` reaches an idle node (see Decision D3);
-- withdraw route (2.2); operator text rows and `NEVER SENT` reconciliation (2.8, 2.11); cross-tab queue reads (2.9); finished-iteration projection (2.10);
-- Codex / OMP / Grok / DeepSeek interrupt (2.4–2.7) — non-Claude providers receive a typed refusal, never a silent no-op;
-- mid-turn soft-inject (G2–G4) and the `delivered` chip (G1).
+For this story, authority is applied in this order:
 
-No schema migration, no durable steering state, no new workflow event type, no `kind` enum widening.
+1. Issue #183 and Story 2.3 acceptance criteria in `epics.md` (the issue names this as spec authority).
+2. Ratified machine companions in `_bmad-output/specs/spec-agent-node-room/`.
+3. Final UX spines `DESIGN.md` and `EXPERIENCE.md`, then `mockups/key-steering-dock.html` for visual anatomy.
+4. Current source and tests for integration shape and existing behavior.
 
-## Evidence checked
+Three conflicts are resolved explicitly:
 
-| Evidence                                                                                                                                  | Verified implication                                                                                                                                                                                                                                                                                       |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SDK declarations `@anthropic-ai/claude-agent-sdk@0.3.209` (`sdk.d.ts:2225-2245`, `:3400-3406`, `:4146-4200`, `:4440-4450`, `:6721`)       | `Query.interrupt(): Promise<SDKControlInterruptResponse \| undefined>` exists; control requests are "only supported when streaming input/output is used". On a clean interrupt the receipt is written before "the interrupted turn result", so a `result` still arrives. `TerminalReason` includes `'aborted_streaming' \| 'aborted_tools'`. |
-| Vendor docs, streaming-vs-single-mode page                                                                                                | Single-message (string prompt) mode "does not support real-time interruption". The Claude provider must run streaming input (`AsyncIterable<SDKUserMessage>`) for a steerable turn.                                                                                                                       |
-| `packages/providers/src/claude/provider.ts:1689` and `:1596-1607`                                                                          | Today the prompt is a string and the only abort listener aborts the SDK controller and closes the query — a Cancel-grade kill. A separate per-turn signal is required.                                                                                                                                     |
-| `packages/providers/src/claude/provider.ts:953-960`, `packages/workflows/src/schemas/node-execution.ts:40`                                 | The SDK marks an interrupted tool result with `is_interrupt`; the provider already normalizes it to `toolOutcome: 'interrupted'`, and transcript metadata already has `outcome: 'interrupted'` (Story 1.1's `⚠` glyph).                                                                                    |
-| `packages/workflows/src/dag-executor.ts:2210-2224`, `:3074-3075`, `:3189`, `:3336-3357`, `:3500-3512`, `:2566`                              | `nodeAbortController` is one-shot and Cancel's; `canReask` guards only on it; the Cancel check precedes the natural-boundary drain gate; the catch block classifies aborts by the same controller; the session id is captured only on the `result` chunk.                                                  |
-| `packages/workflows/src/steering-registry.ts`                                                                                             | The handle is synchronous, keyed `(runId, stepName)`, with `live/parked/closed` phases. Turn tracking, sub-state, and an idle-await waiter are additive.                                                                                                                                                    |
-| `packages/core/src/db/workflows.ts:1450-1465`, `:1495`, `:1526`                                                                            | Same-process Cancel already calls `discardRun` after the terminal write commits — `discard()` can wake an idle-await waiter.                                                                                                                                                                              |
-| `packages/server/src/routes/api.ts:1576-1606`, `:2188-2196`, `:5173-5290`, `:5590-5620`                                                    | The send route pattern (auth pre-check, projection, registry handle, last gate) and `nodeStates` assembly are the templates for the interrupt route and the sub-state field.                                                                                                                              |
-| `packages/web/src/lib/steering-dock.ts`, `ComposerDock.tsx`, `ConsoleComposerDock.tsx`                                                    | The dock derives its mode from `rowStatus`/`live`/`hasPendingAsk`/refusal; `send_now` and sub-state are additive inputs.                                                                                                                                                                                   |
-| `_bmad-output/specs/spec-agent-node-room/{engine-integration,control-states,steering-api-contract,steering-test-plan}.md`                  | Five-case end-cause rule, placement rules, route shapes, response enums, and the test tables this plan's matrices mirror.                                                                                                                                                                                  |
-| `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md:247`, `:264-266`, `:390-400`; `DESIGN.md:650` | Stop disclosure copy, announcement texts, `aria-disabled` rule, focus rules, `⚠ interrupted` climax.                                                                                                                                                                                                       |
+- Story 2.3 says focus moves to the last transcript row rather than `<body>` when a dock transition removes the focused control or the dock. `EXPERIENCE.md` separately says Stop-to-idle moves focus to the renamed send control. The story-level criterion governs: when Stop unmounts, focus the last transcript row (or transcript scroller when no row exists), never the send control or `<body>`. Record this deliberate divergence in component tests so it is not “corrected” back accidentally.
+- `steering-test-plan.md` says the pinned Claude SDK produces no result after interrupt, while the installed `0.3.209` declaration documents an interrupted turn result with a terminal reason. Neither claim substitutes for runtime evidence. Phase 1 therefore has a mandatory real-SDK spike; its observed event sequence gates the provider/executor contract.
+- The steering mock's comment says Legacy inherits a filled send button, but the later final `DESIGN.md` explicitly reverses that treatment after measuring only 3.06:1 contrast. The final design wins: send and Stop are bordered, transparent controls in both shells, with shell-specific tokens/focus offsets only.
 
-Scout reports for this plan land in `./reports/` (`scout-260919-0830-*.md`); phase files cite the anchors verified above and mark spike-dependent claims `[UNVERIFIED]`.
+## Scope
 
-## Decisions
+In scope:
 
-- **D1 — Per-turn seam is a new typed option, not a reason-discriminated `AbortSignal.any`.** `AgentRequestOptions.interruptSignal?: AbortSignal` is created fresh per `runStreamPass` in the executor. `abortSignal` stays node-level and Cancel-only. The Claude provider reacts to `interruptSignal` by calling `query.interrupt()`; it never aborts its SDK controller or closes the query for a steering interrupt. Alternative considered (provider scout, `reports/scout-260919-0830-claude-provider-interrupt.md` §2): keep one `abortSignal = AbortSignal.any([...])` and branch on `signal.reason === 'operator_interrupt'` (Bun forwards the reason — verified). Rejected for this story because a stringly sentinel on `reason` is hidden dynamic behavior the type contract cannot express, and every non-Claude provider would silently receive a Cancel-grade abort on a steering interrupt until its own story lands; the explicit option lets the capability gate (D4) keep that impossible. Revisit in 2.4–2.7 if threading two signals proves noisy (validation question V1).
-- **D2 — Claude runs streaming-input mode only when `interruptSignal` is present.** The string prompt is wrapped in a one-message `AsyncIterable<SDKUserMessage>` that stays open until the turn's `result` arrives (or the query closes). Chat and non-steerable paths keep the string prompt byte-for-byte. Phase 1 spikes this composition with `resume` before Phase 2 relies on it.
-- **D3 — Idle-await exits in this story: `Send now`, run discard (same-process Cancel), and a cancel status poll.** The 30-minute timer and keepalive are Story 2.12. The poll reuses `CANCEL_CHECK_INTERVAL_MS` and `shouldContinueStreamingForStatus` so a CLI-process `/workflow cancel` still reaches the idle node; without it the node would wait forever in the server process. Story 2.12's "cancel poll remains reachable" criterion is then verified, not built.
-- **D4 — Capability gate.** `ProviderCapabilities.interrupt: 'native' | 'stream-abort' | false` (Claude and e2e-fake `'native'`, all others `false` in this story). The executor hands a provider an `interruptSignal` only when the capability is set; the interrupt route refuses a handle registered without it with 422 `not_interruptible` (additive error code; the run/node/queue are untouched).
-- **D5 — Abort marker.** The normalized `result` chunk gains `terminalReason?: string`; the executor treats a result whose `terminalReason` starts with `aborted_` while `operatorInterrupt` is set as an interrupted end (spec case 2). A thrown abort with the flag set is case 3. Result without a marker is a natural end (case 1) even if the flag was set.
-- **D6 — Interrupt route resolves to the actual end state.** `handle.interrupt()` returns a promise the executor settles at classification: `idle-after-interrupt`, `generating` (natural end auto-drained a queued message), or `node_finished` (natural end, empty queue, handle closed → 409). Repeated interrupt while idle replays `idle-after-interrupt`.
-- **D7 — `send_now` response state.** `state` reports whether the message is still waiting after the call: `awaiting_send_now` for `intent: 'queue'` on an idle node; `queued` when `send_now` flushed it (it is now part of the next turn). Flagged in the validation log because the contract does not spell this case out.
-- **D8 — Sub-state on node state.** `WorkflowNodeState.steeringSubState?: 'generating' | 'idle-after-interrupt'` joined from the in-process registry in `GET /api/workflows/runs/:runId`; present only when a live handle exists in this process. Both shells derive the dock from it plus the optimistic UI-local `interrupting` transient. Reach beyond the pressing tab is shell-specific and verified in `reports/scout-260919-0830-server-web-dock.md` §1.9/§3: Legacy re-polls the run every 3 s while live, Console is SSE-driven with only a 30 s heartbeat and no steering SSE event exists — so a reloaded Console tab converges slowly; the `interrupted` status row (written and polled in both shells) is the fallback signal. Cross-tab convergence stays Story 2.9 (V7).
+- a distinct, fresh per-provider-call interrupt signal on `AgentRequestOptions`;
+- Claude streaming-input mode only for interrupt-capable turns, native `Query.interrupt()`, terminal-reason normalization, and same-session resume;
+- an explicit provider interrupt-capability axis, set to native only for Claude and the opt-in e2e fake in this story;
+- race-safe live-turn tracking, interrupt classification, idle-await, atomic `send_now`, and cleanup in the direct AI path, AI loop path, and provider-calling loop-group bodies;
+- an interrupt route, exact actual-outcome responses, and optional live steering sub-state projection;
+- the complete Stop / Stopping / idle / Send now dock flow in both web shells;
+- focused unit, route, component, real-SDK spike, and Playwright evidence.
+
+Out of scope, with existing owners preserved:
+
+- the 30-minute inactivity failure and composing keepalive (Story 2.12); this story only adds the cancel/discard exits needed so an idle node is not uncancellable;
+- withdraw, operator transcript rows, terminal `NEVER SENT` reconciliation, finished-iteration projection, and cross-tab queue synchronization (Stories 2.2 and 2.8–2.11);
+- non-Claude provider interruption (Stories 2.4–2.7); those providers retain the queue-only Story 2.1 dock and are not shown Stop;
+- mid-turn soft injection and delivered acknowledgements (G1–G4);
+- database migrations, durable queue/sub-state storage, new workflow event kinds, or a transcript `kind` widening.
+
+## Repository evidence inspected
+
+| Area             | Evidence and verified implication                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product contract | Issue #183; `epics.md` Story 2.3; `SPEC.md`, `control-states.md`, `engine-integration.md`, `provider-steering-matrix.md`, `steering-api-contract.md`, and `steering-test-plan.md`. These establish native Claude interruption, the five-case end-cause rule, the two projected sub-states, actual-outcome route responses, and direct/loop parity.                                                                                                          |
+| SDK              | Installed `@anthropic-ai/claude-agent-sdk@0.3.209` declarations. `Query.interrupt()` is streaming-input-only; terminal reasons include `aborted_streaming` and `aborted_tools`; the result types carry `terminal_reason`. Runtime behavior remains spike-gated.                                                                                                                                                                                             |
+| Providers        | `packages/providers/src/types.ts`, Claude provider/tests, every provider `capabilities.ts`, registry/observability fixtures, and `scripts/generate-capability-matrix.ts`. Claude currently sends a string prompt and its existing abort listener is Cancel-grade (`AbortController.abort()` plus query close), so steering needs a distinct option and listener.                                                                                            |
+| Engine           | `packages/workflows/src/steering-registry.ts`, `dag-executor.ts`, its direct/loop tests, node execution schemas, and core workflow discard ordering. Story 2.1 already supplies an in-process receipt-ordered queue and multi-turn outer loops; it lacks active-turn identity, interrupt settlement, and idle-await. Existing result handling clears outstanding tools as `unknown`, so interrupted settlement must occur at classification, not afterward. |
+| Server           | Send schemas/handler, GET-run node projection, OpenAPI wrapper patterns, auth resolution, and route tests in `packages/server/src/routes/`. `send_now` already exists in the request schema, and the response schema already includes `awaiting_send_now`; the implementation must preserve idempotent receipts and make enqueue-plus-release atomic.                                                                                                       |
+| Web              | Shared `packages/web/src/lib/steering-dock.ts`, both thin dock components, their node-room owners, both request layers, polling/SSE behavior, and existing component/isolation tests. The existing local `sent` list is only a client receipt view; a failed Send now needs a reversible in-flight batch without re-enqueuing server-accepted messages.                                                                                                     |
+| UX/design        | Final `DESIGN.md`/`EXPERIENCE.md`, `mockups/key-steering-dock.html`, and `validation-report.html`. Required anatomy is identical across shells; 460px is the only authoritative panel width, 520px is illustrative, controls are 32px minimum, send is at least 84px wide, and the final design makes controls bordered on both shells. No separate design-handoff directory referenced by the draft exists in this checkout.                               |
+| E2E/operations   | Existing `e2e-queue-guidance*.yaml` fixtures, `agent-queue-guidance.spec.ts`, e2e-fake provider/tests, and runtime fixture seeding. The current fixtures can be extended; duplicate interrupt-only fixtures and seeding are unnecessary.                                                                                                                                                                                                                    |
+
+The existing reports under `./reports/` were used only as navigation aids; their claims were rechecked against the sources above.
+
+## Technical decisions
+
+### D1 — Separate node Cancel from turn interruption
+
+Add `interruptSignal?: AbortSignal` to `AgentRequestOptions`. `abortSignal` remains the long-lived node Cancel signal. A fresh interrupt controller is created for every provider call, including structured-output re-asks; no `AbortSignal.any`, magic `reason`, or node-controller mutation is used. This makes accidental Cancel-grade behavior impossible for providers that do not implement this story yet.
+
+### D2 — Capability-gated Claude transport
+
+Add a required `ProviderCapabilities.interrupt` axis with values `'native' | 'stream-abort' | false`. Claude and the opt-in e2e fake are `'native'`; other providers are `false` until their stories. Only an interrupt-capable live turn receives an interrupt signal and projects a steering sub-state. A non-Claude Story 2.1 handle remains queue-only, so Stop is absent; a defensive interrupt request maps to the existing 422 `not_steerable_here`, not a new public error code.
+
+When `interruptSignal` is present, Claude uses a typed one-message `AsyncIterable<SDKUserMessage>` kept open for the query lifetime and calls `query.interrupt()` exactly once on signal abort. The node Cancel listener retains its existing abort/close behavior. Calls without `interruptSignal` keep the existing string-prompt path unchanged.
+
+### D3 — Spike-gated terminal contract
+
+Normalize the SDK result's `terminal_reason` as `MessageChunk.result.terminalReason?: string`. The preferred verified path is an abort-marked result that retains the session id. The real-SDK spike must prove initial-turn interrupt, resumed-turn interrupt, event ordering, terminal reason, query completion, and same-session continuation before engine work proceeds.
+
+If the SDK instead closes without a result, Phase 1 may emit a normalized interrupted terminal chunk only when a real session id was already observed and the behavior is covered by tests. If no trustworthy session id survives, stop implementation and record a blocker; do not invent a session id, downgrade to Cancel, or silently broaden scope.
+
+### D4 — Tokenized, idempotent live-turn state machine
+
+Extend the existing registry handle rather than introducing another registry. `beginTurn()` returns a monotonically increasing token; `endTurnStream(token)` clears only that turn's active controller; `settleTurn(token, outcome)` resolves only that turn's pending interrupt. This prevents a late cleanup from clearing a newer turn.
+
+`interrupt()` is synchronous up to aborting the current controller and returns one shared settlement promise. Repeated calls while interrupting do not abort twice. While idle it returns idle immediately. If the stream has already ended it waits for classification without touching a stale controller. Closing/parking the handle settles all pending interrupt and idle waiters exactly once.
+
+### D5 — Five-case end classification and transcript integrity
+
+Classification follows `engine-integration.md`:
+
+1. result without an abort marker: natural end, even if Stop raced it;
+2. abort-marked result plus operator-interrupt flag: interrupted;
+3. abort-like throw plus operator-interrupt flag: interrupted;
+4. other throw: genuine failure;
+5. node Cancel wins by position.
+
+Only cases 2–3 skip validation/re-ask and enter idle-await. For Claude in this story, the typed result marker is exactly `terminalReason === 'aborted_streaming' || terminalReason === 'aborted_tools'`; do not use a broad `startsWith` rule that could absorb a future unrelated terminal. A thrown-error helper accepts only recognized abort names/codes/messages while the matching turn signal and operator-interrupt flag are both set, with false-positive tests. An interrupt request prevents another re-ask from claiming the same turn slot, even when a natural result wins the race. The result handler must settle still-open tool calls as `interrupted` before the existing map clear; provider-emitted interrupted tool results are not duplicated. Idle entry writes exactly one `interrupted` status row, which the existing reader fold applies to the preceding tool card. No `dag_node_failed` is emitted for cases 2–3.
+
+### D6 — Idle-await and atomic redirect
+
+An interrupted end always idles, regardless of queue depth. In this story, idle-await exits only through atomic `send_now`, same-process discard, or a cancel-status poll using the existing interval/status predicate. It intentionally has no 30-minute timer yet.
+
+Registry acceptance takes the intent in the same synchronous mutation as idempotency and queue insertion. A newly accepted `send_now` while idle appends the non-blank message, drains all receipts in order, claims the idle waiter, and moves the internal handle back to generating before yielding. Duplicate message ids replay their original receipt without draining twice. `send_now` received while generating/interrupting queues normally for the next boundary.
+
+The immutable receipt state describes acceptance time: a message accepted while idle returns `awaiting_send_now`, including the message whose `send_now` call releases the batch. It does not change to `queued` merely because delivery began; the projected sub-state reports that transition.
+
+### D7 — Actual-outcome API and ephemeral projection
+
+`POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt` awaits executor settlement and returns only the actual outcome: 200 `idle-after-interrupt`, 200 `generating` after a natural end auto-drains pending guidance, or 409 `node_finished` when the natural end closes with an empty queue. Existing auth/identity and detached/parked refusal behavior mirrors send.
+
+`WorkflowNodeState.steeringSubState?: 'generating' | 'idle-after-interrupt'` is joined from the live in-process registry. It is absent for detached, parked, terminal, and currently non-interrupt-capable handles. `interrupting` remains a caller-tab-only UI transient. No database or SSE event is added; cross-tab freshness stays outside Story 2.3.
+
+### D8 — UI state and lossless local batching
+
+The shared dock logic drives both shells:
+
+- queue-only handle (sub-state absent): existing Story 2.1 Queue dock, no Stop;
+- generating: Stop left, Queue right;
+- interrupting: focusable `Stopping…` with `aria-disabled`, Queue still usable so the race cannot lose text;
+- idle: Stop absent, `Send now`, `WILL SEND · n`, disclosure;
+- resolved generating/terminal: use route outcome plus authoritative run state.
+
+`Send now` requires a non-blank newly typed message, matching the existing request schema and UX ban on an enabled send for an empty draft. Its reducer snapshots displayed server receipts plus the new draft into an in-flight batch and clears the band optimistically. It posts only the new message—the server already holds earlier receipts. Success discards the batch; failure restores the full display batch at the front without re-posting old ids, retains idle state, and exposes `couldn't send · back in the queue` in `role="alert"`.
 
 ## Phases
 
-| #   | Phase                                                                                         | Status  | Depends on |
-| --- | --------------------------------------------------------------------------------------------- | ------- | ---------- |
-| 1   | [Claude native interrupt seam (spike + provider)](./phase-01-claude-native-interrupt-seam.md) | Pending | —          |
-| 2   | [Engine: registry turns, end cause, idle-await](./phase-02-engine-registry-turns-and-idle-await.md) | Pending | 1          |
-| 3   | [Server: interrupt route, Send now flush, sub-state](./phase-03-server-interrupt-route-and-sub-state.md) | Pending | 2          |
-| 4   | [Web: Stop / Send now dock in both shells](./phase-04-web-stop-send-now-dock-both-shells.md)  | Pending | 3          |
-| 5   | [E2E evidence and closeout](./phase-05-e2e-evidence-and-closeout.md)                          | Pending | 1, 2, 3, 4 |
-
-Deep mode: Phase 1 is specified in full; Phases 2–5 are outlined with anchors and receive a dedicated scout pass before execution (`/ak:cook` runs it per phase).
-
-## Dependency map
-
-```mermaid
-flowchart LR
-  P1["P1 provider seam\ninterruptSignal · streaming input · terminalReason · capability"] --> P2["P2 engine\nturn tracking · end cause · idle-await · both paths"]
-  P2 --> P3["P3 server\ninterrupt route · send_now flush · steeringSubState · regen types"]
-  P3 --> P4["P4 web\nStop · Stopping… · Send now · WILL SEND · a11y"]
-  P1 --> P5["P5 e2e-fake interrupt · Playwright · closeout"]
-  P4 --> P5
-```
-
-## Test strategy (TDD)
-
-Every phase lists Tests Before (regression written first), Refactor (protected code change), Tests After (new behavior), and a regression gate. Focused suites run per package; never `bun test` from the root.
-
-| Scenario                                                                        | Criticality | Phase | Suite                                                      |
-| ------------------------------------------------------------------------------- | ----------- | ----- | ---------------------------------------------------------- |
-| Interrupt calls native `interrupt()`, never SDK abort/close; session id retained | Critical    | 1     | `providers` claude provider tests                          |
-| Streaming-input wrapper + `resume` composes (spike script, real SDK, manual)     | Critical    | 1     | `scripts/spikes` manual run, recorded in `reports/`        |
-| Per-turn signal never trips node Cancel check; node stays running               | Critical    | 2     | `workflows` dag-executor tests                             |
-| Interrupted end: no validation, no re-ask, one `interrupted` status row, no fail | Critical    | 2     | `workflows` dag-executor tests                             |
-| Send now drains queued + new in receipt order on the same session               | Critical    | 2, 3  | `workflows` + `server` route tests                         |
-| Race: natural end + queued → `generating`; natural end + empty → 409            | High        | 2, 3  | `workflows` + `server` route tests                         |
-| Loop node and loop-group body: same seam before loop-completion check           | High        | 2     | `workflows` dag-executor loop tests                        |
-| Idle-await wakes on discard and on cancel poll                                  | High        | 2     | `workflows` + `core` db tests                              |
-| Non-Claude provider interrupt → 422 `not_interruptible`, nothing mutated        | High        | 3     | `server` route tests                                       |
-| Dock states, `aria-disabled`, alert, serialized announcements, focus            | High        | 4     | `web` component + `steering-dock` tests                    |
-| End-to-end Stop → Send now on both shells, visual + reduced motion              | Medium      | 5     | Playwright `e2e/ui/agent-interrupt-redirect.spec.ts`       |
-
-## Phase-wide validation
-
-```bash
-(cd packages/providers && bun test src/claude/provider.test.ts -t 'interrupt')
-(cd packages/providers && bun test src/e2e-fake/provider.test.ts)
-(cd packages/workflows && bun test src/steering-registry.test.ts)
-(cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt')
-(cd packages/core && bun test src/db/workflows.test.ts -t 'steering')
-(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'interrupt')
-(cd packages/web && bun test src/lib/steering-dock.test.ts)
-(cd packages/web && NODE_ENV=development bun test src/components/workflows/ComposerDock.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx)
-(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleComposerDock.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx src/experiments/console/console-isolation.test.ts)
-bun run generate:capability-matrix && bun run check:capability-matrix
-(cd e2e && npm run typecheck)
-bun run --cwd e2e test:ui -- --grep 'interrupt'
-bun run validate
-```
+| #   | Phase                                                                                                            | Depends on |
+| --- | ---------------------------------------------------------------------------------------------------------------- | ---------- |
+| 1   | [Claude native interrupt seam and real-SDK gate](./phase-01-claude-native-interrupt-seam.md)                     | —          |
+| 2   | [Registry, executor classification, and idle-await](./phase-02-engine-registry-turns-and-idle-await.md)          | 1          |
+| 3   | [Interrupt route, atomic Send now, and sub-state projection](./phase-03-server-interrupt-route-and-sub-state.md) | 2          |
+| 4   | [Both web docks, accessibility, and visual states](./phase-04-web-stop-send-now-dock-both-shells.md)             | 3          |
+| 5   | [Deterministic E2E evidence and closeout](./phase-05-e2e-evidence-and-closeout.md)                               | 1–4        |
 
 ## Acceptance criteria
 
-- [ ] Registry: the executor registers the `(runId, nodeId)` live handle and turn on every Claude AI path and tears it down on every terminal path (complete, fail, cancel, credit exhaustion, empty output, idle timeout, ask-park hand-off).
-- [ ] Interrupt: `POST …/interrupt` reaches the live turn's per-turn signal; the Claude provider calls native `interrupt()`; `nodeAbortController` is untouched; the node remains `running`; the same session id resumes the next turn.
-- [ ] Race: the route returns `idle-after-interrupt`, `generating` (after auto-drain), or 409 `node_finished`; no accepted message is lost in any branch.
-- [ ] End classification: an interrupted turn skips validation and re-ask, writes one `interrupted` status row, never emits `node_failed`/`dag_node_failed`, and the running tool row settles as `⚠ interrupted`.
-- [ ] Dock (both shells): idle-after-interrupt hides `Stop`, send reads `Send now`, header reads `WILL SEND · n`, the disclosure `stopped after the last completed tool call · files already written stay written` renders; `Send now` returns the dock to generating.
-- [ ] Delivery: queued messages then the new message are sent in receipt order as one next turn through the same Claude session.
-- [ ] Loop parity: AI loop nodes and loop-group bodies apply the same registry, end-cause, idle-await, same-session, and interrupted-row behavior before the loop-completion check.
-- [ ] A11y: announcements are serialized per transition, `Stopping…` is `aria-disabled` (never `disabled`), delivery failure uses `role="alert"`, focus moves to the send control (stop unmount) or the last transcript row (dock removal), never `<body>`.
-- [ ] All focused suites, generated-file checks, and `bun run validate` pass; `sprint-status.yaml` moves `2-3-interrupt-and-redirect-a-running-claude-agent` to `done` at closeout.
+- [ ] Every interrupt-capable direct AI turn, AI-loop turn, and provider-calling loop-group body registers and settles a tokenized active turn; terminal paths close/unregister and settle all waiters, while AskHuman intentionally parks the existing handle/queue for resume.
+- [ ] Stop calls Claude's native `interrupt()` once through the fresh turn signal; it never aborts/closes the query through the node Cancel path, the node remains `running`, and the next turn resumes the verified same session id.
+- [ ] The interrupt route returns the classified actual state—idle, generating after auto-drain, or 409 finished—and concurrent/repeated interrupts and sends lose or duplicate no accepted receipt.
+- [ ] An interrupted end retains usage/cost accounting but performs no output validation, validation-miss event, re-ask, batch partial emission, background-task follow-up wait, node completion, or node failure; it settles outstanding tool UI as interrupted and writes exactly one interrupted status row.
+- [ ] Natural-end races retain normal validation/completion behavior; Cancel remains dominant and unchanged.
+- [ ] Idle `send_now` accepts a non-blank new message, returns its immutable `awaiting_send_now` receipt, drains earlier receipts then the new one exactly once, and starts the next turn on the same session.
+- [ ] Non-Claude providers remain queueable but expose no Stop or steering sub-state in this story; detached/parked/terminal refusals preserve existing contracts.
+- [ ] Both docks match the final design anatomy and content at the authoritative 460px panel width and at a 1440×900 desktop shell: no horizontal overflow or control reordering, 32px targets, stable ≥84px send width, token-only styling, and scrollable transcript as the dock grows.
+- [ ] Generating, interrupting, idle with/without queued receipts, generating-again, delivery-failure, and terminal-removal states meet the copy, announcement, alert, contrast, reduced-motion, and last-transcript-row focus criteria in both shells.
+- [ ] Focused tests, the sanitized real-SDK spike report, both-shell Playwright flow, loop parity test, capability matrix check, type checks, and `bun run validate` all pass before Story 2.3 is marked done.
 
-## Validation Log
+## Compatibility, operations, and rollback
 
-### Session 1 — 2026-09-19 (planning; interview pending)
+- All type/schema changes are additive and optional at wire boundaries. No migration or persisted state changes.
+- Existing calls without `interruptSignal`, all non-opt-in e2e-fake scenarios, and non-Claude queue guidance must remain behaviorally unchanged.
+- The interrupt HTTP request may remain open until classification; every engine terminal path must settle it. Do not add an arbitrary server timeout that can report the wrong outcome.
+- Idle-after-interrupt is process-local and, until Story 2.12, can wait indefinitely if no operator acts; the cancel poll and registry cleanup prevent an uncancellable or leaked run. A process restart loses the session/queue as already disclosed by the steering design.
+- Idle-await adds at most one interval per idle node, using the existing cancel cadence and clearing it on every wake/teardown; it must not busy-poll, retain query listeners, or add per-chunk registry work. Queue and accepted-id complexity remains the existing Story 2.1 behavior.
+- OpenAPI regeneration must use one tracked server process on the deterministic project port and stop that process afterward.
+- Rollback is a single feature slice: remove the route/projection and UI controls, then remove the executor/provider seam. No data rollback is required.
 
-Verification pass: every `file:line` anchor in the Evidence table and the phase files was read from source during planning (Tier: Full — 5 phases); SDK claims were read from `sdk.d.ts@0.3.209` fetched from unpkg. Two claims remain `[UNVERIFIED]` until the Phase 1 spike: the input-generator lifetime required for `interrupt()`, and the exact `terminal_reason` an interrupted Claude turn carries.
+## Validation sequence
 
-Open questions for the owner before `/ak:cook` (answers propagate to the named phases):
+Run the focused commands named in each phase, then:
 
-- **V1 (Phase 1)** — Keep the explicit `interruptSignal` option (D1, recommended) or reuse `abortSignal` with `signal.reason` discrimination (scout recommendation)?
-- **V2 (Phase 2)** — Ship the idle-await cancel status poll in this story (D3, recommended so a CLI-process cancel reaches an idle node) or defer it entirely to Story 2.12 and accept an unbounded wait?
-- **V3 (Phase 4)** — Focus after `Stop` unmounts: send control (EXPERIENCE.md `:264`, recommended) vs last transcript row (story AC wording); both agree on dock removal → last row and never `<body>`.
-- **V4 (Phase 4)** — May `Send now` fire with an empty composer when `n > 0` queued messages exist (recommended yes: it delivers the queue as-is)?
-- **V5 (Phase 5)** — Correct `2-1-queue-guidance-for-a-running-agent: backlog` in `sprint-status.yaml` in the same PR, or leave it to its owning workflow?
-- **V6 (Phase 3)** — Accept the additive error code `not_interruptible` (422) for providers without the capability, or fold it into `not_steerable_here`?
-- **V7 (Phase 3/4)** — Emit a `dag_node` (or new) SSE push when a node enters/leaves `idle-after-interrupt` so a reloaded Console tab converges promptly, or leave cross-tab convergence to Story 2.9 (recommended: defer)?
+```bash
+bun run generate:capability-matrix
+bun run check:capability-matrix
+(cd e2e && npm run typecheck)
+bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'
+bun run validate
+```
 
-### Gates deferred (run before `/ak:cook`)
-
-This planning session ran under a non-interactive structured-output requirement, so the interactive gates were not executed; they are deferred, not skipped silently:
-
-- **Validation interview** (`/ak:plan validate <plan-dir>`) — questions V1–V7 above are the interview; answers propagate to the named phases.
-- **Red-team review** (`/ak:plan red-team <plan-dir>`, 3 reviewers for 5 phases: Security Adversary, Assumption Destroyer, Failure Mode Analyst) — not yet run; the advisor review pass (2 rounds) stands in as expert review and its findings are already applied (case-3 placement, parked-handle ladder, D8 reload hedge).
-- **Task hydration** — no live task-management surface was available in this session; progress lives in the phase-file checkboxes (`ak plan status`).
-- **Journal** — `/ak:journal` not run; run at archive time.
-
-## Residual risks
-
-- The streaming-input + `resume` composition is the spec's named unverified seam. Phase 1 stops and escalates if the spike shows `interrupt()` is rejected, the session does not resume, or the input generator must end before the turn starts. Fallback (owner decision, not silent): stream-abort on a per-turn controller with the session file resumed — it violates the "native `interrupt()`" wording of AC 2.
-- Without Story 2.12, an idle node with no Send now waits until Cancel; the dock must not promise a 30-minute limit yet.
-- Adding exports to `dag-executor.ts` / `steering-registry.ts` un-mocks nothing today (no factory mocks the registry) — re-check with `grep -rn "mock.module('.*steering-registry" packages` before merging.
-- `api.generated.d.ts` regeneration needs a running server on this worktree's deterministic port; record the PID and stop only that process.
-
-<!-- slug: issue-183-interrupt-and-redirect-claude-agent -->
+Do not run root `bun test`; the repository requires per-package isolation. Do not mark `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` done until the final gate and evidence map are complete.

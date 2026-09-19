@@ -1,5 +1,10 @@
 # Scout report — Issue #183, Story 2.3 "Interrupt and redirect a running Claude agent"
 
+> **Historical navigation only.** This pre-review scout is not implementation
+> authority. Its assumptions, recommendations, validation questions, and line
+> anchors were independently rechecked and are superseded by the revised
+> `../plan.md` and phase files. Use this report only to locate source areas.
+
 Read-only scout of the server and web layers to prepare an implementation plan. All anchors
 are relative to the worktree root
 `/Volumes/WD_BLACK/archon/workspaces/anhle128/Archon/worktrees/archon/thread-dffdf57a`.
@@ -110,8 +115,9 @@ function registerOpenApiRoute(
 
 `packages/server/src/routes/api.ts:5173-5289`. Key structure, in order:
 
-1. **Pre-route `app.use` middleware** (`:5179-5194`) runs auth resolution *before* Hono's own
+1. **Pre-route `app.use` middleware** (`:5179-5194`) runs auth resolution _before_ Hono's own
    body validator, so an unauthenticated gated caller gets 401 even on a malformed body:
+
    ```ts
    app.use('/api/workflows/runs/:runId/nodes/:nodeId/send', async (c, next) => {
      if (c.req.method !== 'POST') return next();
@@ -121,11 +127,16 @@ function registerOpenApiRoute(
      }
      const contentType = c.req.header('Content-Type');
      if (contentType !== undefined && /^application\/([a-z-.]+\+)?json/i.test(contentType)) {
-       try { await c.req.json(); } catch { return steeringError(c, 400, 'invalid_request', 'Malformed request body'); }
+       try {
+         await c.req.json();
+       } catch {
+         return steeringError(c, 400, 'invalid_request', 'Malformed request body');
+       }
      }
      return next();
    });
    ```
+
    An interrupt route with no body can drop the JSON pre-parse block but must keep the identical
    auth-before-validation ordering if it registers its own `app.use` guard, OR it can skip the
    guard entirely and rely on `resolveAuthContext` inside the handler (see next) — there is no
@@ -139,9 +150,9 @@ function registerOpenApiRoute(
    - `getValidatedBody(c, sendWorkflowNodeBodySchema)` (`:5207`) — N/A for interrupt (no body).
    - `workflowDb.getWorkflowRun(runId)` → 404 `not_found` if absent (`:5209-5212`).
    - Builds the **effective node-state projection**: `workflowEventDb.listWorkflowEvents(runId)`
-     + `workflowPendingInteractionDb.listPendingInteractions(runId)` →
-     `projectApiWorkflowNodeStates(events, pendingInteractions).find(state => state.nodeId ===
-     nodeId)` (`:5214-5221`).
+     - `workflowPendingInteractionDb.listPendingInteractions(runId)` →
+       `projectApiWorkflowNodeStates(events, pendingInteractions).find(state => state.nodeId ===
+nodeId)` (`:5214-5221`).
    - `const handle = getSteeringRegistry().get(runId, nodeId)` (`:5222`) — the process-local
      handle is the interrupt target too.
    - Lifecycle gates in order (`:5224-5241`): 404 if neither projection nor handle exist; 409
@@ -174,7 +185,7 @@ reports the resulting `sub_state`.
 `closeIfEmpty`/`drain` at natural turn boundaries (`:3337-3352`, `:6883-6907`), `park`
 (`:3446`, `:6464`, `:7041`), and `unregister` (`:3567`, `:5370`) — the natural-boundary gate at
 `:3330-3353` is fully synchronous by design ("no route-side enqueue can land between the empty
-check, the session-id decision, and the drain"); an idle timeout explicitly does *not* go through
+check, the session-id decision, and the drain"); an idle timeout explicitly does _not_ go through
 this path ("An idle timeout is NOT a natural boundary"). This confirms the interrupt mechanism —
 whatever actually stops a live provider turn — is genuinely new work, not a route wired to
 existing plumbing; it is provider/executor scope (see the `scout-provider`/`scout-executor`
@@ -186,6 +197,7 @@ job is to call into it and translate the result to `sub_state`.
 `packages/server/src/routes/api.workflow-runs.test.ts` (6659 lines).
 
 - **App construction** — `makeApp()` at `:842-857`:
+
   ```ts
   function makeApp(): { app: OpenAPIHono; mockWebAdapter: WebAdapter } {
     const app = new OpenAPIHono({ defaultHook: validationErrorHook });
@@ -195,11 +207,12 @@ job is to call into it and translate the result to `sub_state`.
     return { app, mockWebAdapter };
   }
   ```
+
   Every describe block calls `makeApp()` fresh per test (not shared across tests).
 
 - **Registry seeding** — the real singleton is used, not mocked. `getSteeringRegistry` is
   imported directly at `:750` (`import { getSteeringRegistry } from
-  '@archon/workflows/steering-registry';`) and `:752-754` imports `NodeSteeringHandle`,
+'@archon/workflows/steering-registry';`) and `:752-754` imports `NodeSteeringHandle`,
   `SteeringHandleSnapshot` types. `@archon/workflows/steering-registry` does **not** appear in any
   `mock.module(...)` call in this file — confirmed by grep. `beforeEach` in the send describe
   block calls `getSteeringRegistry().clearForTests()` (`:6215`) to reset registry state between
@@ -214,7 +227,7 @@ job is to call into it and translate the result to `sub_state`.
   `@archon/workflows/executor` is mocked at `:413-416` (unrelated to steering — the dispatch path).
 
 - **Send describe block** — `describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send —
-  queued guidance', ...)` at `:6213-6659`. Helpers: `STEER_RUN_ID`/`STEER_NODE_ID`/
+queued guidance', ...)` at `:6213-6659`. Helpers: `STEER_RUN_ID`/`STEER_NODE_ID`/
   `STEER_STARTER_ID`/`STEER_MESSAGE_ID*` constants (`:6162-6167`), `mockSteerableRun(overrides)`
   (`:6169-6176`, a running run with `user_id: STEER_STARTER_ID`), `steerEvent(eventType, nodeId)`
   (`:6178-6187`, builds a `node_started`/`node_completed`/etc mock event), `sendPayload(overrides)`
@@ -222,10 +235,10 @@ job is to call into it and translate the result to `sub_state`.
   `app.request(...)` fetch), `liveSetup(nodeId)` (`:6226-6230`, seeds a running run + `node_started`
   projection + registers a live handle), `expectNoSteeringMutation(handle, before)`
   (`:6233-6242`, asserts snapshot unchanged and no DB writes happened), `expectSteeringError(res,
-  status, code)` (`:6244-6252`).
+status, code)` (`:6244-6252`).
 
 - **Actor-ladder tests** ("Actor matrix" section, `:6259-6338`): run starter (`X-Archon-User:
-  STEER_STARTER_ID`) → 200, operator id recorded; another authenticated member identity
+STEER_STARTER_ID`) → 200, operator id recorded; another authenticated member identity
   (mocked via `mockFindOrCreateUserByPlatformIdentity.mockImplementationOnce`) → 200; an admin
   identity that does **not** own the run → 200 (steering's actor grant is broader than
   ownership — "any authenticated identity may call these routes", confirmed by the contract doc
@@ -269,6 +282,7 @@ nodeStates: settleApiWorkflowNodeStatesForRunStatus(
   projectApiWorkflowNodeStates(events, pendingInteractions)
 ),
 ```
+
 (`packages/server/src/routes/api.ts:5603-5606`)
 
 `projectApiWorkflowNodeStates` (`packages/server/src/routes/api.ts:190-229`) builds
@@ -319,6 +333,7 @@ promptly instead of waiting for its 30s heartbeat.
 ### 2.1 `generate:types` procedure and the worktree port trap
 
 `packages/web/package.json:12`:
+
 ```
 "generate:types": "openapi-typescript http://localhost:3090/api/openapi.json -o src/lib/api.generated.d.ts"
 ```
@@ -329,6 +344,7 @@ different, deterministic port in the 3190-4089 range — confirmed in
 `isWorktreePath(cwd)` is true, the port is `3090 + calculatePortOffset(cwd)`
 (`calculatePortOffset`, `:16-26`, md5-hashes the path into a 100-999 offset). Only an explicit
 `PORT` env var or running outside a worktree yields 3090. **Procedure in this worktree**:
+
 1. Start the server bound to 3090 explicitly: `PORT=3090 bun run dev:server` (root script at
    `package.json:12`, `"dev:server": "bun --filter @archon/server dev"`) — run this
    `run_in_background: true` / via a tracked background process per the process-management rule,
@@ -345,6 +361,7 @@ manual two-step (start server, run generator) documented only implicitly via the
 ### 2.2 `sendNodeGuidance` in `packages/web/src/lib/api.ts` (Legacy)
 
 `packages/web/src/lib/api.ts:748-780`:
+
 ```ts
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
@@ -354,7 +371,12 @@ export async function sendNodeGuidance(
   nodeId: string,
   body: SendWorkflowNodeBody
 ): Promise<SendWorkflowNodeResponse> {
-  const url = '/api/workflows/runs/' + encodeURIComponent(runId) + '/nodes/' + encodeURIComponent(nodeId) + '/send';
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/send';
   try {
     return await fetchJSON<SendWorkflowNodeResponse>(url, {
       method: 'POST',
@@ -366,6 +388,7 @@ export async function sendNodeGuidance(
   }
 }
 ```
+
 An `interruptNode(runId, nodeId)` helper mirrors this: no `body` param, no `body:
 JSON.stringify(...)` in the `fetchJSON` call (or `body: '{}'` if the transport requires a body on
 POST — check `fetchJSON`'s handling of an omitted body for a `Content-Type: application/json`
@@ -376,6 +399,7 @@ and types regenerate.
 ### 2.3 `sendNodeGuidance` in `packages/web/src/experiments/console/skills/runs.ts` (Console)
 
 `packages/web/src/experiments/console/skills/runs.ts:158-180`:
+
 ```ts
 export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
@@ -395,6 +419,7 @@ export async function sendNodeGuidance(
   }
 }
 ```
+
 Uses `requestJson` (console's own HTTP wrapper) instead of `fetchJSON`, but otherwise identical
 shape — an `interruptNode` mirror here follows the same pattern as 2.2, using `requestJson` and
 dropping the body.
@@ -424,6 +449,7 @@ hasPendingAsk={...} />` at `:523-531`.
 The `row`/`runStatus` props trace up to **`WorkflowExecution.tsx`**, which owns the actual
 `GET /api/workflows/runs/:runId` fetch via React Query:
 `packages/web/src/components/workflows/WorkflowExecution.tsx:433-445`:
+
 ```ts
 const { data: queryData, error: queryError } = useQuery({
   queryKey: ['workflowRun', runId],
@@ -439,6 +465,7 @@ const { data: queryData, error: queryError } = useQuery({
   staleTime: 0,
 });
 ```
+
 **Legacy polls the full run detail (including `nodeStates`) every 3000ms while non-terminal.**
 There is no `useWorkflowRun` custom hook — it's an inline `useQuery` in this component. Any
 registry-derived `steering.sub_state` field added to `nodeStates` (§1.8) reaches the Legacy dock
@@ -451,12 +478,14 @@ does with `dock.sent`).
 `ConsoleNodeRoom.tsx` itself is a presentational component (receives data as props like
 `LegacyNodeRoom`). The fetch lives in **`RunDetailPage.tsx`**:
 `packages/web/src/experiments/console/routes/RunDetailPage.tsx:198-201`:
+
 ```ts
 const { data: detail, error: detailError } = useEntity<ConsoleRunDetail | null>(
   runId !== undefined ? K.run(runId) : 'noop:no-run-id',
   () => (runId !== undefined ? skill.getRun(runId) : Promise.resolve(null))
 );
 ```
+
 `skill.getRun` is `packages/web/src/experiments/console/skills/runs.ts:91-111` — a single
 `requestJson` call to the same `GET /api/workflows/runs/:runId`, mapping `res.nodeStates` straight
 through (`:99`, `nodeStates: res.nodeStates`).
@@ -466,8 +495,9 @@ null)` (`RunDetailPage.tsx:229`) subscribes to the conversation's SSE stream
 (`packages/web/src/experiments/console/lib/sse.ts:91-139`); its `case 'dag_node':` branch (`:136`,
 alongside `workflow_tool_activity`/`workflow_step`/`workflow_artifact`/`workflow_dispatch`)
 triggers `invalidate(K.run(runId))` (`:115`), which makes `useEntity` refetch `getRun` immediately.
-Separately there's a **30-second heartbeat safety net**, explicitly *not* meant as the primary
+Separately there's a **30-second heartbeat safety net**, explicitly _not_ meant as the primary
 update path (`RunDetailPage.tsx:234-249`):
+
 ```ts
 // SSE-drop safety net: if the stream silently dies ... A 30s heartbeat refetch
 // while status is non-terminal catches that without being polling proper —
@@ -485,7 +515,7 @@ useEffect(() => {
 **This is the key asymmetry for Story 2.3**: since no SSE event fires for steering state today
 (§1.9), Console will only learn about an interrupt's `idle-after-interrupt` sub_state (from a
 reload or another tab) via the 30s heartbeat unless the interrupt path is made to emit a `dag_node`
-(or new) SSE event that the invalidation switch already listens for. The tab that *made* the
+(or new) SSE event that the invalidation switch already listens for. The tab that _made_ the
 interrupt call gets its `sub_state` from the POST response directly and can update local state
 optimistically (same pattern `ComposerDock`/`ConsoleComposerDock` already use for `dock.sent`), so
 same-tab UX is unaffected — only reload/other-tab convergence depends on this gap.
@@ -507,18 +537,20 @@ accent-bright ring).
 ### 4.1 Props (`ComposerDockProps` / `ConsoleComposerDockProps`)
 
 `ComposerDock.tsx:46-59`:
+
 ```ts
 export interface ComposerDockProps {
   runId: string;
-  nodeId: string;          // namespaced node id — send route segment + draft scope key
-  nodeLabel: string;       // display label for the field's accessible name
+  nodeId: string; // namespaced node id — send route segment + draft scope key
+  nodeLabel: string; // display label for the field's accessible name
   rowStatus: WorkflowNodeStateResponse['status'];
-  live: boolean;           // historical runs never steer
-  hasPendingAsk: boolean;  // this node's pending ask blocks send
+  live: boolean; // historical runs never steer
+  hasPendingAsk: boolean; // this node's pending ask blocks send
   send?: SendNodeGuidance; // injectable for tests, defaults to sendNodeGuidance
-  storage?: Storage;       // injectable for tests
+  storage?: Storage; // injectable for tests
 }
 ```
+
 `ConsoleComposerDock.tsx:51-64` is byte-identical except `rowStatus: WorkflowNodeState['status']`
 (console's own type from `../skills/runs`). A new `interrupt`/`onInterrupt` prop (and a `subState`
 prop carrying the projected `generating`/`idle-after-interrupt` value from the parent's
@@ -527,6 +559,7 @@ prop carrying the projected `generating`/`idle-after-interrupt` value from the p
 ### 4.2 Current button/control inventory (Story 2.1 baseline — no Stop yet)
 
 Both files currently render exactly **one** button, `Queue` (`ComposerDock.tsx:227-243`):
+
 ```tsx
 <button
   type="button"
@@ -540,6 +573,7 @@ Both files currently render exactly **one** button, `Queue` (`ComposerDock.tsx:2
   Queue
 </button>
 ```
+
 Note the **`aria-disabled` pattern** (never native `disabled`) already exists here — the exact
 pattern the task brief says the new `Stop` button and UI-local `interrupting` state must follow.
 This is the precedent to copy: `aria-disabled={blocked ? true : undefined}` plus
@@ -564,9 +598,13 @@ lowercase-DOM/CSS-uppercase convention — likely a new `steering-dock.ts` helpe
 
 - **Refusal** (`role="alert"`): `ComposerDock.tsx:213-217`:
   ```tsx
-  {dock.refusal === null ? null : (
-    <p role="alert" className={REFUSAL_CLASSES}>{dock.refusal.message}</p>
-  )}
+  {
+    dock.refusal === null ? null : (
+      <p role="alert" className={REFUSAL_CLASSES}>
+        {dock.refusal.message}
+      </p>
+    );
+  }
   ```
 - **Detached disclosure** (`role="alert"`, separate early-return branch):
   `ComposerDock.tsx:137-145`.
@@ -575,7 +613,9 @@ lowercase-DOM/CSS-uppercase convention — likely a new `steering-dock.ts` helpe
 - **Status live region** (`role="status"`, visually hidden via `sr-only`):
   `ComposerDock.tsx:245-247`:
   ```tsx
-  <div role="status" className="sr-only">{statusText}</div>
+  <div role="status" className="sr-only">
+    {statusText}
+  </div>
   ```
   `statusText` (`:148-153`) is either the blocked reason or `queuedCountPhrase(dock.sent.length)`
   (e.g. "2 messages queued", `steering-dock.ts:101-103`). This is the **only** `aria-live`-style
@@ -605,7 +645,7 @@ uses `act`/`createElement`/`createRoot` from those dynamic imports, and lazily l
 module itself via `loadComposerModule()` (`:20-35`) which conditionally installs a temporary
 `happy-dom` window (`installHappyDom()`/`restoreHappyDom()` from
 `@/experiments/console/test/install-happy-dom`) only if `globalThis.document` is undefined at
-import time — because `@/lib/api` reads `window` at import time, so the module needs *some* DOM
+import time — because `@/lib/api` reads `window` at import time, so the module needs _some_ DOM
 present for its first import even though the actual test render also needs a fresh DOM per test.
 `send` is injected via the `send` prop (type `SendNodeGuidance`, imported from `./ComposerDock`
 itself, `ComposerDock.test.tsx:9`) — tests never mock the real `sendNodeGuidance` module, they pass
@@ -670,6 +710,7 @@ interrupt-mode-transition unit tests belong — they may need a new file).
 (`NodeMessageRow.kind === 'status'`) whose `payload.state === 'interrupted'`, and treats it
 specially when it **immediately follows a tool-card** in the projected stream
 (`buildAgentHistory`, `:260-303`):
+
 ```ts
 if (item.kind === 'tool-card') {
   const next = projected[index + 1];
@@ -677,11 +718,20 @@ if (item.kind === 'tool-card') {
     next?.kind === 'message' &&
     next.message.kind === 'status' &&
     next.message.payload.state === 'interrupted';
-  items.push(toToolItem(item, input.events, input.nodeId, input.nowMs, interrupted ? 'interrupted' : undefined));
-  if (interrupted) index++;   // the status row is absorbed, not rendered separately
+  items.push(
+    toToolItem(
+      item,
+      input.events,
+      input.nodeId,
+      input.nowMs,
+      interrupted ? 'interrupted' : undefined
+    )
+  );
+  if (interrupted) index++; // the status row is absorbed, not rendered separately
   continue;
 }
 ```
+
 This folds the following status row **into** the preceding tool's `outcome: 'interrupted'` rather
 than rendering the status row on its own — the status row is consumed (`index++`) and never
 reaches the generic `kind === 'status'` branch at `:293-303` in that case. The `'interrupted'`
@@ -699,7 +749,7 @@ general SDK-stream concept referenced in `packages/workflows/src/event-emitter.t
 **reusable but not automatically correct** for Story 2.3's dock-level Stop: an operator-initiated
 interrupt during active tool execution could legitimately reuse this exact wire shape (a status row
 with `payload.state === 'interrupted'` right after the tool-card, producing the ⚠ glyph
-automatically with **no web code change**), but an interrupt landing during a *text-generation*
+automatically with **no web code change**), but an interrupt landing during a _text-generation_
 phase (no open tool call) has nothing to fold into — it needs the **generic lifecycle path**
 instead (see 5.2).
 
@@ -707,25 +757,37 @@ instead (see 5.2).
 
 For a status row that does **not** immediately follow a tool-card, `buildAgentHistory`
 (`:293-301`) produces a generic `AgentHistoryItem` of `kind: 'lifecycle'`:
+
 ```ts
 if (message.kind === 'status') {
   items.push({
-    kind: 'lifecycle', id: message.id, seq: message.seq,
-    state: message.payload.state, detail: message.payload.detail ?? null,
+    kind: 'lifecycle',
+    id: message.id,
+    seq: message.seq,
+    state: message.payload.state,
+    detail: message.payload.detail ?? null,
     execution: message.metadata?.execution ?? null,
   });
 }
 ```
+
 This is rendered by `LifecycleHistory` in `packages/web/src/components/workflows/NodeRoom.tsx:264-275`:
+
 ```tsx
-function LifecycleHistory({ item }: { item: Extract<AgentHistoryItem, {kind:'lifecycle'}> }): React.ReactElement {
+function LifecycleHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'lifecycle' }>;
+}): React.ReactElement {
   return (
     <p className="text-xs text-text-secondary">
-      {item.state}{item.detail !== null && item.detail.length > 0 ? ` ${item.detail}` : ''}
+      {item.state}
+      {item.detail !== null && item.detail.length > 0 ? ` ${item.detail}` : ''}
     </p>
   );
 }
 ```
+
 **This renders `item.state` verbatim as plain text with no per-value styling or icon lookup** — a
 new server-written status row with `state: 'interrupted'` (or whatever exact string the plan
 picks — `started`/`completed`/`failed` are the values named in the task brief as the existing
@@ -737,7 +799,7 @@ confirms `kind === 'lifecycle'` there too — same treatment, not separately re-
 since the pattern is presentational parity with NodeRoom.tsx).
 
 **Conclusion for the plan**: whether a new `state: 'interrupted'` lifecycle row needs any web
-change depends entirely on *whether the interrupt lands mid-tool-call or mid-text-generation* —
+change depends entirely on _whether the interrupt lands mid-tool-call or mid-text-generation_ —
 mid-tool-call reuses the existing tool-outcome fold (§5.1, zero web change, ⚠ glyph); anywhere else
 falls through to the generic lifecycle renderer (§5.2, zero web change, plain text). The only
 scenario needing a **web** change is if the plan wants interrupt-specific styling/iconography
@@ -776,9 +838,10 @@ and `e2e-queue-guidance-loop.yaml`.
 ### 6.1 Fixtures
 
 `e2e-queue-guidance.yaml` (full contents):
+
 ```yaml
 name: e2e-queue-guidance
-description: "E2E — one delayed direct node on the fake provider for queued-guidance drain."
+description: 'E2E — one delayed direct node on the fake provider for queued-guidance drain.'
 mutates_checkout: false
 nodes:
   - id: steer-me
@@ -788,6 +851,7 @@ nodes:
       <<E2E_SCENARIO>>{"delayMs":30000}<</E2E_SCENARIO>>
       $ARGUMENTS
 ```
+
 The `<<E2E_SCENARIO>>{"delayMs":30000}<</E2E_SCENARIO>>` directive tells the fake provider
 (`e2e-fake`) to hold the turn open for 30 seconds — long enough for the test to interact with the
 composer dock before the node completes naturally. A `steer-loop` variant does the same inside one
@@ -798,12 +862,14 @@ long enough to click Stop mid-turn and assert the turn actually ends before the 
 elapses — proof the interrupt did something, not just that the button exists.
 
 Relevant constants — `e2e/lib/playwright/archon-runtime.ts:90-93`:
+
 ```ts
 export const E2E_QUEUE_GUIDANCE_WORKFLOW_NAME = 'e2e-queue-guidance';
 export const E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME = 'e2e-queue-guidance-loop';
 export const QUEUE_GUIDANCE_NODE = 'steer-me';
 export const QUEUE_GUIDANCE_LOOP_NODE = 'steer-loop';
 ```
+
 The `archon` fixture exposes `startWorkflowViaWeb(workflowName, message): Promise<HitlWebRun>`
 (interface at `:188`, implementation `:781-807`) — dispatches a run through the actual web UI and
 returns `{ runId, ... }`.
@@ -811,6 +877,7 @@ returns `{ runId, ... }`.
 ### 6.2 Test structure — both shells via a `surface` loop
 
 `e2e/ui/agent-queue-guidance.spec.ts:296-298`:
+
 ```ts
 for (const surface of ['console', 'legacy'] as const) {
   test(`[P1] [V:steer.direct-${surface}] queue guidance drains at the natural boundary on ${surface}`, async ({ page, archon }, testInfo: TestInfo) => {
@@ -819,6 +886,7 @@ for (const surface of ['console', 'legacy'] as const) {
   ...
 }
 ```
+
 Every `test(...)` name is tagged `[P1] [V:<evidence-id>-${surface}]` — the `[P1]` priority tag
 feeds the `test:ui:p1` script (`e2e/package.json:11`), and `[V:...]` names the visual-evidence
 artifact for that test. Tests present (`:300-777`): `queue-guidance drains at natural boundary`
@@ -849,6 +917,7 @@ writing into the 2.1 plan's directory. `MEASUREMENTS_FILE` (`:50`) is a JSON fil
 
 Reduced-motion handling — `:655-661` inside the `'queue guidance dock geometry, contrast, and
 reduced-motion evidence'` test:
+
 ```ts
 await test.step('reduced-motion parity', async () => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -856,6 +925,7 @@ await test.step('reduced-motion parity', async () => {
   await page.emulateMedia({ reducedMotion: 'no-preference' });
 });
 ```
+
 Uses Playwright's native `page.emulateMedia({ reducedMotion })` — no custom CSS-injection
 workaround. The dock components themselves already guard transitions with
 `motion-reduce:transition-none` (`ComposerDock.tsx:238`,
@@ -875,6 +945,7 @@ invoked at `:637-654` for `460px` (mobile) and Console `1440x900` captures.
 ### 6.4 `e2e/package.json` scripts
 
 `e2e/package.json:7-14`:
+
 ```json
 "scripts": {
   "test:ui": "playwright test -c playwright.config.ts ui",
@@ -885,6 +956,7 @@ invoked at `:637-654` for `460px` (mobile) and Console `1440x900` captures.
   "typecheck": "tsc -p tsconfig.json --noEmit"
 }
 ```
+
 `@archon/e2e` is deliberately **not** a bun workspace member (docblock `description` field,
 `e2e/package.json:6`) so root `bun --filter '*'` scripts never pull in Playwright. A new
 `agent-interrupt-redirect.spec.ts` would live at `e2e/ui/agent-interrupt-redirect.spec.ts`, tagged

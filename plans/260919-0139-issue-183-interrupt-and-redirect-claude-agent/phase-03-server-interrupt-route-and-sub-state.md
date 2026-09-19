@@ -1,89 +1,152 @@
 ---
 phase: 3
-title: 'Server: interrupt route, Send now flush, sub-state'
+title: 'Interrupt route, atomic Send now, and sub-state projection'
 status: pending
 priority: P1
-effort: '1d'
 dependencies: [2]
 ---
 
-# Phase 3: Server — interrupt route, Send now flush, sub-state
+# Phase 3: Interrupt route, atomic Send now, and sub-state projection
 
 ## Goal
 
-`POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt` ends the live turn and answers with the actual end state; `intent: 'send_now'` on the existing send route flushes an idle node's queue; `GET /api/workflows/runs/:runId` carries the projected steering sub-state on each node; `api.generated.d.ts` is regenerated so both shells consume typed wire shapes.
-
-Deep mode: outline; scout pass `reports/scout-260919-0830-server-web-dock.md` §1–2 precedes execution.
-
-## Context links
-
-- Contract: `_bmad-output/specs/spec-agent-node-room/steering-api-contract.md` (interrupt response `{ success:true, sub_state }`, 409 `node_finished`, idempotent repeat while idle, races fold into the queue).
-- Anchors: send route definition `packages/server/src/routes/api.ts:1576-1606`; `steeringJsonError` `:654-662`; `steeringError` `:2188-2196`; auth/JSON pre-middleware `:5179-5197`; handler `:5199-5290` (projection, `TERMINAL_API_NODE_STATUSES` `:241`, last gate `:5250-5258`); `nodeStates` assembly `:5605-5608`; `projectApiWorkflowNodeStates` `:190-234`; schemas `packages/server/src/routes/schemas/workflow.schemas.ts:160-176` (`workflowNodeStateSchema`) and the Story 2.1 send schemas; `openapi-defaults.ts`.
+Expose the live engine state without inventing durable state: add the interrupt route, send `intent` into the registry's atomic accept operation, and project the two interrupt-capable agent sub-states into the existing GET-run node state.
 
 ## Files
 
-| File                                                     | Action | Change                                                                                                 | Test impact       |
-| -------------------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ----------------- |
-| `packages/server/src/routes/schemas/workflow.schemas.ts` | Modify | `interruptWorkflowNodeResponseSchema` (`sub_state` enum), widen send response `state` to include `awaiting_send_now`, `steeringSubState` on `workflowNodeStateSchema`, add `not_interruptible` to the documented error codes | route tests, regen |
-| `packages/server/src/routes/api.ts`                      | Modify | Interrupt route (auth pre-middleware for POST without body, handler), `send_now` flush, sub-state join   | route tests       |
-| `packages/server/src/routes/openapi-defaults.ts`         | Modify | Register the new route's response defaults like the send route                                         | spec snapshot     |
-| `packages/server/src/routes/api.workflow-runs.test.ts`   | Modify | Interrupt/send_now/sub-state tests                                                                     | —                 |
-| `packages/web/src/lib/api.generated.d.ts`                | Regen  | `bun --filter @archon/web generate:types` against a server on this worktree's port (record PID; stop only it) | web types |
+| File                                                     | Change                                                                                                                          |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/server/src/routes/schemas/workflow.schemas.ts` | Add interrupt response schema and optional `steeringSubState`; keep the existing send request/response and shared error schema. |
+| `packages/server/src/routes/api.ts`                      | Register the interrupt route, switch send to intent-aware `handle.accept`, and join live sub-state into GET-run projection.     |
+| `packages/server/src/routes/api.workflow-runs.test.ts`   | Route, race, authorization, idempotency, projection, and OpenAPI assertions.                                                    |
+| `packages/web/src/lib/api.generated.d.ts`                | Regenerate from the server OpenAPI document; never hand-edit.                                                                   |
 
-## Refactor (protected change) — route behavior
+`openapi-defaults.ts` does not change: interrupt has no request body, and send already uses the steering validation hook for malformed JSON.
 
-1. **Interrupt handler** mirrors the send handler's ladder in order: identity (401 when gated) → run 404 → projection + handle → 409 `node_finished` for terminal run/node or closed handle → 422 `not_steerable_here` when no handle or when the handle is `parked` (the node is at an ask; nothing live to interrupt — mirrors the send route's `not_live` refusal) → 422 `not_interruptible` when the handle was registered with `interruptible: false` → last-gate re-read of run status → `const pending = handle.interrupt()` (synchronous abort of the per-turn signal) → `await pending` → map `idle-after-interrupt` / `generating` to 200 `{ success:true, sub_state }` and `node_finished` to 409. Repeated interrupt while idle returns 200 `idle-after-interrupt` without a second abort. A refusal never mutates run, queue, or transcript.
-2. **Send now.** In the send handler after `enqueue()`: when `body.intent === 'send_now'` and `handle.subState() === 'idle-after-interrupt'`, call `handle.sendNow()` (drains synchronously, wakes the executor). Response `state`: `awaiting_send_now` when the message is still waiting on an idle node (`intent:'queue'` while idle), otherwise `queued` (Decision D7). Remove the Story 2.1 placeholder comment at `:5273-5275`.
-3. **Sub-state join.** In the GET run handler, after `projectApiWorkflowNodeStates`, map each node: `const handle = getSteeringRegistry().get(runId, nodeId); if (handle && handle.snapshot().phase === 'live') state.steeringSubState = handle.subState();` — only for live runs, never for terminal ones (the settle helper at `:250` already runs first).
-4. **OpenAPI.** Register with `registerOpenApiRoute(createRoute({...}), handler, steeringValidationErrorHook)`; the interrupt route has no `request.body`.
+## Wire contract
 
-## Tests before
+### Interrupt
 
-- Existing send-route suite (`-t 'queued guidance'`) green; the send response schema still accepts `queued`.
-- GET run response for a run with no live handle is byte-identical (no `steeringSubState` key).
+`POST /api/workflows/runs/{runId}/nodes/{nodeId}/interrupt` has no body.
 
-## Tests after
+Success:
 
-| #   | Scenario                                                                                          | Expect                                   |
-| --- | ------------------------------------------------------------------------------------------------- | ---------------------------------------- |
-| 1   | interrupt on a live generating handle whose executor settles `idle-after-interrupt`               | 200 `sub_state:'idle-after-interrupt'`   |
-| 2   | interrupt racing a natural end with a queued message (executor settles `generating`)              | 200 `sub_state:'generating'`             |
-| 3   | interrupt racing a natural end with an empty queue (`node_finished`)                              | 409 `node_finished`                      |
-| 4   | repeat interrupt while idle                                                                       | 200 idempotent, no second abort          |
-| 5   | actor ladder on interrupt: starter / other member / admin / identity-less run → allowed; unauthenticated → 401 | mirrors send tests            |
-| 6   | unknown run/node → 404; terminal run/node → 409; no handle or parked handle → 422 `not_steerable_here`; non-interruptible handle → 422 `not_interruptible` | nothing mutated |
-| 7   | `send_now` on idle: enqueue + `sendNow()` called; response `state:'queued'`; `queue` on idle → `awaiting_send_now` | D7                        |
-| 8   | send while an interrupt is in flight lands in the queue (no 409)                                  | contract race rule                       |
-| 9   | GET run includes `steeringSubState` only for nodes with a live handle in this process             | join                                     |
-| 10  | OpenAPI spec snapshot includes the interrupt route and new enums                                  | regen                                    |
-
-## Regression gate
-
-```bash
-(cd packages/server && bun test src/routes/api.workflow-runs.test.ts)
-(cd packages/server && bun test src/routes/openapi-defaults.test.ts 2>/dev/null || true)
-bun run lint && bun run type-check
+```json
+{ "success": true, "sub_state": "idle-after-interrupt" }
 ```
 
-## Todo
+or:
 
-- [ ] Scout pass: confirm the route test harness and how the registry is seeded in tests
-- [ ] Schemas + error code
-- [ ] Interrupt route + middleware
-- [ ] `send_now` flush + response state
-- [ ] Sub-state join on GET run
-- [ ] Regenerate `api.generated.d.ts` (start server on the worktree port, record PID, stop only it)
-- [ ] Tests After 1–10 green
+```json
+{ "success": true, "sub_state": "generating" }
+```
 
-## Success criteria
+The route uses the existing strict nested steering error shape:
 
-Route tests green; regenerated types compile in `@archon/web`; the send route's existing behavior for `intent:'queue'` on a generating node is unchanged.
+- 401 unauthenticated when the auth/API gate requires identity;
+- 403 only where existing auth resolution produces it;
+- 404 `not_found` for unknown run/node;
+- 409 `node_finished` for a terminal run/node or natural-empty close during the request;
+- 422 `not_steerable_here` for detached, parked, absent, or currently non-interrupt-capable live handling;
+- 500 `internal_error` for unexpected failures.
 
-## Risk assessment
+Do not add `not_interruptible`: it conflicts with the ratified route error vocabulary and leaks an implementation staging detail. The web never offers Stop when the optional sub-state is absent.
 
-- The interrupt handler awaits the executor's classification; bound the await with the request lifetime only (no server-side timer) — the executor always settles on every terminal path (Phase 2 test 13).
-- Regeneration requires the server; follow the process-management rules (deterministic port, PID tracking).
+### Send receipt
 
-## Next steps
+The body remains strict and non-blank. Pass `body.intent` to the registry in the same synchronous final mutation as receipt acceptance. Return `result.receipt.state` exactly:
 
-Phase 4 consumes `interruptNode`, the widened send response, and `steeringSubState`.
+- generating/interrupting acceptance: `queued`;
+- idle acceptance: `awaiting_send_now`, even when that same `send_now` call releases the batch.
+
+This is an immutable idempotent receipt, not a delivery state. A duplicate `message_id` replays the original response and cannot release idle twice.
+
+### GET-run projection
+
+Add optional:
+
+```ts
+steeringSubState?: 'generating' | 'idle-after-interrupt';
+```
+
+After projecting and terminal-settling persisted node states, join registry snapshots by the exact `(runId, nodeId)` key. Include the field only when:
+
+- the persisted/projection node is still `running`;
+- the handle is live in this server process;
+- the handle is interrupt-capable and has a projected sub-state.
+
+Omit it for queue-only non-Claude handles, parked asks, detached runs, terminal nodes, historical executions, and absent handles. Do not persist it and do not synthesize it from transcript rows.
+
+## Handler sequencing
+
+Follow the established send-route actor grant and lifecycle checks:
+
+1. Resolve auth; any authenticated member may steer, an identity-less run remains allowed when the installation gate permits it.
+2. Load run, events, pending interactions, projected node state, and registry handle.
+3. Apply 404/409/422 checks with persisted lifecycle outranking a stale handle.
+4. Re-read run status as the final async database gate.
+5. Call `handle.interrupt()` synchronously before any further `await`; this is the no-torn-controller boundary.
+6. Await the shared executor settlement and map the actual outcome.
+
+If the caller disconnects after step 5, do not undo the interrupt; the engine transition is already an authorized operation and must finish/clean up independently.
+
+For send, retain the same final gate and ensure there is no `await` between it and `handle.accept(message, intent)`. The registry owns the atomic idle release, so the route never performs “read sub-state, then send now” as two operations.
+
+## Tests first
+
+Add route tests with isolated registry handles:
+
+1. live generating interrupt settles idle → 200 idle;
+2. natural-end race with pending guidance → 200 generating;
+3. natural-end race with empty queue → 409 `node_finished`;
+4. repeated/concurrent interrupts share one abort and each receive the same outcome;
+5. interrupt while already idle → idempotent 200 idle;
+6. actor ladder matches send: starter, other authenticated member, admin, and identity-less allowed; gated unauthenticated rejected;
+7. unknown run/node → 404; terminal run/node/closed handle → 409; absent/parked/non-interrupt-capable handle → 422 `not_steerable_here`;
+8. node becomes terminal after the initial read → final gate or settlement returns 409 with no stale success;
+9. send Queue while idle returns `awaiting_send_now` and does not wake;
+10. send Send now while idle returns `awaiting_send_now` and wakes once with old receipts then the new message;
+11. duplicate Send now replays the original receipt without a second drain;
+12. send during interrupting returns `queued` and remains pending for explicit Send now if interruption wins;
+13. GET run adds the field only to the matching live interrupt-capable running node, including a namespaced loop-group body key;
+14. GET run without a qualifying handle is wire-identical to current output;
+15. generated OpenAPI contains the new route, response enum, and optional node field.
+
+Retain all existing malformed-body and queue-guidance tests.
+
+## Type generation and process safety
+
+Regeneration requires the server:
+
+1. Check port 3090 and reuse only a server known to belong to this worktree; otherwise start `bun run dev:server` through the observable process harness and record PID/port/worktree.
+2. Run `bun --filter @archon/web generate:types`.
+3. Stop only the server started for this task.
+4. Review the generated diff for the route and schemas above; unrelated churn is a failure.
+
+## Validation
+
+```bash
+cd packages/server
+bun test src/routes/api.workflow-runs.test.ts -t 'interrupt'
+bun test src/routes/api.workflow-runs.test.ts -t 'queued guidance'
+bun test src/routes/api.workflow-runs.test.ts
+bun run type-check
+cd ../web
+bun run type-check
+```
+
+Then run the complete server route test file because `api.ts` is shared.
+
+## Completion criteria
+
+- The HTTP outcome reflects executor classification rather than request timing.
+- Send acceptance/release is atomic and idempotent, with the verified receipt semantics.
+- Optional projection cannot expose Stop for non-Claude, detached, parked, historical, or terminal nodes.
+- Generated web types compile and contain no hand edits.
+
+## Security, reliability, and rollback
+
+- Message text is still never logged by the registry/route; errors contain stable codes and non-sensitive prose.
+- There is no per-tenant logic: the existing single-install, multi-user steering actor grant is preserved.
+- An interrupt request intentionally waits for classification, so Phase 2 must prove every close/park/discard/error path settles it. Do not paper over a leaked promise with a route timeout.
+- Rollback removes an additive route/field and restores send to queue-only acceptance; no migration or data rollback exists.

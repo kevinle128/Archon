@@ -1,5 +1,11 @@
 # Scout report: Claude provider interrupt seam (issue #183, Story 2.3)
 
+> **Historical navigation only.** This pre-review scout is not implementation
+> authority. Its recommendations (including the single combined
+> `AbortSignal.any` seam), assumptions, and line anchors were independently
+> rechecked and are superseded by the revised `../plan.md` and phase files.
+> Use this report only to locate source areas.
+
 Scope: `@archon/providers` only. `dag-executor.ts` wiring is out of scope
 (see `scout-executor`) but cited where spec docs already constrain the
 provider-layer design.
@@ -72,6 +78,7 @@ post-hoc — but doing the `terminalReason` stamp inline in
 `streamClaudeMessages` (where `resultMsg` is already destructured) is simpler.
 
 **Retry loop / `onAbort` / `closeQuery` — `:1596-1780`.**
+
 ```
 1601  const onAbort = (): void => {
 1602    currentController?.abort();
@@ -81,6 +88,7 @@ post-hoc — but doing the `terminalReason` stamp inline in
 1606    requestOptions.abortSignal.addEventListener('abort', onAbort, { once: true });
 1607  }
 ```
+
 Registered **once, outside** the retry `for` loop, against
 `requestOptions.abortSignal` — matches the test asserting a single listener
 survives retries (`provider.test.ts:2013-2014`). `currentController`/
@@ -115,6 +123,7 @@ by a **second, fresh** `query()` call with `resume: first.sessionId`
 (`:326-333`) — this predates and does not exercise native `interrupt()`.
 
 Minimal one-message wrapper (must be written new — not present anywhere):
+
 ```ts
 async function* singleMessagePrompt(text: string): AsyncGenerator<SDKUserMessage> {
   yield { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null };
@@ -124,7 +133,7 @@ async function* singleMessagePrompt(text: string): AsyncGenerator<SDKUserMessage
 **Open question, unverified:** whether the input generator may `return`
 after yielding once, or must stay open for `interrupt()` to remain callable
 for the turn's duration. `Query.streamInput(stream)` (`d.ts:2498`, "Used
-internally for multi-turn conversations") is a *separate* channel for pushing
+internally for multi-turn conversations") is a _separate_ channel for pushing
 more input onto a live query, suggesting the initial `prompt` iterable's
 lifecycle may be decoupled from the query's lifetime. Since "Send now"
 delivers the redirect as a new turn through the same session via a **fresh**
@@ -148,6 +157,7 @@ not co-occur in one turn, so this is a documented edge, not a blocker.
 ## 2. `AgentRequestOptions`/`SendQueryOptions` and `abortSignal`
 
 **Shape — `types.ts:591-611`:**
+
 ```ts
 export interface AgentRequestOptions {
   model?: string;
@@ -163,35 +173,38 @@ export interface AgentRequestOptions {
   nativeTools?: NativeTool[];
 }
 ```
+
 `SendQueryOptions extends AgentRequestOptions` (`:732-750`) adds `nodeConfig`,
 `assistantConfig`, `execContext`, `resumeInteractions`. Exactly **one**
 `abortSignal` field exists — no per-turn/per-node split today.
 
 **`abortSignal` consumption, one line each:**
 
-| Provider | File:line |
-|---|---|
-| claude | `claude/provider.ts:1605-1606` `abortSignal.addEventListener('abort', onAbort, {once:true})` |
-| codex | `codex/provider.ts:1066-1067` same pattern, removed `:1186-1187` |
-| grok | `grok/provider.ts:334`, removed `:406` |
-| e2e-fake | `e2e-fake/provider.ts:335`, inside `waitUnlessAborted` (`:319-335`) |
-| community/pi | `community/pi/provider.ts:1071` forwarded as a positional arg |
-| community/omp | `community/omp/provider.ts:424-426`, removed `:517` |
-| community/deepseek | `community/deepseek/provider.ts:211` forwarded into ACP client call |
-| community/opencode | `community/opencode/provider.ts:105,113,213` `.aborted` checks + forwarded |
-| community/copilot | `community/copilot/provider.ts:616` forwarded positionally |
-| community/qodercli | `community/qodercli/provider.ts:472-530` add/removeEventListener pair |
-| community/devin | `community/devin/provider.ts:110-111` spread conditionally |
+| Provider           | File:line                                                                                    |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| claude             | `claude/provider.ts:1605-1606` `abortSignal.addEventListener('abort', onAbort, {once:true})` |
+| codex              | `codex/provider.ts:1066-1067` same pattern, removed `:1186-1187`                             |
+| grok               | `grok/provider.ts:334`, removed `:406`                                                       |
+| e2e-fake           | `e2e-fake/provider.ts:335`, inside `waitUnlessAborted` (`:319-335`)                          |
+| community/pi       | `community/pi/provider.ts:1071` forwarded as a positional arg                                |
+| community/omp      | `community/omp/provider.ts:424-426`, removed `:517`                                          |
+| community/deepseek | `community/deepseek/provider.ts:211` forwarded into ACP client call                          |
+| community/opencode | `community/opencode/provider.ts:105,113,213` `.aborted` checks + forwarded                   |
+| community/copilot  | `community/copilot/provider.ts:616` forwarded positionally                                   |
+| community/qodercli | `community/qodercli/provider.ts:472-530` add/removeEventListener pair                        |
+| community/devin    | `community/devin/provider.ts:110-111` spread conditionally                                   |
 
 Every provider treats `abortSignal` as one signal, one meaning ("stop now",
 hard). None discriminates by `signal.reason` today.
 
 **`AbortSignal.any` reason-forwarding — verified this session (Bun 1.3.14):**
+
 ```
 $ bun -e 'const a=new AbortController(); const c=AbortSignal.any([a.signal]);
 a.abort("custom-reason-A"); console.log(c.reason)'
 custom-reason-A
 ```
+
 Confirmed: `AbortSignal.any([...])` forwards the triggering source's
 `.reason` onto the combined signal.
 
@@ -230,6 +243,7 @@ required field.
 (`:51-69`) is the ordered `{key, label}` row list — adding a capability
 requires appending here. `SKIP_KEYS` (`:79`) excludes advisory-only fields.
 **Exact fail point** — `assertTotalCoverage` (`:163-179`):
+
 ```ts
 function assertTotalCoverage(providers: ProviderInfo[]): void {
   const covered = new Set<string>([...AXES.map(a => a.key), ...SKIP_KEYS]);
@@ -242,6 +256,7 @@ function assertTotalCoverage(providers: ProviderInfo[]): void {
   if (uncovered.size > 0) throw new Error(`ProviderCapabilities field(s) not represented...`);
 }
 ```
+
 Fires under both `bun run generate:capability-matrix` and `--check`
 (`main()`, `:290-320`). `renderCell` (`:150-157`) renders booleans as
 `✅`/`❌`; only `structuredOutput` gets tiered rendering — a tiered
@@ -269,6 +284,7 @@ case the executor would need to special-case.
 `packages/providers/src/claude/provider.test.ts` (3814 lines).
 
 **Mocking: `mock.module` for the SDK, `spyOn` for internal exports.**
+
 ```ts
 // :8-10
 mock.module('@archon/paths', () => ({ createLogger: mock(() => mockLogger) }));
@@ -278,6 +294,7 @@ mock.module('@anthropic-ai/claude-agent-sdk', () => ({
   query: mockQuery, tool: (...) => {...}, createSdkMcpServer: config => config,
 }));
 ```
+
 This replaces the SDK import process-wide (why the file runs as its own `bun
 test` invocation). `spyOn` is reserved for internal functions the provider
 file itself exports, e.g. `spyOn(claudeModule, 'getProcessUid')`
@@ -288,6 +305,7 @@ sometimes a plain async generator, sometimes a hand-built object with
 today.**
 
 **Existing abort tests — `:1986-2065`:**
+
 1. `'abort signal cancels query across retries without listener leak'`
    (`:1986-2014`) — asserts `callCount === 1` after abort fires mid-retry-delay.
 2. `'abort signal closes the active SDK query'` (`:2018-2064`) — hand-rolled
@@ -348,6 +366,7 @@ defines the fixture paths (`:52-65`), exported names
 (`:90-91`), node ids `QUEUE_GUIDANCE_NODE`/`QUEUE_GUIDANCE_LOOP_NODE`
 (`:92-93`); `ARCHON_E2E_FAKE_PROVIDER: '1'` set in `isolatedEnv(...)`
 (`:225`). Web-dispatch start helper:
+
 ```ts
 // :780-787
 const startWorkflowViaWeb = async (workflowName, message): Promise<HitlWebRun> => {
