@@ -49,6 +49,22 @@ const TODO_STRIP_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-todo-strip.yaml'
 );
+const QUEUE_GUIDANCE_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-queue-guidance.yaml'
+);
+const QUEUE_GUIDANCE_LOOP_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-queue-guidance-loop.yaml'
+);
 
 /** Name of the seeded workflow whose single AI node runs on the fake provider. */
 export const E2E_WORKFLOW_NAME = 'e2e-usage-record';
@@ -71,6 +87,10 @@ export const HITL_ASK_DECLINE_NODE = 'ask-decline';
 export const E2E_TASK_DISPATCH_WORKFLOW_NAME = 'e2e-task-dispatch';
 export const TASK_DISPATCH_OMP_NODE = 'omp-dispatch';
 export const TASK_DISPATCH_CLAUDE_NODE = 'claude-dispatch';
+export const E2E_QUEUE_GUIDANCE_WORKFLOW_NAME = 'e2e-queue-guidance';
+export const E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME = 'e2e-queue-guidance-loop';
+export const QUEUE_GUIDANCE_NODE = 'steer-me';
+export const QUEUE_GUIDANCE_LOOP_NODE = 'steer-loop';
 
 /**
  * The one model the seeded config prices. A usage entry for
@@ -160,6 +180,20 @@ export interface ArchonRuntime {
    * Polls until the run exists, then until it pauses at Ask.
    */
   runHitlWorkflowViaWeb(): Promise<HitlWebRun>;
+  /**
+   * Dispatch any seeded workflow from a real web conversation and return once
+   * the run row reports `running`. Unlike runHitlWorkflowViaWeb this does not
+   * wait for a terminal/paused state — the caller observes the in-flight turn.
+   */
+  startWorkflowViaWeb(workflowName: string, message: string): Promise<HitlWebRun>;
+  /**
+   * Spawn `archon workflow run <name>` as a tracked detached CLI child whose
+   * `runId` resolves once the run row exists. The executor lives in the CLI
+   * process, so the server's steering registry holds no handle for this run.
+   */
+  startDetachedWorkflow(workflowName: string, message?: string): Promise<LiveWorkflowRun>;
+  /** Authenticated fetch carrying the starter web identity (`X-Archon-User`). */
+  starterFetch(path: string, init?: RequestInit): Promise<Response>;
   /** Poll GET /api/workflows/runs/:id until `run.status` matches. */
   waitForRunStatus(runId: string, status: string, timeoutMs?: number): Promise<void>;
   /** Stop the server and delete the isolated temp tree. */
@@ -381,6 +415,16 @@ async function startArchonRuntime(
   );
 
   writeFileSync(
+    join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_WORKFLOW_NAME}.yaml`),
+    readFileSync(QUEUE_GUIDANCE_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
+    join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME}.yaml`),
+    readFileSync(QUEUE_GUIDANCE_LOOP_WORKFLOW_FIXTURE)
+  );
+
+  writeFileSync(
     join(home, 'config.yaml'),
     [
       'pricing:',
@@ -595,19 +639,24 @@ async function startArchonRuntime(
     );
   };
 
-  const startHitlWorkflow = async (): Promise<LiveWorkflowRun> => {
-    const knownIds = new Set(await listWorkflowRunIds(E2E_HITL_WORKFLOW_NAME));
-    const args = [CLI_ENTRY, 'workflow', 'run', E2E_HITL_WORKFLOW_NAME, '--folder', '--json'];
+  const startDetachedWorkflow = async (
+    workflowName: string,
+    message?: string
+  ): Promise<LiveWorkflowRun> => {
+    const knownIds = new Set(await listWorkflowRunIds(workflowName));
+    const args = [CLI_ENTRY, 'workflow', 'run', workflowName];
+    if (message !== undefined) args.push(message);
+    args.push('--folder', '--json');
     const launched = spawnCli(args);
     const pid = launched.child.pid;
     if (pid === undefined) {
-      throw new Error('HITL workflow CLI spawned without a pid');
+      throw new Error(`workflow '${workflowName}' CLI spawned without a pid`);
     }
     const wait = async (): Promise<CliRunResult> => {
       const code = await launched.exited;
       if (code !== 0) {
         throw new Error(
-          `live HITL workflow exited ${code}\n--- output ---\n${launched.stdout.text}`
+          `live workflow '${workflowName}' exited ${code}\n--- output ---\n${launched.stdout.text}`
         );
       }
       return parseCliEnvelope(launched.stdout.text);
@@ -617,9 +666,13 @@ async function startArchonRuntime(
       command: `bun ${args.join(' ')}`,
       port,
       workdir,
-      runId: waitForRunId(E2E_HITL_WORKFLOW_NAME, 30_000, knownIds),
+      runId: waitForRunId(workflowName, 30_000, knownIds),
       wait,
     };
+  };
+
+  const startHitlWorkflow = async (): Promise<LiveWorkflowRun> => {
+    return startDetachedWorkflow(E2E_HITL_WORKFLOW_NAME);
   };
 
   const resumeWorkflow = async (runId: string): Promise<CliRunResult> => {
@@ -675,8 +728,11 @@ async function startArchonRuntime(
     );
   };
 
-  const runHitlWorkflowViaWeb = async (): Promise<HitlWebRun> => {
-    const knownIds = new Set(await listWorkflowRunIds(E2E_HITL_WORKFLOW_NAME));
+  const dispatchWorkflowViaWeb = async (
+    workflowName: string,
+    message: string
+  ): Promise<HitlWebRun> => {
+    const knownIds = new Set(await listWorkflowRunIds(workflowName));
     const codebaseRes = await starterFetch('/api/codebases', {
       method: 'POST',
       body: JSON.stringify({ path: workdir }),
@@ -703,19 +759,32 @@ async function startArchonRuntime(
     if (!conv.conversationId) {
       throw new Error(`conversation response missing conversationId: ${JSON.stringify(conv)}`);
     }
-    const runRes = await starterFetch(
-      `/api/workflows/${encodeURIComponent(E2E_HITL_WORKFLOW_NAME)}/run`,
-      {
-        method: 'POST',
-        body: JSON.stringify({ conversationId: conv.conversationId, message: 'e2e hitl web' }),
-      }
-    );
+    const runRes = await starterFetch(`/api/workflows/${encodeURIComponent(workflowName)}/run`, {
+      method: 'POST',
+      body: JSON.stringify({ conversationId: conv.conversationId, message }),
+    });
     if (!runRes.ok) {
-      throw new Error(`web HITL run failed: HTTP ${String(runRes.status)}\n${await runRes.text()}`);
+      throw new Error(
+        `web workflow '${workflowName}' run failed: HTTP ${String(runRes.status)}\n${await runRes.text()}`
+      );
     }
-    const runId = await waitForRunId(E2E_HITL_WORKFLOW_NAME, 30_000, knownIds);
-    await waitForRunStatus(runId, 'paused');
+    const runId = await waitForRunId(workflowName, 30_000, knownIds);
     return { runId, conversationId: conv.conversationId, codebaseId: codebase.id };
+  };
+
+  const runHitlWorkflowViaWeb = async (): Promise<HitlWebRun> => {
+    const run = await dispatchWorkflowViaWeb(E2E_HITL_WORKFLOW_NAME, 'e2e hitl web');
+    await waitForRunStatus(run.runId, 'paused');
+    return run;
+  };
+
+  const startWorkflowViaWeb = async (
+    workflowName: string,
+    message: string
+  ): Promise<HitlWebRun> => {
+    const run = await dispatchWorkflowViaWeb(workflowName, message);
+    await waitForRunStatus(run.runId, 'running');
+    return run;
   };
 
   return {
@@ -735,6 +804,9 @@ async function startArchonRuntime(
     startHitlWorkflow,
     resumeWorkflow,
     runHitlWorkflowViaWeb,
+    startWorkflowViaWeb,
+    startDetachedWorkflow,
+    starterFetch,
     waitForRunStatus,
     stop,
   };

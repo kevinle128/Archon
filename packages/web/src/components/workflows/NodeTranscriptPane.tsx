@@ -29,6 +29,7 @@ import { AskCard, InvalidAskCard } from './AskCard';
 import type { AskActionStateByRequest } from './ask-answer-controller';
 import { resolveAskCardPresentation } from './ask-card-presentation';
 import type { LogRow } from './build-log-rows';
+import { ComposerDock } from './ComposerDock';
 import {
   selectVisibleNodeAskInteractions,
   UNSCOPED_INTERACTION_LIMITATION,
@@ -424,6 +425,15 @@ export function NodeTranscriptPane({
       {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {scroller}
       {jumpButton}
+      <ComposerDock
+        key={`steering:${resolvedScopeKey}`}
+        runId={runId}
+        nodeId={row.nodeId}
+        nodeLabel={agentDisplayName || row.nodeId}
+        rowStatus={rowStatus}
+        live={isLiveRunStatus(runStatus)}
+        hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
+      />
     </RoomRegion>
   );
 }

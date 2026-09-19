@@ -1,0 +1,202 @@
+## Codebase Patterns
+
+### Process-singleton module (event-emitter pattern)
+- **Where**: `packages/workflows/src/event-emitter.ts:361-375`, mirrored in `steering-registry.ts`
+- **Pattern**: module-level `let instance: T | null = null`; `getX()` lazily constructs; separate `createX()` returns isolated instances for tests (never shares singleton state); reset via `clearForTests()`/`resetX()`
+- **Example**: `getSteeringRegistry()` (prod) vs `createSteeringRegistry()` (tests)
+
+### Package exports + test chain (packages/workflows)
+- **Where**: `packages/workflows/package.json`
+- **Pattern**: every importable module gets an explicit `"./name": "./src/name.ts"` entry in `exports`; the package `test` script is an explicit `&&`-chained list of `bun test <file>` invocations — new test files MUST be appended or `bun run validate` silently skips them
+- **Gotcha**: `bun --filter @archon/workflows` does NOT match — run `bun run type-check`/`bun test` from inside `packages/workflows/` instead
+
+### Lint scope
+- `*.test.ts` files are in the eslint ignore list — passing a test file explicitly to eslint emits a "file ignored" warning that fails `--max-warnings 0`; use `--no-warn-ignored` or lint only source files
+
+### OpenAPI type generation without a port
+- **Where**: `packages/web/package.json` `generate:types` (hardcodes `http://localhost:3090`), `registerApiRoutes` in `packages/server/src/routes/api.ts`
+- **Pattern**: when 3090 is owned by ANOTHER workspace's server, do NOT hit it (stale types). `registerApiRoutes(app, {} as WebAdapter, {} as ConversationLockManager)` on a bare `new OpenAPIHono({ defaultHook: validationErrorHook })` registers every route — handlers capture deps lazily, nothing connects at registration. `await app.request('/api/openapi.json')` dumps the doc; `openapi-typescript <file>` accepts file paths, not just URLs. Script must live inside `packages/server/` (Bun resolves imports relative to the FILE, not cwd) — e.g. `dump-openapi.tmp.ts`, delete after
+- **Gotcha**: `startServer()` picks a RANDOM port when 3090 is taken (`opts.port ?? getPort()`) — a `dev:server` boot under collision silently binds elsewhere AND the hardcoded `generate:types` URL still hits the wrong server
+
+### Hono malformed-JSON vs route-scoped validation hooks
+- **Where**: `packages/server/src/routes/api.ts` send-route middleware
+- **Pattern**: `@hono/zod-openapi`'s json validator throws `HTTPException` inside compose BEFORE a route-scoped `validationErrorHook` runs; `try/catch` around `await next()` cannot intercept it (compose catches at the middleware level). Pre-parse `c.req.json()` in `app.use` middleware — Hono caches the raw body so the downstream validator re-reads it unchanged; malformed → map directly to the desired error shape
+
+### Git
+- Pre-commit runs lint-staged (eslint --fix + prettier on staged files) — works fine, no bypass needed
+- `git commit -m "$(cat <<'EOF' ... EOF)"` heredoc broke in this shell; multiple `-m` flags worked
+
+---
+
+## 2026-09-19 — US-001: Steering registry module in @archon/workflows
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/steering-registry.ts` — new registry: `NodeSteeringHandle` (live/parked/closed, sync enqueue, idempotent receipts via accepted-id map, closeIfEmpty last gate, non-closing drain, park/resume/close, snapshot, discard) + `SteeringRegistry` (nested Map runId→nodeId→handle; register resumes parked/replaces closed; discardRun closes+clears+removes per-run) + `getSteeringRegistry()`/`createSteeringRegistry()`
+- `packages/workflows/src/steering-registry.test.ts` — 33 contract tests, no sleeps/network
+- `packages/workflows/package.json` — added `"./steering-registry"` export subpath; appended `bun test src/steering-registry.test.ts` to the test script chain
+
+**Acceptance criteria verified**:
+- [x] Module exports all contract types + classes; `QueuedOperatorMessage`/`AcceptedSteeringReceipt`/`SteeringHandlePhase`/`EnqueueResult`/`SteeringHandleSnapshot` match phase-01 verbatim
+- [x] register() live-create / parked-resume-with-queue / closed-replace
+- [x] enqueue sync; live appends in receipt order; parked→not_live; closed→closed
+- [x] Duplicate id returns original receipt BEFORE phase logic (works while parked AND closed); different-prose duplicate keeps original; module has no logger so content can never be logged
+- [x] >500 ids test passes — no eviction of any kind
+- [x] closeIfEmpty sync-closes live+empty only; false w/o mutation otherwise (incl. parked)
+- [x] drain atomic + non-closing + preserves accepted memory
+- [x] park retains/blocks; resume re-lives same handle; close refuses enqueue, retains items for counting
+- [x] discardRun closes/clears/removes only named run, returns {handles, queued}, held refs left closed+empty
+- [x] `./steering-registry` subpath only (index.ts untouched — still exports only retry-state); test file appended to test chain
+- [x] `bun test src/steering-registry.test.ts` → 33 pass; `bun run type-check` clean; eslint --max-warnings 0 clean; prettier clean
+
+**Learnings**:
+- Contract nuance: duplicate-id check runs BEFORE phase checks — a replayed id returns the original receipt even on a parked or closed handle (verified by tests; required by US-003's "replay while parked" rule)
+- `discard()` added on the handle as registry-internal teardown (closes + clears queue + clears accepted map, returns dropped count) so held references can't drain/accept after discardRun — contract allows "equivalent" API
+- register() on an already-live handle returns the same handle (idempotent); closed → fresh handle + fresh idempotency scope
+
+---
+
+## 2026-09-19 — US-002: Executor natural-boundary drain and central cancel cleanup
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/dag-executor.ts` — steering wiring in both AI paths:
+  - `executeNodeInternal`: registers `(workflowRun.id, stepName)` only when `sessionResume`; `turns:` loop wraps the existing re-ask loop; guidance turns delete `resumeInteractions`, `forkSession:false`, rotate `executionScope` via `newTranscriptAttempt`; synchronous `closeIfEmpty()` last gate at the natural boundary — missing session id fails BEFORE drain; drain joins verbatim with `\n\n`; idle-timeout/cancel/credit/empty seal via `close()` before awaited terminal writes; AskHuman `park()` before pause, `steeringPauseCommitted` only after pause succeeds; `finally` logs queued COUNT + close+unregister unless committed
+  - `executeLoopNode` split into a thin lifecycle wrapper (`LoopSteeringLifecycle` box) + `executeLoopNodeInner` — no 1600-line re-indent; per-iteration `turns:` loop inside the `for i` loop so guidance turns never consume an iteration; boundary evaluates the LATEST turn's completion verdict and treats completion/max_iterations as terminal (closeIfEmpty) vs gate/next-iteration as non-terminal (pendingCount, stays live); interactive gate parks before `pauseGateRespectingExternalTransition`, commits only when `paused===true`; `failLoopNode`/`failLoopIteration` close first
+- `packages/core/src/db/workflows.ts` — `discardRunSteeringHandles(runId)` post-commit helper called from `cancelWorkflowRun` AND `cancelRecoveryWorkflowRun`; counts-only logging; cleanup failure cannot roll back; never runs when the transaction threw
+- `packages/workflows/src/dag-executor.test.ts` — +15 tests: direct drain+same-session resume, verbatim join, batch flush per turn + usage fold, no-handle on non-resumable providers, no-session-id fail w/ queue preserved, undrained on empty/provider-error/cancel/credit/idle-timeout, AskHuman park→resume inherits queue, guidance-in-reask prompt, loop drain in-iteration, guidance wins completion + max_iterations boundaries, loop-group namespaced `grp.body` registration
+- `packages/core/src/db/workflows.test.ts` — +7 tests: live+parked discard post-commit, idempotent terminal discard, db-failure preserves handles, cleanup-failure can't fail commit, per-run isolation, both for cancel and recovery-cancel
+
+**Acceptance criteria verified**:
+- [x] register (workflowRun.id, stepName) only when sessionResume === true (both paths; loop-group prompt nodes inherit via stepNamePrefix → `grp.body`)
+- [x] lifecycle try/finally: park on AskHuman, close before terminal writes, warn-count + unregister in finally (loop via wrapper `finally`, direct via function `finally`)
+- [x] outer provider-turn loop wrapping re-ask; guidance joins `\n\n`, resumes prior turn's session id
+- [x] guidance turns drop resumeInteractions, forkSession:false, rotate attempt scope, no extra lifecycle events (1 node_started asserted)
+- [x] per-turn idle-timeout, cancel dominance, per-turn batch flush, credit/empty failures; usage folds across turns (tokens {30,12}, cost 0.03 asserted)
+- [x] non-natural boundaries close + terminal path without draining (cancel/credit/empty/idle/provider-error all assert queue intact)
+- [x] closeIfEmpty last gate: true→break; missing session id fails before drain; else drain+continue synchronously
+- [x] loop: same semantics per-iteration; guidance wins completion AND max_iterations boundaries
+- [x] db/workflows.ts discardRun after commit; content-free counts; cleanup failure can't roll back; also on recovery-cancel + idempotent terminal path
+- [x] empty-queue execution identical (all 608 pre-existing executor tests pass unmodified)
+- [x] focused tests pass (623 executor + 129 db); `bun x tsc --noEmit` clean both packages; eslint --max-warnings 0 clean on source files; prettier applied
+
+**Learnings**:
+- Loop lifecycle without re-indenting: `executeLoopNode` became a thin wrapper owning a `LoopSteeringLifecycle` box (`steeringHandle`/`steeringPauseCommitted`) passed into `executeLoopNodeInner`; `finally` in the wrapper does warn+close+unregister — avoids a 1600-line try-wrap diff
+- TS CFA can't see closure mutation: `nodeTokens`/`newSessionId` assigned inside `runStreamPass` need `= undefined as T | undefined` resets at the turn head or later reads narrow to `never`
+- `no-unnecessary-boolean-literal-compare` + `no-non-null-assertion` together forbid both `=== true` and `!`/`as` — narrow on the value itself (`turnGuidancePrompt !== undefined`), set alongside the boolean
+- Bun `mock()`-typed store: `store.getWorkflowRunStatus = mock(async () => streaming ? 'cancelled' : 'running')` flips mid-stream deterministically — no sleeps needed for cancel tests
+- AskHuman resume re-entry: a parked handle is revived by `register()` on the resumed execution — the SAME handle object keeps its retained queue, so guidance queued pre-park drains post-resume
+
+---
+
+## 2026-09-20 — US-003: Canonical typed send route in the server
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/schemas/workflow.schemas.ts` — `sendWorkflowNodeBodySchema` (strict; `message` refined non-blank but never transformed so whitespace survives verbatim; `message_id` uuid; `intent` enum), `sendWorkflowNodeResponseSchema` (strict; `success:true` + `state: queued|awaiting_send_now`), `steeringErrorSchema` (strict nested `{success:false,error:{code,message}}`); all `z` from `@hono/zod-openapi`, `z.infer` types
+- `packages/server/src/routes/openapi-defaults.ts` — `steeringValidationErrorHook` maps Zod failures to nested `invalid_request`; global `validationErrorHook`/`apiError` untouched
+- `packages/server/src/routes/api.ts` — `sendWorkflowNodeRoute` (200/400/401/403/404/409/422 documented), `steeringJsonError` doc helper, `steeringError` nested-error helper, `TERMINAL_API_NODE_STATUSES` (completed/failed/skipped), `app.use` middleware (auth BEFORE body validation + JSON pre-parse for malformed bodies), handler: auth → validated body → load run → project node state + registry handle → 404/409/422 target ladder → re-read run status → sync `handle.enqueue` → translate (closed→409, not_live→422, ok→200 `state:'queued'`; `send_now` queues identically)
+- `packages/server/src/routes/api.workflow-runs.test.ts` — +27 tests: actor ladder (starter/member/admin 200, identity-less `operatorUserId:null`), 401-before-400 ordering, validation matrix (blank/missing/extra keys/malformed JSON/bad uuid/bad intent), whitespace preservation, unknown run/node, terminal run/node, closed/detached/parked/live handles, 3-send receipt order, duplicate replay before/after drain + while parked, changed-prose no-overwrite, terminal-projection-wins, run-status race, handle-close race, no-mutation assertions on every rejection
+- `packages/web/src/lib/api.generated.d.ts` — regenerated (+123 lines: send path POST, SendWorkflowNodeBody/SendWorkflowNodeResponse/SteeringError schemas; NO queue GET)
+
+**Acceptance criteria verified**:
+- [x] All three schemas strict, `@hono/zod-openapi` z, `z.infer` derived types
+- [x] `registerOpenApiRoute(createRoute(...), handler, steeringValidationErrorHook)`; nested `invalid_request`; global hook untouched
+- [x] Auth before body validation (middleware); any resolved identity allowed; identity-less → `operatorUserId: null`
+- [x] Handler order: auth→validation→load run→node state/handle→re-read status→enqueue→translate
+- [x] Duplicate `message_id` replays original 200 incl. while parked; changed prose never overwrites
+- [x] `send_now` → `queued`; rejections never repair handles / write transcripts / write workflow events (asserted via `mockCreateWorkflowEvent`/`mockAddMessage`/`mockUpdateWorkflowRun` not-called)
+- [x] No queue GET route, no caps, no unrelated auth/contract edits (contract file untouched)
+- [x] Focused `-t 'queued guidance'` 27/27; full file 227 pass / 9 todo / 0 fail; server `tsc --noEmit` clean; eslint `--max-warnings 0` clean (incl. `--no-warn-ignored` on test file); prettier clean; web `tsc --noEmit` clean
+
+**Learnings**:
+- Port 3090 was owned by a DIFFERENT workspace's server (`/Volumes/WD_BLACK/workspace/opensource/Archon`) — hitting `generate:types` URL would have emitted STALE types. Solution: dumped the doc in-process (`registerApiRoutes` on a bare `OpenAPIHono` needs only `{}` deps since handlers capture them lazily) → `openapi-typescript /tmp/openapi.json` — no port needed at all; openapi-typescript accepts file paths, not just URLs
+- Hono malformed-JSON: `@hono/zod-openapi`'s validator throws `HTTPException` inside compose BEFORE the route-scoped hook runs; `try/catch` around `await next()` cannot intercept it (compose catches at middleware level). Fix: pre-parse `c.req.json()` in the route middleware — Hono caches the raw body so the downstream validator re-reads it unchanged; malformed → map directly to the nested error
+- `handle?.snapshot().phase === 'closed'` — optional-chain short-circuits the whole chain on undefined; eslint `prefer-optional-chain` requires it over `x !== undefined && x.y === z`
+- Rejected-request no-mutation assertions: snapshot `handle.snapshot()` before + after and diff `phase`/`acceptedCount`/`queued` — cheaper than intercepting registry internals
+
+---
+
+## 2026-09-20 — US-004: Queue composer dock in Legacy and Console shells
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — framework-free shared logic: `steeringDockMode` precedence (non-live/non-generating → hidden → blocked → detached → composer), `steeringBlockedReason` (awaiting row OR this-node pending ask), `canSubmitGuidance` single guard, `isQueueShortcut` (Cmd/Ctrl+Enter, isComposing, keyCode 229), `steeringDraftStorageKey` (run + namespaced node), wording helpers (`queued · n` / `Queued messages, n` / accessible name / count phrase), submission reducer (UUID once per submission, unchanged-draft retry reuses id, edit mints new id, 200 dedupes by message_id), sessionStorage draft+retry persistence (never receipts), `SteeringSendError`/`toSteeringSendError`/`toSteeringRefusal` normalizing both transport layers onto nested `{code,message}`
+- `packages/web/src/lib/steering-dock.test.ts` — 48 tests covering the full contract matrix
+- `packages/web/src/lib/api.ts` — `sendNodeGuidance` via `fetchJSON`, generated `SendWorkflowNodeBody`/`SendWorkflowNodeResponse` types, errors normalized via `toSteeringSendError`
+- `packages/web/src/components/workflows/ComposerDock.tsx` — Legacy dock: full-bleed `surface-elevated` band (1px top rule, lowercase `queued · n` header w/ CSS uppercase+tracking, labelled list, `sent` per row, `max-h-[33vh]` internal scroll, end elision, escaped text only), labelled textarea (`min-h-[56px]`, `surface-inset`, accent-bright focus ring), hint `Cmd/Ctrl+Enter to send · this tab only`, right-aligned bordered Queue (≥32×84, aria-keyshortcuts, focusable `aria-disabled` + `aria-describedby`→reason when blocked), verbatim detached disclosure replacing band+field+controls, `role=status`/`role=alert` live regions, `motion-reduce:transition-none`
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — 25 tests
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — dock mounted after scroller+jump control inside RoomRegion, `key={'steering:'+resolvedScopeKey}` (distinct from TodoStrip's scope key — duplicate-key collision), props: runId, `row.nodeId`, rowStatus, `isLiveRunStatus(runStatus)`, this-node pending asks via `selectVisibleNodeAskInteractions`
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — +5 mount tests
+- `packages/web/src/experiments/console/skills/runs.ts` — `sendNodeGuidance` via `requestJson`, same generated types + error normalization
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — identical semantics on console seams; explicit `focus-visible:outline-accent-bright!` on field+button because the console-wide `--accent-ring` (0.3 alpha) composites to ~2:1 < 3:1 floor on dock surfaces
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` — 23 tests
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — dock in analogous position gated on `agentActive && row !== null`
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — +6 tests
+- `packages/web/src/experiments/console/console-isolation.test.ts` — new file in positive list; `@/lib/steering-dock` approved seam
+- `plans/.../reports/evidence/` — 10 screenshots + measurements.txt (scratch Playwright spec, deleted after capture)
+
+**Acceptance criteria verified**:
+- [x] Shared helpers: visibility table, blocked reason, storage key, header/count/announcement wording, shortcut detection incl. isComposing + keyCode 229 — identical semantics both shells
+- [x] Submission rules: blank rejected locally (no request), verbatim non-blank send, one in-flight, shared guard, UUID once + ambiguous-retry reuse + new id on edit, 200 dedupe by message_id in order, clears draft+retry, keeps focus
+- [x] Receipts in-memory only (scope-change/unmount clears), never `delivered`, never persisted; draft+retry in sessionStorage by run+namespaced node; escaped React text + end elision only
+- [x] Pending ask / awaiting blocks pre-transport with exact reason; sibling asks don't block; focusable `aria-disabled` (no native disabled), text-secondary, describedby→reason; click+shortcut no-op
+- [x] 422 → exact disclosure `not steerable here · this run was started detached, so its live session is not in this process` (text-secondary, draft/retry preserved); 409/other → draft kept + role=alert; terminal/historical → no dock, no request
+- [x] API helpers only via `fetchJSON`/`requestJson`; generated types; typed nested error; no auto-retry, no logging; no server/workflows runtime imports in web
+- [x] Layout: RoomRegion flex column, scroller flexible, band above dock outside padded well, dock final fixed sibling reducing transcript viewport (never overlay)
+- [x] Composer contract: real label `message to <node>`, surface-inset/border/md radius/≥56px/high-contrast ring, exact hint text-secondary, bordered transparent right-aligned Queue ≥32×84 both shells, accessible name `Queue · Cmd/Ctrl+Enter to send · n messages queued`, aria-keyshortcuts, no Stop
+- [x] Keyboard/focus/live regions: shortcut gated on non-blank+not-blocked+not-in-flight+not-composing; Enter/Shift+Enter native newline; success keeps focus; rejection never drops focus to body; one role=status per room; role=alert failures; reduced-motion honored
+- [x] Mounting + console-isolation test updated
+- [x] Tests: steering-dock 48, ComposerDock 25 + pane 29 (+ NodeRoom/LegacyNodeRoom suite 124 total), ConsoleComposerDock 23 + ConsoleNodeRoom 62 + isolation — all pass; full `bun run test` in packages/web: 2243 pass / 0 fail
+- [x] Visual captured (real Chromium via e2e harness, fake provider `delayMs` node, web-dispatched steerable run + CLI detached run): Console room=464px @1440×900; 460px harness room=460px field=440×56 queue=84×32 no overflow; Legacy room=459.6px @1150vw field=439.6×56; blocked reason computed `--text-secondary`; detached verbatim both shells; reduced-motion transition-property=none; contrast computed oklch→WCAG (text-secondary 5.35–8.88:1, accent-bright ring 4.54–8.19:1)
+- [x] bun run type-check clean; eslint --max-warnings 0 clean (--no-warn-ignored for ignored .test.ts); prettier clean
+
+**Learnings**:
+- React key collision: sibling components keyed by the same `resolvedScopeKey` warn `two children with the same key` — prefix per component (`steering:${key}` vs TodoStrip's bare key)
+- happy-dom `activeElement` type ≠ lib.dom `HTMLElement` — existing test idiom: `(win.document.activeElement as unknown) === el`
+- Console-wide `--accent-ring` = `oklch(0.64 0.295 330 / 0.3)` composites to ~2:1 on `surface-elevated` — under the 3:1 non-text floor. Console idiom for high-contrast rings: `focus-visible:outline-accent-bright!` (ConsoleTodoStrip precedent); solid brand-magenta = 4.54:1 on elevated
+- `motion-reduce:transition-none` sets `transition-property:none`, not duration — assert the property list, not `transition-duration === '0s'`
+- Playwright evidence in this worktree: `e2e/` is standalone (stub package-lock → `bun install`, browsers already cached); runtime needs `bun run build:web` first; spec can `writeFileSync` a workflow yaml into `archon.home/workflows/` mid-test — no repo fixture needed for scratch scenarios; web-dispatched runs are steerable in-server (200), CLI runs are detached (422)
+- e2e strict-mode gotchas: room page has TWO textareas (dock + Reply composer) — locate by `getByRole('textbox', {name:/^message to /})`; blocked reason appears in both visible `<p>` and sr-only status — use `locator('p', {hasText})`
+- Console room ≈464px at 1440×900 with default rail 280 + 40% split — the 460px contract width is the natural default; Legacy room ≈460px at 1150px viewport
+
+---
+
+## 2025-09-19 — US-005: E2E evidence, acceptance report, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/e2e-fake/provider.ts` — opt-in strict-schema `echoPrompt`; emits `[e2e-fake] echo:` / `[e2e-fake] resumed echo:` of the directive-stripped prompt before result/sentinel handling
+- `packages/providers/src/e2e-fake/provider.test.ts` — +7 tests: strip, usage-directive strip, resumed session id reuse, echo→E2E_LOOP_DONE→result ordering, default parity, invalid type, abort during delay
+- `e2e/fixtures/workflows/e2e-queue-guidance.yaml` — direct `steer-me` node, bounded `delayMs`, echo opt-in via runtime scenario
+- `e2e/fixtures/workflows/e2e-queue-guidance-loop.yaml` — loop `steer-loop`, `until: E2E_LOOP_DONE`, max_iterations 3
+- `e2e/lib/playwright/archon-runtime.ts` — seeds both fixtures into isolated ARCHON_HOME; `startWorkflowViaWeb` (web dispatch → `{runId, conversationId, codebaseId}` once live); generic tracked `startDetachedWorkflow` (PID/command/port/worktree in runtime cleanup); `startHitlWorkflow` delegates to it; `starterFetch` exposed
+- `e2e/ui/agent-queue-guidance.spec.ts` — new spec, 11 tests: both-shell direct drain, both-shell loop delivery, blocked Ask UI, detached 422 disclosure, route-smoke ladder, both-shell visual/a11y evidence
+- `plans/.../reports/acceptance.md` — criterion→evidence map; `reports/evidence/us-005-*` — 12 PNGs + measurements.json
+- `plans/.../prd.md` + `plans/reports/scout-260919-*.md` — prettier-only formatting (format:check gate)
+
+**Acceptance criteria verified**:
+- [x] `echoPrompt` strict field; exactly one echo chunk, resumed prefix iff `resumeSessionId`, before result, stripped once; `doneWhenPromptIncludes` still on stripped prompt; absent = identical chunks
+- [x] Provider tests prove strip, reuse, ordering, unchanged default, abort (`Query aborted`)
+- [x] Two separate fixtures: direct `steer-me` bounded delay; loop `steer-loop` `until: E2E_LOOP_DONE` small max_iterations
+- [x] Runtime: fixtures seeded via existing copy block; web-dispatch helper returns ids once running; tracked detached-CLI helper always cleaned through runtime cleanup; existing status polling, no fixed sleeps/untracked processes
+- [x] Spec both-shell on fresh web-dispatched runs: no empty band, enabled Queue + `this tab only` hint, plain Enter newline/no request, shortcut queues `first correction` (queued·1 + sent + announcement + cleared + focus), button queues `second correction` (queued·2 ordered), resumed echo exactly `first correction\n\nsecond correction` in one occurrence, no extra node_started/operator row/delivered badge
+- [x] Loop: queued `finish now` during delayed iteration 1 → resumed echo + E2E_LOOP_DONE inside ×1 group, no ×2 group, run completes
+- [x] Route smoke: 200 canonical / 400 invalid_request / 404 not_found / 409 node_finished (no new transcript row) / 422 not_steerable_here (detached, during delay)
+- [x] Blocked: focusable `aria-disabled="true"` (no native disabled), reason `answer the agent's question first`, click(force)+shortcut no request. Detached: submit→422→exact disclosure as only dock content, draft/retry in sessionStorage, no NEVER SENT UI asserted
+- [x] Visual/a11y: Console 1440×900 (panel 696px) + 460px harness, Legacy 460px; generating-empty/two-receipt/ask-blocked/post-422/reduced-motion captures; computed contrast (text ≥5.33:1, focus ring ≥5.14:1); band 33vh cap + internal scroll, no overlay/overflow, last transcript row reachable; labelled textarea/list, Queue accessible name, role=status/alert, aria-describedby, focus retention, IME+plain-Enter guards; no axe added
+- [x] acceptance.md maps criteria→tests/artifacts with commands, dimensions, honest deferrals (PR + sprint-status owned elsewhere)
+- [x] Diff contains no migration, GET queue route, contract edit, Stop/delete, operator row, or later-story reconciliation
+- [x] Processes reconciled — no stray PID owned by this worktree (foreign-worktree e2e server on 3409 observed and left)
+- [x] Full verification chain green (see report table)
+
+**Learnings**:
+- Playwright a11y actionability: `aria-disabled="true"` fails `click()` actionability forever — use `click({force:true})` for blocked no-op assertions
+- Legacy run detail opens on the Graph tab; `locator.count() > 0` races initial render — `await expect(tab).toBeVisible()` before clicking Logs
+- Console room defaults to "Attempt 1" execution view; loop echo rows render in the page-level iteration stream group (`steer-loop ×1`), assert DOM order on page text not inside the room region
+- Node-end row splits label/status into separate spans — never match contiguous `'<node> completed'` text
+- ARCHON_E2E_PROOF=1 keeps `test-finished-1.png`; spec writes durable captures via `page.screenshot({path: EVIDENCE_DIR/...})` into the plan's evidence dir
+- e2e test runs can regenerate OTHER plans' tracked PNG evidence (hitl suite → 260907 captures) — restore foreign dirs before staging; only stage own evidence
+- Port-collision on retry is infra, not product: runtime refuses to bind an occupied port; a foreign worktree's orphaned e2e server can hold 340x ports — check `ps ... command` for the owning worktree path before touching it
+
+---

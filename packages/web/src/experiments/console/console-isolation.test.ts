@@ -104,6 +104,7 @@ describe('console NFR4 isolation', () => {
     const roomFiles = [
       'components/ConsoleInspectPane.tsx',
       'components/ConsoleNodeRoom.tsx',
+      'components/ConsoleComposerDock.tsx',
       'components/inspect/ConsoleRoomHeader.tsx',
       'components/inspect/ConsoleAgentHistoryList.tsx',
       'components/inspect/ConsoleExecutionHistory.tsx',
@@ -128,6 +129,7 @@ describe('console NFR4 isolation', () => {
       '@/lib/run-graph',
       '@/lib/run-graph/constants',
       '@/lib/api.generated',
+      '@/lib/steering-dock',
     ]);
     const violations: string[] = [];
     const seen = new Set<string>();

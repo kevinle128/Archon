@@ -135,6 +135,7 @@ const scenarioSchema = z
     repeatTool: z.number().int().min(1).max(200).optional(),
     largeLastToolOutput: z.boolean().optional(),
     taskDispatch: z.enum(['omp', 'claude']).optional(),
+    echoPrompt: z.boolean().optional(),
   })
   .strict()
   .superRefine((scenario, ctx) => {
@@ -485,6 +486,11 @@ export class E2eFakeProvider implements IAgentProvider {
       DIRECTIVE_OPEN,
       DIRECTIVE_CLOSE
     );
+    if (scenario.echoPrompt === true) {
+      const prefix =
+        resumeSessionId === undefined ? '[e2e-fake] echo:' : '[e2e-fake] resumed echo:';
+      yield { type: 'assistant', content: `${prefix} ${promptOutsideDirectives}` };
+    }
     if (
       scenario.doneWhenPromptIncludes !== undefined &&
       promptOutsideDirectives.includes(scenario.doneWhenPromptIncludes)

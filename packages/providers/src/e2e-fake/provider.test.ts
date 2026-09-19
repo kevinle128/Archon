@@ -420,6 +420,111 @@ describe('E2eFakeProvider', () => {
     ).toBe(false);
   });
 
+  test('echoPrompt emits one echo chunk of the stripped prompt before the result', async () => {
+    const prompt =
+      '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>first correction\n\nsecond correction';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp'));
+    expect(chunks[chunks.length - 1]).toMatchObject({
+      type: 'result',
+      sessionId: expect.any(String),
+    });
+    const echo = chunks.filter(
+      chunk => chunk.type === 'assistant' && chunk.content.startsWith('[e2e-fake] echo:')
+    );
+    expect(echo).toHaveLength(1);
+    expect(echo[0]).toEqual({
+      type: 'assistant',
+      content: '[e2e-fake] echo: first correction\n\nsecond correction',
+    });
+    expect(
+      chunks.some(chunk => chunk.type === 'assistant' && chunk.content.includes('<<E2E_SCENARIO>>'))
+    ).toBe(false);
+  });
+
+  test('echoPrompt strips the usage directive alongside the scenario block', async () => {
+    const prompt = `${USAGE}<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>trim the scope`;
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp'));
+    expect(
+      chunks.some(
+        chunk => chunk.type === 'assistant' && chunk.content === '[e2e-fake] echo: trim the scope'
+      )
+    ).toBe(true);
+    expect(
+      chunks.some(chunk => chunk.type === 'assistant' && chunk.content.includes('<<E2E_USAGE>>'))
+    ).toBe(false);
+  });
+
+  test('echoPrompt on a resumed session uses the resumed prefix and reuses the session id', async () => {
+    const prompt = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>steer mid-flight';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess-steer'));
+    expect(chunks[chunks.length - 1]).toMatchObject({
+      type: 'result',
+      sessionId: 'sess-steer',
+      resumed: true,
+    });
+    const echo = chunks.filter(
+      chunk => chunk.type === 'assistant' && chunk.content.startsWith('[e2e-fake] resumed echo:')
+    );
+    expect(echo).toHaveLength(1);
+    expect(echo[0]).toEqual({
+      type: 'assistant',
+      content: '[e2e-fake] resumed echo: steer mid-flight',
+    });
+    expect(
+      chunks.some(
+        chunk => chunk.type === 'assistant' && chunk.content.startsWith('[e2e-fake] echo:')
+      )
+    ).toBe(false);
+  });
+
+  test('echoPrompt + doneWhenPromptIncludes emits echo then E2E_LOOP_DONE then result', async () => {
+    const prompt =
+      '<<E2E_SCENARIO>>{"echoPrompt":true,"doneWhenPromptIncludes":"finish"}<</E2E_SCENARIO>>finish now';
+    const chunks = await collect(provider.sendQuery(prompt, '/tmp', 'sess-loop'));
+    const echoIndex = chunks.findIndex(
+      chunk => chunk.type === 'assistant' && chunk.content === '[e2e-fake] resumed echo: finish now'
+    );
+    const doneIndex = chunks.findIndex(
+      chunk => chunk.type === 'assistant' && chunk.content === E2E_FAKE_LOOP_DONE
+    );
+    const resultIndex = chunks.findIndex(chunk => chunk.type === 'result');
+    expect(echoIndex).toBeGreaterThanOrEqual(0);
+    expect(doneIndex).toBeGreaterThan(echoIndex);
+    expect(resultIndex).toBeGreaterThan(doneIndex);
+    expect(resultIndex).toBe(chunks.length - 1);
+  });
+
+  test('echoPrompt absent or false leaves the chunk sequence unchanged', async () => {
+    for (const body of ['{"delayMs":0}', '{"echoPrompt":false}']) {
+      const chunks = await collect(
+        provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp')
+      );
+      expect(chunks).toEqual([
+        { type: 'assistant', content: '[e2e-fake] deterministic response' },
+        { type: 'result', sessionId: expect.any(String) },
+      ]);
+    }
+  });
+
+  test('rejects non-boolean echoPrompt', async () => {
+    for (const body of ['{"echoPrompt":"yes"}', '{"echoPrompt":1}']) {
+      await expect(
+        collect(provider.sendQuery(`<<E2E_SCENARIO>>${body}<</E2E_SCENARIO>>`, '/tmp'))
+      ).rejects.toThrow('scenario directive failed validation');
+    }
+  });
+
+  test('echoPrompt still throws Query aborted during delayMs', async () => {
+    const abort = new AbortController();
+    const prompt =
+      '<<E2E_SCENARIO>>{"echoPrompt":true,"delayMs":5000}<</E2E_SCENARIO>>never emitted';
+    const pending = collect(
+      provider.sendQuery(prompt, '/tmp', undefined, { abortSignal: abort.signal })
+    );
+    abort.abort();
+    await expect(pending).rejects.toThrow('Query aborted');
+  });
+
   test('throws Query aborted when the signal is already aborted', async () => {
     const abort = new AbortController();
     abort.abort();

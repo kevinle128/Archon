@@ -5,6 +5,7 @@
  */
 import type { WorkflowRunStatus } from '@/lib/types';
 import type { components } from '@/lib/api.generated';
+import { toSteeringSendError } from '@/lib/steering-dock';
 
 export type WorkflowDefinition = components['schemas']['WorkflowDefinition'];
 type GeneratedDagNode = components['schemas']['DagNode'];
@@ -744,6 +745,40 @@ export async function getWorkflowNodeMessage(
     encodeURIComponent(messageId);
   return fetchJSON(url, options?.signal === undefined ? undefined : { signal: options.signal });
 }
+
+export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody'];
+export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send:
+ * operator guidance for a live in-process agent node, drained at the next
+ * natural provider-turn boundary. Refusals surface as SteeringSendError
+ * carrying the nested {code,message} so callers can distinguish a canonical
+ * 422 `not_steerable_here` from other failures. No auto-retry and no message
+ * logging — the caller owns `message_id` reuse for ambiguous failures.
+ */
+export async function sendNodeGuidance(
+  runId: string,
+  nodeId: string,
+  body: SendWorkflowNodeBody
+): Promise<SendWorkflowNodeResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/send';
+  try {
+    return await fetchJSON<SendWorkflowNodeResponse>(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw toSteeringSendError(error);
+  }
+}
+
 export async function getWorkflowRunByWorker(
   workerPlatformId: string
 ): Promise<components['schemas']['WorkflowRunByWorkerResponse'] | null> {

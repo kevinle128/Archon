@@ -1,0 +1,11 @@
+name: e2e-queue-guidance
+description: "E2E — one delayed direct node on the fake provider for queued-guidance drain."
+mutates_checkout: false
+
+nodes:
+  - id: steer-me
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"delayMs":30000}<</E2E_SCENARIO>>
+      $ARGUMENTS

@@ -1,4 +1,4 @@
-import { mock, describe, test, expect, beforeEach } from 'bun:test';
+import { mock, describe, test, expect, beforeEach, spyOn } from 'bun:test';
 import { createQueryResult, mockPostgresDialect } from '../test/mocks/database';
 import type { WorkflowRun } from '@archon/workflows/schemas/workflow-run';
 import type { QueryResult } from './adapters/types';
@@ -87,6 +87,7 @@ import {
   deleteWorkflowRun,
   WorkflowNotResumableError,
 } from './workflows';
+import { getSteeringRegistry } from '@archon/workflows/steering-registry';
 import type { EnvOverlaySnapshot } from '@archon/workflows/schemas/env-overlay';
 
 const pendingAskRow = {
@@ -1989,6 +1990,101 @@ describe('workflows database', () => {
       await expect(cancelWorkflowRun('workflow-run-123')).rejects.toThrow(
         'Failed to cancel workflow run: Lock timeout'
       );
+    });
+
+    describe('steering handle cleanup', () => {
+      beforeEach(() => {
+        getSteeringRegistry().clearForTests();
+      });
+
+      test('discards live and parked in-process handles after the transaction commits', async () => {
+        const live = getSteeringRegistry().register('workflow-run-123', 'node-a');
+        live.enqueue({
+          messageId: 'm-1',
+          message: 'queued guidance',
+          operatorUserId: 'op-1',
+          receivedAt: new Date().toISOString(),
+        });
+        const parked = getSteeringRegistry().register('workflow-run-123', 'node-b');
+        parked.park();
+        mockQuery.mockResolvedValueOnce(createQueryResult([], 1));
+
+        const result = await cancelWorkflowRun('workflow-run-123');
+
+        expect(result).toEqual({ cancelled: true });
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeUndefined();
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-b')).toBeUndefined();
+        // Discarded handles are closed and emptied so they can never drain.
+        expect(live.snapshot()).toEqual({ phase: 'closed', queued: [], acceptedCount: 0 });
+      });
+
+      test('discards a deliberately stale handle on an idempotent already-terminal cancel', async () => {
+        getSteeringRegistry().register('workflow-run-123', 'node-a');
+        mockQuery.mockResolvedValueOnce(createQueryResult([], 0));
+
+        await expect(cancelWorkflowRun('workflow-run-123')).resolves.toEqual({
+          cancelled: false,
+        });
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeUndefined();
+      });
+
+      test('leaves handles untouched when the database call fails', async () => {
+        getSteeringRegistry().register('workflow-run-123', 'node-a');
+        mockQuery.mockRejectedValueOnce(new Error('Lock timeout'));
+
+        await expect(cancelWorkflowRun('workflow-run-123')).rejects.toThrow(
+          'Failed to cancel workflow run: Lock timeout'
+        );
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeDefined();
+      });
+
+      test('does not let a cleanup failure fail a committed cancellation', async () => {
+        getSteeringRegistry().register('workflow-run-123', 'node-a');
+        const registry = getSteeringRegistry();
+        const original = registry.discardRun.bind(registry);
+        spyOn(registry, 'discardRun').mockImplementation(() => {
+          throw new Error('cleanup exploded');
+        });
+        mockQuery.mockResolvedValueOnce(createQueryResult([], 1));
+        try {
+          await expect(cancelWorkflowRun('workflow-run-123')).resolves.toEqual({
+            cancelled: true,
+          });
+        } finally {
+          registry.discardRun = original;
+        }
+      });
+
+      test('discards only the named run, never another run', async () => {
+        getSteeringRegistry().register('workflow-run-123', 'node-a');
+        getSteeringRegistry().register('other-run', 'node-a');
+        mockQuery.mockResolvedValueOnce(createQueryResult([], 1));
+
+        await cancelWorkflowRun('workflow-run-123');
+
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeUndefined();
+        expect(getSteeringRegistry().get('other-run', 'node-a')).toBeDefined();
+      });
+
+      test('recovery cancel discards handles after its transaction commits', async () => {
+        getSteeringRegistry().register('workflow-run-123', 'node-a');
+        mockQuery.mockResolvedValueOnce(createQueryResult([], 1));
+
+        await expect(cancelRecoveryWorkflowRun('workflow-run-123')).resolves.toEqual({
+          cancelled: true,
+        });
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeUndefined();
+      });
+
+      test('recovery cancel leaves handles untouched when the database call fails', async () => {
+        getSteeringRegistry().register('workflow-run-123', 'node-a');
+        mockQuery.mockRejectedValueOnce(new Error('Lock timeout'));
+
+        await expect(cancelRecoveryWorkflowRun('workflow-run-123')).rejects.toThrow(
+          'Failed to cancel recoverable workflow run: Lock timeout'
+        );
+        expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeDefined();
+      });
     });
   });
 

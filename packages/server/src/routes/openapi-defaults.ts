@@ -46,3 +46,28 @@ export const workflowEnvValidationErrorHook: DefaultHook = (result, c): Response
   }
   return undefined;
 };
+
+/**
+ * Steering route-scoped validation hook (issue #181).
+ *
+ * The steering send/interrupt contract uses the nested error shape
+ * `{ success: false, error: { code, message } }` so consumers classify by code,
+ * never by prose. This hook covers Zod-level failures only; malformed JSON
+ * throws an HTTPException inside Hono's validator BEFORE the hook runs and is
+ * mapped to the same shape by the send-route middleware in api.ts.
+ */
+export const steeringValidationErrorHook: DefaultHook = (result, c): Response | undefined => {
+  if (!result.success) {
+    return c.json(
+      {
+        success: false as const,
+        error: {
+          code: 'invalid_request',
+          message: formatSafeZodIssueDetail(result.error),
+        },
+      },
+      400
+    );
+  }
+  return undefined;
+};

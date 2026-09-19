@@ -3,7 +3,11 @@
  * Provides conversation, codebase, and SSE streaming endpoints.
  */
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { formatSafeZodIssueDetail, workflowEnvValidationErrorHook } from './openapi-defaults';
+import {
+  formatSafeZodIssueDetail,
+  steeringValidationErrorHook,
+  workflowEnvValidationErrorHook,
+} from './openapi-defaults';
 import { streamSSE } from 'hono/streaming';
 import { cors } from 'hono/cors';
 import type { WebAdapter } from '../adapters/web';
@@ -95,6 +99,7 @@ import { parseWorkflow } from '@archon/workflows/loader';
 import { resolveWorkflowName } from '@archon/workflows/router';
 import { isValidCommandName, isValidWorkflowName } from '@archon/workflows/command-validation';
 import { projectLatestEffectiveNodeStates } from '@archon/workflows/retry-state';
+import { getSteeringRegistry } from '@archon/workflows/steering-registry';
 import { projectWorkflowExecutionHistory } from './workflow-execution-history';
 import { BUNDLED_WORKFLOWS, BUNDLED_COMMANDS, isBinaryBuild } from '@archon/workflows/defaults';
 import {
@@ -231,6 +236,9 @@ function projectApiWorkflowNodeStates(
 function terminalApiNodeStatus(status: WorkflowRunStatus): ApiWorkflowNodeState['status'] {
   return status === 'completed' ? 'completed' : 'failed';
 }
+
+/** Node statuses that make a steering target finished (issue #181 → 409). */
+const TERMINAL_API_NODE_STATUSES: readonly NodeState[] = ['completed', 'failed', 'skipped'];
 
 function terminalApiNodeError(status: WorkflowRunStatus): string | undefined {
   if (status === 'cancelled') return 'Cancelled by user';
@@ -470,6 +478,9 @@ import {
   listArtifactsResponseSchema,
   reviewFeedbackBodySchema,
   reviewFeedbackResponseSchema,
+  sendWorkflowNodeBodySchema,
+  sendWorkflowNodeResponseSchema,
+  steeringErrorSchema,
 } from './schemas/workflow.schemas';
 import {
   workflowEnvWorkflowParamsSchema,
@@ -637,6 +648,18 @@ function jsonError(description: string): {
   description: string;
 } {
   return { content: { 'application/json': { schema: errorSchema } }, description };
+}
+
+/**
+ * Steering-route JSON error entry (issue #181): the nested
+ * `{ success: false, error: { code, message } }` contract, never the flat
+ * `errorSchema` shape used by legacy routes.
+ */
+function steeringJsonError(description: string): {
+  content: { 'application/json': { schema: typeof steeringErrorSchema } };
+  description: string;
+} {
+  return { content: { 'application/json': { schema: steeringErrorSchema } }, description };
 }
 
 const cwdQuerySchema = z.object({ cwd: z.string().optional() });
@@ -1548,6 +1571,42 @@ const confirmPermissionRoute = createRoute({
   },
 });
 
+const sendWorkflowNodeRoute = createRoute({
+  method: 'post',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/send',
+  tags: ['Workflows'],
+  summary: 'Queue operator guidance for a running workflow node',
+  description:
+    'Accepts operator guidance for a live in-process agent node without interrupting ' +
+    'the current provider turn. Queued messages drain at the next natural ' +
+    'provider-turn boundary on the same provider session; `intent: "send_now"` ' +
+    'queues identically until an idle-after-interrupt state exists. Idempotent on ' +
+    '`message_id` — a duplicate replays the original receipt. Rejections leave the ' +
+    'run, queue, and transcript unchanged.',
+  request: {
+    params: z.object({
+      runId: z.string().min(1),
+      nodeId: z.string().min(1),
+    }),
+    body: {
+      content: { 'application/json': { schema: sendWorkflowNodeBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: sendWorkflowNodeResponseSchema } },
+      description: 'Guidance accepted onto the steering queue',
+    },
+    400: steeringJsonError('Malformed or schema-invalid payload'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+  },
+});
+
 const deleteWorkflowRunRoute = createRoute({
   method: 'delete',
   path: '/api/workflows/runs/{runId}',
@@ -2119,6 +2178,20 @@ export function registerApiRoutes(
     detail?: string
   ): Response {
     return c.json({ error: message, ...(detail ? { detail } : {}) }, status);
+  }
+
+  /**
+   * Steering-route error body (issue #181 contract):
+   * `{ success: false, error: { code, message } }` — consumers classify by
+   * `code`, never prose. Operator message content is never included.
+   */
+  function steeringError(
+    c: Context,
+    status: 400 | 401 | 403 | 404 | 409 | 422 | 500,
+    code: string,
+    message: string
+  ): Response {
+    return c.json({ success: false as const, error: { code, message } }, status);
   }
 
   /**
@@ -5096,6 +5169,125 @@ export function registerApiRoutes(
       return apiError(c, 500, 'Failed to confirm permission');
     }
   });
+
+  // Steering send (issue #181): the auth check runs before OpenAPI body
+  // validation so a gated unauthenticated caller receives 401 even with a
+  // malformed body. The JSON pre-parse maps malformed bodies onto the nested
+  // steering error shape — Hono's validator otherwise throws an HTTPException
+  // that compose's onError swallows before the route-scoped Zod hook runs;
+  // the cached text body feeds the downstream validator unchanged.
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/send', async (c, next) => {
+    if (c.req.method !== 'POST') return next();
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    const contentType = c.req.header('Content-Type');
+    if (contentType !== undefined && /^application\/([a-z-.]+\+)?json/i.test(contentType)) {
+      try {
+        await c.req.json();
+      } catch {
+        return steeringError(c, 400, 'invalid_request', 'Malformed request body');
+      }
+    }
+    return next();
+  });
+
+  // POST /api/workflows/runs/:runId/nodes/:nodeId/send - Queue operator guidance
+  registerOpenApiRoute(
+    sendWorkflowNodeRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+        const body = getValidatedBody(c, sendWorkflowNodeBodySchema);
+
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+
+        // Project the effective node state and inspect the registry handle to
+        // establish the target. The projection is authoritative for lifecycle —
+        // a stale live handle can never beat a terminal run/node.
+        const events = await workflowEventDb.listWorkflowEvents(runId);
+        const pendingInteractions =
+          await workflowPendingInteractionDb.listPendingInteractions(runId);
+        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
+          state => state.nodeId === nodeId
+        );
+        const handle = getSteeringRegistry().get(runId, nodeId);
+
+        if (nodeState === undefined && handle === undefined) {
+          return steeringError(c, 404, 'not_found', 'Workflow node not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle?.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle === undefined) {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        // Final gate: a concurrent terminal transition wins. enqueue() is
+        // synchronous — no await runs between this read and the mutation.
+        const latestRun = await workflowDb.getWorkflowRun(runId);
+        if (latestRun === null) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        const result = handle.enqueue({
+          messageId: body.message_id,
+          message: body.message,
+          operatorUserId: requester?.userId ?? null,
+          receivedAt: new Date().toISOString(),
+        });
+        if (!result.ok) {
+          return result.reason === 'closed'
+            ? steeringError(c, 409, 'node_finished', 'Workflow node is finished')
+            : steeringError(
+                c,
+                422,
+                'not_steerable_here',
+                'No live steering session for this node in this process'
+              );
+        }
+        // `intent: 'send_now'` queues identically for now — awaiting_send_now is
+        // only synthesized once an idle-after-interrupt state exists.
+        return c.json(
+          {
+            success: true as const,
+            message_id: result.receipt.messageId,
+            state: 'queued' as const,
+          },
+          200
+        );
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_send_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to queue guidance');
+      }
+    },
+    steeringValidationErrorHook
+  );
 
   // DELETE /api/workflows/runs/:runId - Delete a workflow run
   registerOpenApiRoute(deleteWorkflowRunRoute, async c => {

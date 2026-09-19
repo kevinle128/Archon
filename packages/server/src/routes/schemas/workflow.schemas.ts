@@ -517,3 +517,60 @@ export const reviewFeedbackResponseSchema = z
     submittedAt: z.string(),
   })
   .openapi('ReviewFeedbackResponse');
+
+// ---------------------------------------------------------------------------
+// POST /api/workflows/runs/:runId/nodes/:nodeId/send (steering contract, #181)
+// ---------------------------------------------------------------------------
+
+/**
+ * Request body for operator steering guidance.
+ *
+ * `message` is refined for non-blank content but NEVER transformed — the
+ * operator's original characters (leading/trailing whitespace included) are
+ * queued verbatim. `message_id` is the caller-stamped correlation key for
+ * idempotent replay and terminal reconciliation. `intent: 'send_now'` is
+ * already public; until an idle-after-interrupt state exists it queues
+ * identically to `queue`.
+ */
+export const sendWorkflowNodeBodySchema = z
+  .object({
+    message: z.string().refine(value => value.trim().length > 0, {
+      message: 'must not be blank',
+    }),
+    message_id: z.string().uuid(),
+    intent: z.enum(['queue', 'send_now']),
+  })
+  .strict()
+  .openapi('SendWorkflowNodeBody');
+
+export type SendWorkflowNodeBody = z.infer<typeof sendWorkflowNodeBodySchema>;
+
+/**
+ * Send success receipt. `queued` — accepted onto the registry queue to drain
+ * at the next natural provider-turn boundary; `awaiting_send_now` — accepted
+ * into an idle-after-interrupt node's queue awaiting Send now.
+ */
+export const sendWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    message_id: z.string().uuid(),
+    state: z.enum(['queued', 'awaiting_send_now']),
+  })
+  .strict()
+  .openapi('SendWorkflowNodeResponse');
+
+export type SendWorkflowNodeResponse = z.infer<typeof sendWorkflowNodeResponseSchema>;
+
+/**
+ * Shared steering-route error shape — consumers classify by `error.code`,
+ * never by prose.
+ */
+export const steeringErrorSchema = z
+  .object({
+    success: z.literal(false),
+    error: z.object({ code: z.string(), message: z.string() }).strict(),
+  })
+  .strict()
+  .openapi('SteeringError');
+
+export type SteeringError = z.infer<typeof steeringErrorSchema>;
