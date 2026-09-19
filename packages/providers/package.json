@@ -37,6 +37,7 @@
     "type-check": "bun x tsc --noEmit",
     "spike:askhuman:claude": "bun src/claude/askhuman-resume-spike.ts",
     "spike:interrupt:claude": "bun src/claude/interrupt-resume-spike.ts",
+    "spike:interrupt:grok": "bun src/grok/interrupt-resume-spike.ts",
     "spike:deepseek:acp": "bun src/community/deepseek/acp-handshake-spike.ts",
     "spike:devin:acp": "bun src/community/devin/acp-live-smoke.ts"
   },
