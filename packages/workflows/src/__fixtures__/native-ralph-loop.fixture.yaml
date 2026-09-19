@@ -1,0 +1,50 @@
+name: native-ralph-loop-fixture
+description: Test fixture mirroring the deleted speckit-ralph-native-feature default.
+provider: codex
+model: gpt-5.5
+effort: xhigh
+nodes:
+  - id: ralph-native-preflight
+    bash: |
+      set -euo pipefail
+      RLN_ROOT=$(git rev-parse --show-toplevel)
+      RLN_FEATURE="$RLN_ROOT/.specify/feature.json"
+      RLN_RULES="$RLN_ROOT/.specify/extensions/ralph-loop/AGENTS.md"
+      [ -f "$RLN_FEATURE" ] || { echo "Missing $RLN_FEATURE" >&2; exit 1; }
+      [ -f "$RLN_RULES" ] || { echo "Missing $RLN_RULES" >&2; exit 1; }
+      RLN_PRD=$(jq -er '.ralph_prd_file | select(type == "string" and length > 0)' "$RLN_FEATURE")
+      RLN_PROGRESS=$(jq -er '.ralph_progress_file | select(type == "string" and length > 0)' "$RLN_FEATURE")
+      case "$RLN_PRD" in /*) : ;; *) RLN_PRD="$RLN_ROOT/$RLN_PRD" ;; esac
+      case "$RLN_PROGRESS" in /*) : ;; *) RLN_PROGRESS="$RLN_ROOT/$RLN_PROGRESS" ;; esac
+      [ -f "$RLN_PRD" ] || { echo "Missing $RLN_PRD" >&2; exit 1; }
+      [ -f "$RLN_PROGRESS" ] || { echo "Missing $RLN_PROGRESS" >&2; exit 1; }
+      jq -e '
+        type == "object" and
+        (.userStories | type == "array" and length > 0) and
+        all(.userStories[];
+          (.completed | type == "boolean") and
+          (.tasks | type == "array" and length > 0) and
+          all(.tasks[]; .passes | type == "boolean")
+        )
+      ' "$RLN_PRD" >/dev/null || { echo "Invalid Ralph PRD: $RLN_PRD" >&2; exit 1; }
+  - id: ralph-loop-run
+    loop:
+      command: archon-speckit-ralph-iteration
+      fresh_context: true
+      max_iterations: 100
+      until_bash: |
+        set -euo pipefail
+        RLN_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+        RLN_PRD=$(jq -r '.ralph_prd_file // empty' "$RLN_ROOT/.specify/feature.json" 2>/dev/null)
+        [ -n "$RLN_PRD" ] || exit 1
+        case "$RLN_PRD" in /*) : ;; *) RLN_PRD="$RLN_ROOT/$RLN_PRD" ;; esac
+        [ -f "$RLN_PRD" ] || exit 1
+        if jq -e '[.userStories[] | select(.completed==false)] | length == 0' "$RLN_PRD" >/dev/null 2>&1; then
+          exit 0
+        fi
+        jq -e '[.userStories[].tasks[]? | select(.passes==false)] | length == 0' "$RLN_PRD" >/dev/null 2>&1
+    depends_on:
+      - ralph-native-preflight
+    effort: high
+    provider: grok
+    model: grok-4.5

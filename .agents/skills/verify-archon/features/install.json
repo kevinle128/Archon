@@ -1,0 +1,44 @@
+{
+  "id": "install",
+  "description": "CLI discovery and local validation",
+  "impact_paths": [
+    "packages/cli/src/commands/doctor.ts",
+    "packages/cli/src/commands/doctor.test.ts",
+    "packages/cli/src/commands/version.ts",
+    "packages/cli/src/commands/validate.ts"
+  ],
+  "behaviors": [
+    {
+      "id": "install.health",
+      "description": "CLI reports the product version, lists local workflows, and rejects invalid DAGs.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/cli/src/commands/doctor.ts",
+        "packages/cli/src/commands/doctor.test.ts",
+        "packages/cli/src/commands/version.ts",
+        "packages/cli/src/commands/validate.ts",
+        "packages/cli/src/cli.ts"
+      ],
+      "scenarios": [
+        "install.health"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "install.health",
+      "runner": {
+        "kind": "cli",
+        "id": "install.health"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies"
+      ],
+      "proof_obligations": [
+        "Version matches target manifest",
+        "Local workflow appears in JSON discovery",
+        "Valid workflow passes and an invalid dependency fails"
+      ]
+    }
+  ]
+}

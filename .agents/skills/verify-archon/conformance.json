@@ -1,0 +1,3808 @@
+{
+  "version": 1,
+  "schema_cases": [
+    {
+      "id": "contract-valid",
+      "schema": "contract",
+      "instance": {
+        "protocol": "project-verification",
+        "version": 1,
+        "skill": "verify-notes",
+        "entrypoint": [
+          "python3",
+          "scripts/verify.py"
+        ],
+        "schemas": {
+          "catalog": "schemas/catalog.schema.json",
+          "gaps": "schemas/gaps.schema.json",
+          "snapshot": "schemas/snapshot.schema.json",
+          "proposal": "schemas/proposal.schema.json",
+          "selection": "schemas/selection.schema.json",
+          "result": "schemas/result.schema.json"
+        }
+      }
+    },
+    {
+      "id": "catalog-valid",
+      "schema": "catalog",
+      "instance": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add a note",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List notes",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [
+                  "empty isolated data directory"
+                ],
+                "proof_obligations": [
+                  "command succeeds",
+                  "note is persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [
+                  "one persisted note"
+                ],
+                "proof_obligations": [
+                  "listed text matches persisted note"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "No isolated implementation path identifies the race"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "id": "gaps-valid",
+      "schema": "gaps",
+      "instance": {
+        "version": 1,
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "No stable harness yet"
+          }
+        ]
+      }
+    },
+    {
+      "id": "snapshot-valid",
+      "schema": "snapshot",
+      "instance": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false
+      }
+    },
+    {
+      "id": "proposal-valid",
+      "schema": "proposal",
+      "instance": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Add implementation changed"
+          }
+        ],
+        "coverage_gaps": []
+      }
+    },
+    {
+      "id": "selection-valid",
+      "schema": "selection",
+      "instance": {
+        "version": 1,
+        "proposal": {
+          "version": 1,
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "changed_paths": [
+            "src/notes/add.py"
+          ],
+          "affected_behaviors": [
+            {
+              "id": "note.add",
+              "confidence": "high",
+              "rationale": "Add implementation changed"
+            }
+          ],
+          "coverage_gaps": []
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "result-valid",
+      "schema": "result",
+      "instance": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "run-001/"
+      }
+    }
+  ],
+  "canonicalization_cases": [
+    {
+      "id": "unicode-no-ascii-escape",
+      "canonical_value": {
+        "z": "café",
+        "a": [
+          "src/z.py",
+          "src/a.py"
+        ]
+      },
+      "expected_sha256": "d066413cbf7bb9ec6691c7b5e6bf64709c7c43378f5089fd3232b5f728fbdcea"
+    },
+    {
+      "id": "set-arrays-pre-normalized",
+      "canonical_value": {
+        "paths": [
+          "docs/",
+          "src/a.py"
+        ],
+        "ids": [
+          "note.write",
+          "note.read"
+        ]
+      },
+      "expected_sha256": "f994887ccfecdaebb193598289e74a79d467b355062e5c78cf425e6f6127e47f"
+    },
+    {
+      "id": "unicode-code-point-key-order",
+      "canonical_value": {
+        "": "bmp-private",
+        "𐀀": "supplementary"
+      },
+      "expected_sha256": "e118a7789b0a6e1a508cde509bcc5249a0f496eaf9b96e99c1bc7f55cd706aeb"
+    }
+  ],
+  "selection_cases": [
+    {
+      "id": "high-confidence",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "medium-expands-feature",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "medium",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": [
+          "notes"
+        ]
+      }
+    },
+    {
+      "id": "low-expands-feature",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/list.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/list.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.list",
+            "confidence": "low",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": [
+          "notes"
+        ]
+      }
+    },
+    {
+      "id": "shared-storage-adds-omitted",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/storage.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/storage.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "uncovered-behavior",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.concurrent-write",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [
+          "note.concurrent-write"
+        ],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "coverage-gap"
+      }
+    },
+    {
+      "id": "unknown-id-and-path",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/unknown.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/unknown.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.unknown",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "unknown-identity-or-path"
+      }
+    },
+    {
+      "id": "rename-both-endpoints",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py",
+          "src/notes/create.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py",
+          "src/notes/create.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": [
+          "notes"
+        ]
+      }
+    },
+    {
+      "id": "substituted-base",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "3333333333333333333333333333333333333333",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "substituted-base"
+      }
+    },
+    {
+      "id": "dirty-target",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": true,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "dirty-target"
+      }
+    },
+    {
+      "id": "order-equivalent-path-sets",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/list.py",
+          "src/notes/add.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py",
+          "src/notes/list.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.list",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          },
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "empty-diff-explicit-historical",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "1111111111111111111111111111111111111111",
+        "changed_paths": [],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "1111111111111111111111111111111111111111",
+        "changed_paths": [],
+        "affected_behaviors": [
+          {
+            "id": "note.list",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": true
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.list"
+        ],
+        "scenario_ids": [
+          "list-notes"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "duplicate-catalog-id",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.add",
+                "description": "Duplicate",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/duplicate.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false,
+        "version": 1
+      },
+      "proposal": {
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": [],
+        "version": 1
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "duplicate-catalog-identity",
+        "phase": "catalog-construction"
+      }
+    },
+    {
+      "id": "omitted-proposal-path",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py",
+          "src/notes/storage.py"
+        ],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Conformance fixture proposal"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "changed-path-mismatch"
+      }
+    },
+    {
+      "id": "deleted-path",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/list.py"
+        ],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/list.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.list",
+            "confidence": "high",
+            "rationale": "Deleted paths remain impact inputs"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.list"
+        ],
+        "scenario_ids": [
+          "list-notes"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "feature-only-impact",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py",
+                  "src/notes/storage.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [
+          {
+            "id": "note.concurrent-write",
+            "description": "Concurrent writes",
+            "impact_paths": [],
+            "reason": "Deferred"
+          }
+        ],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/format.py"
+        ],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/format.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Feature-level shared path changed"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": [
+          "notes"
+        ]
+      }
+    },
+    {
+      "id": "historical-high-confidence",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "2222222222222222222222222222222222222222",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "2222222222222222222222222222222222222222",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Explicit historical regression"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "2222222222222222222222222222222222222222",
+        "historical": true
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "broadened_features": []
+      }
+    },
+    {
+      "id": "historical-medium-confidence",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "2222222222222222222222222222222222222222",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "2222222222222222222222222222222222222222",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "medium",
+            "rationale": "Uncertain historical impact"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "2222222222222222222222222222222222222222",
+        "historical": true
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": [
+          "notes"
+        ]
+      }
+    },
+    {
+      "id": "historical-low-confidence",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "2222222222222222222222222222222222222222",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "2222222222222222222222222222222222222222",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "low",
+            "rationale": "Broad historical uncertainty"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "2222222222222222222222222222222222222222",
+        "historical": true
+      },
+      "expected": {
+        "behavior_ids": [
+          "note.add",
+          "note.list"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "list-notes"
+        ],
+        "broadened_features": [
+          "notes"
+        ]
+      }
+    },
+    {
+      "id": "duplicate-proposal-behavior",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              },
+              {
+                "id": "note.list",
+                "description": "List",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/list.py"
+                ],
+                "scenarios": [
+                  "list-notes"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              },
+              {
+                "id": "list-notes",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note displayed"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "low",
+            "rationale": "First conflicting claim"
+          },
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Second conflicting claim"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected_failure": {
+        "category": "duplicate-proposal-behavior"
+      }
+    },
+    {
+      "id": "omitted-impacted-feature",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "exports",
+            "description": "Export notes",
+            "impact_paths": [
+              "src/export/"
+            ],
+            "behaviors": [
+              {
+                "id": "export.csv",
+                "description": "Export CSV",
+                "priority": 1,
+                "impact_paths": [
+                  "src/export/csv.py"
+                ],
+                "scenarios": [
+                  "export-csv"
+                ]
+              },
+              {
+                "id": "export.json",
+                "description": "Export JSON",
+                "priority": 1,
+                "impact_paths": [
+                  "src/export/json.py"
+                ],
+                "scenarios": [
+                  "export-json"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "export-csv",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "CSV emitted"
+                ]
+              },
+              {
+                "id": "export-json",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "JSON emitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/export/shared.py",
+          "src/notes/add.py"
+        ],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/export/shared.py",
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Direct note change"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "export.csv",
+          "export.json",
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "export-csv",
+          "export-json"
+        ],
+        "broadened_features": [
+          "exports"
+        ]
+      }
+    },
+    {
+      "id": "omitted-feature-with-one-direct-behavior-match",
+      "catalog": {
+        "version": 1,
+        "features": [
+          {
+            "id": "notes",
+            "description": "Manage notes",
+            "impact_paths": [
+              "src/notes/"
+            ],
+            "behaviors": [
+              {
+                "id": "note.add",
+                "description": "Add",
+                "priority": 1,
+                "impact_paths": [
+                  "src/notes/add.py"
+                ],
+                "scenarios": [
+                  "add-note"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "add-note",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "note persisted"
+                ]
+              }
+            ]
+          },
+          {
+            "id": "exports",
+            "description": "Export notes",
+            "impact_paths": [
+              "src/export/"
+            ],
+            "behaviors": [
+              {
+                "id": "export.csv",
+                "description": "Export CSV",
+                "priority": 1,
+                "impact_paths": [
+                  "src/export/csv.py"
+                ],
+                "scenarios": [
+                  "export-csv"
+                ]
+              },
+              {
+                "id": "export.json",
+                "description": "Export JSON",
+                "priority": 1,
+                "impact_paths": [
+                  "src/export/json.py"
+                ],
+                "scenarios": [
+                  "export-json"
+                ]
+              }
+            ],
+            "scenarios": [
+              {
+                "id": "export-csv",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "CSV emitted"
+                ]
+              },
+              {
+                "id": "export-json",
+                "runner": {
+                  "kind": "cli",
+                  "id": "notes-cli"
+                },
+                "prerequisites": [],
+                "proof_obligations": [
+                  "JSON emitted"
+                ]
+              }
+            ]
+          }
+        ],
+        "gaps": [],
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "snapshot": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/export/csv.py",
+          "src/notes/add.py"
+        ],
+        "dirty": false
+      },
+      "proposal": {
+        "version": 1,
+        "base_sha": "1111111111111111111111111111111111111111",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "changed_paths": [
+          "src/export/csv.py",
+          "src/notes/add.py"
+        ],
+        "affected_behaviors": [
+          {
+            "id": "note.add",
+            "confidence": "high",
+            "rationale": "Direct note change"
+          }
+        ],
+        "coverage_gaps": []
+      },
+      "request": {
+        "base": "1111111111111111111111111111111111111111",
+        "historical": false
+      },
+      "expected": {
+        "behavior_ids": [
+          "export.csv",
+          "export.json",
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note",
+          "export-csv",
+          "export-json"
+        ],
+        "broadened_features": [
+          "exports"
+        ]
+      }
+    }
+  ],
+  "result_cases": [
+    {
+      "id": "complete-pass",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": true
+      }
+    },
+    {
+      "id": "failed-status",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "failed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "scenario-failed"
+      }
+    },
+    {
+      "id": "flaky-status",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "flaky",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "scenario-flaky"
+      }
+    },
+    {
+      "id": "skipped-status",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "skipped",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "scenario-skipped"
+      }
+    },
+    {
+      "id": "missing-status",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "missing",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "scenario-missing"
+      }
+    },
+    {
+      "id": "unsupported-status",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "unsupported",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "scenario-unsupported"
+      }
+    },
+    {
+      "id": "duplicate-scenario",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          },
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "duplicate-scenario"
+      }
+    },
+    {
+      "id": "missing-scenario",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "missing-scenario"
+      }
+    },
+    {
+      "id": "extra-scenario",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          },
+          {
+            "id": "list-notes",
+            "status": "passed",
+            "errors": [],
+            "attachments": []
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "extra-scenario"
+      }
+    },
+    {
+      "id": "contradictory-top-level-pass",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [
+              "scenario reported an error"
+            ],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "contradictory-result"
+      }
+    },
+    {
+      "id": "stale-product",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "3333333333333333333333333333333333333333",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "stale-product"
+      }
+    },
+    {
+      "id": "stale-catalog",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "stale-catalog"
+      }
+    },
+    {
+      "id": "stale-tooling",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "stale-tooling"
+      }
+    },
+    {
+      "id": "stale-selection",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "stale-selection"
+      }
+    },
+    {
+      "id": "missing-current-after-earlier-pass",
+      "result": null,
+      "prior_result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-001",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "missing-current-result"
+      }
+    },
+    {
+      "id": "replayed-prior-result",
+      "result": {
+        "version": 1,
+        "run_id": "run-001",
+        "mode": "selection",
+        "repo": "/workspace/notes",
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "behavior_ids": [
+          "note.add"
+        ],
+        "scenario_ids": [
+          "add-note"
+        ],
+        "scenarios": [
+          {
+            "id": "add-note",
+            "status": "passed",
+            "errors": [],
+            "attachments": [
+              {
+                "name": "transcript",
+                "path": "add-note.txt"
+              }
+            ]
+          }
+        ],
+        "errors": [],
+        "ok": true,
+        "verdict": "PASS",
+        "evidence_dir": "/tmp/evidence/run-001"
+      },
+      "current_context": {
+        "run_id": "run-current-replay",
+        "repo": "/workspace/notes",
+        "evidence_dir": "/tmp/evidence/run-001",
+        "required_behavior_ids": [
+          "note.add"
+        ],
+        "required_scenario_ids": [
+          "add-note"
+        ],
+        "product": {
+          "base_sha": "1111111111111111111111111111111111111111",
+          "head_sha": "2222222222222222222222222222222222222222",
+          "dirty": false,
+          "version": 1,
+          "changed_paths": [
+            "src/notes/add.py"
+          ]
+        },
+        "catalog_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selection_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "tooling_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "attachment_inventory": [
+          "add-note.txt"
+        ]
+      },
+      "expected": {
+        "ok": false,
+        "category": "replayed-prior-result"
+      }
+    }
+  ]
+}

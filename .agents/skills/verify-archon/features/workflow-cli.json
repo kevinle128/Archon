@@ -1,0 +1,97 @@
+{
+  "id": "workflow-cli",
+  "description": "Deterministic workflow execution and governance through the CLI",
+  "impact_paths": [
+    "packages/cli/src/commands/workflow.ts",
+    "packages/workflows/src/",
+    "packages/core/src/db/",
+    "packages/paths/src/"
+  ],
+  "behaviors": [
+    {
+      "id": "workflow.execution",
+      "description": "Successful output and artifacts persist; a failed node can be retried.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/cli/src/commands/workflow.ts",
+        "packages/workflows/src/",
+        "packages/core/src/db/"
+      ],
+      "scenarios": [
+        "workflow.execution"
+      ]
+    },
+    {
+      "id": "workflow.governance",
+      "description": "Approval records a decision without inline JSON execution; resume, reject, and cancel persist.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/cli/src/commands/workflow.ts",
+        "packages/workflows/src/",
+        "packages/core/src/db/"
+      ],
+      "scenarios": [
+        "workflow.governance"
+      ]
+    },
+    {
+      "id": "workflow.invalid-input",
+      "description": "Malformed and unknown run requests fail with one JSON envelope and the documented exit.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/cli/src/cli.ts",
+        "packages/cli/src/commands/workflow.ts"
+      ],
+      "scenarios": [
+        "workflow.invalid-input"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "workflow.execution",
+      "runner": {
+        "kind": "cli",
+        "id": "workflow.execution"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies"
+      ],
+      "proof_obligations": [
+        "Run reaches completed with persisted node output and artifact bytes",
+        "Failure reaches failed and retry reaches completed"
+      ]
+    },
+    {
+      "id": "workflow.governance",
+      "runner": {
+        "kind": "cli",
+        "id": "workflow.governance"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies"
+      ],
+      "proof_obligations": [
+        "Gate pauses",
+        "JSON approval does not run the next node",
+        "Blocking resume completes",
+        "Rejection persists",
+        "Cancellation persists"
+      ]
+    },
+    {
+      "id": "workflow.invalid-input",
+      "runner": {
+        "kind": "cli",
+        "id": "workflow.invalid-input"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies"
+      ],
+      "proof_obligations": [
+        "Required arguments return exit 64 and one failure envelope",
+        "Unknown workflow and run return exit 78"
+      ]
+    }
+  ]
+}

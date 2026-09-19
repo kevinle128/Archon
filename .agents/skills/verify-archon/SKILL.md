@@ -1,114 +1,128 @@
 ---
 name: verify-archon
-description: >-
-  Use when verifying Archon CLI, API, or web behavior after a change, when
-  checking historical bug reproductions, or when a passing smoke test may
-  omit the user action, persisted outcome, or workflow continuation.
+description: Prove Archon CLI workflows, solo HTTP API, and Console/Legacy run UI from an explicit selection; retain functional and visual evidence.
 ---
 
 # Verify Archon
 
-Prove the requested behaviors with executable scenarios. A passing room or
-screenshot does not establish that an Ask can be answered. Run this skill
-directly from an agent session; no Archon workflow or artifact environment is
-required.
+Use the executable catalog as the scope authority.
+Read [contract.json](contract.json), [protocol](references/protocol.md), and `features/*.json` before selection or proof.
+This skill tests the product; it does not authorize product repairs, commits, publication, or baseline changes.
 
-## Manual Procedure
+## Target and prerequisites
 
-1. Read the complete user request and relevant design/plan. Identify the product
-   checkout and the expected observable outcome. Read the catalog:
-   `.agents/skills/verify-archon/bin/verify-archon catalog --json`.
-2. For a change-level claim, use `select-verify-archon-targets` to produce
-   normalized `selection.json`. Run `validate-selection`, then
-   `prove --selection`. The helper, not the agent, determines the verdict.
-3. Read the new run's `result.json` and its scenario evidence. Report the target
-   SHA, selected behaviors/scenarios, verdict, exact failures, and evidence path.
-   State incomplete coverage or unsupported setup separately from a reproduced
-   product bug.
-4. When a fix changes the product HEAD, read the new diff and select again.
-   Neither an older selection nor an earlier passing result proves the new HEAD.
+`TOOLING` is the repository that contains this skill.
+`TARGET` is the absolute product repository supplied by the caller.
+They can be different checkouts.
+Never substitute the shell working directory for `TARGET`.
+The helper is `TOOLING/.agents/skills/verify-archon/bin/verify.ts` and runs with Bun.
+Git, Bun, and the locked root dependencies are required.
+Use the declared target install, not dependencies in an ambient parent directory.
+Dependencies and fixture files under `e2e/` belong to the tooling checkout.
 
-```bash
-VERIFY=.agents/skills/verify-archon/bin/verify-archon
-$VERIFY validate-selection /tmp/archon-selection/selection.json \
-  --repo /path/to/checkout --base BASE_REF
-$VERIFY prove --selection /tmp/archon-selection/selection.json \
-  --repo /path/to/checkout --base BASE_REF
+The CLI scenarios use disposable Git projects, SQLite databases, and `ARCHON_HOME` directories.
+They do not need a server, browser, mockup, reviewer, or provider credential.
+HTTP and browser scenarios build the exact target Web UI and reuse `e2e/lib/playwright/archon-runtime.ts`.
+The runtime starts a local server on port 13400, uses a fresh SQLite database, and uses the existing deterministic E2E provider.
+It polls readiness and refuses an occupied port.
+It does not stop an existing listener.
+Browser scenarios require the dependencies in `e2e/package-lock.json` and Chrome, or a configured Playwright browser through `ARCHON_PW_CHANNEL`.
+If these dependencies are absent, obtain installation authorization before `npm ci --prefix "$TOOLING/e2e"`.
+
+`ui.visual` also requires an authenticated `codex exec` with image input and structured output support.
+It invokes the reviewer inside proof with a read-only sandbox and an isolated working directory.
+Review uses Codex authentication with user configuration disabled and medium reasoning effort.
+This keeps unrelated MCP servers, hooks, and user plugins out of the review process.
+An unavailable reviewer is incomplete proof and returns FAIL.
+Do not replace review with screenshot capture or a later informal approval.
+
+## Inspect and run
+
+Set task-specific shell variables from the caller's paths.
+Do not change `HOME` or `CODEX_HOME`.
+
+```sh
+VERIFY_HELPER="$TOOLING/.agents/skills/verify-archon/bin/verify.ts"
+bun "$VERIFY_HELPER" --help
+bun "$VERIFY_HELPER" catalog --json
+bun "$VERIFY_HELPER" doctor --repo "$TARGET"
+bun "$VERIFY_HELPER" snapshot --repo "$TARGET" --base "$BASE_SHA"
+bun "$VERIFY_HELPER" normalize-selection "$ATTEMPT/proposal.json" --repo "$TARGET" --base "$BASE_SHA" --out "$ATTEMPT/selection.json"
+bun "$VERIFY_HELPER" validate-selection "$ATTEMPT/selection.json" --repo "$TARGET" --base "$BASE_SHA"
+bun "$VERIFY_HELPER" prove --selection "$ATTEMPT/selection.json" --repo "$TARGET" --base "$BASE_SHA"
 ```
 
-The product checkout must be clean. Keep existing edits in their checkout and
-use an isolated worktree for a historical revision. The selection normalizer
-rejects unknown IDs, unmapped paths, empty impact, and missing scenarios.
-Uncertainty broadens coverage. An explicit coverage gap stays failing.
+Obtain `BASE_SHA` independently from the change request or integration branch.
+The default is the merge base with local `dev`, then `origin/dev` if local `dev` is absent.
+A one-commit repository can use its initial commit.
+Otherwise a missing base is an error.
+Never trust the proposal to supply the expected base.
+For an explicitly requested historical check with an empty diff, add `--historical` to normalization, validation, and proof.
+Selection mode requires clean source and exact current identities.
 
-## Historical Bug Checks
+An explicit diagnostic can run `bun "$VERIFY_HELPER" prove --scenario install.health --repo "$TARGET" --base "$BASE_SHA"`.
+Diagnostic mode can inspect dirty authoring work but does not qualify a selection.
+Never use diagnostic mode to recover from failed selection.
 
-Check out the exact defective commit in a separate worktree. Keep the current
-verification suite outside that worktree and use `--repo` to target it:
+## Retained artifacts
 
-```bash
-.agents/skills/verify-archon/bin/verify-archon prove \
-  --scenario hitl.console-unowned-ask \
-  --scenario hitl.legacy-unowned-ask \
-  --repo /path/to/defective-checkout
-```
+Use `TARGET/.plans/verifications/{feature_name}/{attempt_id}/` unless the caller gives an external root.
+Resolve this path from the target, not the tooling checkout.
+Use a descriptive feature slug with letters, numbers, and hyphens.
+Use a new UTC timestamp plus UUID for each attempt; require the directory and output files to be absent before creation.
+Keep `snapshot.json`, `proposal.json`, `selection.json`, command receipts, and source or design traces in that attempt.
+Pass the exact absolute selection path through `--selection`.
+The helper never searches for another selection.
+It creates a unique child under `ATTEMPT/evidence/` and writes `result.json` there.
+An explicit `--evidence-root` can change the parent, but never permits source or skill directories.
+Repeated proof creates different children and preserves prior evidence.
 
-To create commit-bound selection evidence for an unchanged historical checkout,
-pass `--base HEAD --historical` to normalize, validate, and prove. Without that
-explicit mode, an empty change diff fails closed.
+Only untracked artifacts in `.plans/verifications/` are exempt from source cleanliness.
+Tracked changes, other untracked source, and escaping symlinks remain dirty or invalid.
+Runtime scratch stays outside this retained subtree.
+The runner stops its own children and removes its own scratch after success or failure.
+Retain reports after cleanup.
+A failed preflight keeps a fresh FAIL receipt.
+If the requested evidence location cannot accept writes, the helper attempts a failure receipt in the tooling repository's retained artifact subtree and reports that path.
+If no location accepts writes, the command exits nonzero and cannot claim proof.
 
-A successful negative-control experiment has a **FAIL product verdict caused
-by the expected behavioral assertion**. Preserve that FAIL; do not invert it
-into product PASS. A build failure, obsolete locator, unsupported fixture, or
-missing browser does not prove detection of the product defect. Confirm a
-corresponding healthy control can pass. Keep known bugs in the target intact;
-repair verification code separately and re-run it against the same target.
+Read the current `result.json` from disk.
+Check its run, target, base, catalog, selection, and tooling identities; required scenario set; per-scenario status; errors; and attachments.
+Only complete functional and required visual proof can return PASS.
+Failed, skipped, flaky, missing, or unsupported work cannot return PASS.
+The helper rechecks provenance, source cleanliness, attachments, and tooling after execution.
 
-Scenario mode is diagnostic. It cannot establish complete change coverage.
-The compatible `prove <feature-id>` command runs the catalog's full feature
-scenario set in diagnostic mode; there is no default smoke.
+## UI scope and design authority
 
-## Executable Evidence
+Follow the complete [visual procedure](references/visual-verification.md).
+[visual-config.json](visual-config.json) pins the design source chain, content hashes, surfaces, states, viewports, region width, criteria, and accepted differences.
+The `ui.visual` runner identity includes that configuration's digest in the catalog.
+Every UI behavior includes this scenario, even when the proposal names only a functional behavior.
+Do not put ad hoc visual requirements into v1 proposal or selection fields.
+A new UI requirement needs a reviewed catalog/configuration update and fresh selection.
 
-JSON manifests under [features/](features/) are the machine source of truth.
-They link behaviors to durable scenarios and describe proof obligations.
-Selectors and assertions live in executable code, not the manifests.
+The current matrix covers Console and Legacy tool rows, open Raw payloads, and pending Ask cards at 1440×1000 and 390×844.
+At the wide viewport, the node room is 460 px wide with a 2 px layout tolerance.
+The capture records viewport and actual region dimensions separately.
+The current final DESIGN controls accessibility targets and Raw contrast where the older mockup differs.
+Replay, steering, view-as, and future tool bodies shown in references are excluded by the accepted scope.
+Data text and durations differ, so comparison uses matched region/context images, geometry, and per-criterion image review instead of one pixel percentage.
+Review output is validated and bound to the current proof context, pinned configuration, manifest, and image hashes.
+Missing references, changed images, missing review, and incomplete outcomes return FAIL.
 
-- UI: the same tagged Playwright specs in `e2e/ui/` used by the durable suite.
-- CLI/API: the shared isolated recipes in `bin/runtime`, called by this helper.
-- First-party mutation: browser/CLI action, real write, authoritative read-back,
-  required transition, and final UI where applicable.
-- Screenshots support behavioral assertions; they are not a substitute for them.
+## Support and limits
 
-Every run creates `evidence/runs/<id>/selection.json`, `result.json`, process
-logs, and `scenarios/<id>/result.json` with attachments. Evidence records the
-product HEAD, selection/catalog digests, and exact verification-tooling digest.
-Required missing, skipped, flaky, failed, unsupported, or stale proof cannot pass.
-Tracked historical `last-proof/` captures are not current evidence.
+The helper owns its `lib/`, copied schemas, conformance vectors, catalog, and visual configuration.
+It reuses native E2E support and the mapped test IDs in `lib/browser-scenarios.ts`.
+`e2e/ui/verifier-visual.spec.ts` supplies matched captures.
+Existing tool-row and room tests honor `ARCHON_VERIFY_EVIDENCE` to retain captures in the current attempt.
+No root Playwright dependency is added.
 
-## Environment and Cleanup
+`coverage-gaps.json` explicitly defers login and multi-user authorization, live provider reasoning, external platform delivery, other UI surfaces, and uncovered workflow semantics.
+Solo mode does not prove authorization.
+The test provider proves engine and UI integration, not real model reasoning.
+The existing workflow gate calls the same runner, but an environment without Chrome or the declared image reviewer cannot complete UI proof.
 
-The local runtime requires macOS/Linux (or WSL), Bash, jq, curl, and lsof.
-Owned POSIX process groups bound timeout cleanup, including CLI descendants.
-
-Install root dependencies with `bun install --frozen-lockfile`, and standalone
-E2E dependencies with `npm ci --prefix e2e`. Bun's default isolated linker does
-not hoist `@hono/zod-openapi` to the repo root; `catalog` / `prove` then fail
-to resolve that import from this skill directory. Reinstall with
-`bun install --frozen-lockfile --linker=hoisted` when that happens. Install
-Playwright Chromium, or set `ARCHON_PW_CHANNEL=chrome` for installed Google
-Chrome. Check `e2e/README.md` for runtime settings. Browser proof rebuilds the
-**target** web bundle first.
-
-All runs use isolated SQLite, loopback ports, fake AI at the provider boundary,
-and separate `ARCHON_HOME`. Never target the operator's instance or Mini
-implicitly. The Playwright fixture and CLI runner own cleanup, including
-failures. Evidence survives cleanup. Missing dependencies are setup failures.
-
-Owned-run authorization needs an authenticated test environment; the solo
-SQLite fixture explicitly reports unsupported setup for that obligation.
-An old fake provider may also be unable to create the long-history fixture.
-These remain failed required proofs, with the unmet prerequisite reported.
-
-For independent local runtime diagnostics, `launch`, `doctor`, `cleanup`,
-`cli`, `http`, `status`, and `evidence` remain available. Read `--help`.
+Run native contract and isolation checks with `bun run test:verification-skills` from the tooling root.
+Run `bun x tsc --noEmit -p .agents/skills/verify-archon/tsconfig.json` and `npm run typecheck --prefix e2e` for support changes.
+Qualification reports belong under the target's `setup-verify` attempts and are separate from product verdicts.

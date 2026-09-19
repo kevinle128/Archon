@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-verification:gaps:1",
+  "title": "Project verification gaps",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "gaps"],
+  "properties": {
+    "version": {"const": 1},
+    "gaps": {"type": "array", "items": {"$ref": "#/$defs/gap"}}
+  },
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*\\u0000)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[*?\\[])(?!.*//).+$"},
+    "paths": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},
+    "gap": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "description", "impact_paths", "reason"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "description": {"type": "string", "minLength": 1},
+        "impact_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}, "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

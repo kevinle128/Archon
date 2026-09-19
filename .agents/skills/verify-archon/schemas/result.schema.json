@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:project-verification:result:1",
+  "title": "Project verification result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "run_id", "mode", "repo", "product", "catalog_sha256", "selection_sha256", "tooling_sha256", "behavior_ids", "scenario_ids", "scenarios", "errors", "ok", "verdict", "evidence_dir"],
+  "properties": {
+    "version": {"const": 1}, "run_id": {"$ref": "#/$defs/id"},
+    "mode": {"enum": ["selection", "scenario-debug"]}, "repo": {"$ref": "#/$defs/executionPath"},
+    "product": {"anyOf": [{"$ref": "#/$defs/product"}, {"type": "null"}]},
+    "catalog_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "selection_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "tooling_sha256": {"anyOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "behavior_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "scenario_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+    "scenarios": {"type": "array", "items": {"$ref": "#/$defs/scenarioResult"}},
+    "errors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "ok": {"type": "boolean"}, "verdict": {"enum": ["PASS", "FAIL"]}, "evidence_dir": {"$ref": "#/$defs/executionPath"}
+  },
+  "allOf": [
+    {"if": {"properties": {"ok": {"const": true}}, "required": ["ok"]}, "then": {"properties": {"verdict": {"const": "PASS"}}}},
+    {"if": {"properties": {"verdict": {"const": "PASS"}}, "required": ["verdict"]}, "then": {"properties": {"ok": {"const": true}, "catalog_sha256": {"$ref": "#/$defs/digest"}, "tooling_sha256": {"$ref": "#/$defs/digest"}, "errors": {"maxItems": 0}}}},
+    {"if": {"properties": {"mode": {"const": "selection"}, "verdict": {"const": "PASS"}}, "required": ["mode", "verdict"]}, "then": {"properties": {"selection_sha256": {"$ref": "#/$defs/digest"}, "product": {"$ref": "#/$defs/cleanProduct"}}}},
+    {"if": {"properties": {"verdict": {"const": "FAIL"}}, "required": ["verdict"]}, "then": {"properties": {"ok": {"const": false}, "errors": {"minItems": 1}}}}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"},
+    "path": {"type": "string", "minLength": 1, "pattern": "^(?![A-Za-z]:)(?!/)(?!.*\\\\)(?!.*\\u0000)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*[*?\\[])(?!.*//).+$"},
+    "executionPath": {"type": "string", "minLength": 1, "pattern": "^(?!.*\\u0000).+$"},
+    "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "gitSha": {"type": "string", "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"},
+    "product": {
+      "type": "object", "additionalProperties": false, "required": ["version", "base_sha", "head_sha", "changed_paths", "dirty"],
+      "properties": {"version": {"const": 1}, "base_sha": {"$ref": "#/$defs/gitSha"}, "head_sha": {"$ref": "#/$defs/gitSha"}, "changed_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}, "dirty": {"type": "boolean"}}
+    },
+    "cleanProduct": {"allOf": [{"$ref": "#/$defs/product"}, {"properties": {"dirty": {"const": false}}}]},
+    "attachment": {
+      "type": "object", "additionalProperties": false, "required": ["name", "path"],
+      "properties": {"name": {"type": "string", "minLength": 1}, "path": {"$ref": "#/$defs/path"}}
+    },
+    "scenarioResult": {
+      "type": "object", "additionalProperties": false, "required": ["id", "status", "errors", "attachments"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"}, "status": {"enum": ["passed", "failed", "flaky", "skipped", "missing", "unsupported"]},
+        "errors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "attachments": {"type": "array", "items": {"$ref": "#/$defs/attachment"}}
+      }
+    }
+  }
+}

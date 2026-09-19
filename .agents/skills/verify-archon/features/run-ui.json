@@ -1,0 +1,124 @@
+{
+  "id": "run-ui",
+  "description": "Console and Legacy workflow rooms, tools and Ask with visual proof",
+  "impact_paths": [
+    "packages/web/src/components/workflows/",
+    "packages/web/src/experiments/console/",
+    "packages/web/src/lib/",
+    "packages/web/src/index.css",
+    "e2e/",
+    "_bmad-output/specs/spec-workflow-run-view-hitl/",
+    "_bmad-output/specs/spec-agent-node-room/",
+    "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/"
+  ],
+  "behaviors": [
+    {
+      "id": "ui.rooms",
+      "description": "Rooms preserve navigation, Log/Graph/Artifacts state, deep links and narrow layout.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/web/src/components/workflows/",
+        "packages/web/src/experiments/console/components/inspect/",
+        "packages/web/src/lib/room-split-layout.ts"
+      ],
+      "scenarios": [
+        "ui.rooms",
+        "ui.visual"
+      ]
+    },
+    {
+      "id": "ui.tools",
+      "description": "Tool rows and Raw disclosure are readable, keyboard accessible, and bounded at desktop and narrow widths.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/web/src/components/workflows/NodeRoom.tsx",
+        "packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx",
+        "packages/web/src/lib/tool-presentation.ts",
+        "e2e/ui/agent-tool-row-visual.spec.ts"
+      ],
+      "scenarios": [
+        "ui.tools",
+        "ui.visual"
+      ]
+    },
+    {
+      "id": "ui.ask",
+      "description": "An operator answers real Ask cards and sees retained decisions and the correct resume behavior.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/web/src/components/workflows/",
+        "packages/web/src/experiments/console/components/ask/"
+      ],
+      "scenarios": [
+        "ui.ask",
+        "ui.visual"
+      ]
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "ui.rooms",
+      "runner": {
+        "kind": "browser",
+        "id": "ui.rooms"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "All mapped room and navigation tests execute once and pass",
+        "Screenshots and reports are retained"
+      ]
+    },
+    {
+      "id": "ui.tools",
+      "runner": {
+        "kind": "browser",
+        "id": "ui.tools"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "Raw is absent from the DOM until opened",
+        "Keyboard, geometry, contrast and viewport checks execute",
+        "Fresh browser evidence is retained"
+      ]
+    },
+    {
+      "id": "ui.ask",
+      "runner": {
+        "kind": "browser",
+        "id": "ui.ask"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "Real Ask state and answers are shown and persisted",
+        "CLI and web origins follow their distinct resume contracts",
+        "Narrow Ask and focus checks pass"
+      ]
+    },
+    {
+      "id": "ui.visual",
+      "runner": {
+        "kind": "browser",
+        "id": "visual-78d882b1f3f0041a73c2c08372eeac24b1e27ebee3b022cb2ef6b2cad2322419"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "Pinned references render with required assets",
+        "Matched state captures and measured geometry exist",
+        "Image reviewer checks every configured criterion",
+        "No missing, changed or stale visual evidence"
+      ]
+    }
+  ]
+}
