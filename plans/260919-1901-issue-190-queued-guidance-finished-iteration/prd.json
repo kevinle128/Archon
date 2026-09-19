@@ -81,8 +81,8 @@
       "technicalNotes": "Phase 2 Console half \u2014 mirror of US-003, deliberately a parallel thin renderer rather than a shared component. Reuse `isInspectRunLive` rather than inventing a second liveness list.",
       "dependsOn": ["US-002"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: ConsoleInspectPane.tsx (resolve once + isInspectRunLive), ConsoleNodeRoom.tsx (consume-once focus handoff), ConsoleComposerDock.tsx (finished-iteration branch + poll onError), matching tests. Commit 04d0e37b."
     },
     {
       "id": "US-005",
