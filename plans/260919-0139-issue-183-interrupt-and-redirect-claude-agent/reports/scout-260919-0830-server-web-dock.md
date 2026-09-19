@@ -149,9 +149,8 @@ function registerOpenApiRoute(
      against the middleware.
    - `getValidatedBody(c, sendWorkflowNodeBodySchema)` (`:5207`) — N/A for interrupt (no body).
    - `workflowDb.getWorkflowRun(runId)` → 404 `not_found` if absent (`:5209-5212`).
-   - Builds the **effective node-state projection**: `workflowEventDb.listWorkflowEvents(runId)`
-     - `workflowPendingInteractionDb.listPendingInteractions(runId)` →
-       `projectApiWorkflowNodeStates(events, pendingInteractions).find(state => state.nodeId ===
+   - Builds the **effective node-state projection**: `workflowEventDb.listWorkflowEvents(runId)` - `workflowPendingInteractionDb.listPendingInteractions(runId)` →
+     `projectApiWorkflowNodeStates(events, pendingInteractions).find(state => state.nodeId ===
 nodeId)` (`:5214-5221`).
    - `const handle = getSteeringRegistry().get(runId, nodeId)` (`:5222`) — the process-local
      handle is the interrupt target too.
@@ -513,9 +512,9 @@ useEffect(() => {
 ```
 
 **This is the key asymmetry for Story 2.3**: since no SSE event fires for steering state today
-(§1.9), Console will only learn about an interrupt's `idle-after-interrupt` sub_state (from a
+(§1.9), Console will only learn about an interrupt's `idle-after-interrupt` sub*state (from a
 reload or another tab) via the 30s heartbeat unless the interrupt path is made to emit a `dag_node`
-(or new) SSE event that the invalidation switch already listens for. The tab that _made_ the
+(or new) SSE event that the invalidation switch already listens for. The tab that \_made* the
 interrupt call gets its `sub_state` from the POST response directly and can update local state
 optimistically (same pattern `ComposerDock`/`ConsoleComposerDock` already use for `dock.sent`), so
 same-tab UX is unaffected — only reload/other-tab convergence depends on this gap.

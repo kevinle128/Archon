@@ -15,7 +15,7 @@ The successful flow:
 
 ## Problem
 
-Story 2.1 delivered a receipt-ordered, in-process steering queue whose messages are delivered only at natural provider-turn boundaries. There is no way to interrupt the *current* Claude turn: the only existing signal (`abortSignal`) is Cancel-grade — it aborts the SDK controller and closes the query, which fails the node. Operators need a distinct, lighter-weight "stop this turn, keep the session, let me redirect" control.
+Story 2.1 delivered a receipt-ordered, in-process steering queue whose messages are delivered only at natural provider-turn boundaries. There is no way to interrupt the _current_ Claude turn: the only existing signal (`abortSignal`) is Cancel-grade — it aborts the SDK controller and closes the query, which fails the node. Operators need a distinct, lighter-weight "stop this turn, keep the session, let me redirect" control.
 
 ## Goals and success metrics
 
@@ -103,13 +103,13 @@ Three conflicts resolved by the plan — do not "correct" them back:
 
 ## Story overview
 
-| ID | Story | Package focus | Depends on |
-| --- | --- | --- | --- |
-| US-001 | Claude native interrupt seam + real-SDK gate | `packages/providers`, capability matrix | — |
-| US-002 | Registry tokenized turns, executor classification, idle-await | `packages/workflows` | US-001 |
-| US-003 | Interrupt route, atomic Send now, sub-state projection | `packages/server`, generated web types | US-002 |
-| US-004 | Both web docks, accessibility, visual states | `packages/web` | US-003 |
-| US-005 | Deterministic E2E evidence and closeout | `e2e`, e2e-fake, reports, sprint status | US-001–US-004 |
+| ID     | Story                                                         | Package focus                           | Depends on    |
+| ------ | ------------------------------------------------------------- | --------------------------------------- | ------------- |
+| US-001 | Claude native interrupt seam + real-SDK gate                  | `packages/providers`, capability matrix | —             |
+| US-002 | Registry tokenized turns, executor classification, idle-await | `packages/workflows`                    | US-001        |
+| US-003 | Interrupt route, atomic Send now, sub-state projection        | `packages/server`, generated web types  | US-002        |
+| US-004 | Both web docks, accessibility, visual states                  | `packages/web`                          | US-003        |
+| US-005 | Deterministic E2E evidence and closeout                       | `e2e`, e2e-fake, reports, sprint status | US-001–US-004 |
 
 ## Conventions and validation
 
