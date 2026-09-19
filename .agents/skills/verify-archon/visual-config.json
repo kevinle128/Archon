@@ -79,7 +79,7 @@
     },
     {
       "path": "packages/web/src/experiments/console/theme.css",
-      "sha256": "2c041fdeda625495523cc8ff79357999d456b21c4f1f367c2e57366f181c5d7b"
+      "sha256": "543f29044c5c3fb455c19013a3a226fa03c15808e1c660e66ff463d4f8036bdf"
     }
   ],
   "criteria": [
