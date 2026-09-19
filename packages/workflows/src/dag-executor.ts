@@ -464,6 +464,30 @@ function isInterruptTerminalReason(reason: string | undefined): boolean {
 }
 
 /**
+ * Provider-neutral interrupt marker on a terminal result chunk (#187 / #183).
+ *
+ * Exact provider-normalized result fields are transport contracts, not prose
+ * inference: Claude's terminalReason allowlist OR the complete DeepSeek abort
+ * triple (`stopReason:'aborted'` + `isError:true` + `errorSubtype:'deepseek_aborted'`).
+ * No provider-id branching, no prefix matching, no error-message parsing, and
+ * no synthetic `terminalReason:'cancelled'`. Callers still gate on the live
+ * turn token + `wasOperatorInterrupted(token)`.
+ */
+function isInterruptMarkedResult(result: {
+  terminalReason?: string;
+  stopReason?: string;
+  isError?: boolean;
+  errorSubtype?: string;
+}): boolean {
+  if (isInterruptTerminalReason(result.terminalReason)) return true;
+  return (
+    result.stopReason === 'aborted' &&
+    result.isError === true &&
+    result.errorSubtype === 'deepseek_aborted'
+  );
+}
+
+/**
  * Abort-like throw recognition (#183 five-case classification, case 3). A
  * throw only classifies as interrupted when the turn ALSO carries the
  * operator-interrupt flag with this token's interrupt signal aborted — this
@@ -2689,7 +2713,7 @@ async function executeNodeInternal(
             passTurn?.token !== undefined &&
             interruptibleHandle !== undefined &&
             interruptibleHandle.wasOperatorInterrupted(passTurn.token) &&
-            isInterruptTerminalReason(msg.terminalReason);
+            isInterruptMarkedResult(msg);
           // A terminal result closes every outstanding lifecycle — 'interrupted'
           // for the abort-marked end (a still-open tool was cut off mid-call),
           // 'unknown' otherwise. Entries the provider already resolved are out
@@ -3193,7 +3217,14 @@ async function executeNodeInternal(
   // and capability resolution, and only when the provider can resume a provider
   // session — a turn that cannot be resumed cannot accept follow-up guidance,
   // so unsupported providers never expose a route target.
-  const providerInterruptible = getProviderCapabilities(provider).interrupt !== false;
+  // Instance `interrupt` is the live advertisement (test fakes may differ from
+  // the static registry). Fall back to the registry when the instance omits the
+  // field so legacy mocks that don't declare `interrupt` keep #183 behaviour.
+  const instanceInterrupt = aiClient.getCapabilities().interrupt;
+  const providerInterruptible =
+    (instanceInterrupt !== undefined
+      ? instanceInterrupt
+      : getProviderCapabilities(provider).interrupt) !== false;
   const steeringHandle: NodeSteeringHandle | undefined = aiClient.getCapabilities().sessionResume
     ? getSteeringRegistry().register(workflowRun.id, stepName, {
         interruptible: providerInterruptible,
@@ -5961,7 +5992,14 @@ async function executeLoopNodeInner(
   // Steering handle (#181): register only when the provider can resume a
   // session — without `sessionResume` queued operator guidance could never
   // ride a natural boundary, so the node exposes no handle at all.
-  const providerInterruptible = getProviderCapabilities(workflowProvider).interrupt !== false;
+  // Instance `interrupt` is the live advertisement (test fakes may differ from
+  // the static registry). Fall back to the registry when the instance omits the
+  // field so legacy mocks that don't declare `interrupt` keep #183 behaviour.
+  const loopInstanceInterrupt = aiClient.getCapabilities().interrupt;
+  const providerInterruptible =
+    (loopInstanceInterrupt !== undefined
+      ? loopInstanceInterrupt
+      : getProviderCapabilities(workflowProvider).interrupt) !== false;
   steering.steeringHandle = aiClient.getCapabilities().sessionResume
     ? getSteeringRegistry().register(workflowRun.id, stepName, {
         interruptible: providerInterruptible,
@@ -6410,7 +6448,7 @@ async function executeLoopNodeInner(
                 turnToken !== undefined &&
                 interruptibleHandle !== undefined &&
                 interruptibleHandle.wasOperatorInterrupted(turnToken) &&
-                isInterruptTerminalReason(msg.terminalReason);
+                isInterruptMarkedResult(msg);
               // A terminal result closes every outstanding lifecycle —
               // 'interrupted' on the abort-marked end, 'unknown' otherwise.
               // Provider-resolved entries are out of the map, so no duplicate
