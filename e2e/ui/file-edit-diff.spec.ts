@@ -219,8 +219,21 @@ async function expectNoDiffBodyOverflow(
   row: Locator,
   context: string
 ): Promise<void> {
-  const report = await row.evaluate(rowEl => {
-    const roomEl = rowEl.closest('[role="region"]');
+  const containers = await room.evaluate(roomEl => {
+    const panelEl = roomEl.closest('[id$="-run-room"]');
+    const width = document.documentElement.clientWidth;
+    const roomRect = roomEl.getBoundingClientRect();
+    const panelRect = panelEl?.getBoundingClientRect();
+    return {
+      roomInsideViewport: roomRect.left >= -1 && roomRect.right <= width + 1,
+      roomScroll: roomEl.scrollWidth - roomEl.clientWidth,
+      panelInsideViewport:
+        panelRect !== undefined ? panelRect.left >= -1 && panelRect.right <= width + 1 : null,
+      panelScroll: panelEl !== null ? panelEl.scrollWidth - panelEl.clientWidth : null,
+    };
+  });
+  const contents = await row.evaluate(rowEl => {
+    const bodyEl = rowEl.querySelector('.tool-family-body');
     const width = document.documentElement.clientWidth;
     const offenders: string[] = [];
     rowEl.querySelectorAll('*').forEach(el => {
@@ -232,19 +245,21 @@ async function expectNoDiffBodyOverflow(
         );
       }
     });
-    const roomRect = roomEl?.getBoundingClientRect();
     return {
-      roomInsideViewport:
-        roomRect !== undefined && roomRect !== null
-          ? roomRect.left >= -1 && roomRect.right <= width + 1
-          : null,
-      roomScroll: roomEl !== null ? roomEl.scrollWidth - roomEl.clientWidth : null,
+      rowScroll: rowEl.scrollWidth - rowEl.clientWidth,
+      bodyScroll: bodyEl !== null ? bodyEl.scrollWidth - bodyEl.clientWidth : null,
       offenders: offenders.slice(0, 5),
     };
   });
-  expect(report.roomInsideViewport, `room stays inside viewport ${context}`).toBe(true);
-  expect(report.roomScroll, `room has no horizontal scroll ${context}`).toBeLessThanOrEqual(1);
-  expect(report.offenders, `no diff-body element overflows the page ${context}`).toEqual([]);
+  expect(containers.panelInsideViewport, `panel stays inside viewport ${context}`).toBe(true);
+  expect(containers.roomInsideViewport, `room stays inside viewport ${context}`).toBe(true);
+  expect(containers.panelScroll, `panel has no horizontal scroll ${context}`).toBeLessThanOrEqual(
+    1
+  );
+  expect(containers.roomScroll, `room has no horizontal scroll ${context}`).toBeLessThanOrEqual(1);
+  expect(contents.rowScroll, `row has no horizontal scroll ${context}`).toBeLessThanOrEqual(1);
+  expect(contents.bodyScroll, `body has no horizontal scroll ${context}`).toBeLessThanOrEqual(1);
+  expect(contents.offenders, `no diff-body element overflows the page ${context}`).toEqual([]);
 }
 
 interface Rgba {
@@ -546,7 +561,8 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     expect(focusableInDiff, 'diff table has no focusable descendants').toBe(0);
 
-    // Focus order: summary -> Raw -> the existing next control, never the diff.
+    // Focus order: summary -> Raw -> outside the row, never the diff. Console's
+    // next control is Re-run; Legacy has no later row action and leaves the row.
     const rawButton = sizedRow.getByRole('button', { name: /^Raw/ });
     await expect(rawButton).toBeVisible();
     await page.keyboard.press('Tab');
@@ -561,10 +577,16 @@ for (const surface of ['console', 'legacy'] as const) {
         tag: active?.tagName ?? '',
         text: (active?.textContent ?? '').trim().slice(0, 60),
         insideDiff: active !== null && active.closest('.tool-diff') !== null,
+        insideRow: active !== null && active.closest('details[data-tool-id]') !== null,
       };
     });
     expect(afterRaw.insideDiff, 'Tab past Raw never lands inside the diff').toBe(false);
-    expect(afterRaw.tag, 'Tab past Raw reaches an existing control').not.toBe('');
+    if (surface === 'console') {
+      expect(afterRaw.tag, 'Console Tab past Raw reaches a button').toBe('BUTTON');
+      expect(afterRaw.text, 'Console Tab past Raw reaches Re-run').toContain('Re-run');
+    } else {
+      expect(afterRaw.insideRow, 'Legacy Tab past Raw leaves the tool row').toBe(false);
+    }
 
     // Raw round-trip: the table unmounts, the stored payload shows the
     // original old_string, and closing Raw restores the identical diff.

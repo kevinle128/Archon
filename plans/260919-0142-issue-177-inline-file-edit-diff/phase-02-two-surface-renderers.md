@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: 'Phase 2: Inline diff on Legacy and Console'
-status: pending
+status: done
 priority: P1
 effort: '1d'
 dependencies: [1]
@@ -132,12 +132,12 @@ bun run format:check
 
 ## Exit criteria
 
-- [ ] Both surfaces pass all changed, failed, multi-hunk, identical, one-sided, no-input, refused, and malicious-control state assertions.
-- [ ] Insert/delete code and markers use their required success/error treatments; context, number column, inset box, hunk separator, and wrapping match the design spines.
-- [ ] Raw swap/restore and focus order are unchanged.
-- [ ] Console isolation, single-owner, generated-type, and renderer-import boundaries pass.
-- [ ] Existing source-control diff tests and the complete web package remain green.
-- [ ] No component test timeout is widened.
+- [x] Both surfaces pass all changed, failed, multi-hunk, identical, one-sided, no-input, refused, and malicious-control state assertions.
+- [x] Insert/delete code and markers use their required success/error treatments; context, number column, inset box, hunk separator, and wrapping match the design spines.
+- [x] Raw swap/restore and focus order are unchanged.
+- [x] Console isolation, single-owner, generated-type, and renderer-import boundaries pass.
+- [x] Existing source-control diff tests and the complete web package remain green.
+- [x] No component test timeout is widened.
 
 ## Risks and safeguards
 

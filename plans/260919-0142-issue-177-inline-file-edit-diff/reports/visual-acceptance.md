@@ -141,6 +141,6 @@ Component-level evidence for the remaining pathological states lives in
 ## Accessibility
 
 Native `details`/`summary` disclosure intact; the diff subtree carries **0**
-focusable descendants on both surfaces; Tab order is summary → Raw → the
-existing next control (`Re-run` on Console). Badges carry `+`/`−` glyphs, not
-color-only signals.
+focusable descendants on both surfaces. Tab order is summary → Raw → `Re-run`
+on Console; on Legacy the successful row has no trailing action, so Tab leaves
+the tool row. Badges carry `+`/`−` glyphs, not color-only signals.

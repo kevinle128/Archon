@@ -348,6 +348,21 @@ describe('memoization', () => {
     expect(calls).toEqual(['12345', 'abcdef', '12345']);
   });
 
+  test('a pair heavier than the source budget is returned but not retained', () => {
+    let calls = 0;
+    const diff = createDiffHunks({
+      memoSourceCodeUnits: 3,
+      patch: asPatch(() => {
+        calls += 1;
+        return EMPTY_PATCH;
+      }),
+    });
+
+    expect(diff('abc', 'd')).toEqual({ hunks: [], added: 0, deleted: 0 });
+    expect(diff('abc', 'd')).toEqual({ hunks: [], added: 0, deleted: 0 });
+    expect(calls).toBe(2);
+  });
+
   test('the singleton carries the declared bounds', () => {
     expect(diffHunks('x'.repeat(MAX_DIFF_SIDE_BYTES + 1), 'a')).toBeNull();
     expect(diffHunks('a', 'b')).not.toBeNull();

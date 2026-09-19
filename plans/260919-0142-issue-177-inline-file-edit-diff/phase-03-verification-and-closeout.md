@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: 'Phase 3: Deterministic full-stack proof and closeout'
-status: pending
+status: done
 priority: P1
 effort: '1d'
 dependencies: [1, 2]
@@ -160,9 +160,9 @@ If the product gate was not resolved, actual Codex coverage remains claimed, or 
 
 ## Exit criteria
 
-- [ ] Provider scenario tests, fixture, registration, and typed runner pass; reports call the bare row generic rather than Codex.
-- [ ] Both surfaces pass at their artifact reference widths, the shared 460px room width, and 390×844 responsive viewport in both themes.
-- [ ] Visual report covers every required state, design comparison, the two resolved discrepancies, and all measured ratios.
-- [ ] Focus order, no-network behavior, no horizontal overflow, wrapping, and Raw round-trip pass.
-- [ ] Focused packages, e2e typecheck, file-edit UI, existing HITL rooms, and `bun run validate` are green.
-- [ ] Authoritative contract and shipped behavior agree; sprint status and PR closeout occur only after that proof.
+- [x] Provider scenario tests, fixture, registration, and typed runner pass; reports call the bare row generic rather than Codex.
+- [x] Both surfaces pass at their artifact reference widths, the shared 460px room width, and 390×844 responsive viewport in both themes.
+- [x] Visual report covers every required state, design comparison, the two resolved discrepancies, and all measured ratios.
+- [x] Focus order, no-network behavior, no horizontal overflow, wrapping, and Raw round-trip pass.
+- [x] Focused packages, e2e typecheck, file-edit UI, existing HITL rooms, and `bun run validate` are green.
+- [x] Authoritative contract and shipped behavior agree; sprint status and implementation closeout occur only after that proof. PR creation is intentionally deferred by the parent task's no-PR rule.

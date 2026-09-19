@@ -223,7 +223,7 @@ export function createDiffHunks(options?: {
     const weight = before.length + after.length;
     cache.set(key, { result, weight });
     totalWeight += weight;
-    while (cache.size > 1 && (cache.size > memoEntries || totalWeight > memoUnits)) {
+    while (cache.size > 0 && (cache.size > memoEntries || totalWeight > memoUnits)) {
       const oldest = cache.keys().next();
       if (oldest.done) break;
       totalWeight -= cache.get(oldest.value)?.weight ?? 0;

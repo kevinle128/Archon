@@ -1,14 +1,13 @@
 ---
 title: 'Issue 177 inline file-edit diff'
 description: 'Verified implementation plan for Story 1.4: bounded inline diffs for persisted two-sided file tool rows on Legacy and Console.'
-status: blocked
+status: done
 priority: P1
 effort: '3 phases (~3.5d) after the product-contract gate'
 issue: 'https://github.com/kevinle128/Archon/issues/177'
 branch: archon/thread-5da49924
 tags: [issue-177, agent-node-room, epic-1, web, frontend, feature, tdd]
-blockedBy:
-  - 'Product/spec decision: reconcile Story 1.4 CAP-5 Codex wording with the real Codex system-message path, which creates no persisted file tool row.'
+blockedBy: []
 blocks: []
 created: 2026-09-19
 baseline: 81ba296f
@@ -132,16 +131,16 @@ Out of scope:
 
 ## Acceptance criteria
 
-- [ ] The product-contract gate is resolved in the authoritative specs; tests and closeout make no false Codex claim.
-- [ ] Qualified both-sides rows produce deterministic valid hunks, counts, snippet-relative numbers, and `+n −m`; identical sides show `no changes`.
-- [ ] One-sided, no-input, oversized, over-line, over-edit, thrown, and non-file cases never fabricate a diff and preserve path/preview fallback.
-- [ ] Exact-bound, limit-plus-one, empty-side, CRLF, repeated text, repeated/doubled no-newline markers, malformed control/Unicode-format content, cache hit/refresh/count eviction/weight eviction, and adapter-conversion tests pass.
-- [ ] Repeated presentation of one row invokes the pair differ once; an equal pair on a new row hits the pair LRU; normal polling retains the row-object fast path.
-- [ ] Legacy and Console render equivalent path/body-bar/badge/table/no-changes/failure/fallback/Raw states. There is no serialized JSON or added focus target.
-- [ ] Inserted and deleted code, gutter, and marker visibly use success and error treatments with the signs as non-color cues; context remains normal.
-- [ ] At each surface's desktop reference width, at a shared 460px room width, and at a 390×844 viewport, the summary remains one line, long code wraps, and no room-level horizontal overflow appears.
-- [ ] Browser measurements are at least 4.5:1 for changed text/markers/numbers against their actual computed backgrounds and for diff badges in rest and hover states, in both themes/surfaces.
-- [ ] Console isolation, the single-`structuredPatch` boundary, the moved adapter/source-control regression, provider fixture tests, focused UI tests, existing HITL room tests, and `bun run validate` pass.
+- [x] The product-contract gate is resolved in the authoritative specs; tests and closeout make no false Codex claim.
+- [x] Qualified both-sides rows produce deterministic valid hunks, counts, snippet-relative numbers, and `+n −m`; identical sides show `no changes`.
+- [x] One-sided, no-input, oversized, over-line, over-edit, thrown, and non-file cases never fabricate a diff and preserve path/preview fallback.
+- [x] Exact-bound, limit-plus-one, empty-side, CRLF, repeated text, repeated/doubled no-newline markers, malformed control/Unicode-format content, cache hit/refresh/count eviction/weight eviction, and adapter-conversion tests pass.
+- [x] Repeated presentation of one row invokes the pair differ once; an equal pair on a new row hits the pair LRU; normal polling retains the row-object fast path.
+- [x] Legacy and Console render equivalent path/body-bar/badge/table/no-changes/failure/fallback/Raw states. There is no serialized JSON or added focus target.
+- [x] Inserted and deleted code, gutter, and marker visibly use success and error treatments with the signs as non-color cues; context remains normal.
+- [x] At each surface's desktop reference width, at a shared 460px room width, and at a 390×844 viewport, the summary remains one line, long code wraps, and no room-level horizontal overflow appears.
+- [x] Browser measurements are at least 4.5:1 for changed text/markers/numbers against their actual computed backgrounds and for diff badges in rest and hover states, in both themes/surfaces.
+- [x] Console isolation, the single-`structuredPatch` boundary, the moved adapter/source-control regression, provider fixture tests, focused UI tests, existing HITL room tests, and `bun run validate` pass.
 
 ## Phases
 

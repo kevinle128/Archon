@@ -74,7 +74,7 @@
   "behavior-console": {
     "surface": "console",
     "edit": {
-      "toolUseId": "e2e-fake-tool-e2e-fake-2682d1f7-c76d-484b-8a85-8ab3788ba330",
+      "toolUseId": "e2e-fake-tool-e2e-fake-806511d8-07b4-45e7-963e-a02d1f4a9b28",
       "closedRow": {
         "height": 28.5,
         "width": 440
@@ -83,7 +83,7 @@
         "height": 28.5,
         "width": 496
       },
-      "bar": "file · 1 hunk · replace_all: false · 16ms",
+      "bar": "file · 1 hunk · replace_all: false · 1ms",
       "facts": {
         "codeClasses": [
           "diff-code diff-code-normal",
@@ -100,7 +100,8 @@
       "afterRaw": {
         "tag": "BUTTON",
         "text": "Re-run",
-        "insideDiff": false
+        "insideDiff": false,
+        "insideRow": false
       },
       "geometry": {
         "tableWidth": 433,
@@ -134,7 +135,7 @@
   "behavior-legacy": {
     "surface": "legacy",
     "edit": {
-      "toolUseId": "e2e-fake-tool-e2e-fake-245d8e91-7031-4e61-a3dc-862af569647e",
+      "toolUseId": "e2e-fake-tool-e2e-fake-c21a1dbc-cd81-49b5-93ca-8d46f9c7101b",
       "closedRow": {
         "height": 28.5,
         "width": 551.59375
@@ -143,7 +144,7 @@
         "height": 28.5,
         "width": 435.671875
       },
-      "bar": "file · 1 hunk · replace_all: false · 30ms",
+      "bar": "file · 1 hunk · replace_all: false · 1ms",
       "facts": {
         "codeClasses": [
           "diff-code diff-code-normal",
@@ -160,7 +161,8 @@
       "afterRaw": {
         "tag": "BODY",
         "text": "AArchonChatDashboardWorkflowsSettingsTry the new console UI→",
-        "insideDiff": false
+        "insideDiff": false,
+        "insideRow": false
       },
       "geometry": {
         "tableWidth": 372.671875,

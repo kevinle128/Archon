@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: 'Phase 1: Bounded differ, adapter move, presentation contract'
-status: blocked
+status: done
 priority: P1
 effort: '1.5d'
 dependencies: [product-contract-gate]
@@ -173,13 +173,13 @@ bun run format:check
 
 ## Exit criteria
 
-- [ ] The gate is resolved and docs no longer overclaim Codex.
-- [ ] `@archon/web` directly pins `diff@9.0.0`; one production module calls `structuredPatch`.
-- [ ] All bound, conversion, safety, cache-count, cache-weight, and adapter tests pass.
-- [ ] The moved adapter uses generated types and all old consumers/tests use its new path.
-- [ ] Presentation qualification, badges, facts, fallback, no-changes, WeakMap, and pair-cache contracts pass without changing non-file output.
-- [ ] Both tone maps are exhaustive and focused type-check/lint/format are green.
-- [ ] Owning docs describe actual behavior and the resolved scope.
+- [x] The gate is resolved and docs no longer overclaim Codex.
+- [x] `@archon/web` directly pins `diff@9.0.0`; one production module calls `structuredPatch`.
+- [x] All bound, conversion, safety, cache-count, cache-weight, and adapter tests pass.
+- [x] The moved adapter uses generated types and all old consumers/tests use its new path.
+- [x] Presentation qualification, badges, facts, fallback, no-changes, WeakMap, and pair-cache contracts pass without changing non-file output.
+- [x] Both tone maps are exhaustive and focused type-check/lint/format are green.
+- [x] Owning docs describe actual behavior and the resolved scope.
 
 ## Risks and safeguards
 

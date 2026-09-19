@@ -62,10 +62,11 @@ harness owns its Archon runtime on `ARCHON_E2E_PORT_BASE`).
 - **Geometry**: at 1440×1000 the room is sized through the production ratio
   path to Legacy 460px / Console 520px, then forced shared 460px, then the
   390×844 responsive viewport — table width matches box content within 2px,
-  `pre-wrap` + `overflow-wrap: anywhere`, no horizontal overflow, one-line
-  summaries throughout.
+  `pre-wrap` + `overflow-wrap: anywhere`, no horizontal overflow in the panel,
+  room, row, or body, and one-line summaries throughout.
 - **Accessibility**: native details/summary, zero focusable descendants inside
-  the diff, Tab order summary → Raw → the existing next control.
+  the diff, Tab order summary → Raw → Console Re-run; Legacy leaves the tool
+  row because that successful row has no trailing action.
 - **Contrast**: every required pair measured ≥ 4.5:1 on both surfaces'
   themes — see `visual-acceptance.md` and
   `captures/file-edit-measurements.json`. The delete foreground is
@@ -85,11 +86,16 @@ harness owns its Archon runtime on `ARCHON_E2E_PORT_BASE`).
    the surface × theme matrix is covered by measuring each surface under its
    own theme.
 
-## Unblock ledger (separate commits, zero story changes)
+## Validation repair and inherited unblock ledger
 
-- `9992e724` — `chore(unblock)`: pre-existing OMP `session-usage` test
-  exceeded its 20s timeout under full-suite load (same fingerprint on clean
-  base); timeouts raised to 60s/20s. Providers gate then green.
+- Final review measured the OMP `session-usage` leg with Bun's JUnit reporter:
+  56 tests completed in 1.320s; the oversized-line case completed in 0.912s
+  and the snapshot case in 0.0042s. The explicit 60s/20s widenings were
+  therefore removed and the default timeout retained.
+- Final review also synchronized every stale governed visual-source hash and
+  the derived `ui.visual` runner binding after this story's contract/CSS
+  changes. The previously blocked feature-gate test passes 14/14, the complete
+  scripts leg passes 158 with 2 skips, and `bun run validate` is green.
 - `a04d8db9` — `chore(unblock)`: three stale HITL contracts left by merged
   PR #202 — restored `focus-visible:` label/border classes #199 shipped on
   the closed Raw toggle (both renderers); gallery Raw-swap probe now targets
