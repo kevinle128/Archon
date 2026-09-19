@@ -71,8 +71,8 @@
       "technicalNotes": "Follow phase-03-server-interrupt-route-and-sub-state.md and plan decision D7. Message text never logged; stable error codes + non-sensitive prose. Interrupt request intentionally waits for classification \u2014 every engine close/park/discard/error path must settle it (proven in US-002); do NOT paper over a leaked promise with a route timeout. Single-install multi-user actor grant preserved; no per-tenant logic.",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3 (route/tests/schemas landed in checkpoint bfac4b11; generated types + validation completed here). Files: packages/server/src/routes/api.ts (interruptWorkflowNodeRoute + handler, intent-aware handle.accept, joinSteeringSubStates on GET-run), routes/schemas/workflow.schemas.ts (interruptWorkflowNodeResponseSchema, optional steeringSubState), routes/api.workflow-runs.test.ts (15 phase-3 items), packages/web/src/lib/api.generated.d.ts regenerated against worktree server port 4038. Validation: 252 route tests pass, server+web type-check clean, eslint/prettier clean. Separate chore(unblock) commit 2b9f1e52 fixed a pre-existing ConsoleNodeRoom.test.tsx type error that was failing the web type-check gate."
     },
     {
       "id": "US-004",

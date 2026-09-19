@@ -1,5 +1,14 @@
 ## Codebase Patterns
 
+### Cross-worktree shared stash list (US-003 hazard)
+- **Where**: `git stash` — the stash list is repo-wide, shared across ALL worktrees of this checkout.
+- **Pattern**: NEVER bare `git stash pop` here. Another ralph worktree (e.g. `archon/thread-5da49924` holding `ralph-unblock:US-004`) can push a stash between your `git stash push` and `pop` — bare pop then applies THEIR stash and conflicts. Always `git stash list` first and `git stash pop stash@{N}` with the exact index of your `ralph-unblock:<story>` entry; leave foreign entries untouched. lint-staged also briefly creates its own backup stash during commits.
+- **Recovery**: if a wrong stash was applied, `git reset --hard HEAD` (nothing of yours is in the tree — it's still stashed), then pop by exact index.
+
+### Dev server port in a worktree (US-003)
+- **Where**: `packages/core/src/utils/port-allocation.ts` (`getPort`)
+- **Pattern**: `PORT` env wins; else worktree path → deterministic `3090 + hash-offset` (3190–4089); else 3090. BUT `bun --filter @archon/server dev` runs with cwd=`packages/server`, so worktree detection fails and it falls back to 3090 — set `PORT` explicitly when generating types from a worktree (e.g. `PORT=4038 bun run dev:server`), then `bun x openapi-typescript http://localhost:<port>/api/openapi.json -o packages/web/src/lib/api.generated.d.ts`. Verify any already-listening port's owner worktree via `lsof -p <pid> | grep cwd` before reuse — a server on 3090 may belong to a different checkout.
+
 ### Claude interrupt seam (US-001)
 - **Where**: `packages/providers/src/claude/provider.ts` (`singleTurnInput`, `raceInterruptFailure`, `sendQuery`)
 - **Pattern**: interrupt-capable calls send `prompt` as a one-message `AsyncIterable<SDKUserMessage>` held open by a provider-owned deferred (`releaseInput`). `interruptSignal` abort → bound `query.interrupt()` exactly once — never `controller.abort()`/`query.close()` (those remain `abortSignal`'s Cancel teardown). An abort landing before the query binds sets `interruptRequested`, flushed right after `currentInterrupt` is assigned.
@@ -93,5 +102,34 @@
 - `settledTurnSessionId` (loop) is attempt-0-only by #2563 design — an interrupted re-ask pass must fall back to `currentSessionId`, not the throwaway re-ask session. Direct path equivalent: `newSessionId ?? turnResumeId` (a throw interrupts before any result).
 - The mid-stream cancel poll fires on the FIRST chunk (throttle map starts empty) — flipping the mock status inside the generator reliably simulates a cancel co-fire without timers.
 - Prettier reformats whole files — run it before the lint-staged commit anyway; eslint `prefer-optional-chain` flags `x !== undefined && x.y !== undefined` and `return-await` flags returns inside try/finally.
+
+---
+
+## 2026-09-19 — US-003: Interrupt route, atomic Send now, and sub-state projection
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/api.ts` (checkpoint bfac4b11) — `interruptWorkflowNodeRoute` + handler (auth → projection/handle → 404/409/422 → final run re-read → synchronous `handle.interrupt()` → settlement → outcome map), `handle.accept(message, body.intent)` on send, `joinSteeringSubStates` on GET-run after terminal-settling
+- `packages/server/src/routes/schemas/workflow.schemas.ts` (checkpoint) — `interruptWorkflowNodeResponseSchema`, optional `steeringSubState` on WorkflowNodeState
+- `packages/server/src/routes/api.workflow-runs.test.ts` (checkpoint) — all 15 phase-3 items: idle/generating/409 settlements, concurrent+repeated interrupts, idempotent idle interrupt, actor ladder + gated 401, 404/409/422 ladder, terminal-after-read, queue-vs-send_now on idle, duplicate replay, send during interrupting, namespaced loop-body projection, wire-identical absence, OpenAPI assertions
+- `packages/web/src/lib/api.generated.d.ts` (commit 7258681d) — regenerated against this worktree's server (`PORT=4038 bun run dev:server`; port 3090 server belonged to a different checkout and was left running); diff = interrupt path + InterruptWorkflowNodeResponse + optional steeringSubState only, no unrelated churn
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` (separate chore(unblock) commit 2b9f1e52) — `execution: null` default in toolItem() base fixture; pre-existing TS2322, zero story changes in that commit
+
+**Acceptance criteria verified**:
+- [x] interrupt route via registerOpenApiRoute(createRoute), no body, returns only actual settlement (200 idle / 200 generating / 409)
+- [x] strict nested steering error shape 401/403/404/409/422/500; NO `not_interruptible`
+- [x] handler sequencing: persisted lifecycle outranks stale handle; final run re-read is last await; interrupt() synchronous; caller disconnect cannot undo
+- [x] send passes intent into ONE synchronous handle.accept; returns receipt.state exactly; duplicate message_id replays without second drain
+- [x] optional steeringSubState joined AFTER terminal-settling; only live+interruptible+running (incl. `loop.body` namespaced key); never persisted/synthesized; `interrupting` never projected
+- [x] openapi-defaults.ts unchanged
+- [x] all 15 phase-3 route tests pass
+- [x] api.generated.d.ts regenerated via tracked dev server (started PORT=4038, recorded, stopped after); generated diff clean
+- [x] `bun test -t 'interrupt'` (21), `-t 'queued guidance'` (27), full file (252 pass / 0 fail), server type-check clean, web type-check clean, eslint + prettier clean
+
+**Learnings**:
+- A checkpoint commit had already landed the route/tests/schemas — verify-then-complete instead of re-implementing.
+- `bun --filter @archon/server dev` cannot detect the worktree (cwd is packages/server) → always sets port 3090; use `PORT=` explicitly (see patterns).
+- **Blocker Ledger**: BLOCKER US-003 | gate=`cd packages/web && bun run type-check` | cause=pre-existing TS2322 at ConsoleNodeRoom.test.tsx:2966 (`execution?: ...|undefined` vs required `execution: ...|null`), identical fingerprint on clean base with story stashed, culprit file outside story diff | action=fixed via `execution: null` default in toolItem() base, separate `chore(unblock)` commit 2b9f1e52 | 2026-09-19
+- git stash list is shared across worktrees — a foreign `ralph-unblock:US-004` stash (worktree thread-5da49924) was left untouched; always pop by exact index (see patterns).
 
 ---
