@@ -1,240 +1,258 @@
 ---
 phase: 2
-title: 'Both docks read and reconcile the shared queue'
+title: 'Both docks hydrate and reconcile the shared queue'
 status: pending
 priority: P1
 effort: '1 session'
 dependencies: [1]
 ---
 
-# Phase 2: Both docks read and reconcile the shared queue
+# Phase 2: both docks hydrate and reconcile the shared queue
 
 ## Goal
 
-Wire the Phase 1 poll loop and reconcile functions into the Legacy
-`ComposerDock` and the Console `ConsoleComposerDock` so each open room
-hydrates the queue on mount, re-reads it every second while the node is live,
-reflects remote sends and withdraws without issuing its own requests, keeps
-keyboard focus off `<body>` when another view removes the focused row, and
-discloses a detached run from the read (after three consecutive 422s, and
-self-healing on a later 200) instead of from a failed send. Update the
-Story 2.1 detached E2E scenario that this behavior change invalidates.
+Wire the Phase 1 read/reconcile/poll primitives into Legacy `ComposerDock` and
+Console `ConsoleComposerDock`. Each visible steerable room must hydrate at
+mount, converge every second, preserve tab-local input, reject stale local
+races, and restore focus after a remote removal without changing established
+copy, detached behavior, or dock geometry.
 
-Deep-mode note: this phase is outlined against today's anchors. Before
-cooking it, re-scout `ComposerDock.tsx`, `ConsoleComposerDock.tsx`, and the
-detached scenario in `agent-queue-guidance.spec.ts` — Phase 1 will have
-changed `steering-dock.ts` and both API layers.
+Before implementation, re-read both components and tests because Phase 1 will
+have changed their imported shared state/API types.
 
-## Source anchors
+## Evidence anchors
 
-- Legacy dock: `packages/web/src/components/workflows/ComposerDock.tsx`
-  — props `:64-80`, state `:108-112`, scope reset `:116-123`, detached focus
-  effect `:135-137`, withdraw focus effect `:141-152`, `submit` `:153-174`,
-  `withdrawMessage` `:176-195`, queue band `:223-268`, delete button ref
-  map `:239-247`.
-- Console dock: `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`
-  — props `:66-80`, state `:113-117`, scope reset `:121-128`, focus effects
-  `:140-156`, `submit` `:158`, `withdrawMessage` `:181`, band from `:228`.
-- Mount points: `NodeTranscriptPane.tsx:523-531` (keyed by
-  `steering:${resolvedScopeKey}`), `ConsoleNodeRoom.tsx:1022-1030`
-  (rendered only when `agentActive`).
-- Poll precedent: `NodeTranscriptPane.tsx:170-231` (AbortController +
-  re-schedule-after-settle + cleanup).
-- Component tests: `ComposerDock.test.tsx:74-120` (injected `send` /
-  `withdraw`, `flush()` micro-task helper, happy-dom) and
-  `ConsoleComposerDock.test.tsx:74-…`.
-- Detached E2E: `e2e/ui/agent-queue-guidance.spec.ts:515-563` (both
-  surfaces) and the route-smoke test at `:691`.
-- Console isolation allowlist:
-  `packages/web/src/experiments/console/console-isolation.test.ts:103-159`
-  — `@/lib/steering-dock` is approved; `@/lib/api` is not.
+- Legacy renderer and tests:
+  `packages/web/src/components/workflows/ComposerDock.tsx` and
+  `ComposerDock.test.tsx`.
+- Console renderer and tests:
+  `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`
+  and `ConsoleComposerDock.test.tsx`.
+- Keyed production mounts:
+  `packages/web/src/components/workflows/NodeTranscriptPane.tsx` and
+  `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx`.
+- Serial-poll cleanup precedent: each parent transcript effect uses an
+  `AbortController`, re-schedules after settle, and stops on cleanup.
+- Console boundary:
+  `packages/web/src/experiments/console/console-isolation.test.ts` already
+  approves `@/lib/steering-dock` and forbids Console room imports from
+  `@/lib/api`.
+- Final UX authority: `EXPERIENCE.md` says it wins over mocks, reserves
+  `this tab only` for unsent input, requires a full-bleed ordered queue band,
+  and forbids focus loss; `DESIGN.md` sets `33vh` and the 460px contract width.
 
-## File inventory
+## Files
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/web/src/components/workflows/ComposerDock.tsx` | modify | +~50: `readQueue` + `pollIntervalMs` props, poll effect, snapshot focus recovery, `data-message-id` on rows, docblock | new + existing component tests |
-| `packages/web/src/components/workflows/ComposerDock.test.tsx` | modify | +~200: injected `readQueue`, 13 new tests (1–12 plus 8b) | new |
-| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` | modify | same as Legacy through console seams | new + existing |
-| `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` | modify | +~200: 13 mirrored tests | new |
-| `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` | modify | +~15: `spyOn(globalThis, 'fetch')` answering `…/queue` with `{ success: true, queued: [] }` and rejecting anything else, restored in `afterEach` | existing tests keep passing without undeclared I/O |
-| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` | modify | same stub (precedent: `ConsoleInspectPane.test.tsx:659`) | existing |
-| `e2e/ui/agent-queue-guidance.spec.ts` | modify | detached scenario (`:515-563`) rewritten; route-smoke unchanged | E2E |
+| File                                                                           | Action                                                                                                                        |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `packages/web/src/components/workflows/ComposerDock.tsx`                       | Add read/poll test seams, immediate poll effect, accepted-snapshot focus scheduling, `data-message-id`, and current docblock. |
+| `packages/web/src/components/workflows/ComposerDock.test.tsx`                  | Stub reads in existing tests and add focused hydration/race/focus/failure/cleanup cases.                                      |
+| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`      | Mirror semantics through the Console API layer.                                                                               |
+| `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` | Mirror the behavior tests.                                                                                                    |
+| `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx`            | Install a strict queue-GET fetch stub for live-dock parent tests.                                                             |
+| `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx`     | Install the equivalent strict fetch stub.                                                                                     |
 
-No new lib module (console allowlist stays untouched). No change to
-`NodeTranscriptPane.tsx` / `ConsoleNodeRoom.tsx` mount props: the pane and
-room tests render live `running` rows (`NodeTranscriptPane.test.tsx:77,746`),
-which now mount a polling dock, so those tests stub `fetch` rather than
-thread a `readQueue` prop through two parents. A test that reaches the real
-`fetch` is exactly the silent-I/O hazard AGENTS.md warns about; the stub's
-"reject anything else" branch makes any other call fail loudly.
+No production change is required in `NodeTranscriptPane.tsx`,
+`ConsoleNodeRoom.tsx`, CSS/theme files, or Console isolation configuration.
+Both production mount points already key the dock by the resolved scope.
 
-## Dock changes (identical semantics in both shells)
+Do not rewrite the existing detached Playwright scenario: a read 422 is
+non-visual, while the existing send 422 still owns the detached disclosure and
+draft-retention proof.
 
-1. **Props.** Add `readQueue?: ReadNodeGuidanceQueue` (default: the shell's
-   `readNodeGuidanceQueue`) and `pollIntervalMs?: number` (default 1000, the
-   same constant `transcriptRefetchInterval` returns). Export the
-   `ReadNodeGuidanceQueue` function type next to `SendNodeGuidance`.
-2. **Row identity.** Each `<li>` gets `data-message-id={receipt.messageId}` so
-   the E2E can assert identity and order across views without reading text.
-3. **Poll effect.** One `useEffect` keyed on `[runId, nodeId, live, rowStatus,
-   readQueue, pollIntervalMs, pollingEnabled]` where
-   `pollingEnabled = mode !== 'hidden'` — polling continues in `detached`
-   mode on purpose, so an in-process node whose handle registers after
-   `node_started` (`dag-executor.ts:2018-2021` vs `:3001`) heals. It calls
-   `startQueuePolling({ read: signal => readQueue(runId, nodeId, { signal }),
-   currentGeneration: () => dockRef.current.queueGeneration,
-   onSnapshot, onRefusal, intervalMs: pollIntervalMs })` and returns the stop
-   function. Keep a `dockRef` mirror of `dock` (same pattern as
-   `pageStateRef` in the pane) so `currentGeneration` reads the latest value
-   without re-running the effect on every state change.
-   - `onSnapshot(snapshot, generationAtRequest)`: compute
-     `focusTargetAfterSnapshot(previousIds, nextIds, focusedId)` where
-     `focusedId` is the key of `deleteButtonsRef` whose element is
-     `document.activeElement`; if non-null and `pendingFocusRef.current ===
-     null`, store it. Then `setDock(current => applyQueueSnapshot(current,
-     snapshot, generationAtRequest))`.
-   - `onRefusal(refusal, status)`: for 422 → `setDock(current =>
-     resolveQueueReadRefusal(current, refusal))` — the streak decides when
-     `steeringDockMode` flips to `detached`, and the existing effect then
-     focuses the disclosure. For 409/404 → no state change; the poll has
-     stopped and the row status will hide the dock.
-   - **Heal focus.** When `mode` transitions from `detached` back to
-     `composer` (a snapshot cleared the refusal), the disclosure unmounts; if
-     it held focus, focus the field. Extend the existing detached focus
-     effect (`:135-137`) with a `prevModeRef` so the transition is explicit —
-     never let focus fall to `<body>` on the way back either.
-   - The scope-change reset effect (`:116-123`) already recreates state; the
-     poll effect re-runs because `nodeId` changed.
-4. **Focus effect.** The existing withdraw focus effect (`:141-152`) already
-   consumes `pendingFocusRef` whenever `dock.sent` changes and no withdraw is
-   active — snapshot-driven removals reuse it unchanged. Verify the deferred
-   case: remote removal while a local withdraw is in flight keeps the target
-   until the withdraw settles.
-5. **Docblocks.** Replace "no polling, no queue read, no rehydration (Story
-   2.9)" in both headers with the read-and-reconcile description.
-6. **Copy.** `STEERING_SEND_HINT` (`this tab only`) still describes the
-   unsent draft correctly and is unchanged. Do not add new copy.
+## Component API
 
-## Tests before (write first, watch fail)
+Export beside the existing send/withdraw function types:
 
-`ComposerDock.test.tsx` and `ConsoleComposerDock.test.tsx`, each with an
-injected `readQueue` returning a controllable deferred and
-`pollIntervalMs={0}` so cadence is driven by resolving deferreds:
-
-1. **hydrates on mount** — a snapshot with two rows renders `queued · 2`, the
-   list in server order, both `data-message-id`s, and `2 messages queued`
-   status text, with zero send/withdraw calls.
-2. **remote withdraw converges** — first snapshot 2 rows, second snapshot 1
-   row → the removed row is gone, header `queued · 1`, `withdrawCalls`
-   remains empty.
-3. **remote send converges** — a snapshot adds a row this tab never sent, in
-   the server's position.
-4. **stale snapshot after local withdraw is ignored** — start a read (deferred
-   A), click delete, resolve the withdraw 200, then resolve A with the old
-   2-row list → still 1 row.
-5. **stale snapshot after local send is ignored** — symmetric with send.
-6. **remote removal of the focused row moves focus** — focus row 1's delete,
-   next snapshot lacks row 1 → focus on row 2's delete; when no sibling
-   survives → focus on the field; `document.activeElement !== body`.
-7. **draft stays local** — type in the field, receive a snapshot → field text
-   and `sessionStorage` record unchanged.
-8. **read 422s disclose detached only after three in a row** — the first
-   two 422 rejections leave the composer visible with no alert; the third
-   renders and focuses the disclosure, the field is absent, no send is
-   issued, and the poll keeps issuing reads.
-8b. **a later 200 heals** — after 8, a snapshot resolves → the composer
-   returns with the snapshot's rows, the disclosure is gone, and focus is on
-   the field (never `body`).
-9. **read 409 stops polling silently** — no alert, dock unchanged, `readQueue`
-   not called again.
-10. **transport failure keeps the last snapshot** — status 0 rejection → rows
-    unchanged, next read scheduled.
-11. **unmount stops polling** — unmount while a read is pending; resolving it
-    afterwards updates nothing (no React warning, no extra call).
-12. **hidden mode never reads** — `live={false}` → `readQueue` never called.
-
-Existing tests: `422 not_steerable_here replaces the dock…` (`:526`) and
-`a 422 refusal follows the detached disclosure…` (`:750`) still pass because
-send/withdraw 422 handling is untouched; they now need `readQueue` stubbed
-to a never-resolving or empty-snapshot deferred so the poll does not race
-them.
-
-## Story 2.1 E2E update — detached scenario
-
-`agent-queue-guidance.spec.ts:515-563` (`[V:steer.detached-${surface}]`):
-
-- Remove the "No queue read exists yet" comment and the fill/press/422-send
-  steps. After `openGuidanceRoom`, wait for the **third** GET `…/queue`
-  422 response (count `page.waitForResponse` matches on the queue pathname),
-  then assert the disclosure text, `field` count 0, no `queued ·` text,
-  contrast, and capture the same evidence file names. Also assert one more
-  `…/queue` request is issued after the disclosure appears (polling
-  continues on a detached run).
-- Drop the sessionStorage draft assertions from this scenario — there is no
-  field to type into on a detached run. The draft-survives-a-refusal property
-  remains covered by `ComposerDock.test.tsx:422` and the library tests.
-- The route-smoke test at `:691` is unchanged (it calls the send route
-  directly).
-- Re-run both surfaces and refresh `us-005-*-detached-422.png` evidence in
-  the Story 2.1 plan's evidence directory only if the visual differs; do not
-  edit that plan's prose.
-
-## Refactor (protected)
-
-- The withdraw focus effect and `pendingFocusRef` are reused, not
-  duplicated. If a snapshot and a local withdraw both want to set the target,
-  the local withdraw (set at activation) wins because the snapshot path only
-  writes when the ref is null.
-- `steeringDockMode` is unchanged; the 422 read simply stores a refusal.
-
-## Tests after
-
-- All 13 new tests green in both shells; the pane/room tests green with the
-  read stubbed.
-- `bun --filter @archon/web test` and `bun run type-check` / `bun run lint`.
-- `(cd e2e && npm run typecheck)` and the two detached scenarios:
-  `npx playwright test --grep '\[V:steer\.detached-'` from `e2e/`.
-
-## Todo
-
-- [ ] Legacy dock: props, `data-message-id`, poll effect, snapshot focus,
-      docblock
-- [ ] Legacy dock tests 1–12 (plus 8b) first, then green; existing 422 tests stubbed
-- [ ] Console dock: mirrored changes through `skills/runs.ts`
-- [ ] Console dock tests 1–12 (plus 8b) first, then green
-- [ ] Pane / room tests: stub the read
-- [ ] Detached E2E scenario rewritten for both surfaces
-- [ ] Console isolation test still green (no new lib imports)
-
-## Regression gate
-
-```bash
-bun run type-check && bun run lint
-bun test packages/web/src/components/workflows/ComposerDock.test.tsx
-bun test packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx
-bun --filter @archon/web test
-(cd e2e && npm run typecheck && npx playwright test --grep '\[V:steer\.detached-')
+```ts
+export type ReadNodeGuidanceQueue = (
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+) => Promise<ReadWorkflowNodeQueueResponse>;
 ```
 
-## Risk assessment
+Add optional props:
 
-- **Effect dependency churn**: putting `dock` in the poll effect's
-  dependencies would restart the loop on every keystroke-adjacent state
-  change; the `dockRef` mirror is the mitigation. Test 11 catches a loop
-  that survives unmount; a test that types while a read is pending and
-  asserts one `readQueue` call catches restarts.
-- **Composer visible for ~3 s on a genuinely detached run** before the
-  third 422 confirms it. Accepted: a send in that window returns 422 and
-  flips the dock immediately (Story 2.1 behavior, unchanged), and the draft
-  save effect keeps anything typed. The alternative — flashing "this run was
-  started detached" on every in-process node during its registration
-  window — is misleading copy, which is worse.
-- **Console `agentActive` gate**: the Console mounts the dock only while the
-  agent is active (`ConsoleNodeRoom.tsx:1021`), so a read never runs on a
-  finished node there; the Legacy pane relies on `mode === 'hidden'`.
+- `readQueue?: ReadNodeGuidanceQueue`, defaulting to that shell's
+  `readNodeGuidanceQueue` helper;
+- `pollIntervalMs?: number`, defaulting to `1000` and used only as a narrow
+  deterministic test seam.
 
-## Security considerations
+The Console component imports its helper/types from `../skills/runs`; Legacy
+uses `@/lib/api`.
 
-- No new identity handling in the browser; reads carry whatever identity
-  the shell's fetch layer already sends.
+## Poll effect
+
+In each dock:
+
+1. Keep `dockRef.current = dock` current during render, matching the parent
+   transcript's current-state ref pattern. The poller uses it only to capture
+   `queueGeneration`; final acceptance still occurs inside functional
+   `setDock`, against the actual current state.
+2. Compute `pollingEnabled` only for existing `composer` and `blocked` modes.
+   Hidden historical/terminal rooms never read, and a send-triggered detached
+   disclosure stops reading because Story 2.9 gives queue reads no capability
+   state transition.
+3. In one effect keyed by `runId`, `nodeId`, `readQueue`, `pollIntervalMs`, and
+   `pollingEnabled`, call:
+
+   ```ts
+   startQueuePolling({
+     read: signal => readQueue(runId, nodeId, { signal }),
+     currentGeneration: () => dockRef.current.queueGeneration,
+     onSnapshot,
+     intervalMs: pollIntervalMs,
+   });
+   ```
+
+   Return the stop function. Do not place the whole `dock` object in the
+   dependency list and restart the loop on every state change.
+
+4. The existing keyed mounts and dependency cleanup guarantee one poller per
+   visible scope. The components' internal scope reset remains as a direct-use
+   safeguard and resets generation with the other state.
+
+## Applying snapshots and focus
+
+`onSnapshot` must capture the currently focused row id from
+`deleteButtonsRef` before rendering changes, then use a functional state update:
+
+1. Call `applyQueueSnapshot(current, snapshot, generationAtRequest)`.
+2. If it returned the same state/sent identity, return immediately and do not
+   touch `pendingFocusRef`.
+3. If the accepted state removed the focused id and
+   `pendingFocusRef.current` is null, set the ref to
+   `focusTargetAfterSnapshot(previousIds, nextIds, focusedId)`.
+4. Return the accepted state.
+
+Mutating the pending-focus ref inside the updater is limited to a deterministic
+ref assignment; actual DOM focus remains in the existing post-commit effect.
+If React evaluates the updater more than once, the same target is assigned.
+
+The current focus effect already waits while a local withdraw is active and
+then resolves delete target → field. Reuse it. A local withdraw target wins
+because the snapshot path writes only when the ref is null.
+
+Add `data-message-id={receipt.messageId}` to each queue `<li>`. Keep keys,
+accessible names, `sent` text, list/header/status copy, classes, target sizes,
+and DOM order unchanged.
+
+## Behavior that must not change
+
+- `STEERING_SEND_HINT` remains `Cmd/Ctrl+Enter to send · this tab only`, and
+  the queue band contains no tab-only label.
+- Send/withdraw responses still update immediately; polling is convergence,
+  not the only feedback path.
+- Existing send/withdraw refusals remain visible and are not cleared by reads.
+- Read 422/transport/5xx produces no alert or detached transition and preserves
+  the last good queue while the shared poller retries.
+- The existing send 422 still replaces the dock with the detached disclosure,
+  focuses that disclosure, and preserves the draft/retry id.
+- Ask-blocked mode continues to render the shared queue but refuses local send.
+- No loading placeholder or animation is introduced during initial hydration.
+
+## Component tests to write first
+
+Update each test render helper to inject a default read promise that does not
+settle, so all existing send/withdraw tests remain deterministic and perform no
+real fetch. Add controllable deferred reads for the new cases.
+
+Mirror these cases in both shells:
+
+1. **Hydrate on mount:** a two-row response renders `queued · 2`, exact server
+   order, `data-message-id`s, `sent`, correct list/status count, no band-level
+   `this tab only`, and zero send/withdraw calls.
+2. **Remote convergence:** subsequent snapshots add a row this tab did not
+   send, then remove a row; header/list/status match, and the observer issues no
+   DELETE.
+3. **Stale after local send:** begin a read, complete a local POST, then resolve
+   the old read without the accepted row; the local row remains.
+4. **Stale after local withdraw:** begin a read with the old rows, complete the
+   DELETE, then resolve the old read; the removed row does not reappear.
+5. **Focused remote removal:** focus the first delete control, apply a snapshot
+   removing it, and assert focus moves to the next surviving delete. Remove the
+   last survivor remotely and assert focus moves to the textarea, never body.
+   Include a multi-row removal so the helper skips another removed sibling.
+6. **Draft/retry locality:** type an unsent draft (and preserve an existing
+   pending retry fixture), apply a remote snapshot, then assert textarea and
+   sessionStorage are byte-for-byte unchanged.
+7. **Transient read failure:** reject reads with 422, transport status 0, and
+   500; the composer/last queue/refusal state remains unchanged and another
+   read is scheduled. No detached alert appears from the read.
+8. **Permanent read failure:** 409 (representative permanent 4xx) stops further
+   reads and leaves current UI unchanged.
+9. **Lifecycle cleanup:** unmount or change scope while a read is pending;
+   resolving it later causes no state/focus update or additional call.
+10. **Hidden/detached modes:** `live={false}` never reads; an existing
+    send-triggered detached state stops reading and preserves its disclosure.
+
+The shared-library tests, not both component suites, own exhaustive status-code
+classification and timer mechanics. The component cases prove each copied React
+wiring reaches the shared contract.
+
+## Parent integration-test isolation
+
+The parent room tests render production docks with the default read helper.
+Prevent undeclared I/O:
+
+- add `spyOn(globalThis, 'fetch')` setup that returns a real JSON `Response`
+  `{ success: true, queued: [] }` only for a GET pathname ending in `/queue`;
+- reject every other URL/method so an unrelated new request fails loudly;
+- restore the spy in `afterEach` even on assertion failure;
+- keep existing injected transcript loaders unchanged.
+
+Do not thread a production-only read prop through both parent component trees
+solely for tests.
+
+## Visual regression checks
+
+The component markup tests must additionally assert that hydrated rows use the
+same existing class/token structure:
+
+- band is a sibling directly above the padded composer and stays
+  `surface-elevated` with a top border;
+- list wrapper retains `max-h-[33vh]` and `overflow-y-auto`;
+- row text remains one-line/end-elided and delete controls retain minimum 24px
+  dimensions/focus class;
+- field/hint/control markup and tab order are unchanged.
+
+Phase 3 supplies actual viewport/contrast/overflow evidence; this phase does
+not update mockups because there is no visual design delta.
+
+## Validation
+
+```bash
+(cd packages/web && NODE_ENV=development bun test src/components/workflows/ComposerDock.test.tsx)
+(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleComposerDock.test.tsx)
+(cd packages/web && NODE_ENV=development bun test src/components/workflows/NodeTranscriptPane.test.tsx)
+(cd packages/web && NODE_ENV=development bun test src/experiments/console/components/ConsoleNodeRoom.test.tsx)
+bun --filter @archon/web test
+bun run type-check
+bun run lint --max-warnings 0
+```
+
+Also run the existing detached scenarios after rebuilding the web bundle to
+prove their send-triggered contract did not change:
+
+```bash
+bun run build:web
+(cd e2e && npx playwright test -c playwright.config.ts --grep '\[V:steer\.detached-')
+```
+
+## Completion checklist
+
+- [ ] Legacy read props/effect/data identity implemented
+- [ ] Console mirror implemented through Console-owned API layer
+- [ ] Focus scheduling occurs only for an applied snapshot removal
+- [ ] Existing send/withdraw/detached/blocked behavior unchanged
+- [ ] Ten focused cases pass in both dock suites
+- [ ] Parent tests use strict queue-only fetch stubs with cleanup
+- [ ] Console isolation test remains green
+- [ ] Web package, typecheck, lint, and detached E2E regressions pass
+
+## Rollback
+
+Remove the two effects/props and row data attributes, remove their new tests and
+parent fetch stubs, and leave Phase 1's additive GET route unused. A full story
+rollback removes Phase 1 as well.
