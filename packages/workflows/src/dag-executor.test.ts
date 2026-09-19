@@ -27071,9 +27071,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
           tasks: [{ taskId: 'task-1', description: 'still running' }],
         };
         yield { type: 'result', sessionId: 'sess-1' };
-        const err = new Error('The operation was aborted');
-        err.name = 'AbortError';
-        throw err;
+        throw new Error(
+          'Claude Code returned an error result: [ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null'
+        );
       }
       yield { type: 'assistant', content: 'resumed' };
       yield { type: 'result', sessionId: 'sess-2' };
@@ -27102,6 +27102,21 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toBe('provider exploded for a different reason');
+  });
+
+  it('interrupt does not convert an unrelated Claude error-result throw into an interrupted end', async () => {
+    const providerError =
+      "Claude Code returned an error result: You've hit your limit · resets 4:50pm (UTC)";
+    mockSendQueryDag.mockImplementation(async function* () {
+      void liveHandle(RUN_ID, 'review').interrupt();
+      yield { type: 'assistant', content: 'partial' };
+      throw new Error(providerError);
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(nodeFailedError(store, 'review')).toBe(providerError);
   });
 
   it('interrupt racing a natural unmarked result still drains queued guidance and settles generating', async () => {

@@ -7,18 +7,18 @@ worktree. Screenshots and computed measurements live in `reports/evidence/`.
 
 ## Verification commands and results
 
-| Command                                                                                                     | Result                                       |
-| ----------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
-| `(cd packages/providers && bun test src/e2e-fake/provider.test.ts)`                                         | 42 pass / 0 fail                             |
-| `(cd packages/providers && bun run type-check)`                                                             | clean                                        |
-| `(cd packages/workflows && bun test src/steering-registry.test.ts src/dag-executor.test.ts -t 'interrupt')` | 30 pass / 0 fail                             |
-| `(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'interrupt')`                      | 21 pass / 0 fail                             |
-| `(cd packages/web && bun test src/lib/steering-dock.test.ts)`                                               | 69 pass / 0 fail                             |
-| `(cd e2e && npm run typecheck)`                                                                             | clean                                        |
-| `bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'`                                              | 11 pass / 0 fail                             |
-| `bun run --cwd e2e test:ui -- --grep 'queue guidance'`                                                      | (Story 2.1 regression gate — recorded below) |
-| `bun run generate:capability-matrix && bun run check:capability-matrix`                                     | check:capability-matrix OK                   |
-| `bun run validate`                                                                                          | (final closeout gate — recorded below)       |
+| Command                                                                                                     | Result                     |
+| ----------------------------------------------------------------------------------------------------------- | -------------------------- |
+| `(cd packages/providers && bun test src/e2e-fake/provider.test.ts)`                                         | 42 pass / 0 fail           |
+| `(cd packages/providers && bun run type-check)`                                                             | clean                      |
+| `(cd packages/workflows && bun test src/steering-registry.test.ts src/dag-executor.test.ts -t 'interrupt')` | 30 pass / 0 fail           |
+| `(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'interrupt')`                      | 21 pass / 0 fail           |
+| `(cd packages/web && bun test src/lib/steering-dock.test.ts)`                                               | 71 pass / 0 fail           |
+| `(cd e2e && npm run typecheck)`                                                                             | clean                      |
+| `bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'`                                              | 11 pass / 0 fail           |
+| `bun run --cwd e2e test:ui -- --grep 'queue guidance'`                                                      | 11 pass / 0 fail           |
+| `bun run generate:capability-matrix && bun run check:capability-matrix`                                     | check:capability-matrix OK |
+| `bun run validate`                                                                                          | pass / exit 0              |
 
 ## Phase 1 real-SDK gate (no secrets / content)
 
@@ -246,12 +246,12 @@ None unrecorded.
 
 ## Final gate
 
-| Command                                                                 | Result                 |
-| ----------------------------------------------------------------------- | ---------------------- |
-| `cd e2e && npm run typecheck`                                           | clean                  |
-| `bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'`          | 11 pass / 0 fail       |
-| `bun run --cwd e2e test:ui -- --grep 'queue guidance'`                  | _(filled at closeout)_ |
-| `bun run generate:capability-matrix && bun run check:capability-matrix` | OK                     |
-| `bun run validate`                                                      | _(filled at closeout)_ |
+| Command                                                                 | Result           |
+| ----------------------------------------------------------------------- | ---------------- |
+| `cd e2e && npm run typecheck`                                           | clean            |
+| `bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'`          | 11 pass / 0 fail |
+| `bun run --cwd e2e test:ui -- --grep 'queue guidance'`                  | 11 pass / 0 fail |
+| `bun run generate:capability-matrix && bun run check:capability-matrix` | OK               |
+| `bun run validate`                                                      | pass / exit 0    |
 
 Every row above is green. Story 2.3 is marked `done`.

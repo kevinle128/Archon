@@ -240,6 +240,10 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
     const offenders: { tag: string; insideRoom: boolean }[] = [];
     document.querySelectorAll('body *').forEach(el => {
       const rect = el.getBoundingClientRect();
+      // Zero-area / hairline SVG geometry can report a sub-pixel overhang
+      // without contributing to page scroll — ignore those; they are not a
+      // room-driven overflow the operator can see.
+      if (rect.width < 1 || rect.height < 1) return;
       if (rect.right > width + 1 || rect.left < -1) {
         offenders.push({
           tag: `${el.tagName}.${typeof el.className === 'string' ? (el.className.split(' ')[0] ?? '') : ''}`,
@@ -253,6 +257,10 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
       roomInsideViewport: roomRect.left >= -1 && roomRect.right <= width + 1,
       roomScroll: roomEl.scrollWidth - roomEl.clientWidth,
       insideCount: offenders.filter(o => o.insideRoom).length,
+      insideSample: offenders
+        .filter(o => o.insideRoom)
+        .slice(0, 5)
+        .map(o => o.tag),
       outsideSample: offenders
         .filter(o => !o.insideRoom)
         .slice(0, 5)
@@ -267,7 +275,7 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
   ).toBeLessThanOrEqual(1);
   expect(
     report.insideCount,
-    `no room element overflows the page ${context} (outside offenders: ${report.outsideSample.join(', ') || 'none'}; page overflow ${String(report.pageOverflow)}px)`
+    `no room element overflows the page ${context} (inside offenders: ${report.insideSample.join(', ') || 'none'}; outside offenders: ${report.outsideSample.join(', ') || 'none'}; page overflow ${String(report.pageOverflow)}px)`
   ).toBe(0);
 }
 
@@ -637,6 +645,25 @@ for (const surface of ['console', 'legacy'] as const) {
     await test.step('460px and console 1440x900 captures with no horizontal overflow', async () => {
       await page.setViewportSize({ width: 460, height: 900 });
       await expect(items).toHaveCount(2);
+      // The Console shell runs first in a cold browser context. Wait for its
+      // web fonts and two paint frames so fallback-font widths cannot produce
+      // a one-frame false overflow that disappears once the real font loads.
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise<void>(resolve => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+      });
+      // Wait for the room panel to reflow into the 460px viewport before the
+      // geometry assertion — a mid-resize snapshot can report a transient
+      // overhang that the final layout does not keep.
+      await expect
+        .poll(async () => (await room.boundingBox())?.width ?? Number.POSITIVE_INFINITY, {
+          timeout: T.medium,
+        })
+        .toBeLessThanOrEqual(460);
       await expectNoRoomDrivenOverflow(room, `${surface}@460`);
       await captureEvidence(room, `us-005-${surface}-460-queued-2.png`, testInfo);
       const narrowWidth = (await room.boundingBox())?.width ?? 0;

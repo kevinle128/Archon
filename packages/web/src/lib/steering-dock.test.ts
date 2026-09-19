@@ -398,11 +398,15 @@ describe('send now batch transitions', () => {
     return state;
   }
 
-  test('begin snapshots the band into inFlightBatch and clears it optimistically', () => {
+  test('begin snapshots the band plus new draft into inFlightBatch and clears it optimistically', () => {
     const state = idleWithReceipts(['first', 'second']);
     const begun = beginSendNow(state, 'redirect now', newId);
     expect(begun.state.sent).toEqual([]);
-    expect(begun.state.inFlightBatch?.map(entry => entry.message)).toEqual(['first', 'second']);
+    expect(begun.state.inFlightBatch?.map(entry => entry.message)).toEqual([
+      'first',
+      'second',
+      'redirect now',
+    ]);
     expect(begun.state.sendInFlight).toBe(true);
     expect(begun.state.pendingRetry).toEqual({
       messageId: begun.messageId,
@@ -410,10 +414,33 @@ describe('send now batch transitions', () => {
     });
   });
 
+  test('an ambiguous Queue retry keeps its id and queued receipt instead of faking Send-now success', () => {
+    const queued = beginGuidanceSubmission(
+      createSteeringDockState('idle-after-interrupt'),
+      'redirect now',
+      newId
+    );
+    const queueFailed = resolveGuidanceFailure(queued.state, { code: null, message: 'lost' });
+    const sendNow = beginSendNow(queueFailed, 'redirect now', newId);
+    const resolved = resolveSendNowSuccess(sendNow.state, {
+      message_id: sendNow.messageId,
+      state: 'queued',
+    });
+
+    expect(sendNow.messageId).toBe(queued.messageId);
+    expect(resolved.subState).toBe('idle-after-interrupt');
+    expect(resolved.sent.map(entry => entry.message)).toEqual(['redirect now']);
+    expect(resolved.pendingRetry).toBeNull();
+    expect(resolved.notice).toBe('1 message will send');
+  });
+
   test('success discards the batch, derives generating, announces once', () => {
     const state = idleWithReceipts(['first']);
     const begun = beginSendNow(state, 'redirect now', newId);
-    const next = resolveSendNowSuccess(begun.state, { message_id: begun.messageId });
+    const next = resolveSendNowSuccess(begun.state, {
+      message_id: begun.messageId,
+      state: 'awaiting_send_now',
+    });
     expect(next.sent).toEqual([]);
     expect(next.inFlightBatch).toBeNull();
     expect(next.pendingRetry).toBeNull();
@@ -424,8 +451,9 @@ describe('send now batch transitions', () => {
   test('a replayed success after settlement never drains twice', () => {
     const state = idleWithReceipts(['first']);
     const begun = beginSendNow(state, 'redirect now', newId);
-    const settled = resolveSendNowSuccess(begun.state, { message_id: begun.messageId });
-    const replay = resolveSendNowSuccess(settled, { message_id: begun.messageId });
+    const receipt = { message_id: begun.messageId, state: 'awaiting_send_now' as const };
+    const settled = resolveSendNowSuccess(begun.state, receipt);
+    const replay = resolveSendNowSuccess(settled, receipt);
     expect(replay).toBe(settled);
   });
 
@@ -436,7 +464,7 @@ describe('send now batch transitions', () => {
       code: null,
       message: STEERING_SEND_FAILED_MESSAGE,
     });
-    expect(failed.sent.map(entry => entry.message)).toEqual(['first', 'second']);
+    expect(failed.sent.map(entry => entry.message)).toEqual(['first', 'second', 'redirect now']);
     expect(failed.inFlightBatch).toBeNull();
     expect(failed.sendInFlight).toBe(false);
     expect(failed.subState).toBe('idle-after-interrupt');
@@ -444,7 +472,23 @@ describe('send now batch transitions', () => {
 
     const retried = beginSendNow(failed, 'redirect now', newId);
     expect(retried.messageId).toBe(begun.messageId);
-    expect(retried.state.inFlightBatch?.map(entry => entry.message)).toEqual(['first', 'second']);
+    expect(retried.state.inFlightBatch?.map(entry => entry.message)).toEqual([
+      'first',
+      'second',
+      'redirect now',
+    ]);
+  });
+
+  test('editing a failed Send-now draft replaces its restored display row and id', () => {
+    const begun = beginSendNow(idleWithReceipts(['first']), 'redirect now', newId);
+    const failed = resolveSendNowFailure(begun.state, { code: null, message: 'lost' });
+    const edited = beginSendNow(failed, 'redirect edited', newId);
+
+    expect(edited.messageId).not.toBe(begun.messageId);
+    expect(edited.state.inFlightBatch?.map(entry => entry.message)).toEqual([
+      'first',
+      'redirect edited',
+    ]);
   });
 
   test('a terminal projection supersedes an idle send-now state', () => {
@@ -454,7 +498,7 @@ describe('send now batch transitions', () => {
     const synced = syncProjectedSubState(failed, 'generating');
     expect(synced.subState).toBe('generating');
     expect(synced.notice).toBe('agent generating');
-    expect(synced.sent).toHaveLength(1);
+    expect(synced.sent).toHaveLength(2);
   });
 });
 

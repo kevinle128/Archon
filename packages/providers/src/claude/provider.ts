@@ -1656,6 +1656,20 @@ export class ClaudeProvider implements IAgentProvider {
     // Usage from usage-bearing attempts that the outer retry consumes — carried
     // into the eventual terminal result (success or final typed error).
     let accumulatedUsage: UsageBreakdown | undefined;
+
+    const resumeInteractions = requestOptions?.resumeInteractions;
+    const hasAskResume = (resumeInteractions?.length ?? 0) > 0;
+    if (hasAskResume) {
+      const sessionId = resumeSessionId?.trim() ?? '';
+      if (sessionId === '') {
+        getLog().error({ errorClass: 'missing_session' }, 'claude.ask_resume_failed');
+        throw new Error(ASK_RESUME_FAILED_MESSAGE);
+      }
+    }
+    const queryPrompt =
+      hasAskResume && resumeInteractions ? buildClaudeAskResumePrompt(resumeInteractions) : prompt;
+    const maxSubprocessRetries = hasAskResume ? 0 : MAX_SUBPROCESS_RETRIES;
+
     const onAbort = (): void => {
       currentController?.abort();
       closeQuery(currentQuery, 'request_abort');
@@ -1673,13 +1687,13 @@ export class ClaudeProvider implements IAgentProvider {
     // setup) — flushed as soon as `currentInterrupt` is assigned so an abort
     // in that window is not silently dropped.
     let interruptRequested = false;
-    let interruptRejection: Error | undefined;
+    let interruptAttempt: Promise<void> | undefined;
     let failInterruptStream: ((error: Error) => void) | undefined;
     const interruptFailed = new Promise<never>((_, reject) => {
       failInterruptStream = reject;
     });
-    // Observed via Promise.race / interruptRejection — the no-op catch marks it
-    // handled when no stream read is in flight at rejection time.
+    // Observed via Promise.race / interruptAttempt — the no-op catch marks it
+    // handled while the stream pump is still deciding which promise settles.
     interruptFailed.catch(() => undefined);
     const onInterrupt = (): void => {
       if (interruptInvoked) return;
@@ -1689,35 +1703,22 @@ export class ClaudeProvider implements IAgentProvider {
         return;
       }
       interruptInvoked = true;
-      const fail = (error: unknown): void => {
-        const err = error instanceof Error ? error : new Error(String(error));
-        interruptRejection = err;
-        failInterruptStream?.(err);
-      };
-      try {
-        invoke().then(ack => {
+      const attempt = (async (): Promise<void> => {
+        try {
+          const ack = await invoke();
           getLog().info({ stillQueued: ack?.still_queued?.length ?? 0 }, 'claude.interrupt_ack');
-        }, fail);
-      } catch (error) {
-        fail(error);
-      }
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          failInterruptStream?.(err);
+          throw err;
+        }
+      })();
+      interruptAttempt = attempt;
+      void attempt.catch(() => undefined);
     };
     if (interruptSignal) {
       interruptSignal.addEventListener('abort', onInterrupt);
     }
-
-    const resumeInteractions = requestOptions?.resumeInteractions;
-    const hasAskResume = (resumeInteractions?.length ?? 0) > 0;
-    if (hasAskResume) {
-      const sessionId = resumeSessionId?.trim() ?? '';
-      if (sessionId === '') {
-        getLog().error({ errorClass: 'missing_session' }, 'claude.ask_resume_failed');
-        throw new Error(ASK_RESUME_FAILED_MESSAGE);
-      }
-    }
-    const queryPrompt =
-      hasAskResume && resumeInteractions ? buildClaudeAskResumePrompt(resumeInteractions) : prompt;
-    const maxSubprocessRetries = hasAskResume ? 0 : MAX_SUBPROCESS_RETRIES;
 
     try {
       for (let attempt = 0; attempt <= maxSubprocessRetries; attempt++) {
@@ -1865,7 +1866,7 @@ export class ClaudeProvider implements IAgentProvider {
           }
           // A native interrupt() that rejected after the stream already ended
           // still surfaces to the consumer rather than being swallowed.
-          if (interruptRejection) throw interruptRejection;
+          if (interruptAttempt) await interruptAttempt;
           if (askBridge.controlError) {
             throw askBridge.controlError;
           }

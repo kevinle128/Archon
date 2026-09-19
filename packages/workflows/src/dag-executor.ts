@@ -474,10 +474,12 @@ function isInterruptTerminalReason(reason: string | undefined): boolean {
 function isAbortLikeStreamError(err: Error): boolean {
   if (err.name === 'AbortError') return true;
   const message = err.message;
+  const knownClaudeInterruptTeardown =
+    message.startsWith('Claude Code returned an error result:') &&
+    message.includes('[ede_diagnostic]') &&
+    message.includes('result_type=user');
   return (
-    message === 'Query interrupted' ||
-    message === 'Query aborted' ||
-    message.includes('Claude Code returned an error result')
+    message === 'Query interrupted' || message === 'Query aborted' || knownClaudeInterruptTeardown
   );
 }
 

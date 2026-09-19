@@ -11,7 +11,7 @@
 export interface LocalSentReceipt {
   readonly messageId: string;
   readonly message: string;
-  /** Wire receipt state, kept verbatim (`queued | awaiting_send_now`). */
+  /** Wire-compatible display state (`queued | awaiting_send_now`). */
   readonly state: 'queued' | 'awaiting_send_now';
 }
 
@@ -38,9 +38,9 @@ export interface SteeringDockState {
   /** UI-local Stop press in flight; never projected or persisted. */
   readonly interruptInFlight: boolean;
   /**
-   * Accepted receipts snapshotted when Send now began — cleared from the
-   * visible band optimistically and restored ahead of the retried message
-   * on failure. Never re-posted: the ids already exist server-side.
+   * Displayed accepted receipts plus the new Send-now draft, snapshotted when
+   * submission began. Cleared from the visible band optimistically and
+   * restored in order on failure. Only the draft's id is ever posted.
    */
   readonly inFlightBatch: readonly LocalSentReceipt[] | null;
   readonly pendingRetry: PendingSubmission | null;
@@ -278,25 +278,43 @@ export function resolveGuidanceFailure(
 }
 
 /**
- * Send now: snapshot the displayed accepted receipts into the batch and
- * clear the visible band optimistically, so nothing looks pickable twice.
- * Only the new draft posts (with its stable retry UUID); earlier items
- * already exist in the server registry.
+ * Send now: snapshot the displayed accepted receipts plus the new draft into
+ * the batch and clear the visible band optimistically, so nothing looks
+ * pickable twice. Only the new draft posts (with its stable retry UUID);
+ * earlier items already exist in the server registry.
  */
 export function beginSendNow(
   state: SteeringDockState,
   draft: string,
   newId: () => string = () => crypto.randomUUID()
 ): { state: SteeringDockState; messageId: string } {
+  const previousPending = state.pendingRetry;
   const pendingRetry =
-    state.pendingRetry !== null && state.pendingRetry.message === draft
-      ? state.pendingRetry
+    previousPending !== null && previousPending.message === draft
+      ? previousPending
       : { messageId: newId(), message: draft };
+  // Editing a failed Send-now draft replaces its optimistic display row. An
+  // unchanged retry keeps the same row/id, while server-accepted receipts are
+  // never removed or re-posted.
+  const displayedReceipts =
+    previousPending !== null && previousPending.message !== draft
+      ? state.sent.filter(entry => entry.messageId !== previousPending.messageId)
+      : state.sent;
+  const inFlightBatch = displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
+    ? displayedReceipts
+    : [
+        ...displayedReceipts,
+        {
+          messageId: pendingRetry.messageId,
+          message: pendingRetry.message,
+          state: 'awaiting_send_now' as const,
+        },
+      ];
   return {
     state: {
       ...state,
       sendInFlight: true,
-      inFlightBatch: state.sent,
+      inFlightBatch,
       sent: [],
       pendingRetry,
       refusal: null,
@@ -312,10 +330,26 @@ export function beginSendNow(
  */
 export function resolveSendNowSuccess(
   state: SteeringDockState,
-  receipt: { message_id: string }
+  receipt: { message_id: string; state: 'queued' | 'awaiting_send_now' }
 ): SteeringDockState {
   if (!state.sendInFlight || state.inFlightBatch === null) return state;
   if (state.pendingRetry?.messageId !== receipt.message_id) return state;
+  // A Queue request with an ambiguous response may be retried after the node
+  // becomes idle. Idempotency replays its original `queued` receipt and cannot
+  // release the idle waiter. Keep the resolved message in Will send and require
+  // a genuinely new draft instead of falsely showing generating or duplicating
+  // the original content under a new id.
+  if (receipt.state === 'queued') {
+    return {
+      ...state,
+      sent: state.inFlightBatch,
+      sendInFlight: false,
+      inFlightBatch: null,
+      pendingRetry: null,
+      refusal: null,
+      notice: willSendCountPhrase(state.inFlightBatch.length),
+    };
+  }
   return {
     ...state,
     sendInFlight: false,
@@ -329,8 +363,9 @@ export function resolveSendNowSuccess(
 
 /**
  * Ambiguous Send-now failure: snapshotted receipts return to the front in
- * original order, the new message keeps its retry id, and the dock stays
- * idle — an alert, not the polite region, carries the failure.
+ * original order (including the new message), the new message keeps its retry
+ * id, and the dock stays idle — an alert, not the polite region, carries the
+ * failure.
  */
 export function resolveSendNowFailure(
   state: SteeringDockState,

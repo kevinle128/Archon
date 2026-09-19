@@ -66,8 +66,11 @@ function deferred<T>(): {
   return { promise, resolve, reject };
 }
 
-function okReceipt(messageId: string): SendWorkflowNodeResponse {
-  return { success: true, message_id: messageId, state: 'queued' };
+function okReceipt(
+  messageId: string,
+  state: SendWorkflowNodeResponse['state'] = 'queued'
+): SendWorkflowNodeResponse {
+  return { success: true, message_id: messageId, state };
 }
 
 function idleAck(): InterruptWorkflowNodeResponse {
@@ -96,7 +99,10 @@ describe('ConsoleComposerDock', () => {
     interruptCalls.length = 0;
     nextSend = async (runId, nodeId, body): Promise<SendWorkflowNodeResponse> => {
       calls.push({ runId, nodeId, body });
-      return okReceipt(body.message_id);
+      return okReceipt(
+        body.message_id,
+        body.intent === 'send_now' ? 'awaiting_send_now' : 'queued'
+      );
     };
     nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
       interruptCalls.push({ runId, nodeId });
@@ -763,10 +769,11 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toBe(
       "couldn't send · back in the queue"
     );
-    const list = host.querySelector('ul[aria-label="Will send, 2"]');
+    const list = host.querySelector('ul[aria-label="Will send, 3"]');
     const items = [...(list?.querySelectorAll('li') ?? [])].map(li => li.textContent ?? '');
     expect(items[0]).toContain('queued one');
     expect(items[1]).toContain('queued two');
+    expect(items[2]).toContain('the redirect');
     expect(field().value).toBe('the redirect');
 
     await clickSendNow();

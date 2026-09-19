@@ -3104,6 +3104,51 @@ describe('turn interrupt (native seam)', () => {
     expect(fake.interrupt).toHaveBeenCalledTimes(1);
   });
 
+  test('a native interrupt rejection after the event stream ends is still surfaced', async () => {
+    const interruptController = new AbortController();
+    const fake = new FakeQuery();
+    let rejectInterrupt: ((error: Error) => void) | undefined;
+    fake.interrupt = mock(
+      () =>
+        new Promise<{ still_queued: string[] }>((_, reject) => {
+          rejectInterrupt = reject;
+        })
+    );
+    mockQuery.mockImplementation(() => {
+      fake.push({
+        done: false,
+        value: { type: 'assistant', message: { content: [{ type: 'text', text: 'working' }] } },
+      });
+      return fake;
+    });
+
+    const chunks = [];
+    let settled = false;
+    const consuming = (async (): Promise<void> => {
+      for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+        interruptSignal: interruptController.signal,
+      })) {
+        chunks.push(chunk);
+      }
+    })().finally(() => {
+      settled = true;
+    });
+    for (let i = 0; i < 50 && chunks.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    interruptController.abort();
+    await flushMicrotasks();
+    expect(rejectInterrupt).toBeDefined();
+    fake.push({ done: true, value: undefined });
+    await flushMicrotasks();
+    expect(settled).toBe(false);
+
+    rejectInterrupt?.(new Error('late interrupt control failure'));
+    await expect(consuming).rejects.toThrow('late interrupt control failure');
+    expect(fake.interrupt).toHaveBeenCalledTimes(1);
+  });
+
   test('an interrupted attempt is never retried even when the stream throws a retryable error', async () => {
     const interruptController = new AbortController();
     let callCount = 0;
@@ -4325,10 +4370,16 @@ describe('AskHuman resume', () => {
     });
   });
 
-  test('throws a safe error without calling query when resumeSessionId is missing', async () => {
+  test('throws a safe error without calling query or attaching listeners when resumeSessionId is missing', async () => {
+    const nodeCancel = new AbortController();
+    const interruptController = new AbortController();
+    const addNodeListener = spyOn(nodeCancel.signal, 'addEventListener');
+    const addInterruptListener = spyOn(interruptController.signal, 'addEventListener');
     let thrown: unknown;
     try {
       for await (const _ of client.sendQuery(EXECUTOR_PROMPT, '/workspace', undefined, {
+        abortSignal: nodeCancel.signal,
+        interruptSignal: interruptController.signal,
         resumeInteractions: interactions,
       })) {
         // consume
@@ -4340,6 +4391,10 @@ describe('AskHuman resume', () => {
     expect(thrown).toBeInstanceOf(Error);
     expect((thrown as Error).message).toBe('Could not resume the AskHuman session');
     expect(mockQuery).not.toHaveBeenCalled();
+    expect(addNodeListener).not.toHaveBeenCalled();
+    expect(addInterruptListener).not.toHaveBeenCalled();
     expect(loggerPayload()).not.toContain(ANSWER_SENTINEL);
+    addNodeListener.mockRestore();
+    addInterruptListener.mockRestore();
   });
 });

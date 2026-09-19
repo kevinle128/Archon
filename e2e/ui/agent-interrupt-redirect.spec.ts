@@ -669,7 +669,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(room.getByText('will send · 1')).toBeVisible();
 
       // First Send-now POST fails once: the band restores the old receipt
-      // ahead of the still-typed message, the alert carries the failure.
+      // followed by the new draft, while the alert carries the failure.
       let failOnce = true;
       await page.route('**/send', async route => {
         const request = route.request();
@@ -703,8 +703,9 @@ for (const surface of ['console', 'legacy'] as const) {
       expect((await failedSend).status()).toBe(500);
       await expect(room.getByRole('alert')).toContainText('simulated delivery failure');
       const items = willSendList(room).getByRole('listitem');
-      await expect(items).toHaveCount(1);
+      await expect(items).toHaveCount(2);
       await expect(items.first()).toContainText('first');
+      await expect(items.nth(1)).toContainText(REDIRECT_TEXT);
       await expect(field).toHaveValue(REDIRECT_TEXT);
       await captureEvidence(room, `us-005-${surface}-send-now-failed.png`, testInfo);
 
