@@ -107,6 +107,7 @@ import { getWorkflowEventEmitter, type LoopProgress } from './event-emitter';
 import {
   getSteeringRegistry,
   type NodeSteeringHandle,
+  type QueuedOperatorMessage,
   type SteeringIdleWake,
 } from './steering-registry';
 import { evaluateCondition } from './condition-evaluator';
@@ -157,7 +158,11 @@ import {
   safeSendMessage,
   type SendMessageContext,
 } from './executor-shared';
-import { appendNodeTranscript, appendToolResultTranscript } from './node-transcript';
+import {
+  appendNodeTranscript,
+  appendOperatorTranscript,
+  appendToolResultTranscript,
+} from './node-transcript';
 import { createAskHumanTool } from './ask-human';
 import {
   executionScopeEventFields,
@@ -538,6 +543,13 @@ interface PassTurn {
   token: number | undefined;
   controller: AbortController | undefined;
   interrupted: boolean;
+}
+
+/** Pending operator-row receipt for a guidance turn's first stream pass. */
+interface PendingOperatorReceipt {
+  readonly scope: TranscriptExecutionScope;
+  readonly messages: readonly QueuedOperatorMessage[];
+  recorded: boolean;
 }
 
 /**
@@ -2406,7 +2418,8 @@ async function executeNodeInternal(
     attemptPrompt: string,
     attemptResumeId: string | undefined,
     passReaskAttempt: number,
-    passTurn: PassTurn | undefined
+    passTurn: PassTurn | undefined,
+    operatorReceipt?: PendingOperatorReceipt
   ): Promise<void> => {
     nodeOutputText = '';
     structuredOutput = undefined;
@@ -2435,6 +2448,17 @@ async function executeNodeInternal(
       passOptions.interruptSignal = controller.signal;
     }
     try {
+      let sawStreamChunk = false;
+      const recordOperatorReceiptIfNeeded = async (): Promise<void> => {
+        if (operatorReceipt === undefined || operatorReceipt.recorded) return;
+        await appendOperatorTranscript(deps.store, {
+          workflow_run_id: workflowRun.id,
+          node_id: stepName,
+          scope: operatorReceipt.scope,
+          messages: operatorReceipt.messages,
+        });
+        operatorReceipt.recorded = true;
+      };
       for await (const msg of withIdleTimeout(
         aiClient.sendQuery(attemptPrompt, cwd, attemptResumeId, passOptions),
         effectiveIdleTimeout,
@@ -2447,6 +2471,12 @@ async function executeNodeInternal(
           nodeAbortController.abort();
         }
       )) {
+        if (!sawStreamChunk) {
+          sawStreamChunk = true;
+          // Delivery seam: first successful stream yield records operator rows
+          // before any caused-turn chunk enters the transcript (#188).
+          await recordOperatorReceiptIfNeeded();
+        }
         const tickNow = Date.now();
         const nodeKey = `${workflowRun.id}:${node.id}`;
 
@@ -3064,6 +3094,10 @@ async function executeNodeInternal(
         }
         // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
       }
+      // Normal empty completion: stream opened and closed without yielding.
+      if (!sawStreamChunk) {
+        await recordOperatorReceiptIfNeeded();
+      }
 
       // Stream ended with background tasks still live: the SDK subprocess died or
       // the idle timeout fired mid-wait. The tasks' artifacts may be missing —
@@ -3262,6 +3296,7 @@ async function executeNodeInternal(
     let turnPrompt = finalPrompt;
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
+    let turnGuidanceMessages: readonly QueuedOperatorMessage[] = [];
     // Token capture folds across every provider turn; re-ask passes inside a
     // turn keep their existing last-pass-wins semantics.
     let accumulatedTokens: TokenUsage | undefined;
@@ -3274,6 +3309,8 @@ async function executeNodeInternal(
         delete nodeOptionsWithAbort.resumeInteractions;
         nodeOptionsWithAbort.forkSession = false;
         executionScope = newTranscriptAttempt(executionScope);
+        // Prompt bytes stay the drained join; retain messages for the stream seam.
+        turnPrompt = turnGuidanceMessages.map(item => item.message).join('\n\n');
       }
       // A turn must positively emit its own session id — an id from an older
       // turn is never reused for the guidance resume. The `as` resets keep
@@ -3289,6 +3326,10 @@ async function executeNodeInternal(
       // exhaustion (or a non-best-effort failure) throws → failed node.
       let reaskAttempt = 0;
       let reaskPrompt = turnPrompt;
+      // Operator receipt only on guidance pass zero — re-asks must not duplicate.
+      const pendingOperatorReceipt: PendingOperatorReceipt | undefined = turnIsGuidance
+        ? { scope: executionScope, messages: turnGuidanceMessages, recorded: false }
+        : undefined;
       // Per-turn interrupt classification (#183): `turnInterrupted` carries the
       // five-case verdict out of the re-ask loop; `lastPassToken` is the final
       // pass's registry token — settled exactly once at the boundary below.
@@ -3312,7 +3353,8 @@ async function executeNodeInternal(
           reaskPrompt,
           reaskAttempt === 0 ? turnResumeId : undefined,
           reaskAttempt,
-          passTurn
+          passTurn,
+          reaskAttempt === 0 ? pendingOperatorReceipt : undefined
         );
         lastPassToken = passTurn.token;
         if (nodeCostUsd !== undefined) {
@@ -3505,9 +3547,8 @@ async function executeNodeInternal(
         const idleWaiter = interruptibleHandle.enterIdle(lastPassToken);
         const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
         if (wake.kind === 'send_now') {
-          // Same-session redirect: the drained batch joins verbatim under the
-          // #181 double-newline convention and runs as a guidance turn.
-          turnPrompt = wake.messages.map(item => item.message).join('\n\n');
+          // Same-session redirect: carry drained objects; join at the guidance head.
+          turnGuidanceMessages = wake.messages;
           turnResumeId = interruptedSessionId;
           turnIsGuidance = true;
           continue turns;
@@ -3637,7 +3678,7 @@ async function executeNodeInternal(
           if (lastPassToken !== undefined) {
             interruptibleHandle?.settleTurn(lastPassToken, 'generating');
           }
-          turnPrompt = drained.map(item => item.message).join('\n\n');
+          turnGuidanceMessages = drained;
           turnResumeId = newSessionId;
           turnIsGuidance = true;
           continue turns;
@@ -6133,6 +6174,7 @@ async function executeLoopNodeInner(
     // returned and sends the drained operator messages verbatim — never a loop
     // iteration of its own.
     let turnGuidancePrompt: string | undefined;
+    let turnGuidanceMessages: readonly QueuedOperatorMessage[] = [];
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
     // Completion verdict of the FINAL turn — re-evaluated after every settled
@@ -6151,7 +6193,16 @@ async function executeLoopNodeInner(
       // re-ask path does per attempt. No extra lifecycle events are emitted.
       if (turnIsGuidance) {
         iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
+        turnGuidancePrompt = turnGuidanceMessages.map(item => item.message).join('\n\n');
       }
+      // Operator receipt only on guidance attempt zero — re-asks must not duplicate.
+      const pendingOperatorReceipt: PendingOperatorReceipt | undefined = turnIsGuidance
+        ? {
+            scope: iterationExecutionScope,
+            messages: turnGuidanceMessages,
+            recorded: false,
+          }
+        : undefined;
       let fullOutput = ''; // raw, for signal detection
       let cleanOutput = ''; // stripped, for platform display
       // A queued follow-up may resume only the session id positively returned
@@ -6338,6 +6389,24 @@ async function executeLoopNodeInner(
 
           const effectiveIdleTimeout = node.idle_timeout ?? STEP_IDLE_TIMEOUT_MS;
 
+          let sawStreamChunk = false;
+          const recordOperatorReceiptIfNeeded = async (): Promise<void> => {
+            if (
+              reaskAttempt !== 0 ||
+              pendingOperatorReceipt === undefined ||
+              pendingOperatorReceipt.recorded
+            ) {
+              return;
+            }
+            await appendOperatorTranscript(deps.store, {
+              workflow_run_id: workflowRun.id,
+              node_id: stepName,
+              scope: pendingOperatorReceipt.scope,
+              messages: pendingOperatorReceipt.messages,
+            });
+            pendingOperatorReceipt.recorded = true;
+          };
+
           for await (const msg of withIdleTimeout(generator, effectiveIdleTimeout, () => {
             iterationIdleTimedOut = true;
             getLog().warn(
@@ -6346,6 +6415,10 @@ async function executeLoopNodeInner(
             );
             iterationAbortController.abort();
           })) {
+            if (!sawStreamChunk) {
+              sawStreamChunk = true;
+              await recordOperatorReceiptIfNeeded();
+            }
             // Mid-stream cancel/pause check (every CANCEL_CHECK_INTERVAL_MS) —
             // lifted from the AI-node stream loop in executeNodeInternal. Same
             // posture: `paused` is tolerated (a sibling approval or AskHuman node may pause
@@ -6725,6 +6798,9 @@ async function executeLoopNodeInner(
             }
             // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
           }
+          if (!sawStreamChunk) {
+            await recordOperatorReceiptIfNeeded();
+          }
           foldIterationUsage();
 
           // Stream ended with background tasks still live (idle timeout mid-wait or
@@ -7095,10 +7171,8 @@ async function executeLoopNodeInner(
         const idleWaiter = interruptibleHandle.enterIdle(turnToken);
         const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
         if (wake.kind === 'send_now') {
-          // Same-session redirect: the drained batch joins verbatim under the
-          // #181 double-newline convention and runs as a guidance turn inside
-          // THIS iteration — it never consumes a loop iteration.
-          turnGuidancePrompt = wake.messages.map(item => item.message).join('\n\n');
+          // Same-session redirect: carry drained objects; join at the guidance head.
+          turnGuidanceMessages = wake.messages;
           turnResumeId = interruptedSessionId;
           turnIsGuidance = true;
           continue turns;
@@ -7352,7 +7426,7 @@ async function executeLoopNodeInner(
           if (turnToken !== undefined) {
             interruptibleHandle?.settleTurn(turnToken, 'generating');
           }
-          turnGuidancePrompt = drained.map(item => item.message).join('\n\n');
+          turnGuidanceMessages = drained;
           turnResumeId = settledTurnSessionId;
           turnIsGuidance = true;
           continue turns;

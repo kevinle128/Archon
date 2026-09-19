@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Operator receipt at first stream yield
+- **Where**: `packages/workflows/src/dag-executor.ts` (`runStreamPass`, loop stream try)
+- **Pattern**: Carry `readonly QueuedOperatorMessage[]` from drain/send_now; join prompt after `newTranscriptAttempt`; await `appendOperatorTranscript` on first stream chunk or normal empty completion of pass zero only; re-asks get no context.
+- **Example**: `await recordOperatorReceiptIfNeeded()` before processing first `msg`
+
 ### Operator display-name projection stays local to api.ts
 - **Where**: `packages/server/src/routes/api.ts` (`buildOperatorDisplayNameById`, `toWorkflowNodeMessageResponse`)
 - **Pattern**: Collect operator text senders from the returned page only (cursor overflow excluded), one `getUserDisplayNamesByIds` call, attach trimmed name / 8-char fallback / explicit null; omit field on non-operator rows. Lookup rejection logs one payload-free warning and still returns 200.
@@ -86,3 +91,27 @@
 
 ---
 
+## 2026-09-19T20:45:58.464Z — US-003: Executor persistence and ordering
+
+**Status**: PASSED
+**Files changed**:
+- packages/workflows/src/node-transcript.ts — appendOperatorTranscript sequential fail-open writer
+- packages/workflows/src/node-transcript.test.ts — exact row shape, null identity, fail-open continuation
+- packages/workflows/src/dag-executor.ts — direct+loop carry messages; first-yield/empty-completion seam
+- packages/workflows/src/dag-executor.test.ts — #181/#183 matrix + seam/startup/append-failure proofs
+
+**Acceptance criteria verified**:
+- [x] appendOperatorTranscript writes verbatim text rows with origin/operator_user_id/message_id under scope
+- [x] node-transcript tests cover two senders, null identity, no stream fields, fail-open second append
+- [x] Direct path carries turnGuidanceMessages at send_now and natural drain; joins after attempt rotate
+- [x] runStreamPass records only on guidance pass zero at first yield or normal empty completion
+- [x] Loop path mirrors with iterationExecutionScope + namespaced stepName
+- [x] dag-executor tests prove FIFO order, attempt placement, interrupt redirect, loop/loop-group, re-ask single row, null identity, append fail-open, startup throw, first-yield seam
+- [x] No registry/route/store/migration/provider/event-model changes
+- [x] bun test node-transcript + operator filter + full dag-executor + steering-registry; type-check; lint
+
+**Learnings**:
+- Operator rows must not be asserted while the first yield is still held — the seam is immediately before processing that chunk, so hold proves beginTurn-only, then release proves operator-before-caused order via append instrumentation
+- re-ask rotates loop iterationExecutionScope after attempt 0; pendingOperatorReceipt must keep the guidance attempt scope and skip re-asks via reaskAttempt === 0
+
+---
