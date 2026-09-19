@@ -2,7 +2,7 @@ import { requestJson } from '../lib/http';
 import { toRun, type Run } from '../primitives/run';
 import { toRunEvent, type RunEvent } from '../primitives/event';
 import type { RunStatus } from '../lib/run-status';
-import { toSteeringRequestError } from '@/lib/steering-dock';
+import { STEERING_INTERRUPT_FAILED_MESSAGE, toSteeringRequestError } from '@/lib/steering-dock';
 import type { components } from '@/lib/api.generated';
 
 export interface ListRunsOptions {
@@ -198,7 +198,7 @@ export async function interruptNode(
       { method: 'POST' }
     );
   } catch (error) {
-    throw toSteeringRequestError(error);
+    throw toSteeringRequestError(error, STEERING_INTERRUPT_FAILED_MESSAGE);
   }
 }
 

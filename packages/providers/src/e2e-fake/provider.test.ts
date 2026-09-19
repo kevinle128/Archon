@@ -1,16 +1,20 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 
 import { AskHumanAwaitingError, type MessageChunk, type NativeTool } from '../types';
 import { E2E_FAKE_CAPABILITIES } from './capabilities';
 import {
   E2E_FAKE_AGENT_INPUT,
   E2E_FAKE_AGENT_TOOL_NAME,
+  E2E_FAKE_INTERRUPT_TERMINAL_STREAM,
+  E2E_FAKE_INTERRUPT_TERMINAL_TOOL,
   E2E_FAKE_LOOP_DONE,
   E2E_FAKE_TASK_OMP_INPUT,
   E2E_FAKE_TASK_TOOL_NAME,
   E2E_FAKE_TODO_INPUTS,
   E2E_FAKE_TODO_OUTPUT,
   E2E_FAKE_TODO_TOOL_NAME,
+  E2E_FAKE_TOOL_INPUT,
+  E2E_FAKE_TOOL_INTERRUPTED_OUTPUT,
   E2E_FAKE_TOOL_NAME,
   E2E_FAKE_TOOL_OUTPUT,
   E2E_FAKE_TOOL_PASS_TEXT,
@@ -550,5 +554,276 @@ describe('E2eFakeProvider', () => {
     expect(E2E_FAKE_CAPABILITIES.sessionResume).toBe(true);
     expect(E2E_FAKE_CAPABILITIES.interrupt).toBe('native');
     expect(E2E_FAKE_CAPABILITIES.mcp).toBe(false);
+  });
+});
+
+describe('E2eFakeProvider interruptible scenario', () => {
+  const provider = new E2eFakeProvider();
+  const interruptiblePrompt = (extra: Record<string, unknown> = {}): string =>
+    `<<E2E_SCENARIO>>${JSON.stringify({ interruptible: true, emitTool: true, delayMs: 30_000, ...extra })}<</E2E_SCENARIO>>\nwork`;
+  const scenarioPrompt = (scenario: Record<string, unknown>): string =>
+    `<<E2E_SCENARIO>>${JSON.stringify(scenario)}<</E2E_SCENARIO>>\nwork`;
+
+  test('interruptible requires emitTool', async () => {
+    for (const body of [
+      { interruptible: true, delayMs: 100 },
+      { interruptible: true, emitTool: false, delayMs: 100 },
+    ]) {
+      await expect(collect(provider.sendQuery(scenarioPrompt(body), '/tmp'))).rejects.toThrow(
+        'interruptible_requires_emitTool'
+      );
+    }
+  });
+
+  test('interruptible requires a positive bounded delayMs', async () => {
+    for (const delayMs of [undefined, 0, -1, 120_001]) {
+      const body: Record<string, unknown> = { interruptible: true, emitTool: true };
+      if (delayMs !== undefined) body['delayMs'] = delayMs;
+      await expect(collect(provider.sendQuery(scenarioPrompt(body), '/tmp'))).rejects.toThrow(
+        'interruptible_requires_bounded_positive_delayMs'
+      );
+    }
+  });
+
+  test('interrupt settles the pending tool as interrupted and ends with aborted_tools', async () => {
+    const interrupt = new AbortController();
+    const it = provider.sendQuery(interruptiblePrompt(), '/tmp', undefined, {
+      interruptSignal: interrupt.signal,
+    });
+    const chunks: MessageChunk[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      const step = await it.next();
+      if (step.done === true) throw new Error('stream ended before tool call');
+      chunks.push(step.value);
+    }
+    const pending = it.next();
+    interrupt.abort();
+    for (let step = await pending; step.done !== true; step = await it.next()) {
+      chunks.push(step.value);
+    }
+    expect(chunks.map(chunk => chunk.type)).toEqual(['assistant', 'tool', 'tool_result', 'result']);
+    const toolCall = chunks[1];
+    const toolResult = chunks[2];
+    const result = chunks[3];
+    if (toolCall.type !== 'tool' || toolResult.type !== 'tool_result' || result.type !== 'result') {
+      throw new Error('unexpected chunk shape');
+    }
+    expect(toolResult.toolCallId).toBe(toolCall.toolCallId);
+    expect(toolResult.toolOutcome).toBe('interrupted');
+    expect(toolResult.toolOutput).toBe(E2E_FAKE_TOOL_INTERRUPTED_OUTPUT);
+    expect(result.isError).toBe(true);
+    expect(result.errorSubtype).toBe('error_during_execution');
+    expect(result.terminalReason).toBe(E2E_FAKE_INTERRUPT_TERMINAL_TOOL);
+    expect(result.sessionId).toEqual(expect.any(String));
+    expect(toolCall.toolCallId).toBe(`e2e-fake-tool-${result.sessionId}`);
+  });
+
+  test('interrupt after the last tool call settles every pending call as interrupted', async () => {
+    const interrupt = new AbortController();
+    const it = provider.sendQuery(interruptiblePrompt({ repeatTool: 2 }), '/tmp', undefined, {
+      interruptSignal: interrupt.signal,
+    });
+    const chunks: MessageChunk[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const step = await it.next();
+      if (step.done === true) throw new Error('stream ended before tool calls');
+      chunks.push(step.value);
+    }
+    const pending = it.next();
+    interrupt.abort();
+    for (let step = await pending; step.done !== true; step = await it.next()) {
+      chunks.push(step.value);
+    }
+    expect(chunks.map(chunk => chunk.type)).toEqual([
+      'assistant',
+      'tool',
+      'tool',
+      'tool_result',
+      'tool_result',
+      'result',
+    ]);
+    const toolCalls = chunks.filter(chunk => chunk.type === 'tool');
+    const toolResults = chunks.filter(chunk => chunk.type === 'tool_result');
+    for (const [index, toolResult] of toolResults.entries()) {
+      if (toolResult.type !== 'tool_result') continue;
+      expect(toolResult.toolCallId).toBe(toolCalls[index]?.toolCallId);
+      expect(toolResult.toolOutcome).toBe('interrupted');
+      expect(toolResult.toolOutput).toBe(E2E_FAKE_TOOL_INTERRUPTED_OUTPUT);
+    }
+    const result = chunks[chunks.length - 1];
+    if (result.type !== 'result') throw new Error('expected result');
+    expect(result.terminalReason).toBe(E2E_FAKE_INTERRUPT_TERMINAL_TOOL);
+  });
+
+  test('natural delay completion keeps the success path unchanged', async () => {
+    const chunks = await collect(provider.sendQuery(interruptiblePrompt({ delayMs: 30 }), '/tmp'));
+    expect(chunks).toEqual([
+      { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT },
+      {
+        type: 'tool',
+        toolName: E2E_FAKE_TOOL_NAME,
+        toolInput: E2E_FAKE_TOOL_INPUT,
+        toolCallId: expect.any(String),
+      },
+      {
+        type: 'tool_result',
+        toolName: E2E_FAKE_TOOL_NAME,
+        toolOutput: E2E_FAKE_TOOL_OUTPUT,
+        toolCallId: expect.any(String),
+        toolOutcome: 'success',
+      },
+      { type: 'result', sessionId: expect.any(String) },
+    ]);
+    const toolCall = chunks[1];
+    const toolResult = chunks[2];
+    if (toolCall.type !== 'tool' || toolResult.type !== 'tool_result') {
+      throw new Error('unexpected chunk shape');
+    }
+    expect(toolResult.toolCallId).toBe(toolCall.toolCallId);
+  });
+
+  test('node abort wins over turn interrupt and throws Query aborted', async () => {
+    const abort = new AbortController();
+    const interrupt = new AbortController();
+    const it = provider.sendQuery(interruptiblePrompt(), '/tmp', undefined, {
+      abortSignal: abort.signal,
+      interruptSignal: interrupt.signal,
+    });
+    await it.next(); // assistant
+    await it.next(); // tool call emitted; generator paused before the wait
+    // Both signals spent before the wait begins — node Cancel outranks the
+    // turn interrupt regardless of abort order.
+    interrupt.abort();
+    abort.abort();
+    await expect(it.next()).rejects.toThrow('Query aborted');
+  });
+
+  test('abort during the pending-tool wait still throws Query aborted alone', async () => {
+    const abort = new AbortController();
+    const it = provider.sendQuery(interruptiblePrompt(), '/tmp', undefined, {
+      abortSignal: abort.signal,
+    });
+    await it.next(); // assistant
+    await it.next(); // tool call
+    const pending = it.next();
+    abort.abort();
+    await expect(pending).rejects.toThrow('Query aborted');
+  });
+
+  test('interrupt without a pending tool emits aborted_streaming and no tool chunks', async () => {
+    const interrupt = new AbortController();
+    const prompt = scenarioPrompt({ delayMs: 30_000 });
+    const it = provider.sendQuery(prompt, '/tmp', undefined, {
+      interruptSignal: interrupt.signal,
+    });
+    const pending = it.next();
+    interrupt.abort();
+    const first = await pending;
+    expect(first.done).not.toBe(true);
+    const result = first.value;
+    if (result.type !== 'result') throw new Error('expected result');
+    expect(result.isError).toBe(true);
+    expect(result.terminalReason).toBe(E2E_FAKE_INTERRUPT_TERMINAL_STREAM);
+    expect((await it.next()).done).toBe(true);
+  });
+
+  test('a spent interrupt signal never starts a query', async () => {
+    const interrupt = new AbortController();
+    interrupt.abort();
+    await expect(
+      collect(
+        provider.sendQuery(interruptiblePrompt({ delayMs: 30 }), '/tmp', undefined, {
+          interruptSignal: interrupt.signal,
+        })
+      )
+    ).rejects.toThrow('Query interrupted');
+  });
+
+  test('non-opt-in scenarios ignore an unspent interruptSignal entirely', async () => {
+    const interrupt = new AbortController();
+    const chunks = await collect(
+      provider.sendQuery(scenarioPrompt({ emitTool: true, delayMs: 0 }), '/tmp', undefined, {
+        interruptSignal: interrupt.signal,
+      })
+    );
+    expect(chunks).toEqual([
+      { type: 'assistant', content: E2E_FAKE_TOOL_PASS_TEXT },
+      {
+        type: 'tool',
+        toolName: E2E_FAKE_TOOL_NAME,
+        toolInput: E2E_FAKE_TOOL_INPUT,
+        toolCallId: expect.any(String),
+      },
+      {
+        type: 'tool_result',
+        toolName: E2E_FAKE_TOOL_NAME,
+        toolOutput: E2E_FAKE_TOOL_OUTPUT,
+        toolCallId: expect.any(String),
+        toolOutcome: 'success',
+      },
+      { type: 'result', sessionId: expect.any(String) },
+    ]);
+  });
+
+  test('the boundary wait removes its signal listeners on every settle path', async () => {
+    const abort = new AbortController();
+    const interrupt = new AbortController();
+    const removeAbort = spyOn(abort.signal, 'removeEventListener');
+    const removeInterrupt = spyOn(interrupt.signal, 'removeEventListener');
+    try {
+      // Interrupted path.
+      const it = provider.sendQuery(interruptiblePrompt(), '/tmp', undefined, {
+        abortSignal: abort.signal,
+        interruptSignal: interrupt.signal,
+      });
+      await it.next();
+      await it.next();
+      const pending = it.next();
+      interrupt.abort();
+      for (let step = await pending; step.done !== true; step = await it.next()) {
+        // drain
+      }
+      expect(removeInterrupt).toHaveBeenCalledWith('abort', expect.any(Function));
+      expect(removeAbort).toHaveBeenCalledWith('abort', expect.any(Function));
+    } finally {
+      removeAbort.mockRestore();
+      removeInterrupt.mockRestore();
+    }
+
+    const abort2 = new AbortController();
+    const interrupt2 = new AbortController();
+    const removeAbort2 = spyOn(abort2.signal, 'removeEventListener');
+    const removeInterrupt2 = spyOn(interrupt2.signal, 'removeEventListener');
+    try {
+      // Natural-delay path.
+      await collect(
+        provider.sendQuery(interruptiblePrompt({ delayMs: 20 }), '/tmp', undefined, {
+          abortSignal: abort2.signal,
+          interruptSignal: interrupt2.signal,
+        })
+      );
+      expect(removeInterrupt2).toHaveBeenCalledWith('abort', expect.any(Function));
+      expect(removeAbort2).toHaveBeenCalledWith('abort', expect.any(Function));
+    } finally {
+      removeAbort2.mockRestore();
+      removeInterrupt2.mockRestore();
+    }
+
+    const abort3 = new AbortController();
+    const removeAbort3 = spyOn(abort3.signal, 'removeEventListener');
+    try {
+      // Node-abort path.
+      const it = provider.sendQuery(interruptiblePrompt(), '/tmp', undefined, {
+        abortSignal: abort3.signal,
+      });
+      await it.next();
+      await it.next();
+      const pending = it.next();
+      abort3.abort();
+      await expect(pending).rejects.toThrow('Query aborted');
+      expect(removeAbort3).toHaveBeenCalledWith('abort', expect.any(Function));
+    } finally {
+      removeAbort3.mockRestore();
+    }
   });
 });

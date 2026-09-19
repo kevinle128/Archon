@@ -5,7 +5,7 @@
  */
 import type { WorkflowRunStatus } from '@/lib/types';
 import type { components } from '@/lib/api.generated';
-import { toSteeringRequestError } from '@/lib/steering-dock';
+import { STEERING_INTERRUPT_FAILED_MESSAGE, toSteeringRequestError } from '@/lib/steering-dock';
 
 export type WorkflowDefinition = components['schemas']['WorkflowDefinition'];
 type GeneratedDagNode = components['schemas']['DagNode'];
@@ -802,7 +802,7 @@ export async function interruptNode(
   try {
     return await fetchJSON<InterruptWorkflowNodeResponse>(url, { method: 'POST' });
   } catch (error) {
-    throw toSteeringRequestError(error);
+    throw toSteeringRequestError(error, STEERING_INTERRUPT_FAILED_MESSAGE);
   }
 }
 

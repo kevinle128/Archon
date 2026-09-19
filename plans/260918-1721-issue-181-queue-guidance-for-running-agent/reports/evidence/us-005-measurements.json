@@ -15,7 +15,7 @@
     "receiptText": 7.9,
     "sentBadge": 7.9,
     "hint": 7.9,
-    "queueLabel": 18.79,
+    "queueLabel": 7.9,
     "focusRing": {
       "color": "oklch(0.64 0.295 330)",
       "ratio": 5.14
@@ -48,7 +48,7 @@
     "receiptText": 5.33,
     "sentBadge": 5.33,
     "hint": 5.33,
-    "queueLabel": 16.45,
+    "queueLabel": 5.33,
     "focusRing": {
       "color": "oklch(0.72 0.18 250)",
       "ratio": 7.99

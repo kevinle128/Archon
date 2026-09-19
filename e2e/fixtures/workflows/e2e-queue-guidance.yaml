@@ -7,5 +7,5 @@ nodes:
     provider: e2e-fake
     model: e2e-fake-model
     prompt: |
-      <<E2E_SCENARIO>>{"delayMs":30000}<</E2E_SCENARIO>>
+      <<E2E_SCENARIO>>{"interruptible":true,"emitTool":true,"delayMs":30000}<</E2E_SCENARIO>>
       $ARGUMENTS
