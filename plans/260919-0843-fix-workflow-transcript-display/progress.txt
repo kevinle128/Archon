@@ -1,0 +1,247 @@
+## Codebase Patterns
+
+### Console wildcard border pin defeats Tailwind border-* utilities
+- Where: `packages/web/src/experiments/console/theme.css` (`.console-root * { border-color: var(--border) }`)
+- Pattern: Unlayered wildcard border pin beats layered Tailwind `border-warning` / `border-border-bright`. Restore intended colors with a more-specific unlayered rule (Raw toggle already did this; Ask card uses `[data-ask-card] { border-color: var(--warning) }`).
+- Example: `.console-root [data-ask-card] { border-color: var(--warning); }`
+- Gotcha: changing theme.css requires re-pinning its sha256 in visual-config.json AND regenerating the `ui.visual` runner digest in run-ui.json; pin AFTER prettier rewrites the file.
+
+### Raw focus/hover/open all flip to primary text + bright border
+- Where: `NodeRoom.tsx` + `ConsoleAgentHistoryList.tsx` Raw toggle closed-state classes
+- Pattern: closed = secondary + quiet border; `hover:` AND `focus-visible:` must both promote to primary text + bright border (open state already primary). Missing `focus-visible:text-text-primary` fails the tool-row visual gate even when hover works.
+- Example: `... hover:text-text-primary focus-visible:border-border-bright focus-visible:text-text-primary`
+
+### Deterministic real-server transcript E2E via `prepareTranscriptDisplayRun`
+- Where: `e2e/lib/playwright/archon-runtime.ts` (`TRANSCRIPT_*` exports + `prepareTranscriptDisplayRun()`); spec `e2e/ui/workflow-transcript-display.spec.ts`; fixture `e2e/fixtures/workflows/e2e-transcript-display.yaml`.
+- Pattern: The e2e-fake provider cannot emit structured output, so the fixture's `output_format` node (`group.structured`, a `loop_group` child to exercise nested resolution) and `plain` sibling skip via an unsatisfiable `when: $seed.output == '...'` guard on a `bash:` producer (whole-output compare is allowed on bash; AI producers are rejected by the loader). After `workflow run` completes, the helper reads each node's minted `occurrence_id`/`attempt_id` back from its `node_skipped` event row and seeds matching `metadata.execution` + `text_mode: 'delta'` fragments plus ineligible rows into `remote_agent_workflow_node_messages` — the durable shape, while request/API/storage stay real. `ghost` (started/completed events, no definition row) covers the deleted-definition fallback.
+- Gotcha: assert unwrap by polling `not.toContainText(<exact canonical envelope>)` — the raw envelope contains the inner text as a substring, so `toContainText(inner)` alone passes prematurely before the async definition resolves.
+- Note: `loop_group` requires a completion channel (`until_bash: exit 0` here); e2e deps install with `bun install` in `e2e/` (npm leaves a stub tree — lockfile has no resolved URLs); CI uses `npm ci --prefix e2e`.
+
+### One-string output_format → unwrapped assistant text
+- Where: `packages/web/src/lib/agent-history.ts` — `singleStringSchemaKey()` + `presentedText()`; applied per projected assistant item inside `buildAgentHistory()` after `projectTextTranscript()`.
+- Pattern: The matched definition node's `output_format` arrives as optional `outputFormat` on `AgentHistoryInput`. Unwrap only when the schema is an object with exactly one `type:'string'` property AND the whole text is the canonical `JSON.stringify` of that one-key object; every other shape returns the original bytes (fail closed). Never mutates rows; per-item, so tool rows stay block boundaries.
+- Example: `'{"report":"# Title"}'` + `{type:'object',properties:{report:{type:'string'}}}` → assistant text `# Title`.
+
+### MessageChunk textMode → transcript metadata.text_mode
+- Where: `packages/providers/src/provider-types.ts` (MessageChunk.textMode?: 'complete' | 'delta' | 'snapshot'); persistence forwarding in `packages/workflows/src/dag-executor.ts` — `...(msg.textMode !== undefined ? { text_mode: msg.textMode } : {})` in BOTH the direct-node and loop-node transcript paths.
+- Pattern: Providers declare the text boundary semantic on the chunk; the executor forwards it into row metadata verbatim. No DB/schema change needed — `metadata` is a free-form JSON column validated by `packages/workflows/src/schemas/node-execution.ts`.
+- Example: `return [{ type: 'assistant', content: update.content.text, textMode: 'delta' }];`
+
+### Transcript execution scope / attempt rotation
+- Where: `packages/workflows/src/transcript-execution-scope.ts` — `newTranscriptAttempt(scope)` returns `{ ...scope, attempt_id: randomUUID() }` (same occurrence_id, new attempt).
+- Pattern: Every provider re-ask inside a loop MUST rotate the scope before the next pass, or failed + repaired text land in the same attempt. The invalid-structured-output branch already did this (~dag-executor.ts:6630); the missing-output branch (~6660) previously only bumped `reaskAttempt` — now it rotates too.
+- Example: `reaskAttempt++; iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope); reaskErrors = ['no JSON object was found in the response']; continue attempts;`
+
+### Executor test infra for transcript rows
+- Where: `packages/workflows/src/dag-executor.test.ts` — `runNodes()` helper + fake transcript store capture; `runNodes` accepts an optional provider name (added `provider` param this iteration) so node `provider:` fields resolve through `workflowProvider`.
+- Pattern: Assert on captured append payloads: `textRows[i].payload` for text, `textRows[i].metadata.execution` for `{ occurrence_id, attempt_id, retry_epoch, text_mode }`.
+- Gotcha: `bun test -t` filters run fast; the full file is ~48s/629 tests. Test files are in the repo eslintignore — lint only production files when checking warnings.
+
+### ACP bridge test fakes
+- Where: `packages/providers/src/community/{devin,deepseek}/acp-client.test.ts`
+- Pattern: Fake ACP child processes emit session/update JSON-RPC notifications; to test split streaming, emit two `agent_message_chunk` notifications ('Hel' then 'lo') before the terminal result and assert two ordered delta chunks.
+
+### happy-dom prototype stubs are process-global — make them writable
+- Where: `packages/web/src/components/workflows/WorkflowExecution.test.tsx` (`installHappyDom`); victim example `ConsoleNodeRoom.test.tsx` `stubRect`.
+- Pattern: `Object.defineProperty(win.HTMLElement.prototype, <prop>, {...})` without `writable: true` installs a NON-writable prototype member on the shared happy-dom prototype. Any later file in the SAME `bun test` process that does `el.<prop> = fn` throws `TypeError: Attempted to assign to readonly property`. The package test script splits `src/components/` and `src/experiments/` into separate processes, so the hazard only detonates in combined invocations (focused gates, `bun test src/`). Always pass `writable: true` on prototype stubs; instance-level `defineProperty`/`=` stays the normal pattern for consumers.
+
+---
+
+## 2026-03-20 — US-001: Provider delta boundaries and loop missing-output attempt rotation
+
+**Status**: PASSED
+**Commit**: 0a42a072 `fix(workflows): preserve ACP delta transcript boundaries`
+**Files changed**:
+- `packages/providers/src/community/devin/event-bridge.ts` — `textMode: 'delta'` on text-valued agent_message_chunk → assistant MessageChunk mapping
+- `packages/providers/src/community/deepseek/event-bridge.ts` — same delta mapping
+- `packages/workflows/src/dag-executor.ts` — `newTranscriptAttempt(iterationExecutionScope)` added to the missing structured-output re-ask branch
+- `packages/providers/src/community/devin/event-bridge.test.ts` — exact assertions tightened to `textMode: 'delta'`; thought/tool/replay/usage unchanged
+- `packages/providers/src/community/deepseek/event-bridge.test.ts` — same
+- `packages/providers/src/community/devin/acp-client.test.ts` — split 'Hel'/'lo' chunks through fake ACP process → two ordered delta chunks + unchanged terminal result; loaded-session replay suppression + first-new-message-is-delta
+- `packages/providers/src/community/deepseek/acp-client.test.ts` — same
+- `packages/workflows/src/dag-executor.test.ts` — `runNodes` provider param; new tests: direct + loop `metadata.text_mode === 'delta'` persistence; invalid-output and missing-output re-asks each produce distinct attempt_id under same occurrence_id
+
+**RED evidence** (before production edits):
+- event-bridge tests: 3 failures — chunks emitted without `textMode` vs expected `{ type: 'assistant', content, textMode: 'delta' }`
+- acp-client tests: 10 failures — split 'Hel'/'lo' chunks lacked `textMode: 'delta'`
+- executor: missing-output re-ask rows shared the same attempt_id; invalid-output isolation already passed (proves existing rotation)
+
+**Acceptance criteria verified**:
+- [x] Devin + DeepSeek bridges map text agent_message_chunk → MessageChunk textMode 'delta' (RED→GREEN recorded)
+- [x] ACP client tests send 'Hel'/'lo' through fake ACP child → two ordered deltas → 'Hello', terminal result unchanged
+- [x] Loaded-session replay still suppresses replays; first new message is a delta
+- [x] Direct and loop persisted chunks carry `metadata.text_mode: 'delta'`
+- [x] Invalid-output AND missing-output re-asks produce distinct transcript attempts (same occurrence_id)
+- [x] No new state, stream id, DB field, provider buffering, or UI heuristic; historical rows untouched (metadata forwarder was pre-existing)
+- [x] Focused suites: providers 78/78, workflows 629/629, web 35/35; tsc --noEmit clean (providers, workflows); eslint clean on production files; prettier clean
+
+**Learnings**:
+- The executor's text_mode forwarder already existed in both direct and loop paths — the bug was purely providers not declaring the boundary + one missing scope rotation. Minimal two-line production fix plus one line in the executor.
+- Test files are eslint-ignored repo-wide; lint production paths directly to get a meaningful signal.
+- `runNodes` needed a provider parameter so loop/agent nodes with an explicit `provider:` field resolve `workflowProvider` instead of defaulting to claude.
+
+---
+
+## 2026-09-19 — US-002: Canonical spec reconciliation and one-string unwrap transform in buildAgentHistory()
+
+**Status**: PASSED
+**Commit**: 8437175f `feat: unwrap exact one-string structured envelopes in agent history`
+**Unblock commit**: 08d78de9 `chore(unblock): fix pre-existing type error blocking web type-check`
+**Files changed**:
+- `_bmad-output/specs/spec-agent-node-room/SPEC.md` — read-half constraint rewritten: tool payloads keep CAP-7 Raw toggle, exact one-string envelopes render their string value, unclassifiable assistant text fails closed to original bytes; three surfaces named (LegacyNodeRoom via NodeTranscriptPane, ConsoleNodeRoom, ConsoleInspectPane via ConsoleExecutionHistory). Edited BEFORE code.
+- `packages/web/src/lib/agent-history.ts` — `outputFormat?: Record<string, unknown>` on `AgentHistoryInput`; `singleStringSchemaKey()` + `presentedText()` local helpers; transform applied per projected assistant item after `projectTextTranscript()`.
+- `packages/web/src/lib/agent-history.test.ts` — new nested describe: canonical unwrap, delta-then-unwrap ordering, lone fragment, tool-boundary independence, 28-case fail-closed matrix, annotated schemas/empty/nested-JSON-string values, input immutability + field preservation.
+- `packages/workflows/src/dag-executor.test.ts` — engine contract: `{ report: string }` structuredOutput → `$producer.output.report` resolves the string in the consumer prompt (no JSON envelope).
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — unblock fix only: `execution: null` added to `toolItem()` base (committed separately).
+
+**RED evidence** (before production edits):
+- 5 failures in the new describe: canonical unwrap, delta-assembled unwrap, tool-boundary unwrap, annotated-schema unwrap, and qualifying-text copy all rendered the raw `{"report":...}` wrapper (outputFormat ignored).
+- Fail-closed matrix and lone-fragment cases were vacuously green pre-change (they pin the fallback contract).
+- dag-executor contract test green pre-change as intended (regression proof, engine untouched).
+
+**Acceptance criteria verified**:
+- [x] SPEC.md updated BEFORE code: resolved rule stated, three production surfaces named
+- [x] `AgentHistoryInput.outputFormat?: Record<string, unknown>`; transform runs after `projectTextTranscript()` per projected text item; tool rows remain boundaries
+- [x] Unwrap only when ALL guards pass (non-array object schema, exactly-one string property, exact one-key payload with string value, `text === JSON.stringify(parsed)`)
+- [x] Every failed guard/parse returns original bytes — 28-case matrix (absent/non-record/non-object schema, missing/non-record/zero/multiple properties, non-record/non-string/missing property type, malformed/fenced/prose-wrapped/array/primitive/null payloads, missing/extra keys, non-string/null values, duplicate keys, whitespace, noncanonical escaping, reordered extra keys)
+- [x] Delta-assembled exact payload unwraps once after assembly; tool-separated matching blocks unwrap independently without joining
+- [x] Input rows never mutated; id/seq/execution/occurrence/attempt/timestamps/tool items/status preserved; only qualifying text copied
+- [x] dag-executor test proves structured result stays `{ report: string }` and downstream `$producer.output.report` receives the string
+- [x] Focused suites: web 42/42, workflows 630/630; web tsc clean; eslint 0/0; prettier clean
+
+**Learnings**:
+- `bun test` transpiles without typechecking — tests passing an undeclared `outputFormat` input still run (and fail at runtime = RED) before the field exists; tsc only validates after GREEN.
+- `asRecord()` in agent-history.ts is the codebase's non-array-record guard — reuse it for both schema and payload checks instead of hand-rolled `typeof` chains.
+- eslint `@typescript-eslint/prefer-optional-chain` prefers `schema?.type !== 'object'` over `schema === null || schema.type !== 'object'`; `asRecord` returning null composes cleanly with that.
+- The plannotator-gate integration test (`runs producer → real gate → downstream`) is flaky under load — JSON EOF reading a spawned control file; passes standalone. Not a story blocker; noted for future iterations.
+
+## Blocker Ledger
+
+BLOCKER US-002 | gate=`cd packages/web && bun x tsc --noEmit` | cause=pre-existing TS2322 at `ConsoleNodeRoom.test.tsx:2966` — `toolItem()` base omitted required `execution` field since 81ba296f; identical fingerprint with story stashed; file outside story diff | action=added `execution: null` to base, committed separately as 08d78de9 `chore(unblock):` | 2026-09-19
+
+## 2026-09-19 — US-003: Wire outputFormat through three transcript mounts with deterministic real-server E2E
+
+**Status**: PASSED
+**Commit**: 96324021 `feat: wire outputFormat through three transcript mounts with real-server E2E`
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — new `outputFormat?: Record<string, unknown> | null` prop forwarded to `buildAgentHistory()`
+- `packages/web/src/components/workflows/LegacyNodeRoom.tsx` — `resolution.definitionNode?.output_format` forwarded
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — selected definition schema forwarded
+- `packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.tsx` — `outputFormat` prop → `buildAgentHistory()`
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` — `resolveRoomKind(entry.row.nodeId, definitionNodes, rawEvents, approval).definitionNode?.output_format` per log entry (reuses the existing nested resolver — no second walker)
+- Five component test files — forwarding, fallback, definition-resolve rerender, inline history, nested loop_group
+- `e2e/fixtures/workflows/e2e-transcript-display.yaml` — `seed` (bash) completes; `group.structured` (output_format inside loop_group) + `plain` skip via unsatisfiable `when:` on bash output; `until_bash: exit 0` completion channel
+- `e2e/lib/playwright/archon-runtime.ts` — `TRANSCRIPT_*` constants + `prepareTranscriptDisplayRun()`; module-private `seedTranscriptDisplayRows` reads minted occurrence/attempt ids from each `node_skipped` event and seeds 2 delta fragments + 6 ineligible rows (malformed, extra-key, multi-field, duplicate-key, noncanonical-escape, whitespace) + `ghost` node events/row
+- `e2e/lib/playwright/run-detail.ts` — `listNodeMessages` return type widened with `metadata.execution`
+- `e2e/ui/workflow-transcript-display.spec.ts` — 3 specs: Console inline+room unwrap + API/stored-row integrity; Legacy room unwrap; no-schema/deleted-definition raw fallback on both surfaces
+
+**RED evidence** (before wiring): 7 component failures — `outputFormat` prop ignored in NodeTranscriptPane, LegacyNodeRoom (3), ConsoleNodeRoom, ConsoleExecutionHistory, ConsoleInspectPane (nested + pending→resolve rerender)
+
+**Acceptance criteria verified**:
+- [x] LegacyNodeRoom forwards definitionNode?.output_format → NodeTranscriptPane → buildAgentHistory (component test: unwrap + fallback)
+- [x] ConsoleNodeRoom supplies selected definition schema (parity test)
+- [x] ConsoleInspectPane resolves nested definition nodes into ConsoleExecutionHistory via the existing resolver (nested loop_group test)
+- [x] Missing/deleted definition → original history renders; rerenders on resolve (pending→resolved test)
+- [x] e2e-transcript-display.yaml deterministic, no AI call (unsatisfiable `when:` on bash producer)
+- [x] ONE `prepareTranscriptDisplayRun()` helper; no generic seeding API; e2e-fake provider unchanged
+- [x] Spec proves all 3 mounts unwrap on the real server; ineligible rows byte-for-byte; API rows keep exact fragments/order/execution metadata; stored rows unchanged
+- [x] Persisted rows/API/engine unchanged; no JSON-specific React component
+- [x] Verification: web 208/208 (5 files), workflows 630/630, build:web, e2e typecheck, playwright 3/3; eslint/prettier clean
+
+**Learnings**:
+- `when:` may compare a `bash:` node's whole output to a literal (loader only rejects free-form AI producers); a `loop_group` body's `when:` may reference outer producers. Skipped nodes emit `node_skipped` with minted `occurrence_id`/`attempt_id` — read them back from the events table so seeded `metadata.execution` matches the real scope.
+- Console skipped rows select `kind:'node'` (all node messages), so scoping metadata is belt-and-suspenders but matches the executor's durable shape.
+- `section[data-execution-row-id]` wraps divider + inline `ConsoleExecutionHistory`; the body suspends only when that row is selected — assert inline BEFORE selecting the row.
+- `not.toContainText(<exact envelope>)` is the reliable unwrap wait: the raw envelope contains the inner text as a substring, so presence checks pass prematurely before the async definition resolves.
+- `npm ci`/`npm install` in `e2e/` leaves a stub `node_modules` here (lockfile lacks resolved URLs); `bun install` works and writes a gitignored `e2e/bun.lock`. `build:web` (includes `tsc --noEmit`) is required before Playwright.
+
+---
+## 2026-09-19 — US-004: Legacy viewport containment, hidden-label geometry, and runtime minimap removal
+
+**Status**: PASSED
+**Commit**: 0a6c562f `fix: contain legacy run viewport and drop runtime minimap` (landed by prior iteration before tracking update)
+**Unblock commit**: 2a5ea1cb `chore(unblock): fix pre-existing readonly getBoundingClientRect stub blocking US-004 test gate`
+**Files changed**:
+- `packages/web/src/components/workflows/NodeRoom.tsx` — `relative` on direct tool-row summary (containing block for the sr-only status label)
+- `packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx` — same `relative` fix on the duplicated Console row
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` — `min-h-0 min-w-0 overflow-hidden` + inline `overflow:hidden` on the right resizable run panel (inline style must beat react-resizable-panels' default `overflow:auto`)
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — `overscroll-y-contain` on `[data-testid='node-transcript-scroll']` (sole vertical scroll owner)
+- `packages/web/src/components/workflows/WorkflowDagViewer.tsx` — MiniMap removed plus dead-only imports/constants (`ExecutionNodeData`, `WorkflowStepStatus`, `STATUS_MINIMAP_COLORS`, `DEFAULT_MINIMAP_COLOR`); Controls/Background kept
+- `packages/web/src/components/workflows/WorkflowExecution.test.tsx` — unblock fix only (`writable: true` on the prototype gBCR stub); plus story minimap-absence/controls/selection test
+- Component tests: summary `relative`, panel `min-h-0`/`overflow-hidden`, scroller `overscroll-y-contain`
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — `expectDocumentContained` (scrollTop 0, slack ≤2px both axes, offender/chain diagnostics), `expectStatusLabelsInsideSummaries`, `wheelOver`; desktop + narrow long-history cases (T.xlong, expect.poll, no sleeps)
+- `e2e/ui/workflow-transcript-display.spec.ts` — `[V:transcript-display.graph]`: minimap count 0, zoom/fit transform diff, empty-pane drag pan, node click → room, builder minimap still present
+
+**RED evidence**: captured by the implementing iteration (spec + fix in one commit, same as prior stories); the new geometry assertions assert scrollTop===0 and slack≤2 — they fail outright on the defect (~18,000px root scrollHeight vs 873px viewport). This iteration re-qualified the gate: identical 6-failure fingerprint reproduced on the clean pre-story base, then GREEN on HEAD.
+
+**Acceptance criteria verified**:
+- [x] Root scrollTop 0 and scroll height ≤ client+2px proven by browser assertions at 1440x1000 and 390x844
+- [x] `relative` direct tool summaries in NodeRoom + ConsoleAgentHistoryList; sr-only labels inside summary geometry with accessible text (component + browser)
+- [x] Legacy right panel `min-h-0 overflow-hidden`; transcript scroller `overscroll-y-contain`, sole vertical scroll owner
+- [x] scrollTop===0 with pointer over transcript / room header / non-node graph pane; tail reachable; at-bottom wheel moves neither root scroll nor headers
+- [x] Header, resize handle, Back/Close controls, keyboard transcript scrolling (Home/End), no horizontal overflow — preserved controls verified
+- [x] WorkflowDagViewer MiniMap + dead imports/constants removed; zoom/fit/pan/selection verified by transform + room-state observation
+- [x] WorkflowCanvas/BuilderCanvas/RunGraphPanel untouched; builder minimap asserted present in e2e
+- [x] Layout.tsx NOT modified — post-fix metrics pass without ancestor changes (conditional correctly not triggered)
+- [x] Separate desktop + narrow long-history cases, T.xlong, polling only, no sleeps; graph spec uses US-003 fixture
+- [x] Verification: web 258/258 (exact 6-file gate), build:web, e2e typecheck, playwright 3/3 (2 legacy-scroll + 1 graph); eslint 0/0; prettier clean
+
+**Learnings**:
+- `Object.defineProperty(proto, prop, {value})` defaults `writable:false` — a happy-dom prototype stub with no `writable:true` silently breaks every later `el.prop = fn` in the same process. The package test script's separate `src/components/` + `src/experiments/` invocations hid this until a focused gate combined both trees.
+- react-resizable-panels puts `className`/`style` on the content wrapper INSIDE the `#legacy-run-room` element; the inline `overflow:hidden` is required to beat the library's default `overflow:auto`.
+- `expectDocumentContained` enumerates the top overflow offenders + the html→body→room→scroller chain on failure — reuse this diagnostic pattern for future containment bugs.
+
+## Blocker Ledger
+
+BLOCKER US-004 | gate=`cd packages/web && NODE_ENV=development bun test <6 story files>` | cause=pre-existing `defineProperty(win.HTMLElement.prototype,'getBoundingClientRect',{configurable:true,value})` missing `writable:true` at WorkflowExecution.test.tsx:371 (since 56c61f72 #155) → `TypeError: Attempted to assign to readonly property` at ConsoleNodeRoom.test.tsx:4097 `stubRect`; identical 6-failure fingerprint reproduced on clean pre-story base; culprit outside story diff lines | action=added `writable: true`, committed separately as 2a5ea1cb `chore(unblock):` | 2026-09-19
+
+---
+
+## 2026-09-19 — US-005: Governed verification registration, fresh verification attempt, and full regression gate
+
+**Status**: PASSED
+**Commits**:
+- 73e6a8f8 `feat: register governed verification for transcript display and run graph`
+- b976dc4f `chore(unblock): raise governed web-build timeout blocking US-005 verification attempt`
+- b029fdbf `fix(web): restore Raw focus primary and Console ask warning tone` (product gaps surfaced by proof)
+- 0f56b911 `chore(verify): re-pin theme.css hash after prettier rewrite`
+
+**Files changed**:
+- `.agents/skills/verify-archon/lib/browser-scenarios.ts` — `ui.transcript-display` → four V-tags
+- `.agents/skills/verify-archon/features/run-ui.json` — behavior + scenario + regenerated `ui.visual` runner digest
+- `.agents/skills/verify-archon/visual-config.json` — `assistant-report` + `runtime-graph` states/criteria; SPEC.md + theme.css source hashes
+- `.agents/skills/verify-archon/lib/visual-review.ts` — per-case `runId` in manifest schema
+- `e2e/ui/verifier-visual.spec.ts` — HITL vs prepared-transcript runs; drive new states; record runId per case
+- `e2e/ui/workflow-transcript-display.spec.ts` — structured specs merged under `[V:transcript-display.structured]`
+- `.agents/skills/verify-archon/lib/runner.ts` — web-build timeout 180s → 900s (unblock only)
+- `packages/web/src/components/workflows/NodeRoom.tsx` + `ConsoleAgentHistoryList.tsx` — Raw `focus-visible` primary/bright
+- `packages/web/src/experiments/console/components/ask/ConsoleAskCard.tsx` + `theme.css` — warning heading + `[data-ask-card]` border restore
+
+**Governed attempt**: `.plans/verifications/fix-workflow-transcript-display/us-005-20260919T174638Z-a2c6e8cc`
+- head `0f56b911`; evidence `.../evidence/c48a1b9d-236e-4a07-b11c-1e0ce095eb4b`
+- PASS: ui.ask, ui.rooms, ui.tools, ui.transcript-display, ui.visual, workflow.execution, workflow.governance
+- visual 32/32 including assistant-report + runtime-graph at 1440 and 390 on console + legacy; desktop/narrow artifacts retained
+- First attempt failed on pre-existing Raw focus secondary text + Console ask neutral border (wildcard pin); fixed minimally then re-proved
+
+**Acceptance criteria verified**:
+- [x] browser-scenarios maps ui.transcript-display → structured, legacy-scroll-desktop, legacy-scroll-narrow, graph
+- [x] run-ui.json registers behavior/scenario; ui.visual digest regenerated after visual-config changes
+- [x] visual-config assistant-report + runtime-graph both surfaces/viewports; SPEC.md hash current
+- [x] visual-review + verifier-visual record actual runId per case; new states driven/captured (not tag-only)
+- [x] Fresh governed functional+visual attempt PASS on clean committed target; artifacts retained
+- [x] `bun x tsc --noEmit -p .agents/skills/verify-archon/tsconfig.json` + `bun run test:verification-skills` pass
+- [x] `bun run validate` full PASS (exit 0)
+
+**Learnings**:
+- Console `.console-root * { border-color: var(--border) }` silently defeats every Tailwind `border-*` utility; fix with a more-specific unlayered rule, not by removing the pin.
+- Pin visual-config source hashes AFTER prettier/lint-staged rewrites the source file — pre-prettier bytes fail `checkVisualSources`.
+- Governed selection broadens to all run-ui behaviors matched by the feature diff; product gaps outside the story (Raw focus, Ask warning tone) still block PASS and must be fixed minimally per the story technical notes.
+- `ui.visual` runner id is `visual-` + digest(visual-config.json); any config/source-hash edit must update run-ui.json in the same commit.
+
+## Blocker Ledger
+
+BLOCKER US-005 | gate=`bun .agents/skills/verify-archon/bin/verify.ts prove --selection` | cause=ui.tools focused Raw stayed secondary text (missing focus-visible utilities on closed Raw); ui.visual console ask-pending lacked warning border because theme wildcard pin defeated border-warning, heading was text-primary | action=b029fdbf added focus-visible primary/bright on Raw; data-ask-card + text-warning heading + theme override; 0f56b911 re-pinned theme hash; re-prove PASS | 2026-09-19
+
+BLOCKER US-005 | gate=`prove preflight build:web` | cause=governed web build SIGTERM at 180s; vite alone ~4m, full build:web ~9.5m on this hardware | action=b976dc4f raised only the build call site to 900s; assertions unchanged | 2026-09-19
+
+---

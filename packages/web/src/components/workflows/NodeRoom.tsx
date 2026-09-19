@@ -812,7 +812,7 @@ function ToolHistory({
       : `${presentation.family} · ${presentation.label}`;
   return (
     <details data-tool-id={item.toolUseId} open={open} onToggle={onToggle}>
-      <summary className="flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden rounded-[6px] px-1.5 py-1 font-mono text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
+      <summary className="relative flex min-h-[24px] cursor-pointer list-none items-baseline gap-2 overflow-hidden rounded-[6px] px-1.5 py-1 font-mono text-[12px] font-normal hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2 [&::-webkit-details-marker]:hidden">
         <span
           aria-hidden="true"
           className={cn(
@@ -871,7 +871,7 @@ function ToolHistory({
                 'flex min-h-[24px] flex-none items-center rounded-[4px] border px-[7px] font-mono text-[10.5px] focus-visible:outline-2 focus-visible:outline-accent-bright',
                 rawOpen
                   ? 'border-border-bright text-text-primary'
-                  : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary'
+                  : 'border-border text-text-secondary hover:border-border-bright hover:text-text-primary focus-visible:border-border-bright focus-visible:text-text-primary'
               )}
               onClick={(): void => {
                 setRawOpen(value => !value);

@@ -1253,4 +1253,252 @@ describe('buildAgentHistory', () => {
       expect(item.execution).toBeNull();
     }
   });
+
+  describe('one-string structured envelope presentation', () => {
+    const REPORT_SCHEMA: Record<string, unknown> = {
+      type: 'object',
+      properties: { report: { type: 'string' } },
+    };
+    const CANONICAL = '{"report":"# Report\\n\\nFindings **bold**"}';
+
+    function historyFor(
+      rows: NodeMessageRow[],
+      outputFormat?: Record<string, unknown>
+    ): ReturnType<typeof buildAgentHistory> {
+      return buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        ...(outputFormat === undefined ? {} : { outputFormat }),
+        rows,
+      });
+    }
+
+    test('unwraps a canonical one-string envelope to its Markdown string value', () => {
+      const { items } = historyFor([textRow('t-1', 1, CANONICAL)], REPORT_SCHEMA);
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        kind: 'assistant',
+        id: 't-1',
+        seq: 1,
+        text: '# Report\n\nFindings **bold**',
+      });
+    });
+
+    test('unwraps text assembled from compatible deltas once after assembly', () => {
+      const { items } = historyFor(
+        [
+          textRow('d-1', 1, '{"report":"# Tit', {
+            text_mode: 'delta',
+            message_id: 'm1',
+            block_id: 'b1',
+          }),
+          textRow('d-2', 2, 'le"}', { text_mode: 'delta', message_id: 'm1', block_id: 'b1' }),
+        ],
+        REPORT_SCHEMA
+      );
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({
+        kind: 'assistant',
+        id: 'd-1',
+        seq: 1,
+        text: '# Title',
+      });
+    });
+
+    test('leaves a lone delta fragment byte-for-byte when assembly never completes', () => {
+      const { items } = historyFor(
+        [textRow('d-1', 1, '{"report":"# Tit', { text_mode: 'delta' })],
+        REPORT_SCHEMA
+      );
+      expect(items[0]).toMatchObject({ kind: 'assistant', text: '{"report":"# Tit' });
+    });
+
+    test('unwraps matching blocks on both sides of a tool boundary without joining them', () => {
+      const { items } = historyFor(
+        [
+          textRow('a-1', 1, '{"report":"First"}', { text_mode: 'delta' }),
+          toolRow({
+            id: 'call-1',
+            seq: 2,
+            name: 'Bash',
+            toolUseId: 'b-1',
+            metadata: { tool_phase: 'call' },
+          }),
+          textRow('b-1', 3, '{"report":"Second"}', { text_mode: 'delta' }),
+        ],
+        REPORT_SCHEMA
+      );
+      expect(kinds(items)).toEqual(['assistant', 'tool', 'assistant']);
+      expect(items[0]).toMatchObject({ text: 'First' });
+      expect(items[1]).toMatchObject({ kind: 'tool', toolUseId: 'b-1' });
+      expect(items[2]).toMatchObject({ text: 'Second' });
+    });
+
+    test('returns the original text byte-for-byte for every ineligible schema or payload', () => {
+      const cases: Array<{
+        name: string;
+        outputFormat?: Record<string, unknown>;
+        text: string;
+      }> = [
+        { name: 'absent schema', text: CANONICAL },
+        {
+          name: 'non-record schema',
+          outputFormat: [] as unknown as Record<string, unknown>,
+          text: CANONICAL,
+        },
+        { name: 'non-object schema type', outputFormat: { type: 'string' }, text: CANONICAL },
+        { name: 'missing properties', outputFormat: { type: 'object' }, text: CANONICAL },
+        {
+          name: 'non-record properties',
+          outputFormat: {
+            type: 'object',
+            properties: [] as unknown as Record<string, unknown>,
+          },
+          text: CANONICAL,
+        },
+        {
+          name: 'zero properties',
+          outputFormat: { type: 'object', properties: {} },
+          text: CANONICAL,
+        },
+        {
+          name: 'multiple properties',
+          outputFormat: {
+            type: 'object',
+            properties: { report: { type: 'string' }, extra: { type: 'string' } },
+          },
+          text: CANONICAL,
+        },
+        {
+          name: 'non-record property',
+          outputFormat: { type: 'object', properties: { report: 'string' } },
+          text: CANONICAL,
+        },
+        {
+          name: 'non-string property type',
+          outputFormat: { type: 'object', properties: { report: { type: 'number' } } },
+          text: CANONICAL,
+        },
+        {
+          name: 'missing property type',
+          outputFormat: { type: 'object', properties: { report: {} } },
+          text: CANONICAL,
+        },
+        { name: 'malformed payload', outputFormat: REPORT_SCHEMA, text: '{"report":' },
+        {
+          name: 'fenced payload',
+          outputFormat: REPORT_SCHEMA,
+          text: '```json\n{"report":"A"}\n```',
+        },
+        {
+          name: 'prose-wrapped payload',
+          outputFormat: REPORT_SCHEMA,
+          text: 'Here: {"report":"A"}',
+        },
+        { name: 'array payload', outputFormat: REPORT_SCHEMA, text: '[{"report":"A"}]' },
+        {
+          name: 'string payload',
+          outputFormat: REPORT_SCHEMA,
+          text: '"{\\"report\\":\\"A\\"}"',
+        },
+        { name: 'number payload', outputFormat: REPORT_SCHEMA, text: '42' },
+        { name: 'boolean payload', outputFormat: REPORT_SCHEMA, text: 'true' },
+        { name: 'null payload', outputFormat: REPORT_SCHEMA, text: 'null' },
+        { name: 'missing declared key', outputFormat: REPORT_SCHEMA, text: '{"other":"A"}' },
+        {
+          name: 'extra key',
+          outputFormat: REPORT_SCHEMA,
+          text: '{"report":"A","extra":1}',
+        },
+        { name: 'non-string value', outputFormat: REPORT_SCHEMA, text: '{"report":123}' },
+        { name: 'null value', outputFormat: REPORT_SCHEMA, text: '{"report":null}' },
+        {
+          name: 'duplicate keys',
+          outputFormat: REPORT_SCHEMA,
+          text: '{"report":"a","report":"b"}',
+        },
+        {
+          name: 'whitespace variation',
+          outputFormat: REPORT_SCHEMA,
+          text: '{ "report": "A" }',
+        },
+        {
+          name: 'non-canonical escaping',
+          outputFormat: REPORT_SCHEMA,
+          text: '{"report":"\\u0041"}',
+        },
+        {
+          name: 'reordered extra keys',
+          outputFormat: REPORT_SCHEMA,
+          text: '{"extra":1,"report":"A"}',
+        },
+        {
+          name: 'extra key under annotation-tolerant schema',
+          outputFormat: {
+            type: 'object',
+            required: ['report'],
+            properties: { report: { type: 'string' } },
+          },
+          text: '{"report":"A","extra":1}',
+        },
+      ];
+      const results = cases.map(entry => {
+        const { items } = historyFor([textRow('t-case', 1, entry.text)], entry.outputFormat);
+        const item = items[0];
+        return {
+          name: entry.name,
+          preserved: item?.kind === 'assistant' && item.text === entry.text,
+        };
+      });
+      expect(results).toEqual(cases.map(entry => ({ name: entry.name, preserved: true })));
+    });
+
+    test('unwraps annotated schemas, empty values, and string values that look like JSON', () => {
+      const annotated = {
+        type: 'object',
+        title: 'Report',
+        required: ['report'],
+        additionalProperties: false,
+        properties: { report: { type: 'string', description: 'Markdown body', minLength: 1 } },
+      };
+      const { items: annotatedItems } = historyFor(
+        [textRow('t-1', 1, '{"report":"A"}')],
+        annotated
+      );
+      expect(annotatedItems[0]).toMatchObject({ text: 'A' });
+
+      const nested = JSON.stringify({ report: '{"nested":true}' });
+      const { items: nestedItems } = historyFor([textRow('t-2', 1, nested)], REPORT_SCHEMA);
+      expect(nestedItems[0]).toMatchObject({ text: '{"nested":true}' });
+
+      const { items: emptyItems } = historyFor([textRow('t-3', 1, '{"report":""}')], REPORT_SCHEMA);
+      expect(emptyItems[0]).toMatchObject({ text: '' });
+    });
+
+    test('copies only the qualifying text and never mutates input rows', () => {
+      const execution = { occurrence_id: 'occ-1', attempt_id: 'att-1', retry_epoch: 0 };
+      const rows = [
+        textRow('t-1', 1, CANONICAL, { execution }),
+        textRow('t-2', 2, '{ "report": "loose" }'),
+      ];
+      const { items } = historyFor(rows, REPORT_SCHEMA);
+      expect(items[0]).toMatchObject({
+        kind: 'assistant',
+        id: 't-1',
+        seq: 1,
+        text: '# Report\n\nFindings **bold**',
+        execution,
+      });
+      expect(items[1]).toMatchObject({
+        kind: 'assistant',
+        id: 't-2',
+        text: '{ "report": "loose" }',
+        execution: null,
+      });
+      expect(rows[0]?.payload).toEqual({ text: CANONICAL });
+      expect(rows[1]?.payload).toEqual({ text: '{ "report": "loose" }' });
+      expect(items[0]).not.toBe(rows[0]);
+    });
+  });
 });

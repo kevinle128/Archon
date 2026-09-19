@@ -39,7 +39,7 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "798be292e82bcf9d423702b4af275cb492b1ea724da7c1e5f84a2e257fc428cd"
+      "sha256": "8abd2eeb2094c98d983e85009a93aad5c8907d724412691f6881f0e2f76b9896"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
@@ -79,7 +79,7 @@
     },
     {
       "path": "packages/web/src/experiments/console/theme.css",
-      "sha256": "a265cc8690abe6779d71ec0f00d42b6a27503b6eeda174c6291cbc9b09221a4a"
+      "sha256": "543f29044c5c3fb455c19013a3a226fa03c15808e1c660e66ff463d4f8036bdf"
     }
   ],
   "criteria": [
@@ -108,6 +108,22 @@
       "expected": "Warning-toned pending card, readable question, selectable options and reachable Submit; no content or controls clipped in the selected card."
     },
     {
+      "id": "assistant-report",
+      "states": [
+        "assistant-report"
+      ],
+      "source": "_bmad-output/specs/spec-agent-node-room/SPEC.md#read-half",
+      "expected": "One assistant block carries the ASSISTANT label and readable Markdown report text with no JSON envelope, braces, or serialized quoting; styling matches the surface's other assistant text. Compare presentation, not fixture wording."
+    },
+    {
+      "id": "runtime-graph",
+      "states": [
+        "runtime-graph"
+      ],
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/README.md#the-graph-renderer",
+      "expected": "The runtime graph fills the run view with status-marked node cards, connecting edges, and zoom and fit controls; no minimap is present. Compare structure and controls, not node count or labels."
+    },
+    {
       "id": "layout-and-focus",
       "states": [
         "row-closed",
@@ -125,7 +141,9 @@
   "states": [
     "row-closed",
     "raw-open",
-    "ask-pending"
+    "ask-pending",
+    "assistant-report",
+    "runtime-graph"
   ],
   "viewports": [
     {
@@ -146,7 +164,8 @@
     "DESIGN.md wins over mockup-only 22 px targets and tertiary Raw text.",
     "Current semantic tokens apply separately on Console and Legacy.",
     "Mockup-only Replay, view-as, steering dock, future tool family bodies and unrelated nodes are excluded.",
-    "References are resized to the measured region width; browser and region dimensions are recorded separately."
+    "References are resized to the measured region width; browser and region dimensions are recorded separately.",
+    "Transcript-display captures come from a separate prepared run; its seeded fixture text, node names, and graph shape differ from the HITL run and mockup data."
   ],
   "width_tolerance_px": 2,
   "measurement_rules": [

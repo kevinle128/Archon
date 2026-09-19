@@ -84,6 +84,8 @@ export interface ConsoleExecutionHistoryProps {
   ) => Promise<WorkflowNodeMessage>;
   pendingInteractions: readonly PendingInteraction[];
   nodeStates?: readonly WorkflowNodeState[];
+  /** Matched definition node's `output_format`; absent or ineligible schemas leave text untouched. */
+  outputFormat?: Record<string, unknown>;
   approval?: unknown;
   showToolCalls: boolean;
   showSystem: boolean;
@@ -120,6 +122,7 @@ export function ConsoleExecutionHistory({
   loadMessage = getNodeMessage,
   pendingInteractions,
   nodeStates = [],
+  outputFormat,
   approval,
   showToolCalls,
   showSystem,
@@ -208,6 +211,7 @@ export function ConsoleExecutionHistory({
     rows: visibleRows,
     events,
     nodeId: row.nodeId,
+    outputFormat,
     nowMs,
   });
   // A group stays in the display only when a row is visible under the Console

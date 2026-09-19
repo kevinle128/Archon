@@ -6658,6 +6658,7 @@ async function executeLoopNodeInner(
         );
         if (canReask) {
           reaskAttempt++;
+          iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
           reaskErrors = ['no JSON object was found in the response'];
           continue attempts;
         }
