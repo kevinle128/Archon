@@ -16,7 +16,12 @@ import {
   E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME,
   QUEUE_GUIDANCE_LOOP_NODE,
 } from '../lib/playwright/archon-runtime';
-import { getRunDetail, openLegacyRunDetail, openRunDetail } from '../lib/playwright/run-detail';
+import {
+  getRunDetail,
+  listNodeMessages,
+  openLegacyRunDetail,
+  openRunDetail,
+} from '../lib/playwright/run-detail';
 import { T } from '../lib/playwright/timeouts';
 
 /**
@@ -398,5 +403,93 @@ for (const surface of ['legacy', 'console'] as const) {
     } finally {
       requests.dispose();
     }
+  });
+
+  test(`[P1] [V:steer.finished-iteration-never-sent-${surface}] finished-iteration observer recovers after node failure on ${surface}`, async ({
+    page,
+    archon,
+  }) => {
+    test.setTimeout(T.xlong * 3);
+    const tag = randomUUID().replace(/-/g, '').slice(0, 12);
+    const queuedMessage = `finished-iter-never-sent-${surface}-${tag}`;
+
+    await page.setViewportSize(NARROW);
+    const run = await archon.startWorkflowViaWeb(
+      E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME,
+      `e2e finished-iter never-sent ${tag}`
+    );
+    await waitForLoopEvent(page, run.runId, 'loop_iteration_completed', 1);
+    await waitForLoopEvent(page, run.runId, 'loop_iteration_started', 2);
+
+    const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_LOOP_NODE);
+    await selectExecution(page, 2);
+    await expectSelectedIteration(page, 2);
+
+    const sent = page.waitForResponse(
+      response =>
+        response.request().method() === 'POST' &&
+        new URL(response.url()).pathname === sendPathname(run.runId, QUEUE_GUIDANCE_LOOP_NODE)
+    );
+    await guidanceField(room).fill(queuedMessage);
+    await guidanceField(room).press('Meta+Enter');
+    const response = await sent;
+    expect(response.status()).toBe(200);
+    const body = (await response.json()) as { message_id?: string };
+    expect(body.message_id).toMatch(/^[0-9a-f-]{36}$/);
+    const messageId = body.message_id as string;
+    await expect(room.getByText('queued · 1')).toBeVisible({ timeout: T.medium });
+
+    await selectExecution(page, 1);
+    const disclosure = 'reading a finished iteration · the agent is working in iteration 2';
+    const go = room.getByRole('button', { name: 'Go to iteration 2', exact: true });
+    await expect(room.getByText(disclosure, { exact: true })).toBeVisible({ timeout: T.medium });
+    await expect(queueList(room)).toContainText(queuedMessage);
+    await go.focus();
+
+    const abandon = await archon.starterFetch(
+      `/api/workflows/runs/${encodeURIComponent(run.runId)}/abandon`,
+      { method: 'POST', body: JSON.stringify({}) }
+    );
+    expect(abandon.status).toBe(200);
+    await archon.waitForRunStatus(run.runId, 'cancelled', T.long);
+
+    await expect
+      .poll(
+        async () => {
+          const detail = await getRunDetail(page, run.runId);
+          const hasEvent = detail.events.some(
+            event =>
+              event.event_type === 'node_failed' && event.step_name === QUEUE_GUIDANCE_LOOP_NODE
+          );
+          const failedExec = detail.nodeExecutions.some(
+            row => row.node_id === QUEUE_GUIDANCE_LOOP_NODE && row.status === 'failed'
+          );
+          return hasEvent && failedExec;
+        },
+        {
+          timeout: T.xlong,
+          message: 'persisted node_failed for steer-loop',
+        }
+      )
+      .toBe(true);
+
+    await expect(go).toHaveCount(0);
+    await expect(room.getByText(/^reading a finished iteration/)).toHaveCount(0);
+    const neverSent = room.getByRole('list', { name: /^Never sent/ });
+    await expect(neverSent).toBeVisible({ timeout: T.long });
+    await expect(neverSent).toHaveAttribute('aria-label', 'Never sent, 1');
+    await expect(neverSent.getByRole('listitem')).toHaveCount(1);
+    await expect(neverSent.getByRole('listitem').first()).toHaveAttribute(
+      'data-message-id',
+      messageId
+    );
+    await expect(neverSent.getByRole('listitem').first()).toHaveText(queuedMessage);
+    await expect(room.getByRole('alert')).toHaveText('node finished · none of this was sent');
+
+    const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_LOOP_NODE);
+    const operatorIds = messages
+      .filter(message => message.kind === 'text' && message.metadata?.origin === 'operator')
+      .map(message => message.metadata?.message_id);
+    expect(operatorIds).not.toContain(messageId);
   });
 }

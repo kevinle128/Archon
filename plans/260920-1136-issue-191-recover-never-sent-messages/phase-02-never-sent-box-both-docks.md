@@ -1,7 +1,7 @@
 ---
 phase: 2
 title: 'Phase 2: Read-only NEVER SENT box in both docks'
-status: pending
+status: done
 priority: P1
 effort: '6h'
 dependencies: [1]

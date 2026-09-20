@@ -120,16 +120,20 @@ const STEERING_NOT_STEERABLE_CODE = 'not_steerable_here';
 const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
 
 /**
- * Visibility/block precedence: a non-live run hides the dock entirely; a
- * nonempty never-sent result with explicit node-terminal evidence selects
- * finished (over finished-iteration and the terminal-row hide check); a
- * proven finished-iteration descriptor wins before the terminal-row hide
- * check so a completed occurrence on a still-live loop can surface the
- * read-only dock; otherwise a non-generating row hides the dock
- * (historical/cold executions must never issue a request); a real pending
+ * Visibility/block precedence: a nonempty never-sent result with explicit
+ * node-terminal evidence selects finished first (so Cancel that flips the run
+ * non-live after observation still surfaces recovery); otherwise a non-live
+ * run hides the dock entirely; a proven finished-iteration descriptor wins
+ * before the terminal-row hide check so a completed occurrence on a still-live
+ * loop can surface the read-only dock; otherwise a non-generating row hides the
+ * dock (historical/cold executions must never issue a request); a real pending
  * ask keeps its blocked reason even when a refusal is stored — no request
  * should have been made from that state; only then does a stored 422
  * `not_steerable_here` flip the dock to the detached disclosure.
+ *
+ * Reconcile still never *triggers* on `!live` alone — finished requires both
+ * nonempty neverSent and nodeTerminal. Cold opens of terminal runs stay hidden
+ * because they never observed a ledger.
  */
 export function steeringDockMode(input: {
   rowStatus: string;
@@ -140,7 +144,6 @@ export function steeringDockMode(input: {
   neverSent?: readonly NeverSentEntry[] | null;
   nodeTerminal?: boolean;
 }): SteeringDockMode {
-  if (!input.live) return 'hidden';
   if (
     input.nodeTerminal === true &&
     input.neverSent !== null &&
@@ -149,6 +152,7 @@ export function steeringDockMode(input: {
   ) {
     return 'finished';
   }
+  if (!input.live) return 'hidden';
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
     return 'finished-iteration';
   }

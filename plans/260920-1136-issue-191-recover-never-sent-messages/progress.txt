@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Finished mode over live:false after Cancel
+- **Where**: `steering-dock.ts` `steeringDockMode` + dock finished focus effect
+- **Pattern**: nonempty neverSent + nodeTerminal selects finished *before* live:false hide, so Cancel recovery survives run non-live. Entering finished re-hands focus to transcript if focus would be body.
+- **Example**: cancel while field focused → node_failed → Never sent box + focus last-row/scroller.
+
 ### Node-wide reconcile drain (separate from transcript pageState)
 - **Where**: `NodeTranscriptPane.tsx` / `ConsoleNodeRoom.tsx` reconcile effect
 - **Pattern**: When `nodeTerminal`, `drainNodeMessages({ selection: { kind:'node', rowId: executionKey } })` with no-op `onState`; publish `collectWrittenOperatorMessageIds` only if `complete && error===null`; retry 1s on incomplete/error; abort+clear written ids on run/node/key change or terminal false. Never feed into `pageState`.
@@ -208,5 +213,33 @@
 - complete empty pages need highWatermark/nextCursor (compatibility empty pages error).
 - After key change while terminal, draft-only never-sent can reappear via reconcile — T2.14 pattern: assert old receipt gone, then terminal false restores draft field.
 - External writtenOperatorMessageIds pane prop is ignored; drain owns the set passed to docks.
+
+---
+
+## 2026-09-20T09:36:08Z — US-007: Real-executor E2E, evidence, authority sync, tracker closeout
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/agent-never-sent.spec.ts` — E4.1–E4.5, E4.7–E4.8 both shells
+- `e2e/ui/agent-queue-guidance.spec.ts` — E4.6 natural-drain negative
+- `e2e/ui/agent-finished-iteration.spec.ts` — finished-iteration never-sent observer
+- `e2e/lib/playwright/run-detail.ts` — nodeExecutions.status pass-through
+- `packages/web/src/lib/steering-dock.ts` + docks — finished precedes live:false; finished focus handoff
+- AD-11 spine, walkthrough, steering-test-plan, key-steering-dock mockup
+- evidence under `reports/evidence/`, acceptance report, sprint-status 2-11 done
+
+**Acceptance criteria verified**:
+- [x] E4.1–E4.8 executable, no test.fixme
+- [x] Cancel two-milestone node_failed (not dag_node_failed)
+- [x] Observer/idle-queue/draft/finished-iter/focus/visual
+- [x] E4.6 natural delivery has no Never sent
+- [x] Authority sync after green behavior
+- [x] acceptance report AC1–AC6 map
+- [x] bun run validate zero; tracker done only after
+
+**Learnings**:
+- Cancel publishes run non-live before node_failed; finished must not require live:true once neverSent+nodeTerminal.
+- Idle-after-interrupt send returns state `awaiting_send_now`, not `queued`.
+- Legacy Execution select needs iteration events before room open for Iteration 2 option.
 
 ---

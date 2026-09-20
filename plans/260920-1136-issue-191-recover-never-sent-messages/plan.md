@@ -1,7 +1,7 @@
 ---
 title: 'Issue 191: recover messages that were never sent when the node ends'
 description: 'Implementation-ready plan for Story 2.11: reconcile observed steering receipts against post-terminal operator rows and render unmatched guidance as a read-only NEVER SENT box.'
-status: pending
+status: done
 priority: P1
 effort: '4 phases · ~26h'
 issue: 'https://github.com/kevinle128/Archon/issues/191'

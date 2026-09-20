@@ -1,7 +1,7 @@
 ---
 phase: 3
 title: 'Phase 3: Actual-terminal catch-up and node-wide transcript gate'
-status: pending
+status: done
 priority: P1
 effort: '10h'
 dependencies: [1, 2]

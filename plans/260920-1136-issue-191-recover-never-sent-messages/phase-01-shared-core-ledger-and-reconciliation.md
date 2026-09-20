@@ -1,7 +1,7 @@
 ---
 phase: 1
 title: 'Phase 1: Shared core — observed ledger, reconciliation, finished mode'
-status: pending
+status: done
 priority: P1
 effort: '4h'
 dependencies: []

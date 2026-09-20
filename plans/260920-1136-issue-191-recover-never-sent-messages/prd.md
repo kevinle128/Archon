@@ -79,12 +79,12 @@ UX authority: dock width 460 px; Console host also checked at 1440 px; band ≤ 
 
 ## Story overview
 
-| Story | Title | Phase | Tests | Depends on |
-| ----- | ----- | ----- | ----- | ---------- |
-| US-001 | Shared core: observed ledger, reconciliation, finished mode | 1 | T1.1–T1.22 | — |
-| US-002 | Read-only NEVER SENT box in both docks | 2 | T2.1–T2.18 | US-001 |
-| US-003 | Server projection: scoped purged/answered Ask closure | 3A | T3.1–T3.4 | US-002 |
-| US-004 | Raw-history helpers + terminal catch-up in both parents | 3B/3C | T3.5–T3.14 | US-003 |
-| US-005 | Node-terminal derivation, pass-through, dock rekey | 3D | T3.15–T3.17 | US-004 |
-| US-006 | Node-wide reconciliation drain in both panes | 3E | T3.18–T3.26 | US-005 |
-| US-007 | Real-executor E2E, evidence, authority sync, tracker closeout | 4 | E4.1–E4.8 | US-006 |
+| Story  | Title                                                         | Phase | Tests       | Depends on |
+| ------ | ------------------------------------------------------------- | ----- | ----------- | ---------- |
+| US-001 | Shared core: observed ledger, reconciliation, finished mode   | 1     | T1.1–T1.22  | —          |
+| US-002 | Read-only NEVER SENT box in both docks                        | 2     | T2.1–T2.18  | US-001     |
+| US-003 | Server projection: scoped purged/answered Ask closure         | 3A    | T3.1–T3.4   | US-002     |
+| US-004 | Raw-history helpers + terminal catch-up in both parents       | 3B/3C | T3.5–T3.14  | US-003     |
+| US-005 | Node-terminal derivation, pass-through, dock rekey            | 3D    | T3.15–T3.17 | US-004     |
+| US-006 | Node-wide reconciliation drain in both panes                  | 3E    | T3.18–T3.26 | US-005     |
+| US-007 | Real-executor E2E, evidence, authority sync, tracker closeout | 4     | E4.1–E4.8   | US-006     |

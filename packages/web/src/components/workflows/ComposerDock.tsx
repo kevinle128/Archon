@@ -469,6 +469,22 @@ export function ComposerDock({
     if (mode === 'detached') detachedAlertRef.current?.focus();
   }, [mode]);
 
+  // Cancel can hide the dock (live→false) before neverSent is ready, then
+  // re-enter finished. The composer→hidden handoff may miss; ensure finished
+  // never leaves keyboard focus on <body>.
+  useEffect(() => {
+    if (mode !== 'finished') return;
+    const active = document.activeElement;
+    if (
+      active === null ||
+      active === document.body ||
+      !document.contains(active) ||
+      focusInsideRef.current
+    ) {
+      focusLastRowRef.current?.();
+    }
+  }, [mode]);
+
   // Parent-owned consume-once autofocus after Go-driven selection remount.
   useEffect(() => {
     if (autoFocusTarget === null || autoFocusTarget === undefined) return;

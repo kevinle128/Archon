@@ -1,5 +1,5 @@
 ---
-title: "Plan issue 191: recover never-sent steering messages"
+title: 'Plan issue 191: recover never-sent steering messages'
 date: 2026-09-20
 summary: Deep TDD plan for Story 2.11 terminal reconciliation in both node-room shells
 ---
@@ -22,7 +22,7 @@ schema, or API change.
   (`discardRunSteeringHandles`), but the executor writes `node_failed` up to
   10 s later (`CANCEL_CHECK_INTERVAL_MS`) and the web run query stops polling
   the moment it sees `cancelled` — so the browser may never observe the node
-  terminal *event*. The plan keys reconciliation on the settled terminal row
+  terminal _event_. The plan keys reconciliation on the settled terminal row
   status (or non-live run) plus one transcript drain started after that
   observation, and records this as an AD-11 clarification.
 - `NodeSteeringHandle.drain()` empties the queue before the operator row is

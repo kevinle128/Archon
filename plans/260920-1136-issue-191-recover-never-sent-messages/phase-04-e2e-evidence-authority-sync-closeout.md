@@ -1,7 +1,7 @@
 ---
 phase: 4
 title: 'Phase 4: Real-executor E2E, evidence, authority sync, closeout'
-status: pending
+status: done
 priority: P1
 effort: '6h'
 dependencies: [3]

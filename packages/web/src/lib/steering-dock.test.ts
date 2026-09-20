@@ -1768,7 +1768,12 @@ describe('observed ledger and never-sent reconciliation (T1.1–T1.22)', () => {
     ).toBe('finished');
     expect(modeFor('running', { neverSent, nodeTerminal: false })).toBe('composer');
     expect(modeFor('completed', { neverSent, nodeTerminal: false })).toBe('hidden');
-    expect(modeFor('running', { live: false, neverSent, nodeTerminal: true })).toBe('hidden');
+    // Cancel flips the run non-live before/after nodeTerminal; finished still
+    // wins when both neverSent and nodeTerminal are present (E4.1 Cancel path).
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
+    expect(modeFor('completed', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
+    // live:false alone still hides — no finished without neverSent+nodeTerminal.
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: false })).toBe('hidden');
   });
 
   test('T1.19 empty/unreconciled result preserves old table', () => {

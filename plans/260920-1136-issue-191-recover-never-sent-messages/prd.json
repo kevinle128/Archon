@@ -145,8 +145,8 @@
       "technicalNotes": "Implement phase-04-e2e-evidence-authority-sync-closeout.md exactly. Reuse confirmed infrastructure: e2e/lib/playwright/archon-runtime.ts (startWorkflowViaWeb, starterFetch, waitForRunStatus, getRunDetail, listNodeMessages, Console/Legacy navigation), fixtures e2e-queue-guidance.yaml (interruptible turn delayMs: 30000) and e2e-queue-guidance-loop.yaml (two loop occurrences, 25 s live iteration), abandon via POST /api/workflows/runs/{runId}/abandon. Keep request-id tracking and room/visual helpers local to the spec \u2014 no two-caller abstraction. No new fixture unless confirmed ones provably cannot hold a transition (record evidence if so). On E2E failure retain trace/screenshot output; never weaken the terminal-event assertion or widen timeouts without a measured healthy baseline; never reintroduce !live reconciliation.",
       "dependsOn": ["US-006"],
       "priority": 7,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 7. Files: agent-never-sent.spec.ts (E4.1\u2013E4.5,E4.7\u2013E4.8), agent-queue-guidance E4.6, agent-finished-iteration E4.5 extension, run-detail status field, steeringDockMode finished-over-live + finished focus handoff, AD-11/walkthrough/test-plan/mockup, evidence + acceptance report, tracker done. bun run validate green."
     }
   ]
 }

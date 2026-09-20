@@ -2035,6 +2035,8 @@ describe('ComposerDock', () => {
     expect(neverSentList()).toBeNull();
     expect(host.querySelector('textarea')).not.toBeNull();
 
+    // Cancel: run goes non-live while nodeTerminal is true. Observed receipts
+    // still reconcile into finished — live:false alone must not hide recovery.
     await renderDock({
       readQueue: ctrl.read,
       nodeExecutionKey: 'exec-1',
@@ -2043,8 +2045,8 @@ describe('ComposerDock', () => {
       writtenOperatorMessageIds: new Set(),
       pollIntervalMs: 60_000,
     });
-    expect(host.textContent ?? '').toBe('');
-    expect(neverSentList()).toBeNull();
+    expect(neverSentList()).not.toBeNull();
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
 
     await renderDock({
       readQueue: ctrl.read,
