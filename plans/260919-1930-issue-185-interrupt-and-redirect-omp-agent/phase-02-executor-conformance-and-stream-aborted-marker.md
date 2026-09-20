@@ -15,9 +15,9 @@ Add OMP's deterministic graceful-interrupt marker to the existing five-case clas
 
 ## Files
 
-| File | Change |
-| --- | --- |
-| `packages/workflows/src/dag-executor.ts` | import shared marker, extend marker set/comment |
+| File                                          | Change                                             |
+| --------------------------------------------- | -------------------------------------------------- |
+| `packages/workflows/src/dag-executor.ts`      | import shared marker, extend marker set/comment    |
 | `packages/workflows/src/dag-executor.test.ts` | OMP-shaped direct and AI-loop conformance fixtures |
 
 No server, route, registry, persistence, or UI production file changes are expected. Stop and reassess the plan if implementation requires one.
@@ -36,19 +36,19 @@ The #183 test helper currently accepts only `claude | pi` and special-cases Pi c
 
 Use OMP-shaped async generators that react to the supplied per-turn `interruptSignal`.
 
-| Scenario | Path | Required evidence |
-| --- | --- | --- |
-| marked result after Stop | direct | idle reached; node still running; open tool settles `interrupted` once; one interrupted status; no `node_failed`; `Send now` drains old then new messages; second call uses the same session id and completes |
-| marked result after Stop | AI loop | current iteration idles; no iteration/completion check is consumed before redirect; second call uses the same session id; loop then completes normally |
-| marked result lacks first-turn session | direct and AI loop | each path's explicit “no session id to resume” failure fires; no fresh session or silent guidance loss |
-| marked result has `isError: true` | direct | marker plus operator flag wins and idles, preserving the established case-2 rule |
-| marked result without operator flag | direct | natural result path; no idle and no interrupted status |
-| force-kill/unmarked provider error with operator flag | direct | existing error path fails the node; the flag alone cannot convert failure to interrupt |
-| natural result races Stop | direct | natural completion/queued auto-drain behavior remains unchanged |
-| thrown `Query aborted` after an earlier result supplied a session | direct | case 3 idles and resumes that known id; no `node_failed` |
-| thrown `Query aborted` with no known session | direct | interrupt classification occurs but the existing explicit session safety check fails |
-| redirected result reports `resumed: false` and a new observed id | direct | existing cold-resume warning is recorded; executor uses the observed id and remains governed by current compatibility behavior |
-| OMP capability pin | direct | mock provider receives a defined interrupt signal and the projected sub-state is `generating` |
+| Scenario                                                          | Path               | Required evidence                                                                                                                                                                                             |
+| ----------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| marked result after Stop                                          | direct             | idle reached; node still running; open tool settles `interrupted` once; one interrupted status; no `node_failed`; `Send now` drains old then new messages; second call uses the same session id and completes |
+| marked result after Stop                                          | AI loop            | current iteration idles; no iteration/completion check is consumed before redirect; second call uses the same session id; loop then completes normally                                                        |
+| marked result lacks first-turn session                            | direct and AI loop | each path's explicit “no session id to resume” failure fires; no fresh session or silent guidance loss                                                                                                        |
+| marked result has `isError: true`                                 | direct             | marker plus operator flag wins and idles, preserving the established case-2 rule                                                                                                                              |
+| marked result without operator flag                               | direct             | natural result path; no idle and no interrupted status                                                                                                                                                        |
+| force-kill/unmarked provider error with operator flag             | direct             | existing error path fails the node; the flag alone cannot convert failure to interrupt                                                                                                                        |
+| natural result races Stop                                         | direct             | natural completion/queued auto-drain behavior remains unchanged                                                                                                                                               |
+| thrown `Query aborted` after an earlier result supplied a session | direct             | case 3 idles and resumes that known id; no `node_failed`                                                                                                                                                      |
+| thrown `Query aborted` with no known session                      | direct             | interrupt classification occurs but the existing explicit session safety check fails                                                                                                                          |
+| redirected result reports `resumed: false` and a new observed id  | direct             | existing cold-resume warning is recorded; executor uses the observed id and remains governed by current compatibility behavior                                                                                |
+| OMP capability pin                                                | direct             | mock provider receives a defined interrupt signal and the projected sub-state is `generating`                                                                                                                 |
 
 Also assert the terminal marked result carries no `structuredOutput` into output validation and that usage/model captured before classification remains accounted once; these are shared-contract regressions already covered for Claude but must be pinned for the OMP-shaped result.
 

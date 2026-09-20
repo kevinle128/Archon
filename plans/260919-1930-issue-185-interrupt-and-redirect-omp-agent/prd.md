@@ -76,13 +76,13 @@ The plan review's focused test run failed on `@archon/paths` module resolution �
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-| --- | --- | --- | --- |
-| US-001 | Baseline + OMP interrupt spike harness and raw characterization | 1 | — |
-| US-002 | Provider/parser stream-abort seam (TDD) | 1 | US-001 |
-| US-003 | Real-binary conformance gate, report, capability flip | 1 | US-002 |
-| US-004 | Executor `stream_aborted` marker + OMP conformance tests | 2 | US-003 |
-| US-005 | Contract/docs sync, matrix regeneration, sprint closeout | 3 | US-004 |
+| ID     | Title                                                           | Phase | Depends on |
+| ------ | --------------------------------------------------------------- | ----- | ---------- |
+| US-001 | Baseline + OMP interrupt spike harness and raw characterization | 1     | —          |
+| US-002 | Provider/parser stream-abort seam (TDD)                         | 1     | US-001     |
+| US-003 | Real-binary conformance gate, report, capability flip           | 1     | US-002     |
+| US-004 | Executor `stream_aborted` marker + OMP conformance tests        | 2     | US-003     |
+| US-005 | Contract/docs sync, matrix regeneration, sprint closeout        | 3     | US-004     |
 
 ## Hard rules carried from the plan
 

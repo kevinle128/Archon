@@ -505,6 +505,9 @@ export class OmpProvider implements IAgentProvider {
         clearKillTimer();
         clearHeaderWait();
         pendingInterrupt = false;
+        // A non-zero child exit is a real provider failure.  Record it before
+        // a later Stop listener can claim the already-dead process as its own.
+        if (exitCode !== 0) recordCause('transport');
         return { ok: true, value: exitCode };
       },
       (error: unknown) => {

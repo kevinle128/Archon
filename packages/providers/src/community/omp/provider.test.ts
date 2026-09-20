@@ -1129,6 +1129,30 @@ describe('OmpProvider interrupt / stream-abort seam', () => {
     expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
   });
 
+  test('a non-zero process exit that wins before Stop remains an unmarked failure', async () => {
+    const interrupt = new AbortController();
+    const proc = makeControllableProcess({ exitOn: 'manual' });
+    const run = collect(new OmpProvider({ spawn: makeSpawner(proc, []) }), undefined, {
+      interruptSignal: interrupt.signal,
+    });
+    await waitFor(() => proc.stdout?.locked === true);
+    proc.pushStdout?.(`${JSON.stringify({ type: 'session', id: 'exit-first' })}\n`);
+    proc.closeStdout?.();
+    proc.resolveExit?.(1);
+    await waitFor(() => proc.signals.length === 0);
+    interrupt.abort();
+
+    const chunks = await run;
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'result',
+      sessionId: 'exit-first',
+      isError: true,
+      errorSubtype: 'omp_exit_nonzero',
+    });
+    expect(chunks.at(-1)).not.toHaveProperty('terminalReason');
+    expect(proc.signals).toEqual([]);
+  });
+
   test('agent_end then Stop before process close remains normal unmarked result', async () => {
     const interrupt = new AbortController();
     const proc = makeControllableProcess({ exitOn: 'manual' });

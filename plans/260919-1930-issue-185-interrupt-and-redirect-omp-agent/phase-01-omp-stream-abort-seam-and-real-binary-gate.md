@@ -17,18 +17,18 @@ Phase 2 is blocked until the real-binary gate passes for the version/platform pa
 
 ## Files
 
-| File | Change |
-| --- | --- |
-| `packages/providers/src/community/omp/capabilities.ts` | advertise `'stream-abort'` after the gate passes |
-| `packages/providers/src/community/omp/provider.ts` | pending-header interrupt, termination ownership/escalation, result normalization, truthful resume outcome |
-| `packages/providers/src/community/omp/event-parser.ts` | natural-end query, interrupt mode, pending-text drain, interrupted result |
-| `packages/providers/src/community/omp/provider.test.ts` | termination races, resume semantics, enrichment, cleanup |
-| `packages/providers/src/community/omp/event-parser.test.ts` | parser interrupt behavior and result field boundary |
-| `packages/providers/src/registry.test.ts` | capability pin |
-| `packages/providers/src/types.ts` | shared marker and accurate public docs |
-| `packages/providers/src/community/omp/interrupt-resume-spike.ts` | versioned diagnostic; not exported |
-| `packages/providers/package.json` | `spike:interrupt:omp` script |
-| `plans/reports/omp-interrupt-resume-spike.md` | sanitized gate evidence |
+| File                                                             | Change                                                                                                    |
+| ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `packages/providers/src/community/omp/capabilities.ts`           | advertise `'stream-abort'` after the gate passes                                                          |
+| `packages/providers/src/community/omp/provider.ts`               | pending-header interrupt, termination ownership/escalation, result normalization, truthful resume outcome |
+| `packages/providers/src/community/omp/event-parser.ts`           | natural-end query, interrupt mode, pending-text drain, interrupted result                                 |
+| `packages/providers/src/community/omp/provider.test.ts`          | termination races, resume semantics, enrichment, cleanup                                                  |
+| `packages/providers/src/community/omp/event-parser.test.ts`      | parser interrupt behavior and result field boundary                                                       |
+| `packages/providers/src/registry.test.ts`                        | capability pin                                                                                            |
+| `packages/providers/src/types.ts`                                | shared marker and accurate public docs                                                                    |
+| `packages/providers/src/community/omp/interrupt-resume-spike.ts` | versioned diagnostic; not exported                                                                        |
+| `packages/providers/package.json`                                | `spike:interrupt:omp` script                                                                              |
+| `plans/reports/omp-interrupt-resume-spike.md`                    | sanitized gate evidence                                                                                   |
 
 ## Prerequisite baseline
 

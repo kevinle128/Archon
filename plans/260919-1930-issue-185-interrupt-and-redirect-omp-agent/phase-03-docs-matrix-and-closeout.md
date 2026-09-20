@@ -15,13 +15,13 @@ Make the canonical engine/test contract, public OMP documentation, generated cap
 
 ## Files
 
-| File | Change |
-| --- | --- |
-| `_bmad-output/specs/spec-agent-node-room/engine-integration.md` | replace OMP's obsolete throw-only description with normalized marked-result behavior |
-| `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` | update OMP conformance fixture while retaining defensive thrown-abort coverage |
-| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` | concise OMP Stop/resume/failure-boundary note |
-| `packages/docs-web/src/content/docs/reference/provider-capabilities.md` | regenerate; do not hand-edit |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | `backlog` to `done` only at final closeout |
+| File                                                                       | Change                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `_bmad-output/specs/spec-agent-node-room/engine-integration.md`            | replace OMP's obsolete throw-only description with normalized marked-result behavior |
+| `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md`            | update OMP conformance fixture while retaining defensive thrown-abort coverage       |
+| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md`      | concise OMP Stop/resume/failure-boundary note                                        |
+| `packages/docs-web/src/content/docs/reference/provider-capabilities.md`    | regenerate; do not hand-edit                                                         |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | `backlog` to `done` only at final closeout                                           |
 
 Do not edit the historical files below `_bmad-output/specs/spec-agent-node-room/sources/`, the high-level provider matrix (its `stream-abort` statement is already correct), or UI files.
 

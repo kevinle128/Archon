@@ -121,11 +121,11 @@ The existing provider-neutral UI must remain unchanged at both its normal deskto
 
 ## Phases
 
-| # | Phase | Depends on |
-| --- | --- | --- |
-| 1 | [OMP graceful stream-abort seam and real-binary gate](./phase-01-omp-stream-abort-seam-and-real-binary-gate.md) | — |
-| 2 | [Executor conformance and `stream_aborted`](./phase-02-executor-conformance-and-stream-aborted-marker.md) | 1 |
-| 3 | [Contract/docs synchronization and closeout](./phase-03-docs-matrix-and-closeout.md) | 1–2 |
+| #   | Phase                                                                                                           | Depends on |
+| --- | --------------------------------------------------------------------------------------------------------------- | ---------- |
+| 1   | [OMP graceful stream-abort seam and real-binary gate](./phase-01-omp-stream-abort-seam-and-real-binary-gate.md) | —          |
+| 2   | [Executor conformance and `stream_aborted`](./phase-02-executor-conformance-and-stream-aborted-marker.md)       | 1          |
+| 3   | [Contract/docs synchronization and closeout](./phase-03-docs-matrix-and-closeout.md)                            | 1–2        |
 
 ## Measurable acceptance criteria
 

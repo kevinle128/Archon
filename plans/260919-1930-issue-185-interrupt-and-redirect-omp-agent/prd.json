@@ -64,7 +64,7 @@
       "dependsOn": ["US-002"],
       "priority": 3,
       "passes": false,
-      "notes": "BLOCKED iteration 3: darwin/18.1.21 OmpProvider conformance PASS (assistant+tool; signal-to-return 14-38ms; stream_aborted; same-id resume+context; no descendants). Report updated. Capability NOT flipped — linux/win32 uncharacterized and no owner-scoped platform decision on record. Files: interrupt-resume-spike.ts, plans/reports/omp-interrupt-resume-spike.md. interrupt remains false."
+      "notes": "BLOCKED review rerun: darwin/arm64 omp/18.1.21 raw assistant+tool and active-tool conformance passed, but a fresh assistant interruption emitted stream_aborted without a resumable same-id session (resume did not reach agent_end or prove context). The previous seeded conformance did not prove the interrupted first turn. Linux/win32 remain uncharacterized. Files: interrupt-resume-spike.ts, plans/reports/omp-interrupt-resume-spike.md. interrupt remains false."
     },
     {
       "id": "US-004",

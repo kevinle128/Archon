@@ -83,6 +83,8 @@ interface RawCaseEvidence {
   /** Whether any usage-bearing message_end was observed (presence only). */
   sawUsageAfterSignal: boolean;
   ownedPids: OwnedPidRecord[];
+  /** Active-tool runs must identify a PID distinct from the OMP process. */
+  toolDescendantPidDistinct: boolean | null;
   /** True when every tracked owned PID is dead after the run returns. */
   noOwnedDescendantAlive: boolean;
   failureCategory: FailureCategory;
@@ -104,6 +106,8 @@ interface ConformanceCaseEvidence {
   /** True when provider kill path used SIGTERM only (no SIGKILL). */
   gracefulSigterm: boolean | null;
   sigkillFired: boolean | null;
+  /** Active-tool runs must identify a PID distinct from the OMP process. */
+  toolDescendantPidDistinct: boolean | null;
   noOwnedDescendantAlive: boolean | null;
   /** Resume leg: observed id hash equals interrupted id hash. */
   resumeSameId: boolean | null;
@@ -247,6 +251,7 @@ function emptyRawCase(kind: CaseKind): RawCaseEvidence {
     sawAgentEndAfterSignal: false,
     sawUsageAfterSignal: false,
     ownedPids: [],
+    toolDescendantPidDistinct: null,
     noOwnedDescendantAlive: true,
     failureCategory: null,
     errorCode: null,
@@ -330,14 +335,10 @@ function isAssistantTextDelta(line: string): boolean {
   return (evt as Record<string, unknown>).type === 'text_delta';
 }
 
-function assistantPrompt(): string {
+function assistantPrompt(contextToken?: string): string {
   // Long-form generation so SIGTERM can land mid-stream after the first delta.
-  return 'Count from 1 to 200, one number per line, with no other commentary.';
-}
-
-/** Short completed turn so OMP flushes a resumable session before mid-text Stop. */
-function assistantSeedPrompt(token: string): string {
-  return `Remember the single code token ${token}. Reply with exactly the single token OK and nothing else.`;
+  const context = contextToken ? `Remember the code token ${contextToken}. ` : '';
+  return `${context}Count from 1 to 200, one number per line, with no other commentary.`;
 }
 
 function isToolExecutionStart(line: string): boolean {
@@ -368,12 +369,14 @@ function buildSpawnArgs(cwd: string, prompt: string, resumeSessionId?: string): 
   return args;
 }
 
-function toolPrompt(pidFileName: string, marker: string): string {
+function toolPrompt(pidFileName: string, marker: string, contextToken?: string): string {
   // Unique marker in the command so we never match unrelated processes.
-  // The shell writes its own PID then sleeps; interrupt while active.
+  // A nested shell writes its PID while the outer shell waits, proving a
+  // separately-owned tool descendant rather than re-recording the OMP PID.
+  const context = contextToken ? `Remember the code token ${contextToken}. ` : '';
   return (
-    'Run exactly one shell command and nothing else: ' +
-    `echo $$ > ${pidFileName} && echo ${marker} && sleep ${String(TOOL_SLEEP_SECONDS)}. ` +
+    `${context}Run exactly one shell command and nothing else: ` +
+    `sh -c 'echo "$$" > ${pidFileName}; echo ${marker}; sleep ${String(TOOL_SLEEP_SECONDS)}' & wait. ` +
     'Do not read files. Do not edit files. Do not run any other command.'
   );
 }
@@ -436,11 +439,7 @@ async function waitForExitOrGrace(
   return exitCode;
 }
 
-async function reapOwned(
-  handle: SpikeChildProcess,
-  extraPids: number[],
-  graceMs: number
-): Promise<ReapResult> {
+async function reapOwned(handle: SpikeChildProcess, graceMs: number): Promise<ReapResult> {
   const signalAt = Date.now();
   let sigkillFired = false;
 
@@ -459,26 +458,24 @@ async function reapOwned(
     } catch {
       // gone
     }
-    for (const pid of extraPids) {
-      if (isPidAlive(pid)) tryKill(pid, 'SIGKILL');
-    }
     exitCode = await waitForExitOrGrace(handle.exited, 2_000);
   }
 
   if (isPidAlive(handle.pid)) {
     if (tryKill(handle.pid, 'SIGKILL')) sigkillFired = true;
   }
-  for (const pid of extraPids) {
-    if (isPidAlive(pid) && tryKill(pid, 'SIGKILL')) sigkillFired = true;
-  }
-
-  await sleep(PROCESS_POLL_MS * 4);
-
   return {
     sigkillFired,
     exitCode,
     sigtermToExitMs: exitCode !== null || !isPidAlive(handle.pid) ? Date.now() - signalAt : null,
   };
+}
+
+function cleanupOwnedPids(ompPid: number, toolPid: number | null): void {
+  if (isPidAlive(ompPid)) tryKill(ompPid, 'SIGKILL');
+  if (toolPid !== null && toolPid !== ompPid && isPidAlive(toolPid)) {
+    tryKill(toolPid, 'SIGKILL');
+  }
 }
 
 function buildOwnedRecords(ompPid: number, toolPid: number | null): OwnedPidRecord[] {
@@ -518,7 +515,6 @@ async function waitForToolPid(pidFilePath: string, budgetMs: number): Promise<nu
 
 async function escalateAfterSignal(
   handle: SpikeChildProcess,
-  extraPids: number[],
   signalAt: number
 ): Promise<ReapResult> {
   let settled = false;
@@ -538,9 +534,6 @@ async function escalateAfterSignal(
     } catch {
       // gone
     }
-    for (const pid of extraPids) {
-      tryKill(pid, 'SIGKILL');
-    }
   }, TERMINATION_GRACE_MS);
 
   const graceGate = Promise.withResolvers<null>();
@@ -555,10 +548,6 @@ async function escalateAfterSignal(
   }
 
   if (isPidAlive(handle.pid) && tryKill(handle.pid, 'SIGKILL')) sigkillFired = true;
-  for (const pid of extraPids) {
-    if (isPidAlive(pid) && tryKill(pid, 'SIGKILL')) sigkillFired = true;
-  }
-  await sleep(PROCESS_POLL_MS * 4);
 
   return {
     sigkillFired,
@@ -585,7 +574,6 @@ async function runRawCase(input: {
   let signaled = false;
   let signalAt: number | null = null;
   let toolPid: number | null = null;
-  const extraPids: number[] = [];
 
   // Drain stderr so the pipe cannot block; never record content.
   const stderrDrain: Promise<void> = (async (): Promise<void> => {
@@ -623,7 +611,6 @@ async function runRawCase(input: {
           // Tool case: give the child a moment to write its PID file after start.
           if (input.kind === 'active-tool') {
             toolPid = await waitForToolPid(pidFilePath, 1_500);
-            if (toolPid !== null) extraPids.push(toolPid);
           }
           signaled = true;
           signalAt = Date.now();
@@ -655,13 +642,13 @@ async function runRawCase(input: {
 
   let reap: ReapResult;
   if (signaled && signalAt !== null) {
-    reap = await escalateAfterSignal(handle, extraPids, signalAt);
+    reap = await escalateAfterSignal(handle, signalAt);
   } else {
     if (evidence.triggerEvent === 'none') {
       evidence.errorCode = evidence.errorCode ?? 'trigger_never_observed';
       evidence.failureCategory = evidence.failureCategory ?? 'runtime-error';
     }
-    reap = await reapOwned(handle, extraPids, TERMINATION_GRACE_MS);
+    reap = await reapOwned(handle, TERMINATION_GRACE_MS);
   }
 
   if (toolPid === null) toolPid = readToolPid(pidFilePath);
@@ -671,7 +658,15 @@ async function runRawCase(input: {
   evidence.exitCode = reap.exitCode;
   evidence.sigtermToExitMs = reap.sigtermToExitMs;
   evidence.ownedPids = buildOwnedRecords(handle.pid, toolPid);
-  evidence.noOwnedDescendantAlive = evidence.ownedPids.every(p => !p.aliveAfterProviderReturn);
+  evidence.toolDescendantPidDistinct =
+    input.kind === 'active-tool' ? toolPid !== null && toolPid !== handle.pid : null;
+  evidence.noOwnedDescendantAlive =
+    evidence.ownedPids.every(p => !p.aliveAfterProviderReturn) &&
+    (input.kind !== 'active-tool' || evidence.toolDescendantPidDistinct === true);
+  // Evidence is measured before this final owned-PID cleanup. Never make an
+  // orphan disappear first and then report that none survived the interrupt.
+  cleanupOwnedPids(handle.pid, toolPid);
+  await sleep(PROCESS_POLL_MS * 4);
   return evidence;
 }
 
@@ -697,6 +692,7 @@ function emptyConformance(kind: CaseKind): ConformanceCaseEvidence {
     sessionWasFirst: null,
     gracefulSigterm: null,
     sigkillFired: null,
+    toolDescendantPidDistinct: null,
     noOwnedDescendantAlive: null,
     resumeSameId: null,
     resumeReachedAgentEnd: null,
@@ -719,11 +715,11 @@ function skippedConformance(kind: CaseKind, reason: string): ConformanceCaseEvid
   };
 }
 
-function resumeChallengePrompt(kind: CaseKind, seedToken?: string): string {
-  if (seedToken) {
+function resumeChallengePrompt(kind: CaseKind, contextToken?: string): string {
+  if (contextToken) {
     return (
       'Reply with exactly the single token YES if you were told to remember the code token ' +
-      `${seedToken}, otherwise reply with exactly NO. No other words.`
+      `${contextToken}, otherwise reply with exactly NO. No other words.`
     );
   }
   if (kind === 'assistant-text') {
@@ -770,7 +766,7 @@ async function runResumeChallenge(input: {
   cwd: string;
   env: Record<string, string>;
   sessionId: string;
-  seedToken?: string;
+  contextToken?: string;
 }): Promise<{
   sameId: boolean;
   reachedAgentEnd: boolean;
@@ -790,7 +786,7 @@ async function runResumeChallenge(input: {
     let failureCategory: FailureCategory = null;
     try {
       for await (const chunk of provider.sendQuery(
-        resumeChallengePrompt(input.kind, input.seedToken),
+        resumeChallengePrompt(input.kind, input.contextToken),
         input.cwd,
         input.sessionId,
         {
@@ -834,44 +830,6 @@ async function runResumeChallenge(input: {
 }
 
 /**
- * OMP does not flush a session file when SIGTERM lands mid-first-assistant-message
- * on a brand-new session (session id is emitted, but --resume cannot find it).
- * Seed one short completed turn first so the interrupted generation rides a
- * real on-disk session — matching multi-turn production nodes.
- */
-async function seedAssistantSession(input: {
-  cwd: string;
-  env: Record<string, string>;
-  seedToken: string;
-}): Promise<{ sessionId: string | null; failureCategory: FailureCategory }> {
-  const provider = new OmpProvider();
-  let sessionId: string | null = null;
-  try {
-    for await (const chunk of provider.sendQuery(
-      assistantSeedPrompt(input.seedToken),
-      input.cwd,
-      undefined,
-      {
-        env: input.env,
-      }
-    )) {
-      if (
-        chunk.type === 'result' &&
-        'sessionId' in chunk &&
-        typeof chunk.sessionId === 'string' &&
-        chunk.sessionId.length > 0 &&
-        chunk.isError !== true
-      ) {
-        sessionId = chunk.sessionId;
-      }
-    }
-  } catch (error: unknown) {
-    return { sessionId: null, failureCategory: classifyFailure(error) };
-  }
-  return { sessionId, failureCategory: null };
-}
-
-/**
  * Provider conformance through the real OmpProvider interruptSignal path.
  * Spike-only teeing spawner records event types and trigger timing without
  * changing production parsing.
@@ -893,33 +851,15 @@ async function runProviderConformanceCase(input: {
   const marker = `${TOOL_PID_MARKER_PREFIX}${randomUUID().replaceAll('-', '').slice(0, 12)}`;
   const pidFileName = `${marker}.pid`;
   const pidFilePath = join(input.cwd, pidFileName);
+  const contextToken = `T${randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase()}`;
   const prompt =
-    input.kind === 'assistant-text' ? assistantPrompt() : toolPrompt(pidFileName, marker);
+    input.kind === 'assistant-text'
+      ? assistantPrompt(contextToken)
+      : toolPrompt(pidFileName, marker, contextToken);
   const providerEnv = {
     ...input.env,
     OMP_BIN_PATH: input.binaryPath,
   };
-
-  // Seed a flushed session first. OMP emits a session id on a brand-new
-  // mid-text SIGTERM but does not write the session file, so --resume fails.
-  // A one-turn seed matches multi-turn production nodes and gives a stable
-  // boolean context token for the post-interrupt resume challenge.
-  let resumeSessionId: string | undefined;
-  const seedToken = `T${randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase()}`;
-  {
-    const seeded = await seedAssistantSession({
-      cwd: input.cwd,
-      env: providerEnv,
-      seedToken,
-    });
-    if (seeded.failureCategory) evidence.failureCategory = seeded.failureCategory;
-    if (!seeded.sessionId) {
-      evidence.failReasons = ['seed_session_failed'];
-      evidence.pass = false;
-      return evidence;
-    }
-    resumeSessionId = seeded.sessionId;
-  }
 
   const interrupt = new AbortController();
   const recordedEventTypes: string[] = [];
@@ -1020,7 +960,7 @@ async function runProviderConformanceCase(input: {
   let providerError: unknown = null;
 
   try {
-    for await (const chunk of provider.sendQuery(prompt, input.cwd, resumeSessionId, {
+    for await (const chunk of provider.sendQuery(prompt, input.cwd, undefined, {
       env: providerEnv,
       interruptSignal: interrupt.signal,
     })) {
@@ -1035,13 +975,6 @@ async function runProviderConformanceCase(input: {
   await Promise.all(teeDrainTasks.map(task => task.catch(() => undefined)));
 
   if (toolPid === null) toolPid = readToolPid(pidFilePath);
-  if (ompPid !== null) {
-    // Final safety reap of owned PIDs only — never broad pkill.
-    if (isPidAlive(ompPid)) tryKill(ompPid, 'SIGKILL');
-    if (toolPid !== null && isPidAlive(toolPid)) tryKill(toolPid, 'SIGKILL');
-    await sleep(PROCESS_POLL_MS * 4);
-  }
-
   const result = [...chunks].reverse().find(chunk => chunk.type === 'result');
   const resultSessionId =
     result && 'sessionId' in result && typeof result.sessionId === 'string'
@@ -1064,17 +997,27 @@ async function runProviderConformanceCase(input: {
   evidence.sigkillFired = killSignals.includes('SIGKILL');
   evidence.gracefulSigterm = killSignals.includes('SIGTERM') && !killSignals.includes('SIGKILL');
   evidence.ownedPids = ompPid !== null ? buildOwnedRecords(ompPid, toolPid) : [];
+  evidence.toolDescendantPidDistinct =
+    input.kind === 'active-tool' ? ompPid !== null && toolPid !== null && toolPid !== ompPid : null;
   evidence.noOwnedDescendantAlive =
-    evidence.ownedPids.length > 0 && evidence.ownedPids.every(p => !p.aliveAfterProviderReturn);
+    evidence.ownedPids.length > 0 &&
+    evidence.ownedPids.every(p => !p.aliveAfterProviderReturn) &&
+    (input.kind !== 'active-tool' || evidence.toolDescendantPidDistinct === true);
+  // Snapshot liveness before final cleanup so a surviving tool is a failed
+  // conformance condition, not evidence of a successful interrupt.
+  if (ompPid !== null) {
+    cleanupOwnedPids(ompPid, toolPid);
+    await sleep(PROCESS_POLL_MS * 4);
+  }
 
-  // Resume same-id + boolean context challenge (only when we have a real id).
+  // A first-turn interrupt must itself produce a session that can resume.
   if (resultSessionId && terminalReason === STREAM_ABORTED_TERMINAL_REASON) {
     const resume = await runResumeChallenge({
       kind: input.kind,
       cwd: input.cwd,
       env: providerEnv,
       sessionId: resultSessionId,
-      seedToken,
+      contextToken,
     });
     evidence.resumeSameId = resume.sameId;
     evidence.resumeReachedAgentEnd = resume.reachedAgentEnd;
@@ -1101,6 +1044,9 @@ async function runProviderConformanceCase(input: {
   }
   if (resultIsError === true) failReasons.push('result_is_error');
   if (!resultSessionId) failReasons.push('session_id_missing');
+  if (input.kind === 'active-tool' && evidence.toolDescendantPidDistinct !== true) {
+    failReasons.push('tool_descendant_pid_missing_or_not_distinct');
+  }
   if (!evidence.noOwnedDescendantAlive) failReasons.push('owned_descendant_alive');
   if (evidence.resumeSameId !== true) failReasons.push('resume_id_mismatch_or_missing');
   if (evidence.resumeReachedAgentEnd !== true) failReasons.push('resume_no_agent_end');
@@ -1258,6 +1204,9 @@ function rawCaseOk(caseEvidence: RawCaseEvidence | null): boolean {
   if (caseEvidence.sessionHeaderLatencyMs === null) return false;
   if (!caseEvidence.sessionWasFirst) return false;
   if (caseEvidence.sigtermToExitMs === null) return false;
+  if (caseEvidence.kind === 'active-tool' && caseEvidence.toolDescendantPidDistinct !== true) {
+    return false;
+  }
   if (!caseEvidence.noOwnedDescendantAlive) return false;
   return true;
 }

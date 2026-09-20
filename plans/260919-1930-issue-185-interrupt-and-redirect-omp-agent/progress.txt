@@ -84,14 +84,15 @@
 
 ## 2026-09-20 — US-003: Real-binary conformance gate, sanitized report, capability flip
 
-**Status**: BLOCKED (darwin conformance green; platform coverage incomplete)
+**Status**: BLOCKED (darwin fresh assistant resume fails; platform coverage incomplete)
 **Files changed**:
-- `packages/providers/src/community/omp/interrupt-resume-spike.ts` — full OmpProvider conformance leg (teeing spawner, interruptSignal, seeded resume + boolean challenge, gate evaluation, silent logs)
+- `packages/providers/src/community/omp/interrupt-resume-spike.ts` — full OmpProvider conformance leg (teeing spawner, interruptSignal, first-turn same-id resume + boolean challenge, gate evaluation, silent logs)
 - `plans/reports/omp-interrupt-resume-spike.md` — sanitized version/platform-keyed gate evidence
 
 **Acceptance criteria verified**:
 - [x] `bun run spike:interrupt:omp` runs conformance through OmpProvider for assistant + active-tool
-- [x] darwin evidence: session first, SIGTERM no SIGKILL, provider return 14–38 ms, same-id resume + context, no descendants
+- [x] darwin raw evidence: both cases see session first, SIGTERM without SIGKILL, and no owned descendants; provider return is 17–24 ms
+- [ ] darwin assistant same-id resume + context — **FAIL** (the fresh interrupted session is not resumable); active-tool conformance passes
 - [x] Report written sanitized (hashed ids only)
 - [ ] Platform coverage = all resolver platforms OR owner-scoped decision — **FAIL** (linux/win32 missing; no owner decision)
 - [ ] Capability flip to `'stream-abort'` — **not done** (gate forbids)
@@ -99,11 +100,10 @@
 - [x] Focused suite green without flip: provider/event-parser/session-usage/registry tests + type-check
 
 **Learnings**:
-- Brand-new mid-first-assistant-message SIGTERM emits session id but OMP does not flush session file → `--resume` fails. Seed one short completed turn before the interrupt generation (multi-turn production path).
+- Brand-new mid-first-assistant-message SIGTERM emits a session id but it cannot be resumed. The spike now exercises this first-turn path directly; seeding an earlier completed turn would hide the failure and cannot justify advertising redirect.
 - `setLogLevel('silent')` required so spike stdout is exactly one JSON document (pino otherwise leaks raw session ids).
 - thisPlatformPass can be true while capabilityFlipAllowed stays false — do not conflate them.
 
-BLOCKER US-003 | gate=platform coverage for OMP_CAPABILITIES.interrupt flip | cause=darwin/18.1.21 conformance pass but linux+win32 uncharacterized and no owner-scoped platform decision in plan/prd | action=leave interrupt:false; need linux/win32 spike runs or recorded owner scope (a) defer (b) platform-specific contract | 2026-09-20
+BLOCKER US-003 | gate=cd packages/providers && bun run spike:interrupt:omp | cause=darwin/arm64 omp/18.1.21 fresh assistant interrupt emitted stream_aborted but `--resume` did not report the same id or reach agent_end; linux+win32 also uncharacterized | action=leave interrupt:false; require a separately reviewed OMP/session-persistence remedy plus successful assistant+tool conformance on every advertised platform | 2026-09-20
 
 ---
-
