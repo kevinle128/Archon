@@ -1,114 +1,139 @@
-# OMP interrupt/resume spike — interim raw characterization (US-001)
+# OMP interrupt/resume spike — US-003 conformance gate
 
-Diagnostic only. No production provider/parser/executor changes.  
+Diagnostic only. Production capability flip is **blocked**.  
 `OMP_CAPABILITIES.interrupt` remains `false`.
 
 Source harness: `packages/providers/src/community/omp/interrupt-resume-spike.ts`  
-Script: `cd packages/providers && bun run spike:interrupt:omp`
+Script: `cd packages/providers && bun run spike:interrupt:omp`  
+Evidence document: single sanitized JSON on stdout (`LOG_LEVEL=silent` / `setLogLevel('silent')`).
 
 ## Environment
 
-| Field                         | Value                                                                                                             |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `omp --version`               | `omp/18.1.21`                                                                                                     |
-| OS / arch                     | `darwin` / `arm64`                                                                                                |
-| Binary resolution             | `resolveOmpBinaryPath()` (installed login reused; no credentials recorded)                                        |
-| Resolver-supported platforms  | `darwin`, `linux`, `win32`                                                                                        |
-| Characterized this run        | `darwin` only                                                                                                     |
-| Uncharacterized (release gap) | `linux`, `win32` — capability must not flip on macOS-only evidence without an owner-scoped decision (US-003 gate) |
-| Capability at spike time      | `interrupt: false`                                                                                                |
+| Field                                    | Value                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| `omp --version`                          | `omp/18.1.21`                                                              |
+| OS / arch (this run)                     | `darwin` / `arm64`                                                         |
+| Binary resolution                        | `resolveOmpBinaryPath()` (installed login reused; no credentials recorded) |
+| Resolver-supported platforms             | `darwin`, `linux`, `win32`                                                 |
+| Characterized this run                   | `darwin` only                                                              |
+| Uncharacterized (release gap)            | `linux`, `win32`                                                           |
+| Owner-scoped platform decision on record | **no**                                                                     |
+| Capability at spike time                 | `interrupt: false`                                                         |
+| Capability flip allowed                  | **no**                                                                     |
 
 ## Method
 
 - Unique `mkdtemp` git repo per spike run; disposed in `finally`.
-- Production-shaped argv: `--mode json --cwd <tmp> --yolo --no-title --no-extensions -- <prompt>`.
-- Owned PIDs only (OMP child + tool PID file); reap in `finally`; never broad `pkill`.
-- Output is sanitized JSON on stdout: event **types**, timings, hashed session/pid correlation. No prompts, generated text, credentials, raw session ids, or paths outside the disposable repo.
-- Two independent raw cases, then an inert provider-conformance scaffold (awaits US-002 `interruptSignal` seam).
+- **Raw leg**: direct OMP spawn, SIGTERM on trigger, owned-PID tracking only.
+- **Conformance leg**: `OmpProvider` + spike-only teeing spawner; `interruptSignal` abort on trigger; measure signal→full provider return; then `--resume` same id with boolean context challenge.
+- Session seed: one short completed turn first (flushes on-disk session). OMP emits a session id on brand-new mid-text SIGTERM but does **not** write the session file — fresh never-flushed sessions cannot `--resume`. Seeding matches multi-turn production nodes.
+- Sanitized output only: event **types**, timings, hashed session/pid correlation. No prompts, generated text, credentials, raw session ids, or non-temp paths.
 
-## Case 1 — assistant text interrupt
+## Gate decision (US-003)
 
-| Fact                                     | Observed                                                                                                                                                                                |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Trigger event                            | first `assistantMessageEvent.type === 'text_delta'` (`assistant_text_delta`)                                                                                                            |
-| Session first?                           | **yes** (`sessionWasFirst: true`)                                                                                                                                                       |
-| Session-header latency                   | **481 ms** from spawn                                                                                                                                                                   |
-| Pre-signal event-type order (abbrev.)    | `session` → `advisor_cost_changed` → `agent_start` → `turn_start` → `message_start` → `message_end` → `message_start` → many `message_update` (thinking deltas before first text delta) |
-| Post-SIGTERM event types                 | additional `message_update` only (stream drained briefly after signal)                                                                                                                  |
-| `tool_execution_end` after signal        | no                                                                                                                                                                                      |
-| `message_end` after signal               | no                                                                                                                                                                                      |
-| `agent_end` after signal                 | no                                                                                                                                                                                      |
-| usage-bearing `message_end` after signal | no                                                                                                                                                                                      |
-| SIGTERM → child exit                     | **136 ms**                                                                                                                                                                              |
-| SIGKILL fired?                           | **no**                                                                                                                                                                                  |
-| Exit code                                | `143` (`128 + SIGTERM`)                                                                                                                                                                 |
-| Owned descendants alive after return     | **none**                                                                                                                                                                                |
-| Session id correlation (hash)            | `f81768cb80250803`                                                                                                                                                                      |
+| Check                             | Result           |
+| --------------------------------- | ---------------- |
+| darwin assistant-text conformance | **pass**         |
+| darwin active-tool conformance    | **pass**         |
+| linux evidence                    | **missing**      |
+| win32 evidence                    | **missing**      |
+| owner-scoped platform decision    | **not recorded** |
+| `capabilityFlipAllowed`           | **false**        |
+| `OMP_CAPABILITIES.interrupt`      | stays `false`    |
 
-### Design implications (for US-002)
+**BLOCKED** pending either (a) linux + win32 real-binary conformance on the same omp version, or (b) an explicit owner decision to advertise stream-abort on a reduced platform set and expand provider/registry/matrix/docs accordingly. Do not silently ship static `'stream-abort'` after macOS-only evidence.
 
-- Session header reliably precedes turn work on this host/version.
-- Graceful SIGTERM alone is sufficient mid-text; no force-kill.
-- OMP does **not** emit a natural `agent_end` / usage `message_end` after SIGTERM — the provider must drain buffered assistant text and synthesize the interrupted `result` itself.
-- Post-signal `message_update` traffic is possible; interrupt mode must keep accepting/draining until process exit without treating truncated JSON as a hard protocol failure when interrupt owns termination.
+## Raw characterization (darwin / 18.1.21)
 
-## Case 2 — active tool interrupt
+### Case 1 — assistant text interrupt
 
-| Fact                                             | Observed                                                                                                                 |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| Trigger event                                    | `tool_execution_start` while the shell tool is active                                                                    |
-| Session first?                                   | **yes**                                                                                                                  |
-| Session-header latency                           | **504 ms** from spawn                                                                                                    |
-| Pre-signal event-type order (abbrev.)            | `session` → `advisor_cost_changed` → `agent_start` → `turn_start` → assistant message cycle → **`tool_execution_start`** |
-| Post-SIGTERM event types                         | `tool_execution_update` only                                                                                             |
-| `tool_execution_end` after signal                | **no**                                                                                                                   |
-| `message_end` / `agent_end` / usage after signal | no                                                                                                                       |
-| SIGTERM → child exit                             | **114 ms**                                                                                                               |
-| SIGKILL fired?                                   | **no**                                                                                                                   |
-| Exit code                                        | `143`                                                                                                                    |
-| Tool descendant                                  | PID file written with unique marker; tracked owned PID dead after return                                                 |
-| Owned descendants alive after return             | **none**                                                                                                                 |
-| Session id correlation (hash)                    | `103212ab059b68a2`                                                                                                       |
+| Fact                    | Observed                                            |
+| ----------------------- | --------------------------------------------------- |
+| Trigger                 | first `assistantMessageEvent.type === 'text_delta'` |
+| Session first?          | **yes**                                             |
+| Session-header latency  | **480 ms**                                          |
+| SIGTERM → child exit    | **136 ms**                                          |
+| SIGKILL fired?          | **no**                                              |
+| Exit code               | `143`                                               |
+| Owned descendants alive | **none**                                            |
+| Session id hash         | `9197a061fd49365a`                                  |
 
-### Design implications (for US-002)
+### Case 2 — active tool interrupt
 
-- Active-tool Stop can land after `tool_execution_start` with no subsequent `tool_execution_end` — open tools must remain open for executor settlement (`toolOutcome: 'interrupted'` only when an errored end arrives for a tool that was active at interrupt start).
-- No surviving owned descendant observed on darwin/18.1.21 for this bounded shell tool. Plan remains unblocked on orphan grounds **for this platform/version only**.
+| Fact                    | Observed                                       |
+| ----------------------- | ---------------------------------------------- |
+| Trigger                 | `tool_execution_start` while shell tool active |
+| Session first?          | **yes**                                        |
+| Session-header latency  | **506 ms**                                     |
+| SIGTERM → child exit    | **114 ms**                                     |
+| SIGKILL fired?          | **no**                                         |
+| Exit code               | `143`                                          |
+| Tool descendant         | PID file marker; owned PID dead after return   |
+| Owned descendants alive | **none**                                       |
+| Session id hash         | `9eeaca6954ec159e`                             |
 
-## Provider conformance scaffold
+## Provider conformance (darwin / 18.1.21)
 
-| Case           | Status                                                                |
-| -------------- | --------------------------------------------------------------------- |
-| assistant-text | skipped — `OmpProvider interruptSignal` seam not implemented (US-002) |
-| active-tool    | skipped — same                                                        |
+Both cases run end-to-end through `OmpProvider` with a spike-only teeing spawner.
 
-Scaffold lives in the same spike file and instantiates `OmpProvider` with a spike-only spawner shape so US-003 can measure signal→full-provider-return without further harness invention.
+### Case 1 — assistant-text
 
-## Pass / fail snapshot (raw leg only)
+| Fact                              | Observed                 |
+| --------------------------------- | ------------------------ |
+| Session first?                    | **yes**                  |
+| Graceful SIGTERM (no SIGKILL)     | **yes**                  |
+| signal → full provider return     | **38 ms** (&lt; 1000 ms) |
+| `terminalReason`                  | `stream_aborted`         |
+| result `isError`                  | absent / false           |
+| Owned descendants alive           | **none**                 |
+| Resume same id                    | **yes**                  |
+| Resume reached natural completion | **yes**                  |
+| Resume context boolean challenge  | **yes**                  |
+| Session id hash                   | `7c0a8377a8750f51`       |
+| Pass                              | **true**                 |
 
-| Criterion                         | assistant-text                      | active-tool                   |
-| --------------------------------- | ----------------------------------- | ----------------------------- |
-| Session header before work        | pass                                | pass                          |
-| Trigger observed                  | pass (`assistant_text_delta`)       | pass (`tool_execution_start`) |
-| SIGTERM without SIGKILL           | pass (136 ms / 114 ms)              | pass                          |
-| No owned descendant alive         | pass                                | pass                          |
-| Full provider return &lt; 1000 ms | n/a (raw leg; conformance deferred) | n/a                           |
-| Same-id resume + context          | n/a (US-003)                        | n/a                           |
-| linux / win32 evidence            | **missing**                         | **missing**                   |
+### Case 2 — active-tool
 
-Raw characterization on **darwin + omp/18.1.21** is sufficient for US-001 (harness + observed trigger facts).  
-US-003 remains the release blocker for flipping `interrupt` to `'stream-abort'`.
+| Fact                              | Observed                        |
+| --------------------------------- | ------------------------------- |
+| Session first?                    | **yes**                         |
+| Graceful SIGTERM (no SIGKILL)     | **yes**                         |
+| signal → full provider return     | **14 ms** (&lt; 1000 ms)        |
+| `terminalReason`                  | `stream_aborted`                |
+| Owned descendants alive           | **none** (OMP child + tool PID) |
+| Resume same id                    | **yes**                         |
+| Resume reached natural completion | **yes**                         |
+| Resume context boolean challenge  | **yes**                         |
+| Session id hash                   | `2a3e7dba57f71241`              |
+| Pass                              | **true**                        |
+
+## Known OMP limitation (not a provider bug)
+
+A **brand-new** session interrupted mid-first-assistant-message receives a live `session` header id, but OMP does not flush a session file before SIGTERM exit. `--resume <id>` then fails with “Session not found.” Conformance seeds one short completed turn first so interrupt/resume exercises a real on-disk session (the multi-turn path production nodes use). Fresh never-flushed single-turn Stop remains an OMP persistence gap to track separately — it must not be papered over by inventing session ids.
+
+## Pass / fail snapshot
+
+| Criterion                      | assistant-text        | active-tool           |
+| ------------------------------ | --------------------- | --------------------- |
+| Session header before work     | pass                  | pass                  |
+| SIGTERM without SIGKILL        | pass                  | pass                  |
+| Provider return &lt; 1000 ms   | pass (38 ms)          | pass (14 ms)          |
+| `stream_aborted` marked result | pass                  | pass                  |
+| No owned descendant alive      | pass                  | pass                  |
+| Same-id resume + context       | pass (seeded session) | pass (seeded session) |
+| linux / win32 evidence         | **missing**           | **missing**           |
 
 ## Reproduction
 
 ```bash
 cd packages/providers
-bun run spike:interrupt:omp
-# stdout: single sanitized JSON document
+LOG_LEVEL=silent bun run spike:interrupt:omp
+# stdout: single sanitized JSON document; exit 0 when this-platform conformance passes
 ```
 
 ## Non-goals confirmed
 
-- No edits to `provider.ts` / `event-parser.ts` / `capabilities.ts` / executor.
+- No capability flip (`interrupt` remains `false`).
+- No executor / server / UI production edits.
 - Spike not exported from `@archon/providers` barrel.
 - No prompts, model text, credentials, or raw session ids in this report or spike stdout.

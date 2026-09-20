@@ -6,13 +6,13 @@
  *  1. Raw characterization (US-001) — spawn the installed OMP binary directly,
  *     SIGTERM on a deterministic JSONL trigger, and record sanitized facts
  *     about event order, timings, and owned-process cleanup.
- *  2. Provider conformance scaffold (US-003) — instantiate OmpProvider with a
- *     spike-only teeing spawner so signal-to-full-provider-return is measurable
- *     once the US-002 stream-abort seam exists. Inert until then.
+ *  2. Provider conformance (US-003) — instantiate OmpProvider with a spike-only
+ *     teeing spawner so signal-to-full-provider-return is measurable through
+ *     the stream-abort seam; resume same-id + boolean context challenge.
  *
  * Output is a single sanitized JSON evidence document on stdout (no prompt
  * text, no credentials, no model content, no raw session ids) plus a
- * non-zero exit when raw characterization cannot complete.
+ * non-zero exit when the exercised gate cannot complete.
  */
 import { createHash, randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -20,15 +20,24 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { setLogLevel } from '@archon/paths';
 import { resolveOmpBinaryPath } from './binary-resolver';
 import { OMP_CAPABILITIES } from './capabilities';
-import { OmpProvider, type OmpProcess, type OmpSpawnOptions, type OmpSpawner } from './provider';
+import {
+  INTERRUPT_SESSION_HEADER_WAIT_MS,
+  OmpProvider,
+  type OmpProcess,
+  type OmpSpawnOptions,
+  type OmpSpawner,
+} from './provider';
+import { STREAM_ABORTED_TERMINAL_REASON, type MessageChunk } from '../../types';
 
 const EXPERIMENT_TIMEOUT_MS = 180_000;
 const TERMINATION_GRACE_MS = 5_000;
 const PROCESS_POLL_MS = 25;
 const TOOL_SLEEP_SECONDS = 30;
 const TOOL_PID_MARKER_PREFIX = 'archon-omp-spike-tool-';
+const PROVIDER_RETURN_BUDGET_MS = 1_000;
 const RESOLVER_SUPPORTED_PLATFORMS = ['darwin', 'linux', 'win32'] as const;
 
 type FailureCategory =
@@ -80,22 +89,39 @@ interface RawCaseEvidence {
   errorCode: string | null;
 }
 
-interface ConformanceCaseScaffold {
+interface ConformanceCaseEvidence {
   kind: CaseKind;
-  /** false until US-002 wires interruptSignal into OmpProvider. */
+  /** false only when the US-002 interrupt seam is absent. */
   implemented: boolean;
   skipReason: string | null;
-  /** ms from interruptSignal abort to provider generator return; null if skipped. */
+  /** ms from interruptSignal abort to provider generator return. */
   signalToProviderReturnMs: number | null;
   terminalReason: string | null;
   resultIsError: boolean | null;
   sessionIdHash: string | null;
+  /** True when first teed event type was `session`. */
+  sessionWasFirst: boolean | null;
+  /** True when provider kill path used SIGTERM only (no SIGKILL). */
+  gracefulSigterm: boolean | null;
+  sigkillFired: boolean | null;
+  noOwnedDescendantAlive: boolean | null;
+  /** Resume leg: observed id hash equals interrupted id hash. */
+  resumeSameId: boolean | null;
+  /** Resume leg reached a natural `agent_end` / non-error result. */
+  resumeReachedAgentEnd: boolean | null;
+  /** Resume boolean challenge proved prior context (YES observed). */
+  resumeContextProved: boolean | null;
+  resumeSessionIdHash: string | null;
   recordedEventTypes: string[];
+  ownedPids: OwnedPidRecord[];
+  pass: boolean;
+  failReasons: string[];
+  failureCategory: FailureCategory;
 }
 
 export interface OmpInterruptSpikeDocument {
   schemaVersion: 1;
-  leg: 'raw-characterization' | 'mixed';
+  leg: 'raw-characterization' | 'mixed' | 'conformance';
   ompVersion: string;
   platform: string;
   arch: string;
@@ -103,19 +129,29 @@ export interface OmpInterruptSpikeDocument {
   resolverSupportedPlatforms: readonly string[];
   platformsCharacterized: string[];
   platformsUncharacterized: string[];
-  /** Capability value at spike time — must remain false for US-001. */
+  /**
+   * Capability value observed while the spike ran. Flip is a separate production
+   * edit gated on platform-wide evidence (or an owner-scoped decision).
+   */
   interruptCapability: typeof OMP_CAPABILITIES.interrupt;
   raw: {
     assistantText: RawCaseEvidence | null;
     activeTool: RawCaseEvidence | null;
   };
   /**
-   * Post-implementation conformance scaffold. Runs only when OmpProvider
-   * accepts interruptSignal; otherwise records an explicit skip.
+   * Post-implementation conformance through OmpProvider + interruptSignal.
    */
   conformance: {
-    assistantText: ConformanceCaseScaffold;
-    activeTool: ConformanceCaseScaffold;
+    assistantText: ConformanceCaseEvidence;
+    activeTool: ConformanceCaseEvidence;
+  };
+  /** Overall gate for the platforms actually exercised this run. */
+  gate: {
+    thisPlatformPass: boolean;
+    allResolverPlatformsCovered: boolean;
+    ownerScopedPlatformDecisionRecorded: boolean;
+    capabilityFlipAllowed: boolean;
+    blockReasons: string[];
   };
   failureCategory: FailureCategory;
 }
@@ -291,10 +327,17 @@ function isAssistantTextDelta(line: string): boolean {
   if (parsed?.type !== 'message_update') return false;
   const evt = parsed.assistantMessageEvent;
   if (typeof evt !== 'object' || evt === null || Array.isArray(evt)) return false;
-  const record = evt as Record<string, unknown>;
-  return (
-    record.type === 'text_delta' && typeof record.delta === 'string' && record.delta.length > 0
-  );
+  return (evt as Record<string, unknown>).type === 'text_delta';
+}
+
+function assistantPrompt(): string {
+  // Long-form generation so SIGTERM can land mid-stream after the first delta.
+  return 'Count from 1 to 200, one number per line, with no other commentary.';
+}
+
+/** Short completed turn so OMP flushes a resumable session before mid-text Stop. */
+function assistantSeedPrompt(token: string): string {
+  return `Remember the single code token ${token}. Reply with exactly the single token OK and nothing else.`;
 }
 
 function isToolExecutionStart(line: string): boolean {
@@ -323,11 +366,6 @@ function buildSpawnArgs(cwd: string, prompt: string, resumeSessionId?: string): 
   }
   args.push('--', prompt);
   return args;
-}
-
-function assistantPrompt(): string {
-  // Long-form generation so SIGTERM can land mid-stream after the first delta.
-  return 'Count from 1 to 200, one number per line, with no other commentary.';
 }
 
 function toolPrompt(pidFileName: string, marker: string): string {
@@ -638,40 +676,212 @@ async function runRawCase(input: {
 }
 
 /**
- * OmpProvider currently ignores interruptSignal (only abortSignal terminates).
- * US-002 flips this by wiring first-cause interrupt ownership. Keep the
- * readiness gate explicit so the scaffold activates automatically once the
- * seam lands — without importing private provider internals.
+ * US-002 exported INTERRUPT_SESSION_HEADER_WAIT_MS with the interrupt seam.
+ * Presence of that export is the readiness signal (no private internals).
  */
 function providerInterruptSeamReady(): boolean {
-  return false;
+  return (
+    typeof INTERRUPT_SESSION_HEADER_WAIT_MS === 'number' && INTERRUPT_SESSION_HEADER_WAIT_MS > 0
+  );
 }
 
-function skippedConformance(kind: CaseKind, reason: string): ConformanceCaseScaffold {
+function emptyConformance(kind: CaseKind): ConformanceCaseEvidence {
   return {
     kind,
-    implemented: false,
-    skipReason: reason,
+    implemented: true,
+    skipReason: null,
     signalToProviderReturnMs: null,
     terminalReason: null,
     resultIsError: null,
     sessionIdHash: null,
+    sessionWasFirst: null,
+    gracefulSigterm: null,
+    sigkillFired: null,
+    noOwnedDescendantAlive: null,
+    resumeSameId: null,
+    resumeReachedAgentEnd: null,
+    resumeContextProved: null,
+    resumeSessionIdHash: null,
     recordedEventTypes: [],
+    ownedPids: [],
+    pass: false,
+    failReasons: [],
+    failureCategory: null,
   };
 }
 
+function skippedConformance(kind: CaseKind, reason: string): ConformanceCaseEvidence {
+  return {
+    ...emptyConformance(kind),
+    implemented: false,
+    skipReason: reason,
+    failReasons: [reason],
+  };
+}
+
+function resumeChallengePrompt(kind: CaseKind, seedToken?: string): string {
+  if (seedToken) {
+    return (
+      'Reply with exactly the single token YES if you were told to remember the code token ' +
+      `${seedToken}, otherwise reply with exactly NO. No other words.`
+    );
+  }
+  if (kind === 'assistant-text') {
+    return (
+      'Reply with exactly the single token YES if your immediately previous turn ' +
+      'was counting numbers line by line, otherwise reply with exactly NO. ' +
+      'No other words.'
+    );
+  }
+  return (
+    'Your previous turn started a long-running shell sleep. ' +
+    'Reply with exactly the single token YES if that is true, otherwise exactly NO. ' +
+    'No punctuation. No other words.'
+  );
+}
+
+function assistantTextProvesYes(chunks: MessageChunk[]): boolean {
+  const text = chunks
+    .filter(chunk => chunk.type === 'assistant')
+    .map(chunk => {
+      if (!('content' in chunk) || chunk.content == null) return '';
+      return typeof chunk.content === 'string' ? chunk.content : '';
+    })
+    .join('\n')
+    .trim()
+    .toUpperCase();
+  if (text.length === 0) return false;
+  // Never log model text. Accept YES as the whole reply or the first token,
+  // with optional surrounding quotes/punctuation the model sometimes adds.
+  const normalized = text
+    .replace(/["'`.,!;:()[\]]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (normalized === 'YES') return true;
+  const firstToken = normalized.split(' ')[0];
+  if (firstToken === 'YES') return true;
+  // Whole-reply contains a clear affirmative token and no leading NO.
+  if (normalized.startsWith('NO')) return false;
+  return /(^|\s)YES(\s|$)/.test(normalized);
+}
+
+async function runResumeChallenge(input: {
+  kind: CaseKind;
+  cwd: string;
+  env: Record<string, string>;
+  sessionId: string;
+  seedToken?: string;
+}): Promise<{
+  sameId: boolean;
+  reachedAgentEnd: boolean;
+  contextProved: boolean;
+  sessionIdHash: string | null;
+  failureCategory: FailureCategory;
+}> {
+  const attempt = async (): Promise<{
+    sameId: boolean;
+    reachedAgentEnd: boolean;
+    contextProved: boolean;
+    sessionIdHash: string | null;
+    failureCategory: FailureCategory;
+  }> => {
+    const provider = new OmpProvider();
+    const chunks: MessageChunk[] = [];
+    let failureCategory: FailureCategory = null;
+    try {
+      for await (const chunk of provider.sendQuery(
+        resumeChallengePrompt(input.kind, input.seedToken),
+        input.cwd,
+        input.sessionId,
+        {
+          env: input.env,
+        }
+      )) {
+        chunks.push(chunk);
+      }
+    } catch (error: unknown) {
+      failureCategory = classifyFailure(error);
+    }
+
+    const result = [...chunks].reverse().find(chunk => chunk.type === 'result');
+    const observedId =
+      result && 'sessionId' in result && typeof result.sessionId === 'string'
+        ? result.sessionId
+        : null;
+    const sameId = observedId === input.sessionId;
+    const isError =
+      result !== undefined && 'isError' in result && result.isError === true ? true : false;
+    const reachedAgentEnd = result !== undefined && !isError && failureCategory === null;
+    return {
+      sameId,
+      reachedAgentEnd,
+      contextProved: assistantTextProvesYes(chunks),
+      sessionIdHash: observedId ? hashOpaque(observedId) : null,
+      failureCategory,
+    };
+  };
+
+  const first = await attempt();
+  if (first.sameId && first.reachedAgentEnd && first.contextProved) return first;
+  // One retry — model wording on the boolean challenge can miss once without
+  // implying session loss (sameId/agent_end already prove resume mechanics).
+  if (first.sameId && first.reachedAgentEnd && !first.contextProved) {
+    const second = await attempt();
+    if (second.contextProved || second.failureCategory) return second;
+    return { ...first, contextProved: second.contextProved };
+  }
+  return first;
+}
+
 /**
- * Future US-003 entry point. Intentionally mostly unused until
- * providerInterruptSeamReady() returns true. Kept inside the spike file
- * (not package-exported) so signal-to-full-provider-return is measurable
- * after the US-002 seam lands.
+ * OMP does not flush a session file when SIGTERM lands mid-first-assistant-message
+ * on a brand-new session (session id is emitted, but --resume cannot find it).
+ * Seed one short completed turn first so the interrupted generation rides a
+ * real on-disk session — matching multi-turn production nodes.
+ */
+async function seedAssistantSession(input: {
+  cwd: string;
+  env: Record<string, string>;
+  seedToken: string;
+}): Promise<{ sessionId: string | null; failureCategory: FailureCategory }> {
+  const provider = new OmpProvider();
+  let sessionId: string | null = null;
+  try {
+    for await (const chunk of provider.sendQuery(
+      assistantSeedPrompt(input.seedToken),
+      input.cwd,
+      undefined,
+      {
+        env: input.env,
+      }
+    )) {
+      if (
+        chunk.type === 'result' &&
+        'sessionId' in chunk &&
+        typeof chunk.sessionId === 'string' &&
+        chunk.sessionId.length > 0 &&
+        chunk.isError !== true
+      ) {
+        sessionId = chunk.sessionId;
+      }
+    }
+  } catch (error: unknown) {
+    return { sessionId: null, failureCategory: classifyFailure(error) };
+  }
+  return { sessionId, failureCategory: null };
+}
+
+/**
+ * Provider conformance through the real OmpProvider interruptSignal path.
+ * Spike-only teeing spawner records event types and trigger timing without
+ * changing production parsing.
  */
 async function runProviderConformanceCase(input: {
   kind: CaseKind;
   binaryPath: string;
   cwd: string;
   env: Record<string, string>;
-}): Promise<ConformanceCaseScaffold> {
+}): Promise<ConformanceCaseEvidence> {
   if (!providerInterruptSeamReady()) {
     return skippedConformance(
       input.kind,
@@ -679,9 +889,51 @@ async function runProviderConformanceCase(input: {
     );
   }
 
-  // Scaffold body for US-003: tee stdout through a recording spawner, abort
-  // interruptSignal on the case trigger, measure signal→generator-return.
+  const evidence = emptyConformance(input.kind);
+  const marker = `${TOOL_PID_MARKER_PREFIX}${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+  const pidFileName = `${marker}.pid`;
+  const pidFilePath = join(input.cwd, pidFileName);
+  const prompt =
+    input.kind === 'assistant-text' ? assistantPrompt() : toolPrompt(pidFileName, marker);
+  const providerEnv = {
+    ...input.env,
+    OMP_BIN_PATH: input.binaryPath,
+  };
+
+  // Seed a flushed session first. OMP emits a session id on a brand-new
+  // mid-text SIGTERM but does not write the session file, so --resume fails.
+  // A one-turn seed matches multi-turn production nodes and gives a stable
+  // boolean context token for the post-interrupt resume challenge.
+  let resumeSessionId: string | undefined;
+  const seedToken = `T${randomUUID().replaceAll('-', '').slice(0, 8).toUpperCase()}`;
+  {
+    const seeded = await seedAssistantSession({
+      cwd: input.cwd,
+      env: providerEnv,
+      seedToken,
+    });
+    if (seeded.failureCategory) evidence.failureCategory = seeded.failureCategory;
+    if (!seeded.sessionId) {
+      evidence.failReasons = ['seed_session_failed'];
+      evidence.pass = false;
+      return evidence;
+    }
+    resumeSessionId = seeded.sessionId;
+  }
+
+  const interrupt = new AbortController();
   const recordedEventTypes: string[] = [];
+  const killSignals: NodeJS.Signals[] = [];
+  let ompPid: number | null = null;
+  let toolPid: number | null = null;
+  let signalAt: number | null = null;
+  let triggerFired = false;
+  let sessionWasFirst: boolean | null = null;
+  let firstEventSeen = false;
+  let rawSessionId: string | null = null;
+
+  const teeDrainTasks: Promise<void>[] = [];
+
   const teeingSpawner: OmpSpawner = (command, options: OmpSpawnOptions): OmpProcess => {
     const proc = Bun.spawn(command, {
       cwd: options.cwd,
@@ -690,23 +942,220 @@ async function runProviderConformanceCase(input: {
       stdout: 'pipe',
       stderr: 'pipe',
     });
-    // Identity pipe for the provider; a parallel tee records event types.
-    // Full tee wiring lands with US-003 once the seam is live.
-    void recordedEventTypes;
+    ompPid = proc.pid;
+
+    if (!proc.stdout) {
+      return {
+        stdout: null,
+        stderr: proc.stderr,
+        exited: proc.exited,
+        kill: (signal?: NodeJS.Signals): void => {
+          const sig = signal ?? 'SIGTERM';
+          killSignals.push(sig);
+          proc.kill(sig);
+        },
+      };
+    }
+
+    const [providerStdout, recordStdout] = proc.stdout.tee();
+
+    teeDrainTasks.push(
+      (async (): Promise<void> => {
+        try {
+          for await (const line of streamLines(recordStdout)) {
+            if (line.trim().length === 0) continue;
+            const type = eventTypeOf(line) ?? 'unknown';
+            recordedEventTypes.push(type);
+
+            if (!firstEventSeen) {
+              firstEventSeen = true;
+              sessionWasFirst = type === 'session';
+            }
+
+            if (type === 'session' && rawSessionId === null) {
+              const sid = sessionIdOf(line);
+              if (sid) rawSessionId = sid;
+            }
+
+            if (triggerFired) continue;
+
+            const shouldSignal =
+              input.kind === 'assistant-text'
+                ? isAssistantTextDelta(line)
+                : isToolExecutionStart(line);
+
+            if (!shouldSignal) continue;
+
+            triggerFired = true;
+            if (input.kind === 'active-tool') {
+              toolPid = await waitForToolPid(pidFilePath, 1_500);
+            }
+            signalAt = Date.now();
+            interrupt.abort();
+          }
+        } catch {
+          // stream closed
+        }
+      })()
+    );
+
     return {
-      stdout: proc.stdout,
+      stdout: providerStdout,
       stderr: proc.stderr,
       exited: proc.exited,
       kill: (signal?: NodeJS.Signals): void => {
-        proc.kill(signal);
+        const sig = signal ?? 'SIGTERM';
+        killSignals.push(sig);
+        try {
+          proc.kill(sig);
+        } catch {
+          // already dead
+        }
       },
     };
   };
 
   const provider = new OmpProvider({ spawn: teeingSpawner });
-  void provider;
-  void input.binaryPath;
-  return skippedConformance(input.kind, 'conformance body not activated');
+  const chunks: MessageChunk[] = [];
+  let providerError: unknown = null;
+
+  try {
+    for await (const chunk of provider.sendQuery(prompt, input.cwd, resumeSessionId, {
+      env: providerEnv,
+      interruptSignal: interrupt.signal,
+    })) {
+      chunks.push(chunk);
+    }
+  } catch (error: unknown) {
+    providerError = error;
+    evidence.failureCategory = classifyFailure(error);
+  }
+
+  const providerReturnAt = Date.now();
+  await Promise.all(teeDrainTasks.map(task => task.catch(() => undefined)));
+
+  if (toolPid === null) toolPid = readToolPid(pidFilePath);
+  if (ompPid !== null) {
+    // Final safety reap of owned PIDs only — never broad pkill.
+    if (isPidAlive(ompPid)) tryKill(ompPid, 'SIGKILL');
+    if (toolPid !== null && isPidAlive(toolPid)) tryKill(toolPid, 'SIGKILL');
+    await sleep(PROCESS_POLL_MS * 4);
+  }
+
+  const result = [...chunks].reverse().find(chunk => chunk.type === 'result');
+  const resultSessionId =
+    result && 'sessionId' in result && typeof result.sessionId === 'string'
+      ? result.sessionId
+      : rawSessionId;
+  const terminalReason =
+    result && 'terminalReason' in result && typeof result.terminalReason === 'string'
+      ? result.terminalReason
+      : null;
+  const resultIsError =
+    result !== undefined && 'isError' in result ? Boolean(result.isError) : null;
+
+  evidence.recordedEventTypes = recordedEventTypes;
+  evidence.sessionWasFirst = sessionWasFirst;
+  evidence.sessionIdHash = resultSessionId ? hashOpaque(resultSessionId) : null;
+  evidence.terminalReason = terminalReason;
+  evidence.resultIsError = resultIsError;
+  evidence.signalToProviderReturnMs =
+    signalAt !== null ? Math.max(0, providerReturnAt - signalAt) : null;
+  evidence.sigkillFired = killSignals.includes('SIGKILL');
+  evidence.gracefulSigterm = killSignals.includes('SIGTERM') && !killSignals.includes('SIGKILL');
+  evidence.ownedPids = ompPid !== null ? buildOwnedRecords(ompPid, toolPid) : [];
+  evidence.noOwnedDescendantAlive =
+    evidence.ownedPids.length > 0 && evidence.ownedPids.every(p => !p.aliveAfterProviderReturn);
+
+  // Resume same-id + boolean context challenge (only when we have a real id).
+  if (resultSessionId && terminalReason === STREAM_ABORTED_TERMINAL_REASON) {
+    const resume = await runResumeChallenge({
+      kind: input.kind,
+      cwd: input.cwd,
+      env: providerEnv,
+      sessionId: resultSessionId,
+      seedToken,
+    });
+    evidence.resumeSameId = resume.sameId;
+    evidence.resumeReachedAgentEnd = resume.reachedAgentEnd;
+    evidence.resumeContextProved = resume.contextProved;
+    evidence.resumeSessionIdHash = resume.sessionIdHash;
+    if (resume.failureCategory && evidence.failureCategory === null) {
+      evidence.failureCategory = resume.failureCategory;
+    }
+  }
+
+  const failReasons: string[] = [];
+  if (providerError) failReasons.push('provider_threw');
+  if (!triggerFired) failReasons.push('trigger_never_observed');
+  if (sessionWasFirst !== true) failReasons.push('session_not_first');
+  if (evidence.signalToProviderReturnMs === null) {
+    failReasons.push('signal_to_return_unmeasured');
+  } else if (evidence.signalToProviderReturnMs >= PROVIDER_RETURN_BUDGET_MS) {
+    failReasons.push(`provider_return_over_budget_ms:${String(evidence.signalToProviderReturnMs)}`);
+  }
+  if (!evidence.gracefulSigterm) failReasons.push('not_graceful_sigterm');
+  if (evidence.sigkillFired) failReasons.push('sigkill_fired');
+  if (terminalReason !== STREAM_ABORTED_TERMINAL_REASON) {
+    failReasons.push(`terminal_reason:${terminalReason ?? 'null'}`);
+  }
+  if (resultIsError === true) failReasons.push('result_is_error');
+  if (!resultSessionId) failReasons.push('session_id_missing');
+  if (!evidence.noOwnedDescendantAlive) failReasons.push('owned_descendant_alive');
+  if (evidence.resumeSameId !== true) failReasons.push('resume_id_mismatch_or_missing');
+  if (evidence.resumeReachedAgentEnd !== true) failReasons.push('resume_no_agent_end');
+  if (evidence.resumeContextProved !== true) failReasons.push('resume_context_not_proved');
+
+  evidence.failReasons = failReasons;
+  evidence.pass = failReasons.length === 0;
+  return evidence;
+}
+
+function evaluateGate(input: {
+  platform: string;
+  conformance: {
+    assistantText: ConformanceCaseEvidence;
+    activeTool: ConformanceCaseEvidence;
+  };
+  platformsCharacterized: string[];
+}): OmpInterruptSpikeDocument['gate'] {
+  const blockReasons: string[] = [];
+  const thisPlatformPass =
+    input.conformance.assistantText.pass && input.conformance.activeTool.pass;
+
+  if (!input.conformance.assistantText.pass) {
+    blockReasons.push(
+      `assistant-text failed: ${input.conformance.assistantText.failReasons.join(',') || 'unknown'}`
+    );
+  }
+  if (!input.conformance.activeTool.pass) {
+    blockReasons.push(
+      `active-tool failed: ${input.conformance.activeTool.failReasons.join(',') || 'unknown'}`
+    );
+  }
+
+  const characterized = new Set(input.platformsCharacterized);
+  const missing = RESOLVER_SUPPORTED_PLATFORMS.filter(p => !characterized.has(p));
+  const allResolverPlatformsCovered = missing.length === 0;
+  // No owner-scoped decision is on record in plan.md / prd — require full coverage.
+  const ownerScopedPlatformDecisionRecorded = false;
+
+  if (!allResolverPlatformsCovered && !ownerScopedPlatformDecisionRecorded) {
+    blockReasons.push(
+      `platform_coverage_incomplete: missing ${missing.join(',')} (no owner-scoped decision recorded)`
+    );
+  }
+
+  const capabilityFlipAllowed =
+    thisPlatformPass && (allResolverPlatformsCovered || ownerScopedPlatformDecisionRecorded);
+
+  return {
+    thisPlatformPass,
+    allResolverPlatformsCovered,
+    ownerScopedPlatformDecisionRecorded,
+    capabilityFlipAllowed,
+    blockReasons,
+  };
 }
 
 async function runSpike(binaryPath: string): Promise<OmpInterruptSpikeDocument> {
@@ -718,7 +1167,7 @@ async function runSpike(binaryPath: string): Promise<OmpInterruptSpikeDocument> 
 
   const document: OmpInterruptSpikeDocument = {
     schemaVersion: 1,
-    leg: 'raw-characterization',
+    leg: 'mixed',
     ompVersion,
     platform,
     arch,
@@ -728,14 +1177,15 @@ async function runSpike(binaryPath: string): Promise<OmpInterruptSpikeDocument> 
     interruptCapability: OMP_CAPABILITIES.interrupt,
     raw: { assistantText: null, activeTool: null },
     conformance: {
-      assistantText: skippedConformance(
-        'assistant-text',
-        'OmpProvider interruptSignal seam not implemented (awaiting US-002)'
-      ),
-      activeTool: skippedConformance(
-        'active-tool',
-        'OmpProvider interruptSignal seam not implemented (awaiting US-002)'
-      ),
+      assistantText: skippedConformance('assistant-text', 'not-run'),
+      activeTool: skippedConformance('active-tool', 'not-run'),
+    },
+    gate: {
+      thisPlatformPass: false,
+      allResolverPlatformsCovered: false,
+      ownerScopedPlatformDecisionRecorded: false,
+      capabilityFlipAllowed: false,
+      blockReasons: ['not-evaluated'],
     },
     failureCategory: null,
   };
@@ -753,7 +1203,8 @@ async function runSpike(binaryPath: string): Promise<OmpInterruptSpikeDocument> 
     }
     writeFileSync(join(cwd, 'README.spike'), 'archon omp interrupt spike disposable repo\n');
 
-    await runWithTimeout(EXPERIMENT_TIMEOUT_MS, async () => {
+    await runWithTimeout(EXPERIMENT_TIMEOUT_MS * 2, async () => {
+      // Raw characterization remains useful context; conformance is the gate.
       document.raw.assistantText = await runRawCase({
         kind: 'assistant-text',
         binaryPath,
@@ -789,6 +1240,14 @@ async function runSpike(binaryPath: string): Promise<OmpInterruptSpikeDocument> 
     rmSync(cwd, { recursive: true, force: true });
   }
 
+  document.gate = evaluateGate({
+    platform,
+    conformance: document.conformance,
+    platformsCharacterized: document.platformsCharacterized,
+  });
+  // Reflect live capability constant (still false until a separate flip edit).
+  document.interruptCapability = OMP_CAPABILITIES.interrupt;
+
   return document;
 }
 
@@ -819,11 +1278,21 @@ function unresolvedBinaryDocument(error: unknown): OmpInterruptSpikeDocument {
       assistantText: skippedConformance('assistant-text', 'binary unresolved'),
       activeTool: skippedConformance('active-tool', 'binary unresolved'),
     },
+    gate: {
+      thisPlatformPass: false,
+      allResolverPlatformsCovered: false,
+      ownerScopedPlatformDecisionRecorded: false,
+      capabilityFlipAllowed: false,
+      blockReasons: ['binary unresolved'],
+    },
     failureCategory: classifyFailure(error) ?? 'binary-missing',
   };
 }
 
 async function main(): Promise<void> {
+  // Keep stdout to exactly one JSON document (CLI --json convention).
+  setLogLevel('silent');
+
   let binaryPath: string;
   try {
     binaryPath = await resolveOmpBinaryPath();
@@ -837,7 +1306,15 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify(document)}\n`);
 
   const rawOk = rawCaseOk(document.raw.assistantText) && rawCaseOk(document.raw.activeTool);
-  if (!rawOk || document.failureCategory !== null || document.interruptCapability !== false) {
+  const conformanceOk =
+    document.conformance.assistantText.pass && document.conformance.activeTool.pass;
+
+  // Exit 0 only when this-platform conformance passes (raw is supporting evidence).
+  // Platform-wide capability flip is a separate production decision.
+  if (!conformanceOk || document.failureCategory !== null) {
+    process.exitCode = 1;
+  } else if (!rawOk) {
+    // Raw failed but conformance passed — still non-zero so operators notice.
     process.exitCode = 1;
   }
 }
