@@ -1,7 +1,7 @@
 ---
-title: "Plan issue 193: concurrent operator order and attribution"
+title: 'Plan issue 193: concurrent operator order and attribution'
 date: 2026-09-20
-summary: "Deep TDD plan for ANR Story 2.13; proof-and-harden, red-teamed with 14 accepted findings"
+summary: 'Deep TDD plan for ANR Story 2.13; proof-and-harden, red-teamed with 14 accepted findings'
 ---
 
 # Plan issue 193: concurrent operator order and attribution

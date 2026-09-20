@@ -23,14 +23,14 @@
     "band": {
       "maxHeight": "237.6px",
       "overflowY": "auto",
-      "clientHeight": 57,
-      "scrollHeight": 57,
+      "clientHeight": 62,
+      "scrollHeight": 62,
       "viewportHeight": 720
     }
   },
   "console-viewports": {
     "narrow460": 460,
-    "wide1440": 696
+    "wide1440": 1160
   },
   "blocked-legacy": {
     "reasonText": "answer the agent's question first",
@@ -56,8 +56,8 @@
     "band": {
       "maxHeight": "237.6px",
       "overflowY": "auto",
-      "clientHeight": 57,
-      "scrollHeight": 57,
+      "clientHeight": 62,
+      "scrollHeight": 62,
       "viewportHeight": 720
     }
   },
