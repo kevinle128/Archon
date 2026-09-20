@@ -67,8 +67,8 @@
       "technicalNotes": "Phase 3 (phase-03-keepalive-route-and-client.md). Route/schema owners: packages/server/src/routes/api.ts (interrupt route :1643, handler guard ladder :5464+, steeringValidationErrorHook :8) and routes/schemas/workflow.schemas.ts (next to interruptWorkflowNodeResponseSchema, api.ts :511). Contract already fixed by _bmad-output/specs/spec-agent-node-room/steering-api-contract.md — bodyless, { success: true }, existing steering grant, no row. Client: packages/web/src/lib/api.ts (toSteeringRequestError import :8, interruptNode :794). Never hand-edit api.generated.d.ts; never work around an occupied port 3090 — reuse only a proven current-worktree server.",
       "dependsOn": ["US-001"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/server/src/routes/schemas/workflow.schemas.ts, packages/server/src/routes/api.ts, packages/server/src/routes/api.workflow-runs.test.ts, packages/web/src/lib/api.ts, packages/web/src/lib/api.keepalive.test.ts, packages/web/src/lib/api.generated.d.ts. Phase gate green: 307 workflow-runs tests, 2 keepalive client tests, server+web type-check, eslint clean. Typegen via in-process OpenAPI dump (port 3090 owned by foreign worktree process that could not be signaled)."
     },
     {
       "id": "US-004",
@@ -92,8 +92,8 @@
       "technicalNotes": "Phase 4 (phase-04-dock-disclosure-keepalive-fail-copy.md). Design authority: _bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/{EXPERIENCE.md (exact strings + 'finished empty = no dock'), DESIGN.md, mockups/key-steering-dock.html, key-legacy-node-room.html, key-console-node-room.html} — EXPERIENCE.md wins for the Story 2.12 sentence; mockups predate it. Shared logic stays framework-free in packages/web/src/lib/steering-dock.ts; ComposerDock.tsx and ConsoleComposerDock.tsx mirror shell edits. Evidence helper beside hasTerminalNodeEvidence at execution-room-model.ts:453; nodeTerminal prop chain precedent at ConsoleNodeRoom.tsx:112. A leading-only throttle is forbidden — it can expire before 30 min from the last keystroke. Multiple tabs/operators sharing keepalives is intended under the existing shared steering grant.",
       "dependsOn": ["US-002", "US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: packages/web/src/lib/steering-dock.ts(+test), execution-room-model.ts(+test), ComposerDock.tsx(+test), ConsoleComposerDock.tsx(+test), LegacyGraphLogsPane/LegacyNodeRoom/NodeTranscriptPane, ConsoleInspectPane/ConsoleNodeRoom(+tests), console skills/runs.ts keepalive. Phase gate green: 204 pure helpers, 653 workflow components, 535 console components, web type-check, eslint --max-warnings 0."
     },
     {
       "id": "US-005",

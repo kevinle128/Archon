@@ -7,6 +7,7 @@
  */
 import type { components } from './api.generated';
 import type { RoomSurface } from './room-split-layout';
+import { IDLE_AWAIT_EXPIRED_ERROR } from './steering-dock';
 
 type WorkflowEvent = components['schemas']['WorkflowEvent'];
 
@@ -460,6 +461,60 @@ export function hasTerminalNodeEvidence(
   const forNode = executions.filter(execution => execution.node_id === nodeId);
   if (forNode.length === 0) return false;
   return forNode.every(execution => isTerminalNodeExecutionStatus(execution.status));
+}
+
+/**
+ * True when the selected node's latest terminal execution failed with the
+ * idle-await expiry error. Requires ≥1 row for the node and every row terminal
+ * so reconciliation cannot race a new attempt. Latest row is highest
+ * retry_epoch (missing = 0), then started_at ?? ended_at ?? '', then later
+ * original array position. Evaluates the actual selected id — grp.body vs grp
+ * composite errors must not cross.
+ */
+export function hasIdleAwaitExpiredEvidence(
+  executions: readonly NodeExecution[] | null | undefined,
+  nodeId: string
+): boolean {
+  if (executions === null || executions === undefined || executions.length === 0) {
+    return false;
+  }
+  const forNode: { execution: NodeExecution; index: number }[] = [];
+  for (let index = 0; index < executions.length; index += 1) {
+    const execution = executions[index];
+    if (execution?.node_id === nodeId) {
+      forNode.push({ execution, index });
+    }
+  }
+  if (forNode.length === 0) return false;
+  if (!forNode.every(entry => isTerminalNodeExecutionStatus(entry.execution.status))) {
+    return false;
+  }
+
+  let latest: { execution: NodeExecution; index: number } | undefined;
+  for (const candidate of forNode) {
+    if (latest === undefined) {
+      latest = candidate;
+      continue;
+    }
+    const latestEpoch = latest.execution.retry_epoch ?? 0;
+    const candidateEpoch = candidate.execution.retry_epoch ?? 0;
+    if (candidateEpoch !== latestEpoch) {
+      if (candidateEpoch > latestEpoch) latest = candidate;
+      continue;
+    }
+    const latestTs = latest.execution.started_at ?? latest.execution.ended_at ?? '';
+    const candidateTs = candidate.execution.started_at ?? candidate.execution.ended_at ?? '';
+    if (candidateTs !== latestTs) {
+      if (candidateTs > latestTs) latest = candidate;
+      continue;
+    }
+    if (candidate.index > latest.index) latest = candidate;
+  }
+  if (latest === undefined) return false;
+
+  return (
+    latest.execution.status === 'failed' && latest.execution.error === IDLE_AWAIT_EXPIRED_ERROR
+  );
 }
 
 /**

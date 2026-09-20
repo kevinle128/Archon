@@ -7,6 +7,7 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 import {
   buildExecutionHeader,
   hasTerminalNodeEvidence,
+  hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
   resolveFinishedIterationView,
   type ExecutionHeaderModel,
@@ -249,6 +250,8 @@ export function ConsoleInspectPane({
         });
   const nodeTerminal =
     selectedNodeId === null ? false : hasTerminalNodeEvidence(nodeExecutions, selectedNodeId);
+  const idleAwaitExpired =
+    selectedNodeId === null ? false : hasIdleAwaitExpiredEvidence(nodeExecutions, selectedNodeId);
   const nodeExecutionKey =
     selectedNodeId === null ? null : latestNodeExecutionKey(rawEvents, selectedNodeId);
   const headerModel: ExecutionHeaderModel | null =
@@ -366,6 +369,7 @@ export function ConsoleInspectPane({
           }}
           finishedIteration={finishedIteration}
           nodeTerminal={nodeTerminal}
+          idleAwaitExpired={idleAwaitExpired}
           nodeExecutionKey={nodeExecutionKey}
           showToolCalls={showToolCalls}
           showSystem={showSystem}

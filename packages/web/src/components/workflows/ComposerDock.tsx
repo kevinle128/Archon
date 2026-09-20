@@ -13,10 +13,12 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   interruptNode,
+  keepaliveNode,
   readNodeGuidanceQueue,
   sendNodeGuidance,
   withdrawNodeGuidance,
   type InterruptWorkflowNodeResponse,
+  type KeepaliveWorkflowNodeResponse,
   type ReadWorkflowNodeQueueResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
@@ -31,14 +33,17 @@ import {
   beginSendNow,
   beginWithdraw,
   canSubmitGuidance,
+  createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
   finishedIterationDisclosure,
   focusTargetAfterSnapshot,
   goToIterationLabel,
+  isKeepaliveActivityKey,
   isQueueShortcut,
   loadSteeringDraft,
   neverSentBandHeader,
+  neverSentDisclosure,
   neverSentListLabel,
   nextFocusAfterRemoval,
   queueBandHeader,
@@ -64,14 +69,15 @@ import {
   syncProjectedSubState,
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_IDLE_AWAIT_DISCLOSURE,
   STEERING_INTERRUPT_DISCLOSURE,
-  STEERING_NEVER_SENT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   toSteeringRefusal,
   willSendBandHeader,
   willSendListLabel,
   toSteeringRequestError,
+  type KeepaliveCoalescer,
   type RemovalFocusTarget,
   type SteeringDockMode,
   type SteeringDockState,
@@ -89,6 +95,11 @@ export type InterruptNode = (
   runId: string,
   nodeId: string
 ) => Promise<InterruptWorkflowNodeResponse>;
+
+export type KeepaliveNode = (
+  runId: string,
+  nodeId: string
+) => Promise<KeepaliveWorkflowNodeResponse>;
 
 export type WithdrawNodeGuidance = (
   runId: string,
@@ -165,6 +176,17 @@ export interface ComposerDockProps {
    * preserving the raw draft. Default null.
    */
   nodeExecutionKey?: string | null;
+  /**
+   * Bodyless idle-await keepalive. Defaults to the Legacy API helper.
+   * Injectable for tests.
+   */
+  keepalive?: KeepaliveNode;
+  /**
+   * True when the selected node's latest terminal execution failed for the
+   * idle-await expiry cause. Drives the Story 2.12 never-sent alert copy.
+   * Default false.
+   */
+  idleAwaitExpired?: boolean;
 }
 
 const FIELD_CLASSES = cn(
@@ -206,12 +228,14 @@ export function ComposerDock({
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
   readQueue = readNodeGuidanceQueue,
+  keepalive = keepaliveNode,
   pollIntervalMs = 1000,
   storage,
   focusLastRow,
   writtenOperatorMessageIds = null,
   nodeTerminal = false,
   nodeExecutionKey = null,
+  idleAwaitExpired = false,
 }: ComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
   const storageKey = steeringDraftStorageKey(runId, nodeId);
@@ -233,6 +257,10 @@ export function ComposerDock({
   const prevScopeRef = useRef(storageKey);
   const prevExecutionKeyRef = useRef<string | null>(nodeExecutionKey);
   const prevNodeTerminalRef = useRef(nodeTerminal);
+  const coalescerRef = useRef<KeepaliveCoalescer | null>(null);
+  const keepaliveRef = useRef(keepalive);
+  keepaliveRef.current = keepalive;
+
   /** Skip one ordinary persist after an explicit pendingRetry:null write. */
   const suppressPersistRef = useRef(false);
   const draftRef = useRef('');
@@ -515,11 +543,39 @@ export function ComposerDock({
   const agentMode = steeringAgentMode(dock);
   const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
 
+  // One coalescer per idle attempt. Leaving idle / attempt-key change / unmount
+  // disposes it so a late result cannot affect a new attempt.
+  useEffect(() => {
+    coalescerRef.current?.dispose();
+    coalescerRef.current = null;
+    if (agentMode !== 'idle') return;
+    const attemptGen = attemptGenerationRef.current;
+    const attemptKey = nodeExecutionKey;
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        if (steeringAgentMode(dockRef.current) !== 'idle') return;
+        if (nodeExecutionKey !== attemptKey) return;
+        return keepaliveRef.current(runId, nodeId);
+      },
+    });
+    coalescerRef.current = coalescer;
+    return (): void => {
+      coalescer.dispose();
+      if (coalescerRef.current === coalescer) {
+        coalescerRef.current = null;
+      }
+    };
+  }, [agentMode, nodeExecutionKey, runId, nodeId]);
+
   const submit = (): void => {
     if (!canSubmit) return;
     const submittedDraft = draft;
     const attemptGen = attemptGenerationRef.current;
     if (agentMode === 'idle') {
+      // Send now cancels pending trailing keepalive and never issues one of its own.
+      coalescerRef.current?.dispose();
+      coalescerRef.current = null;
       const begun = beginSendNow(dock, draft);
       setDock(begun.state);
       void send(runId, nodeId, {
@@ -659,7 +715,7 @@ export function ComposerDock({
           role="alert"
           className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
         >
-          {STEERING_NEVER_SENT_DISCLOSURE}
+          {neverSentDisclosure(idleAwaitExpired)}
         </p>
       </section>
     );
@@ -821,9 +877,14 @@ export function ComposerDock({
         className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]"
       >
         {idle ? (
-          <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
-            {STEERING_INTERRUPT_DISCLOSURE}
-          </p>
+          <>
+            <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+              {STEERING_INTERRUPT_DISCLOSURE}
+            </p>
+            <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+              {STEERING_IDLE_AWAIT_DISCLOSURE}
+            </p>
+          </>
         ) : null}
         <label htmlFor={fieldId} className="sr-only">
           message to {nodeLabel}
@@ -836,18 +897,26 @@ export function ComposerDock({
           onChange={(event): void => {
             setDraft(event.target.value);
           }}
+          onFocus={(): void => {
+            if (agentMode === 'idle') {
+              coalescerRef.current?.touch();
+            }
+          }}
           onKeyDown={(event): void => {
-            if (
-              isQueueShortcut({
-                key: event.key,
-                metaKey: event.metaKey,
-                ctrlKey: event.ctrlKey,
-                isComposing: event.nativeEvent.isComposing,
-                keyCode: event.keyCode,
-              })
-            ) {
+            const shortcut = {
+              key: event.key,
+              metaKey: event.metaKey,
+              ctrlKey: event.ctrlKey,
+              isComposing: event.nativeEvent.isComposing,
+              keyCode: event.keyCode,
+            };
+            if (isQueueShortcut(shortcut)) {
               event.preventDefault();
               submit();
+              return;
+            }
+            if (agentMode === 'idle' && isKeepaliveActivityKey(shortcut)) {
+              coalescerRef.current?.touch();
             }
           }}
           className={FIELD_CLASSES}

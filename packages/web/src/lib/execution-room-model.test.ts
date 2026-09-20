@@ -9,6 +9,7 @@ import {
   chooseExecutionForNode,
   closeRoom,
   hasTerminalNodeEvidence,
+  hasIdleAwaitExpiredEvidence,
   hasUnsettledNodeExecutions,
   latestNodeExecutionKey,
   openRoom,
@@ -1042,6 +1043,153 @@ describe('hasTerminalNodeEvidence (T3.6–T3.8)', () => {
         NODE_ID
       )
     ).toBe(true);
+  });
+});
+
+describe('hasIdleAwaitExpiredEvidence (T4.7)', () => {
+  const EXPIRED = 'interrupted by operator, no redirect received';
+
+  test('exact latest expiry is true; wrong node/error/status, unsettled, and no row are false', () => {
+    expect(hasIdleAwaitExpiredEvidence(undefined, NODE_ID)).toBe(false);
+    expect(hasIdleAwaitExpiredEvidence([], NODE_ID)).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: 'other', status: 'failed', error: EXPIRED })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: NODE_ID, status: 'failed', error: 'other failure' })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: NODE_ID, status: 'completed', error: EXPIRED })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({ node_id: NODE_ID, status: 'failed', error: EXPIRED }),
+          nodeExecution({ node_id: NODE_ID, status: 'running' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: NODE_ID, status: 'failed', error: EXPIRED })],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('expiry epoch 0 followed by completed epoch 1 is false', () => {
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: EXPIRED,
+            retry_epoch: 0,
+            started_at: '2026-09-08T00:00:01.000Z',
+          }),
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'completed',
+            retry_epoch: 1,
+            started_at: '2026-09-08T00:10:00.000Z',
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+  });
+
+  test('timestamp and array position break ties; grp.body vs grp do not cross', () => {
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: 'older',
+            retry_epoch: 0,
+            started_at: '2026-09-08T00:00:01.000Z',
+          }),
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: EXPIRED,
+            retry_epoch: 0,
+            started_at: '2026-09-08T00:00:05.000Z',
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+
+    // Same epoch + same effective timestamp → later array position wins.
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: 'first',
+            retry_epoch: 1,
+            started_at: '2026-09-08T00:00:09.000Z',
+          }),
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: EXPIRED,
+            retry_epoch: 1,
+            started_at: '2026-09-08T00:00:09.000Z',
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: 'grp',
+            status: 'failed',
+            error: 'Loop group failed: body: ' + EXPIRED,
+          }),
+          nodeExecution({
+            node_id: 'grp.body',
+            status: 'failed',
+            error: EXPIRED,
+          }),
+        ],
+        'grp.body'
+      )
+    ).toBe(true);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: 'grp',
+            status: 'failed',
+            error: 'Loop group failed: body: ' + EXPIRED,
+          }),
+          nodeExecution({
+            node_id: 'grp.body',
+            status: 'failed',
+            error: EXPIRED,
+          }),
+        ],
+        'grp'
+      )
+    ).toBe(false);
   });
 });
 

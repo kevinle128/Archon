@@ -105,6 +105,8 @@ export interface NodeTranscriptPaneProps {
   onSelectLiveRow?: (liveRowId: string) => void;
   /** Actual node-terminal evidence from raw executions. Default false. */
   nodeTerminal?: boolean;
+  /** True when latest terminal execution failed for idle-await expiry. Default false. */
+  idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
   /** Node-wide written operator ids for terminal reconciliation. Default null. */
@@ -143,6 +145,7 @@ export function NodeTranscriptPane({
   onAskDraftChange,
   finishedIteration = null,
   nodeTerminal = false,
+  idleAwaitExpired = false,
   nodeExecutionKey = null,
   writtenOperatorMessageIds: _externalWrittenIds = null,
   onSelectLiveRow,
@@ -662,6 +665,7 @@ export function NodeTranscriptPane({
         }}
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
+        idleAwaitExpired={idleAwaitExpired}
         nodeExecutionKey={nodeExecutionKey}
         writtenOperatorMessageIds={reconcileWrittenIds}
       />

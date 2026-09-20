@@ -1,6 +1,16 @@
 ## Codebase Patterns
 
 
+### Keepalive coalescer + idle disclosure (Story 2.12)
+- **Where**: `packages/web/src/lib/steering-dock.ts` (`createKeepaliveCoalescer`, `neverSentDisclosure`, constants); docks in `ComposerDock.tsx` / `ConsoleComposerDock.tsx`
+- **Pattern**: Leading-plus-trailing coalescer with injected clock/scheduler. First touch sends immediately; interior activity schedules one trailing at window boundary. One coalescer per idle attempt — dispose on leave idle, attempt-key change, unmount, and Send now. Docks touch on textarea focus + non-submit keydown only while idle. Disclosure renders Stop text then exact 30-min line. Finished band uses `neverSentDisclosure(idleAwaitExpired)`.
+- **Example**: `createKeepaliveCoalescer({ send, now, setTimer, clearTimer })`; `neverSentDisclosure(true) === STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE`
+
+### idleAwaitExpired evidence (Story 2.12)
+- **Where**: `packages/web/src/lib/execution-room-model.ts` (`hasIdleAwaitExpiredEvidence`); computed in `LegacyGraphLogsPane` / `ConsoleInspectPane` beside `nodeTerminal`
+- **Pattern**: Filter selected node rows; require all terminal; pick latest by retry_epoch → started_at??ended_at??'' → array index; true only when latest is failed with exact IDLE_AWAIT_EXPIRED_ERROR mirror. Evaluate actual selected id so `grp.body` vs `grp` never cross.
+- **Example**: `hasIdleAwaitExpiredEvidence(nodeExecutions, selectedNodeId)`
+
 ### Executor expired wake branches (Story 2.12)
 - **Where**: `packages/workflows/src/dag-executor.ts` (`executeNodeInternal`, `executeLoopNode`)
 - **Pattern**: After `send_now`, branch on `wake.kind === 'expired'`. Prompt path throws `Error(IDLE_AWAIT_EXPIRED_ERROR)` into the existing generic catch (sole finalizer — do not abort `nodeAbortController`). Loop path returns `failLoopIteration(exact, extras, exact)` so the outer node error is not wrapped. Loop `terminated` closes the handle synchronously before status/message awaits so a losing timer cannot fire mid-await.
@@ -25,6 +35,17 @@
 - **Where**: production `scheduleIdleExpiryWithTimeout` and existing server timers
 - **Pattern**: `const t = timer as unknown as { unref?: () => void }; if (typeof t.unref === 'function') t.unref();`
 - **Example**: Same guarded cast used by dashboard-event-poller / workflow-events dispatcher.
+
+### Bodyless keepalive route ladder (Story 2.12)
+- **Where**: `packages/server/src/routes/api.ts` (keepalive route + handler)
+- **Pattern**: Mirror interrupt guard ladder exactly (auth → 404 → 409 terminal/closed → 422 missing/parked → final run re-read → synchronous `handle.keepalive()`). Public body is always `{ success: true }` — private `rearmed`/`not_idle` is not exposed. Parked must be checked before keepalive because keepalive returns `not_idle` for parked (would incorrectly 200). Error log event: `api.workflow_node_keepalive_failed`.
+- **Example**: `handle.keepalive(); return c.json({ success: true as const }, 200);`
+
+### keepaliveNode client (no body / no content-type)
+- **Where**: `packages/web/src/lib/api.ts`
+- **Pattern**: Same encoding style as interruptNode; `fetchJSON(url, { method: 'POST' })` with no body and no headers so no synthetic JSON content-type; failures via `toSteeringRequestError` without auto-retry.
+- **Example**: `return await fetchJSON<KeepaliveWorkflowNodeResponse>(url, { method: 'POST' });`
+
 
 ---
 
@@ -80,5 +101,64 @@
 - failLoopIteration's third arg is required to keep the owner-ratified string unwrapped on the outer node.
 - Cancel-vs-expiry tests must hold the idle status poll on a deferred gate; returning cancelled immediately races enterIdle and prevents awaitIdle from observing idle-after-interrupt.
 - Outer loop_group does not emit its own node_failed event — composite error is delivered via safeSendMessage + failed NodeOutput.
+
+---
+
+## 2026-09-20 — US-003: Bodyless keepalive route and web client
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/schemas/workflow.schemas.ts` — strict keepaliveWorkflowNodeResponseSchema + KeepaliveWorkflowNodeResponse
+- `packages/server/src/routes/api.ts` — OpenAPI route + interrupt-mirrored guard ladder calling handle.keepalive()
+- `packages/server/src/routes/api.workflow-runs.test.ts` — T3.1–T3.11 keepalive route matrix
+- `packages/web/src/lib/api.ts` — keepaliveNode helper
+- `packages/web/src/lib/api.keepalive.test.ts` — T3.12 client helper tests
+- `packages/web/src/lib/api.generated.d.ts` — regenerated keepalive path + KeepaliveWorkflowNodeResponse
+
+**Acceptance criteria verified**:
+- [x] T3.1–T3.12 route/client matrix
+- [x] Strict schema + OpenAPI KeepaliveWorkflowNodeResponse, bodyless POST
+- [x] Guard ladder: 401/404/409/422 + final re-read + sync keepalive → 200 { success: true }
+- [x] Live idle rearms; generating/between-turn/queue-only no-op 200; later send_now still wakes
+- [x] No durable row writes; actor grant parity with send/interrupt
+- [x] keepaliveNode encodes path, POST no body/content-type, 422 → SteeringRequestError
+- [x] Phase gate: 307 workflow-runs tests, 2 client tests, server+web type-check, eslint clean
+
+**Learnings**:
+- keepalive() returns not_idle for parked — route must 422 parked explicitly (interrupt gets this from interrupt() settlement).
+- Port 3090 was owned by a foreign worktree bun process that the sandbox refused to signal; typegen used the same registerApiRoutes OpenAPI doc already asserted by T3.10 (file dump → openapi-typescript). Diff is keepalive path/schema plus a harmless steeringSubState property reorder.
+- Object.defineProperty is the safe spy seam for class methods on live handles in route tests.
+
+---
+
+## 2026-09-20 — US-004: Dock disclosure, keepalive wiring, and fail copy
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — disclosure constants, neverSentDisclosure, isKeepaliveActivityKey, createKeepaliveCoalescer
+- `packages/web/src/lib/steering-dock.test.ts` — T4.1–T4.6
+- `packages/web/src/lib/execution-room-model.ts` — hasIdleAwaitExpiredEvidence
+- `packages/web/src/lib/execution-room-model.test.ts` — T4.7
+- `packages/web/src/components/workflows/ComposerDock.tsx` (+test) — coalescer wiring, dual disclosure, expiry alert
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` (+test) — mirror
+- `packages/web/src/experiments/console/skills/runs.ts` — keepaliveNode helper
+- Prop chain: LegacyGraphLogsPane → LegacyNodeRoom → NodeTranscriptPane; ConsoleInspectPane → ConsoleNodeRoom (+ T4.16 tests)
+
+**Acceptance criteria verified**:
+- [x] T4.1–T4.7 pure helpers
+- [x] Exact copy constants + neverSentDisclosure
+- [x] Leading-plus-trailing coalescer with dispose/rejection handling
+- [x] Key predicate excludes only Cmd/Ctrl+Enter submit
+- [x] hasIdleAwaitExpiredEvidence latest-row / grp.body isolation
+- [x] idleAwaitExpired threaded through room/pane chains
+- [x] Both docks: injectable keepalive, idle coalescer, focus/keydown touch, Send now dispose
+- [x] Idle dual disclosure; finished cause-specific alert; empty terminal no shell
+- [x] T4.8–T4.16 dock + prop-chain matrix
+- [x] Phase gate: 204 pure, 653 workflow, 535 console, type-check, eslint 0
+
+**Learnings**:
+- Re-focus after attempt-key change may not fire onFocus if the textarea stayed focused — tests must blur then focus.
+- IDLE_AWAIT_EXPIRED_ERROR is an intentional package-boundary string mirror in steering-dock (web must not import @archon/workflows).
+- Leading-only throttle is forbidden; trailing at window boundary is what keeps the final keystroke represented within 30s.
 
 ---
