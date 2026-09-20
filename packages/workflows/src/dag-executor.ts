@@ -512,11 +512,15 @@ function isAbortLikeStreamError(err: Error): boolean {
   );
 }
 
+/** Owner-ratified idle-await expiry error (#192 / Story 2.12). Fixed product copy. */
+export const IDLE_AWAIT_EXPIRED_ERROR = 'interrupted by operator, no redirect received';
+
 /**
- * Idle-await first-wins race (#183): the executor parks on the handle's idle
- * waiter while a side-channel polls run status on the streaming cadence.
- * First of send_now / discard / terminal status wins; the loser is torn down
- * synchronously — no trailing timer or unresolved waiter survives.
+ * Idle-await first-wins race (#183 / #192): the executor parks on the handle's
+ * idle waiter while a side-channel polls run status on the streaming cadence.
+ * First of send_now / expiry / discard / a non-streamable run status wins; the
+ * loser is torn down synchronously — no trailing timer or unresolved waiter
+ * survives.
  */
 async function raceIdleWake(
   deps: WorkflowDeps,
@@ -3576,6 +3580,16 @@ async function executeNodeInternal(
           turnResumeId = interruptedSessionId;
           turnIsGuidance = true;
           continue turns;
+        }
+        if (wake.kind === 'expired') {
+          // Explicit fail — throw into the generic catch (sole prompt finalizer).
+          // Do NOT abort nodeAbortController: that path would misclassify as Cancel.
+          const duration = Date.now() - nodeStartTime;
+          getLog().warn(
+            { runId: workflowRun.id, nodeId: node.id, durationMs: duration },
+            'dag.node_idle_await_expired'
+          );
+          throw new Error(IDLE_AWAIT_EXPIRED_ERROR);
         }
         // Discard / terminal-status wake — land on the existing Cancel path so
         // the run ends exactly as a mid-stream cancel would.
@@ -7201,8 +7215,35 @@ async function executeLoopNodeInner(
           turnIsGuidance = true;
           continue turns;
         }
+        if (wake.kind === 'expired') {
+          const duration = Date.now() - iterationStart;
+          getLog().warn(
+            {
+              runId: workflowRun.id,
+              nodeId: node.id,
+              iteration: i,
+              durationMs: duration,
+            },
+            'loop_node.idle_await_expired'
+          );
+          // Pass the exact error as both iteration and node error so the outer
+          // loop does not wrap it with "Loop iteration N failed: …".
+          return await failLoopIteration(
+            IDLE_AWAIT_EXPIRED_ERROR,
+            {
+              costUsd: loopTotalCostUsd,
+              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+              loopIterations: i,
+              data: { iteration: i },
+            },
+            IDLE_AWAIT_EXPIRED_ERROR
+          );
+        }
         // Discard / terminal-status wake — land on the existing cancel path so
-        // the run ends exactly as a mid-stream stop would.
+        // the run ends exactly as a mid-stream stop would. Close the handle
+        // synchronously BEFORE the status re-read / platform message so a
+        // losing inactivity timer cannot fire during those awaits (#192).
+        steering.steeringHandle?.close();
         const effectiveStatus =
           (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ?? 'cancelled';
         await safeSendMessage(

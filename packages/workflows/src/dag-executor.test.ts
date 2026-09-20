@@ -108,6 +108,7 @@ import {
   collectAskHumanUnsupportedProviders,
   containerCommandName,
   buildSubprocessDockerArgs,
+  IDLE_AWAIT_EXPIRED_ERROR,
 } from './dag-executor';
 import type { WorkflowModelScope } from './node-model-resolution';
 import { getSteeringRegistry, type NodeSteeringHandle } from './steering-registry';
@@ -28105,6 +28106,496 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(sendQueryArg<string>(1, 0)).toBe('redirect the body');
     expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-body-1');
     expect(getSteeringRegistry().get(RUN_ID, 'grp.body')).toBeUndefined();
+  });
+
+  /**
+   * Idle-await expiry fail branch (#192 / Story 2.12 / US-002).
+   * Drive expiry via expireIdleForTests() after awaitIdle — no real sleeps,
+   * no duplicated timer-timing coverage from the registry suite.
+   */
+  describe('idle-await expiry fail branch (#192)', () => {
+    it('T2.1 prompt expiry fails once with the exact error', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+      const idle = await awaitIdle(RUN_ID, 'review');
+      idle.expireIdleForTests();
+      await run;
+
+      expect(IDLE_AWAIT_EXPIRED_ERROR).toBe('interrupted by operator, no redirect received');
+      expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      expect(storedEventTypes(store).filter(t => t === 'node_failed')).toHaveLength(1);
+      expect(storedEventTypes(store)).not.toContain('node_completed');
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      const states = await transcriptStates(store, RUN_ID, 'review');
+      expect(states).toContain('failed');
+      expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+    });
+
+    it('T2.2 expiry is not stream idle-timeout completion', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      const platform = createMockPlatform();
+      const run = executeDagWorkflow(
+        createMockDeps(store),
+        platform,
+        'conv-dag',
+        testDir,
+        { name: 'interrupt-test', nodes: [{ id: 'review', prompt: 'do work' }] },
+        makeWorkflowRun(RUN_ID),
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      const idle = await awaitIdle(RUN_ID, 'review');
+      idle.expireIdleForTests();
+      await run;
+
+      expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      expect(storedEventTypes(store)).not.toContain('node_completed');
+      const sent = (platform.sendMessage as ReturnType<typeof mock>).mock.calls.map(
+        call => call[1] as string
+      );
+      expect(sent.some(text => text.includes('completed via idle timeout'))).toBe(false);
+      const failedCall = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+        call =>
+          (call[0] as { event_type: string }).event_type === 'node_failed' &&
+          (call[0] as { step_name: string }).step_name === 'review'
+      );
+      const failedData = (failedCall![0] as { data: Record<string, unknown> }).data;
+      expect(JSON.stringify(failedData)).not.toContain('idle_timeout');
+      expect(failedData.error).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+    });
+
+    it('T2.3 prompt expiry uses the generic failure finalizer once', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      let handleClosedAtNodeFailed = false;
+      const originalCreate = store.createWorkflowEvent.bind(store);
+      store.createWorkflowEvent = mock(
+        async (event: Parameters<IWorkflowStore['createWorkflowEvent']>[0]) => {
+          if (event.event_type === 'node_failed' && event.step_name === 'review') {
+            const handle = getSteeringRegistry().get(RUN_ID, 'review');
+            handleClosedAtNodeFailed = handle === undefined || handle.isClosed();
+          }
+          return originalCreate(event);
+        }
+      ) as typeof store.createWorkflowEvent;
+
+      mockLogFn.mockClear();
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+      const idle = await awaitIdle(RUN_ID, 'review');
+      idle.expireIdleForTests();
+      await run;
+
+      expect(handleClosedAtNodeFailed).toBe(true);
+      expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      expect(storedEventTypes(store).filter(t => t === 'node_failed')).toHaveLength(1);
+      expect(mockLogFn.mock.calls.some(call => call[1] === 'dag_node_failed')).toBe(true);
+      expect(mockLogFn.mock.calls.some(call => call[1] === 'dag.node_idle_await_expired')).toBe(
+        true
+      );
+      // No Cancel-path log for this failure.
+      expect(
+        mockLogFn.mock.calls.some(call => call[1] === 'dag_node_cancelled_during_streaming')
+      ).toBe(false);
+    });
+
+    it('T2.4 send_now wins before forced expiry and stale expiry cannot fail it', async () => {
+      let calls = 0;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          void liveHandle(RUN_ID, 'review').interrupt();
+          yield { type: 'assistant', content: 'partial' };
+          yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected' };
+        yield { type: 'result', sessionId: 'sess-2' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+      const idle = await awaitIdle(RUN_ID, 'review');
+      sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+      // Stale expiry after send_now must be inert.
+      idle.expireIdleForTests();
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+    });
+
+    it('T2.5 Cancel status-poll wins; stale expiry cannot add a failure', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      // Hold the first idle status poll until the test observes idle, then
+      // release as cancelled — avoids wall-clock CANCEL_CHECK_INTERVAL_MS.
+      let releaseIdlePoll: (() => void) | undefined;
+      const idlePollGate = new Promise<void>(resolve => {
+        releaseIdlePoll = resolve;
+      });
+      let idlePollHeld = false;
+      store.getWorkflowRunStatus = mock(async () => {
+        const handle = getSteeringRegistry().get(RUN_ID, 'review');
+        if (handle?.steeringSubState() === 'idle-after-interrupt' && !handle.isClosed()) {
+          idlePollHeld = true;
+          await idlePollGate;
+          return 'cancelled';
+        }
+        return 'running';
+      });
+
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+      const idle = await awaitIdle(RUN_ID, 'review');
+      // Drain microtasks until raceIdleWake's poll has entered the hold.
+      for (let i = 0; i < 100 && !idlePollHeld; i++) {
+        await Promise.resolve();
+      }
+      expect(idlePollHeld).toBe(true);
+      releaseIdlePoll!();
+      await run;
+      // Closed handle: stale expiry must not add another failure.
+      idle.expireIdleForTests();
+
+      expect(nodeFailedError(store, 'review')).toBe('Cancelled by user');
+      expect(storedEventTypes(store).filter(t => t === 'node_failed')).toHaveLength(1);
+      expect(storedEventTypes(store)).not.toContain('node_completed');
+      expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+    });
+
+    it('T2.6 expiry wins before discard; one terminal outcome and handle unregistered', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+      const idle = await awaitIdle(RUN_ID, 'review');
+      idle.expireIdleForTests();
+      getSteeringRegistry().discardRun(RUN_ID);
+      await run;
+
+      expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      expect(storedEventTypes(store).filter(t => t === 'node_failed')).toHaveLength(1);
+      expect(storedEventTypes(store)).not.toContain('node_completed');
+      expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+    });
+
+    it('T2.7 AI loop expiry fails iteration and outer node with the exact error', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'my-loop').interrupt();
+        yield {
+          type: 'assistant',
+          content: 'iteration work',
+        };
+        yield {
+          type: 'result',
+          sessionId: 'loop-sess-1',
+          terminalReason: 'aborted_streaming',
+          tokens: { input: 3, output: 1 },
+          cost: 0.01,
+        };
+      });
+      const store = createMockStore();
+      const run = invokeDag(store, [
+        {
+          id: 'my-loop',
+          loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+        },
+      ]);
+
+      const idle = await awaitIdle(RUN_ID, 'my-loop');
+      idle.expireIdleForTests();
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'my-loop')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      const iterationFailed = (
+        store.createWorkflowEvent as ReturnType<typeof mock>
+      ).mock.calls.find(
+        call => (call[0] as { event_type: string }).event_type === 'loop_iteration_failed'
+      );
+      expect(iterationFailed).toBeDefined();
+      expect((iterationFailed![0] as { data: { error: string } }).data.error).toBe(
+        IDLE_AWAIT_EXPIRED_ERROR
+      );
+      expect(storedEventTypes(store)).not.toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('loop_iteration_completed');
+      const failedData = (
+        (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+          call =>
+            (call[0] as { event_type: string }).event_type === 'node_failed' &&
+            (call[0] as { step_name: string }).step_name === 'my-loop'
+        )![0] as { data: Record<string, unknown> }
+      ).data;
+      // Accounting extras ride the fail path (iteration present).
+      expect(failedData.iteration).toBe(1);
+      expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+    });
+
+    it('T2.8 loop Cancel remains unchanged and stale expiry is inert', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'my-loop').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      let releaseIdlePoll: (() => void) | undefined;
+      const idlePollGate = new Promise<void>(resolve => {
+        releaseIdlePoll = resolve;
+      });
+      let idlePollHeld = false;
+      let handleClosedBeforeTerminatedStatusRead = false;
+      let terminatedStatusReads = 0;
+      store.getWorkflowRunStatus = mock(async () => {
+        const handle = getSteeringRegistry().get(RUN_ID, 'my-loop');
+        if (
+          !idlePollHeld &&
+          handle?.steeringSubState() === 'idle-after-interrupt' &&
+          !handle.isClosed()
+        ) {
+          idlePollHeld = true;
+          await idlePollGate;
+          return 'cancelled';
+        }
+        // Terminated branch re-reads status after the synchronous close.
+        if (idlePollHeld) {
+          terminatedStatusReads += 1;
+          if (terminatedStatusReads === 1) {
+            const live = getSteeringRegistry().get(RUN_ID, 'my-loop');
+            handleClosedBeforeTerminatedStatusRead = live === undefined || live.isClosed();
+          }
+          return 'cancelled';
+        }
+        return 'running';
+      });
+
+      const platform = createMockPlatform();
+      const run = executeDagWorkflow(
+        createMockDeps(store),
+        platform,
+        'conv-dag',
+        testDir,
+        {
+          name: 'interrupt-test',
+          nodes: [
+            {
+              id: 'my-loop',
+              loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+            },
+          ],
+        },
+        makeWorkflowRun(RUN_ID),
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      const idle = await awaitIdle(RUN_ID, 'my-loop');
+      for (let i = 0; i < 100 && !idlePollHeld; i++) {
+        await Promise.resolve();
+      }
+      expect(idlePollHeld).toBe(true);
+      releaseIdlePoll!();
+      await run;
+      idle.expireIdleForTests();
+      expect(nodeFailedError(store, 'my-loop')).toBe('Loop iteration 1 failed: Workflow cancelled');
+      expect(storedEventTypes(store).filter(t => t === 'node_failed')).toHaveLength(1);
+      const sent: string[] = [];
+      for (const call of (platform.sendMessage as Mock).mock.calls) {
+        if (typeof call[1] === 'string') sent.push(call[1]);
+      }
+      expect(
+        sent.some(text =>
+          text.includes("Loop node 'my-loop' stopped during iteration 1 (cancelled)")
+        )
+      ).toBe(true);
+      expect(handleClosedBeforeTerminatedStatusRead).toBe(true);
+      expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+    });
+
+    it('T2.9 loop-group body expiry carries exact error under grp.body', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'grp.body').interrupt();
+        yield { type: 'assistant', content: 'body partial' };
+        yield { type: 'result', sessionId: 'sess-body-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      const platform = createMockPlatform();
+      const run = executeDagWorkflow(
+        createMockDeps(store),
+        platform,
+        'conv-dag',
+        testDir,
+        {
+          name: 'interrupt-test',
+          nodes: [
+            {
+              id: 'grp',
+              loop_group: {
+                until: 'COMPLETE',
+                max_iterations: 3,
+                nodes: [{ id: 'body', prompt: 'emit COMPLETE' }],
+              },
+            },
+          ],
+        },
+        makeWorkflowRun(RUN_ID),
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      const idle = await awaitIdle(RUN_ID, 'grp.body');
+      idle.expireIdleForTests();
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'grp.body')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      // Outer group does not emit its own node_failed event — it returns the
+      // composite wrapper via safeSendMessage and fails the run.
+      const sent: string[] = [];
+      for (const call of (platform.sendMessage as Mock).mock.calls) {
+        if (typeof call[1] === 'string') sent.push(call[1]);
+      }
+      const composite = sent.find(text =>
+        text.includes("Loop-group node 'grp' failed at iteration 1")
+      );
+      expect(composite).toBeDefined();
+      expect(composite).toContain(`'body': ${IDLE_AWAIT_EXPIRED_ERROR}`);
+      expect(getSteeringRegistry().get(RUN_ID, 'grp.body')).toBeUndefined();
+    });
+
+    it('T2.10 queued rows remain unmatched on expiry', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      mockLogFn.mockClear();
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+      const idle = await awaitIdle(RUN_ID, 'review');
+      enqueue(RUN_ID, 'review', 'm-1', 'held one');
+      enqueue(RUN_ID, 'review', 'm-2', 'held two');
+      expect(idle.snapshot().queued.length).toBe(2);
+      idle.expireIdleForTests();
+      await run;
+
+      expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      const unconsumed = mockLogFn.mock.calls.filter(
+        call => call[1] === 'dag.steering_queue_unconsumed'
+      );
+      expect(unconsumed.length).toBeGreaterThanOrEqual(1);
+      expect((unconsumed[0]![0] as { queuedCount: number }).queuedCount).toBe(2);
+      const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(
+        isOperatorTextRow
+      );
+      expect(operatorRows).toHaveLength(0);
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    });
+
+    it('T2.11 expiry result carries no session id and does not upsert', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work', persist_session: true }]);
+
+      const idle = await awaitIdle(RUN_ID, 'review');
+      idle.expireIdleForTests();
+      await run;
+
+      expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+      expect(store.upsertWorkflowNodeSession).not.toHaveBeenCalled();
+      // Failed finalizer returns no sessionId — only completed nodes upsert.
+      const completed = storedEventTypes(store).filter(t => t === 'node_completed');
+      expect(completed).toHaveLength(0);
+    });
+
+    it('T2.12 a new DAG invocation after expiry starts with resumeSessionId undefined', async () => {
+      // Supported-retry deletion contract lives in workflow-retry.test.ts.
+      // Here: after an expiry failure (no upsert), a fresh DAG invocation does
+      // not resume the interrupted session id.
+      let calls = 0;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        resume?: string
+      ) {
+        calls++;
+        if (calls === 1) {
+          expect(resume).toBeUndefined();
+          void liveHandle(RUN_ID, 'review').interrupt();
+          yield { type: 'assistant', content: 'partial' };
+          yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+          return;
+        }
+        // Second DAG invocation (fresh run) must also start without a resume id.
+        expect(resume).toBeUndefined();
+        yield { type: 'assistant', content: 'fresh start' };
+        yield { type: 'result', sessionId: 'sess-fresh' };
+      });
+      const store = createMockStore();
+      const first = invokeDag(store, [{ id: 'review', prompt: 'do work', persist_session: true }]);
+      const idle = await awaitIdle(RUN_ID, 'review');
+      idle.expireIdleForTests();
+      await first;
+      expect(store.upsertWorkflowNodeSession).not.toHaveBeenCalled();
+
+      getSteeringRegistry().clearForTests();
+      const store2 = createMockStore();
+      await invokeDag(store2, [{ id: 'review', prompt: 'do work', persist_session: true }], {
+        runId: 'interrupt-run-2',
+      });
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string | undefined>(1, 2)).toBeUndefined();
+      expect(storedEventTypes(store2)).toContain('node_completed');
+    });
   });
 
   /**

@@ -1,0 +1,84 @@
+## Codebase Patterns
+
+
+### Executor expired wake branches (Story 2.12)
+- **Where**: `packages/workflows/src/dag-executor.ts` (`executeNodeInternal`, `executeLoopNode`)
+- **Pattern**: After `send_now`, branch on `wake.kind === 'expired'`. Prompt path throws `Error(IDLE_AWAIT_EXPIRED_ERROR)` into the existing generic catch (sole finalizer — do not abort `nodeAbortController`). Loop path returns `failLoopIteration(exact, extras, exact)` so the outer node error is not wrapped. Loop `terminated` closes the handle synchronously before status/message awaits so a losing timer cannot fire mid-await.
+- **Example**: `if (wake.kind === 'expired') { getLog().warn(...); throw new Error(IDLE_AWAIT_EXPIRED_ERROR); }`
+
+### Deterministic Cancel-vs-expiry race in executor tests
+- **Where**: `packages/workflows/src/dag-executor.test.ts` (T2.5 / T2.8)
+- **Pattern**: Hold the first `getWorkflowRunStatus` that observes `idle-after-interrupt` on a deferred gate; `awaitIdle` then spin microtasks until the hold is set; release as `cancelled`; call `expireIdleForTests()` after the run to prove stale expiry is inert. No wall-clock `CANCEL_CHECK_INTERVAL_MS` waits.
+- **Example**: `idlePollHeld = true; await idlePollGate; return 'cancelled'`
+
+### Idle-await inactivity timer (Story 2.12)
+- **Where**: `packages/workflows/src/steering-registry.ts`
+- **Pattern**: One process-local timer per idle waiter. `enterIdle` installs the waiter then arms; `keepalive()` re-arms without resolving; `send_now`/`seal()` cancel before resolve. Expiry resolves `{ kind: 'expired' }` without changing phase/sub-state/queue — handle stays live/idle for failure teardown + queue reconciliation. Generation counter + cancel make stale callbacks inert.
+- **Example**: `createSteeringRegistry({ idleAwaitInactivityMs, scheduleIdleExpiry })` for tests; production uses `scheduleIdleExpiryWithTimeout` + `resolveIdleAwaitInactivityMs(process.env)`.
+
+### Manual idle scheduler in tests
+- **Where**: `packages/workflows/src/steering-registry.test.ts`
+- **Pattern**: Inject `ScheduleIdleExpiry` that records jobs with `cancelled` flags; `fire(job)` always invokes the callback so generation guards are proven. Never fake global clocks or sleep.
+- **Example**: `const scheduler = createManualScheduler(); createSteeringRegistry({ scheduleIdleExpiry: scheduler.schedule })`
+
+### Timer unref convention
+- **Where**: production `scheduleIdleExpiryWithTimeout` and existing server timers
+- **Pattern**: `const t = timer as unknown as { unref?: () => void }; if (typeof t.unref === 'function') t.unref();`
+- **Example**: Same guarded cast used by dashboard-event-poller / workflow-events dispatcher.
+
+---
+
+## 2026-09-20 — US-001: Registry inactivity timer and keepalive
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/steering-registry.ts` — STEERING_IDLE_AWAIT_INACTIVITY_MS, expired wake kind, scheduler seam, keepalive, expireIdleForTests, resolveIdleAwaitInactivityMs, registry options
+- `packages/workflows/src/steering-registry.test.ts` — T1.1–T1.12 + expireIdleForTests coverage via manual scheduler
+
+**Acceptance criteria verified**:
+- [x] TDD: T1.1–T1.12 with injected manual scheduler (no fake clocks / ms sleeps)
+- [x] STEERING_IDLE_AWAIT_INACTIVITY_MS === 1_800_000; default registry schedules that delay
+- [x] Active job fire → single `{ kind: 'expired' }`; stale/cancelled generation inert
+- [x] keepalive rearmed only for live idle with pending waiter; other states not_idle
+- [x] send_now + every seal path cancel timer; first-wins orders yield one result
+- [x] Post-expiry stays live/idle; queue-intent awaiting_send_now; closeIfEmpty false while queued
+- [x] Production scheduler unrefs + idempotent cancel; expireIdleForTests
+- [x] resolveIdleAwaitInactivityMs E2E gate with strict integer bounds
+- [x] Registry options isolation; clearing one does not affect the other/singleton
+- [x] Phase gate: 79 tests pass; type-check; eslint on source --max-warnings 0
+
+**Learnings**:
+- `async function` that `return promise` unwraps one level — `await enterIdleFor()` was awaiting the idle waiter itself (5s timeouts). Helper must be sync and callers must not await until they intend to settle.
+- Expiry must leave handle live/idle (not seal) so Story 2.11 queue reconciliation still sees `awaiting_send_now`.
+- US-001+US-002 are one atomic rollout unit — expired wake without executor branch would misclassify as Cancel.
+
+---
+
+## 2026-09-20 — US-002: Executor explicit expired fail branch
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/dag-executor.ts` — export IDLE_AWAIT_EXPIRED_ERROR; raceIdleWake doc names expiry; prompt expired throw into generic catch; loop expired via failLoopIteration(exact, extras, exact); loop terminated closes handle before awaits
+- `packages/workflows/src/dag-executor.test.ts` — T2.1–T2.12 idle-await expiry suite
+
+**Acceptance criteria verified**:
+- [x] T2.1–T2.12 drive expiry via expireIdleForTests() after awaitIdle (no real sleeps)
+- [x] IDLE_AWAIT_EXPIRED_ERROR exported exact string
+- [x] Prompt expired branch throws into generic catch; no nodeAbortController.abort; nodeIdleTimedOut untouched
+- [x] Loop expired branch failLoopIteration with exact error as both args; no extra platform message
+- [x] Loop terminated closes handle before status/message awaits; Cancel semantics byte-equivalent (wrapped Loop iteration N failed: Workflow cancelled)
+- [x] withIdleTimeout / finishCancelled / raceIdleWake implementation unchanged (doc only)
+- [x] Prompt expiry: one node_failed exact error, no node_completed, no idle timeout classification, one provider call
+- [x] First-wins: send_now, Cancel poll, expiry-before-discard
+- [x] Loop + loop-group body exact error; outer grp composite via safeSendMessage; no later iteration
+- [x] Queued unmatched count 2; no session upsert on expiry even with persist_session
+- [x] workflow-retry session deletion stays green; fresh DAG invocation resumeSessionId undefined
+- [x] Phase gate: 671 dag-executor tests, 20 workflow-retry, type-check, eslint source
+
+**Learnings**:
+- Throwing on the prompt path is intentional so the generic catch stays the single failure writer.
+- failLoopIteration's third arg is required to keep the owner-ratified string unwrapped on the outer node.
+- Cancel-vs-expiry tests must hold the idle status poll on a deferred gate; returning cancelled immediately races enterIdle and prevents awaitIdle from observing idle-after-interrupt.
+- Outer loop_group does not emit its own node_failed event — composite error is delivered via safeSendMessage + failed NodeOutput.
+
+---

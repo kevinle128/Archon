@@ -20,8 +20,8 @@
       "technicalNotes": "Phase 1 of the plan (phase-01-registry-inactivity-timer-and-keepalive.md). Owner: packages/workflows/src/steering-registry.ts (SteeringIdleWake :97, idleWaiter :136, enterIdle :267, seal/clearForTests :437/:533, createSteeringRegistry :563). Duration is a fixed product rule — no config key, YAML field, DB state, or content logging. Queue-intent while idle must stay queued without waking or re-arming. Deploys atomically with US-002: an unhandled expired wake misclassifies as Cancel.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: packages/workflows/src/steering-registry.ts, packages/workflows/src/steering-registry.test.ts. Phase gate green: 79 tests pass, type-check clean, eslint clean."
     },
     {
       "id": "US-002",
@@ -44,8 +44,8 @@
       "technicalNotes": "Phase 2 (phase-02-executor-explicit-fail-branch.md). Sites: executeNodeInternal (dag-executor.ts :2125, raceIdleWake await :3572, generic catch is sole finalizer, finishCancelled :3274) and executeLoopNode (:5656/:5733, raceIdleWake :7196, failLoopIteration :6132). Throwing is intentional — a duplicate finalizer would drift. Passing the exact error as failLoopIteration's third arg prevents the outer loop wrapping it. US-001+US-002 are one atomic rollout/rollback unit.",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: packages/workflows/src/dag-executor.ts, packages/workflows/src/dag-executor.test.ts. Phase gate green: 671 dag-executor tests, 20 workflow-retry tests, type-check clean, eslint clean on source."
     },
     {
       "id": "US-003",
