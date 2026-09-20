@@ -63,8 +63,8 @@
       "technicalNotes": "Implement phase-03 section A exactly, in projectWorkflowExecutionHistory (packages/server/src/routes/workflow-execution-history.ts ~line 142; existing execution_scope handling ~247). Handle purged/answered Ask rows after lifecycle pairing, before returning history. Use real PendingInteraction and WorkflowEventRow shapes in tests. This is a read-model fix, NOT autonomous lifecycle mutation \u2014 consume committed state only. A legacy parked Ask without complete scope stays visibly unsettled intentionally (bounded 3 s catch-up preferred over a fabricated terminal).",
       "dependsOn": ["US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/server/src/routes/workflow-execution-history.ts, packages/server/src/routes/workflow-execution-history.test.ts. T3.1\u2013T3.4 green; server type-check and focused eslint clean."
     },
     {
       "id": "US-004",

@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Ask resolution pre-resolution filter
+- **Where**: `packages/server/src/routes/workflow-execution-history.ts` (`isPreResolutionStart`, owner finders)
+- **Pattern**: Answered Ask closure only considers starts with `sortedIndex < resolvedEventIndex` so later resume starts do not create multi-candidate ambiguity; purge has no before-index filter.
+- **Example**: Two open `type:'loop'` containers → without the filter, outer owner stays open; with it, only the parked outer fails.
+
 ### Observed ledger append-if-new
 - **Where**: `packages/web/src/lib/steering-dock.ts` (`appendObservedIfNew`)
 - **Pattern**: Local helper keyed by `messageId`; returns the same array reference when nothing is new so React identity short-circuits stay intact.
@@ -76,5 +81,29 @@
 - `controlsMounted('finished-iteration')` is required so Go→finished uses focusLastRow.
 - Explicit `pendingRetry: null` storage write must suppress the ordinary save effect in the same commit or the stale UUID is rewritten.
 - finished-iteration 409 stop assertion is timing-sensitive; assert no growth after rejection rather than `readsBefore + 1`.
+
+---
+
+## 2026-09-20T07:32:41Z — US-003: Server projection: scoped purged/answered Ask closure
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/workflow-execution-history.ts` — purged/answered Ask read-model closure after lifecycle pairing; start-meta indexes; ancestry-prefix owners; pre-resolution filter for answered resume
+- `packages/server/src/routes/workflow-execution-history.test.ts` — T3.1–T3.4
+
+**Acceptance criteria verified**:
+- [x] T3.1–T3.4 written first and passing
+- [x] purged ask with complete scope fails exact open execution; Date resolved_at → ISO ended_at; duration from ordered endpoints
+- [x] re-ask same-occurrence adoption clears stale start timing
+- [x] loop_ancestry closes unique iteration + outer container; siblings stay open
+- [x] answered requires interaction_resolved resumed:true + later corresponding starts; later executions kept
+- [x] missing scope/time, permission, sibling, unmatched, multi-candidate, pending fail closed
+- [x] inputs unchanged; no fabricated lifecycle rows
+- [x] bun test + server type-check + focused eslint clean
+
+**Learnings**:
+- Answered-resume owner matching must ignore post-resolution starts or unique outer-container match fails when the resumed outer is already open.
+- Keep loop fixture occurrence ids disjoint from unrelated completed pairs; `find(occurrence_id)` is not node-scoped.
+- freezeJson immutability checks cannot round-trip `Date` fields — assert Date identity separately.
 
 ---
