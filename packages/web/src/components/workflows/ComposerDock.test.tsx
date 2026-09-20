@@ -172,7 +172,7 @@ describe('ComposerDock', () => {
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
       readQueue: ReadNodeGuidanceQueue;
-      keepalive: import('./ComposerDock').KeepaliveNode;
+      keepalive: KeepaliveNode;
       pollIntervalMs: number;
       storage: Storage;
       nodeLabel: string;
@@ -2628,17 +2628,22 @@ describe('ComposerDock', () => {
       keepaliveCalls.push(Date.now());
       return { success: true };
     };
-    await renderDock({ subState: 'idle-after-interrupt', keepalive });
-    await act(async () => {
-      reactOnFocus(field())?.();
-    });
-    await flush();
-    expect(keepaliveCalls).toHaveLength(1);
-    await act(async () => {
-      await new Promise(resolve => setTimeout(resolve, 1100));
-    });
-    await setDraft('later');
-    expect(keepaliveCalls).toHaveLength(2);
+    const realNow = Date.now;
+    let nowMs = 1_000_000;
+    Date.now = (): number => nowMs;
+    try {
+      await renderDock({ subState: 'idle-after-interrupt', keepalive });
+      await act(async () => {
+        reactOnFocus(field())?.();
+      });
+      await flush();
+      expect(keepaliveCalls).toHaveLength(1);
+      nowMs += 1100;
+      await setDraft('later');
+      expect(keepaliveCalls).toHaveLength(2);
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   test('2.12 rejected keepalive is caught and later activity retries', async () => {
