@@ -8,7 +8,7 @@ The read half is covered by `test-plan.md` (CAP-1…7); this companion covers ev
 
 Build provider fixtures from the SDK type declarations and the measured payloads in `findings.md`, as the read plan does.
 **Every applicable table below carries at least one Claude fixture and one non-Claude (omp or codex) fixture** — the providers disagree on interrupt mechanism and on soft-inject transport, so a single-provider table would pass while the other renders or behaves wrong.
-Timer tests use fake timers; never a real 30-minute wait.
+Timer unit tests use an injected manual scheduler and `expireIdleForTests()` — never fake global clocks and never a real 30-minute wait. One real-timer E2E (`e2e/ui/agent-idle-await-expiry.spec.ts`, worker option `idleAwaitMs: 8_000`) proves the production path end-to-end.
 Process-boundary tests exercise both in-process (web dispatch) and detached (no live handle).
 
 ## Engine — the per-node turn loop
@@ -22,13 +22,15 @@ Process-boundary tests exercise both in-process (web dispatch) and detached (no 
 - the sub-state projection emits **exactly two** values (`generating` | `idle-after-interrupt`); `interrupting` never appears in the projected field
 - **every engine turn-loop assertion above also runs against `executeLoopNode`** (AI loop nodes are steerable in v1): registry key, per-turn signal, the end-cause rule, sub-state projection, idle-await; plus the loop-only case — `Send now` continues the **interrupted iteration** on the same session before the normal loop-completion check
 
-## Engine — idle-await lifecycle (fake timers)
+## Engine — idle-await lifecycle (manual scheduler + one real E2E timer)
 
 - 30-minute inactivity expiry takes the explicit fail branch (`interrupted by operator, no redirect received`), never the completing idle timeout
 - the timer re-arms on composer keepalive activity (keystroke / focus / keepalive route — **not** `Send now`, which resolves idle-await) and fails only after 30 minutes of genuine inactivity
 - the idle-await cancel-poll lets `/workflow cancel` reach the node while no stream exists
 - idle-await resolves exactly once — the first of `Send now`, cancel-poll, or timer wins; the other two tear down
 - rerunning a 30-minute-failed node via `workflow retry-node` re-runs it with a fresh session
+- Story 2.12 focused coverage: registry T1.x (`steering-registry.test.ts`), executor T2.x (`dag-executor.test.ts`), route/client T3.x (`api.workflow-runs.test.ts` + `api.keepalive.test.ts`), dock T4.x (`steering-dock` / Composer / Console), E2E E1–E8 (`agent-idle-await-expiry.spec.ts`)
+- **Restart limitation:** the idle timer and registry handle are process-local. A server restart drops them and leaves a durable non-terminal run; Archon does not autonomously fail or resume it. Recovery = explicit abandon/cancel, then CLI `archon workflow retry-node` (web Retry is not shown while the projected node is still `running`).
 
 ## Providers — interrupt conformance
 

@@ -2,16 +2,30 @@ import { test as base, expect } from '@playwright/test';
 
 import { createArchonRuntime, type ArchonRuntime } from './archon-runtime';
 
+type WorkerFixtures = {
+  archon: ArchonRuntime;
+  /**
+   * Optional E2E-only idle-await duration (ms). When set, the worker's server
+   * receives ARCHON_E2E_STEERING_IDLE_AWAIT_MS. Specs that omit it keep the
+   * production 30-minute default.
+   */
+  idleAwaitMs: number | undefined;
+};
+
 /**
  * Test fixture: every worker gets its own isolated Archon runtime, and `baseURL`
  * points at that worker's server. Import `test`/`expect` from here instead of
  * from `@playwright/test`.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type -- no test-scoped fixtures added; only the worker-scoped `archon`
-export const test = base.extend<{}, { archon: ArchonRuntime }>({
+export const test = base.extend<{}, WorkerFixtures>({
+  idleAwaitMs: [undefined, { scope: 'worker', option: true }],
   archon: [
-    async ({}, use, workerInfo) => {
-      const runtime = await createArchonRuntime(workerInfo.workerIndex);
+    async ({ idleAwaitMs }, use, workerInfo) => {
+      const serverEnv =
+        idleAwaitMs !== undefined
+          ? { ARCHON_E2E_STEERING_IDLE_AWAIT_MS: String(idleAwaitMs) }
+          : undefined;
+      const runtime = await createArchonRuntime(workerInfo.workerIndex, { serverEnv });
       try {
         await use(runtime);
       } finally {

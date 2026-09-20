@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### E2E idleAwaitMs worker option (Story 2.12)
+- **Where**: `e2e/lib/playwright/suite.ts`, `archon-runtime.ts`
+- **Pattern**: Worker-scoped Playwright option `idleAwaitMs` feeds `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` via `serverEnv` on the server spawn only (CLI env unchanged). Spec uses `test.use({ idleAwaitMs: 8_000 })`; other specs omit and keep 30 min.
+- **Example**: `createArchonRuntime(workerIndex, { serverEnv: { ARCHON_E2E_STEERING_IDLE_AWAIT_MS: '8000' } })`
+
 
 ### Keepalive coalescer + idle disclosure (Story 2.12)
 - **Where**: `packages/web/src/lib/steering-dock.ts` (`createKeepaliveCoalescer`, `neverSentDisclosure`, constants); docks in `ComposerDock.tsx` / `ConsoleComposerDock.tsx`
@@ -160,5 +165,35 @@
 - Re-focus after attempt-key change may not fire onFocus if the textarea stayed focused — tests must blur then focus.
 - IDLE_AWAIT_EXPIRED_ERROR is an intentional package-boundary string mirror in steering-dock (web must not import @archon/workflows).
 - Leading-only throttle is forbidden; trailing at window boundary is what keeps the final keystroke represented within 30s.
+
+---
+
+## 2026-09-20 — US-005: Real-timer E2E evidence, authority sync, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/lib/playwright/suite.ts` — worker-scoped `idleAwaitMs` option consumed by archon fixture
+- `e2e/lib/playwright/archon-runtime.ts` — `CreateArchonRuntimeOptions.serverEnv` spread after isolatedEnv on server spawn only
+- `e2e/lib/playwright/run-detail.ts` — nodeExecutions gains error/retry_epoch/started_at/ended_at
+- `e2e/ui/agent-idle-await-expiry.spec.ts` — E1–E8 real-timer proofs (idleAwaitMs: 8000)
+- `plans/.../reports/evidence/` — screenshots + idle-await-measurements.json
+- Authority: SPEC.md, engine-integration.md (+ absorbed sources), steering-api-contract.md, steering-test-plan.md, ARCHITECTURE-SPINE.md, walkthrough.html — restart claim corrected; keepalive ladder documented; fake-timers instruction replaced
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — 2-12 → done
+- `.agents/skills/verify-archon/visual-config.json` + `features/run-ui.json` — pin/hash after SPEC.md edit
+
+**Acceptance criteria verified**:
+- [x] serverEnv plumbing + idleAwaitMs worker option
+- [x] run-detail node execution fields
+- [x] E1–E8 in agent-idle-await-expiry.spec.ts (7 tests / both shells where required)
+- [x] Evidence under plans/.../reports/evidence with measurements JSON
+- [x] Authority sync + rg confirms no canonical "resumes normally"
+- [x] control-states verified unchanged (already correct)
+- [x] Phase 1–4 focused gates + build:web + e2e typecheck + idle-await + interrupt/never-sent regression + bun run validate
+- [x] sprint-status 2.12 done last
+
+**Learnings**:
+- Idle dock has Send now, not Queue — queue-while-idle for NEVER SENT uses starterFetch intent:queue (same as never-sent E2E).
+- 33vh cap lives on the list parent wrapper (`max-h-[33vh]`), not the ul's computed maxHeight.
+- Editing pinned SPEC.md requires updating visual-config source sha256 AND the ui.visual runner binding id via `visualBinding()`.
 
 ---

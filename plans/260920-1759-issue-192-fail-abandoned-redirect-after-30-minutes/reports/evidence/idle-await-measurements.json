@@ -1,0 +1,410 @@
+{
+  "idle-empty-console": {
+    "geometry": {
+      "room": {
+        "x": 976,
+        "y": 142,
+        "width": 464,
+        "height": 623.5,
+        "top": 142,
+        "right": 1440,
+        "bottom": 765.5,
+        "left": 976
+      },
+      "field": {
+        "x": 986,
+        "y": 657.5,
+        "width": 444,
+        "height": 56,
+        "top": 657.5,
+        "right": 1430,
+        "bottom": 713.5,
+        "left": 986
+      },
+      "sendNow": {
+        "x": 1346,
+        "y": 725.5,
+        "width": 84,
+        "height": 32,
+        "top": 725.5,
+        "right": 1430,
+        "bottom": 757.5,
+        "left": 1346
+      },
+      "queueBand": null,
+      "well": {
+        "x": 976,
+        "y": 575.625,
+        "width": 464,
+        "height": 189.875,
+        "top": 575.625,
+        "right": 1440,
+        "bottom": 765.5,
+        "left": 976
+      },
+      "roomScrollWidth": 464,
+      "roomClientWidth": 464,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "idleAt": 1789910629782,
+    "keepaliveCount": 0
+  },
+  "expired-empty-console": {
+    "geometry": {
+      "room": {
+        "x": 976,
+        "y": 142,
+        "width": 464,
+        "height": 623.5,
+        "top": 142,
+        "right": 1440,
+        "bottom": 765.5,
+        "left": 976
+      },
+      "field": null,
+      "sendNow": null,
+      "queueBand": null,
+      "well": null,
+      "roomScrollWidth": 464,
+      "roomClientWidth": 464,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "keepaliveCount": 1,
+    "lastActivity": 1789910629897,
+    "failedAt": 1789910638473,
+    "elapsed": 8576,
+    "latestError": "interrupted by operator, no redirect received"
+  },
+  "idle-empty-legacy": {
+    "geometry": {
+      "room": {
+        "x": 0,
+        "y": 235,
+        "width": 460,
+        "height": 665,
+        "top": 235,
+        "right": 460,
+        "bottom": 900,
+        "left": 0
+      },
+      "field": {
+        "x": 10,
+        "y": 792,
+        "width": 440,
+        "height": 56,
+        "top": 792,
+        "right": 450,
+        "bottom": 848,
+        "left": 10
+      },
+      "sendNow": {
+        "x": 366,
+        "y": 860,
+        "width": 84,
+        "height": 32,
+        "top": 860,
+        "right": 450,
+        "bottom": 892,
+        "left": 366
+      },
+      "queueBand": null,
+      "well": {
+        "x": 0,
+        "y": 710.125,
+        "width": 460,
+        "height": 189.875,
+        "top": 710.125,
+        "right": 460,
+        "bottom": 900,
+        "left": 0
+      },
+      "roomScrollWidth": 460,
+      "roomClientWidth": 460,
+      "viewport": {
+        "width": 460,
+        "height": 900
+      }
+    },
+    "idleAt": 1789910648491,
+    "keepaliveCount": 0
+  },
+  "expired-empty-legacy": {
+    "geometry": {
+      "room": {
+        "x": 0,
+        "y": 284,
+        "width": 460,
+        "height": 616,
+        "top": 284,
+        "right": 460,
+        "bottom": 900,
+        "left": 0
+      },
+      "field": null,
+      "sendNow": null,
+      "queueBand": null,
+      "well": null,
+      "roomScrollWidth": 460,
+      "roomClientWidth": 460,
+      "viewport": {
+        "width": 460,
+        "height": 900
+      }
+    },
+    "keepaliveCount": 1,
+    "lastActivity": 1789910648598,
+    "failedAt": 1789910657156,
+    "elapsed": 8558,
+    "latestError": "interrupted by operator, no redirect received"
+  },
+  "rearm-console": {
+    "idleAt": 1789910668131,
+    "rearmAt": 1789910674157,
+    "failedAt": 1789910683081,
+    "keepaliveCount": 1,
+    "fromRearm": 8924,
+    "totalLifetime": 14950
+  },
+  "send-now-exclusion": {
+    "clickKeepalivesBefore": 1,
+    "clickKeepalivesAtSubmit": 1,
+    "clickKeepalivesAfter": 1,
+    "keyboardKeepalivesAtSubmit": 1,
+    "keyboardKeepalivesAfter": 1,
+    "sendBodies": [
+      {
+        "message": "<<E2E_SCENARIO>>{\"echoPrompt\":true,\"delayMs\":1500}<</E2E_SCENARIO>>expiry-redirect",
+        "message_id": "8b42e6a3-acda-4b8b-9258-b46c7a266cee",
+        "intent": "send_now"
+      }
+    ]
+  },
+  "retry-legacy": {
+    "interruptedToolId": "e2e-fake-tool-e2e-fake-5d44e926-a77c-497d-9da4-4d659b76bbae",
+    "retriedToolId": "e2e-fake-tool-e2e-fake-a7189abe-d084-4fa5-a848-f1d93b79b0aa",
+    "interruptedSession": "e2e-fake-5d44e926-a77c-497d-9da4-4d659b76bbae",
+    "retriedSession": "e2e-fake-a7189abe-d084-4fa5-a848-f1d93b79b0aa",
+    "failedRetryEpoch": 0,
+    "retriedRetryEpoch": 1
+  },
+  "idle-queued-console": {
+    "geometry": {
+      "room": {
+        "x": 976,
+        "y": 142,
+        "width": 464,
+        "height": 623.5,
+        "top": 142,
+        "right": 1440,
+        "bottom": 765.5,
+        "left": 976
+      },
+      "field": {
+        "x": 986,
+        "y": 657.5,
+        "width": 444,
+        "height": 56,
+        "top": 657.5,
+        "right": 1430,
+        "bottom": 713.5,
+        "left": 986
+      },
+      "sendNow": {
+        "x": 1346,
+        "y": 725.5,
+        "width": 84,
+        "height": 32,
+        "top": 725.5,
+        "right": 1430,
+        "bottom": 757.5,
+        "left": 1346
+      },
+      "queueBand": {
+        "x": 986,
+        "y": 541.625,
+        "width": 444,
+        "height": 26,
+        "top": 541.625,
+        "right": 1430,
+        "bottom": 567.625,
+        "left": 986
+      },
+      "well": {
+        "x": 976,
+        "y": 575.625,
+        "width": 464,
+        "height": 189.875,
+        "top": 575.625,
+        "right": 1440,
+        "bottom": 765.5,
+        "left": 976
+      },
+      "roomScrollWidth": 464,
+      "roomClientWidth": 464,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "idleAt": 1789910639284,
+    "messageId": "2a3339a1-d019-4920-81b7-4759ae47d507"
+  },
+  "idle-queued-legacy": {
+    "geometry": {
+      "room": {
+        "x": 0,
+        "y": 235,
+        "width": 460,
+        "height": 665,
+        "top": 235,
+        "right": 460,
+        "bottom": 900,
+        "left": 0
+      },
+      "field": {
+        "x": 10,
+        "y": 792,
+        "width": 440,
+        "height": 56,
+        "top": 792,
+        "right": 450,
+        "bottom": 848,
+        "left": 10
+      },
+      "sendNow": {
+        "x": 366,
+        "y": 860,
+        "width": 84,
+        "height": 32,
+        "top": 860,
+        "right": 450,
+        "bottom": 892,
+        "left": 366
+      },
+      "queueBand": {
+        "x": 10,
+        "y": 676.125,
+        "width": 440,
+        "height": 26,
+        "top": 676.125,
+        "right": 450,
+        "bottom": 702.125,
+        "left": 10
+      },
+      "well": {
+        "x": 0,
+        "y": 710.125,
+        "width": 460,
+        "height": 189.875,
+        "top": 710.125,
+        "right": 460,
+        "bottom": 900,
+        "left": 0
+      },
+      "roomScrollWidth": 460,
+      "roomClientWidth": 460,
+      "viewport": {
+        "width": 460,
+        "height": 900
+      }
+    },
+    "idleAt": 1789910658207,
+    "messageId": "51ee7bd2-1c6a-4004-8c3a-ae801f0a3274"
+  },
+  "expired-queued-console": {
+    "geometry": {
+      "room": {
+        "x": 976,
+        "y": 142,
+        "width": 464,
+        "height": 623.5,
+        "top": 142,
+        "right": 1440,
+        "bottom": 765.5,
+        "left": 976
+      },
+      "field": null,
+      "sendNow": null,
+      "queueBand": {
+        "x": 986,
+        "y": 702.015625,
+        "width": 444,
+        "height": 23.265625,
+        "top": 702.015625,
+        "right": 1430,
+        "bottom": 725.28125,
+        "left": 986
+      },
+      "well": null,
+      "roomScrollWidth": 464,
+      "roomClientWidth": 464,
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      }
+    },
+    "idleAt": 1789910639284,
+    "failedAt": 1789910647701,
+    "elapsed": 8417,
+    "messageId": "2a3339a1-d019-4920-81b7-4759ae47d507",
+    "bandCap": {
+      "hasMaxH33vh": true,
+      "maxHeight": "297px",
+      "overflowY": "auto",
+      "wrapHeight": 33.265625,
+      "vh33": 297
+    },
+    "focus": "last-row"
+  },
+  "expired-queued-legacy": {
+    "geometry": {
+      "room": {
+        "x": 0,
+        "y": 284,
+        "width": 460,
+        "height": 616,
+        "top": 284,
+        "right": 460,
+        "bottom": 900,
+        "left": 0
+      },
+      "field": null,
+      "sendNow": null,
+      "queueBand": {
+        "x": 10,
+        "y": 836.515625,
+        "width": 440,
+        "height": 23.265625,
+        "top": 836.515625,
+        "right": 450,
+        "bottom": 859.78125,
+        "left": 10
+      },
+      "well": null,
+      "roomScrollWidth": 460,
+      "roomClientWidth": 460,
+      "viewport": {
+        "width": 460,
+        "height": 900
+      }
+    },
+    "idleAt": 1789910658207,
+    "failedAt": 1789910666586,
+    "elapsed": 8379,
+    "messageId": "51ee7bd2-1c6a-4004-8c3a-ae801f0a3274",
+    "bandCap": {
+      "hasMaxH33vh": true,
+      "maxHeight": "297px",
+      "overflowY": "auto",
+      "wrapHeight": 33.265625,
+      "vh33": 297
+    },
+    "focus": "last-row"
+  }
+}
