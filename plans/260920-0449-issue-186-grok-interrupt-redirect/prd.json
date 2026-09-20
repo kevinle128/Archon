@@ -24,7 +24,7 @@
       "dependsOn": [],
       "priority": 1,
       "passes": true,
-      "notes": "Implemented in iteration 1. Files: packages/providers/src/grok/interrupt-resume-spike.ts, packages/providers/src/grok/provider.ts (export buildSpawnCommand), plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md, plans/260920-0449-issue-186-grok-interrupt-redirect/plan.md validation log. Overall evidence BLOCKED (B7/B9 mid-tool tree + Linux/Windows hosts); M=first-stdout-event on macOS; LAT 10x3 <1000ms. Capability still false. Issue comment posted."
+      "notes": "Implemented in iteration 1; independently repaired in review. The original Node-spawn matrix is superseded pending a full current-Bun rerun. Current native-macOS B7/B9 evidence in plans/reports/spike-260920-1433-grok-interrupt-resume-audit-rerun.md shows 120/94 ms settlement but live descendants; Linux/Windows remain unavailable. Capability stays false."
     },
     {
       "id": "US-002",
@@ -51,7 +51,7 @@
       "dependsOn": ["US-001"],
       "priority": 2,
       "passes": false,
-      "notes": "ENTRY GATE blocked iteration 2: no production edit. Round-2 report plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md overall BLOCKED. Failed/missing mandatory evidence: B7 mid-tool owned-tree descendantsAlive=true settlement=9951ms; B9 Cancel tree descendantsAlive=true; HOST-MAC BLOCKED via B7/B9; HOST-LINUX unavailable; W1 Windows unavailable. plan.md validation log mirrors same. Requires operator native Linux+Windows re-run and mid-tool tree-reap proof before Phase 2."
+      "notes": "ENTRY GATE blocked: no production edit. The original Node-spawn report is superseded. Corrected native-macOS Bun rerun (plans/reports/spike-260920-1433-grok-interrupt-resume-audit-rerun.md) has B7/B9 descendantsAlive=true despite 120/94 ms settlement; the full current-Bun matrix, native Linux, and native Windows remain required. Requires a proven tree-reap primitive and operator host evidence before Phase 2."
     },
     {
       "id": "US-003",

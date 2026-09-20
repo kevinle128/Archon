@@ -34,7 +34,6 @@
  *  GROK_SPIKE_HOST_KIND     native|container (default native)
  *  GROK_SPIKE_BIN_PATH      override binary path
  */
-import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -212,6 +211,8 @@ interface RunOutcome extends TimingFields {
   textBlob: string;
   childFingerprints: string[];
   descendantsAliveAfterExit: boolean | null;
+  /** A Stop arriving after a valid terminal end was deliberately ignored. */
+  stopRequestedAfterNaturalEnd: boolean;
   errorMessage: string | null;
 }
 
@@ -221,9 +222,41 @@ interface ExitObservation {
 }
 
 interface OwnedProcess {
-  child: ChildProcess;
-  pid: number | undefined;
+  stdout: ReadableStream<Uint8Array> | null;
+  stderr: ReadableStream<Uint8Array> | null;
+  pid: number;
+  exited: Promise<ExitObservation>;
+  currentExit: () => ExitObservation | null;
   killTree: (signal: NodeJS.Signals) => boolean;
+}
+
+interface CommandResult {
+  success: boolean;
+  stdout: string;
+}
+
+function runCommand(command: string[], cwd?: string): CommandResult {
+  try {
+    const result = Bun.spawnSync(command, {
+      ...(cwd ? { cwd } : {}),
+      stdin: 'ignore',
+      stdout: 'pipe',
+      stderr: 'ignore',
+      windowsHide: true,
+    });
+    return {
+      success: result.success,
+      stdout: new TextDecoder().decode(result.stdout ?? new Uint8Array()),
+    };
+  } catch {
+    return { success: false, stdout: '' };
+  }
+}
+
+function runCommandOrThrow(command: string[], cwd?: string): string {
+  const result = runCommand(command, cwd);
+  if (!result.success) throw new Error(`command failed: ${command[0] ?? 'unknown'}`);
+  return result.stdout;
 }
 
 function parseJsonObject(value: unknown): Record<string, unknown> | null {
@@ -391,11 +424,25 @@ function readStartTime(pid: number): string | null {
       return fields[19] ?? null;
     }
     if (process.platform === 'darwin') {
-      const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
+      const out = runCommand(['ps', '-o', 'lstart=', '-p', String(pid)]).stdout.trim();
       return out.length > 0 ? out : null;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function readProcessState(pid: number): string | null {
+  try {
+    if (process.platform === 'linux') {
+      const stat = readFileSync(`/proc/${String(pid)}/stat`, 'utf8');
+      const closeParen = stat.lastIndexOf(')');
+      return stat.slice(closeParen + 2, closeParen + 3) || null;
+    }
+    if (process.platform === 'darwin') {
+      const out = runCommand(['ps', '-o', 'stat=', '-p', String(pid)]).stdout.trim();
+      return out.length > 0 ? (out[0] ?? null) : null;
     }
   } catch {
     return null;
@@ -413,6 +460,10 @@ function isFingerprintAlive(fp: string): boolean {
   } catch {
     return false;
   }
+  // A zombie has exited. `kill(pid, 0)` still succeeds until its parent reaps
+  // it, so treating that as a surviving descendant would be a false tree-leak.
+  const state = readProcessState(pid);
+  if (state === 'Z' || state === 'X') return false;
   const expectedStart = /;start=(.+)$/.exec(fp)?.[1] ?? null;
   if (!expectedStart) return true;
   const liveStart = readStartTime(pid);
@@ -423,10 +474,7 @@ function isFingerprintAlive(fp: string): boolean {
 function listChildPids(parentPid: number): number[] {
   try {
     if (process.platform === 'darwin' || process.platform === 'linux') {
-      const out = execFileSync('ps', ['-axo', 'pid=,ppid='], {
-        encoding: 'utf8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
+      const out = runCommand(['ps', '-axo', 'pid=,ppid=']).stdout;
       const children: number[] = [];
       for (const line of out.split('\n')) {
         const parts = line.trim().split(/\s+/);
@@ -461,23 +509,13 @@ function collectDescendantFingerprints(rootPid: number | undefined): string[] {
 }
 
 function windowsTreeKill(pid: number): boolean {
-  try {
-    execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
-      stdio: 'ignore',
-      windowsHide: true,
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  return runCommand(['taskkill', '/PID', String(pid), '/T', '/F']).success;
 }
 
 function spawnGrok(binaryPath: string, args: string[], cwd: string, mode: SpawnMode): OwnedProcess {
   const command = buildSpawnCommand(binaryPath, args);
-  const [file, ...rest] = command;
-  if (!file) throw new Error('empty spawn command');
   const detached = mode === 'owned-tree' && process.platform !== 'win32';
-  const child = spawn(file, rest, {
+  const child = Bun.spawn(command, {
     cwd,
     env: {
       ...Object.fromEntries(
@@ -487,33 +525,42 @@ function spawnGrok(binaryPath: string, args: string[], cwd: string, mode: SpawnM
       ),
       GROK_DISABLE_AUTOUPDATER: '1',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdin: 'ignore',
+    stdout: 'pipe',
+    stderr: 'pipe',
     windowsHide: true,
     detached,
   });
+  const currentExit = (): ExitObservation | null => {
+    if (child.exitCode === null && child.signalCode === null) return null;
+    return { code: child.exitCode, signal: child.signalCode };
+  };
   return {
-    child,
     pid: child.pid,
+    stdout: child.stdout instanceof ReadableStream ? child.stdout : null,
+    stderr: child.stderr instanceof ReadableStream ? child.stderr : null,
+    exited: child.exited.then(() => currentExit() ?? { code: null, signal: null }),
+    currentExit,
     killTree: (signal: NodeJS.Signals): boolean => {
-      const pid = child.pid;
-      if (pid === undefined) return false;
       try {
         if (process.platform === 'win32') {
-          return windowsTreeKill(pid);
+          return windowsTreeKill(child.pid);
         }
         if (mode === 'owned-tree' && detached) {
           try {
-            process.kill(-pid, signal);
+            process.kill(-child.pid, signal);
             return true;
           } catch {
             try {
-              return child.kill(signal);
+              child.kill(signal);
+              return true;
             } catch {
               return false;
             }
           }
         }
-        return child.kill(signal);
+        child.kill(signal);
+        return true;
       } catch {
         return false;
       }
@@ -521,30 +568,19 @@ function spawnGrok(binaryPath: string, args: string[], cwd: string, mode: SpawnM
   };
 }
 
-function currentExit(child: ChildProcess): ExitObservation | null {
-  if (child.exitCode !== null || child.signalCode !== null) {
-    return { code: child.exitCode, signal: child.signalCode };
-  }
-  return null;
-}
-
 async function waitForExit(
-  child: ChildProcess,
+  process: OwnedProcess,
   timeoutMs: number
 ): Promise<ExitObservation | null> {
-  const already = currentExit(child);
+  const already = process.currentExit();
   if (already) return already;
   const { promise, resolve } = Promise.withResolvers<ExitObservation | null>();
   const timer = setTimeout(() => {
     resolve(null);
   }, timeoutMs);
-  child.once('exit', (code, signal) => {
+  void process.exited.then(observation => {
     clearTimeout(timer);
-    resolve({ code, signal });
-  });
-  child.once('error', () => {
-    clearTimeout(timer);
-    resolve(null);
+    resolve(observation);
   });
   return await promise;
 }
@@ -588,6 +624,10 @@ async function runGrokTurn(input: {
   spawnMode?: SpawnMode;
   /** Operator Stop is requested immediately after listener registration. */
   requestStopImmediately?: boolean;
+  /** Operator Stop is requested when the trigger is reached (mid-tool cases). */
+  requestStopAtBoundary?: boolean;
+  /** Simulate a Stop received only after the terminal end has been accepted. */
+  requestStopAfterNaturalEnd?: boolean;
   /** Actual tree signal waits for this trigger. Omit for natural completion. */
   terminateOn?: TriggerKind;
   /** When set, terminate uses Cancel grace instead of interrupt grace. */
@@ -624,14 +664,18 @@ async function runGrokTurn(input: {
   let signalled = false;
   let childFingerprints: string[] = [];
   let descendantsAliveAfterExit: boolean | null = null;
+  let stopRequestedAfterNaturalEnd = false;
+  let graceTimer: ReturnType<typeof setTimeout> | undefined;
   const graceMs = input.cancelMode === true ? CANCEL_GRACE_MS : INTERRUPT_GRACE_MS;
   // No default kill — natural turns omit terminateOn entirely.
   const terminateOn = input.terminateOn;
 
-  owned.child.once('exit', (code, signal) => {
+  void owned.exited.then(observation => {
     processExited = true;
     exitedAt = Date.now();
-    lastExit = { code, signal };
+    lastExit = observation;
+    if (graceTimer) clearTimeout(graceTimer);
+    graceTimer = undefined;
   });
 
   const requestStop = (): void => {
@@ -653,14 +697,14 @@ async function runGrokTurn(input: {
       }
     }
     const ok = owned.killTree('SIGTERM');
-    if (!ok && process.platform === 'win32' && owned.pid !== undefined) {
+    if (!ok && process.platform === 'win32') {
       windowsTreeKill(owned.pid);
       escalation = 'taskkill-tree';
     }
-    void delay(graceMs).then(() => {
+    graceTimer = setTimeout(() => {
       if (!processExited) {
         usedSigkill = true;
-        if (process.platform === 'win32' && owned.pid !== undefined) {
+        if (process.platform === 'win32') {
           windowsTreeKill(owned.pid);
           escalation = 'taskkill-tree';
         } else {
@@ -668,7 +712,7 @@ async function runGrokTurn(input: {
           escalation = 'sigkill';
         }
       }
-    });
+    }, graceMs);
   };
 
   let lastSeenEventType: string | null = null;
@@ -680,6 +724,7 @@ async function runGrokTurn(input: {
       terminateOn.kind === 'spawn'
     ) {
       if (boundaryAt === null) boundaryAt = Date.now();
+      if (input.requestStopAtBoundary === true && stopRequestedAt === null) requestStop();
       if (stopRequestedAt !== null || terminateOn.kind === 'spawn') {
         if (stopRequestedAt === null) requestStop();
         sendSignal();
@@ -687,20 +732,25 @@ async function runGrokTurn(input: {
     }
   };
 
-  // Operator Stop request is separate from the eventual termination trigger.
-  if (terminateOn) {
-    if (input.requestStopImmediately === true || terminateOn.kind === 'spawn') {
-      requestStop();
-      if (terminateOn.kind === 'spawn') sendSignal();
+  const stderrPromise = (async (): Promise<void> => {
+    const stderr = owned.stderr;
+    if (!stderr) return;
+    const reader = stderr.getReader();
+    const decoder = new TextDecoder();
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) return;
+        if (stderrTail.length < 4_000) {
+          stderrTail += decoder
+            .decode(next.value, { stream: true })
+            .slice(0, 4_000 - stderrTail.length);
+        }
+      }
+    } finally {
+      reader.releaseLock();
     }
-  }
-
-  if (owned.child.stderr) {
-    owned.child.stderr.setEncoding('utf8');
-    owned.child.stderr.on('data', (chunk: string) => {
-      if (stderrTail.length < 4_000) stderrTail += chunk.slice(0, 4_000 - stderrTail.length);
-    });
-  }
+  })();
 
   const pidWatcher =
     terminateOn?.kind === 'pid-file' || input.pidFilePath !== undefined
@@ -713,6 +763,10 @@ async function runGrokTurn(input: {
               const toolPid = readPidFile(pidPath);
               if (toolPid !== null && isFingerprintAlive(fingerprint(toolPid, null))) {
                 pidFileReady = true;
+                // The PID file is the mid-tool boundary. Record the operator
+                // Stop before the brief fingerprint-collection wait so the
+                // reported request-to-settlement interval includes that work.
+                if (input.requestStopAtBoundary === true) requestStop();
                 await delay(50);
                 maybeSignalFromBoundary();
                 return;
@@ -736,15 +790,19 @@ async function runGrokTurn(input: {
   let buffer = '';
 
   const stdoutPromise = (async (): Promise<void> => {
-    const stdout = owned.child.stdout;
+    const stdout = owned.stdout;
     if (!stdout) return;
+    const reader = stdout.getReader();
+    const decoder = new TextDecoder();
     try {
-      for await (const chunk of stdout) {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
         if (!firstStdout) {
           firstStdout = true;
           maybeSignalFromBoundary();
         }
-        const piece = typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+        const piece = decoder.decode(next.value, { stream: true });
         buffer += piece;
         let nl = buffer.indexOf('\n');
         while (nl >= 0) {
@@ -762,6 +820,10 @@ async function runGrokTurn(input: {
               endStopReason = parsed.stopReason ?? null;
               reportedSessionId = parsed.sessionId ?? null;
               finalUsageSeen = Boolean(parsed.hasEndUsage) || finalUsageSeen;
+              if (input.requestStopAfterNaturalEnd === true) {
+                requestStop();
+                stopRequestedAfterNaturalEnd = true;
+              }
             }
             if (
               parsed.type === 'tool_call' ||
@@ -774,6 +836,7 @@ async function runGrokTurn(input: {
           nl = buffer.indexOf('\n');
         }
       }
+      buffer += decoder.decode();
       if (buffer.trim().length > 0) {
         const parsed = parseLine(buffer);
         if (parsed) {
@@ -783,36 +846,43 @@ async function runGrokTurn(input: {
       }
     } catch {
       // stdout may close under signal
+    } finally {
+      reader.releaseLock();
     }
   })();
 
+  // The immediate-Stop measurement starts only after both stream listeners are live.
+  if (terminateOn && (input.requestStopImmediately === true || terminateOn.kind === 'spawn')) {
+    requestStop();
+    if (terminateOn.kind === 'spawn') sendSignal();
+    else maybeSignalFromBoundary();
+  }
+
   const timeoutMs = input.timeoutMs ?? EXPERIMENT_TIMEOUT_MS;
-  await Promise.race([
-    waitForExit(owned.child, timeoutMs),
-    delay(timeoutMs).then(() => {
-      if (!processExited) {
-        usedSigkill = true;
-        escalation = process.platform === 'win32' ? 'taskkill-tree' : 'sigkill';
-        owned.killTree('SIGKILL');
-      }
-      return null;
-    }),
-  ]);
+  const initialExit = await waitForExit(owned, timeoutMs);
+  if (!initialExit && !processExited) {
+    usedSigkill = true;
+    escalation = process.platform === 'win32' ? 'taskkill-tree' : 'sigkill';
+    owned.killTree('SIGKILL');
+  }
 
   await Promise.race([stdoutPromise, delay(2_000)]);
+  await Promise.race([stderrPromise, delay(2_000)]);
   await pidWatcher.catch(() => undefined);
 
   if (!processExited) {
-    const late = await waitForExit(owned.child, EXIT_WAIT_MS);
+    const late = await waitForExit(owned, EXIT_WAIT_MS);
     if (late) lastExit = late;
   }
   if (!processExited) {
     usedSigkill = true;
     escalation = process.platform === 'win32' ? 'taskkill-tree' : 'sigkill';
     owned.killTree('SIGKILL');
-    const forced = await waitForExit(owned.child, EXIT_WAIT_MS);
+    const forced = await waitForExit(owned, EXIT_WAIT_MS);
     if (forced) lastExit = forced;
   }
+  if (graceTimer) clearTimeout(graceTimer);
+  graceTimer = undefined;
 
   if (childFingerprints.length > 0) {
     // Brief settle so graceful group members can exit before the liveness sample.
@@ -846,7 +916,7 @@ async function runGrokTurn(input: {
 
   const settledAt = exitedAt ?? Date.now();
   return {
-    exitCode: normalizeExitCode(lastExit ?? currentExit(owned.child)),
+    exitCode: normalizeExitCode(lastExit ?? owned.currentExit()),
     eventTypes,
     endStopReason,
     reportedSessionId,
@@ -859,6 +929,7 @@ async function runGrokTurn(input: {
     textBlob,
     childFingerprints,
     descendantsAliveAfterExit,
+    stopRequestedAfterNaturalEnd,
     errorMessage,
     spawnToRequestMs: stopRequestedAt !== null ? Math.max(0, stopRequestedAt - spawnedAt) : null,
     requestToBoundaryMs:
@@ -909,40 +980,23 @@ function readPidFile(pidPath: string): number | null {
 
 function ensureTempGitRepo(): string {
   const cwd = mkdtempSync(join(tmpdir(), 'archon-grok-spike-'));
-  execFileSync('git', ['init'], { cwd, stdio: 'ignore' });
+  runCommandOrThrow(['git', 'init'], cwd);
   writeFileSync(join(cwd, 'README.md'), 'spike\n', 'utf8');
-  execFileSync('git', ['add', 'README.md'], { cwd, stdio: 'ignore' });
-  execFileSync(
-    'git',
-    ['-c', 'user.email=spike@example.com', '-c', 'user.name=spike', 'commit', '-m', 'init'],
-    { cwd, stdio: 'ignore' }
+  runCommandOrThrow(['git', 'add', 'README.md'], cwd);
+  runCommandOrThrow(
+    ['git', '-c', 'user.email=spike@example.com', '-c', 'user.name=spike', 'commit', '-m', 'init'],
+    cwd
   );
   return cwd;
 }
 
 function deleteSession(binaryPath: string, cwd: string, sessionId: string): boolean {
-  try {
-    execFileSync(binaryPath, ['sessions', 'delete', sessionId], {
-      cwd,
-      stdio: 'ignore',
-      env: { ...process.env, GROK_DISABLE_AUTOUPDATER: '1' },
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  return runCommand([binaryPath, 'sessions', 'delete', sessionId], cwd).success;
 }
 
 function readCliVersion(binaryPath: string): string {
-  try {
-    return execFileSync(binaryPath, ['--version'], {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      env: { ...process.env, GROK_DISABLE_AUTOUPDATER: '1' },
-    }).trim();
-  } catch {
-    return 'unknown';
-  }
+  const result = runCommand([binaryPath, '--version']);
+  return result.success ? result.stdout.trim() : 'unknown';
 }
 
 function containsMarker(text: string, marker: string): boolean {
@@ -1533,7 +1587,7 @@ async function runMidTool(
     allowedTools: ALLOWED_SHELL_TOOLS,
     deniedTools: denied,
     spawnMode: mode,
-    requestStopImmediately: true,
+    requestStopAtBoundary: true,
     terminateOn: { kind: 'pid-file' },
     pidFilePath: pidPath,
     timeoutMs: 120_000,
@@ -1594,7 +1648,9 @@ async function runB8(
     sessionId,
     prompt: promptForShape('text-only', marker, false),
     deniedTools: DENIED_TOOLS_NO_SHELL,
-    // No stop — pure natural completion control, then we note race separately.
+    // Simulate a Stop after the parser has accepted the terminal end. It must
+    // not send a stale tree signal or relabel the completed turn as interrupted.
+    requestStopAfterNaturalEnd: true,
     timeoutMs: 90_000,
   });
   applyTurnMeta(result, turn, sessionId);
@@ -1603,13 +1659,14 @@ async function runB8(
     turn.endStopReason !== null &&
     !turn.usedSigkill &&
     turn.escalation === 'none' &&
-    result.sessionIdEqual === true;
+    result.sessionIdEqual === true &&
+    turn.stopRequestedAfterNaturalEnd;
   if (!result.passed) {
     result.notes.push(
       `B8 natural exit=${String(turn.exitCode)} stopReason=${String(turn.endStopReason)}`
     );
   } else {
-    result.notes.push('natural-end-wins-without-kill');
+    result.notes.push('natural-end-accepted-before-stop-without-kill');
   }
   return result;
 }
@@ -1636,7 +1693,7 @@ async function runB9(
     allowedTools: ALLOWED_SHELL_TOOLS,
     deniedTools: denied,
     spawnMode: 'owned-tree',
-    requestStopImmediately: true,
+    requestStopAtBoundary: true,
     terminateOn: { kind: 'pid-file' },
     cancelMode: true,
     pidFilePath: pidPath,
@@ -2015,6 +2072,11 @@ function renderReport(doc: SpikeDocument): string {
     lines.push(
       `| ${s.id} | ${s.spawnMode} | ${s.trigger ?? '—'} | ${String(s.passed)} | ${String(s.exitCode)} | ${String(s.timings.requestToSettlementMs)} | ${String(s.usedSigkill)} | ${String(s.sessionIdEqual)} | ${markers} | ${String(s.descendantsAliveAfterExit)} |`
     );
+  }
+  lines.push('', '### Exact descendant fingerprints', '');
+  for (const s of doc.scenarios) {
+    if (s.childFingerprints.length === 0) continue;
+    lines.push(`- **${s.id}**: ${s.childFingerprints.join(', ')}`);
   }
   lines.push('', '### Event types (no payloads)', '');
   for (const s of doc.scenarios) {

@@ -81,3 +81,18 @@ BLOCKER US-002 | gate=ENTRY GATE / plan.md validation log from PASS round-2 | ca
 
 ---
 
+## 2026-09-20 — independent review repair: Phase 1 diagnostic
+
+**Status**: REPAIRED; release evidence remains BLOCKED
+**Files changed**:
+- `packages/providers/src/grok/interrupt-resume-spike.ts` — uses the production Bun spawn path, records exact descendant fingerprints, timestamps mid-tool Stop at the PID boundary, treats zombies as exited, and exercises the natural-end/late-Stop race.
+- `plans/reports/spike-260920-1433-grok-interrupt-resume-audit-rerun.md` — sanitized current-Bun B7/B9 rerun.
+- `plan.md` — supersedes invalid Node-spawn matrix claims.
+
+**Fresh evidence**:
+- [x] B7 and B9 use Bun-owned-tree mode on native macOS and settle in 120 ms and 94 ms without SIGKILL.
+- [x] B8 proves a Stop after a terminal `end` is accepted without a stale kill or relabel.
+- [ ] B7/B9 still leave exact descendants alive after the detached-group signal; the successful timing does not waive the tree-reap gate.
+- [ ] The complete current-Bun macOS matrix and required native Linux/Windows runs remain outstanding.
+
+BLOCKER US-002 | gate=Phase-1 decision rules / Phase-2 entry gate | cause=corrected current-Bun B7/B9 prove descendant survival despite 120/94 ms settlement; full current-Bun matrix and native Linux/Windows remain absent | action=keep capability false and production seams unedited; requires a proven tree primitive and operator native-host evidence | 2026-09-20
