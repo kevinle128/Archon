@@ -1,0 +1,80 @@
+## Codebase Patterns
+
+### Observed ledger append-if-new
+- **Where**: `packages/web/src/lib/steering-dock.ts` (`appendObservedIfNew`)
+- **Pattern**: Local helper keyed by `messageId`; returns the same array reference when nothing is new so React identity short-circuits stay intact.
+- **Example**: `applyQueueSnapshot` appends snapshot rows to the ledger before replacing `sent`; empty later snapshots clear `sent` only.
+
+### Finished mode gate
+- **Where**: `steeringDockMode`
+- **Pattern**: `'finished'` requires nonempty `neverSent` AND `nodeTerminal === true`. `live:false` still hides first. Null/empty `neverSent` leaves the prior visibility table unchanged.
+- **Example**: Terminal-looking selected rows without `nodeTerminal` never select finished.
+
+### Dock mode union coupling
+- **Where**: `ComposerDock.tsx` / `ConsoleComposerDock.tsx` `controlsMounted`
+- **Pattern**: Local mode parameter unions must track `SteeringDockMode` (import the shared type) or package type-check breaks when a new mode is added.
+
+### Attempt generation + suppressPersist on key reset
+- **Where**: `ComposerDock.tsx` / `ConsoleComposerDock.tsx` layout reset effect
+- **Pattern**: Bump `attemptGenerationRef` on non-null key replacement (and scope change); capture gen at async start; ignore continuations when gen drifts. On reset, `suppressPersistRef` skips one ordinary save after writing `{ draft, pendingRetry: null }`.
+- **Example**: Queue/Send-now/withdraw/interrupt/poll onSnapshot all gate on `attemptGenerationRef.current === attemptGen`.
+
+---
+
+## 2026-09-20T07:04:41Z — US-001: Shared core: observed ledger, reconciliation, finished mode
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — observedLedger/neverSent, finished mode, reconcileNeverSent, collectWrittenOperatorMessageIds, copy helpers
+- `packages/web/src/lib/steering-dock.test.ts` — T1.1–T1.22 plus existing coverage
+- `packages/web/src/components/workflows/ComposerDock.tsx` — controlsMounted accepts SteeringDockMode
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — same type widen
+
+**Acceptance criteria verified**:
+- [x] T1.1–T1.22 written and passing with existing tests
+- [x] observedLedger ordered/deduped; neverSent null until reconcile
+- [x] local success + valid snapshots observe; stale gen inert; empty snapshot keeps history
+- [x] only confirmed withdraw removes ledger ids
+- [x] reconcileNeverSent order, purity, idempotence, [] when empty
+- [x] finished mode requires nodeTerminal + nonempty neverSent
+- [x] collectWrittenOperatorMessageIds strict operator text + message_id
+- [x] exact copy helpers/constants
+- [x] no persistence/fetches/timers/new module
+- [x] bun test + web type-check + focused eslint clean
+
+**Learnings**:
+- Prettier/lint-staged may rewrite test formatting on commit — expect insertion count drift.
+- Adding `'finished'` to SteeringDockMode forces a type widen in both docks even before UI work (US-002).
+- Snapshot identity short-circuit must include ledger: pre-populate observedLedger in tests that expect `toBe(state)`.
+
+---
+
+## 2026-09-20T07:21:09Z — US-002: Read-only NEVER SENT box in both docks
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/ComposerDock.tsx` — props, attempt reset/generation, reconcile effect, finished branch, controlsMounted
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — T2.1–T2.18
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — mirror of Legacy wiring
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` — T2.1–T2.18
+
+**Acceptance criteria verified**:
+- [x] T2.1–T2.18 in both dock test files
+- [x] optional writtenOperatorMessageIds / nodeTerminal / nodeExecutionKey
+- [x] reconcile only when written non-null, neverSent null, nodeTerminal, no withdraw, queueWasObservable
+- [x] withdraw in flight blocks reconcile; success omits / failure restores
+- [x] finished anatomy + single alert; no controls
+- [x] controlsMounted: finished-iteration yes, finished no; focus handoff
+- [x] execution-key reset clears attempt state, keeps draft, clears pendingRetry
+- [x] same-key / occurrence preserve; run/node change clears
+- [x] attempt generation guards async continuations; poll deps include key
+- [x] finished list stable after reconcile
+- [x] both dock suites + isolation + type-check + eslint clean
+
+**Learnings**:
+- Inject `send`/`withdraw` via renderDock overrides; mutating `nextSend` after render does not update the mounted dock.
+- `controlsMounted('finished-iteration')` is required so Go→finished uses focusLastRow.
+- Explicit `pendingRetry: null` storage write must suppress the ordinary save effect in the same commit or the stale UUID is rewritten.
+- finished-iteration 409 stop assertion is timing-sensitive; assert no growth after rejection rather than `readsBefore + 1`.
+
+---
