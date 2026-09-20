@@ -1785,17 +1785,22 @@ describe('ComposerDock', () => {
       readQueue: ctrl.read,
     });
     await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'gone' }]));
-    const readsBefore = readCalls.length;
     await settleRejection(ctrl, new SteeringRequestError(409, 'run_terminal', 'run ended'));
     expect(host.querySelector('ul')).toBeNull();
     expect(host.textContent ?? '').not.toContain(DETACHED);
     expect(host.textContent).toContain('reading a finished iteration');
 
+    // Count after the terminal 409, not before — the 1ms post-snapshot poll
+    // may already be in flight when settleSnapshot returns (CI flake).
+    const afterStop = readCalls.length;
+    expect(afterStop).toBeGreaterThanOrEqual(2);
+
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 20));
     });
     await flush();
-    expect(readCalls.length).toBe(readsBefore + 1);
+    expect(readCalls.length).toBe(afterStop);
+    expect(ctrl.pendingCount()).toBe(0);
   });
 
   test('existing composer/blocked/hidden modes remain unchanged without descriptor', async () => {
