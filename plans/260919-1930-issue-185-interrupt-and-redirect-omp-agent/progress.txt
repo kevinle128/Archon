@@ -1,0 +1,40 @@
+## Codebase Patterns
+
+### OMP interrupt spike hygiene
+- **Where**: `packages/providers/src/community/omp/interrupt-resume-spike.ts`, mirrors `packages/providers/src/claude/interrupt-resume-spike.ts`
+- **Pattern**: Diagnostic spikes are not package-exported; script entry via `packages/providers/package.json` only. Spawn via `resolveOmpBinaryPath` + unique `mkdtemp` git cwd. Track owned PIDs only; reap in `finally`; never `pkill`. stdout is one sanitized JSON document (event types, timings, hashed ids) — no prompts, model text, credentials, or raw session ids.
+- **Example**: `bun run spike:interrupt:omp` from `packages/providers`
+
+### OMP SIGTERM mid-turn facts (darwin / 18.1.21)
+- **Where**: `plans/reports/omp-interrupt-resume-spike.md`
+- **Pattern**: `session` is first. Assistant Stop triggers on first `text_delta`; tool Stop on `tool_execution_start`. SIGTERM exits in ~100–140 ms with code 143; SIGKILL not required. No `agent_end` / usage `message_end` after signal — provider must synthesize interrupted result and drain buffered text. Open tools may get only `tool_execution_update` (no end). linux/win32 still uncharacterized.
+- **Example**: raw leg exit 0 with `interruptCapability: false`
+
+---
+
+## 2026-09-20 — US-001: Baseline + OMP interrupt spike harness and raw characterization
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/community/omp/interrupt-resume-spike.ts` — new diagnostic spike (raw characterization + inert conformance scaffold)
+- `packages/providers/package.json` — added `spike:interrupt:omp` script
+- `plans/reports/omp-interrupt-resume-spike.md` — sanitized interim findings
+
+**Acceptance criteria verified**:
+- [x] `bun install --frozen-lockfile` + focused OMP baseline tests + type-check green
+- [x] Spike file exists, not exported; package script mirrors Claude spike
+- [x] Uses `resolveOmpBinaryPath`, mkdtemp git repo, existing login; owned PID tracking; no broad pkill
+- [x] Two cases: assistant text delta + active tool with PID file marker
+- [x] Raw characterization records version/OS/arch/event order/timings/SIGKILL/descendants
+- [x] Sanitized output only
+- [x] Conformance leg scaffolded (inert until US-002 seam)
+- [x] Findings in `plans/reports/omp-interrupt-resume-spike.md`
+- [x] No production provider/parser/executor edits; `interrupt` remains `false`
+
+**Learnings**:
+- Session header latency ~480–500 ms on this host; still first event.
+- Thinking/message_update noise precedes first text_delta — trigger must be the nested `assistantMessageEvent.type === 'text_delta'`, not bare `message_update`.
+- Post-SIGTERM OMP may keep emitting `message_update` briefly; do not require natural `agent_end` for graceful interrupt classification.
+- linux + win32 remain uncharacterized; US-003 must not flip capability on macOS-only evidence without owner scope decision.
+
+---
