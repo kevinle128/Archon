@@ -5830,9 +5830,86 @@ export function registerApiRoutes(
     return metadata !== undefined && metadata !== null ? { metadata } : {};
   }
 
+  function isOperatorTextRow(row: NodeMessage): boolean {
+    return row.kind === 'text' && row.metadata?.origin === 'operator';
+  }
+
+  function operatorSenderId(row: NodeMessage): string | null {
+    const senderId = row.metadata?.operator_user_id;
+    return typeof senderId === 'string' ? senderId : null;
+  }
+
+  function resolveOperatorDisplayName(
+    senderId: string | null,
+    nameById: ReadonlyMap<string, string | null>
+  ): string | null {
+    if (senderId === null) {
+      return null;
+    }
+    const storedName = nameById.get(senderId);
+    if (typeof storedName === 'string') {
+      const trimmed = storedName.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    return senderId.slice(0, 8);
+  }
+
+  async function buildOperatorDisplayNameById(
+    rows: readonly NodeMessage[],
+    context: { runId: string; nodeId: string }
+  ): Promise<ReadonlyMap<string, string | null>> {
+    const senderIds: string[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (!isOperatorTextRow(row)) {
+        continue;
+      }
+      const senderId = operatorSenderId(row);
+      if (senderId === null || seen.has(senderId)) {
+        continue;
+      }
+      seen.add(senderId);
+      senderIds.push(senderId);
+    }
+
+    if (senderIds.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const users = await userDb.getUserDisplayNamesByIds(senderIds);
+      const map = new Map<string, string | null>();
+      for (const senderId of senderIds) {
+        map.set(senderId, null);
+      }
+      for (const user of users) {
+        map.set(user.id, user.display_name);
+      }
+      return map;
+    } catch (error) {
+      getLog().warn(
+        {
+          runId: context.runId,
+          nodeId: context.nodeId,
+          distinctSenderCount: senderIds.length,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+        'workflow_node_operator_names_lookup_failed'
+      );
+      const map = new Map<string, string | null>();
+      for (const senderId of senderIds) {
+        map.set(senderId, null);
+      }
+      return map;
+    }
+  }
+
   function toWorkflowNodeMessageResponse(
     row: NodeMessage,
-    truncateOutput: boolean
+    truncateOutput: boolean,
+    operatorDisplayNameById: ReadonlyMap<string, string | null> = new Map()
   ): z.infer<typeof workflowNodeMessageResponseSchema> {
     const createdAt = toISOString(row.created_at);
     if (row.kind === 'tool') {
@@ -5866,7 +5943,7 @@ export function registerApiRoutes(
       };
     }
     if (row.kind === 'text') {
-      return {
+      const base = {
         id: row.id,
         seq: row.seq,
         kind: row.kind,
@@ -5874,6 +5951,16 @@ export function registerApiRoutes(
         created_at: createdAt,
         ...nodeMessageMetadata(row.metadata),
       };
+      if (row.metadata?.origin === 'operator') {
+        return {
+          ...base,
+          operator_display_name: resolveOperatorDisplayName(
+            operatorSenderId(row),
+            operatorDisplayNameById
+          ),
+        };
+      }
+      return base;
     }
     return {
       id: row.id,
@@ -5900,8 +5987,14 @@ export function registerApiRoutes(
       if (!run) return apiError(c, 404, 'Workflow run not found');
       if (!cursorMode) {
         const rows = await workflowNodeMessageDb.listNodeMessages(runId, nodeId);
+        const operatorDisplayNameById = await buildOperatorDisplayNameById(rows, {
+          runId,
+          nodeId,
+        });
         return c.json({
-          messages: rows.map(row => toWorkflowNodeMessageResponse(row, false)),
+          messages: rows.map(row =>
+            toWorkflowNodeMessageResponse(row, false, operatorDisplayNameById)
+          ),
         });
       }
       const limit = query.limit ?? 100;
@@ -5919,8 +6012,14 @@ export function registerApiRoutes(
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
       const last = page[page.length - 1];
+      const operatorDisplayNameById = await buildOperatorDisplayNameById(page, {
+        runId,
+        nodeId,
+      });
       return c.json({
-        messages: page.map(row => toWorkflowNodeMessageResponse(row, true)),
+        messages: page.map(row =>
+          toWorkflowNodeMessageResponse(row, true, operatorDisplayNameById)
+        ),
         ...(last !== undefined ? { nextCursor: String(last.seq) } : {}),
         hasMore,
         highWatermark,
@@ -5947,7 +6046,11 @@ export function registerApiRoutes(
       if (!run) return apiError(c, 404, 'Workflow run not found');
       const row = await workflowNodeMessageDb.getNodeMessage(runId, nodeId, messageId);
       if (!row) return apiError(c, 404, 'Workflow node message not found');
-      return c.json(toWorkflowNodeMessageResponse(row, false));
+      const operatorDisplayNameById = await buildOperatorDisplayNameById([row], {
+        runId,
+        nodeId,
+      });
+      return c.json(toWorkflowNodeMessageResponse(row, false, operatorDisplayNameById));
     } catch (error) {
       getLog().error(
         {

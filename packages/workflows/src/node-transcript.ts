@@ -7,7 +7,10 @@
  */
 import { createLogger } from '@archon/paths';
 import type { AppendNodeMessageInput } from './schemas/node-message';
+import type { TranscriptExecutionScope } from './schemas/node-execution';
 import type { IWorkflowNodeMessageStore } from './store';
+import type { QueuedOperatorMessage } from './steering-registry';
+import { transcriptMetadata } from './transcript-execution-scope';
 
 const log = createLogger('workflows.node-transcript');
 
@@ -56,4 +59,33 @@ export async function appendToolResultTranscript(
     },
     ...(input.metadata !== undefined ? { metadata: input.metadata } : {}),
   });
+}
+
+/**
+ * Append one verbatim operator text row per drained guidance message, in array
+ * order, under the caused turn's transcript attempt. Fail-open per row via
+ * appendNodeTranscript — no extra catch/log layer.
+ */
+export async function appendOperatorTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    messages: readonly QueuedOperatorMessage[];
+  }
+): Promise<void> {
+  for (const message of input.messages) {
+    await appendNodeTranscript(store, {
+      workflow_run_id: input.workflow_run_id,
+      node_id: input.node_id,
+      kind: 'text',
+      payload: { text: message.message },
+      metadata: transcriptMetadata(input.scope, {
+        origin: 'operator',
+        operator_user_id: message.operatorUserId,
+        message_id: message.messageId,
+      }),
+    });
+  }
 }

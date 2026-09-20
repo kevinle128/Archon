@@ -31,6 +31,8 @@ export const nodeTranscriptMetadataSchema = z
     execution: transcriptExecutionScopeSchema.optional(),
     stream_id: z.string().min(1).optional(),
     message_id: z.string().min(1).optional(),
+    origin: z.literal('operator').optional(),
+    operator_user_id: z.string().min(1).nullable().optional(),
     block_id: z.string().min(1).optional(),
     text_mode: nodeTranscriptTextModeSchema.optional(),
     tool_phase: nodeTranscriptToolPhaseSchema.optional(),

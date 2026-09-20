@@ -2316,4 +2316,212 @@ describe('LegacyNodeRoom tool disclosure rows', () => {
       expect(payload).toContain('\u{2028}');
     });
   });
+
+  describe('operator history rows', () => {
+    function operatorItem(
+      overrides: Partial<Extract<AgentHistoryItem, { kind: 'operator' }>> = {}
+    ): Extract<AgentHistoryItem, { kind: 'operator' }> {
+      return {
+        kind: 'operator',
+        id: overrides.id ?? 'op-1',
+        seq: overrides.seq ?? 1,
+        role: 'operator',
+        text: overrides.text ?? 'wrong suite — use -p archon-workflows',
+        operatorUserId:
+          overrides.operatorUserId === undefined
+            ? 'abcdef12-3456-4789-a012-3456789abcde'
+            : overrides.operatorUserId,
+        operatorDisplayName:
+          overrides.operatorDisplayName === undefined
+            ? 'e2e-starter'
+            : overrides.operatorDisplayName,
+        messageId: overrides.messageId === undefined ? 'msg-1' : overrides.messageId,
+        delivery: 'sent',
+        execution: overrides.execution === undefined ? null : overrides.execution,
+      };
+    }
+
+    function assistantItem(
+      overrides: Partial<Extract<AgentHistoryItem, { kind: 'assistant' }>> = {}
+    ): Extract<AgentHistoryItem, { kind: 'assistant' }> {
+      return {
+        kind: 'assistant',
+        id: overrides.id ?? 'as-1',
+        seq: overrides.seq ?? 2,
+        role: 'assistant',
+        text: overrides.text ?? 'Understood — switching suites.',
+        execution: overrides.execution === undefined ? null : overrides.execution,
+      };
+    }
+
+    function toolItemInterrupted(): Extract<AgentHistoryItem, { kind: 'tool' }> {
+      return {
+        kind: 'tool',
+        id: 'tool-1',
+        seq: 1,
+        role: 'tool',
+        name: 'Bash',
+        toolUseId: 'bash-1',
+        input: { cmd: 'cargo test' },
+        output: null,
+        outcome: 'interrupted',
+        exitCode: null,
+        durationMs: null,
+        canLoadFullOutput: false,
+        outputState: 'missing',
+        presentation: toolPresentation.toolRowPresentation(
+          { name: 'Bash', input: { cmd: 'cargo test' }, output: null },
+          {
+            outcome: 'interrupted',
+            exitCode: null,
+            durationMs: null,
+            outputState: 'missing',
+          }
+        ),
+        messageId: 'tool-1',
+        execution: null,
+      };
+    }
+
+    test('renders label, right-aligned sent, raw body text, and approved tokens', async () => {
+      await act(async () => {
+        mountItems([
+          operatorItem({
+            text: 'keep **bold** and <img src=x onerror=1>\nand a second line',
+          }),
+        ]);
+      });
+
+      const row = host.querySelector('[data-operator-row]');
+      if (row === null) throw new Error(`missing operator row: ${host.innerHTML}`);
+      expect((row as HTMLElement).style.overflowWrap).toBe('anywhere');
+
+      const label = row.querySelector('[data-operator-label]');
+      if (label === null) throw new Error('missing operator label');
+      expect(label.textContent).toBe('operator · e2e-starter');
+      expect(label.className).toBe('');
+
+      const roleLine = label.parentElement;
+      if (roleLine === null) throw new Error('missing role line');
+      expect(roleLine.className).toContain('flex');
+      expect(roleLine.className).toContain('w-full');
+      expect(roleLine.className).toContain('text-[10px]');
+      expect(roleLine.className).toContain('tracking-[0.07em]');
+      expect(roleLine.className).toContain('uppercase');
+      expect(roleLine.className).toContain('text-text-secondary');
+      expect(roleLine.getAttribute('style') ?? '').toContain('margin: 10px 2px 3px');
+
+      const delivery = row.querySelector('[data-operator-delivery]');
+      if (delivery === null) throw new Error('missing delivery');
+      expect(delivery.textContent).toBe('sent');
+      expect(delivery.className).toContain('ml-auto');
+      expect(delivery.className).toContain('shrink-0');
+      expect(delivery.className).toContain('text-[11px]');
+      expect(delivery.className).toContain('normal-case');
+      expect(delivery.className).toContain('tracking-normal');
+      expect(delivery.className).toContain('text-text-secondary');
+      expect(delivery.className).not.toContain('border');
+      expect(delivery.className).not.toContain('rounded');
+      expect(delivery.className).not.toContain('uppercase');
+
+      const body = row.querySelector('[data-operator-body]');
+      if (body === null) throw new Error('missing body');
+      expect(body.textContent).toBe('keep **bold** and <img src=x onerror=1>\nand a second line');
+      expect(body.querySelector('strong')).toBeNull();
+      expect(body.querySelector('img')).toBeNull();
+      expect(body.querySelector('p')).toBeNull();
+      expect(body.className).toContain('font-sans');
+      expect(body.className).toContain('text-[12.5px]');
+      expect(body.className).toContain('leading-[1.55]');
+      expect(body.className).toContain('font-normal');
+      expect(body.className).toContain('text-text-primary');
+      expect(body.className).toContain('whitespace-pre-wrap');
+      expect((body as HTMLElement).style.margin).toBe('0px 2px 6px');
+    });
+
+    test('escapes markup-like display names as text and omits separator for null identity', async () => {
+      await act(async () => {
+        mountItems([
+          operatorItem({
+            id: 'op-markup',
+            operatorDisplayName: '<b>evil</b>',
+            text: 'named',
+          }),
+          operatorItem({
+            id: 'op-null',
+            seq: 2,
+            operatorUserId: null,
+            operatorDisplayName: null,
+            text: 'anonymous',
+          }),
+        ]);
+      });
+
+      const labels = Array.from(host.querySelectorAll('[data-operator-label]'));
+      expect(labels).toHaveLength(2);
+      expect(labels[0]?.textContent).toBe('operator · <b>evil</b>');
+      expect(labels[0]?.querySelector('b')).toBeNull();
+      expect(labels[1]?.textContent).toBe('operator');
+      expect(labels[1]?.textContent).not.toContain('·');
+    });
+
+    test('keeps tool interrupted -> operator -> assistant document order', async () => {
+      await act(async () => {
+        mountItems([
+          toolItemInterrupted(),
+          operatorItem({ id: 'op-mid', seq: 2 }),
+          assistantItem({ id: 'as-after', seq: 3 }),
+        ]);
+      });
+
+      const tool = host.querySelector('details[data-tool-id="bash-1"]');
+      const operator = host.querySelector('[data-operator-row]');
+      const assistantLabel = Array.from(host.querySelectorAll('div')).find(
+        el => el.textContent === 'assistant' && el.className.includes('uppercase')
+      );
+      if (tool === null || operator === null || assistantLabel === undefined) {
+        throw new Error(`missing ordered nodes: ${host.innerHTML}`);
+      }
+      expect(
+        tool.compareDocumentPosition(operator) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+      expect(
+        operator.compareDocumentPosition(assistantLabel) & Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy();
+    });
+
+    test('operator as final item keeps data-last-row and tabindex=-1', async () => {
+      await act(async () => {
+        mountItems([
+          assistantItem({ id: 'as-first', seq: 1 }),
+          operatorItem({ id: 'op-last', seq: 2 }),
+        ]);
+      });
+      const last = host.querySelector('[data-last-row]');
+      if (last === null) throw new Error('missing last-row marker');
+      expect(last.getAttribute('tabindex')).toBe('-1');
+      expect(last.querySelector('[data-operator-row]')).not.toBeNull();
+    });
+
+    test('assistant label source is lowercase and body uses text-secondary', async () => {
+      await act(async () => {
+        mountItems([assistantItem({ text: '**hello** world' })]);
+      });
+      const label = Array.from(host.querySelectorAll('div')).find(
+        el => el.textContent === 'assistant' && el.className.includes('text-[10px]')
+      );
+      if (label === null || label === undefined) throw new Error('missing assistant label');
+      expect(label.textContent).toBe('assistant');
+      expect(label.className).toContain('tracking-[0.07em]');
+      expect(label.className).toContain('uppercase');
+      expect(label.className).toContain('text-text-secondary');
+
+      const body = label.nextElementSibling;
+      if (body === null) throw new Error('missing assistant body');
+      expect(body.className).toContain('text-[12.5px]');
+      expect(body.className).toContain('leading-[1.55]');
+      expect(body.className).toContain('text-text-secondary');
+      expect(body.querySelector('strong')?.textContent).toBe('hello');
+    });
+  });
 });

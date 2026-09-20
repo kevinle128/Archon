@@ -1,0 +1,161 @@
+## Codebase Patterns
+
+### E2E starter identity header for browser sends
+- **Where**: `e2e/ui/agent-queue-guidance.spec.ts`, `e2e/ui/agent-interrupt-redirect.spec.ts`
+- **Pattern**: `page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER })` before room navigation so UI POSTs resolve `e2e-starter` projection. `startWorkflowViaWeb` already uses the starter; the default page does not.
+- **Example**: `await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });`
+
+### Attempt-scoped rooms drop prior-attempt tools
+- **Where**: Console/Legacy node rooms load messages with `attemptId`
+- **Pattern**: After redirect `Send now`, the live room switches to the resumed attempt and no longer mounts the interrupted attempt’s `[data-tool-id]`. Prove interrupted→operator adjacency via API `seq`; prove operator→echo with `compareDocumentPosition` on the live/fresh room.
+- **Example**: `expect(interrupted!.seq).toBeLessThan(operatorRows[0]!.seq)`
+
+
+### Operator receipt at first stream yield
+- **Where**: `packages/workflows/src/dag-executor.ts` (`runStreamPass`, loop stream try)
+- **Pattern**: Carry `readonly QueuedOperatorMessage[]` from drain/send_now; join prompt after `newTranscriptAttempt`; await `appendOperatorTranscript` on first stream chunk or normal empty completion of pass zero only; re-asks get no context.
+- **Example**: `await recordOperatorReceiptIfNeeded()` before processing first `msg`
+
+### Operator display-name projection stays local to api.ts
+- **Where**: `packages/server/src/routes/api.ts` (`buildOperatorDisplayNameById`, `toWorkflowNodeMessageResponse`)
+- **Pattern**: Collect operator text senders from the returned page only (cursor overflow excluded), one `getUserDisplayNamesByIds` call, attach trimmed name / 8-char fallback / explicit null; omit field on non-operator rows. Lookup rejection logs one payload-free warning and still returns 200.
+- **Example**: `operator_display_name: resolveOperatorDisplayName(operatorSenderId(row), map)`
+
+### Batch user display-name lookup
+- **Where**: `packages/core/src/db/users.ts:getUserDisplayNamesByIds`
+- **Pattern**: Dedupe with Set, empty → no query, sequential chunks of 500, positional `IN ($1…)` only.
+- **Example**: `SELECT id, display_name FROM remote_agent_users WHERE id IN (${placeholders})`
+
+
+### Operator history item is plain text, not assistant
+- **Where**: `packages/web/src/lib/agent-history.ts` (`buildAgentHistory`)
+- **Pattern**: Branch on `kind === 'text' && metadata?.origin === 'operator'` after tool cards and before generic text. Verbatim payload text; display name = trimmed response field else 8-char sender id else null; `delivery: 'sent'` literal. Never `presentedText` / Markdown / todo fold.
+- **Example**: `items.push({ kind: 'operator', text: message.payload.text, delivery: 'sent', ... })`
+
+### Local OperatorHistory on both shells
+- **Where**: `NodeRoom.tsx`, `ConsoleAgentHistoryList.tsx`
+- **Pattern**: Thin duplicate DOM (no shared component). Role line lowercase + CSS uppercase; body plain `{item.text}`; assistant corrected to 12.5px/1.55 text-secondary. `historyItemRowVisible` already shows non-tool/lifecycle kinds — do not special-case operator.
+- **Example**: `<div data-operator-body ...>{item.text}</div>`
+
+---
+
+## 2026-09-19T20:29:24Z — US-001: Contract and server read model
+
+**Status**: PASSED
+**Files changed**:
+- packages/workflows/src/schemas/node-execution.ts — optional origin + nullable operator_user_id
+- packages/workflows/src/schemas/node-execution.test.ts — operator triple / null / strict rejection tests
+- packages/core/src/db/users.ts — getUserDisplayNamesByIds chunked helper
+- packages/core/src/db/users.test.ts — empty/dedupe/params/501-id coverage
+- packages/server/src/routes/schemas/workflow.schemas.ts — text-only operator_display_name
+- packages/server/src/routes/api.ts — list/cursor/detail projection + fail-open warn
+- packages/server/src/routes/api.workflow-runs.test.ts — mock batch + projection/failure cases
+- packages/web/src/lib/api.generated.d.ts — regenerated contract fields only
+- ARCHITECTURE-SPINE.md AD-12, steering-test-plan.md, steering-api-contract.md — Story 2.8 alignment
+
+**Acceptance criteria verified**:
+- [x] nodeTranscriptMetadataSchema accepts operator triple / null sender; rejects assistant origin and unknown keys
+- [x] getUserDisplayNamesByIds dedupes, empty short-circuit, positional params, 500-id chunks
+- [x] workflowNodeMessageTextResponseSchema gains nullable optional operator_display_name
+- [x] list/cursor/detail enrich only operator text rows; one batch lookup; overflow excluded
+- [x] lookup rejection → 200 + short ids + one safe warning
+- [x] api.workflow-runs.test.ts covers projection matrix
+- [x] api.generated.d.ts only origin/operator_user_id/operator_display_name
+- [x] AD-12 + steering docs match Story 2.8
+- [x] focused tests + type-check + lint + server package tests pass
+- [x] no executor writer / migration / new helper module
+
+**Learnings**:
+- openapi-typescript may reorder unrelated optional fields; keep only contract-derived hunks after regen against the worktree server
+- users module is mocked in several server test invocations — add getUserDisplayNamesByIds only to factories that this suite owns (api.workflow-runs.test.ts)
+
+---
+
+## 2026-09-19T20:39:22Z — US-002: Web read model and both shell renderers
+
+**Status**: PASSED
+**Files changed**:
+- packages/web/src/lib/agent-history.ts — operator AgentHistoryItem + buildAgentHistory branch
+- packages/web/src/lib/agent-history.test.ts — verbatim/fallback/envelope/order/todo isolation
+- packages/web/src/components/workflows/NodeRoom.tsx — OperatorHistory + assistant correction
+- packages/web/src/components/workflows/LegacyNodeRoom.test.tsx — DOM/token/order/last-row proofs
+- packages/web/src/components/workflows/NodeRoom.test.tsx — lowercase assistant + markup anchors
+- packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx — Console parity renderer
+- packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx — parity + filter visibility/focus
+- packages/web/src/experiments/console/components/inspect/ConsoleExecutionHistory.test.tsx — lowercase assistant
+
+**Acceptance criteria verified**:
+- [x] AgentHistoryItem gains operator member with delivery 'sent'
+- [x] buildAgentHistory operator branch before generic text; verbatim + display-name fallback
+- [x] agent-history.test.ts covers AC matrix
+- [x] Legacy OperatorHistory DOM contract + assistant correction
+- [x] LegacyNodeRoom.test.tsx proves tokens/order/escaping/last-row
+- [x] Console OperatorHistory parity; historyItemRowVisible unchanged; filter visibility asserted
+- [x] ConsoleNodeRoom.test.tsx independent DOM + focus-marker under hidden filters
+- [x] no project-text/pair-tool/occurrence-groups/steering-dock changes; no cross-shell component
+- [x] rejected draft styling absent; focused + package web tests, type-check, lint pass
+
+**Learnings**:
+- project-text-transcript still coalesces same-key deltas across a complete operator row; operator-between-delta tests must use distinct message/block ids
+- happy-dom normalizes `margin: 0 2px 6px` to `0px 2px 6px`
+- assistant label source is now lowercase `assistant` (CSS uppercase); update textContent assertions that expected `ASSISTANT`
+
+---
+
+## 2026-09-19T20:45:58.464Z — US-003: Executor persistence and ordering
+
+**Status**: PASSED
+**Files changed**:
+- packages/workflows/src/node-transcript.ts — appendOperatorTranscript sequential fail-open writer
+- packages/workflows/src/node-transcript.test.ts — exact row shape, null identity, fail-open continuation
+- packages/workflows/src/dag-executor.ts — direct+loop carry messages; first-yield/empty-completion seam
+- packages/workflows/src/dag-executor.test.ts — #181/#183 matrix + seam/startup/append-failure proofs
+
+**Acceptance criteria verified**:
+- [x] appendOperatorTranscript writes verbatim text rows with origin/operator_user_id/message_id under scope
+- [x] node-transcript tests cover two senders, null identity, no stream fields, fail-open second append
+- [x] Direct path carries turnGuidanceMessages at send_now and natural drain; joins after attempt rotate
+- [x] runStreamPass records only on guidance pass zero at first yield or normal empty completion
+- [x] Loop path mirrors with iterationExecutionScope + namespaced stepName
+- [x] dag-executor tests prove FIFO order, attempt placement, interrupt redirect, loop/loop-group, re-ask single row, null identity, append fail-open, startup throw, first-yield seam
+- [x] No registry/route/store/migration/provider/event-model changes
+- [x] bun test node-transcript + operator filter + full dag-executor + steering-registry; type-check; lint
+
+**Learnings**:
+- Operator rows must not be asserted while the first yield is still held — the seam is immediately before processing that chunk, so hold proves beginTurn-only, then release proves operator-before-caused order via append instrumentation
+- re-ask rotates loop iterationExecutionScope after attempt 0; pendingOperatorReceipt must keep the guidance attempt scope and skip re-asks via reaskAttempt === 0
+
+---
+
+## 2026-09-19T21:16:06Z — US-004: Integration, rollout, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- e2e/lib/playwright/run-detail.ts — NodeMessageRow type + listNodeMessages widening
+- e2e/ui/agent-queue-guidance.spec.ts — positive direct operator API/DOM proof + starter header + message_id tracking
+- e2e/ui/agent-interrupt-redirect.spec.ts — interrupt operator matrix, visual contract, OPERATOR_EVIDENCE_DIR captures
+- plans/.../reports/acceptance-evidence.md — criterion→test map, gates, captures, rollout/rollback
+- plans/.../reports/evidence/us-004-*-operator-rows.png — 460/1440 Console+Legacy
+- _bmad-output/.../sprint-status.yaml — 2-8 done
+- packages/workflows/src/loader.test.ts — unblock: drop stale pr-e2e-verify test
+- packages/workflows/src/defaults/bundled-defaults.test.ts — unblock: omp/xai-oauth loop expectations
+
+**Acceptance criteria verified**:
+- [x] listNodeMessages type widened (id/seq/kind/payload/created_at/operator_display_name/metadata)
+- [x] direct-{console,legacy} positive operator API + DOM with e2e-starter
+- [x] interrupt-{console,legacy} triple + attempt placement + sent; API seq interrupted < ops < echo
+- [x] interrupt-visual both surfaces 460/1440 operator visual contract + captures in this plan
+- [x] no third spec
+- [x] package gates + type-check + lint + build:web + e2e typecheck + playwright 13+22 + validate
+- [x] acceptance-evidence.md written
+- [x] sprint-status 2-8 done
+- [x] no PR (parent owns publication)
+
+**Learnings**:
+- Sibling worktrees can hold ARCHON_E2E_PORT_BASE 3400; use ARCHON_E2E_PORT_BASE offset for local runs
+- Attempt-scoped message loads hide interrupted tools once redirect attempt is selected — do not require cross-attempt tool+operator DOM co-presence after Send now
+- Pre-existing workflows failures (pr-e2e-verify YAML gone; ralph-loop-run provider omp) blocked validate; fixed as separate chore(unblock) commits
+
+BLOCKER US-004 | gate=bun --filter @archon/workflows test | cause=loader.test pr-e2e-verify.yaml ENOENT (deleted by #203) + bundled-defaults expected devin/swe-2-max vs YAML omp/xai-oauth/grok-4.5 | action=chore(unblock) drop stale test; align provider/model expectations | 2026-09-19
+
+---

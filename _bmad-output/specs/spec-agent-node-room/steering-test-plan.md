@@ -59,7 +59,7 @@ Per `steering-api-contract.md`.
 - the executor is the sole writer; the row is a `text` row with `metadata` `{ origin='operator', operator_user_id, message_id }`; no new table, no widened `kind`; placed by `seq` between the turn it redirected and the turn it caused
 - the message stays `sent` on every provider (v1 floor); nothing advances past `sent`
 - terminal reconciliation runs **only** on the node's terminal event: each `sent` id matches a written `message_id`; an unmatched id returns as `NEVER SENT`; assert it never runs on a live refetch (a Cancel mid-flight must not mis-mark a delivered message)
-- display-name projection (AD-12): the served operator row carries `operator_display_name` from the read-time join; a join miss yields `null` and the core renders the short id
+- display-name projection (AD-12 / Story 2.8): the served operator row carries `operator_display_name` from the read-time join; a non-null sender always gets a trimmed name or the 8-char short id (server-owned fallback); `null` is reserved for identity-less rows; the web does not fetch users
 
 ## Concurrent operators
 
@@ -68,6 +68,18 @@ Per `steering-api-contract.md`.
 ## Steering UI — end-to-end, both shells
 
 Extend the node-room E2E on **Legacy and Console**.
+
+- **Story 2.10 finished iteration** — `steer.finished-iteration-legacy` and
+  `steer.finished-iteration-console` in
+  `e2e/ui/agent-finished-iteration.spec.ts` run the existing
+  `e2e-queue-guidance-loop` fixture through a real first completed iteration and
+  second live iteration. They select the completed row through `Execution`, prove
+  the exact read-only disclosure, ordered shared queue band, one successful
+  node-scoped queue GET and zero send/withdraw/interrupt mutations, then use
+  keyboard Go to restore the live textarea, stored draft, and queue order. They
+  record 460px/1440px overflow, button-height, full-width-band, and `33vh`-cap
+  measurements with screenshots. The #188 operator-row assertion remains in its
+  owning closure gate until that issue lands; it is not claimed by this journey.
 
 - dock states across `generating` (`Stop` / `Queue`), the `interrupting` transient (`Stopping…` `aria-disabled`, never native disabled), `idle-after-interrupt` (`Send now`, `WILL SEND`), `generating again`, finished (`NEVER SENT` read-only), and the detached-run disclosure (state 8)
 - **the queue dispatches at `Queue`-press:** pressing `Queue` fires the send route (`intent:'queue'`) and the message is server-side at once; a later `x` fires the **withdraw route** for that `message_id`; a withdraw after the message has drained is a success no-op

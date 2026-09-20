@@ -1,6 +1,7 @@
 /**
  * Query boundary for a selected node transcript: drain cursor pages, poll live
- * runs, abort on scope change, and restore container scroll.
+ * runs, abort on scope change, and restore container scroll. Owns the
+ * consume-once focus handoff across keyed ComposerDock remounts for Story 2.10.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
@@ -22,6 +23,7 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import type { FinishedIterationView } from '@/lib/execution-room-model';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -57,7 +59,7 @@ export function transcriptRefetchInterval(status: WorkflowRunStatus): 1000 | fal
   }
 }
 
-function isLiveRunStatus(status: WorkflowRunStatus): boolean {
+export function isLiveRunStatus(status: WorkflowRunStatus): boolean {
   return transcriptRefetchInterval(status) === 1000;
 }
 
@@ -96,6 +98,10 @@ export interface NodeTranscriptPaneProps {
   loadMessage?: typeof getWorkflowNodeMessage;
   askDrafts?: AskDraftByRequest;
   onAskDraftChange?: (requestId: string, draft: AskDraft) => void;
+  /** Proven finished-iteration descriptor from the parent pane. */
+  finishedIteration?: FinishedIterationView | null;
+  /** Existing execution-selection callback used by the Go control. */
+  onSelectLiveRow?: (liveRowId: string) => void;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -128,6 +134,8 @@ export function NodeTranscriptPane({
   loadMessage = getWorkflowNodeMessage,
   askDrafts,
   onAskDraftChange,
+  finishedIteration = null,
+  onSelectLiveRow,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -143,6 +151,8 @@ export function NodeTranscriptPane({
   const [retryNonce, setRetryNonce] = useState(0);
   const [localAskDrafts, setLocalAskDrafts] = useState<AskDraftByRequest>({});
   const [navTarget, setNavTarget] = useState<string | null>(null);
+  /** Consume-once autofocus after a Go-driven selection change. */
+  const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
 
@@ -152,6 +162,8 @@ export function NodeTranscriptPane({
   const navigatedHeadingRef = useRef<HTMLElement | null>(null);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
+  /** Intended live row id set on Go; cleared before focusing after commit. */
+  const pendingGoTargetRef = useRef<{ fromRowId: string; toRowId: string } | null>(null);
   pageStateRef.current = pageState;
   loadMessagesRef.current = loadMessages;
 
@@ -160,6 +172,43 @@ export function NodeTranscriptPane({
   const rowStatus = row?.status ?? 'completed';
   const occurrenceId = row?.selection.kind === 'occurrence' ? row.selection.occurrenceId : null;
   const attemptId = row?.selection.kind === 'occurrence' ? (row.selection.attemptId ?? null) : null;
+
+  // After Go commits a new selection, clear the pending target then hand focus
+  // to the live composer/blocked field, the new finished Go button, or the
+  // transcript scroller when the dock disappears. Unrelated remounts never
+  // set pendingGoTargetRef, so they never steal focus.
+  useEffect(() => {
+    const pending = pendingGoTargetRef.current;
+    if (pending === null) return;
+    // Still on the pre-Go row — wait for the parent selection to commit.
+    if (rowId === pending.fromRowId) return;
+
+    // Selection changed: consume before focusing so a later refetch cannot re-fire.
+    pendingGoTargetRef.current = null;
+
+    if (rowId === null) {
+      scrollRef.current?.focus();
+      return;
+    }
+    if (finishedIteration !== null) {
+      // Target is finished (loop advanced, or raced past the intended live row).
+      setAutoFocusTarget('go');
+      return;
+    }
+    if (rowStatus === 'running' || rowStatus === 'awaiting') {
+      setAutoFocusTarget('field');
+      return;
+    }
+    // Dock gone (terminal) — focus the transcript scroller.
+    scrollRef.current?.focus();
+  }, [rowId, rowStatus, finishedIteration]);
+
+  const handleSelectLiveRow = (liveRowId: string): void => {
+    if (rowId !== null) {
+      pendingGoTargetRef.current = { fromRowId: rowId, toRowId: liveRowId };
+    }
+    onSelectLiveRow?.(liveRowId);
+  };
 
   useEffect(() => {
     if (prevScopeRef.current !== resolvedScopeKey) {
@@ -542,6 +591,12 @@ export function NodeTranscriptPane({
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
         subState={nodeState?.steeringSubState}
+        finishedIteration={finishedIteration}
+        onSelectLiveRow={onSelectLiveRow === undefined ? undefined : handleSelectLiveRow}
+        autoFocusTarget={autoFocusTarget}
+        onAutoFocusApplied={(): void => {
+          setAutoFocusTarget(null);
+        }}
         focusLastRow={focusLastRow}
       />
     </RoomRegion>

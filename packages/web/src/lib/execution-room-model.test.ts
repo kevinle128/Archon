@@ -12,9 +12,12 @@ import {
   openExplicitRoom,
   rememberRoomScroll,
   resetRoomVisit,
+  resolveFinishedIterationView,
   roomOpenerId,
   runtimeForSelection,
+  type ExecutionLoopAncestryEntry,
   type ExecutionRow,
+  type ExecutionRowSelection,
 } from './execution-room-model';
 
 const RUN_STARTED_AT = '2026-09-08T00:00:00.000Z';
@@ -91,6 +94,400 @@ describe('chooseExecutionForNode', () => {
 
   test('returns null for an unknown node', () => {
     expect(chooseExecutionForNode(rows, 'other', 'awaiting')).toBeNull();
+  });
+});
+
+describe('resolveFinishedIterationView', () => {
+  function occurrenceRow(args: {
+    id: string;
+    status: string;
+    order: number;
+    iteration: number;
+    occurrenceId?: string;
+    nodeId?: string;
+    retryEpoch?: number;
+    routeActivationSeq?: number;
+    loopAncestry?: readonly ExecutionLoopAncestryEntry[];
+    unknownScope?: boolean;
+  }): ExecutionRow {
+    const loopAncestry =
+      args.loopAncestry ??
+      ([{ nodeId: args.nodeId ?? NODE_ID, iteration: args.iteration }] as const);
+    const selection: ExecutionRowSelection = {
+      kind: 'occurrence',
+      occurrenceId: args.occurrenceId ?? args.id,
+      iteration: args.iteration,
+      ...(args.retryEpoch !== undefined ? { retryEpoch: args.retryEpoch } : {}),
+      ...(args.routeActivationSeq !== undefined
+        ? { routeActivationSeq: args.routeActivationSeq }
+        : {}),
+      loopAncestry,
+    };
+    return row({
+      id: args.id,
+      status: args.status,
+      order: args.order,
+      nodeId: args.nodeId ?? NODE_ID,
+      selection,
+      unknownScope: args.unknownScope ?? false,
+    });
+  }
+
+  function resolve(
+    rows: readonly ExecutionRow[],
+    selected: ExecutionRow,
+    overrides?: { nodeStatus?: string; live?: boolean }
+  ) {
+    return resolveFinishedIterationView({
+      rows,
+      selected,
+      nodeStatus: overrides?.nodeStatus ?? 'running',
+      live: overrides?.live ?? true,
+    });
+  }
+
+  test('completed ×1 + live ×2 in the same top-level lineage resolves ×2', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'occ-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('a loop_group body row with the same parent ancestry resolves its later row', () => {
+    const ancestry1 = [
+      { nodeId: 'outer', iteration: 1 },
+      { nodeId: 'body', iteration: 1 },
+    ] as const;
+    const ancestry2 = [
+      { nodeId: 'outer', iteration: 1 },
+      { nodeId: 'body', iteration: 2 },
+    ] as const;
+    const finished = occurrenceRow({
+      id: 'body-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      nodeId: 'body',
+      loopAncestry: ancestry1,
+    });
+    const live = occurrenceRow({
+      id: 'body-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      nodeId: 'body',
+      loopAncestry: ancestry2,
+    });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'body-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('selected live row returns null', () => {
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([live], live)).toBeNull();
+  });
+
+  test('non-live run returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished, { live: false })).toBeNull();
+  });
+
+  test('terminal node status returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const later = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, later], finished, { nodeStatus: 'completed' })).toBeNull();
+  });
+
+  test('no later live candidate returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    expect(resolve([finished], finished)).toBeNull();
+  });
+
+  test('only-terminal candidates return null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const later = occurrenceRow({ id: 'occ-2', status: 'completed', order: 1, iteration: 2 });
+    expect(resolve([finished, later], finished)).toBeNull();
+  });
+
+  test('node selection returns null', () => {
+    const selected = row({
+      id: 'node-1',
+      status: 'completed',
+      order: 0,
+      selection: { kind: 'node' },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([selected, live], selected)).toBeNull();
+  });
+
+  test('event-fallback loop_iteration returns null', () => {
+    const selected = row({
+      id: 'loop-1',
+      status: 'completed',
+      order: 0,
+      selection: { kind: 'loop_iteration', iteration: 1 },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([selected, live], selected)).toBeNull();
+  });
+
+  test('route-only selection returns null', () => {
+    const selected = row({
+      id: 'route-1',
+      status: 'completed',
+      order: 0,
+      selection: { kind: 'route_iteration', executionSeq: 1 },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([selected, live], selected)).toBeNull();
+  });
+
+  test('outer occurrence with different final loop node returns null', () => {
+    const finished = occurrenceRow({
+      id: 'outer-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      nodeId: 'outer',
+      loopAncestry: [{ nodeId: 'outer', iteration: 1 }],
+    });
+    const live = occurrenceRow({
+      id: 'inner-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      nodeId: 'outer',
+      loopAncestry: [{ nodeId: 'inner', iteration: 2 }],
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('different retry epoch returns null', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      retryEpoch: 0,
+    });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      retryEpoch: 1,
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('undefined and retry epoch 0 compare as the same initial retry', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      retryEpoch: 0,
+    });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'occ-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('route activation absence does not equal a numeric value', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      routeActivationSeq: 1,
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('matching route activation allows resolution', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      routeActivationSeq: 3,
+    });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      routeActivationSeq: 3,
+    });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'occ-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('selected or candidate unknown scope returns null', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      unknownScope: true,
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toBeNull();
+
+    const knownFinished = occurrenceRow({
+      id: 'occ-1b',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+    });
+    const unknownLive = occurrenceRow({
+      id: 'occ-2b',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      unknownScope: true,
+    });
+    expect(resolve([knownFinished, unknownLive], knownFinished)).toBeNull();
+  });
+
+  test('empty ancestry returns null', () => {
+    const finished = row({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      unknownScope: false,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        loopAncestry: [],
+      },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('malformed selected final iteration returns null', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 9,
+      loopAncestry: [{ nodeId: NODE_ID, iteration: 1 }],
+    });
+    // Force disagreement: displayed iteration 9 vs ancestry final 1
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('malformed candidate final iteration returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 9,
+      loopAncestry: [{ nodeId: NODE_ID, iteration: 2 }],
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('earlier candidate returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-2', status: 'completed', order: 1, iteration: 2 });
+    const earlier = occurrenceRow({ id: 'occ-1', status: 'running', order: 0, iteration: 1 });
+    expect(resolve([earlier, finished], finished)).toBeNull();
+  });
+
+  test('different nested ancestry prefix returns null', () => {
+    const finished = occurrenceRow({
+      id: 'body-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      nodeId: 'body',
+      loopAncestry: [
+        { nodeId: 'outer', iteration: 1 },
+        { nodeId: 'body', iteration: 1 },
+      ],
+    });
+    const live = occurrenceRow({
+      id: 'body-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      nodeId: 'body',
+      loopAncestry: [
+        { nodeId: 'outer', iteration: 2 },
+        { nodeId: 'body', iteration: 2 },
+      ],
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('awaiting is preferred to running, then latest order', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const runningEarly = occurrenceRow({
+      id: 'occ-run-early',
+      status: 'running',
+      order: 3,
+      iteration: 4,
+    });
+    const runningLate = occurrenceRow({
+      id: 'occ-run-late',
+      status: 'running',
+      order: 4,
+      iteration: 5,
+    });
+    const awaitingEarly = occurrenceRow({
+      id: 'occ-await-early',
+      status: 'awaiting',
+      order: 1,
+      iteration: 2,
+    });
+    const awaitingLate = occurrenceRow({
+      id: 'occ-await-late',
+      status: 'awaiting',
+      order: 2,
+      iteration: 3,
+    });
+    expect(
+      resolve([finished, awaitingEarly, awaitingLate, runningEarly, runningLate], finished)
+    ).toEqual({
+      liveRowId: 'occ-await-late',
+      liveIteration: 3,
+    });
+    expect(resolve([finished, runningEarly, runningLate], finished)).toEqual({
+      liveRowId: 'occ-run-late',
+      liveIteration: 5,
+    });
+  });
+
+  test('never falls back to a terminal row when a live candidate exists only mismatched', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const terminalLater = occurrenceRow({
+      id: 'occ-done',
+      status: 'completed',
+      order: 2,
+      iteration: 3,
+    });
+    const mismatchedLive = occurrenceRow({
+      id: 'occ-retry',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      retryEpoch: 1,
+    });
+    expect(resolve([finished, mismatchedLive, terminalLater], finished)).toBeNull();
   });
 });
 

@@ -13,7 +13,11 @@ import {
   type UIEvent,
 } from 'react';
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
-import { buildExecutionHeader, type ExecutionHeaderModel } from '@/lib/execution-room-model';
+import {
+  buildExecutionHeader,
+  type ExecutionHeaderModel,
+  type FinishedIterationView,
+} from '@/lib/execution-room-model';
 import {
   beginNodeMessageRefresh,
   createNodeMessageState,
@@ -100,6 +104,8 @@ export interface ConsoleNodeRoomProps {
   headerModel?: ExecutionHeaderModel | null;
   headerOptions?: readonly ConsoleExecutionHeaderOption[];
   onSelectRow?: (rowId: string) => void;
+  /** Proven finished-iteration descriptor from the parent pane. */
+  finishedIteration?: FinishedIterationView | null;
   showToolCalls?: boolean;
   showSystem?: boolean;
   closeLabel?: 'Close' | 'Back';
@@ -478,6 +484,7 @@ export function ConsoleNodeRoom({
   headerModel,
   headerOptions,
   onSelectRow,
+  finishedIteration = null,
   showToolCalls = true,
   showSystem = true,
   closeLabel = 'Close',
@@ -505,6 +512,7 @@ export function ConsoleNodeRoom({
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [navTarget, setNavTarget] = useState<string | null>(null);
+  const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
   const pageStateRef = useRef(pageState);
@@ -513,6 +521,8 @@ export function ConsoleNodeRoom({
   const navigatedHeadingRef = useRef<HTMLElement | null>(null);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
+  /** Intended live row id set on Go; cleared before focusing after commit. */
+  const pendingGoTargetRef = useRef<{ fromRowId: string; toRowId: string } | null>(null);
   pageStateRef.current = pageState;
   loadMessagesRef.current = loadMessages;
 
@@ -520,6 +530,42 @@ export function ConsoleNodeRoom({
   const rowId = row?.id ?? null;
   const rowStatus = row?.status ?? 'completed';
 
+  // After Go commits a new selection, clear the pending target then hand focus
+  // to the live composer/blocked field, the new finished Go button, or the
+  // transcript scroller when the dock disappears. Unrelated remounts never
+  // set pendingGoTargetRef, so they never steal focus.
+  useEffect(() => {
+    const pending = pendingGoTargetRef.current;
+    if (pending === null) return;
+    // Still on the pre-Go row — wait for the parent selection to commit.
+    if (rowId === pending.fromRowId) return;
+
+    // Selection changed: consume before focusing so a later refetch cannot re-fire.
+    pendingGoTargetRef.current = null;
+
+    if (rowId === null) {
+      scrollRef.current?.focus();
+      return;
+    }
+    if (finishedIteration !== null) {
+      // Target is finished (loop advanced, or raced past the intended live row).
+      setAutoFocusTarget('go');
+      return;
+    }
+    if (rowStatus === 'running' || rowStatus === 'awaiting') {
+      setAutoFocusTarget('field');
+      return;
+    }
+    // Dock gone (terminal) — focus the transcript scroller.
+    scrollRef.current?.focus();
+  }, [rowId, rowStatus, finishedIteration]);
+
+  const handleSelectLiveRow = (liveRowId: string): void => {
+    if (rowId !== null) {
+      pendingGoTargetRef.current = { fromRowId: rowId, toRowId: liveRowId };
+    }
+    onSelectRow?.(liveRowId);
+  };
   useEffect(() => {
     if (prevScopeRef.current !== resolvedScopeKey) {
       prevScopeRef.current = resolvedScopeKey;
@@ -1038,6 +1084,12 @@ export function ConsoleNodeRoom({
               live={isLive}
               hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
               subState={selectedNodeState?.steeringSubState}
+              finishedIteration={finishedIteration}
+              onSelectLiveRow={onSelectRow === undefined ? undefined : handleSelectLiveRow}
+              autoFocusTarget={autoFocusTarget}
+              onAutoFocusApplied={(): void => {
+                setAutoFocusTarget(null);
+              }}
               focusLastRow={focusLastRow}
             />
           ) : null}

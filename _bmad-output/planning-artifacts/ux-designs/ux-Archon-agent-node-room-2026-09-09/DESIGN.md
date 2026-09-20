@@ -627,7 +627,7 @@ A message-status badge sits on the label line, right-aligned.
 `sent` is text-secondary; `delivered` takes the success colour **in addition to** the word. Most providers never reach `delivered`, so the resting state of this badge is the grey one.
 
 **Composer dock** (`{components.composer-dock}`) — pinned to the bottom of the node panel on both shells, `surface-elevated` with a 1px `border` top edge, padding `{spacing.dock-pad}`, children `{spacing.dock-gap}` apart.
-Top to bottom: the **Draft box** when it holds something, the **stop disclosure** when the agent is idle-after-interrupt, the **Composer field**, then one control row.
+Top to bottom: the **Draft box** when it holds something, the **stop disclosure** when the agent is idle-after-interrupt, the **Composer field**, then one control row. In the finished-iteration mode (Story 2.10) the stack is instead one flex/control row (disclosure + Go) then the read-only queue band — see **Finished-iteration dock** below.
 The control row puts the **Stop control** at the left edge and the **Send control** at the right, pushed apart by the full dock width. That gap is the point — the recoverable-but-disruptive control and the primary control must never sit under the same thumb.
 
 **Composer field** (`{components.composer-field}`) — a `surface-inset` textarea, 1px `border`, radius `{rounded.md}`, min-height `{spacing.composer-min-h}`, set in the same sans face and size as assistant and operator prose.
@@ -652,6 +652,15 @@ It is a slot in the dock's anatomy rather than a caption on another component, b
 
 **Draft item** (`{components.draft-item}`) — one line per waiting message, `{typography.badge}` text-secondary, end-elided, radius `{rounded.sm}`.
 Per-item controls are text buttons at the row's right edge, at the 24×24 SC 2.5.8 floor grown on padding — not the dock's 32px, which an 11px row cannot carry without becoming a card.
+
+**Finished-iteration dock (Story 2.10 / AD-16, issue #190 decision B2 — adopted 2026-09-20).** When the operator is viewing a completed iteration of a still-live loop node through the `Execution` selection controls, the composer dock swaps to a read-only mode rather than disappearing:
+
+1. **One flex/control row** at the dock's top (same `{spacing.dock-pad}` / `{spacing.dock-gap}` rhythm as the live dock): a flexible disclosure cell on the left carrying the complete copy `reading a finished iteration · the agent is working in iteration N` in `{typography.body-bar}` text-secondary, and a native `Go to iteration N` button on the right.
+2. **At the authoritative 460px room width** the complete disclosure **may wrap** inside its flexible cell so every word stays visible; the Go button remains fully visible, at least `{spacing.control-min-h}` **32px** high, and never compresses under the text. There is **no horizontal overflow** of the row or the dock.
+3. **Queue band below the control row** — the same full-width `surface-elevated` band anatomy as the live draft/queue band (1px top rule, `QUEUED · n` / `sent` labels, internal scroll past `33vh`). Rendered only when the shared pending queue has `sent.length > 0` (never an empty shell). Read-only: no textarea, no send hint, no Queue/Send control, no per-message delete, no bound mutation handler.
+4. DOM order is disclosure → Go → optional detached/alert line → band. Focus never lands on `<body>`.
+
+This is deliberately a thin parallel treatment in each shell's own dock renderer (no cross-surface abstraction). Elision of the disclosure string is **not** authorized; wrapping inside the flex cell is the approved narrow-width answer.
 
 ## Do's and Don'ts
 

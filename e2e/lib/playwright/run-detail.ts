@@ -44,28 +44,38 @@ export async function openNodeRoom(page: Page, nodeId: string): Promise<void> {
   await divider.getByRole('button', { name: new RegExp(nodeId) }).click();
 }
 
+/** One node-transcript row as returned by the messages list route. */
+export type NodeMessageRow = {
+  id: string;
+  seq: number;
+  kind: string;
+  payload: Record<string, unknown>;
+  created_at?: string;
+  operator_display_name?: string | null;
+  metadata?: {
+    origin?: 'operator';
+    operator_user_id?: string | null;
+    message_id?: string;
+    execution?: {
+      occurrence_id?: string;
+      attempt_id?: string;
+      retry_epoch?: number;
+      loop_ancestry?: { node_id: string; iteration: number }[];
+      route_activation_seq?: number;
+    };
+  } | null;
+};
+
 export async function listNodeMessages(
   page: Page,
   runId: string,
   nodeId: string
-): Promise<
-  {
-    kind: string;
-    payload: Record<string, unknown>;
-    metadata?: { execution?: { occurrence_id?: string; attempt_id?: string } };
-  }[]
-> {
+): Promise<NodeMessageRow[]> {
   const res = await page.request.get(
     `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/messages`
   );
   expect(res.ok(), `node messages for ${nodeId} responded ${res.status()}`).toBeTruthy();
-  const body = (await res.json()) as {
-    messages?: {
-      kind: string;
-      payload: Record<string, unknown>;
-      metadata?: { execution?: { occurrence_id?: string; attempt_id?: string } };
-    }[];
-  };
+  const body = (await res.json()) as { messages?: NodeMessageRow[] };
   return body.messages ?? [];
 }
 

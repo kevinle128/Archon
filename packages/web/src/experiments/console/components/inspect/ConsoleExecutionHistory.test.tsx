@@ -269,7 +269,7 @@ describe('ConsoleExecutionHistory', () => {
     expect(recorded[0]?.attemptId).toBe(ATTEMPT_B);
     expect(recorded[0]?.limit).toBe(100);
     expect(recorded[0]?.signal).toBeInstanceOf(AbortSignal);
-    expect(host.textContent).toContain('ASSISTANT');
+    expect(host.textContent).toContain('assistant');
     expect(host.textContent).toContain('Bash');
     expect(host.textContent).not.toContain('occ-a-assistant');
   });

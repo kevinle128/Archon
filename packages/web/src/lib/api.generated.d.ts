@@ -5671,6 +5671,9 @@ export interface components {
                 };
                 stream_id?: string;
                 message_id?: string;
+                /** @enum {string} */
+                origin?: "operator";
+                operator_user_id?: string | null;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5692,6 +5695,7 @@ export interface components {
             id: string;
             seq: number;
             created_at: string;
+            operator_display_name?: string | null;
         } | {
             metadata?: {
                 execution?: {
@@ -5708,6 +5712,9 @@ export interface components {
                 };
                 stream_id?: string;
                 message_id?: string;
+                /** @enum {string} */
+                origin?: "operator";
+                operator_user_id?: string | null;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5748,6 +5755,9 @@ export interface components {
                 };
                 stream_id?: string;
                 message_id?: string;
+                /** @enum {string} */
+                origin?: "operator";
+                operator_user_id?: string | null;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";

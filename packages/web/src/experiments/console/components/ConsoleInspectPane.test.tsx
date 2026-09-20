@@ -8,6 +8,7 @@ import { foldNodeRuns, toRunEvent } from '../primitives/event';
 import type { Message } from '../primitives/message';
 import type { Run } from '../primitives/run';
 import type {
+  NodeExecution,
   PendingInteraction,
   WorkflowEvent,
   WorkflowNodeMessage,
@@ -838,5 +839,176 @@ describe('ConsoleInspectPane', () => {
     );
     expect(host.querySelector('[aria-label="plan room"]')).toBe(roomBefore);
     fetchSpy.mockRestore();
+  });
+
+  test('same-lineage finished occurrence shows finished-iteration dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return new Response(JSON.stringify({ success: true, queued: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'GET' && pathname.includes('/messages')) {
+        return new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const executions: NodeExecution[] = [
+        {
+          node_id: 'loop',
+          status: 'completed',
+          occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          attempt_id: '11111111-1111-4111-8111-111111111111',
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+        },
+        {
+          node_id: 'loop',
+          status: 'running',
+          occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          attempt_id: '22222222-2222-4222-8222-222222222222',
+          loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+        },
+      ];
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const loopStates = [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })];
+      const loopEntries = buildConsoleLogEntries({
+        rows: buildLogRows(loopStates, [], executions, CREATED_AT),
+        rawEvents: [],
+        nodeRuns: [],
+        runStartedAt: CREATED_AT,
+      });
+      const selected: string[] = [];
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-loop', status: 'running' }),
+          nodeStates: loopStates,
+          events: [],
+          rawEvents: [],
+          logEntries: loopEntries,
+          selectedNodeId: 'loop',
+          selectedLogRowId: finishedId,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [{ id: 'loop', prompt: 'iterate' }],
+          onSelectNode: (nodeId: string, rowId?: string): void => {
+            if (rowId !== undefined) selected.push(rowId);
+            void nodeId;
+          },
+        });
+      });
+      await flush();
+      await flushUntil('finished dock', () =>
+        (host.textContent ?? '').includes('reading a finished iteration')
+      );
+      expect(host.textContent).toContain(
+        'reading a finished iteration · the agent is working in iteration 2'
+      );
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      expect(go).not.toBeUndefined();
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+      expect(selected).toEqual([
+        'exec:loop:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:22222222-2222-4222-8222-222222222222:1',
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('retry-epoch mismatch fail-closes the finished dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const executions: NodeExecution[] = [
+        {
+          node_id: 'loop',
+          status: 'completed',
+          occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          attempt_id: '11111111-1111-4111-8111-111111111111',
+          retry_epoch: 0,
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+        },
+        {
+          node_id: 'loop',
+          status: 'running',
+          occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          attempt_id: '22222222-2222-4222-8222-222222222222',
+          retry_epoch: 1,
+          loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+        },
+      ];
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const loopStates = [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })];
+      const loopEntries = buildConsoleLogEntries({
+        rows: buildLogRows(loopStates, [], executions, CREATED_AT),
+        rawEvents: [],
+        nodeRuns: [],
+        runStartedAt: CREATED_AT,
+      });
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-loop', status: 'running' }),
+          nodeStates: loopStates,
+          events: [],
+          rawEvents: [],
+          logEntries: loopEntries,
+          selectedNodeId: 'loop',
+          selectedLogRowId: finishedId,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [{ id: 'loop', prompt: 'iterate' }],
+        });
+      });
+      await flush();
+      expect(host.textContent ?? '').not.toContain('reading a finished iteration');
+      expect(
+        [...host.querySelectorAll('button')].some(b =>
+          (b.textContent ?? '').includes('Go to iteration')
+        )
+      ).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

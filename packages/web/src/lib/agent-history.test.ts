@@ -922,6 +922,189 @@ describe('buildAgentHistory', () => {
     });
   });
 
+  describe('operator rows', () => {
+    const EXECUTION = {
+      occurrence_id: '11111111-1111-4111-8111-111111111111',
+      attempt_id: '22222222-2222-4222-8222-222222222222',
+      retry_epoch: 0,
+    };
+    const SENDER_ID = 'abcdef12-3456-4789-a012-3456789abcde';
+
+    function operatorRow(
+      id: string,
+      seq: number,
+      body: string,
+      extras: {
+        operatorUserId?: string | null;
+        messageId?: string;
+        execution?: typeof EXECUTION;
+        operatorDisplayName?: string | null;
+      } = {}
+    ): Extract<NodeMessageRow, { kind: 'text' }> {
+      return {
+        id,
+        seq,
+        kind: 'text',
+        payload: { text: body },
+        created_at: CREATED_AT,
+        metadata: {
+          origin: 'operator',
+          operator_user_id: extras.operatorUserId === undefined ? SENDER_ID : extras.operatorUserId,
+          ...(extras.messageId === undefined ? {} : { message_id: extras.messageId }),
+          ...(extras.execution === undefined ? {} : { execution: extras.execution }),
+        },
+        ...('operatorDisplayName' in extras
+          ? { operator_display_name: extras.operatorDisplayName }
+          : {}),
+      };
+    }
+
+    test('projects verbatim text, sent delivery, message id, and execution without transforms', () => {
+      const body = '  keep **md** and\n\n  spaces  ';
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          operatorRow('op-1', 1, body, {
+            messageId: 'msg-op-1',
+            execution: EXECUTION,
+            operatorDisplayName: 'e2e-starter',
+          }),
+        ],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'operator',
+          id: 'op-1',
+          seq: 1,
+          role: 'operator',
+          text: body,
+          operatorUserId: SENDER_ID,
+          operatorDisplayName: 'e2e-starter',
+          messageId: 'msg-op-1',
+          delivery: 'sent',
+          execution: EXECUTION,
+        },
+      ]);
+    });
+
+    test('keeps a one-property output_format envelope serialized for operator while unwrapping assistant', () => {
+      const reportSchema = {
+        type: 'object',
+        properties: { report: { type: 'string' } },
+      };
+      const envelope = '{"report":"# Report"}';
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        outputFormat: reportSchema,
+        rows: [
+          operatorRow('op-env', 1, envelope, { operatorDisplayName: 'ops' }),
+          textRow('as-env', 2, envelope),
+        ],
+      });
+      expect(kinds(items)).toEqual(['operator', 'assistant']);
+      expect(items[0]).toMatchObject({ kind: 'operator', text: envelope });
+      expect(items[1]).toMatchObject({ kind: 'assistant', text: '# Report' });
+    });
+
+    test('prefers the response display name, falls back to 8-char id, and keeps null identity null', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          operatorRow('op-name', 1, 'named', {
+            operatorDisplayName: '  e2e-starter  ',
+          }),
+          operatorRow('op-blank', 2, 'blank-name', {
+            operatorDisplayName: '   ',
+          }),
+          operatorRow('op-missing', 3, 'missing-name'),
+          operatorRow('op-null', 4, 'null-id', {
+            operatorUserId: null,
+            operatorDisplayName: null,
+          }),
+        ],
+      });
+      expect(
+        items.map(item => (item.kind === 'operator' ? item.operatorDisplayName : null))
+      ).toEqual(['e2e-starter', SENDER_ID.slice(0, 8), SENDER_ID.slice(0, 8), null]);
+      expect(items[3]).toMatchObject({
+        kind: 'operator',
+        operatorUserId: null,
+        operatorDisplayName: null,
+      });
+    });
+
+    test('keeps an operator row between assistant deltas as its own seq-ordered item', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          textRow('a-1', 1, 'Hel', {
+            text_mode: 'delta',
+            message_id: 'm1',
+            block_id: 'b1',
+          }),
+          operatorRow('op-mid', 2, 'steer now', {
+            messageId: 'msg-mid',
+            operatorDisplayName: 'ops',
+          }),
+          textRow('a-2', 3, 'lo', {
+            text_mode: 'delta',
+            message_id: 'm2',
+            block_id: 'b2',
+          }),
+        ],
+      });
+      expect(kinds(items)).toEqual(['assistant', 'operator', 'assistant']);
+      expect(items.map(item => item.seq)).toEqual([1, 2, 3]);
+      expect(items[0]).toMatchObject({ kind: 'assistant', text: 'Hel' });
+      expect(items[1]).toMatchObject({
+        kind: 'operator',
+        text: 'steer now',
+        messageId: 'msg-mid',
+      });
+      expect(items[2]).toMatchObject({ kind: 'assistant', text: 'lo' });
+    });
+
+    test('todo folding ignores operator prose and still folds todo-family tools', () => {
+      const { items, todos } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          operatorRow('op-todo', 1, 'op: init\nitems:\n- fake todo', {
+            operatorDisplayName: 'ops',
+          }),
+          toolRow({
+            id: 'todo-call',
+            seq: 2,
+            name: 'todo',
+            toolUseId: 'todo-1',
+            input: { op: 'init', phase: 'Research', items: ['Read the spec'] },
+            metadata: { tool_phase: 'call' },
+          }),
+        ],
+      });
+      expect(kinds(items)).toEqual(['operator', 'tool']);
+      expect(items[0]).toMatchObject({
+        kind: 'operator',
+        text: 'op: init\nitems:\n- fake todo',
+      });
+      expect(todos).toEqual([
+        {
+          phase: 'Research',
+          items: [{ content: 'Read the spec', status: 'in_progress' }],
+        },
+      ]);
+    });
+  });
+
   test('returns empty todos when no tool resolves to the todo family', () => {
     const { items, todos } = buildAgentHistory({
       nodeId: NODE_ID,

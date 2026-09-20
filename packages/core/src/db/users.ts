@@ -43,6 +43,34 @@ export async function getUserById(id: string): Promise<User | null> {
   return result.rows[0] ?? null;
 }
 
+const USER_DISPLAY_NAME_ID_CHUNK_SIZE = 500;
+
+/**
+ * Batch-load current display names for transcript operator projection.
+ * Deduplicates input, issues sequential chunked SELECTs (≤500 ids), and never
+ * interpolates ids into SQL. Empty input short-circuits without a query.
+ */
+export async function getUserDisplayNamesByIds(
+  ids: readonly string[]
+): Promise<Pick<User, 'id' | 'display_name'>[]> {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const rows: Pick<User, 'id' | 'display_name'>[] = [];
+  for (let offset = 0; offset < uniqueIds.length; offset += USER_DISPLAY_NAME_ID_CHUNK_SIZE) {
+    const chunk = uniqueIds.slice(offset, offset + USER_DISPLAY_NAME_ID_CHUNK_SIZE);
+    const placeholders = chunk.map((_, index) => `$${index + 1}`).join(', ');
+    const result = await pool.query<Pick<User, 'id' | 'display_name'>>(
+      `SELECT id, display_name FROM remote_agent_users WHERE id IN (${placeholders})`,
+      chunk
+    );
+    rows.push(...result.rows);
+  }
+  return rows;
+}
+
 async function selectIdentity(
   platform: IdentityPlatform,
   platformUserId: string
