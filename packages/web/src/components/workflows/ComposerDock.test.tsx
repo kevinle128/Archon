@@ -2682,6 +2682,20 @@ describe('ComposerDock', () => {
       }
       expect(keepaliveCalls).toHaveLength(0);
     }
+    // Blocked + idle must still suppress keepalive (mode gate, not agentMode alone).
+    keepaliveCalls.length = 0;
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      hasPendingAsk: true,
+      keepalive,
+    });
+    const blockedField = host.querySelector('textarea');
+    expect(blockedField).not.toBeNull();
+    await act(async () => {
+      reactOnFocus(blockedField as Element)?.();
+    });
+    await setDraft('blocked-idle');
+    expect(keepaliveCalls).toHaveLength(0);
   });
 
   test('2.12 scope change resets throttle so first activity sends', async () => {

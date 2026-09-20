@@ -552,8 +552,9 @@ export function ConsoleComposerDock({
   const agentMode = steeringAgentMode(dock);
   const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
 
-  // Entering a new idle epoch re-opens the keepalive throttle window.
-  useEffect(() => {
+  // Entering a new idle epoch re-opens the keepalive throttle window before
+  // paint/autofocus so an earlier focus cannot use a stale throttle.
+  useLayoutEffect(() => {
     if (agentMode === 'idle' && prevAgentModeRef.current !== 'idle') {
       keepaliveEpochRef.current += 1;
       lastKeepaliveAtRef.current = 0;
@@ -562,7 +563,8 @@ export function ConsoleComposerDock({
   }, [agentMode]);
 
   const maybeKeepalive = (): void => {
-    if (agentMode !== 'idle') return;
+    // Composer-only: blocked/finished/detached/finished-iteration must never arm.
+    if (mode !== 'composer' || agentMode !== 'idle') return;
     const now = Date.now();
     if (
       lastKeepaliveAtRef.current !== 0 &&
