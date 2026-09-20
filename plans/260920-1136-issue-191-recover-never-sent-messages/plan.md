@@ -1,9 +1,9 @@
 ---
 title: 'Issue 191: recover messages that were never sent when the node ends'
-description: 'Deep TDD plan for Story 2.11 — client-side terminal reconciliation that restores accepted-but-undelivered steering messages as a read-only NEVER SENT box in both node-room shells.'
+description: 'Implementation-ready plan for Story 2.11: reconcile observed steering receipts against post-terminal operator rows and render unmatched guidance as a read-only NEVER SENT box.'
 status: pending
 priority: P1
-effort: '4 phases · ~14h'
+effort: '4 phases · ~26h'
 issue: 'https://github.com/kevinle128/Archon/issues/191'
 branch: archon/thread-18fe51fd
 tags: [issue-191, agent-node-room, story-2-11, web, frontend, e2e, feature]
@@ -18,423 +18,470 @@ tdd: true
 
 ## Outcome
 
-When a steered node ends for any reason — natural finish, workflow Cancel,
-node failure, or (once Story 2.12 ships) the 30-minute idle-await expiry — no
-operator guidance disappears silently. Both node-room shells (Legacy
-`ComposerDock` and Console `ConsoleComposerDock`) compare every message id
-that was shown as queued (plus every receipt this tab itself received) with
-the operator rows the executor actually wrote, and restore every unmatched
-message to a **read-only draft box** headed `NEVER SENT · n`, each item
-keeping its original text and `message_id`. A half-typed unsent draft folds
-in as the last item. The restoration is announced once through an assertive
-`role="alert"`. The comparison runs **only after the node is terminal and
-only against transcript rows fetched after that fact was observed**, so a
-live refetch can never mark a message prematurely.
+After the client observes the selected node's actual terminal evidence, both
+the Legacy and Console node rooms compare every steering receipt previously
+shown by the shared node queue (plus successful receipts returned directly to
+this tab) with the executor's persisted operator rows. Evidence is either a
+persisted lifecycle terminal or the server's exact-scope terminal projection
+of a transactionally purged Ask interaction. Unmatched messages return in the
+draft area as a read-only `NEVER SENT · n` box, retaining their exact text and
+`message_id`. A still-pending submission and any different half-typed draft
+are folded in last. The disclosure is announced once with `role="alert"`.
 
-Issue #191 names Story 2.11 in
-`_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` as the
-acceptance authority. Its blockers (Story 2.8 operator rows with
-`message_id`, Story 2.9 shared live queue) are `done` in
-`_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`.
+The comparison must not run when only the workflow run is terminal. In the
+Cancel path, the run becomes `cancelled` and the steering handle is discarded
+before the executor writes `node_failed`; an operator row may still be written
+in that interval. The browser therefore keeps refreshing terminal runs whose
+raw node execution remains unsettled and reconciles only after the raw
+`node_completed`/`node_failed` event is visible. A parked Ask has no remaining
+executor, so its transactionally purged scoped interaction is the one explicit
+terminal-evidence exception.
 
-## Acceptance criteria (from Story 2.11, restated as testable claims)
+This is Story 2.11 from
+`_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`. Its data
+dependencies, Story 2.8 operator rows with `message_id` and Story 2.9 shared
+queue snapshots, are already marked `done` in the sprint tracker.
 
-| # | Claim | Proven by |
-|---|-------|-----------|
-| AC1 | On the node terminal event the client compares every queued `message_id` shown by the node queue with written operator rows; unmatched ones return to the draft area as `NEVER SENT`. | Phase 1 unit (`reconcileNeverSent`), Phase 2 dock component tests, Phase 3 pane tests, Phase 4 E2E Cancel case |
-| AC2 | A live refetch before terminal state, with operator-row persistence still in flight, never runs reconciliation and cannot mark prematurely. | Phase 1 unit (`steeringDockMode` precedence), Phase 2 dock guard (T2.8), Phase 3 pane tests (prop stays `null` on live drains; only a drain started after terminal populates it), Phase 4 natural-drain E2E (no box) |
-| AC3 | One or more restored messages are announced through an assertive `role="alert"`, and each keeps its original text and identity. | Phase 2 dock component tests (alert copy, `data-message-id`, verbatim text), Phase 4 E2E |
-| Tracker | Focused tests / characterization evidence recorded; `sprint-status.yaml` entry moved to `done`. | Phase 4 |
+## Acceptance criteria
 
-## Verified authority and conflict resolution
+| ID      | Measurable result                                                                                                                                                                                                                                                                                                                                                            | Evidence                                                                             |
+| ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| AC1     | On actual node terminal evidence, every receipt ever shown by a generation-valid queue snapshot (including the read-only finished-iteration view) or returned by this tab, except ids this tab confirmed withdrawn, is compared with node-wide persisted operator `message_id`s; every unmatched receipt is restored once in original observation order.                     | Phase 1 state tests, Phase 2 component tests, Phase 3 pane tests, Phase 4 Cancel E2E |
+| AC2     | A live refetch, a workflow-level terminal status with raw execution still `running`/`awaiting`, and a transcript drain begun before terminal evidence never populate reconciliation input; cancelling a scoped parked Ask projects only its proven execution(s) terminal, answered resume retires only proven superseded segments, and unscoped/ambiguous data fails closed. | Phase 3 server/model/parent/pane tests                                               |
+| AC3     | A pending submission that has neither been observed nor written is restored; a different current draft follows it verbatim; unchanged text is not duplicated.                                                                                                                                                                                                                | Phase 1 and Phase 2 tests                                                            |
+| AC4     | The finished box contains exact text and identities, has the accessible name `Never sent, n`, contains exactly one assertive alert with `node finished · none of this was sent`, and exposes no field or controls.                                                                                                                                                           | Phase 2 tests and Phase 4 visual/accessibility E2E                                   |
+| AC5     | If every observed receipt has a written operator row and there is no unsent input, the finished dock is absent.                                                                                                                                                                                                                                                              | Unit, component, and natural-drain E2E                                               |
+| AC6     | A new execution attempt for the same node clears terminal reconciliation state even if it starts and finishes between client refreshes or the prior reconciliation never completed; late queue/send/withdraw/interrupt/drain results from the prior attempt are inert; draft text remains, the old retry UUID is cleared, and the next submission mints a new id.            | Phase 2 and Phase 3 tests                                                            |
+| Tracker | Focused evidence is recorded and the Story 2.11 tracker entry moves to `done` only after all gates pass.                                                                                                                                                                                                                                                                     | Phase 4                                                                              |
 
-Checked against the working tree at `0d935ef2` (branch `archon/thread-18fe51fd`).
+## Repository evidence and resolved decisions
 
-1. **Story 2.11** (`epics.md` §"Story 2.11") is the acceptance authority.
-2. **UX authority** is `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md`
-   (`draft-box` token block: "On a FINISHED node the same block renders
-   read-only and is the only part of the dock left standing — no field, no
-   controls. Same tokens, no new colour") and `EXPERIENCE.md` ("Node finishes
-   on its own, dock removed" row; Accessibility Floor: list name
-   `Never sent, 2`; header lowercase DOM under CSS uppercase; announcement
-   copy `node finished · none of this was sent`).
-3. **Steering architecture** is `_bmad-output/planning-artifacts/architecture/architecture-Archon-live-agent-steering-2026-09-12/ARCHITECTURE-SPINE.md`
-   AD-11 ("Every terminal cause surfaces the undelivered queue — the row is
-   how, and the terminal event is when") and AD-6 (`message_id` on the
-   operator row exists for exactly this reconciliation).
-4. `_bmad-output/specs/spec-agent-node-room/control-states.md` "finished" row
-   and `steering-test-plan.md` line 61 restate the same rule.
+Evidence was checked at worktree `915e0593`; its production parent is
+`0d935ef2`.
 
-Three conflicts/gaps were found and are resolved as follows (recorded in the
-spine by Phase 4):
-
-- **Terminal trigger vs. Cancel timing.** AD-11 says reconciliation keys on
-  the `node_completed`/`node_failed` event. Verified: `cancelWorkflowRun`
-  (`packages/core/src/db/workflows.ts` → `discardRunSteeringHandles`)
-  discards the registry queue **synchronously in the same commit** that makes
-  the run `cancelled`, while the executor writes `node_failed` up to ~10 s
-  later (`CANCEL_CHECK_INTERVAL_MS = 10_000`). The web run query
-  (`WorkflowExecution.tsx`, `refetchInterval` → `false` on terminal) stops
-  polling the moment it sees `cancelled`, so the client may **never** observe
-  that `node_failed` event. The API also settles running node states to
-  `failed` in the same response (`settleApiWorkflowNodeStatesForRunStatus`).
-  **Decision:** the client's terminal trigger is *"the node row is terminal
-  (`completed | failed | skipped`) or the run is no longer live"*, followed by
-  **one transcript drain that started after that observation**. For natural
-  finish/failure this is exactly the `node_completed`/`node_failed` event
-  projected onto the row (the executor writes those after its last operator
-  row). For Cancel the queue was already discarded before the status became
-  visible, so nothing can drain after the trigger; the only residual is an
-  already-in-flight guidance turn's first-yield row landing after the final
-  drain, which would show a delivered-into-a-cancelled-turn message as
-  `NEVER SENT` in a read-only box — harmless (no resend is possible on a
-  finished node) and preferable to silent loss.
-- **Drained-but-unwritten messages.** Verified: `NodeSteeringHandle.drain()`
-  empties `pending` immediately; the executor records the operator row only
-  at the guidance turn's first successful stream yield
-  (`dag-executor.ts` "Delivery seam"). A queue snapshot polled in that window
-  replaces `sent` wholesale (`applyQueueSnapshot`), so a message whose
-  guidance turn fails before its first yield would vanish from the client
-  before any row exists. **Decision:** the dock keeps a **tab-local accepted
-  ledger** — every receipt this tab received a 200 for, removed only by this
-  tab's own successful withdraw — and reconciles the **union** of the ledger
-  and the last shown queue. Trade-off accepted: a message withdrawn by
-  *another* tab after this tab queued it is restored here as `NEVER SENT`
-  (true statement, read-only, no duplicate request).
-- **Disclosure copy.** `mockups/key-steering-dock.html` shows
-  `node finished · these never left this tab`; `EXPERIENCE.md` specifies
-  `node finished · none of this was sent`. Since Story 2.9 the box can hold
-  other tabs' messages, so "this tab" is inaccurate. **Decision:**
-  `EXPERIENCE.md` wins; Phase 4 aligns the mockup line. The mockup's
-  30-minute variant copy belongs to Story 2.12 and is untouched.
-
-- **Announcement register.** `EXPERIENCE.md` says the finish is "announced
-  once, in the same register the stop wait is" — the stop wait uses the
-  polite `role="status"` region. Story 2.11's AC and NFR8 require an
-  **assertive `role="alert"`**. **Decision:** the story AC wins; the finished
-  box carries exactly one `role="alert"` and no `role="status"` region.
-- **Retry / resume of the same node.** `workflow retry-node` and
-  `/workflow resume` re-run a failed node under the **same run id and row id**
-  (`retryEpoch` increments), so the dock stays mounted under the same `key`.
-  A sticky `finished` mode would hide the composer for the retried node and
-  re-restore the first attempt's ledger ids when it ends. **Decision:**
-  `finished` mode requires the row to still be terminal (or the run non-live);
-  when a reconciled dock sees its row return to `running`/`awaiting` on a live
-  run it resets through the same path as a scope change (fresh state, ledger
-  cleared, draft re-hydrated), and the panes reset the written-ids prop to
-  `null` whenever the node is no longer terminal.
-
-No server, engine, schema, or API change is required. Story 2.11 is entirely
-a client concern built on data that already exists (AD-11: "not a new event").
-
-## Current behavior traced end to end
-
-- `packages/web/src/lib/steering-dock.ts` is the framework-free core both
-  shells consume. `SteeringDockState.sent` holds `LocalSentReceipt`s; local
-  200s append (`resolveGuidanceSuccess`, `resolveSendNowSuccess`), the 1 s
-  `startQueuePolling` loop replaces `sent` wholesale via `applyQueueSnapshot`
-  (generation-guarded), and `steeringDockMode` returns
-  `hidden | blocked | detached | composer | finished-iteration`. A non-live
-  run or a non-`running`/`awaiting` row → `hidden`.
-- `ComposerDock.tsx` / `ConsoleComposerDock.tsx` render `null` in `hidden`
-  mode. When the node ends, `rowStatus` leaves `running`, `pollingEnabled`
-  becomes false (the last snapshot stays in `sent`), the controls unmount, the
-  existing focus effect moves focus to the last transcript row — and the
-  receipts vanish from view silently. This is the defect Story 2.11 fixes.
-- The queue route (`GET …/nodes/:nodeId/queue`) returns `409 node_finished`
-  when the run is terminal or the handle is `closed`; the poller stops on any
-  non-retryable 4xx without touching `sent`.
-- Both panes own a serial transcript drain (`drainNodeMessages` in
-  `NodeTranscriptPane.tsx` ~L222-L280 and `ConsoleNodeRoom.tsx` ~L578-L636):
-  one drain per effect run, re-armed every 1 s while the run is live, and the
-  effect re-runs on `row`/`runStatus` (`isLive`) change so a terminal
-  transition always starts one more drain. `NodeMessageState.complete` is true
-  after a full drain to the high-watermark.
-- Operator rows reach the web as `kind: 'text'` rows with
-  `metadata.origin === 'operator'` and `metadata.message_id` (Story 2.8;
-  `buildAgentHistory` already maps them to `kind: 'operator'` items with
-  `messageId`).
-- `LogRow.status` is the server's node state, already settled to
-  `failed`/`completed` for every running node when the run is terminal.
-  Loop-occurrence rows take their status from `nodeExecutions`; the plan
-  therefore ORs the run-liveness check into the trigger so Cancel is terminal
-  for every row shape.
-- The Story 2.10 `finished-iteration` mode mirrors the queue read-only and
-  loads only that occurrence's rows; its `finishedIteration` descriptor
-  resolves to `null` once the node is no longer `running`/`awaiting`.
+1. **Product authority.** The issue and Story 2.11 require comparison on the
+   node terminal event, not merely a terminal workflow status. The story also
+   requires identity preservation and an assertive announcement.
+2. **UX authority.** `EXPERIENCE.md` specifies the exact disclosure, list name,
+   lowercase DOM text with CSS uppercase, read-only result, one announcement,
+   and focus returning to the last transcript row. `DESIGN.md` specifies the
+   existing elevated-band tokens, top rule, single-line/elided items, maximum
+   height `33vh`, and no controls or new color. The authoritative dock width is
+   460 px; the Console host is additionally checked at 1440 px. No repository
+   authority supports the draft plan's 1280 px dock target.
+3. **Copy conflict.** The mockup says `these never left this tab`, while
+   `EXPERIENCE.md` says `none of this was sent`. Shared queue observations can
+   originate in another tab, so the experience copy is correct. Phase 4
+   updates the mockup. Story 2.11's explicit `role="alert"` overrides the
+   experience prose that compares the announcement register to the polite
+   stop status.
+4. **The queue is lossy; observation history is not.**
+   `NodeSteeringHandle.drain()` removes pending items immediately, and
+   `applyQueueSnapshot()` currently replaces the visible `sent` array. The
+   executor writes the operator row only on the guidance turn's first
+   successful stream yield. A receipt can therefore disappear from a later
+   snapshot before any row exists. A tab-local-success-only ledger is also
+   insufficient: an observer tab may see a shared receipt and later see an
+   empty queue. The core needs an **observed ledger** populated by both valid
+   snapshots and local successes; snapshots add but never delete history.
+5. **Cancel is not the node event.** `cancelWorkflowRun()` commits run status
+   `cancelled` and calls `discardRunSteeringHandles()` immediately. The
+   executor later detects cancellation and records `node_failed`; meanwhile it
+   can persist an operator row. The API's settled `nodeStates` projection is
+   not proof of the event: raw `nodeExecutions` remains `running` until the
+   event exists. Reconciliation on `!live` would create a false `NEVER SENT`
+   result, so it is forbidden.
+6. **A parked Ask needs a read-side terminal closure.** Cancelling or failing a
+   paused run transactionally changes its pending interaction to `purged` and
+   records `interaction_resolved`, but no executor remains to emit
+   `node_failed`. The run-detail query already supplies all interaction rows,
+   including their server-minted `execution_scope`, to
+   `projectWorkflowExecutionHistory()`. That projection must mark only the
+   scoped matching execution as failed at `resolved_at`, with the same
+   unambiguous occurrence fallback already used for a re-asked pending
+   interaction. An unscoped, unmatched, or ambiguous purge remains unresolved.
+   When the scope has `loop_ancestry`, the projection must also close every
+   unambiguously matched pre-resolution loop-owner execution represented by
+   those ancestry prefixes (the owning iteration and a normal loop's open
+   container); otherwise an ancestor remains falsely running after the parked
+   execution is closed. Ambiguity is evaluated per owner and fails closed.
+   This is a read-model fix, not autonomous lifecycle mutation, and it prevents
+   both a missing result and an endless terminal catch-up loop.
+   The same projection must also retire a pre-pause open segment after an
+   answered Ask's matching persisted `interaction_resolved` event says
+   `resumed:true` and a later lifecycle start proves execution resumed;
+   otherwise an eventual real terminal pairs with the resumed segment while
+   the pre-pause segment remains falsely `running`. For loop Ask scopes, the
+   interaction's `loop_ancestry` identifies all provable owner segments. Exact
+   scope, tool identity, persisted resolution time, and corresponding later
+   starts are required; ambiguity fails closed.
+7. **Terminal catch-up is necessary.** Legacy polling currently stops at a
+   terminal run. Console SSE invalidation can miss the later node event during
+   reconnect, and its live heartbeat also stops. Both parents must continue a
+   mounted-view 3 s refresh only while the run is terminal and any raw node
+   execution has a nonterminal status (including `running`/`awaiting`); stop as
+   soon as all raw executions settle. If the event never arrives, fail safe by
+   not claiming a message was unsent. This is read-only observation and does
+   not mutate run lifecycle.
+8. **Pending submission and edited draft are distinct inputs.** The textarea
+   remains editable while a request is in flight. If the user changes it, the
+   submitted `pendingRetry` and current draft must both survive. If the
+   pending id was observed or written, it must not be added again.
+9. **Retry/resume keeps the same run/node storage key.** A boolean
+   terminal-to-live transition is not a sufficient reset signal: a short retry
+   can start and finish between two client refreshes. Modern `node_started`
+   events carry a server-minted `occurrence_id`. A prompt Ask resume reuses its
+   occurrence, while a loop Ask resume starts a new outer occurrence even
+   though it is the same logical execution. Derive the logical execution key
+   by folding ordered events: an `interaction_resolved` for the same Ask with
+   `resumed:true` makes the next same-node `node_started` retain the prior key;
+   every other new start adopts its occurrence id (or persisted event id for a
+   legacy unscoped row). The prior attempt's ambiguous `pendingRetry` UUID must
+   also be cleared: the node-wide transcript legitimately contains
+   prior-attempt operator rows, so reusing that UUID could falsely classify a
+   new-attempt submission as already delivered. Preserve its draft text and
+   mint a new id only if the user submits again. The folded logical key, not
+   the raw occurrence id, is the reset contract for Ask continuations.
+10. **Existing infrastructure is sufficient.** Both panes already serialize
+    transcript drains and expose `NodeMessageState.complete`. Operator rows are
+    text rows whose metadata has `origin: 'operator'` and `message_id`. The
+    existing interruptible `e2e-queue-guidance` fixture and web test helpers
+    cover the real executor path. Apart from the server's existing execution
+    history read projection, no schema, engine, route, or API change is needed.
+11. **Finished-iteration is an observer, not an exclusion.** Story 2.10 lets a
+    selected completed loop occurrence mirror the live node's shared queue.
+    Story 2.11 therefore applies if that node later ends. Its displayed
+    occurrence transcript is not a safe delivery set because operator rows can
+    belong to the live occurrence. Terminal reconciliation must use a separate
+    node-wide message drain (no occurrence filter) and the dock mode that last
+    showed the queue is eligible even when it was read-only.
+12. **Transcript scope and steering-history scope differ.** Both panes currently
+    key the dock with the occurrence-scoped transcript key. That remount would
+    discard an already observed receipt when the operator changes occurrences,
+    even though all those views show the same node registry queue. Keep
+    transcript pagination occurrence-scoped, but key the dock and terminal
+    reconciliation by run/node so observation history survives occurrence
+    selection. A run or node change still resets it.
+13. **An in-flight own withdraw must settle first.** A confirmed withdraw is
+    the operator intentionally cancelling that receipt, but its response can
+    race the terminal drain. Reconciliation must wait while
+    `withdrawingMessageId` is non-null. Success removes the id before the
+    one-shot comparison; failure clears the transient but preserves the id, so
+    the comparison recovers it. Guessing either outcome would lose intent.
+14. **Attempt reset is also an async ownership boundary.** The current dock
+    continuations apply responses directly to component state. Resetting that
+    state without invalidating requests would let an old send, withdraw,
+    interrupt, or queue-read response repopulate the new attempt. Each dock
+    needs a local attempt generation captured by every async operation; a
+    changed generation makes the old continuation inert. The pane applies the
+    same rule to its abortable terminal drain. This does not cancel a server
+    mutation that already happened; it prevents its obsolete client response
+    from corrupting the next attempt.
 
 ## Scope
 
 Included:
 
-- `steering-dock.ts`: accepted ledger, `neverSent` state, `reconcileNeverSent`,
-  `finished` mode precedence, copy/label helpers,
-  `collectWrittenOperatorMessageIds`, `isTerminalNodeRowStatus` — tests first.
-- Both panes: post-terminal drain gate that produces
-  `writtenOperatorMessageIds: ReadonlySet<string> | null` and passes it to the
-  dock — tests first.
-- Both dock renderers: the read-only `NEVER SENT` box, the draft fold-in, the
-  assertive alert, focus safety, exact copy and accessible names — tests
-  first; visual acceptance in both shells at 460 px and 1280 px.
-- Outside-in Playwright coverage for Cancel-with-queued, Stop→queue→Cancel,
-  draft fold-in, and the natural-drain negative case, on both surfaces.
-- Authority sync (AD-11 clarification, test-plan wording, mockup copy) and the
-  tracker move to `done`.
+- Shared core: observed ledger, one-shot reconciliation, exact copy/labels,
+  explicit terminal input, operator-id extraction, and finished mode.
+- Both docks: eligibility tracking (including queue-observing
+  finished-iteration mode), execution-generation reset, read-only finished box,
+  announcement, focus, visual and responsive behavior.
+- Exact-scope Ask pause/resume and purge closure in the server's existing
+  execution-history read projection; raw-execution settlement helpers and
+  terminal catch-up in both run-detail parents.
+- Node-room wrappers and both transcript panes: a raw terminal-evidence signal,
+  a complete node-wide post-terminal drain, and reset rules.
+- Focused unit/component tests, real-executor Playwright coverage, evidence,
+  current architecture/walkthrough/test/mockup correction, and tracker
+  closeout. Historical review/memory records remain unchanged.
 
-Excluded (explicit non-goals):
+Excluded:
 
-- Any server, executor, registry, schema, or OpenAPI change; no new event,
-  route, or `delivered` state (G1).
-- Story 2.12's 30-minute timer and its dock disclosure; Story 2.13 ordering.
-- Durable/`sessionStorage` persistence of the `NEVER SENT` box. Steering
-  state is in-process and non-durable (NFR4); the box lives for the mounted
-  dock and is announced once. A later "dismiss/resend" affordance is out of
-  scope.
-- Reconciling from the Story 2.10 finished-iteration band: its rows are
-  occurrence-scoped (delivered rows live in the live iteration), so comparing
-  there would mis-mark. The band already clears on `409`; the live dock (any
-  tab) owns restoration.
-- Any change to `agent-history.ts`, `NodeRoom.tsx`, or the transcript row
-  renderers.
+- Workflow engine, steering registry, database writes/schema, routes, OpenAPI,
+  or generated API changes. The server change is limited to projecting an
+  already-persisted scoped Ask state as accurate execution history.
+- Durable/session storage of the observed ledger/finished box,
+  resend/dismiss controls, and cross-reload recovery. Existing draft/retry
+  storage key and record shape remain unchanged; retry reset clears only the
+  prior attempt's UUID while retaining draft text. Observation history is
+  mounted state.
+- Story 2.12's idle-expiry timer/copy and Story 2.13 ordering work.
+- Changes to transcript rendering, `agent-history.ts`, or node-room routing.
 
-## Design and technical decisions
+## Design
 
-### 1. State model (framework-free, `steering-dock.ts`)
+### 1. Framework-free state
 
-```ts
-export interface NeverSentEntry {
-  /** Original caller-stamped id; null only for the folded unsent draft without a retry id. */
-  readonly messageId: string | null;
-  readonly message: string;
-}
-
-export interface SteeringDockState {
-  // …existing fields unchanged…
-  /**
-   * Tab-local accepted ledger: every receipt this tab received a 200 for, in
-   * acceptance order. Snapshots never touch it; only this tab's successful
-   * withdraw removes an id; a scope reset clears it.
-   */
-  readonly acceptedLedger: readonly LocalSentReceipt[];
-  /** null = not reconciled; [] = reconciled, nothing to restore; non-empty = finished box. */
-  readonly neverSent: readonly NeverSentEntry[] | null;
-}
-```
-
-`reconcileNeverSent(state, { writtenMessageIds, draft })`:
-
-- idempotent — returns the identical state object when `neverSent !== null`;
-- candidates, in order: ledger entries **not** in `sent` (acceptance order —
-  these were drained or withdrawn before anything still queued), then `sent`
-  (last shown server receipt order), deduplicated by `messageId`;
-- drops every candidate whose id is in `writtenMessageIds`;
-- appends the trimmed non-empty `draft` as the last entry with
-  `messageId = pendingRetry.messageId` when `pendingRetry.message === draft`,
-  otherwise `null` — **unless** that retry id is already among the candidates
-  (an ambiguous POST may have been accepted server-side; never list one
-  message twice);
-- covers a terminal that lands while a `Send now` batch is in flight
-  (`sent === []`, `inFlightBatch` non-null): the batch's earlier ids are in
-  the ledger and the new draft is still `pendingRetry`, so nothing is lost;
-- leaves `draft`, `pendingRetry`, `sent`, `refusal`, `notice`, and storage
-  untouched (the server has no opinion on them; nothing here is a request).
-
-Ledger transitions: `resolveGuidanceSuccess` and `resolveSendNowSuccess`
-append the resolved receipt when absent (replay-safe); `resolveWithdrawSuccess`
-removes the id; `applyQueueSnapshot`, failures, `beginSendNow`, and interrupt
-transitions never touch it; `createSteeringDockState` starts it empty.
-
-`steeringDockMode` gains an optional `neverSent` input and returns the new
-`'finished'` mode **before every other check** when `neverSent` is non-empty
-**and** the row is still terminal or the run is non-live
-(`!live || isTerminalNodeRowStatus(rowStatus)`). A reconciled box therefore
-survives `live === false` and a terminal row, but a row that returns to
-`running`/`awaiting` on a live run (retry/resume) falls straight back into the
-existing table. `SteeringDockMode` gains `'finished'`;
-`controlsMounted('finished')` is false in both renderers.
-
-Copy and names (lowercase DOM text; renderers apply CSS uppercase):
+Add to `SteeringDockState`:
 
 ```ts
-export const STEERING_NEVER_SENT_DISCLOSURE = 'node finished · none of this was sent';
-export function neverSentBandHeader(count: number): string   // `never sent · ${count}`
-export function neverSentListLabel(count: number): string    // `Never sent, ${count}`
-export function isTerminalNodeRowStatus(status: string): boolean // completed | failed | skipped
-export function collectWrittenOperatorMessageIds(rows: readonly NodeMessageRow[]): ReadonlySet<string>
+readonly observedLedger: readonly LocalSentReceipt[];
+readonly neverSent: readonly NeverSentEntry[] | null;
 ```
 
-### 2. Post-terminal drain gate (both panes — Phase 3)
+`observedLedger` is ordered by first observation and deduplicated by
+`messageId`. `resolveGuidanceSuccess` and `resolveSendNowSuccess` add local
+receipts. Every generation-valid `applyQueueSnapshot` adds all snapshot rows
+before replacing the visible queue. Stale snapshots change neither. A
+successful withdraw by this tab removes the id because the user deliberately
+cancelled it; snapshots, failures, interrupts, and queue omission never remove
+history. Scope/retry reset clears it.
 
-Each pane computes `nodeTerminal = isTerminalNodeRowStatus(rowStatus) || !live`
-every render into a ref. Inside `runDrain`, the drain samples
-`terminalRef.current` **when it starts**; when a drain that started after the
-trigger completes with `error === null && complete === true`, the pane stores
-those rows as the reconciliation snapshot and derives
-`writtenOperatorMessageIds = collectWrittenOperatorMessageIds(rows)`. A drain
-that started before the trigger — however late it settles — never populates
-the prop. The prop resets to `null` on scope change and whenever the node is
-no longer terminal (retry/resume). Note that both drain effects list `row`
-and the run-liveness value in their deps, so a terminal transition also
-**aborts** the straddling drain and starts a fresh one; the
-`startedAfterTerminal` sample is defense in depth for any future dep change,
-not the primary mechanism. This is what makes AC2
-mechanical: the value is `null` for every live refetch and for the in-flight
-drain that straddles the terminal transition.
+`reconcileNeverSent(state, { writtenMessageIds, draft })` runs once:
 
-Because the Legacy drain effect re-runs on `row`/`runStatus` and the Console
-effect on `row`/`isLive`, a terminal transition always begins at least one
-qualifying drain; a still-live run keeps ticking at 1 s so a node that
-finishes mid-run also gets one. If the post-terminal drain fails, the prop
-stays `null` and the pane's existing error/retry surface is the recovery path
-(no guessing, no timer-based fallback — fail-safe rather than mis-mark).
+1. Append observed-ledger rows whose ids are not written.
+2. Append `pendingRetry` only when its id is neither observed nor written.
+3. Append the current raw draft only when `draft.trim()` is non-empty and its
+   raw value differs from `pendingRetry.message`; use `messageId: null`.
+4. Deduplicate ids, preserve raw message text and order, and set `neverSent` to
+   the resulting array (including `[]`). Do not mutate draft, storage, queue,
+   refusal, notice, or retry state. A repeated call returns the same object.
 
-### 3. Dock behavior (Phase 2)
+This order handles local and cross-tab receipts, drained snapshots, ambiguous
+POST outcomes, an in-flight request followed by field edits, and replayed
+responses without synthesizing delivery state.
 
-- New optional prop `writtenOperatorMessageIds?: ReadonlySet<string> | null`
-  (default `null`) on both docks.
-- Eligibility: the dock records the last mode it rendered before going
-  `hidden`; reconciliation runs only when that mode was `composer` or
-  `blocked` (an `awaiting` node parked at an Ask still has a parked queue and a
-  send-capable dock). A dock last in `finished-iteration` or `detached` never
-  reconciles (see non-goals).
-- Effect: when the prop is non-null, `neverSent === null`, and the dock is
-  eligible → `setDock(current => reconcileNeverSent(current, { writtenMessageIds, draft }))`.
-  Idempotent under StrictMode replays.
-- `finished` render, in DOM order: `<section aria-labelledby={bandHeaderId}>`
-  reusing the queue band classes → `<h3>` `never sent · n` (same
-  `uppercase tracking-[0.07em]` treatment as the queue band) →
-  `<ul aria-label="Never sent, n">` → one `<li data-message-id={id}>` per entry
-  containing only the elided text (no `sent` badge, no delete button; the
-  folded draft omits `data-message-id` when its id is null) → the disclosure
-  `<p role="alert">node finished · none of this was sent</p>` in the position
-  the stop-disclosure occupies. No textarea, no Stop/Queue/Send now, no
-  `role="status"` region. Same tokens, no new colour, no dimmed fill.
-- Focus: the existing "controls left the DOM" effect already moves focus to
-  the last transcript row; the finished box adds no focusable element, so
-  nothing lands on `<body>`. The `role="alert"` is inserted with its content
-  when the box mounts, matching the existing refusal-alert pattern.
-- Nothing undelivered → `neverSent` is `[]` → mode falls through to `hidden`
-  → no dock at all (control-states "finished" row, mockup state 6).
-- Retry/resume: when `dock.neverSent !== null` and the row is back to
-  `running`/`awaiting` on a live run, the dock resets exactly as on a scope
-  change (fresh `createSteeringDockState(subState)`, `pendingRetry`
-  re-hydrated from storage) so the composer, an empty ledger, and a fresh
-  reconciliation slot return.
+`steeringDockMode` may return `finished` only when `neverSent` is non-empty
+**and** an explicit `nodeTerminal` input is true. The input is derived from raw
+event-backed execution history in Phase 3; neither selected-row status nor
+`!live` is a substitute. A null/empty result follows the existing table.
 
-### 4. Why no server change
+### 2. Terminal projection and catch-up
 
-The queue snapshot, the operator rows with `message_id`, and the settled node
-status already exist and are already consumed by both shells. Adding a
-"drained" list to the queue route or a terminal steering event would widen
-the API for a purely client concern and contradict AD-11's "data that already
-exists". The ledger covers the only real gap (drained-but-unwritten) inside
-the tab that owns those receipts.
+Extend `projectWorkflowExecutionHistory()` before adding client gates. It
+already receives every interaction row, not only pending rows. For a
+`kind:'ask', status:'purged'` row with a complete `execution_scope`, first match node,
+`occurrence_id`, and `attempt_id`. If a re-ask has advanced the interaction's
+attempt without another node start, allow the existing projection precedent:
+one unambiguous same-node/same-occurrence execution may adopt that scope, with
+stale start timing cleared. Project that execution as `failed`, with
+`ended_at` from a parseable non-null `resolved_at` (normalizing a `Date` to
+ISO) and a duration only when retained endpoints parse and are ordered. Do not
+close by node id alone, do not guess among multiple
+occurrence matches, do not fabricate scope for legacy rows, and do not change
+pending/permission interactions or an answered Ask without later resume
+evidence. If the purged scope has `loop_ancestry`, use each ordered ancestry
+prefix plus raw start kind/iteration to close every uniquely matched open
+pre-resolution loop-owner execution: its loop iteration and, when present, the
+normal loop's outer `node_started` container. Do not close a sibling or infer
+ownership from node id alone; zero or multiple candidates for an owner leave
+that owner open. This consumes committed state only; it writes no lifecycle
+event or run status.
 
-## Architecture (data flow)
+Also normalize answered-Ask resume gaps. Given a scoped answered Ask with a
+valid `resolved_at`, require its matching `interaction_resolved` event
+(`kind:'ask'`, same node/tool id, `resumed:true`) and a later corresponding
+lifecycle start before retiring a matching open pre-resolution segment. For an
+ordinary prompt, match the occurrence/attempt and later `node_started`. For a
+loop scope, apply the same ancestry-prefix ownership rules and require a later
+corresponding owner start before retiring each old owner. Keep all resumed/later
+executions. Do not infer resume merely from `status:'answered'`, and fail closed
+per segment on zero or multiple candidates.
+
+Add pure raw-history helpers in `execution-room-model.ts`:
+`hasUnsettledNodeExecutions(nodeExecutions)` treats every status other than
+`completed`/`failed`/`skipped` as unsettled (including `running`, `awaiting`,
+and future/unknown values), while `hasTerminalNodeEvidence(nodeExecutions,
+nodeId)` is true only when the node has at least one execution and all its
+executions have terminal raw-history statuses. Add
+`latestNodeExecutionKey(events, nodeId)`, ordered by `event_order` with the same
+timestamp/id fallback used by event projections. Fold exact-node events: a
+normal `node_started` adopts its nonempty `data.occurrence_id` or persisted
+event id; an Ask `interaction_resolved` with `resumed:true` arms one
+continuation so the next exact-node `node_started` retains the prior key. Clear
+an unused continuation marker on an exact-node terminal or retry request. The
+helper ignores loop-iteration starts and sibling events. In Legacy
+`WorkflowExecution`, retain the existing live 3 s poll and also poll every 3 s
+when the run is terminal and raw executions are unsettled. In Console
+`RunDetailPage`, retain SSE and the existing 30 s live heartbeat, plus a 3 s
+terminal catch-up invalidation while raw executions are unsettled. Stop
+catch-up once settled or unmounted.
+
+Do not derive this from settled `nodeStates`. Do not alter lifecycle status or
+invent a timeout that marks a node terminal.
+
+### 3. Event-backed, node-wide terminal drain
+
+The node-room wrappers derive `nodeTerminal` from raw `nodeExecutions` and
+`nodeExecutionKey` from raw ordered events for the selected node, then pass both
+through to the pane and dock. Terminality remains false for an
+already-completed selected iteration while a later occurrence is still
+running, and becomes true only after the live occurrence's terminal event.
+For a parked Ask, the server read projection supplies the terminal failed
+execution from its exact scoped purge instead.
+
+When `nodeTerminal` becomes true, each pane starts a separate reconciliation
+drain with a node-wide selection (no `occurrenceId`/`attemptId`). It does not
+reuse or alter the displayed occurrence's transcript state. Only a drain that
+started under `nodeTerminal === true` and completed with `error === null` and
+`complete === true` may produce `writtenOperatorMessageIds`. Transient errors
+retry on the existing 1 s transcript cadence while mounted; reset/abort on
+run/node change, `nodeExecutionKey` change, or when `nodeTerminal` becomes
+false. An execution-key change restarts the drain even if a short execution was
+observed only after it had already become terminal. The dock and this drain
+use run/node identity; the displayed transcript retains its existing
+occurrence-scoped identity. No pre-event display drain can populate this
+state.
+
+The dock reconciles only when that set is non-null and this mounted run/node
+attempt previously rendered a queue-observing mode: `composer`, `blocked`, or
+`finished-iteration`. A room that was detached from the outset never
+qualifies because it observed no queue; a room that observed the queue and
+later becomes detached keeps that history. Its own `withdrawingMessageId`
+must also be null; the effect waits for an in-flight withdraw to settle before
+taking the one-shot snapshot.
+
+### 4. Finished dock
+
+DOM order:
+
+1. Existing elevated band surface with a top rule.
+2. Lowercase source heading `never sent · n`, visually uppercased with the
+   existing tracking style.
+3. `<ul aria-label="Never sent, n">` with one single-line/elided item per
+   entry and `data-message-id` only for identified entries.
+4. One `<p role="alert">node finished · none of this was sent</p>`.
+
+There is no textarea, badge, delete action, Stop/Queue/Send-now control, or
+`role="status"`. The alert node remains the same DOM node across ordinary
+rerenders so it is announced once. The band uses existing colors/tokens, is
+at most `33vh`, and cannot introduce horizontal overflow. Existing focus
+handoff targets the last transcript row/scroller and never leaves focus on
+`body`.
+
+### 5. Attempt reset
+
+Track the explicit `nodeExecutionKey` and `nodeTerminal` inputs. When a non-null
+execution key replaces another for the same run/node, create fresh dock state;
+this is authoritative even when both old and new renders are terminal because
+the attempt ran between refreshes. Keep terminal true-to-false as a fail-safe
+for an incomplete legacy history that cannot yet supply a key. Retain the
+current draft text, but set `pendingRetry` to null in state and that run/node's
+existing session-storage record so the next submission mints a new UUID.
+Clear observed history, `neverSent`, and the pane's written-id snapshot even
+when the prior terminal reconciliation failed or stayed `null`. A resumed Ask
+retains the folded logical execution key even when a loop resume mints a new
+outer `occurrence_id`, so it does not reset. Changing the displayed occurrence
+for the same node is not an attempt reset: it must preserve the
+node-wide observation ledger and any terminal drain in progress. Increment a
+local attempt generation on reset. Queue polling and every Queue, Send-now,
+withdraw, and interrupt continuation capture that generation and perform no
+state, draft, focus, or storage work after it changes. The pane likewise
+aborts its old drain and rejects late completion before publishing ids.
+
+## Behavior flow
 
 ```mermaid
 sequenceDiagram
-  participant Q as Queue poll (1s)
-  participant R as Run query (3s)
-  participant P as Pane drain (1s while live)
-  participant D as Dock core (steering-dock.ts)
-  Q->>D: applyQueueSnapshot → sent (ledger untouched)
-  R->>P: row.status terminal OR run not live
-  Note over P: terminalRef = true
-  P->>P: next drain starts (startedAfterTerminal = true)
-  P-->>D: writtenOperatorMessageIds (only after that drain completes)
-  D->>D: reconcileNeverSent(ledger ∪ sent, written, draft)
-  alt unmatched > 0
-    D-->>D: mode = finished → read-only box + role=alert
-  else all matched
-    D-->>D: neverSent = [] → hidden (no dock)
+  participant Q as Queue snapshot/local response
+  participant D as Dock core
+  participant R as Run query/SSE
+  participant P as Transcript pane
+  Q->>D: add receipts to observed ledger
+  R->>R: terminal run + raw execution unsettled → 3 s catch-up
+  R->>P: raw history proves selected node terminal
+  P->>P: start separate node-wide terminal drain
+  P-->>D: node-wide operator ids after complete drain
+  D->>D: observed − written + unmatched pending + different draft
+  alt result non-empty
+    D-->>D: finished read-only box + one alert
+  else result empty
+    D-->>D: no dock
   end
 ```
 
 ## Phases
 
-| # | Phase | Status | Effort | Depends on |
-|---|-------|--------|--------|------------|
-| 1 | [Shared core: ledger, reconciliation, finished mode](./phase-01-shared-core-ledger-and-reconciliation.md) | pending | 3h | — |
-| 2 | [Read-only NEVER SENT box in both docks](./phase-02-never-sent-box-both-docks.md) | pending | 4h | 1 |
-| 3 | [Post-terminal drain gate in both panes](./phase-03-post-terminal-drain-gate-both-panes.md) | pending | 3h | 1, 2 |
-| 4 | [E2E evidence, authority sync, tracker closeout](./phase-04-e2e-evidence-authority-sync-closeout.md) | pending | 4h | 3 |
+| #   | Phase                                                                                                       | Effort | Depends on |
+| --- | ----------------------------------------------------------------------------------------------------------- | -----: | ---------- |
+| 1   | [Shared core: observed ledger and reconciliation](./phase-01-shared-core-ledger-and-reconciliation.md)      |     4h | —          |
+| 2   | [Read-only NEVER SENT box in both docks](./phase-02-never-sent-box-both-docks.md)                           |     6h | 1          |
+| 3   | [Actual-terminal catch-up and node-wide transcript gate](./phase-03-post-terminal-drain-gate-both-panes.md) |    10h | 1, 2       |
+| 4   | [E2E evidence, authority sync, tracker closeout](./phase-04-e2e-evidence-authority-sync-closeout.md)        |     6h | 3          |
 
-Deep mode: Phase 1 is fully specified. Phases 2–4 are specified to the file
-and test level but each opens with a **scout checklist** that the executor
-must re-verify against the tree before editing (line numbers drift; anchors
-are text). Docks (Phase 2) come before panes (Phase 3) on purpose: the pane
-tests already stub the dock's queue `fetch`, so the gate is proven
-end-to-end through the real dock instead of through a test-only seam.
+Tests are written red before implementation within each phase. A skipped
+`test.fixme` is not a red test and is not used. Use package/per-file Bun test
+commands; never run root `bun test`.
 
-## Test strategy (`--tdd`)
-
-Every phase writes the failing tests first, runs them red, implements, runs
-green, then runs the package suite. Commands:
+## Validation
 
 ```bash
-# Phase 1
 bun test packages/web/src/lib/steering-dock.test.ts
-# Phase 2 (docks)
+bun test packages/server/src/routes/workflow-execution-history.test.ts
 NODE_ENV=development bun test packages/web/src/components/workflows/ComposerDock.test.tsx
 NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx
-bun test packages/web/src/experiments/console/console-isolation.test.ts
-# Phase 3 (panes)
 NODE_ENV=development bun test packages/web/src/components/workflows/NodeTranscriptPane.test.tsx
 NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx
-# Package + repo gates
-bun --filter @archon/web test && bun --filter @archon/web type-check
-bun run validate
-# Phase 4 (needs `bun run build:web` once)
-cd e2e && npx playwright test -c playwright.config.ts ui/agent-never-sent.spec.ts ui/agent-queue-guidance.spec.ts
+NODE_ENV=development bun test packages/web/src/components/workflows/WorkflowExecution.test.tsx
+NODE_ENV=development bun test packages/web/src/experiments/console/routes/RunDetailPage.test.tsx
+NODE_ENV=development bun test packages/web/src/components/workflows/LegacyGraphLogsPane.test.tsx
+NODE_ENV=development bun test packages/web/src/components/workflows/LegacyNodeRoom.test.tsx
+NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleInspectPane.test.tsx
+bun test packages/web/src/experiments/console/console-isolation.test.ts
+bun --filter @archon/web test
+bun --filter @archon/server type-check
+bun --filter @archon/web type-check
+bun x eslint packages/server/src/routes/workflow-execution-history.ts packages/server/src/routes/workflow-execution-history.test.ts packages/web/src/lib/steering-dock.ts packages/web/src/lib/steering-dock.test.ts packages/web/src/components/workflows/ComposerDock.tsx packages/web/src/components/workflows/ComposerDock.test.tsx packages/web/src/components/workflows/NodeTranscriptPane.tsx packages/web/src/components/workflows/NodeTranscriptPane.test.tsx packages/web/src/components/workflows/WorkflowExecution.tsx packages/web/src/components/workflows/WorkflowExecution.test.tsx packages/web/src/components/workflows/LegacyGraphLogsPane.tsx packages/web/src/components/workflows/LegacyGraphLogsPane.test.tsx packages/web/src/components/workflows/LegacyNodeRoom.tsx packages/web/src/components/workflows/LegacyNodeRoom.test.tsx packages/web/src/lib/execution-room-model.ts packages/web/src/lib/execution-room-model.test.ts packages/web/src/experiments/console/components/ConsoleComposerDock.tsx packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx packages/web/src/experiments/console/components/ConsoleInspectPane.tsx packages/web/src/experiments/console/components/ConsoleInspectPane.test.tsx packages/web/src/experiments/console/routes/RunDetailPage.tsx packages/web/src/experiments/console/routes/RunDetailPage.test.tsx --max-warnings 0
+bun run build:web
+cd e2e && npm run typecheck && npx playwright test -c playwright.config.ts ui/agent-never-sent.spec.ts ui/agent-queue-guidance.spec.ts ui/agent-finished-iteration.spec.ts
+cd .. && bun run validate
 ```
 
-`bun test` from the repo root is forbidden (AGENTS.md); use the per-file
-forms above or `bun --filter @archon/web test`.
+`@archon/web` has no package `lint` script; the focused command uses the root
+ESLint binary, and `bun run validate` remains the final repository gate.
 
-## Risks and rollback
+## Risks, operations, compatibility, and rollback
 
-| Risk | Mitigation |
-|------|------------|
-| A post-terminal drain that fails leaves the prop `null` and the box never appears. | Pane's existing error + retry re-runs the drain; documented; no timer fallback (fail-safe > mis-mark). |
-| A remote withdraw shows up here as `NEVER SENT`. | Accepted, documented in AD-11 clarification; read-only, no request. |
-| Cancel: an in-flight guidance turn writes its row after the final drain. | Message shows as `NEVER SENT` on a finished node; no resend path exists, so no duplicate correction. |
-| Loop-occurrence row status not settled on Cancel. | Trigger ORs `!live`; unit-tested. |
-| `finished` mode precedence hides a live composer by mistake. | `neverSent` is only ever set by reconciliation, which requires the terminal trigger; tests assert `null` on every live path. |
+| Risk                                                                                          | Handling                                                                                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Terminal evidence never arrives after a terminal run.                                         | Do not render a potentially false box. Catch-up remains mounted-view-only and stops on unmount; no lifecycle mutation.                                                                                                                                                                 |
+| A cancelled/failed parked Ask has no later executor event.                                    | The existing scoped purged interaction closes its exact execution and every uniquely proven loop-owner execution in the read projection; ambiguous legacy scope/owners fail closed.                                                                                                    |
+| Node-wide terminal transcript request fails.                                                  | Keep reconciliation input null and retry the read-only drain at 1 s only while the terminal room remains mounted; do not guess.                                                                                                                                                        |
+| Every observing same-node dock closes, reloads, or navigates to another node before terminal. | Observation history is intentionally component-memory under NFR4; a later remount cannot reconstruct a destroyed in-memory queue. Occurrence-only selection keeps the dock mounted.                                                                                                    |
+| Another tab withdraws a receipt after this tab observed it.                                   | This tab may show it as never sent; the statement is true and read-only. This tab's own confirmed withdraw removes it.                                                                                                                                                                 |
+| Queue history grows during a long node.                                                       | Ledger memory is O(receipts observed by one mounted run/node attempt), preserves exactness, and clears on run/node change or retry; it does not accumulate globally.                                                                                                                   |
+| A terminal node has a large transcript or many observers.                                     | Each mounted observer performs one existing sequential 100-row paginated drain to a captured high-water mark; requests do not overlap and no new route or unpaginated read is added.                                                                                                   |
+| Duplicate alert announcements.                                                                | Mount one alert node only on transition to a non-empty result and preserve node identity on rerender; component tests pin this.                                                                                                                                                        |
+| Operator text is untrusted content.                                                           | Render it through ordinary React text nodes with existing CSS elision; never use HTML injection or parse prose. Exactness tests inspect text content.                                                                                                                                  |
+| Extra reads broaden access.                                                                   | Reuse the existing authenticated run-detail and node-message loaders with the same run/node scope; add no route, grant, or client-supplied identity.                                                                                                                                   |
+| Public/API compatibility.                                                                     | The run-detail schema and routes are unchanged. `nodeExecutions` intentionally stops reporting a proven superseded/purged scoped Ask segment as running; old scoped rows improve on first read, while unscoped history remains unchanged. No persisted data or generated type changes. |
+| Read-projection cost.                                                                         | Build file-local scope/occurrence/ancestry indexes and process events, interactions, and their already-loaded ancestry entries once; add no query or payload. The client adds only the bounded reads described above.                                                                  |
 
-Rollback: the change is additive and client-only. Reverting the four phases
-restores today's silent hide; no data or API surface changes.
+Rollback is a plain revert of the server read-projection and client changes,
+plus authority/test artifacts. There is no migration or data rollback;
+historical rows are never rewritten. The terminal catch-up is independently
+reversible because it changes only query invalidation cadence.
 
-## Validation log
+## Definition of done
 
-- 2026-09-20 — `ak plan validate` passed (structure, front matter, links).
-- 2026-09-20 — Advisor red-team (assumptions / failure / scope / security):
-  confirmed the settled-status trigger for Cancel and the ledger ∪ shown-queue
-  set; **blocker found and fixed** — sticky `finished` mode across
-  retry/resume of the same row (now gated on terminal row status, with dock
-  and pane resets, tests T1.18, T2.18, T3.9); sharpened the draft fold-in
-  dedupe (T1.19), the in-flight `Send now` terminal edge (T1.20), the T3.2
-  claim (abort path vs. flag), and replaced the "run E2E red against an
-  older build" step with a `test.fixme` skeleton written in Phase 1.
-- Critical questions: every phase names disjoint files (Phase 1 lib; Phase 2
-  docks; Phase 3 panes; Phase 4 e2e/docs), every test has a runnable
-  command, no mock/placeholder implementation is prescribed, no secrets or
-  data changes are involved, rollback is a plain revert per phase.
-- Task hydration: no live task-management tool is available in this session;
-  the `ak-feature` workflow hydrates phases into the co-located Ralph PRD
-  (`prd.md` / `prd.json`) in its next step, which is the durable work-item
-  mapping for this plan.
+- [ ] AC1–AC6 pass in both Legacy and Console surfaces.
+- [ ] Cross-tab observation is proven: a receipt seen from another tab remains
+      recoverable after a later empty snapshot.
+- [ ] A receipt observed from a completed iteration's read-only shared band is
+      reconciled against node-wide rows after the overall node event.
+- [ ] Cancel E2E waits for the actual `node_failed` event before asserting the
+      box; natural delivery proves written ids and absence of the box.
+- [ ] Visual evidence covers a 460 px dock in both shells and Console at a
+      1440 px host, including `33vh`, overflow, focus, accessible naming, and
+      contrast ≥ 4.5:1.
+- [ ] Focused tests, web suite/typecheck/lint, E2E typecheck/specs, build, and
+      `bun run validate` pass.
+- [ ] AD-11, its visual walkthrough, steering test plan, and mockup copy match
+      implemented behavior; tracker changes to `done` only after the gates
+      pass.
 
-## Success criteria
+## Remaining assumptions and blockers
 
-- [ ] All AC1–AC3 tests listed in the phase matrices pass in both shells.
-- [ ] `bun --filter @archon/web test`, `type-check`, and `bun run validate` pass with zero warnings.
-- [ ] Playwright `agent-never-sent.spec.ts` passes on both surfaces; evidence captured under `reports/evidence/`.
-- [ ] AD-11 clarification, test-plan wording, and mockup copy are aligned; `sprint-status.yaml` shows `2-11-…: done`.
-
-## Unresolved questions
-
-None blocking. Two judgment calls are recorded above (settled-status trigger
-for Cancel; ledger union including remote-withdrawn ids) and will be reviewed
-by the advisor pass; if reversed, only Phase 1's `reconcileNeverSent` inputs
-and Phase 3's trigger predicate change.
+No design blocker remains in repository evidence. The accepted scope assumes
+at least one same-run/node dock remains mounted from receipt observation through
+terminal evidence; occurrence-only selection preserves that dock, while a
+reload, closing every observer, or navigating each observer to another node
+does not. Durable/cross-remount recovery would expand the steering feature's
+current in-process/NFR4 contract and is explicitly excluded. Implementation
+must retain the fail-safe rule: absence of real terminal evidence or a
+complete terminal transcript drain means absence of a NEVER SENT claim, not a
+guessed result. A legacy parked Ask without a complete execution scope therefore
+remains visibly unsettled and may keep the mounted view's 3 s catch-up active;
+the plan intentionally prefers that bounded read-only cost over inventing a
+terminal execution or a false recovery result.
