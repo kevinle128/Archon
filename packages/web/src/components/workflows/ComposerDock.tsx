@@ -9,7 +9,7 @@
  * persist in sessionStorage scoped by run + namespaced node id.
  * Story 2.10 adds a read-only finished-iteration branch (GET poll only).
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   interruptNode,
@@ -38,11 +38,14 @@ import {
   goToIterationLabel,
   isQueueShortcut,
   loadSteeringDraft,
+  neverSentBandHeader,
+  neverSentListLabel,
   nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
   queuedCountPhrase,
+  reconcileNeverSent,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
   resolveInterruptError,
@@ -62,6 +65,7 @@ import {
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
   STEERING_INTERRUPT_DISCLOSURE,
+  STEERING_NEVER_SENT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   toSteeringRefusal,
@@ -144,6 +148,23 @@ export interface ComposerDockProps {
    * on `<body>`.
    */
   focusLastRow?: () => void;
+  /**
+   * Node-wide operator message ids already written to the transcript.
+   * Non-null arms terminal reconciliation; default null leaves it inert.
+   * Phase 3 supplies the real set from the node-wide drain.
+   */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
+  /**
+   * True only when the parent has actual node-terminal evidence. Run-level
+   * terminal status is not sufficient. Default false.
+   */
+  nodeTerminal?: boolean;
+  /**
+   * Logical node-execution attempt key from the event fold. Replacing one
+   * non-null key with another resets attempt-scoped observation state while
+   * preserving the raw draft. Default null.
+   */
+  nodeExecutionKey?: string | null;
 }
 
 const FIELD_CLASSES = cn(
@@ -163,10 +184,10 @@ const CONTROL_DISABLED_CLASSES = 'border-border text-text-secondary';
 const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
-
 /** Modes where the dock's focusable controls are in the DOM. */
 function controlsMounted(mode: SteeringDockMode): boolean {
-  return mode === 'composer' || mode === 'blocked';
+  // finished-iteration mounts Go; finished is read-only with no focusables.
+  return mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
 }
 
 export function ComposerDock({
@@ -188,6 +209,9 @@ export function ComposerDock({
   pollIntervalMs = 1000,
   storage,
   focusLastRow,
+  writtenOperatorMessageIds = null,
+  nodeTerminal = false,
+  nodeExecutionKey = null,
 }: ComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
   const storageKey = steeringDraftStorageKey(runId, nodeId);
@@ -197,10 +221,21 @@ export function ComposerDock({
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const wellRef = useRef<HTMLDivElement>(null);
   const goButtonRef = useRef<HTMLButtonElement>(null);
+  const neverSentAlertRef = useRef<HTMLParagraphElement>(null);
   const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
   const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
   const detachedAlertRef = useRef<HTMLParagraphElement>(null);
   const dockRef = useRef<SteeringDockState>(createSteeringDockState(subState));
+  /** Per-attempt observation eligibility — set on composer/blocked/finished-iteration. */
+  const queueWasObservableRef = useRef(false);
+  /** Bumped on run/node scope change or execution-key/attempt reset. */
+  const attemptGenerationRef = useRef(0);
+  const prevScopeRef = useRef(storageKey);
+  const prevExecutionKeyRef = useRef<string | null>(nodeExecutionKey);
+  const prevNodeTerminalRef = useRef(nodeTerminal);
+  /** Skip one ordinary persist after an explicit pendingRetry:null write. */
+  const suppressPersistRef = useRef(false);
+  const draftRef = useRef('');
 
   const [dock, setDock] = useState<SteeringDockState>(() => ({
     ...createSteeringDockState(subState),
@@ -212,29 +247,7 @@ export function ComposerDock({
   /** Finished-iteration other 4xx notify copy (poll stopped). */
   const [readNotify, setReadNotify] = useState<string | null>(null);
   dockRef.current = dock;
-
-  // Receipts live for the mounted execution only; a scope change resets them
-  // while the persisted draft for the new scope hydrates from storage.
-  const prevScopeRef = useRef(storageKey);
-  useEffect(() => {
-    if (prevScopeRef.current === storageKey) return;
-    prevScopeRef.current = storageKey;
-    const saved = loadSteeringDraft(store, storageKey);
-    setDraft(saved.draft);
-    setDock({ ...createSteeringDockState(subState), pendingRetry: saved.pendingRetry });
-    setReadDetached(false);
-    setReadNotify(null);
-  }, [storageKey, store, subState]);
-
-  useEffect(() => {
-    saveSteeringDraft(store, storageKey, { draft, pendingRetry: dock.pendingRetry });
-  }, [store, storageKey, draft, dock.pendingRetry]);
-
-  // The projected sub-state is authoritative; the local interrupting
-  // transient yields to it when a defined projection arrives.
-  useEffect(() => {
-    setDock(current => syncProjectedSubState(current, subState));
-  }, [subState]);
+  draftRef.current = draft;
 
   // A host without a selection callback must never show an enabled Go control.
   const usableFinishedIteration =
@@ -248,20 +261,114 @@ export function ComposerDock({
     hasPendingAsk,
     refusal: dock.refusal,
     finishedIteration: usableFinishedIteration,
+    neverSent: dock.neverSent,
+    nodeTerminal,
   });
+
+  // Attempt reset + observation marking run in layout before passive async
+  // continuations so a generation bump invalidates in-flight work first.
+  // Reset is declared before observation so a new-attempt render cannot set
+  // queueWasObservable only to have a later effect clear it.
+  useLayoutEffect(() => {
+    const scopeChanged = prevScopeRef.current !== storageKey;
+    if (scopeChanged) {
+      prevScopeRef.current = storageKey;
+      attemptGenerationRef.current += 1;
+      queueWasObservableRef.current = false;
+      prevExecutionKeyRef.current = nodeExecutionKey;
+      prevNodeTerminalRef.current = nodeTerminal;
+      pendingFocusRef.current = null;
+      const saved = loadSteeringDraft(store, storageKey);
+      setDraft(saved.draft);
+      setDock({ ...createSteeringDockState(subState), pendingRetry: saved.pendingRetry });
+      setReadDetached(false);
+      setReadNotify(null);
+    } else {
+      const prevKey = prevExecutionKeyRef.current;
+      const nextKey = nodeExecutionKey;
+      const keyReplaced =
+        typeof prevKey === 'string' && typeof nextKey === 'string' && prevKey !== nextKey;
+      const terminalFailSafe =
+        prevKey === null && nextKey === null && prevNodeTerminalRef.current && !nodeTerminal;
+
+      if (keyReplaced || terminalFailSafe) {
+        attemptGenerationRef.current += 1;
+        queueWasObservableRef.current = false;
+        pendingFocusRef.current = null;
+        suppressPersistRef.current = true;
+        const keptDraft = draftRef.current;
+        saveSteeringDraft(store, storageKey, { draft: keptDraft, pendingRetry: null });
+        setDock({ ...createSteeringDockState(subState), pendingRetry: null });
+        setReadDetached(false);
+        setReadNotify(null);
+      }
+
+      prevExecutionKeyRef.current = nodeExecutionKey;
+      prevNodeTerminalRef.current = nodeTerminal;
+    }
+
+    if (mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration') {
+      queueWasObservableRef.current = true;
+    }
+  }, [storageKey, store, subState, nodeExecutionKey, nodeTerminal, mode]);
+
+  useEffect(() => {
+    if (suppressPersistRef.current) {
+      suppressPersistRef.current = false;
+      return;
+    }
+    saveSteeringDraft(store, storageKey, { draft, pendingRetry: dock.pendingRetry });
+  }, [store, storageKey, draft, dock.pendingRetry]);
+
+  // The projected sub-state is authoritative; the local interrupting
+  // transient yields to it when a defined projection arrives.
+  useEffect(() => {
+    setDock(current => syncProjectedSubState(current, subState));
+  }, [subState]);
+
+  // One-shot terminal reconciliation — only when the attempt could observe
+  // the queue and no own withdraw is in flight.
+  useEffect(() => {
+    if (writtenOperatorMessageIds === null || writtenOperatorMessageIds === undefined) return;
+    if (!nodeTerminal) return;
+    if (dock.neverSent !== null) return;
+    if (dock.withdrawingMessageId !== null) return;
+    if (!queueWasObservableRef.current) return;
+    const written = writtenOperatorMessageIds;
+    const draftAtReconcile = draftRef.current;
+    setDock(current => {
+      if (current.neverSent !== null) return current;
+      if (current.withdrawingMessageId !== null) return current;
+      return reconcileNeverSent(current, {
+        writtenMessageIds: written,
+        draft: draftAtReconcile,
+      });
+    });
+  }, [
+    writtenOperatorMessageIds,
+    nodeTerminal,
+    dock.neverSent,
+    dock.withdrawingMessageId,
+    dock.observedLedger,
+    dock.pendingRetry,
+  ]);
+
   // Shared-queue reads while composer/blocked/finished-iteration are mounted.
   // Hidden historical/terminal rooms and send-triggered detached disclosures
   // never poll — Story 2.9 gives queue reads no capability-state transition.
   // finished-iteration polls GET only (no mutation handlers bound).
+  // finished mode never polls.
   const pollingEnabled = mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
 
   useEffect(() => {
     if (!pollingEnabled) return;
     const finishedMode = mode === 'finished-iteration';
+    const attemptGen = attemptGenerationRef.current;
     return startQueuePolling({
       read: signal => readQueue(runId, nodeId, { signal }),
       currentGeneration: () => dockRef.current.queueGeneration,
       onSnapshot: (snapshot, generationAtRequest): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         if (finishedMode) {
           setReadDetached(false);
           setReadNotify(null);
@@ -292,6 +399,7 @@ export function ComposerDock({
       },
       onError: finishedMode
         ? (error): void => {
+            if (attemptGenerationRef.current !== attemptGen) return;
             const normalized = toSteeringRequestError(error);
             if (normalized.status === 422 && normalized.code === 'not_steerable_here') {
               setReadDetached(true);
@@ -314,7 +422,8 @@ export function ComposerDock({
         : undefined,
       intervalMs: pollIntervalMs,
     });
-  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode]);
+    // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
+  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -393,6 +502,7 @@ export function ComposerDock({
   const submit = (): void => {
     if (!canSubmit) return;
     const submittedDraft = draft;
+    const attemptGen = attemptGenerationRef.current;
     if (agentMode === 'idle') {
       const begun = beginSendNow(dock, draft);
       setDock(begun.state);
@@ -402,11 +512,13 @@ export function ComposerDock({
         intent: 'send_now',
       }).then(
         (receipt): void => {
+          if (attemptGenerationRef.current !== attemptGen) return;
           setDock(current => resolveSendNowSuccess(current, receipt));
           setDraft(current => (current === submittedDraft ? '' : current));
           fieldRef.current?.focus();
         },
         (error: unknown): void => {
+          if (attemptGenerationRef.current !== attemptGen) return;
           setDock(current => resolveSendNowFailure(current, toSteeringRefusal(error)));
         }
       );
@@ -420,6 +532,7 @@ export function ComposerDock({
       intent: 'queue',
     }).then(
       (receipt): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveGuidanceSuccess(current, receipt));
         // The field stays editable while the POST is in flight. Clear only the
         // text that was accepted; preserve anything the operator typed next.
@@ -427,6 +540,7 @@ export function ComposerDock({
         fieldRef.current?.focus();
       },
       (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveGuidanceFailure(current, toSteeringRefusal(error)));
       }
     );
@@ -434,15 +548,18 @@ export function ComposerDock({
 
   const stop = (): void => {
     if (dock.interruptInFlight || dock.subState !== 'generating') return;
+    const attemptGen = attemptGenerationRef.current;
     setDock(current => beginInterrupt(current));
     void interrupt(runId, nodeId).then(
       (response): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveInterruptOutcome(current, response.sub_state));
         if (response.sub_state === 'idle-after-interrupt') {
           focusLastRowRef.current?.();
         }
       },
       (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current =>
           resolveInterruptError(
             current,
@@ -457,6 +574,7 @@ export function ComposerDock({
     // One active withdraw per dock — a second click while one is in flight
     // issues no request.
     if (dock.withdrawingMessageId !== null) return;
+    const attemptGen = attemptGenerationRef.current;
     pendingFocusRef.current = nextFocusAfterRemoval(
       dock.sent.map(receipt => receipt.messageId),
       messageId
@@ -464,9 +582,11 @@ export function ComposerDock({
     setDock(current => beginWithdraw(current, messageId));
     void withdraw(runId, nodeId, messageId).then(
       (): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveWithdrawSuccess(current, messageId));
       },
       (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         pendingFocusRef.current = null;
         setDock(current => resolveWithdrawFailure(current, messageId, toSteeringRefusal(error)));
       }
@@ -487,6 +607,45 @@ export function ComposerDock({
           {STEERING_DETACHED_DISCLOSURE}
         </p>
       </div>
+    );
+  }
+
+  if (mode === 'finished' && dock.neverSent !== null && dock.neverSent.length > 0) {
+    const entries = dock.neverSent;
+    return (
+      <section
+        aria-labelledby={bandHeaderId}
+        className="flex-none border-t border-border bg-surface-elevated"
+      >
+        <h3
+          id={bandHeaderId}
+          className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+        >
+          {neverSentBandHeader(entries.length)}
+        </h3>
+        <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+          <ul aria-label={neverSentListLabel(entries.length)}>
+            {entries.map((entry, index) => (
+              <li
+                key={entry.messageId ?? `draft-${String(index)}`}
+                {...(entry.messageId !== null ? { 'data-message-id': entry.messageId } : {})}
+                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+              >
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {entry.message}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p
+          ref={neverSentAlertRef}
+          role="alert"
+          className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+        >
+          {STEERING_NEVER_SENT_DISCLOSURE}
+        </p>
+      </section>
     );
   }
 
