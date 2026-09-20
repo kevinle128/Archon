@@ -1409,14 +1409,18 @@ describe('LegacyNodeRoom dispatcher', () => {
           runStatus: 'running',
           nodeTerminal: true,
           nodeExecutionKey: 'logical-1',
-          writtenOperatorMessageIds: new Set(),
           finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
           scopeKey: 'run:run-1|node:command|sel:occurrence:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         });
       });
       await act(async () => {
-        await Promise.resolve();
-        await Promise.resolve();
+        for (let i = 0; i < 40; i += 1) {
+          await Promise.resolve();
+          if ((host.textContent ?? '').includes('node finished · none of this was sent')) break;
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
       });
 
       const list = host.querySelector('[aria-label="Never sent, 1"]');

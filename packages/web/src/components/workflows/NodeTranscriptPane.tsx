@@ -23,6 +23,7 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
 import type { FinishedIterationView } from '@/lib/execution-room-model';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
@@ -143,7 +144,7 @@ export function NodeTranscriptPane({
   finishedIteration = null,
   nodeTerminal = false,
   nodeExecutionKey = null,
-  writtenOperatorMessageIds = null,
+  writtenOperatorMessageIds: _externalWrittenIds = null,
   onSelectLiveRow,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
@@ -154,6 +155,8 @@ export function NodeTranscriptPane({
   const [pageState, setPageState] = useState<NodeMessageState>(() =>
     createNodeMessageState(resolvedScopeKey)
   );
+  /** Node-wide written operator ids from the terminal reconcile drain. null until complete. */
+  const [reconcileWrittenIds, setReconcileWrittenIds] = useState<ReadonlySet<string> | null>(null);
   const [follow, setFollow] = useState(() =>
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
@@ -290,6 +293,57 @@ export function NodeTranscriptPane({
     runId,
     runStatus,
   ]);
+
+  // Separate node-wide reconcile drain — never feeds pageState/transcript.
+  // Starts only on real node-terminal evidence; publishes written ids only
+  // after a complete error-free drain. Retries transport/incomplete failures
+  // at 1s while mounted+terminal. Resets on run/node/key change or terminal drop.
+  useEffect(() => {
+    if (!nodeTerminal || nodeId === null) {
+      setReconcileWrittenIds(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const executionRowId = nodeExecutionKey ?? `run:${runId}|node:${nodeId}`;
+    const selection: NodeMessageSelection = { kind: 'node', rowId: executionRowId };
+
+    const runReconcileDrain = async (): Promise<void> => {
+      if (cancelled || controller.signal.aborted) return;
+      const next = await drainNodeMessages({
+        runId,
+        nodeId,
+        selection,
+        loader: loadMessagesRef.current,
+        signal: controller.signal,
+        state: createNodeMessageState(nodeMessageScopeKey(runId, nodeId, selection)),
+        onState: (): void => {
+          // Intentionally ignore intermediate pages — never touch transcript state.
+        },
+      });
+      if (cancelled || controller.signal.aborted) return;
+      if (next.complete && next.error === null) {
+        setReconcileWrittenIds(collectWrittenOperatorMessageIds(next.rows));
+        return;
+      }
+      // Incomplete or transport error: read-only retry while still terminal.
+      timer = setTimeout(() => {
+        void runReconcileDrain();
+      }, 1000);
+    };
+
+    setReconcileWrittenIds(null);
+    void runReconcileDrain();
+
+    return (): void => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
+      setReconcileWrittenIds(null);
+    };
+  }, [nodeExecutionKey, nodeId, nodeTerminal, runId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -609,7 +663,7 @@ export function NodeTranscriptPane({
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
         nodeExecutionKey={nodeExecutionKey}
-        writtenOperatorMessageIds={writtenOperatorMessageIds}
+        writtenOperatorMessageIds={reconcileWrittenIds}
       />
     </RoomRegion>
   );

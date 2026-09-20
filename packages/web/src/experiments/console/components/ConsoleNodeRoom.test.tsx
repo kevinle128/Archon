@@ -1,6 +1,6 @@
 process.env.NODE_ENV = 'development';
 
-import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from 'bun:test';
 import { Window } from 'happy-dom';
 import type { Root } from 'react-dom/client';
 
@@ -283,6 +283,7 @@ describe('ConsoleNodeRoom', () => {
   });
 
   afterEach(async () => {
+    jest.useRealTimers();
     await act(async () => {
       root.unmount();
     });
@@ -5557,7 +5558,12 @@ describe('ConsoleNodeRoom', () => {
         return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
       }) as typeof fetch);
 
-      const emptyLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+      const emptyLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({
+        messages: [],
+        hasMore: false,
+        highWatermark: 0,
+        nextCursor: '0',
+      });
       const occ1 = row({
         id: 'occ-1',
         nodeId: 'review',
@@ -5642,18 +5648,519 @@ describe('ConsoleNodeRoom', () => {
           loadMessages: emptyLoad,
           nodeTerminal: true,
           nodeExecutionKey: 'logical-1',
-          writtenOperatorMessageIds: new Set(),
           finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
           onSelectRow: (): void => undefined,
           scopeKey: 'run:run-1|node:review|sel:occurrence:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
         });
       });
-      await flush();
+      await flushUntil('never sent after drain', () =>
+        (host.textContent ?? '').includes('node finished · none of this was sent')
+      );
 
       const list = host.querySelector('[aria-label="Never sent, 1"]');
       expect(list).not.toBeNull();
       expect(list?.textContent ?? '').toContain('alpha receipt');
       expect(host.textContent ?? '').toContain('node finished · none of this was sent');
+    });
+  });
+
+  describe('T3.18–T3.26 node-wide reconciliation drain', () => {
+    function completePage(messages: WorkflowNodeMessage[] = []): WorkflowNodeMessagesResponse {
+      const maxSeq = messages.reduce((max, row) => Math.max(max, row.seq), 0);
+      return {
+        messages: [...messages],
+        hasMore: false,
+        highWatermark: maxSeq,
+        nextCursor: String(maxSeq),
+      };
+    }
+
+    function operatorText(seq: number, messageId: string, text: string): WorkflowNodeMessage {
+      return {
+        id: `op-${String(seq)}`,
+        seq,
+        kind: 'text',
+        payload: { text },
+        metadata: { origin: 'operator', message_id: messageId },
+        created_at: CREATED_AT,
+      };
+    }
+
+    function assistantText(seq: number, messageId: string, text: string): WorkflowNodeMessage {
+      return {
+        id: `as-${String(seq)}`,
+        seq,
+        kind: 'text',
+        payload: { text },
+        metadata: {
+          origin: 'assistant',
+          message_id: messageId,
+        } as unknown as WorkflowNodeMessage['metadata'],
+        created_at: CREATED_AT,
+      };
+    }
+
+    function toolMsg(seq: number, id: string): WorkflowNodeMessage {
+      return {
+        id: `tool-${String(seq)}`,
+        seq,
+        kind: 'tool',
+        payload: { name: 'Bash', id, input: {} },
+        metadata: { message_id: id },
+        created_at: CREATED_AT,
+      };
+    }
+
+    interface LoaderOpts {
+      afterSeq?: number;
+      limit?: number;
+      occurrenceId?: string;
+      attemptId?: string;
+      signal?: AbortSignal;
+    }
+    type Loader = (
+      runId: string,
+      nodeId: string,
+      options?: LoaderOpts
+    ) => Promise<WorkflowNodeMessagesResponse>;
+
+    const OCC_ROW = row({
+      id: 'occ-1',
+      nodeId: 'review',
+      label: 'Review ×1',
+      status: 'completed',
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attemptId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+    const LIVE_OCC_ROW = row({
+      id: 'occ-2',
+      nodeId: 'review',
+      label: 'Review ×2',
+      status: 'running',
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      },
+    });
+
+    function installQueued(queued: { message_id: string; message: string }[]): void {
+      queueFetchSpy?.mockRestore();
+      queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+        input: RequestInfo | URL,
+        init?: RequestInit
+      ): Promise<Response> => {
+        const raw =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const method = (init?.method ?? 'GET').toUpperCase();
+        let pathname = raw;
+        try {
+          pathname = new URL(raw, 'http://localhost').pathname;
+        } catch {
+          pathname = raw.split('?')[0] ?? raw;
+        }
+        if (method === 'GET' && pathname.endsWith('/queue')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ success: true, queued }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
+        }
+        return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+      }) as typeof fetch);
+    }
+
+    async function waitForText(needle: string): Promise<void> {
+      await act(async () => {
+        for (let i = 0; i < 40; i += 1) {
+          await Promise.resolve();
+          if ((host.textContent ?? '').toLowerCase().includes(needle.toLowerCase())) break;
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+    }
+
+    function baseRoom(overrides: {
+      loadMessages: Loader;
+      selectedRow?: LogRow;
+      nodeTerminal?: boolean;
+      nodeExecutionKey?: string | null;
+      finishedIteration?: { liveRowId: string; liveIteration: number } | null;
+      onSelectRow?: (rowId: string) => void;
+      scopeKey?: string;
+      isLive?: boolean;
+      runStatus?: Run['status'];
+    }): Parameters<typeof renderRoom>[0] {
+      const selected = overrides.selectedRow ?? LIVE_OCC_ROW;
+      return {
+        run: run({ id: 'run-1', status: overrides.runStatus ?? 'running' }),
+        nodeId: 'review',
+        selectedRow: selected,
+        definitionNodes: [{ id: 'review', prompt: 'Write' }],
+        nodeStates: [
+          nodeState({
+            nodeId: 'review',
+            name: 'Review',
+            status: selected.status === 'completed' ? 'running' : selected.status,
+          }),
+        ],
+        isLive: overrides.isLive ?? true,
+        loadMessages: overrides.loadMessages,
+        nodeTerminal: overrides.nodeTerminal,
+        nodeExecutionKey: overrides.nodeExecutionKey,
+        finishedIteration: overrides.finishedIteration,
+        onSelectRow: overrides.onSelectRow,
+        scopeKey: overrides.scopeKey,
+      };
+    }
+
+    test('T3.18 nodeTerminal false never starts or publishes reconciliation', async () => {
+      const nodeWide: LoaderOpts[] = [];
+      const loadMessages: Loader = async (_runId, _nodeId, options = {}) => {
+        if (options.occurrenceId === undefined) nodeWide.push({ ...options });
+        return completePage([]);
+      };
+
+      await act(async () => {
+        renderRoom(
+          baseRoom({
+            loadMessages,
+            selectedRow: OCC_ROW,
+            nodeTerminal: false,
+            nodeExecutionKey: 'logical-1',
+            isLive: false,
+            runStatus: 'cancelled',
+          })
+        );
+      });
+      await flush();
+      expect(nodeWide).toHaveLength(0);
+      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
+
+      await act(async () => {
+        renderRoom(
+          baseRoom({
+            loadMessages,
+            selectedRow: OCC_ROW,
+            nodeTerminal: false,
+            nodeExecutionKey: 'logical-1',
+            finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+            onSelectRow: (): void => undefined,
+          })
+        );
+      });
+      await flush();
+      expect(nodeWide).toHaveLength(0);
+      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
+    });
+
+    test('T3.19 terminal request is node-wide without occurrence/attempt', async () => {
+      const nodeWide: LoaderOpts[] = [];
+      const occLoads: LoaderOpts[] = [];
+      const displayRows: WorkflowNodeMessage[] = [
+        {
+          id: 'd1',
+          seq: 1,
+          kind: 'text',
+          payload: { text: 'display-only' },
+          created_at: CREATED_AT,
+        },
+      ];
+      const loadMessages: Loader = async (_runId, _nodeId, options = {}) => {
+        if (options.occurrenceId !== undefined) {
+          occLoads.push({ ...options });
+          return completePage(displayRows);
+        }
+        nodeWide.push({ ...options });
+        return completePage([]);
+      };
+
+      await act(async () => {
+        renderRoom(
+          baseRoom({
+            loadMessages,
+            selectedRow: OCC_ROW,
+            nodeTerminal: true,
+            nodeExecutionKey: 'logical-1',
+            finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+            onSelectRow: (): void => undefined,
+          })
+        );
+      });
+      await flushUntil('display row', () => (host.textContent ?? '').includes('display-only'));
+      expect(nodeWide.length).toBeGreaterThan(0);
+      for (const call of nodeWide) {
+        expect(call.occurrenceId).toBeUndefined();
+        expect(call.attemptId).toBeUndefined();
+      }
+      expect(occLoads.length).toBeGreaterThan(0);
+      expect(occLoads[0]?.occurrenceId).toBe('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
+      expect(occLoads[0]?.attemptId).toBe('11111111-1111-4111-8111-111111111111');
+      expect(host.textContent ?? '').toContain('display-only');
+    });
+
+    test('T3.20 complete absence restores observed receipt', async () => {
+      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
+      const loadMessages: Loader = async () => completePage([]);
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-1' }));
+      });
+      await waitForText('alpha receipt');
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-1' }));
+      });
+      await flushUntil('never sent', () =>
+        (host.textContent ?? '').includes('node finished · none of this was sent')
+      );
+      const list = host.querySelector('[aria-label="Never sent, 1"]');
+      expect(list).not.toBeNull();
+      expect(list?.textContent ?? '').toContain('alpha receipt');
+    });
+
+    test('T3.21 written operator row filters finished box', async () => {
+      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
+      const loadMessages: Loader = async (_r, _n, options = {}) => {
+        if (options.occurrenceId !== undefined) return completePage([]);
+        return completePage([operatorText(1, 'id-a', 'alpha receipt')]);
+      };
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-1' }));
+      });
+      await waitForText('alpha receipt');
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-1' }));
+      });
+      await act(async () => {
+        for (let i = 0; i < 20; i += 1) {
+          await Promise.resolve();
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
+      expect(host.textContent ?? '').not.toContain('node finished · none of this was sent');
+    });
+
+    test('T3.22 only operator ids count as delivery', async () => {
+      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
+      const loadMessages: Loader = async (_r, _n, options = {}) => {
+        if (options.occurrenceId !== undefined) return completePage([]);
+        return completePage([
+          assistantText(1, 'id-a', 'assistant said id-a'),
+          toolMsg(2, 'id-a'),
+          {
+            id: 'm3',
+            seq: 3,
+            kind: 'text',
+            payload: { text: 'malformed' },
+            metadata: { origin: 'operator', message_id: 123 as unknown as string },
+            created_at: CREATED_AT,
+          },
+        ]);
+      };
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-1' }));
+      });
+      await waitForText('alpha receipt');
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-1' }));
+      });
+      await flushUntil('never sent despite decoys', () =>
+        (host.textContent ?? '').includes('node finished · none of this was sent')
+      );
+      expect(host.querySelector('[aria-label="Never sent, 1"]')).not.toBeNull();
+    });
+
+    test('T3.23 incomplete/error fails safe and retries', async () => {
+      jest.useFakeTimers({ now: Date.now() });
+      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
+      let nodeWideCalls = 0;
+      const loadMessages: Loader = async (_r, _n, options = {}) => {
+        if (options.occurrenceId !== undefined) return completePage([]);
+        nodeWideCalls += 1;
+        if (nodeWideCalls === 1) throw new Error('transient transport');
+        return completePage([]);
+      };
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-1' }));
+      });
+      await waitForText('alpha receipt');
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-1' }));
+      });
+      await flush();
+      expect(nodeWideCalls).toBe(1);
+      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
+
+      await act(async () => {
+        jest.advanceTimersByTime(1000);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      await flushUntil('retry reconcile', () =>
+        (host.textContent ?? '').includes('node finished · none of this was sent')
+      );
+      expect(nodeWideCalls).toBeGreaterThanOrEqual(2);
+      jest.useRealTimers();
+    });
+
+    test('T3.24 reset aborts stale work; occurrence-only does not', async () => {
+      const pending = deferred<WorkflowNodeMessagesResponse>();
+      let nodeWideStarts = 0;
+      const loadMessages: Loader = async (_r, _n, options = {}) => {
+        if (options.occurrenceId !== undefined) return completePage([]);
+        nodeWideStarts += 1;
+        if (nodeWideStarts === 1) return pending.promise;
+        return completePage([]);
+      };
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-1' }));
+      });
+      await flush();
+      expect(nodeWideStarts).toBe(1);
+
+      const startsBeforeOcc = nodeWideStarts;
+      await act(async () => {
+        renderRoom(
+          baseRoom({
+            loadMessages,
+            selectedRow: OCC_ROW,
+            nodeTerminal: true,
+            nodeExecutionKey: 'logical-1',
+            finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+            onSelectRow: (): void => undefined,
+          })
+        );
+      });
+      await flush();
+      expect(nodeWideStarts).toBe(startsBeforeOcc);
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-2' }));
+      });
+      await flush();
+      expect(nodeWideStarts).toBe(startsBeforeOcc + 1);
+
+      await act(async () => {
+        pending.resolve(completePage([]));
+      });
+      await flush();
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-2' }));
+      });
+      await flush();
+      // Terminal drop must not keep a finished claim; late aborted drain stays inert.
+      expect(host.querySelector('[aria-label^="Never sent"]')).toBeNull();
+      expect(host.textContent ?? '').not.toContain('node finished · none of this was sent');
+    });
+
+    test('T3.25 same-run/node retry/resume starts fresh on key change', async () => {
+      installQueued([{ message_id: 'id-a', message: 'alpha receipt' }]);
+      const loadMessages: Loader = async () => completePage([]);
+      win.sessionStorage.setItem(
+        'archon:steering-draft:run-1:review',
+        JSON.stringify({ draft: 'keep this draft', pendingRetry: null })
+      );
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-1' }));
+      });
+      await waitForText('alpha receipt');
+      const field = host.querySelector('textarea') as unknown as HTMLTextAreaElement | null;
+      expect(field?.value ?? '').toBe('keep this draft');
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-1' }));
+      });
+      await flushUntil('first never sent', () =>
+        (host.textContent ?? '').includes('node finished · none of this was sent')
+      );
+      expect(host.querySelector('[aria-label^="Never sent"]')?.textContent ?? '').toContain(
+        'alpha receipt'
+      );
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: true, nodeExecutionKey: 'logical-2' }));
+      });
+      await flush();
+      await act(async () => {
+        for (let i = 0; i < 15; i += 1) {
+          await Promise.resolve();
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+      const afterKey = host.querySelector('[aria-label^="Never sent"]');
+      expect(afterKey?.textContent ?? '').not.toContain('alpha receipt');
+
+      await act(async () => {
+        renderRoom(baseRoom({ loadMessages, nodeTerminal: false, nodeExecutionKey: 'logical-2' }));
+      });
+      await flush();
+      const draftField = host.querySelector('textarea') as unknown as HTMLTextAreaElement | null;
+      expect(draftField?.value ?? '').toBe('keep this draft');
+    });
+
+    test('T3.26 finished-iteration observer is recovered after overall node evidence', async () => {
+      installQueued([{ message_id: 'id-a', message: 'alpha from finished band' }]);
+      const loadMessages: Loader = async () => completePage([]);
+
+      await act(async () => {
+        renderRoom(
+          baseRoom({
+            loadMessages,
+            selectedRow: OCC_ROW,
+            nodeTerminal: false,
+            nodeExecutionKey: 'logical-1',
+            finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+            onSelectRow: (): void => undefined,
+          })
+        );
+      });
+      await waitForText('alpha from finished band');
+
+      installQueued([]);
+      await act(async () => {
+        renderRoom(
+          baseRoom({
+            loadMessages,
+            selectedRow: OCC_ROW,
+            nodeTerminal: true,
+            nodeExecutionKey: 'logical-1',
+            finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+            onSelectRow: (): void => undefined,
+          })
+        );
+      });
+      await flushUntil('finished-iteration restore', () =>
+        (host.textContent ?? '').includes('node finished · none of this was sent')
+      );
+      const list = host.querySelector('[aria-label="Never sent, 1"]');
+      expect(list).not.toBeNull();
+      expect(list?.textContent ?? '').toContain('alpha from finished band');
     });
   });
 });

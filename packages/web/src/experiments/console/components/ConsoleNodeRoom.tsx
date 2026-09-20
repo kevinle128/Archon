@@ -23,8 +23,10 @@ import {
   createNodeMessageState,
   drainNodeMessages,
   nodeMessageScopeKey,
+  type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -493,7 +495,7 @@ export function ConsoleNodeRoom({
   finishedIteration = null,
   nodeTerminal = false,
   nodeExecutionKey = null,
-  writtenOperatorMessageIds = null,
+  writtenOperatorMessageIds: _externalWrittenIds = null,
   showToolCalls = true,
   showSystem = true,
   closeLabel = 'Close',
@@ -516,6 +518,8 @@ export function ConsoleNodeRoom({
   const [pageState, setPageState] = useState<NodeMessageState>(() =>
     createNodeMessageState(resolvedScopeKey)
   );
+  /** Node-wide written operator ids from the terminal reconcile drain. null until complete. */
+  const [reconcileWrittenIds, setReconcileWrittenIds] = useState<ReadonlySet<string> | null>(null);
   const [follow, setFollow] = useState(() =>
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
@@ -643,6 +647,54 @@ export function ConsoleNodeRoom({
     rowId,
     run.id,
   ]);
+
+  // Separate node-wide reconcile drain — never feeds pageState/transcript.
+  useEffect(() => {
+    if (!nodeTerminal || nodeKey === null || !agentActive) {
+      setReconcileWrittenIds(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const runId = run.id;
+    const executionRowId = nodeExecutionKey ?? `run:${runId}|node:${nodeKey}`;
+    const selection: NodeMessageSelection = { kind: 'node', rowId: executionRowId };
+
+    const runReconcileDrain = async (): Promise<void> => {
+      if (cancelled || controller.signal.aborted) return;
+      const next = await drainNodeMessages({
+        runId,
+        nodeId: nodeKey,
+        selection,
+        loader: loadMessagesRef.current,
+        signal: controller.signal,
+        state: createNodeMessageState(nodeMessageScopeKey(runId, nodeKey, selection)),
+        onState: (): void => {
+          // Intentionally ignore intermediate pages — never touch transcript state.
+        },
+      });
+      if (cancelled || controller.signal.aborted) return;
+      if (next.complete && next.error === null) {
+        setReconcileWrittenIds(collectWrittenOperatorMessageIds(next.rows));
+        return;
+      }
+      timer = setTimeout(() => {
+        void runReconcileDrain();
+      }, 1000);
+    };
+
+    setReconcileWrittenIds(null);
+    void runReconcileDrain();
+
+    return (): void => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
+      setReconcileWrittenIds(null);
+    };
+  }, [agentActive, nodeExecutionKey, nodeKey, nodeTerminal, run.id]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1102,7 +1154,7 @@ export function ConsoleNodeRoom({
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}
               nodeExecutionKey={nodeExecutionKey}
-              writtenOperatorMessageIds={writtenOperatorMessageIds}
+              writtenOperatorMessageIds={reconcileWrittenIds}
             />
           ) : null}
         </RoomRegion>
