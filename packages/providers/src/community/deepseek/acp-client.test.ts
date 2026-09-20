@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, jest, test } from 'bun:test';
 import type { ChildProcess, spawn, SpawnOptions } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Readable, Writable } from 'node:stream';
@@ -123,11 +123,16 @@ function createFakeDsh(options?: {
   configError?: Error;
   configHold?: ReturnType<typeof createDeferred<void>>;
   closeError?: Error;
+  closeHold?: ReturnType<typeof createDeferred<void>>;
   promptUpdates?: SessionUpdate[] | ((sessionId: string) => SessionUpdate[]);
   promptHold?: ReturnType<typeof createDeferred<void>>;
+  /** When false, session/cancel does not release promptHold (hung cancelled prompt). Default true. */
+  resolvePromptHoldOnCancel?: boolean;
   promptText?: string;
   requestPermission?: boolean;
+  onPromptStart?: () => void;
   onPromptSettled?: () => void;
+  onCancel?: () => void;
 }): FakeDsh {
   const calls: RecordedCall[] = [];
   const permissionResponses: unknown[] = [];
@@ -160,6 +165,7 @@ function createFakeDsh(options?: {
     })
     .onRequest(methods.agent.session.prompt, async c => {
       calls.push({ method: methods.agent.session.prompt, params: c.params });
+      options?.onPromptStart?.();
       if (options?.requestPermission) {
         const response = await c.client.request(methods.client.session.requestPermission, {
           sessionId: c.params.sessionId,
@@ -195,12 +201,20 @@ function createFakeDsh(options?: {
     })
     .onRequest(methods.agent.session.close, c => {
       calls.push({ method: methods.agent.session.close, params: c.params });
-      if (options?.closeError) throw options.closeError;
-      return {};
+      return (async (): Promise<Record<string, never>> => {
+        if (options?.closeHold !== undefined) {
+          await options.closeHold.promise;
+        }
+        if (options?.closeError) throw options.closeError;
+        return {};
+      })();
     })
     .onNotification(methods.agent.session.cancel, c => {
       calls.push({ method: methods.agent.session.cancel, params: c.params });
-      options?.promptHold?.resolve();
+      options?.onCancel?.();
+      if (options?.resolvePromptHoldOnCancel !== false) {
+        options?.promptHold?.resolve();
+      }
     });
 
   return {
@@ -501,7 +515,7 @@ describe('driveDeepseekAcpTurn', () => {
 
   test('aborting during prompt sends cancel, closes the session, and emits local aborted result', async () => {
     const hold = createDeferred<void>();
-    const fake = createFakeDsh({ promptHold: hold });
+    const fake = createFakeDsh({ promptHold: hold, sessionId: 'sess-abort-1' });
     const controller = new AbortController();
     const gen = driveDeepseekAcpTurn(fake.app, baseInput({ abortSignal: controller.signal }));
     const chunksPromise = collect(gen);
@@ -517,11 +531,304 @@ describe('driveDeepseekAcpTurn', () => {
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     expect(fake.methodsCalled()).toContain(methods.agent.session.close);
     const result = chunks.find(chunk => chunk.type === 'result');
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       type: 'result',
+      sessionId: 'sess-abort-1',
+      stopReason: 'aborted',
+      isError: true,
+      errorSubtype: 'deepseek_aborted',
+    });
+    expect(result).not.toHaveProperty('terminalReason');
+  });
+
+  test('aborting interruptSignal during prompt sends one cancel, closes, and emits exact abort result', async () => {
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({ promptHold: hold, sessionId: 'sess-interrupt-1' });
+    const interrupt = new AbortController();
+    const gen = driveDeepseekAcpTurn(fake.app, baseInput({ interruptSignal: interrupt.signal }));
+    const chunksPromise = collect(gen);
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.prompt)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    interrupt.abort();
+    const chunks = await chunksPromise;
+    const cancelCalls = fake.calls.filter(call => call.method === methods.agent.session.cancel);
+    expect(cancelCalls).toHaveLength(1);
+    expect(fake.methodsCalled()).toContain(methods.agent.session.close);
+    expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+      type: 'result',
+      sessionId: 'sess-interrupt-1',
+      stopReason: 'aborted',
+      isError: true,
+      errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('Stop and Cancel race sends exactly one session/cancel', async () => {
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({ promptHold: hold });
+    const nodeCancel = new AbortController();
+    const interrupt = new AbortController();
+    const gen = driveDeepseekAcpTurn(
+      fake.app,
+      baseInput({ abortSignal: nodeCancel.signal, interruptSignal: interrupt.signal })
+    );
+    const chunksPromise = collect(gen);
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.prompt)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    nodeCancel.abort();
+    interrupt.abort();
+    const chunks = await chunksPromise;
+    expect(fake.calls.filter(call => call.method === methods.agent.session.cancel)).toHaveLength(1);
+    expect(chunks.find(chunk => chunk.type === 'result')).toMatchObject({
+      stopReason: 'aborted',
+      errorSubtype: 'deepseek_aborted',
+      isError: true,
+    });
+  });
+
+  test('already-aborted interruptSignal skips prompt, cancels once, and returns abort with session id', async () => {
+    const fake = createFakeDsh({ sessionId: 'sess-preabort' });
+    const interrupt = new AbortController();
+    interrupt.abort();
+    const chunks = await collect(
+      driveDeepseekAcpTurn(fake.app, baseInput({ interruptSignal: interrupt.signal }))
+    );
+    expect(fake.methodsCalled()).toEqual([
+      methods.agent.initialize,
+      methods.agent.session.new,
+      methods.agent.session.cancel,
+      methods.agent.session.close,
+    ]);
+    expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+      type: 'result',
+      sessionId: 'sess-preabort',
+      stopReason: 'aborted',
+      isError: true,
+      errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('when both signals are already aborted, node Cancel is checked first and only one cancel is sent', async () => {
+    const fake = createFakeDsh({ sessionId: 'sess-both-pre' });
+    const nodeCancel = new AbortController();
+    const interrupt = new AbortController();
+    nodeCancel.abort();
+    interrupt.abort();
+    const chunks = await collect(
+      driveDeepseekAcpTurn(
+        fake.app,
+        baseInput({ abortSignal: nodeCancel.signal, interruptSignal: interrupt.signal })
+      )
+    );
+    expect(fake.calls.filter(call => call.method === methods.agent.session.cancel)).toHaveLength(1);
+    expect(fake.methodsCalled()).not.toContain(methods.agent.session.prompt);
+    expect(chunks.find(chunk => chunk.type === 'result')).toMatchObject({
+      sessionId: 'sess-both-pre',
       stopReason: 'aborted',
       errorSubtype: 'deepseek_aborted',
     });
+  });
+
+  test('interrupt during set_config_option cancels once, skips prompt, closes, and yields abort result', async () => {
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      configHold: hold,
+      sessionId: 'sess-config-interrupt',
+    });
+    const interrupt = new AbortController();
+    const chunksPromise = collect(
+      driveDeepseekAcpTurn(
+        fake.app,
+        baseInput({ model: 'deepseek-chat', interruptSignal: interrupt.signal })
+      )
+    );
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.setConfigOption)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    interrupt.abort();
+    hold.resolve();
+    const chunks = await chunksPromise;
+    expect(fake.calls.filter(call => call.method === methods.agent.session.cancel)).toHaveLength(1);
+    expect(fake.methodsCalled()).not.toContain(methods.agent.session.prompt);
+    expect(fake.methodsCalled()).toContain(methods.agent.session.close);
+    expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+      type: 'result',
+      sessionId: 'sess-config-interrupt',
+      stopReason: 'aborted',
+      isError: true,
+      errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('natural prompt result winning a Stop race during session/close stays natural with no cancel', async () => {
+    const closeHold = createDeferred<void>();
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } } };
+    const fake = createFakeDsh({
+      closeHold,
+      promptText: '{"ok":true}',
+      sessionId: 'sess-natural-race',
+    });
+    const interrupt = new AbortController();
+    const chunksPromise = collect(
+      driveDeepseekAcpTurn(
+        fake.app,
+        baseInput({ interruptSignal: interrupt.signal, outputSchema: schema })
+      )
+    );
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.close)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    interrupt.abort();
+    closeHold.resolve();
+    const chunks = await chunksPromise;
+    expect(fake.methodsCalled()).not.toContain(methods.agent.session.cancel);
+    expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+      type: 'result',
+      sessionId: 'sess-natural-race',
+      stopReason: 'end_turn',
+      structuredOutput: { ok: true },
+    });
+  });
+
+  test('success, setup failure, and early return remove both signal listeners', async () => {
+    const successAbort = new AbortController();
+    const successInterrupt = new AbortController();
+    const removeAbort = jest.spyOn(successAbort.signal, 'removeEventListener');
+    const removeInterrupt = jest.spyOn(successInterrupt.signal, 'removeEventListener');
+    await collect(
+      driveDeepseekAcpTurn(
+        createFakeDsh().app,
+        baseInput({
+          abortSignal: successAbort.signal,
+          interruptSignal: successInterrupt.signal,
+        })
+      )
+    );
+    expect(removeAbort).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(removeInterrupt).toHaveBeenCalledWith('abort', expect.any(Function));
+    removeAbort.mockRestore();
+    removeInterrupt.mockRestore();
+
+    const setupAbort = new AbortController();
+    const setupInterrupt = new AbortController();
+    const removeSetupAbort = jest.spyOn(setupAbort.signal, 'removeEventListener');
+    const removeSetupInterrupt = jest.spyOn(setupInterrupt.signal, 'removeEventListener');
+    const setupError = await collect(
+      driveDeepseekAcpTurn(
+        createFakeDsh({ configError: new Error('bad model') }).app,
+        baseInput({
+          model: 'deepseek-chat',
+          abortSignal: setupAbort.signal,
+          interruptSignal: setupInterrupt.signal,
+        })
+      )
+    ).catch((caught: unknown) => caught);
+    expect(setupError).toBeInstanceOf(DeepseekProviderError);
+    expect(removeSetupAbort).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(removeSetupInterrupt).toHaveBeenCalledWith('abort', expect.any(Function));
+    removeSetupAbort.mockRestore();
+    removeSetupInterrupt.mockRestore();
+
+    const hold = createDeferred<void>();
+    const earlyAbort = new AbortController();
+    const earlyInterrupt = new AbortController();
+    const removeEarlyAbort = jest.spyOn(earlyAbort.signal, 'removeEventListener');
+    const removeEarlyInterrupt = jest.spyOn(earlyInterrupt.signal, 'removeEventListener');
+    const earlyFake = createFakeDsh({
+      promptHold: hold,
+      promptUpdates: [
+        {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'partial' },
+        },
+      ],
+    });
+    const gen = driveDeepseekAcpTurn(
+      earlyFake.app,
+      baseInput({ abortSignal: earlyAbort.signal, interruptSignal: earlyInterrupt.signal })
+    );
+    await gen.next();
+    await gen.return(undefined);
+    expect(earlyFake.methodsCalled()).toContain(methods.agent.session.cancel);
+    expect(removeEarlyAbort).toHaveBeenCalledWith('abort', expect.any(Function));
+    expect(removeEarlyInterrupt).toHaveBeenCalledWith('abort', expect.any(Function));
+    hold.resolve();
+    removeEarlyAbort.mockRestore();
+    removeEarlyInterrupt.mockRestore();
+  });
+
+  test('CANCEL_DRAIN_GRACE_MS releases a hung cancelled prompt so close and abort result still run', async () => {
+    jest.useFakeTimers();
+    try {
+      const hold = createDeferred<void>();
+      let promptStarted = false;
+      let cancelSeen = false;
+      const fake = createFakeDsh({
+        promptHold: hold,
+        resolvePromptHoldOnCancel: false,
+        sessionId: 'sess-drain',
+        onPromptStart: () => {
+          promptStarted = true;
+        },
+        onCancel: () => {
+          cancelSeen = true;
+        },
+      });
+      const interrupt = new AbortController();
+      const chunksPromise = collect(
+        driveDeepseekAcpTurn(fake.app, baseInput({ interruptSignal: interrupt.signal }))
+      );
+
+      // Drive microtasks until the fake observes session/prompt without real timers.
+      for (let i = 0; i < 200 && !promptStarted; i += 1) {
+        await Promise.resolve();
+      }
+      expect(promptStarted).toBe(true);
+
+      interrupt.abort();
+      for (let i = 0; i < 200 && !cancelSeen; i += 1) {
+        await Promise.resolve();
+      }
+      expect(cancelSeen).toBe(true);
+      expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
+      expect(fake.methodsCalled()).not.toContain(methods.agent.session.close);
+
+      jest.advanceTimersByTime(500);
+      // Flush the timer callback and subsequent ACP close microtasks.
+      for (let i = 0; i < 50; i += 1) {
+        await Promise.resolve();
+      }
+
+      const chunks = await chunksPromise;
+      expect(fake.methodsCalled()).toContain(methods.agent.session.close);
+      expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+        type: 'result',
+        sessionId: 'sess-drain',
+        stopReason: 'aborted',
+        isError: true,
+        errorSubtype: 'deepseek_aborted',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   test('aborting during config reports a local aborted result when config rejects', async () => {

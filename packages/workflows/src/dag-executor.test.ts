@@ -76,8 +76,11 @@ import {
   registerPiProvider,
   registerQoderCliProvider,
   registerDevinProvider,
+  registerDeepseekProvider,
   DEVIN_CAPABILITIES,
+  DEEPSEEK_CAPABILITIES,
   clearRegistry,
+  getRegistration,
 } from '@archon/providers';
 clearRegistry();
 registerBuiltinProviders();
@@ -89,6 +92,9 @@ registerOpencodeProvider();
 registerPiProvider();
 registerDevinProvider();
 registerQoderCliProvider();
+// DeepSeek community provider — registry lookup for capabilities + interrupt
+// conformance (#187). deps.getAgentProvider stays mocked.
+registerDeepseekProvider();
 
 // --- Imports (after mocks) ---
 import {
@@ -27382,7 +27388,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   async function invokeDag(
     store: IWorkflowStore,
     nodes: DagNode[],
-    opts?: { runId?: string; assistant?: 'claude' | 'pi' }
+    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' }
   ): Promise<IWorkflowPlatform> {
     const assistant = opts?.assistant ?? 'claude';
     const config =
@@ -27392,7 +27398,13 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
             assistant: 'pi' as const,
             assistants: { ...minimalConfig.assistants, pi: {} },
           }
-        : minimalConfig;
+        : assistant === 'deepseek'
+          ? {
+              ...minimalConfig,
+              assistant: 'deepseek' as const,
+              assistants: { ...minimalConfig.assistants, deepseek: {} },
+            }
+          : minimalConfig;
     const platform = createMockPlatform();
     await executeDagWorkflow(
       createMockDeps(store),
@@ -28054,5 +28066,194 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(sendQueryArg<string>(1, 0)).toBe('redirect the body');
     expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-body-1');
     expect(getSteeringRegistry().get(RUN_ID, 'grp.body')).toBeUndefined();
+  });
+
+  /**
+   * DeepSeek interrupt conformance (#187 / US-002).
+   *
+   * Phase 1 spike recorded Block (missing-env), so product
+   * `DEEPSEEK_CAPABILITIES.interrupt` stays `false`. This fixture temporarily
+   * replaces only the registered test capability so it can exercise the
+   * native path without adding a production capability override.
+   */
+  describe('deepseek conformance', () => {
+    const DEEPSEEK_RUN = 'deepseek-interrupt-run';
+
+    /** Exact Phase 1 abort result — no terminalReason. */
+    function abortedResult(sessionId: string) {
+      return {
+        type: 'result' as const,
+        sessionId,
+        stopReason: 'aborted' as const,
+        isError: true as const,
+        errorSubtype: 'deepseek_aborted' as const,
+      };
+    }
+
+    /** Test-local native interrupt; product capability remains false under Block. */
+    const deepseekTestCapabilities = {
+      ...DEEPSEEK_CAPABILITIES,
+      interrupt: 'native' as const,
+    };
+
+    beforeEach(() => {
+      const registered = getRegistration('deepseek');
+      Reflect.set(registered, 'capabilities', deepseekTestCapabilities);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'deepseek',
+        getCapabilities: () => DEEPSEEK_CAPABILITIES,
+      }));
+    });
+
+    afterEach(() => {
+      const registered = getRegistration('deepseek');
+      Reflect.set(registered, 'capabilities', DEEPSEEK_CAPABILITIES);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'claude',
+        getCapabilities: mockClaudeCapabilities,
+      }));
+    });
+
+    it('direct path: exact abort triple + operator flag idles, drains queue+Send now on same session, one interrupted tool, no re-ask', async () => {
+      let calls = 0;
+      let interruptOutcome: Promise<string> | undefined;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          interruptOutcome = liveHandle(DEEPSEEK_RUN, 'review').interrupt() as Promise<string>;
+          yield { type: 'tool', toolName: 'Bash', toolCallId: 'ds-tool-open', toolInput: {} };
+          // Abort-marked DeepSeek result with NO structuredOutput — a natural
+          // miss would re-ask; interrupt must skip the re-ask entirely.
+          yield abortedResult('ds-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected' };
+        yield { type: 'result', sessionId: 'ds-sess-2', structuredOutput: { verdict: 'ok' } };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'review',
+            prompt: 'do work',
+            output_format: {
+              type: 'object',
+              properties: { verdict: { type: 'string' } },
+              required: ['verdict'],
+            },
+          },
+        ],
+        { runId: DEEPSEEK_RUN, assistant: 'deepseek' }
+      );
+
+      const idle = await awaitIdle(DEEPSEEK_RUN, 'review');
+      expect(await interruptOutcome).toBe('idle-after-interrupt');
+      const states = await transcriptStates(store, DEEPSEEK_RUN, 'review');
+      expect(states.filter(s => s === 'interrupted').length).toBe(1);
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      // Open tool settled interrupted exactly once.
+      expect(toolCompletedOutcomes(store).get('ds-tool-open')).toEqual(['interrupted']);
+      // Interrupted pass must not have re-asked structured output.
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+
+      enqueue(DEEPSEEK_RUN, 'review', 'm-old', 'older guidance');
+      expect(idle.snapshot().queued.length).toBe(1);
+      sendNow(DEEPSEEK_RUN, 'review', 'm-new', 'new instruction');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('older guidance\n\nnew instruction');
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('ds-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'review')).toBeUndefined();
+    });
+
+    it('exact abort triple without operator flag follows SDK deepseek_aborted failure path', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        yield abortedResult('ds-sess-fail');
+      });
+      const store = createMockStore();
+      await invokeDag(store, [{ id: 'review', prompt: 'do work' }], {
+        runId: DEEPSEEK_RUN,
+        assistant: 'deepseek',
+      });
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'review')).toContain('SDK returned deepseek_aborted');
+      expect(storedEventTypes(store)).toContain('node_failed');
+      expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'review')).toBeUndefined();
+    });
+
+    it('operator flag + near-miss result (missing triple member) is normal failure, not idle', async () => {
+      let interruptOutcome: Promise<string> | undefined;
+      mockSendQueryDag.mockImplementation(async function* () {
+        interruptOutcome = liveHandle(DEEPSEEK_RUN, 'review').interrupt() as Promise<string>;
+        // Missing errorSubtype — exactness guard must NOT classify as interrupt.
+        yield {
+          type: 'result',
+          sessionId: 'ds-sess-near',
+          stopReason: 'aborted',
+          isError: true,
+          errorSubtype: 'something_else',
+        };
+      });
+      const store = createMockStore();
+      await invokeDag(store, [{ id: 'review', prompt: 'do work' }], {
+        runId: DEEPSEEK_RUN,
+        assistant: 'deepseek',
+      });
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'review')).toContain('SDK returned something_else');
+      expect(storedEventTypes(store)).toContain('node_failed');
+      expect(storedEventTypes(store)).not.toContain('node_completed');
+      // Never entered idle — interrupt settles as node_finished on failure path.
+      expect(await interruptOutcome).toBe('node_finished');
+      expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'review')).toBeUndefined();
+    });
+
+    it('AI loop: exact abort triple idles inside iteration; Send now resumes same session without consuming one', async () => {
+      let calls = 0;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          void liveHandle(DEEPSEEK_RUN, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'iteration work' };
+          yield abortedResult('ds-loop-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+        yield { type: 'result', sessionId: 'ds-loop-sess-2' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'my-loop',
+            loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+          },
+        ],
+        { runId: DEEPSEEK_RUN, assistant: 'deepseek' }
+      );
+
+      await awaitIdle(DEEPSEEK_RUN, 'my-loop');
+      const states = await transcriptStates(store, DEEPSEEK_RUN, 'my-loop');
+      expect(states).toContain('interrupted');
+      sendNow(DEEPSEEK_RUN, 'my-loop', 'm-1', 'redirect the loop');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('redirect the loop');
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('ds-loop-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'my-loop')).toBeUndefined();
+    });
   });
 });

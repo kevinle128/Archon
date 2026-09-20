@@ -469,6 +469,30 @@ function isInterruptTerminalReason(reason: string | undefined): boolean {
 }
 
 /**
+ * Provider-neutral interrupt marker on a terminal result chunk (#187 / #183).
+ *
+ * Exact provider-normalized result fields are transport contracts, not prose
+ * inference: Claude's terminalReason allowlist OR the complete DeepSeek abort
+ * triple (`stopReason:'aborted'` + `isError:true` + `errorSubtype:'deepseek_aborted'`).
+ * No provider-id branching, no prefix matching, no error-message parsing, and
+ * no synthetic `terminalReason:'cancelled'`. Callers still gate on the live
+ * turn token + `wasOperatorInterrupted(token)`.
+ */
+function isInterruptMarkedResult(result: {
+  terminalReason?: string;
+  stopReason?: string;
+  isError?: boolean;
+  errorSubtype?: string;
+}): boolean {
+  if (isInterruptTerminalReason(result.terminalReason)) return true;
+  return (
+    result.stopReason === 'aborted' &&
+    result.isError === true &&
+    result.errorSubtype === 'deepseek_aborted'
+  );
+}
+
+/**
  * Abort-like throw recognition (#183 five-case classification, case 3). A
  * throw only classifies as interrupted when the turn ALSO carries the
  * operator-interrupt flag with this token's interrupt signal aborted — this
@@ -2719,7 +2743,7 @@ async function executeNodeInternal(
             passTurn?.token !== undefined &&
             interruptibleHandle !== undefined &&
             interruptibleHandle.wasOperatorInterrupted(passTurn.token) &&
-            isInterruptTerminalReason(msg.terminalReason);
+            isInterruptMarkedResult(msg);
           // A terminal result closes every outstanding lifecycle — 'interrupted'
           // for the abort-marked end (a still-open tool was cut off mid-call),
           // 'unknown' otherwise. Entries the provider already resolved are out
@@ -6483,7 +6507,7 @@ async function executeLoopNodeInner(
                 turnToken !== undefined &&
                 interruptibleHandle !== undefined &&
                 interruptibleHandle.wasOperatorInterrupted(turnToken) &&
-                isInterruptTerminalReason(msg.terminalReason);
+                isInterruptMarkedResult(msg);
               // A terminal result closes every outstanding lifecycle —
               // 'interrupted' on the abort-marked end, 'unknown' otherwise.
               // Provider-resolved entries are out of the map, so no duplicate
