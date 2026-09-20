@@ -27,6 +27,7 @@ Phase 2 must not start until the real-binary gate below records a usable session
 
 - The provider already owns a SIGTERM→SIGKILL `terminate()` path bound to `abortSignal` (Cancel). Interrupt reuses it; the *difference* is entirely in what happens after reap: Cancel throws, interrupt yields a result.
 - The parser stores the `session` header privately and never emits it (`event-parser.ts:160-166`). The interrupted result is the only vehicle that can carry the session id to the executor.
+- The parser coalesces assistant `text_delta`s into `pendingAssistant` and releases them only on a later event (`consumeMessageUpdate` returns `[]` for `text_delta`; `flushAssistant` is private and fires on `text_end`/`done`/`notice`/tool events). A Stop mid-message therefore leaves partial text buffered; the provider must drain it before the interrupted result or the transcript loses written work.
 - `buildResult()` decorates any open tool call / open assistant message as `omp_incomplete_output` (`event-parser.ts:80-104`) and treats `stopReason === 'aborted'` as an error. An interrupted turn is *expectedly* incomplete, so it needs its own builder.
 - The scout report's teardown claim was read from v18.1.16 source. The installed binary is v18.1.21. Measure; do not assume.
 
@@ -86,6 +87,7 @@ Write `reports/omp-interrupt-resume-spike.md` with: binary version, command shap
 - After the reap (`:446`), order the checks: existing `if (abortSignal?.aborted) throw new Error('Query aborted');` first; then
   ```ts
   if (interruptSignal?.aborted) {
+    for (const chunk of parser.drainPendingAssistant()) yield chunk;
     yield await maybeEnrichResult(parser.buildInterruptedResult(resumeSessionId), { env, cwd, noSession, snapshot });
     getLog().info({ sessionId: parser.getSessionId(), exitCode: exitOutcome.ok ? exitOutcome.value : undefined }, 'omp.query_interrupted');
     return;
@@ -98,7 +100,7 @@ Write `reports/omp-interrupt-resume-spike.md` with: binary version, command shap
 
 ### Parser
 
-Add `buildInterruptedResult(requestedSessionId: string | undefined): ResultChunk` that returns `{ ...this.buildObservedResult(resumed), terminalReason: 'stream_aborted' }` where `resumed` is `undefined` when no resume was requested and otherwise `this.sessionId === requestedSessionId` (red team A3: an OMP that silently opened a fresh session must surface as `resumed: false`, which the executor already warns on). No `isError`, no `errorSubtype`, no `errors`. Flush nothing: partial assistant text already reached the consumer via `message_update` chunks. Export the marker string from `packages/providers/src/types.ts` as `export const STREAM_ABORTED_TERMINAL_REASON = 'stream_aborted' as const;` — `types.ts` is the zero-dependency contract subpath `@archon/workflows` already imports from (`dag-executor.ts:40`), so Phase 2 adds the same constant to the executor's marker set instead of retyping the string. The parser imports it from `../../types`.
+Add `buildInterruptedResult(requestedSessionId: string | undefined): ResultChunk` that returns `{ ...this.buildObservedResult(resumed), terminalReason: 'stream_aborted' }` where `resumed` is `undefined` when no resume was requested and otherwise `this.sessionId === requestedSessionId` (red team A3: an OMP that silently opened a fresh session must surface as `resumed: false`, which the executor already warns on). No `isError`, no `errorSubtype`, no `errors`. Also add `drainPendingAssistant(): MessageChunk[]` — a public wrapper that returns `this.flushAssistant()` — so the provider can release buffered partial text before the result; `buildInterruptedResult` itself yields nothing. Export the marker string from `packages/providers/src/types.ts` as `export const STREAM_ABORTED_TERMINAL_REASON = 'stream_aborted' as const;` — `types.ts` is the zero-dependency contract subpath `@archon/workflows` already imports from (`dag-executor.ts:40`), so Phase 2 adds the same constant to the executor's marker set instead of retyping the string. The parser imports it from `../../types`.
 
 ### Types (`types.ts`)
 
@@ -127,7 +129,7 @@ In `omp/event-parser.test.ts`:
 
 `omp/provider.test.ts` (use `makeRunningProcess`, `makeSpawner`, `collect`, `waitFor`):
 
-4. Interrupt mid-stream: after the child printed `session` + a `tool_execution_start`, abort `interruptSignal` → child receives `['SIGTERM']` and the fake resolves exit code **143**; the collected chunks end with exactly one `result` `{ sessionId, terminalReason: 'stream_aborted' }`, no `isError`, no throw, no `omp_exit_nonzero` (this is what makes the post-reap ordering falsifiable).
+4. Interrupt mid-stream: after the child printed `session`, a `message_start`, two `text_delta` updates (no `text_end`), and a `tool_execution_start`, abort `interruptSignal` → child receives `['SIGTERM']` and the fake resolves exit code **143**; the collected chunks contain one `assistant` chunk with the concatenated partial text immediately before exactly one `result` `{ sessionId, terminalReason: 'stream_aborted' }`, no `isError`, no throw, no `omp_exit_nonzero` (this is what makes the post-reap ordering falsifiable and proves buffered text is not lost).
 5. Interrupt escalates SIGTERM→SIGKILL when the child ignores SIGTERM (mirror `:537-548`, fake resolves **137**); still result-shaped. This test waits the real 5 s grace like its Cancel twin — give it the same explicit `7_000` ms timeout and keep it the only additional real-timer wait in the file (red team F5; AGENTS.md bimodal-timeout note).
 6. Interrupt when SIGTERM makes stdout reject (mirror `:550-561`) → still result-shaped, `omp_transport_error` not emitted.
 6b. Interrupt when SIGTERM truncates the last stdout line (fake pushes `{"type":"mess` then closes) → still result-shaped; `omp_protocol_error` not emitted.
@@ -141,7 +143,7 @@ In `omp/event-parser.test.ts`:
 
 `omp/event-parser.test.ts`:
 
-13. `buildInterruptedResult(undefined)` on a parser with open tool + partial usage → `sessionId`, usage fields, `terminalReason: 'stream_aborted'`, no error fields, `resumed` absent; `buildInterruptedResult('<observed id>')` → `resumed: true`; `buildInterruptedResult('<other id>')` → `resumed: false`.
+13. `drainPendingAssistant()` on a parser holding two un-flushed `text_delta`s returns one `assistant` chunk and a second call returns `[]`; `buildInterruptedResult(undefined)` on a parser with open tool + partial usage → `sessionId`, usage fields, `terminalReason: 'stream_aborted'`, no error fields, `resumed` absent; `buildInterruptedResult('<observed id>')` → `resumed: true`; `buildInterruptedResult('<other id>')` → `resumed: false`.
 
 `registry.test.ts`:
 

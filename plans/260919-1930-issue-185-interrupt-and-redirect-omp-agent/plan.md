@@ -7,7 +7,7 @@ effort: '3 phases'
 issue: 'https://github.com/kevinle128/Archon/issues/185'
 branch: archon/thread-9aa07a8e
 tags: [issue-185, agent-node-room, providers, workflows, omp, tdd]
-blockedBy: [project:260919-0139-issue-183-interrupt-and-redirect-claude-agent]
+blockedBy: []
 blocks: []
 created: 2026-09-20
 ---
@@ -21,7 +21,7 @@ An operator watching a live OMP-backed node can press `Stop`, see the current OM
 The successful flow is:
 
 1. `Stop` aborts the fresh per-turn `interruptSignal`; the OMP provider terminates its child process (SIGTERM, existing SIGKILL grace) — never the node-level Cancel controller.
-2. The provider yields one abort-marked `result` carrying the real OMP session id and the usage observed so far, then returns.
+2. The provider drains any buffered partial assistant text, yields one abort-marked `result` carrying the real OMP session id and the usage observed so far, then returns.
 3. The executor classifies the end as interrupted (five-case rule, case 2), settles still-open tool cards as `interrupted`, writes one `interrupted` status row, and enters `idle-after-interrupt` without emitting `dag_node_failed`.
 4. `Send now` drains queued receipts plus the new message in written order and starts the next turn with `--resume <same session id>`; the dock returns to generating.
 
@@ -33,7 +33,7 @@ Authority order for this story:
 
 1. Issue #185 and Story 2.5 acceptance criteria in `_bmad-output/planning-artifacts/epics-agent-node-room/epics.md` (lines 553–583).
 2. Ratified companions in `_bmad-output/specs/spec-agent-node-room/`: `provider-steering-matrix.md`, `steering-test-plan.md`.
-3. Current source and tests, above all the #214 executor/registry contract.
+3. Current source and tests, above all the #214 executor/registry contract (commit `79ed773a` on `develop`; Story 2.3 is `done` in `sprint-status.yaml`, so this plan carries no open `blockedBy` edge).
 
 Three conflicts are resolved explicitly:
 
@@ -83,7 +83,7 @@ Out of scope, owners preserved:
 
 ### D2 — Result-shaped interrupted end with a provider-neutral marker
 
-`OmpEventParser.buildInterruptedResult(requestedSessionId)` returns the observed result (`sessionId`, tokens/cost/`usageBreakdown`/`resolvedModel` when seen) plus `terminalReason: 'stream_aborted'`, with no `isError`/`errorSubtype` — incompleteness is the expected state of an interrupted turn. When a resume was requested, `resumed` is `observedSessionId === requestedSessionId` (the existing `false` contract: "resume requested but the provider fell back to fresh"), not an unconditional `true` (red team A3). `INTERRUPT_TERMINAL_REASONS` gains `stream_aborted`.
+The OMP parser coalesces `text_delta`s in `pendingAssistant` and releases them only on a later event (`event-parser.ts` `consumeMessageUpdate`/`flushAssistant`), so the provider must first yield `parser.drainPendingAssistant()` — a public wrapper over the private flush — or a mid-message Stop would drop the partial text the dock promises was not undone. Then `OmpEventParser.buildInterruptedResult(requestedSessionId)` returns the observed result (`sessionId`, tokens/cost/`usageBreakdown`/`resolvedModel` when seen) plus `terminalReason: 'stream_aborted'`, with no `isError`/`errorSubtype` — incompleteness is the expected state of an interrupted turn. When a resume was requested, `resumed` is `observedSessionId === requestedSessionId` (the existing `false` contract: "resume requested but the provider fell back to fresh"), not an unconditional `true` (red team A3). `INTERRUPT_TERMINAL_REASONS` gains `stream_aborted`.
 
 Hidden-session usage enrichment (`maybeEnrichResult`) **runs** on the interrupted result. The child has already exited when it is called, the pre-spawn snapshot is valid, and the existing byte-delta path already warns-and-omits on a mid-record tail. Skipping it would lose the interrupted turn's advisor/subagent spend permanently, because the redirect turn's own pre-spawn snapshot then treats those bytes as history (red team F2). Primary-stream usage OMP has not yet reported at `message_end` time is not recoverable and is documented in Phase 3; the spike records whether OMP's teardown emits a final `message_end` with usage.
 
@@ -170,3 +170,24 @@ Do not run root `bun test`. Do not mark `sprint-status.yaml` done until the fina
 ### Whole-Plan Consistency Sweep
 Decision delta: (1) enrichment runs on the interrupted result; (2) `resumed` computed from observed-vs-requested id; (3) one shared grace, no dual grace; (4) fixture exit codes 143/137; (5) loop-path no-session row; (6) rollback wording; (7) spike gains process-table check, version stamp, login policy. Searched all four files for `skipped on the interrupted`, `interrupt-only grace`, `buildInterruptedResult(resumed`, `nothing persisted`, `Do not call maybeEnrichResult`, `resumed flag is true` — the only survivors were D4's "interrupt-only grace" sentence, the Phase 1 risk bullet, and parser test 13's `buildInterruptedResult(true)` signature, all rewritten in this sweep. No unresolved contradictions remain.
 
+
+## Validation Log
+
+### Session 1 — 2026-09-20
+
+**Verification Results** (carried from the red-team pass; Standard tier, Fact Checker + Contract Verifier)
+- Claims checked: 40 | Verified: 39 | Failed: 1 (A1 fixture exit code — fixed in Phase 1) | Unverified: 1 (Bun `Subprocess.exited` value for a signal-killed child — moot for correctness because the interrupt check precedes the exit-code branch; the spike records the actual value)
+
+**Questions asked:** 4 (all answered with the recommended option)
+
+| # | Decision | Answer | Propagated to |
+|---|----------|--------|---------------|
+| Q1 | Interrupt end shape vs. spec wording "throws `Query aborted`" | Result-shaped interrupt end, no trailing throw | Plan "Authority and resolved conflicts", D2; Phase 1 provider contract; Phase 2 story-literal rows |
+| Q2 | Authorization posture after the capability flip | Keep the spec's actor grant (any authenticated user); document only, no server change | Plan "Compatibility, operations, and rollback"; Phase 3 doc note |
+| Q3 | Hidden-session usage enrichment on an interrupted turn | Run enrichment fail-soft | D2; Phase 1 provider contract + test 12; Phase 3 doc note |
+| Q4 | Process-group termination of bash-tool grandchildren | Out of this story; spike measures, follow-up issue only if orphaning observed | Plan follow-ups; Phase 1 spike step 5 |
+
+### Whole-Plan Consistency Sweep
+All four answers matched what the red-team session had already applied, so no phase text changed in this session. Re-read `plan.md` and every `phase-*.md`: the interrupt shape, enrichment, auth posture, and process-group statements agree across the index, D1–D5, the three phases, and the Red Team table. No unresolved contradictions.
+
+**Recommendation:** proceed — `Failed: 0` outstanding after the A1 fix; eligible for `/ak:cook`.
