@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### OMP stream-abort termination ownership
+- **Where**: `packages/providers/src/community/omp/provider.ts`, `event-parser.ts`
+- **Pattern**: Single terminate path with first-writer-wins cause (`interrupt|interrupt-unresumable|cancel|transport|protocol|cleanup`); pending Stop waits ≤500ms for session header then SIGTERM; parser `beginOperatorInterrupt` snapshots open tools; graceful interrupt yields drained assistant + one `terminalReason: stream_aborted` result (no throw); SIGKILL → unmarked `omp_interrupt_force_killed`.
+- **Example**: `setTerminationGraceMsForTest(20)` for force-kill unit tests without a second real 5s wait
+
 ### OMP interrupt spike hygiene
 - **Where**: `packages/providers/src/community/omp/interrupt-resume-spike.ts`, mirrors `packages/providers/src/claude/interrupt-resume-spike.ts`
 - **Pattern**: Diagnostic spikes are not package-exported; script entry via `packages/providers/package.json` only. Spawn via `resolveOmpBinaryPath` + unique `mkdtemp` git cwd. Track owned PIDs only; reap in `finally`; never `pkill`. stdout is one sanitized JSON document (event types, timings, hashed ids) — no prompts, model text, credentials, or raw session ids.
@@ -36,5 +41,37 @@
 - Thinking/message_update noise precedes first text_delta — trigger must be the nested `assistantMessageEvent.type === 'text_delta'`, not bare `message_update`.
 - Post-SIGTERM OMP may keep emitting `message_update` briefly; do not require natural `agent_end` for graceful interrupt classification.
 - linux + win32 remain uncharacterized; US-003 must not flip capability on macOS-only evidence without owner scope decision.
+
+---
+
+## 2026-09-20 — US-002: Provider/parser stream-abort seam (TDD)
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/types.ts` — export `STREAM_ABORTED_TERMINAL_REASON`; broaden terminalReason/interruptSignal/capability docs
+- `packages/providers/src/index.ts` — re-export marker
+- `packages/providers/src/community/omp/event-parser.ts` — session/turn/natural-end queries, interrupt mode, drain/buildInterrupted/force-kill/session-unavailable builders
+- `packages/providers/src/community/omp/provider.ts` — first-cause terminate, pending-header deferral, interrupt result path; `interrupt` capability still false
+- `packages/providers/src/community/omp/event-parser.test.ts` / `provider.test.ts` — phase-01 interrupt cases + controllable process harness
+- `packages/providers/src/registry.test.ts` — assert no stream-abort advertiser yet
+
+**Acceptance criteria verified**:
+- [x] Tests before/with production seam; `makeRunningProcess` extended + controllable process; shortened grace for force-kill
+- [x] Provider/parser cases 1–14 covered (registry still expects zero stream-abort until US-003)
+- [x] Single termination path with cause tracking; cancel wins when aborted
+- [x] 500ms pending-header deferral; turn-before-header / timeout → unmarked session_unavailable
+- [x] Parser narrow interrupt methods; tool interrupted mapping; normal parse unchanged without interrupt mode
+- [x] Interrupted result field boundary + resumed semantics
+- [x] SIGKILL → omp_interrupt_force_killed unmarked
+- [x] Drain → marked result → enrich → return (no throw)
+- [x] STREAM_ABORTED exported; docs broadened
+- [x] No argv/env/spawn/happy-path/hidden-session/5s fallback changes
+- [x] OMP interrupt capability still false
+- [x] Focused package gates green
+
+**Learnings**:
+- `beginOperatorInterrupt` must run after active tools are observed; Stop on session-only snapshots an empty tool set, so later errored ends stay `error` not `interrupted`.
+- Header-wait tests need `waitFor(..., 1500)` because the signal fires at t=500ms.
+- Controllable FakeProcess with manual exit is required for late tool ends after SIGTERM.
 
 ---

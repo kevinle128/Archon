@@ -21,6 +21,27 @@ import {
 
 const MAX_CAPTURE_CHARS = 1_000_000;
 const TERMINATION_GRACE_MS = 5_000;
+/** Bounded wait for a session header after operator Stop on a fresh turn. */
+export const INTERRUPT_SESSION_HEADER_WAIT_MS = 500;
+
+type TerminationCause =
+  | 'interrupt'
+  | 'interrupt-unresumable'
+  | 'cancel'
+  | 'transport'
+  | 'protocol'
+  | 'cleanup';
+
+/** Test-only override so force-kill paths avoid a second real 5s wait. */
+let terminationGraceMsForTest: number | undefined;
+
+export function setTerminationGraceMsForTest(ms: number | undefined): void {
+  terminationGraceMsForTest = ms;
+}
+
+function terminationGraceMs(): number {
+  return terminationGraceMsForTest ?? TERMINATION_GRACE_MS;
+}
 
 let cachedLog: ReturnType<typeof createLogger> | undefined;
 function getLog(): ReturnType<typeof createLogger> {
@@ -204,12 +225,26 @@ async function* streamLines(stream: ReadableStream<Uint8Array> | null): AsyncGen
   }
 }
 
-function scheduleKill(proc: OmpProcess): ReturnType<typeof setTimeout> {
+function scheduleKill(proc: OmpProcess, onSigkill: () => void): ReturnType<typeof setTimeout> {
   proc.kill('SIGTERM');
-  const timer = setTimeout(() => {
+  return setTimeout(() => {
+    onSigkill();
     proc.kill('SIGKILL');
-  }, TERMINATION_GRACE_MS);
-  return timer;
+  }, terminationGraceMs());
+}
+
+/**
+ * Interrupted-result `resumed` only. Ordinary resume requires id equality;
+ * fork requires an observed session header; no request omits the field.
+ */
+function interruptedResumed(
+  resumeSessionId: string | undefined,
+  forkSession: boolean | undefined,
+  observedSessionId: string | undefined
+): boolean | undefined {
+  if (resumeSessionId === undefined) return undefined;
+  if (forkSession === true) return observedSessionId !== undefined;
+  return observedSessionId !== undefined && observedSessionId === resumeSessionId;
 }
 
 function buildExitErrorMessage(exitCode: number, stderr: string): string {
@@ -379,32 +414,104 @@ export class OmpProvider implements IAgentProvider {
     const parser = new OmpEventParser(wantsStructured);
     const proc = this.spawn(command, { cwd, env });
     const abortSignal = requestOptions?.abortSignal;
+    const interruptSignal = requestOptions?.interruptSignal;
     let processExited = false;
     let killTimer: ReturnType<typeof setTimeout> | undefined;
+    let headerWaitTimer: ReturnType<typeof setTimeout> | undefined;
+    let terminationCause: TerminationCause | undefined;
+    let sigkillFired = false;
+    let pendingInterrupt = false;
     let protocolError: Error | undefined;
     let transportError: Error | undefined;
+
     const clearKillTimer = (): void => {
       if (!killTimer) return;
       clearTimeout(killTimer);
       killTimer = undefined;
     };
-    const terminate = (): void => {
+    const clearHeaderWait = (): void => {
+      if (!headerWaitTimer) return;
+      clearTimeout(headerWaitTimer);
+      headerWaitTimer = undefined;
+    };
+    const recordCause = (cause: TerminationCause): boolean => {
+      if (terminationCause !== undefined) return false;
+      terminationCause = cause;
+      return true;
+    };
+    const scheduleTerminate = (): void => {
       if (processExited || killTimer) return;
-      killTimer = scheduleKill(proc);
+      killTimer = scheduleKill(proc, () => {
+        sigkillFired = true;
+      });
+    };
+    const claimInterruptOwnership = (): void => {
+      if (parser.hasNaturalTurnEnded()) return;
+      if (parser.hasSession()) {
+        pendingInterrupt = false;
+        clearHeaderWait();
+        if (recordCause('interrupt')) {
+          parser.beginOperatorInterrupt();
+          scheduleTerminate();
+        }
+        return;
+      }
+      if (parser.hasTurnActivity()) {
+        pendingInterrupt = false;
+        clearHeaderWait();
+        if (recordCause('interrupt-unresumable')) scheduleTerminate();
+        return;
+      }
+      // No session yet and no turn activity — defer until header or deadline.
+      pendingInterrupt = true;
+      if (headerWaitTimer) return;
+      headerWaitTimer = setTimeout(() => {
+        headerWaitTimer = undefined;
+        if (!pendingInterrupt) return;
+        pendingInterrupt = false;
+        if (parser.hasSession()) {
+          claimInterruptOwnership();
+          return;
+        }
+        if (recordCause('interrupt-unresumable')) scheduleTerminate();
+      }, INTERRUPT_SESSION_HEADER_WAIT_MS);
     };
     const onAbort = (): void => {
-      terminate();
+      // Cancel wins final classification whenever aborted, even if Stop fired first.
+      if (
+        terminationCause === undefined ||
+        terminationCause === 'interrupt' ||
+        terminationCause === 'interrupt-unresumable'
+      ) {
+        terminationCause = 'cancel';
+      }
+      pendingInterrupt = false;
+      clearHeaderWait();
+      scheduleTerminate();
+    };
+    const onInterrupt = (): void => {
+      if (abortSignal?.aborted) return;
+      claimInterruptOwnership();
+    };
+    const afterParsedLine = (): void => {
+      if (!pendingInterrupt) return;
+      if (parser.hasSession() || parser.hasTurnActivity()) {
+        claimInterruptOwnership();
+      }
     };
     const exitOutcomePromise = proc.exited.then<ProcessOutcome<number>, ProcessOutcome<number>>(
       exitCode => {
         processExited = true;
         clearKillTimer();
+        clearHeaderWait();
+        pendingInterrupt = false;
         return { ok: true, value: exitCode };
       },
       (error: unknown) => {
         const normalized = toError(error);
         transportError ??= normalized;
-        terminate();
+        recordCause('transport');
+        scheduleTerminate();
         return { ok: false, error: normalized };
       }
     );
@@ -416,7 +523,8 @@ export class OmpProvider implements IAgentProvider {
       (error: unknown) => {
         const normalized = toError(error);
         transportError ??= normalized;
-        terminate();
+        recordCause('transport');
+        scheduleTerminate();
         return { ok: false, error: normalized };
       }
     );
@@ -425,29 +533,81 @@ export class OmpProvider implements IAgentProvider {
       if (abortSignal.aborted) onAbort();
       else abortSignal.addEventListener('abort', onAbort, { once: true });
     }
+    // No pre-aborted no-spawn guard for interruptSignal — fresh-turn Stop still spawns.
+    if (interruptSignal) {
+      if (interruptSignal.aborted) onInterrupt();
+      else interruptSignal.addEventListener('abort', onInterrupt, { once: true });
+    }
 
     try {
       try {
         for await (const line of streamLines(proc.stdout)) {
           if (line.trim().length === 0) continue;
           try {
-            for (const chunk of parser.consumeLine(line)) yield chunk;
+            const chunks = parser.consumeLine(line);
+            // Fire pending interrupt as soon as the header is consumed, before yielding work.
+            afterParsedLine();
+            for (const chunk of chunks) yield chunk;
           } catch (error: unknown) {
+            // Interrupt-owned truncated JSON / protocol noise after SIGTERM stays graceful.
+            if (terminationCause === 'interrupt') break;
             protocolError = toError(error);
-            terminate();
+            recordCause('protocol');
+            scheduleTerminate();
             break;
           }
         }
       } catch (error: unknown) {
-        transportError ??= toError(error);
-        terminate();
+        if (terminationCause !== 'interrupt') {
+          transportError ??= toError(error);
+          recordCause('transport');
+          scheduleTerminate();
+        }
       }
 
       const [exitOutcome, stderrOutcome] = await Promise.all([
         exitOutcomePromise,
         stderrOutcomePromise,
       ]);
+      // Cancel dominates final classification whenever the node abort fired.
       if (abortSignal?.aborted) throw new Error('Query aborted');
+
+      const enrichOptions = { env, cwd, noSession, snapshot };
+      const resumedForInterrupt = interruptedResumed(
+        resumeSessionId,
+        requestOptions?.forkSession,
+        parser.getSessionId()
+      );
+
+      // SIGKILL during an interrupt attempt → unmarked force-kill error (never idle).
+      if (
+        sigkillFired &&
+        (terminationCause === 'interrupt' || terminationCause === 'interrupt-unresumable')
+      ) {
+        for (const chunk of parser.drainPendingAssistant()) yield chunk;
+        yield await maybeEnrichResult(
+          parser.buildForceKilledResult(resumedForInterrupt),
+          enrichOptions
+        );
+        return;
+      }
+
+      if (terminationCause === 'interrupt-unresumable') {
+        for (const chunk of parser.drainPendingAssistant()) yield chunk;
+        yield parser.buildSessionUnavailableResult();
+        return;
+      }
+
+      if (terminationCause === 'interrupt') {
+        // Drain pending assistant → one marked result → fail-soft usage enrich → return (no throw).
+        for (const chunk of parser.drainPendingAssistant()) yield chunk;
+        yield await maybeEnrichResult(
+          parser.buildInterruptedResult(resumedForInterrupt),
+          enrichOptions
+        );
+        getLog().info({ sessionId: parser.getSessionId() }, 'omp.query_interrupted');
+        return;
+      }
 
       // Late I/O after the parser already accepted authoritative usage must
       // yield one terminal isError result (not throw) so the executor can
@@ -468,7 +628,7 @@ export class OmpProvider implements IAgentProvider {
               message,
               resumeSessionId !== undefined
             ),
-            { env, cwd, noSession, snapshot }
+            enrichOptions
           );
           return;
         }
@@ -488,7 +648,7 @@ export class OmpProvider implements IAgentProvider {
             message,
             resumeSessionId !== undefined
           ),
-          { env, cwd, noSession, snapshot }
+          enrichOptions
         );
         return;
       }
@@ -503,19 +663,25 @@ export class OmpProvider implements IAgentProvider {
             message,
             resumeSessionId !== undefined
           ),
-          { env, cwd, noSession, snapshot }
+          enrichOptions
         );
         return;
       }
 
       yield await maybeEnrichResult(
         parser.buildResult(resumeSessionId === undefined ? undefined : true),
-        { env, cwd, noSession, snapshot }
+        enrichOptions
       );
       getLog().info({ sessionId: parser.getSessionId() }, 'omp.query_completed');
     } finally {
       if (abortSignal) abortSignal.removeEventListener('abort', onAbort);
-      if (!processExited) terminate();
+      if (interruptSignal) interruptSignal.removeEventListener('abort', onInterrupt);
+      clearHeaderWait();
+      pendingInterrupt = false;
+      if (!processExited) {
+        recordCause('cleanup');
+        scheduleTerminate();
+      }
       await Promise.all([exitOutcomePromise, stderrOutcomePromise]);
       if (processExited) clearKillTimer();
     }

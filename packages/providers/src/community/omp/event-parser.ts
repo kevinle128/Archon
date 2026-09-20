@@ -1,6 +1,11 @@
 import { createLogger } from '@archon/paths';
 
-import type { MessageChunk, ModelUsageEntry, TokenUsage } from '../../types';
+import {
+  STREAM_ABORTED_TERMINAL_REASON,
+  type MessageChunk,
+  type ModelUsageEntry,
+  type TokenUsage,
+} from '../../types';
 import { normalizeModelUsageEntry, toUsageBreakdown } from '../../usage-breakdown';
 import { tryParseStructuredOutput } from '../../shared/structured-output';
 
@@ -47,12 +52,16 @@ export class OmpEventParser {
   private sessionId: string | undefined;
   private sawAgentEnd = false;
   private sawAssistantMessage = false;
+  private sawTurnActivity = false;
   private activeAssistantMessage = false;
   private pendingAssistant = '';
   private currentMessageText = '';
   private structuredText = '';
   private streamError: string | undefined;
   private readonly activeTools = new Map<string, string>();
+  /** Tool call ids that were open when operator interrupt ownership began. */
+  private toolsActiveAtInterrupt = new Set<string>();
+  private operatorInterrupt = false;
   private tokens: TokenUsage = { input: 0, output: 0, total: 0, cost: 0 };
   private readonly usageEntries: ModelUsageEntry[] = [];
   private stopReason: string | undefined;
@@ -127,6 +136,89 @@ export class OmpEventParser {
     return this.sessionId;
   }
 
+  hasSession(): boolean {
+    return this.sessionId !== undefined;
+  }
+
+  /** True once any assistant/tool/agent work event has been observed. */
+  hasTurnActivity(): boolean {
+    return this.sawTurnActivity;
+  }
+
+  /** True only for the current turn's observed `agent_end`. */
+  hasNaturalTurnEnded(): boolean {
+    return this.sawAgentEnd;
+  }
+
+  /**
+   * Enter interrupt mode after the provider claims interrupt ownership.
+   * Snapshots currently-open tools so Stop-caused errored ends map to
+   * `toolOutcome: 'interrupted'` instead of failure warnings.
+   */
+  beginOperatorInterrupt(): void {
+    if (this.operatorInterrupt) return;
+    this.operatorInterrupt = true;
+    this.toolsActiveAtInterrupt = new Set(this.activeTools.keys());
+  }
+
+  /** Idempotent drain of coalesced assistant text (wraps flushAssistant). */
+  drainPendingAssistant(): MessageChunk[] {
+    return this.flushAssistant();
+  }
+
+  /**
+   * Interrupted result: session + accounting/model only, plus optional
+   * `resumed` and the stream-abort marker. Never fabricates a session id;
+   * never carries completion/error fields even if prior subevents set them.
+   */
+  buildInterruptedResult(resumed: boolean | undefined): ResultChunk {
+    const usageBreakdown = toUsageBreakdown(this.usageEntries);
+    return {
+      type: 'result',
+      ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+      ...(this.numTurns > 0
+        ? { tokens: this.tokens, cost: this.tokens.cost, numTurns: this.numTurns }
+        : {}),
+      ...(usageBreakdown.length > 0 ? { usageBreakdown } : {}),
+      ...(this.resolvedModel ? { resolvedModel: { id: this.resolvedModel } } : {}),
+      ...(resumed !== undefined ? { resumed } : {}),
+      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+    };
+  }
+
+  /**
+   * Force-kill error result after SIGKILL fired during an interrupt attempt.
+   * Unmarked (no stream_aborted) so the executor fails rather than idling.
+   */
+  buildForceKilledResult(resumed: boolean | undefined): ResultChunk {
+    const usageBreakdown = toUsageBreakdown(this.usageEntries);
+    return {
+      type: 'result',
+      ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+      ...(this.numTurns > 0
+        ? { tokens: this.tokens, cost: this.tokens.cost, numTurns: this.numTurns }
+        : {}),
+      ...(usageBreakdown.length > 0 ? { usageBreakdown } : {}),
+      ...(this.resolvedModel ? { resolvedModel: { id: this.resolvedModel } } : {}),
+      ...(resumed !== undefined ? { resumed } : {}),
+      isError: true,
+      errorSubtype: 'omp_interrupt_force_killed',
+      errors: ['OMP CLI did not exit after SIGTERM; SIGKILL fallback fired.'],
+    };
+  }
+
+  /** Unmarked error when Stop cannot obtain a resumable session id. */
+  buildSessionUnavailableResult(): ResultChunk {
+    return {
+      type: 'result',
+      isError: true,
+      errorSubtype: 'omp_interrupt_session_unavailable',
+      errors: [
+        'OMP interrupt could not obtain a session header before turn activity or the header wait deadline.',
+      ],
+    };
+  }
+
   private buildObservedResult(resumed: boolean | undefined): ResultChunk {
     const structuredOutput =
       this.wantsStructured && !this.streamError
@@ -172,6 +264,7 @@ export class OmpEventParser {
             throw new Error(
               'OMP CLI started an assistant message before the unfinished message ended.'
             );
+          this.sawTurnActivity = true;
           this.activeAssistantMessage = true;
           this.currentMessageText = '';
         }
@@ -207,6 +300,7 @@ export class OmpEventParser {
       case 'agent_end':
         if (this.activeTools.size > 0)
           throw new Error('OMP CLI ended with an outstanding tool call.');
+        this.sawTurnActivity = true;
         this.sawAgentEnd = true;
         return this.activeAssistantMessage ? [] : this.flushAssistant();
       default:
@@ -218,11 +312,13 @@ export class OmpEventParser {
     const type = stringField(event?.type);
     const delta = stringField(event?.delta);
     if (type === 'text_delta' && delta) {
+      this.sawTurnActivity = true;
       this.pendingAssistant += delta;
       this.currentMessageText += delta;
       return [];
     }
     if (type === 'thinking_delta' && delta) {
+      this.sawTurnActivity = true;
       return [...this.flushAssistant(), { type: 'thinking', content: delta }];
     }
     return type === 'text_end' || type === 'done' || type === 'error' ? this.flushAssistant() : [];
@@ -239,6 +335,7 @@ export class OmpEventParser {
     const stopReason = stringField(message.stopReason);
     if (!stopReason) throw new Error('OMP CLI assistant message_end is missing stop reason.');
     this.assertUsage(usage);
+    this.sawTurnActivity = true;
     const content = message.content;
     const completeText = content
       .map(asObject)
@@ -285,6 +382,7 @@ export class OmpEventParser {
     if (!toolInput) throw new Error('OMP CLI tool_execution_start has invalid args.');
     if (this.activeTools.has(toolCallId))
       throw new Error('OMP CLI emitted a duplicate active toolCallId.');
+    this.sawTurnActivity = true;
     this.activeTools.set(toolCallId, toolName);
     return [
       ...chunks,
@@ -314,13 +412,29 @@ export class OmpEventParser {
       throw new Error('OMP CLI emitted a mismatched tool_execution_end.');
     if (!Object.hasOwn(event, 'result'))
       throw new Error('OMP CLI errored tool_execution_end is missing result.');
+    this.sawTurnActivity = true;
     this.activeTools.delete(toolCallId);
     const result: MessageChunk[] = [...chunks];
-    if (event.isError === true)
+    const wasActiveAtInterrupt =
+      this.operatorInterrupt && this.toolsActiveAtInterrupt.has(toolCallId);
+    if (event.isError === true) {
+      if (wasActiveAtInterrupt) {
+        // Stop-caused errored end: interrupted outcome, no failure warning.
+        result.push({
+          type: 'tool_result',
+          toolName,
+          toolOutput: serializeToolResult(event.result),
+          toolCallId,
+          toolOutcome: 'interrupted',
+          outputState: 'full' as const,
+        });
+        return result;
+      }
       result.push({
         type: 'system',
         content: `OMP tool ${toolName} failed: ${serializeToolResult(event.result)}`,
       });
+    }
     result.push({
       type: 'tool_result',
       toolName,

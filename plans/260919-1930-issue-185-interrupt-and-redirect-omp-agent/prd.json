@@ -44,8 +44,8 @@
       "technicalNotes": "Phase 1 second half, decisions D2/D3/D4. Termination ownership rules: cancel > first-cause transport/protocol > interrupt > cleanup; a Stop racing natural `agent_end` stays natural. Parser keeps session header swallowed (:160-165) but must expose hasSession/hasTurnActivity/hasNaturalTurnEnded. Read phase-01 'Implementation contract' and 'Test plan' sections in full before editing. Capability flip is deliberately excluded.",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: packages/providers/src/types.ts (STREAM_ABORTED_TERMINAL_REASON + docs), packages/providers/src/index.ts, packages/providers/src/community/omp/event-parser.ts, packages/providers/src/community/omp/provider.ts (first-cause terminate + pending-header deferral), event-parser.test.ts, provider.test.ts, registry.test.ts. OMP_CAPABILITIES.interrupt remains false."
     },
     {
       "id": "US-003",

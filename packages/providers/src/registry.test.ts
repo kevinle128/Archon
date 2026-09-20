@@ -204,6 +204,16 @@ describe('registry', () => {
       expect(capable).toEqual(['claude']);
     });
 
+    test('no registered provider advertises stream-abort yet', () => {
+      registerCommunityProviders();
+      const streamAbort = getProviderInfoList()
+        .filter(info => info.capabilities.interrupt === 'stream-abort')
+        .map(info => info.id)
+        .sort();
+      // US-003 flips OMP after the real-binary gate; US-002 keeps interrupt false.
+      expect(streamAbort).toEqual([]);
+    });
+
     test('throws UnknownProviderError for unknown type', () => {
       expect(() => getProviderCapabilities('unknown')).toThrow(UnknownProviderError);
     });

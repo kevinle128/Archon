@@ -348,10 +348,13 @@ export type MessageChunk =
       /** Concrete model reported by the provider; omitted when its SDK does not expose one. */
       resolvedModel?: ResolvedModel;
       /**
-       * Provider-native terminal reason forwarded verbatim from the SDK result
-       * (Claude `terminal_reason` — e.g. 'aborted_streaming', 'aborted_tools',
-       * 'completed'). The executor uses it to classify how the turn ended;
-       * never inferred from assistant prose or tool text.
+       * Terminal reason for how the provider turn ended.
+       * May be a provider-native SDK value (Claude `terminal_reason` —
+       * e.g. 'aborted_streaming', 'aborted_tools', 'completed') or an
+       * adapter-synthesized marker such as `stream_aborted` when the
+       * provider ends the turn by aborting its stream/child process.
+       * The executor uses it to classify the turn; never inferred from
+       * assistant prose or tool text.
        */
       terminalReason?: string;
       /**
@@ -601,10 +604,13 @@ export interface AgentRequestOptions {
   /**
    * Turn-scoped interrupt signal (operator "Stop"): providers declaring
    * `capabilities.interrupt === 'native'` end only the current provider turn
-   * via the SDK's native interrupt — the workflow node stays running so the
-   * operator can redirect the same session afterward. Distinct from
-   * `abortSignal`, which remains the node-level Cancel that tears the turn
-   * down. Providers without the capability ignore it.
+   * via the SDK's native interrupt; providers declaring `'stream-abort'` end
+   * the turn by aborting their stream/child and synthesizing a deterministic
+   * interrupted result (e.g. `terminalReason: 'stream_aborted'`). In both
+   * cases the workflow node stays running so the operator can redirect the
+   * same session afterward. Distinct from `abortSignal`, which remains the
+   * node-level Cancel that tears the turn down. Providers without the
+   * capability ignore it.
    */
   interruptSignal?: AbortSignal;
   systemPrompt?: SystemPromptInput;
@@ -840,12 +846,21 @@ export interface ProviderCapabilities {
    *  - `'native'`       — the provider can end only the current turn in-process
    *    while keeping the session resumable on the same id (Claude
    *    `Query.interrupt()`; e2e-fake's deterministic equivalent).
-   *  - `'stream-abort'` — the provider can only end the turn by aborting its
-   *    stream (reserved; no provider declares it yet).
+   *  - `'stream-abort'` — the provider ends the turn by aborting its
+   *    stream/child process and synthesizing a deterministic interrupted
+   *    result (`terminalReason: 'stream_aborted'`).
    *  - `false`          — no turn interrupt; operators get queue-guidance only.
    */
   interrupt: 'native' | 'stream-abort' | false;
 }
+
+/**
+ * Adapter-synthesized terminal reason for stream-abort interrupt providers
+ * (e.g. OMP). Distinct from Claude-native `aborted_streaming` /
+ * `aborted_tools`. The dag-executor treats this as an operator Stop so the
+ * node idles for redirect instead of failing.
+ */
+export const STREAM_ABORTED_TERMINAL_REASON = 'stream_aborted' as const;
 
 /**
  * How a credential of a given vendor can be connected / detected.
