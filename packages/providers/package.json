@@ -39,6 +39,7 @@
     "spike:interrupt:claude": "bun src/claude/interrupt-resume-spike.ts",
     "spike:interrupt:codex": "bun src/codex/interrupt-resume-spike.ts",
     "spike:interrupt:grok": "bun src/grok/interrupt-resume-spike.ts",
+    "spike:interrupt:omp": "bun src/community/omp/interrupt-resume-spike.ts",
     "spike:deepseek:acp": "bun src/community/deepseek/acp-handshake-spike.ts",
     "spike:interrupt:deepseek": "bun src/community/deepseek/interrupt-resume-spike.ts",
     "spike:devin:acp": "bun src/community/devin/acp-live-smoke.ts"

@@ -19,7 +19,7 @@ export type {
   CredentialSpec,
   ProviderCredentialCatalog,
 } from './types';
-export { CREDENTIAL_KINDS } from './types';
+export { CREDENTIAL_KINDS, STREAM_ABORTED_TERMINAL_REASON } from './types';
 
 // Provider config types (canonical definitions in ./types, re-exported via config modules)
 // Import from ./types directly or from the config modules — both work.

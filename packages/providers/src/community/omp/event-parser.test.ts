@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
+import { STREAM_ABORTED_TERMINAL_REASON } from '../../types';
 import { OmpEventParser, messageUsageToEntry } from './event-parser';
 
 const OMP_SUCCESS_LINES = [
@@ -490,6 +491,219 @@ describe('OmpEventParser', () => {
     const result = parser.buildResult(undefined);
     expect(result).toMatchObject({ sessionId: 'omp-session-1', stopReason: 'stop' });
     expect(result).not.toHaveProperty('isError');
+  });
+
+  test('exposes session/turn/natural-end queries without changing happy-path chunks', () => {
+    const parser = new OmpEventParser(false);
+    expect(parser.hasSession()).toBe(false);
+    expect(parser.hasTurnActivity()).toBe(false);
+    expect(parser.hasNaturalTurnEnded()).toBe(false);
+
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's1' }));
+    expect(parser.hasSession()).toBe(true);
+    expect(parser.hasTurnActivity()).toBe(false);
+
+    parser.consumeLine(
+      JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } })
+    );
+    expect(parser.hasTurnActivity()).toBe(true);
+
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'Hi' },
+      })
+    );
+    parser.consumeLine(JSON.stringify({ type: 'message_end', message: completeMessage('Hi') }));
+    expect(parser.hasNaturalTurnEnded()).toBe(false);
+    parser.consumeLine(JSON.stringify({ type: 'agent_end', messages: [] }));
+    expect(parser.hasNaturalTurnEnded()).toBe(true);
+  });
+
+  test('drainPendingAssistant is idempotent over flushAssistant', () => {
+    const parser = new OmpEventParser(false);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's1' }));
+    parser.consumeLine(
+      JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } })
+    );
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'Hel' },
+      })
+    );
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'lo' },
+      })
+    );
+    expect(parser.drainPendingAssistant()).toEqual([{ type: 'assistant', content: 'Hello' }]);
+    expect(parser.drainPendingAssistant()).toEqual([]);
+  });
+
+  test('buildInterruptedResult keeps only session/accounting/model and stream_aborted marker', () => {
+    const parser = new OmpEventParser(true);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's-int' }));
+    parser.consumeLine(
+      JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } })
+    );
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: '{"a":1}' },
+      })
+    );
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_end',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: '{"a":1}' }],
+          provider: 'openai-codex',
+          model: 'gpt-5.6-sol',
+          usage: { input: 3, output: 2, totalTokens: 5, cost: { total: 0.1 } },
+          stopReason: 'error',
+          errorMessage: 'should not leak',
+        },
+      })
+    );
+    const result = parser.buildInterruptedResult(true);
+    expect(result).toEqual({
+      type: 'result',
+      sessionId: 's-int',
+      tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
+      cost: 0.1,
+      numTurns: 1,
+      usageBreakdown: [
+        {
+          provider: 'openai-codex',
+          model: 'gpt-5.6-sol',
+          modelSource: 'reported',
+          inputTokens: 3,
+          outputTokens: 2,
+          requests: 1,
+          costUsd: 0.1,
+        },
+      ],
+      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resumed: true,
+      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+    });
+    expect(result).not.toHaveProperty('stopReason');
+    expect(result).not.toHaveProperty('structuredOutput');
+    expect(result).not.toHaveProperty('isError');
+    expect(result).not.toHaveProperty('errorSubtype');
+    expect(result).not.toHaveProperty('errors');
+  });
+
+  test('buildInterruptedResult never fabricates a session id', () => {
+    const parser = new OmpEventParser(false);
+    const result = parser.buildInterruptedResult(undefined);
+    expect(result).toEqual({
+      type: 'result',
+      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+    });
+    expect(result).not.toHaveProperty('sessionId');
+    expect(result).not.toHaveProperty('resumed');
+  });
+
+  test('interrupt mode maps Stop-caused errored tool end to interrupted without failure warning', () => {
+    const parser = new OmpEventParser(false);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's-tool' }));
+    const startChunks = parser.consumeLine(
+      JSON.stringify({
+        type: 'tool_execution_start',
+        toolCallId: 't1',
+        toolName: 'bash',
+        args: { command: 'sleep 10' },
+      })
+    );
+    expect(startChunks).toEqual([
+      { type: 'tool', toolName: 'bash', toolInput: { command: 'sleep 10' }, toolCallId: 't1' },
+    ]);
+    parser.beginOperatorInterrupt();
+    const endChunks = parser.consumeLine(
+      JSON.stringify({
+        type: 'tool_execution_end',
+        toolCallId: 't1',
+        toolName: 'bash',
+        isError: true,
+        result: 'signal',
+      })
+    );
+    expect(endChunks).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'bash',
+        toolOutput: 'signal',
+        toolCallId: 't1',
+        toolOutcome: 'interrupted',
+        outputState: 'full',
+      },
+    ]);
+    expect(endChunks.some(c => c.type === 'system')).toBe(false);
+  });
+
+  test('interrupt mode keeps late successful tool end as success', () => {
+    const parser = new OmpEventParser(false);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's-tool' }));
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'tool_execution_start',
+        toolCallId: 't1',
+        toolName: 'read',
+        args: { path: 'a' },
+      })
+    );
+    parser.beginOperatorInterrupt();
+    expect(
+      parser.consumeLine(
+        JSON.stringify({
+          type: 'tool_execution_end',
+          toolCallId: 't1',
+          toolName: 'read',
+          isError: false,
+          result: 'ok',
+        })
+      )
+    ).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'read',
+        toolOutput: 'ok',
+        toolCallId: 't1',
+        toolOutcome: 'success',
+        outputState: 'full',
+      },
+    ]);
+  });
+
+  test('without beginOperatorInterrupt errored tool end keeps failure warning', () => {
+    const parser = new OmpEventParser(false);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's-tool' }));
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'tool_execution_start',
+        toolCallId: 't1',
+        toolName: 'bash',
+        args: { command: 'x' },
+      })
+    );
+    const chunks = parser.consumeLine(
+      JSON.stringify({
+        type: 'tool_execution_end',
+        toolCallId: 't1',
+        toolName: 'bash',
+        isError: true,
+        result: 'boom',
+      })
+    );
+    expect(chunks[0]).toMatchObject({
+      type: 'system',
+      content: expect.stringContaining('failed'),
+    });
+    expect(chunks[1]).toMatchObject({ toolOutcome: 'error' });
   });
 });
 
