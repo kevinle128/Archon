@@ -513,47 +513,54 @@ function isAbortLikeStreamError(err: Error): boolean {
 }
 
 /**
- * Idle-await first-wins race (#183): the executor parks on the handle's idle
- * waiter while a side-channel polls run status on the streaming cadence.
- * First of send_now / discard / terminal status wins; the loser is torn down
- * synchronously — no trailing timer or unresolved waiter survives.
+ * Race the idle-after-interrupt waiter against a run-status poll (Story 2.12).
+ * The handle owns the single settlement surface: Cancel/terminal status calls
+ * `terminateIdleAwait()` so expiry, send_now, and Cancel share first-wins on
+ * one waiter. The poll stops when the waiter settles — no trailing timer or
+ * unresolved waiter survives.
  */
 async function raceIdleWake(
   deps: WorkflowDeps,
   workflowRunId: string,
+  handle: NodeSteeringHandle,
   waiter: Promise<SteeringIdleWake>
 ): Promise<SteeringIdleWake> {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const poll = new Promise<SteeringIdleWake>(resolve => {
-    const tick = (): void => {
-      if (stopped) return;
-      deps.store
-        .getWorkflowRunStatus(workflowRunId)
-        .then(status => {
-          if (stopped) return;
-          if (!shouldContinueStreamingForStatus(status)) {
-            resolve({ kind: 'terminated' });
-            return;
-          }
+  const stopPoll = (): void => {
+    stopped = true;
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const tick = (): void => {
+    if (stopped) return;
+    deps.store
+      .getWorkflowRunStatus(workflowRunId)
+      .then(status => {
+        if (stopped) return;
+        if (!shouldContinueStreamingForStatus(status)) {
+          // Settle through the handle so the idle timer clears with the waiter.
+          handle.terminateIdleAwait();
+          return;
+        }
+        timer = setTimeout(tick, CANCEL_CHECK_INTERVAL_MS);
+      })
+      .catch(() => {
+        if (!stopped) {
           timer = setTimeout(tick, CANCEL_CHECK_INTERVAL_MS);
-        })
-        .catch(() => {
-          if (!stopped) {
-            timer = setTimeout(tick, CANCEL_CHECK_INTERVAL_MS);
-          }
-        });
-    };
-    // First check is immediate — a run that reached a terminal state before
-    // (or exactly at) idle entry must not wait a full cancel interval.
-    tick();
-  });
-  // Poll never rejects by construction — observed anyway for safety.
-  void poll.catch(() => undefined);
-  const wake = await Promise.race([waiter, poll]);
-  stopped = true;
-  if (timer !== undefined) clearTimeout(timer);
-  return wake;
+        }
+      });
+  };
+  // First check is immediate — a run that reached a terminal state before
+  // (or exactly at) idle entry must not wait a full cancel interval.
+  tick();
+  try {
+    return await waiter;
+  } finally {
+    stopPoll();
+  }
 }
 
 /**
@@ -722,7 +729,17 @@ type NodeExecutionResult = NodeOutput & {
   tokens?: TokenUsage;
   /** Loop nodes only: number of iterations executed. */
   loopIterations?: number;
+  /**
+   * Internal structured failure reason (Story 2.12). Never on the public
+   * NodeOutput schema — retry + engine finalizers only.
+   */
+  failureReason?: 'idle_after_interrupt_timeout';
 };
+
+/** Exact engine error for abandoned idle-after-interrupt (Story 2.12). */
+const IDLE_AFTER_INTERRUPT_ERROR = 'interrupted by operator, no redirect received';
+/** Structured failure_reason persisted on node_failed for idle expiry. */
+const IDLE_AFTER_INTERRUPT_FAILURE_REASON = 'idle_after_interrupt_timeout' as const;
 
 /** node_started request fields — same shape as ENV resolved metadata. */
 type NodeObservabilityMetadata = NodeExecutionMetadata;
@@ -996,13 +1013,17 @@ function getExplicitNodeRetryConfig(
  * so callers can label the notification.
  */
 function shouldRetryNodeFailure(
-  output: NodeOutput,
+  output: NodeOutput & { failureReason?: 'idle_after_interrupt_timeout' },
   onError: 'transient' | 'all'
 ): { shouldRetry: boolean; isTransient: boolean } {
   // Only failed outputs carry `error` (discriminated union); a non-failed output
   // is never retried. Callers already guard on `state === 'failed'`, but narrow
   // here too so `output.error` type-checks and the helper is safe standalone.
   if (output.state !== 'failed') {
+    return { shouldRetry: false, isTransient: false };
+  }
+  // Abandoned redirect expiry is never retried — even under on_error: all.
+  if (output.failureReason === IDLE_AFTER_INTERRUPT_FAILURE_REASON) {
     return { shouldRetry: false, isTransient: false };
   }
   const errorType = output.error ? classifyError(new Error(output.error)) : undefined;
@@ -3311,6 +3332,57 @@ async function executeNodeInternal(
     return { state: 'failed', output: nodeOutputText, error: 'Cancelled by user' };
   };
 
+  // Idle-after-interrupt expiry finalizer (Story 2.12) — one structured
+  // non-retryable failure. Close is already complete when expiry wakes; the
+  // idempotent close gate keeps the finalizer consistent with Cancel.
+  const finishIdleExpired = async (): Promise<NodeExecutionResult> => {
+    steeringHandle?.close();
+    const duration = Date.now() - nodeStartTime;
+    getLog().info(
+      { nodeId: node.id, durationMs: duration },
+      'dag_node_idle_after_interrupt_timeout'
+    );
+
+    deps.store
+      .createWorkflowEvent({
+        workflow_run_id: workflowRun.id,
+        event_type: 'node_failed',
+        step_name: stepName,
+        data: withLifecycleScopeData(workflowRun, undefined, executionScope, {
+          error: IDLE_AFTER_INTERRUPT_ERROR,
+          failure_reason: IDLE_AFTER_INTERRUPT_FAILURE_REASON,
+          duration_ms: duration,
+          ...iterationData,
+        }),
+      })
+      .catch((err: Error) => {
+        getLog().error(
+          { err, workflowRunId: workflowRun.id, eventType: 'node_failed' },
+          'workflow_event_persist_failed'
+        );
+      });
+
+    emitter.emit({
+      type: 'node_failed',
+      runId: workflowRun.id,
+      nodeId: node.id,
+      nodeName: node.command ?? node.id,
+      error: IDLE_AFTER_INTERRUPT_ERROR,
+    });
+
+    await recordFailedStatus(IDLE_AFTER_INTERRUPT_ERROR);
+
+    lastNodeCancelCheck.delete(`${workflowRun.id}:${node.id}`);
+    lastNodeActivityUpdate.delete(`${workflowRun.id}:${node.id}`);
+
+    return {
+      state: 'failed',
+      output: nodeOutputText,
+      error: IDLE_AFTER_INTERRUPT_ERROR,
+      failureReason: IDLE_AFTER_INTERRUPT_FAILURE_REASON,
+    };
+  };
+
   try {
     // Outer provider-turn loop (#181). Turn 1 runs the node's own prompt and
     // resume id; a settled turn whose handle holds queued operator guidance
@@ -3569,13 +3641,18 @@ async function executeNodeInternal(
         // before rendering the idle dock).
         await recordNodeStatus('interrupted');
         const idleWaiter = interruptibleHandle.enterIdle(lastPassToken);
-        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
+        const wake = await raceIdleWake(deps, workflowRun.id, interruptibleHandle, idleWaiter);
         if (wake.kind === 'send_now') {
           // Same-session redirect: carry drained objects; join at the guidance head.
           turnGuidanceMessages = wake.messages;
           turnResumeId = interruptedSessionId;
           turnIsGuidance = true;
           continue turns;
+        }
+        if (wake.kind === 'expired') {
+          // Abandoned redirect — explicit finalizer, never the broad outer catch.
+          nodeAbortController.abort();
+          return await finishIdleExpired();
         }
         // Discard / terminal-status wake — land on the existing Cancel path so
         // the run ends exactly as a mid-stream cancel would.
@@ -7193,7 +7270,7 @@ async function executeLoopNodeInner(
         // outcome precedes the interrupt request's resolution.
         await recordLoopStatus(iterationExecutionScope, 'interrupted', String(i));
         const idleWaiter = interruptibleHandle.enterIdle(turnToken);
-        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
+        const wake = await raceIdleWake(deps, workflowRun.id, interruptibleHandle, idleWaiter);
         if (wake.kind === 'send_now') {
           // Same-session redirect: carry drained objects; join at the guidance head.
           turnGuidanceMessages = wake.messages;
@@ -7203,6 +7280,7 @@ async function executeLoopNodeInner(
         }
         // Discard / terminal-status wake — land on the existing cancel path so
         // the run ends exactly as a mid-stream stop would.
+        // Idle-expiry (`expired`) loop parity is Story 2.12 US-002.
         const effectiveStatus =
           (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ?? 'cancelled';
         await safeSendMessage(

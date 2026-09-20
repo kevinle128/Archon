@@ -1,9 +1,11 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, jest, test } from 'bun:test';
 
 import {
   createSteeringRegistry,
   getSteeringRegistry,
+  type NodeSteeringHandle,
   type QueuedOperatorMessage,
+  type SteeringIdleWake,
 } from './steering-registry';
 
 // ---------------------------------------------------------------------------
@@ -986,5 +988,256 @@ describe('accept + enterIdle', () => {
     const waiter = handle.enterIdle(token);
     registry.clearForTests();
     await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Idle-after-interrupt inactivity timer (Story 2.12 / #192)
+// ---------------------------------------------------------------------------
+
+const IDLE_TIMEOUT_MS = 1_800_000;
+
+describe('idle-after-interrupt inactivity timer', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function enterIdleHandle(): {
+    registry: ReturnType<typeof createSteeringRegistry>;
+    handle: NodeSteeringHandle;
+    waiter: Promise<SteeringIdleWake>;
+  } {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.interrupt();
+    const waiter = handle.enterIdle(token);
+    return { registry, handle, waiter };
+  }
+
+  test('enterIdle arms one timer and stays live idle before the deadline', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    expect(handle.steeringSubState()).toBe('idle-after-interrupt');
+    expect(handle.isClosed()).toBe(false);
+
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
+    const settled = await Promise.race([
+      waiter.then(() => 'woke' as const),
+      Promise.resolve('still-idle' as const),
+    ]);
+    expect(settled).toBe('still-idle');
+    expect(handle.steeringSubState()).toBe('idle-after-interrupt');
+    expect(handle.isClosed()).toBe(false);
+
+    handle.close();
+    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+  });
+
+  test('advancing to 1_800_000 ms resolves expired once and closes the handle', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    await expect(waiter).resolves.toEqual({ kind: 'expired' });
+    expect(handle.isClosed()).toBe(true);
+    expect(handle.steeringSubState()).toBeUndefined();
+
+    // Late send_now on a new id is refused closed — cannot drain.
+    expect(handle.accept(msg('m-late', 'too late'), 'send_now')).toEqual({
+      ok: false,
+      reason: 'closed',
+    });
+    expect(handle.pendingCount()).toBe(0);
+  });
+
+  test('recordComposerActivity re-arms a full interval and never resolves the waiter', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
+    handle.recordComposerActivity();
+    // Original deadline would have fired; re-arm keeps idle.
+    jest.advanceTimersByTime(1);
+    const stillIdle = await Promise.race([
+      waiter.then(() => 'woke' as const),
+      Promise.resolve('still-idle' as const),
+    ]);
+    expect(stillIdle).toBe('still-idle');
+    expect(handle.steeringSubState()).toBe('idle-after-interrupt');
+
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
+    const stillIdle2 = await Promise.race([
+      waiter.then(() => 'woke' as const),
+      Promise.resolve('still-idle' as const),
+    ]);
+    expect(stillIdle2).toBe('still-idle');
+
+    jest.advanceTimersByTime(1);
+    await expect(waiter).resolves.toEqual({ kind: 'expired' });
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  test('recordComposerActivity is a no-op on generating, parked, or closed handles', () => {
+    jest.useFakeTimers();
+    const registry = createSteeringRegistry();
+
+    const generating = registry.register('run-1', 'gen', { interruptible: true });
+    generating.beginTurn(new AbortController());
+    expect(generating.steeringSubState()).toBe('generating');
+    generating.recordComposerActivity();
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    expect(generating.isClosed()).toBe(false);
+    expect(generating.steeringSubState()).toBe('generating');
+
+    const parked = registry.register('run-1', 'park', { interruptible: true });
+    const parkToken = parked.beginTurn(new AbortController());
+    parked.interrupt();
+    void parked.enterIdle(parkToken);
+    parked.park();
+    expect(parked.snapshot().phase).toBe('parked');
+    parked.recordComposerActivity();
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    expect(parked.snapshot().phase).toBe('parked');
+
+    const closed = registry.register('run-1', 'closed', { interruptible: true });
+    closed.close();
+    closed.recordComposerActivity();
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    expect(closed.isClosed()).toBe(true);
+  });
+
+  test('send_now before expiry clears the timer and produces no late expiry', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    handle.accept(msg('m-1', 'go'), 'send_now');
+    await expect(waiter).resolves.toEqual({
+      kind: 'send_now',
+      messages: [expect.objectContaining({ messageId: 'm-1' })],
+    });
+    expect(handle.steeringSubState()).toBe('generating');
+    expect(handle.isClosed()).toBe(false);
+
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
+    expect(handle.isClosed()).toBe(false);
+    expect(handle.steeringSubState()).toBe('generating');
+  });
+
+  test('terminateIdleAwait clears the timer and resolves terminated', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    handle.terminateIdleAwait();
+    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+    expect(handle.isClosed()).toBe(true);
+
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
+    // Still closed; no second wake possible.
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  test('expiry then send_now is first-wins — post-expiry id receives closed', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    await expect(waiter).resolves.toEqual({ kind: 'expired' });
+    expect(handle.accept(msg('m-after', 'nope'), 'send_now')).toEqual({
+      ok: false,
+      reason: 'closed',
+    });
+  });
+
+  test('send_now then expiry is first-wins — timer cannot fire after drain', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    handle.accept(msg('m-win', 'go'), 'send_now');
+    const wake = await waiter;
+    expect(wake.kind).toBe('send_now');
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
+    expect(handle.isClosed()).toBe(false);
+  });
+
+  test('terminateIdleAwait then expiry is first-wins', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    handle.terminateIdleAwait();
+    await expect(waiter).resolves.toEqual({ kind: 'terminated' });
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  test('expiry then terminateIdleAwait is first-wins no-op', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    await expect(waiter).resolves.toEqual({ kind: 'expired' });
+    handle.terminateIdleAwait(); // no-op on closed
+    expect(handle.isClosed()).toBe(true);
+  });
+
+  test('close/park/discard/unregister/clearForTests leave no live idle timer', async () => {
+    jest.useFakeTimers();
+    const registry = createSteeringRegistry();
+
+    const closedHandle = registry.register('run-c', 'n', { interruptible: true });
+    const tClose = closedHandle.beginTurn(new AbortController());
+    closedHandle.interrupt();
+    const wClose = closedHandle.enterIdle(tClose);
+    closedHandle.close();
+    await expect(wClose).resolves.toEqual({ kind: 'terminated' });
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    expect(closedHandle.isClosed()).toBe(true);
+
+    const parkedHandle = registry.register('run-p', 'n', { interruptible: true });
+    const tPark = parkedHandle.beginTurn(new AbortController());
+    parkedHandle.interrupt();
+    const wPark = parkedHandle.enterIdle(tPark);
+    parkedHandle.park();
+    await expect(wPark).resolves.toEqual({ kind: 'terminated' });
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+    expect(parkedHandle.snapshot().phase).toBe('parked');
+
+    const discarded = registry.register('run-d', 'n', { interruptible: true });
+    const tDisc = discarded.beginTurn(new AbortController());
+    discarded.interrupt();
+    const wDisc = discarded.enterIdle(tDisc);
+    discarded.discard();
+    await expect(wDisc).resolves.toEqual({ kind: 'terminated' });
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+
+    const unreg = registry.register('run-u', 'n', { interruptible: true });
+    const tUnreg = unreg.beginTurn(new AbortController());
+    unreg.interrupt();
+    const wUnreg = unreg.enterIdle(tUnreg);
+    registry.unregister('run-u', 'n');
+    await expect(wUnreg).resolves.toEqual({ kind: 'terminated' });
+    expect(unreg.isClosed()).toBe(true);
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+
+    const cleared = registry.register('run-x', 'n', { interruptible: true });
+    const tClear = cleared.beginTurn(new AbortController());
+    cleared.interrupt();
+    const wClear = cleared.enterIdle(tClear);
+    registry.clearForTests();
+    await expect(wClear).resolves.toEqual({ kind: 'terminated' });
+    jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+  });
+
+  test('duplicate accepted ids keep idempotency after close; new id asserts closed refusal', async () => {
+    jest.useFakeTimers();
+    const { handle, waiter } = enterIdleHandle();
+    handle.accept(msg('m-1', 'go'), 'send_now');
+    await waiter;
+    handle.close();
+    // Replay original id still returns the original receipt.
+    expect(handle.accept(msg('m-1', 'go'), 'send_now')).toEqual({
+      ok: true,
+      duplicate: true,
+      receipt: { messageId: 'm-1', state: 'awaiting_send_now' },
+    });
+    // Fresh id after close is refused.
+    expect(handle.accept(msg('m-new', 'nope'), 'send_now')).toEqual({
+      ok: false,
+      reason: 'closed',
+    });
   });
 });

@@ -89,14 +89,17 @@ export type InterruptSettlement =
   | 'not_steerable_here';
 
 /**
- * What an idle executor wakes to (#183). `send_now` carries the full drained
- * batch in accepted order; `terminated` covers both discard and the
- * cancel-status poll — the executor re-reads run status and lands on the
- * existing Cancel path.
+ * What an idle executor wakes to (#183 / #192). `send_now` carries the full
+ * drained batch; `terminated` covers Cancel/discard/close; `expired` is the
+ * fixed 30-minute idle-after-interrupt inactivity bound (Story 2.12).
  */
 export type SteeringIdleWake =
   | { readonly kind: 'send_now'; readonly messages: readonly QueuedOperatorMessage[] }
-  | { readonly kind: 'terminated' };
+  | { readonly kind: 'terminated' }
+  | { readonly kind: 'expired' };
+
+/** Fixed idle-after-interrupt inactivity bound — not configurable (Story 2.12). */
+const IDLE_AFTER_INTERRUPT_TIMEOUT_MS = 1_800_000;
 
 export interface SteeringHandleSnapshot {
   readonly phase: SteeringHandlePhase;
@@ -134,6 +137,7 @@ export class NodeSteeringHandle {
   private turnSeq = 0;
   private currentTurn: ActiveTurn | undefined;
   private idleWaiter: { resolve: (wake: SteeringIdleWake) => void } | undefined;
+  private idleTimeout: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options?: { interruptible?: boolean }) {
     this.interruptible = options?.interruptible ?? false;
@@ -259,8 +263,9 @@ export class NodeSteeringHandle {
   /**
    * Move a classified-interrupted turn into `idle-after-interrupt`: resolves
    * that token's pending interrupt as `idle-after-interrupt`, releases the
-   * turn slot, and returns ONE waiter resolved by the first of `send_now`
-   * (with the drained batch), discard, or terminal cleanup. Fails fast on a
+   * turn slot, arms the fixed 30-minute inactivity timer, and returns ONE
+   * waiter resolved by the first of `send_now` (with the drained batch),
+   * expiry, discard, Cancel, or terminal cleanup. Fails fast on a
    * stale/already-settled token — idle entry is a classification outcome,
    * not a fallback.
    */
@@ -278,7 +283,41 @@ export class NodeSteeringHandle {
     this.subState = 'idle-after-interrupt';
     return new Promise<SteeringIdleWake>(resolve => {
       this.idleWaiter = { resolve };
+      this.armIdleTimer();
     });
+  }
+
+  /**
+   * Composer activity keepalive (Story 2.12): re-arm the full fixed idle
+   * interval on a live idle handle with an active waiter. No-op on generating,
+   * parked, closed, or non-idle handles — never creates a timer out of idle.
+   */
+  recordComposerActivity(): void {
+    if (
+      this.phase !== 'live' ||
+      this.subState !== 'idle-after-interrupt' ||
+      this.idleWaiter === undefined
+    ) {
+      return;
+    }
+    this.armIdleTimer();
+  }
+
+  /**
+   * Idle-only Cancel/terminal settlement (Story 2.12): close the handle and
+   * resolve the idle waiter as `terminated` in one synchronous mutation so the
+   * run-status poll shares the same first-wins waiter as expiry and send_now.
+   * No-op when not live-idle with a waiter.
+   */
+  terminateIdleAwait(): void {
+    if (
+      this.phase !== 'live' ||
+      this.subState !== 'idle-after-interrupt' ||
+      this.idleWaiter === undefined
+    ) {
+      return;
+    }
+    this.seal('node_finished');
   }
 
   /**
@@ -311,9 +350,11 @@ export class NodeSteeringHandle {
       message.message.trim() !== '' &&
       this.idleWaiter !== undefined
     ) {
-      // First-wins release: drain the whole pending batch in accepted order,
-      // flip the handle back to generating, and resolve the idle waiter in
-      // the same synchronous tick — no second drain is possible after this.
+      // First-wins release: clear the inactivity timer, drain the whole pending
+      // batch in accepted order, flip the handle back to generating, and resolve
+      // the idle waiter in the same synchronous tick — no second drain is
+      // possible after this.
+      this.clearIdleTimer();
       const batch = this.pending;
       this.pending = [];
       this.subState = 'generating';
@@ -426,8 +467,10 @@ export class NodeSteeringHandle {
    * Shared terminal settlement — every phase transition out of `live`
    * resolves the active turn's pending interrupt AND the idle waiter exactly
    * once, so no caller can strand a route request or an executor waiter.
+   * Always clears the idle inactivity timer first.
    */
   private seal(outcome: InterruptSettlement, nextPhase: SteeringHandlePhase = 'closed'): void {
+    this.clearIdleTimer();
     const turn = this.currentTurn;
     if (turn !== undefined && !turn.settled) {
       turn.settled = true;
@@ -439,6 +482,45 @@ export class NodeSteeringHandle {
     waiter?.resolve({ kind: 'terminated' });
     this.phase = nextPhase;
     this.subState = undefined;
+  }
+
+  /** Arm (or re-arm) the fixed idle-after-interrupt inactivity timer. */
+  private armIdleTimer(): void {
+    this.clearIdleTimer();
+    this.idleTimeout = setTimeout(() => {
+      this.idleTimeout = undefined;
+      this.expireIdle();
+    }, IDLE_AFTER_INTERRUPT_TIMEOUT_MS);
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimeout !== undefined) {
+      clearTimeout(this.idleTimeout);
+      this.idleTimeout = undefined;
+    }
+  }
+
+  /**
+   * Timer-fired settlement: close the handle and resolve the waiter as
+   * `expired` in one synchronous mutation. First-wins against send_now /
+   * terminateIdleAwait / seal — a cleared waiter is a no-op.
+   */
+  private expireIdle(): void {
+    if (this.idleWaiter === undefined || this.subState !== 'idle-after-interrupt') {
+      return;
+    }
+    this.clearIdleTimer();
+    const turn = this.currentTurn;
+    if (turn !== undefined && !turn.settled) {
+      turn.settled = true;
+      turn.pendingInterrupt?.resolve('node_finished');
+    }
+    this.currentTurn = undefined;
+    const waiter = this.idleWaiter;
+    this.idleWaiter = undefined;
+    this.phase = 'closed';
+    this.subState = undefined;
+    waiter.resolve({ kind: 'expired' });
   }
 
   private ensurePendingInterrupt(turn: ActiveTurn): PendingInterrupt {
@@ -505,6 +587,10 @@ export class SteeringRegistry {
   unregister(runId: string, nodeId: string): void {
     const nodes = this.runs.get(runId);
     if (nodes === undefined) return;
+    // Close before delete so an active idle timer cannot survive registry
+    // removal through another held handle reference (Story 2.12).
+    const handle = nodes.get(nodeId);
+    handle?.close();
     nodes.delete(nodeId);
     if (nodes.size === 0) {
       this.runs.delete(runId);
