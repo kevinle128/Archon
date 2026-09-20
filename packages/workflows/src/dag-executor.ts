@@ -7291,6 +7291,7 @@ async function executeLoopNodeInner(
           return await failLoopIteration(
             IDLE_AFTER_INTERRUPT_ERROR,
             {
+              output: lastIterationOutput,
               costUsd: loopTotalCostUsd,
               ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
               loopIterations: i,

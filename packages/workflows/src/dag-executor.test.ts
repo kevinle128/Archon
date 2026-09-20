@@ -28386,7 +28386,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
       });
       const store = createMockStore();
-      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+      // persist_session: true arms the normally-eligible upsert path so the
+      // not-called assertion is non-vacuous (lookup runs; failed expiry must not upsert).
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work', persist_session: true }]);
 
       await awaitIdleFast(RUN_ID, 'review', gate.armed);
       expect(storedEventTypes(store)).not.toContain('node_failed');
@@ -28401,6 +28403,8 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(storedEventTypes(store)).not.toContain('node_completed');
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
       expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+      expect(store.getWorkflowNodeSession).toHaveBeenCalled();
+      expect(store.upsertWorkflowNodeSession).not.toHaveBeenCalled();
       // Not the stream idle-timeout completion path (nodeIdleTimedOut).
       expect(platformMessages(platform).some(m => /completed via idle timeout/i.test(m))).toBe(
         false
@@ -28664,19 +28668,52 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
       it('Claude loop fixture expires after 1_800_000 ms with exact error and failure_reason', async () => {
         const gate = createFakeArmGate();
+        let calls = 0;
         mockSendQueryDag.mockImplementation(async function* () {
-          void liveHandle(RUN_ID, 'my-loop').interrupt();
-          yield { type: 'assistant', content: 'iteration work' };
-          gate.arm();
-          yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+          calls++;
+          if (calls === 1) {
+            // Iteration 1 settles normally so lastIterationOutput is non-empty when
+            // iteration 2 expires — proves the failed result keeps prior loop output.
+            yield { type: 'assistant', content: 'prior loop work' };
+            yield { type: 'result', sessionId: 'loop-sess-1' };
+            return;
+          }
+          if (calls === 2) {
+            void liveHandle(RUN_ID, 'my-loop').interrupt();
+            yield { type: 'assistant', content: 'partial' };
+            gate.arm();
+            yield { type: 'result', sessionId: 'loop-sess-2', terminalReason: 'aborted_streaming' };
+            return;
+          }
+          // all_done reader after failed loop
+          yield { type: 'assistant', content: 'ok' };
+          yield { type: 'result', sessionId: 'read-sess' };
         });
         const store = createMockStore();
-        const run = invokeDag(store, [LOOP_NODE]);
+        // Downstream all_done prompt reads $my-loop.output from the failed result so
+        // prior-iteration retention is observable without shell quoting. Loop nodes
+        // are not isPersistableNode — upsert is gated off structurally; the not-called
+        // assertion still guards against a future path that would write a session on
+        // failed expiry.
+        const run = invokeDag(store, [
+          {
+            id: 'my-loop',
+            loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+          },
+          {
+            id: 'read-out',
+            depends_on: ['my-loop'],
+            trigger_rule: 'all_done',
+            prompt: 'captured=$my-loop.output',
+          },
+        ]);
 
         await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
         expect(storedEventTypes(store)).not.toContain('node_failed');
 
         jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+        // Downstream prompt needs real timers after expiry settles.
+        jest.useRealTimers();
         const platform = await run;
 
         expect(countNodeFailed(store, 'my-loop')).toBe(1);
@@ -28688,9 +28725,12 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         expect(countEvent(store, 'loop_iteration_failed')).toBe(1);
         expect(loopIterationFailedData(store).error).toBe(EXACT_ERROR);
         expect(countEvent(store, 'node_failed', 'my-loop')).toBe(1);
-        expect(storedEventTypes(store)).not.toContain('node_completed');
-        expect(storedEventTypes(store)).not.toContain('loop_iteration_completed');
-        expect(mockSendQueryDag.mock.calls.length).toBe(1);
+        // Iteration 1 completed; the expired attempt must not complete the loop node.
+        expect(countEvent(store, 'loop_iteration_completed')).toBe(1);
+        expect(countEvent(store, 'node_completed', 'my-loop')).toBe(0);
+        // Loop: 2 provider calls + 1 for the all_done reader.
+        expect(mockSendQueryDag.mock.calls.length).toBe(3);
+        expect(sendQueryArg<string>(2, 0)).toBe('captured=prior loop work');
         expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
         expect(store.upsertWorkflowNodeSession).not.toHaveBeenCalled();
         expect(platformMessages(platform).some(m => /completed via idle timeout/i.test(m))).toBe(
