@@ -1,103 +1,89 @@
 ---
 phase: 3
-title: 'Docs, capability matrix, and closeout'
+title: 'Contract and docs synchronization, matrix, and closeout'
 status: pending
 priority: P2
-effort: '0.25d'
+effort: '0.5d'
 dependencies: [1, 2]
 ---
 
-# Phase 3: Docs, capability matrix, and closeout
+# Phase 3: contract and docs synchronization, matrix, and closeout
 
 ## Goal
 
-Make the user-facing and generated documentation state what OMP's `Stop` does, prove the generated matrix is current, run the full pre-PR gate, and move the sprint-status entry to `done` with the evidence recorded.
+Make the canonical engine/test contract, public OMP documentation, generated capability matrix, and sprint record match the verified implementation, then run the proportional repository gates.
 
-This phase is outlined (deep mode). **Scout pass before execution:** re-read the OMP section of `ai-assistants.md` and the matrix legend; confirm `bun run generate:capability-matrix` still owns `provider-capabilities.md` end to end.
+## Files
 
-## Context links
+| File | Change |
+| --- | --- |
+| `_bmad-output/specs/spec-agent-node-room/engine-integration.md` | replace OMP's obsolete throw-only description with normalized marked-result behavior |
+| `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` | update OMP conformance fixture while retaining defensive thrown-abort coverage |
+| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` | concise OMP Stop/resume/failure-boundary note |
+| `packages/docs-web/src/content/docs/reference/provider-capabilities.md` | regenerate; do not hand-edit |
+| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | `backlog` to `done` only at final closeout |
 
-- `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` §"OMP CLI (Community Provider)"
-- `packages/docs-web/src/content/docs/reference/provider-capabilities.md` (generated; legend describes `stream-abort`)
-- `scripts/generate-capability-matrix.ts` (renders `**stream-abort**` already)
-- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` key `2-5-interrupt-and-redirect-a-running-omp-agent`
-- Spike evidence from Phase 1: `reports/omp-interrupt-resume-spike.md`
+Do not edit the historical files below `_bmad-output/specs/spec-agent-node-room/sources/`, the high-level provider matrix (its `stream-abort` statement is already correct), or UI files.
 
-## File inventory
+## Contract synchronization
 
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/docs-web/src/content/docs/reference/provider-capabilities.md` | regenerate | 1 cell | `check:capability-matrix` |
-| `packages/docs-web/src/content/docs/getting-started/ai-assistants.md` | modify | ~10 lines | none |
-| `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` | modify | 1 line | none |
+Update the two root companions after code/test behavior is known:
 
-## Dependency map
+- OMP owns a per-turn interrupt signal, waits for the real session header when necessary, uses the proven graceful platform mechanism (SIGTERM on POSIX), and returns one deterministic `stream_aborted` result carrying the session/accounting evidence.
+- The executor case-2 path classifies that result only with the matching operator flag. The case-3 abort-like throw remains supported when a session id was already observed; it is defensive compatibility, not the primary first-turn provider shape.
+- Cancel still dominates; natural-end races remain natural; force-kill/first-cause failures are unmarked errors and fail the node.
+- Direct and AI-loop conformance are required. Do not claim a separate loop-group provider path.
 
-- Depends on Phase 1 (measured numbers) and Phase 2 (conformance evidence).
+Re-read each document before editing and keep anchors/rationale that remain true. Do not rewrite unrelated stories.
 
-## Implementation contract
+## Public OMP documentation
 
-### `ai-assistants.md` OMP section
+In the existing OMP section, add the smallest user-facing note that explains:
 
-Add a short "Interrupt and redirect (operator Stop)" note after the `--yolo` paragraph:
+- `Stop` ends only the current OMP turn with graceful process interruption; it does not cancel the workflow node or undo files already written;
+- after idle, `Send now` sends queued guidance as the next turn on the same OMP session; OMP RPC soft-inject is not used;
+- identify the OMP version/platform pairs characterized for this release and recommend re-running compatibility checks after changing either; unexpected protocol/termination behavior fails the node instead of pretending redirect is safe;
+- usage already reported by OMP and discoverable hidden-session usage is retained best-effort; an unfinished provider event may not contain final primary-turn usage.
 
-- `Stop` in the node room sends SIGTERM to the OMP child (SIGKILL after the grace measured in Phase 1); OMP's signal teardown persists the session, and `Send now` continues it with `--resume`.
-- The interrupted turn's partial work stays on disk and in the session; Stop does not undo it (matches the dock disclosure).
-- If Stop lands before OMP prints its session header (state the measured window), the node fails explicitly rather than continuing on a fresh session.
-- Mid-turn steering (`steer` in RPC mode) is not used in this version; guidance is delivered as the next turn.
-- Usage from a turn stopped before OMP reported its first `message_end` is not recorded (state what the spike measured); advisor/subagent usage already on disk is still enriched fail-soft.
-- Stop and Send now follow the node room's actor grant (any authenticated user; identity-less runs allowed) — the same posture as every other provider.
+Do not duplicate generic route authorization, dock layout, or the capability table in the provider setup guide. Do not hardcode timing samples as product constants; link to the spike report only from maintainer/PR evidence, not the public guide.
 
-Keep it to the smallest owning surface; do not duplicate the matrix.
+## Generated matrix
 
-### Capability matrix
-
-`bun run generate:capability-matrix` then `bun run check:capability-matrix`. The OMP cell in the "Turn interrupt (operator Stop)" row must read `**stream-abort**`.
-
-### Closeout
-
-- Run `bun run validate` from the repo root (never root `bun test`).
-- Update `sprint-status.yaml`: `2-5-interrupt-and-redirect-a-running-omp-agent: done`.
-- In the PR body (template at `.github/pull_request_template.md`), cite the spike report and the executor matrix rows as the "Focused tests / characterization evidence" the issue requires; `Closes #185`.
-
-## Tests before
-
-- `bun run check:capability-matrix` fails before regeneration (proves the check sees the flip).
-
-## Refactor
-
-- None.
-
-## Tests after
-
-- `bun run check:capability-matrix` passes; `bun run validate` passes.
-
-## Todo
-
-- [ ] Scout pass on the two docs files.
-- [ ] Regenerate + check the matrix.
-- [ ] Write the OMP Stop note with the Phase 1 numbers.
-- [ ] `bun run validate`.
-- [ ] Flip `sprint-status.yaml` to `done`; open the PR with the template.
-
-## Regression gate
+Run the generator, never edit the generated file by hand. The OMP cell in `Turn interrupt (operator Stop)` must become `**stream-abort**`, while Claude remains `**native**`.
 
 ```bash
 bun run generate:capability-matrix
 bun run check:capability-matrix
-bun run validate
 ```
 
-## Success criteria
+## UI/design scope and inherited acceptance
 
-- Docs state SIGTERM semantics, session persistence, the explicit early-Stop failure, and the no-soft-inject boundary.
-- Matrix current; validate green; sprint status `done`.
+No UI implementation is in scope because the route projection and both docks are provider-neutral. `e2e/ui/agent-interrupt-redirect.spec.ts` already proves the shared behavior for Legacy and Console and writes into #183's tracked evidence directory, so do not rerun or overwrite that evidence for a provider-only change. The Phase 2 capability/projection fixture is the proof that OMP enters this shared path.
 
-## Risk assessment
+At normal desktop width and the authoritative 460px room width, verify:
 
-- **Docs drift from measurement:** the numbers come from the spike report, not from the scout report's source reading.
-- **Premature `done`:** the flip is the last todo, after validate.
+- generating: dock remains at the panel bottom with `Stop` left and fixed-position `Queue` right;
+- interrupting: `Stopping…` remains focusable with `aria-disabled`, at least the existing text-secondary contrast, no progress bar, and queue action still available;
+- idle: Stop is gone, focus moves to fixed-position `Send now`, the `WILL SEND` band and “files already written stay written” disclosure appear, and the active tool shows `⚠ interrupted`, not failed;
+- resumed: `Stop` and `Queue` return together; no dock/room overflow, layout shift, extra breakpoint, or shell divergence at 460px.
 
-## Next steps
+These criteria come from the ratified `control-states.md`, `DESIGN.md`, and `EXPERIENCE.md`; the older imported HTML mockup's durable “stopped node” language is superseded and must not be reintroduced.
 
-Stories 2.4 (Codex), 2.6 (Grok), 2.7 (DeepSeek) can reuse the `stream_aborted` contract; the decision to parameterise the executor fixtures is deferred to them.
+If implementation unexpectedly changes a server/UI production file or any criterion above, expand scope explicitly, then run `cd e2e && bun run typecheck` and `bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'` in a clean worktree after deciding where new evidence belongs. Do not silently overwrite #183's evidence.
+
+## Final validation and status order
+
+1. Confirm the platform-wide gate or an owner-approved platform-specific contract is recorded, then run all focused commands from Phases 1 and 2.
+2. Generate/check the matrix. Confirm `git diff` contains no server/UI production files; otherwise follow the conditional visual gate above.
+3. Run preliminary `bun run validate` from the root. Do not run root `bun test`.
+4. Only after the spike, focused gates, matrix check, scope check, and preliminary validate are green, change `2-5-interrupt-and-redirect-a-running-omp-agent` from `backlog` to `done`.
+5. Run `bun run validate` again so the status/document edits are covered. Restore `backlog` if the final gate fails.
+
+If a PR is requested, target `develop`, explicitly use `.github/pull_request_template.md`, cite `plans/reports/omp-interrupt-resume-spike.md` plus the direct/loop tests, and include `Closes #185`.
+
+## Completion gate
+
+- Canonical companions, code, tests, and public docs describe one non-conflicting end shape.
+- Generated matrix is current and untouched by hand.
+- No UI/server production diff; if that changes, both visual surfaces pass all four states at desktop and 460px without overwriting prior evidence.
+- Final `bun run validate` passes with sprint status included.

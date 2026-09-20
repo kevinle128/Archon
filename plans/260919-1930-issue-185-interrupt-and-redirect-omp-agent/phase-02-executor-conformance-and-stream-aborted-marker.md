@@ -11,78 +11,56 @@ dependencies: [1]
 
 ## Goal
 
-Teach the executor's five-case classification to recognise the provider-neutral `stream_aborted` marker, then prove with an OMP-shaped fixture that the direct AI path, the AI-loop path, and a provider-calling loop-group body all interrupt, idle, and redirect on the same session — and that a thrown `Query aborted` with the operator flag set still idles (the story's literal Given/Then).
+Add OMP's deterministic graceful-interrupt marker to the existing five-case classifier and prove that direct and AI-loop executions idle, redirect, and continue on the same session without changing unrelated executor behavior.
 
-This phase is outlined (deep mode). **Scout pass before execution:** re-locate the anchors below in `packages/workflows/src/dag-executor.ts` and `dag-executor.test.ts` by their text, not line numbers, and update this file with deltas before writing tests.
+## Files
 
-## Context links
+| File | Change |
+| --- | --- |
+| `packages/workflows/src/dag-executor.ts` | import shared marker, extend marker set/comment |
+| `packages/workflows/src/dag-executor.test.ts` | OMP-shaped direct and AI-loop conformance fixtures |
 
-- Phase 1 contract: `terminalReason: 'stream_aborted'` on one result, then return; `STREAM_ABORTED_TERMINAL_REASON` exported from `@archon/providers/types`.
-- `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` §"Engine — the per-node turn loop" and §"Providers — interrupt conformance" (omp row).
-- #183 matrix: `dag-executor.test.ts` `describe('executeDagWorkflow -- interrupt and redirect (#183)')`.
-
-## Key insights
-
-- The executor never branches on `'native'` vs `'stream-abort'`; both gates are `getProviderCapabilities(provider).interrupt !== false` (text anchors: "The interrupt-capable face of the handle (#183)" in both `executeAiNode`-equivalent and `executeLoopNode`). No gate change is needed.
-- Case 2 (abort-marked result) is decided by `isInterruptTerminalReason(msg.terminalReason)` in both paths; adding one string to `INTERRUPT_TERMINAL_REASONS` is the entire executor change.
-- The test file already calls `registerOmpProvider()` at module load, so `getProviderCapabilities('omp')` returns the real, now-`'stream-abort'` constant while `deps.getAgentProvider` stays mocked — no SDK or binary is touched.
-- `invokeDag` in the #183 matrix accepts `assistant: 'claude' | 'pi'` and builds a config with `assistants: { ...minimalConfig.assistants, pi: {} }`; OMP needs the same treatment (`omp: {}`), and `mockGetAgentProviderDag` must return `getType: () => 'omp'` for those cases.
-
-## File inventory
-
-| File | Action | Size | Test impact |
-| --- | --- | --- | --- |
-| `packages/workflows/src/dag-executor.ts` | modify | ~6 lines (marker set + docstring) | whole #183 matrix must stay green |
-| `packages/workflows/src/dag-executor.test.ts` | modify | ~200 lines (helper widening + 6 fixtures) | new OMP conformance scenarios |
-
-## Dependency map
-
-- Depends on Phase 1 (constant + marker string).
-- Feeds Phase 3 (the "conformance evidence" the sprint-status close cites).
+No server, route, registry, persistence, or UI production file changes are expected. Stop and reassess the plan if implementation requires one.
 
 ## Implementation contract
 
-- `INTERRUPT_TERMINAL_REASONS` (anchor: "The ONLY provider terminal reasons that classify a result as an operator interrupt") becomes `new Set(['aborted_streaming', 'aborted_tools', STREAM_ABORTED_TERMINAL_REASON])`, imported from `@archon/providers/types`. Rewrite the docstring: two Claude SDK markers plus the provider-neutral marker a `stream-abort` provider sets from its own interrupt signal. Keep "no prefix or prose matching".
-- `isAbortLikeStreamError` is unchanged; `Query aborted` stays recognised.
-- No other executor edits. If the scout pass finds any `'native'` comparison outside tests, stop and record it — the plan's no-server/no-web claim would be wrong.
+- Import `STREAM_ABORTED_TERMINAL_REASON` from `@archon/providers/types` and add it to `INTERRUPT_TERMINAL_REASONS`.
+- Update the nearby comment to describe two provider-native Claude reasons plus a provider-normalized stream-abort reason. Keep the rule deterministic: never match assistant prose, stderr substrings, or prefixes.
+- Do not change `isAbortLikeStreamError`; `Query aborted` remains a recognized defensive thrown shape.
+- Do not branch on `'native'` versus `'stream-abort'`. The existing capability check `interrupt !== false` and common idle-await behavior own both.
+- Do not alter queue ordering, Cancel placement, validation bypass, status persistence, idle timeout, or session selection.
 
-## Test scenario matrix
+The #183 test helper currently accepts only `claude | pi` and special-cases Pi configuration. Widen it narrowly for OMP and add `omp: {}` in the test config; the OMP provider is already registered at module load while `getAgentProvider` remains mocked, so no binary is launched. Do not parameterize the full Claude matrix or add a loop-group duplicate.
 
-| Priority | Scenario | Path | Asserts |
-| --- | --- | --- | --- |
-| Critical | OMP-shaped interrupt: fixture yields `session`-less assistant chunk(s), a `tool` chunk, then on `interruptSignal` abort yields `{ type: 'result', sessionId: 'omp-1', terminalReason: 'stream_aborted' }` and returns | direct | `awaitIdle` reaches `idle-after-interrupt`; tool settles `interrupted` once; one `interrupted` status row; no `node_failed`; `sendNow` → second call's `resumeSessionId === 'omp-1'`; `node_completed` |
-| Critical | Same fixture | AI loop (`loop:`) | idles inside the iteration; `Send now` resumes the interrupted iteration on `omp-1` before the completion check; iteration count not consumed |
-| Critical | Same fixture | loop-group body (`loop_group:` with a `prompt` body node) | parks under the namespaced step name; same-session resume |
-| High | Story literal: fixture throws `new Error('Query aborted')` after `result { sessionId }` with the flag set | direct | classified interrupted (case 3), no `node_failed`, resume on the same id |
-| High | Story literal, first turn, throw with **no** prior result | direct | explicit failure text "returned no session id to resume" — pins D3 and documents why the provider is result-shaped |
-| High | `stream_aborted` result with **no** `sessionId`, first iteration | AI loop | the loop path's own copy of the safety net fires ("Loop node … was interrupted but the provider turn returned no session id") and the iteration fails explicitly; queued guidance is not silently dropped (red team F4) |
-| High | `stream_aborted` result with `resumed: false` on a redirect turn | direct | the existing resume-fallback warning is emitted and the node still idles on the observed id (pins the A3 contract end to end) |
-| High | `stream_aborted` result **without** the operator flag (provider emitted the marker but nobody pressed Stop) | direct | treated as natural end (case 1): validation runs, node completes or fails on its own merits, no idle |
-| Medium | `stream_aborted` result carrying `isError: true` | direct | marker wins, idles (mirrors the existing Claude "marker wins over isError" case) |
-| Medium | Capability pin: `provider: 'omp'` node observes a defined `interruptSignal` and `steeringSubState === 'generating'` inside `sendQuery` | direct | proves the capability flip alone made the handle interruptible |
+## Test matrix
 
-## Tests before
+Use OMP-shaped async generators that react to the supplied per-turn `interruptSignal`.
 
-- Run the existing #183 matrix (`bun test src/dag-executor.test.ts -t 'interrupt and redirect'`) and record the count; it must not change except for additions.
-- Add the "marker without flag → natural end" scenario **first** against the unchanged executor; it passes today (unknown marker = natural) and must still pass after the marker is added — it is the guard against over-classification.
+| Scenario | Path | Required evidence |
+| --- | --- | --- |
+| marked result after Stop | direct | idle reached; node still running; open tool settles `interrupted` once; one interrupted status; no `node_failed`; `Send now` drains old then new messages; second call uses the same session id and completes |
+| marked result after Stop | AI loop | current iteration idles; no iteration/completion check is consumed before redirect; second call uses the same session id; loop then completes normally |
+| marked result lacks first-turn session | direct and AI loop | each path's explicit “no session id to resume” failure fires; no fresh session or silent guidance loss |
+| marked result has `isError: true` | direct | marker plus operator flag wins and idles, preserving the established case-2 rule |
+| marked result without operator flag | direct | natural result path; no idle and no interrupted status |
+| force-kill/unmarked provider error with operator flag | direct | existing error path fails the node; the flag alone cannot convert failure to interrupt |
+| natural result races Stop | direct | natural completion/queued auto-drain behavior remains unchanged |
+| thrown `Query aborted` after an earlier result supplied a session | direct | case 3 idles and resumes that known id; no `node_failed` |
+| thrown `Query aborted` with no known session | direct | interrupt classification occurs but the existing explicit session safety check fails |
+| redirected result reports `resumed: false` and a new observed id | direct | existing cold-resume warning is recorded; executor uses the observed id and remains governed by current compatibility behavior |
+| OMP capability pin | direct | mock provider receives a defined interrupt signal and the projected sub-state is `generating` |
 
-## Refactor
+Also assert the terminal marked result carries no `structuredOutput` into output validation and that usage/model captured before classification remains accounted once; these are shared-contract regressions already covered for Claude but must be pinned for the OMP-shaped result.
 
-- Widen `invokeDag`'s `assistant` option to `'claude' | 'pi' | 'omp'` and extend the config branch; add `getType: () => 'omp'` where the OMP fixtures install their mock provider. Do not parameterise the 19 Claude scenarios into a shared helper in this story; Stories 2.4/2.6/2.7 will show whether that abstraction earns its keep (rule of three).
+## Test order
 
-## Tests after
+1. Run the existing `interrupt and redirect` subset and record a clean baseline.
+2. Add the unflagged-marker and unmarked-force-kill cases first; both must remain natural/failure after the marker is recognized.
+3. Add direct and AI-loop OMP cases and confirm they fail because `stream_aborted` is not yet recognized.
+4. Make the marker-set/comment change only.
+5. Run the focused subset, full executor file, steering registry tests, and workflows type-check.
 
-- The Critical/High/Medium rows above, each with a `sessionId` assertion on the resume call (`sendQueryArg(1, 2)`).
-
-## Todo
-
-- [ ] Scout pass: confirm anchors, `invokeDag` shape, and that `registerOmpProvider()` is still called at module load.
-- [ ] Tests before: baseline count; marker-without-flag scenario.
-- [ ] Tests after: write all matrix rows, confirm they fail for the right reason (unknown marker → natural end → validation → no idle).
-- [ ] Add `STREAM_ABORTED_TERMINAL_REASON` to the marker set; fix the docstring.
-- [ ] Full file green; `bun run type-check` for `@archon/workflows`.
-
-## Regression gate
+## Commands
 
 ```bash
 cd packages/workflows
@@ -92,16 +70,8 @@ bun test src/steering-registry.test.ts
 bun run type-check
 ```
 
-## Success criteria
+## Completion gate
 
-- Every matrix row green; no existing scenario changed.
-- The executor diff is the marker set and its docstring only.
-
-## Risk assessment
-
-- **Over-classification:** a provider that emits `stream_aborted` without an operator Stop must still be a natural end — pinned by the "without flag" row.
-- **Loop-path drift:** the loop path has its own copy of the classification; the loop rows exist so both copies are exercised.
-
-## Next steps
-
-Phase 3 regenerates docs and closes the story.
+- Every matrix row is green in both independently implemented executor paths.
+- Existing #183 cases remain green and no loop-group behavior changes.
+- Production executor diff is limited to the shared marker import/set/comment.
