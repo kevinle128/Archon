@@ -62,6 +62,7 @@ import {
   willSendListLabel,
   toSteeringRequestError,
   type RemovalFocusTarget,
+  type SteeringDockMode,
   type SteeringDockState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
@@ -170,9 +171,7 @@ const BLOCKED_REASON_CLASSES =
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
 
 /** Modes where the dock's focusable controls are in the DOM. */
-function controlsMounted(
-  mode: 'hidden' | 'blocked' | 'detached' | 'composer' | 'finished-iteration'
-): boolean {
+function controlsMounted(mode: SteeringDockMode): boolean {
   return mode === 'composer' || mode === 'blocked';
 }
 
