@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -8584,5 +8584,452 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
     expect((await getNodeQueue(app)).headers.get('cache-control')).toBe('no-store');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive — Story 2.12
+// Bodyless composer keepalive: re-arms a live idle handle, no-op on live
+// generating, never writes rows. Hot path skips event history; parked → 422.
+// ---------------------------------------------------------------------------
+
+function postNodeKeepalive(
+  app: OpenAPIHono,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/keepalive`, {
+    method: 'POST',
+    headers,
+  });
+}
+
+describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
+  beforeEach(() => {
+    resetSteeringMocks();
+    mockApiLogError.mockClear();
+  });
+
+  /** Running run + live generating handle (mid-turn, no idle waiter). */
+  function liveGeneratingSetup(nodeId: string = STEER_NODE_ID): InterruptibleSetup {
+    return liveInterruptibleSetup(nodeId);
+  }
+
+  /** Running run + live idle-after-interrupt handle with an active waiter. */
+  function liveIdleSetup(nodeId: string = STEER_NODE_ID): InterruptibleSetup & {
+    idleWait: Promise<SteeringIdleWake>;
+  } {
+    return idleInterruptibleSetup(nodeId);
+  }
+
+  // -- Success path -----------------------------------------------------------
+
+  test('returns exactly { success: true } and calls recordComposerActivity once on live idle', async () => {
+    const { handle } = liveIdleSetup();
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(activity).toHaveBeenCalledTimes(1);
+    // Activity re-arms only — queue/phase/accepted count unchanged, no writes.
+    expectNoSteeringMutation(handle, before);
+    activity.mockRestore();
+  });
+
+  test('returns exactly { success: true } on live generating; activity is a lifecycle no-op', async () => {
+    const { handle } = liveGeneratingSetup();
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(activity).toHaveBeenCalledTimes(1);
+    // Generating: recordComposerActivity itself is a no-op (no idle waiter).
+    expect(handle.snapshot().subState).toBe('generating');
+    expectNoSteeringMutation(handle, before);
+    activity.mockRestore();
+  });
+
+  test('repeated keepalive calls are safe and create no queue or transcript mutation', async () => {
+    const { handle } = liveIdleSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID, 'queued-before-keepalive');
+    const before = handle.snapshot();
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const { app } = makeApp();
+
+    for (let i = 0; i < 3; i++) {
+      const res = await postNodeKeepalive(app);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+    }
+
+    expect(activity).toHaveBeenCalledTimes(3);
+    expectNoSteeringMutation(handle, before);
+    activity.mockRestore();
+  });
+
+  // -- Hot-path cost ----------------------------------------------------------
+
+  test('live success uses two run lookups and no event/pending-interaction reads', async () => {
+    liveIdleSetup();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    expect(res.status).toBe(200);
+    // Initial gate + final awaited re-read.
+    expect(mockGetWorkflowRun).toHaveBeenCalledTimes(2);
+    expect(mockGetWorkflowRun).toHaveBeenCalledWith(STEER_RUN_ID);
+    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    expect(mockListPendingInteractions).not.toHaveBeenCalled();
+  });
+
+  // -- Target/status ladder ----------------------------------------------------
+
+  test('returns 404 for an unknown run', async () => {
+    mockGetWorkflowRun.mockResolvedValue(null);
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+  });
+
+  test('returns 404 for an unknown node (no projection, no handle)', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'other-node')]);
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(mockListWorkflowEvents).toHaveBeenCalledTimes(1);
+    expect(mockListPendingInteractions).not.toHaveBeenCalled();
+  });
+
+  test('returns 409 for a terminal run even with a stale live handle', async () => {
+    const { handle } = liveIdleSetup();
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expect(activity).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  test('returns 409 for each terminal projected node state when no handle exists', async () => {
+    const { app } = makeApp();
+    for (const eventType of ['node_completed', 'node_failed', 'node_skipped']) {
+      const nodeId = `node-${eventType}`;
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+      mockListWorkflowEvents.mockResolvedValue([steerEvent(eventType, nodeId)]);
+
+      const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, nodeId);
+      await expectSteeringError(res, 409, 'node_finished');
+    }
+  });
+
+  test('returns 409 for a closed handle without reading events or calling activity', async () => {
+    const { handle } = liveIdleSetup();
+    handle.close();
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expect(activity).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  test('returns 422 for a parked handle without calling activity', async () => {
+    const { handle } = liveIdleSetup();
+    handle.park();
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(activity).not.toHaveBeenCalled();
+    expectNoSteeringMutation(handle, before);
+    expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  test('returns 422 for a known running node with no in-process handle (detached)', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(mockListPendingInteractions).not.toHaveBeenCalled();
+  });
+
+  // -- Final-await races -------------------------------------------------------
+
+  test('returns 409 when the run turns terminal between lookup and final re-read', async () => {
+    const { handle } = liveIdleSetup();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      .mockResolvedValueOnce(mockSteerableRun({ status: 'cancelled' }));
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expect(activity).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  test('returns 409 when the handle closes during the final awaited run lookup', async () => {
+    const { handle } = liveIdleSetup();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      .mockImplementationOnce(async () => {
+        handle.close();
+        return mockSteerableRun();
+      });
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 409, 'node_finished');
+    expect(activity).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  test('returns 422 when the handle parks during the final awaited run lookup', async () => {
+    const { handle } = liveIdleSetup();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      .mockImplementationOnce(async () => {
+        handle.park();
+        return mockSteerableRun();
+      });
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(activity).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  test('returns 404 when the run disappears during the final awaited re-read', async () => {
+    const { handle } = liveIdleSetup();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun.mockResolvedValueOnce(mockSteerableRun()).mockResolvedValueOnce(null);
+    const activity = spyOn(handle, 'recordComposerActivity');
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 404, 'not_found');
+    expect(activity).not.toHaveBeenCalled();
+    activity.mockRestore();
+  });
+
+  // -- Actor matrix -------------------------------------------------------------
+
+  test('returns 200 for the run starter', async () => {
+    liveIdleSetup();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app, { 'X-Archon-User': STEER_STARTER_ID });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+  });
+
+  test('returns 200 for another authenticated member identity', async () => {
+    liveIdleSetup();
+    mockFindOrCreateUserByPlatformIdentity.mockImplementationOnce(
+      async (_platform: string, platformUserId: string) => ({
+        id: platformUserId,
+        display_name: platformUserId,
+        email: null,
+        role: 'member' as const,
+        created_at: new Date(),
+        updated_at: new Date(),
+      })
+    );
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app, { 'X-Archon-User': 'member-other' });
+
+    expect(res.status).toBe(200);
+  });
+
+  test('returns 200 for an admin identity that does not own the run', async () => {
+    liveIdleSetup();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app, { 'X-Archon-User': 'user-admin-9' });
+
+    expect(res.status).toBe(200);
+  });
+
+  test('returns 200 on an identity-less (auth-disabled solo) install', async () => {
+    liveIdleSetup();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    expect(res.status).toBe(200);
+  });
+
+  test('returns the nested 401 before the generic API gate for a gated unauthenticated caller', async () => {
+    getAuth();
+    const savedDb = process.env.DATABASE_URL;
+    const savedSecret = process.env.BETTER_AUTH_SECRET;
+    const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
+    process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
+    process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
+    delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+    try {
+      const { app } = makeApp();
+      const res = await postNodeKeepalive(app);
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: { code: 'unauthenticated', message: 'Authentication required' },
+      });
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+      expect(mockListWorkflowEvents).not.toHaveBeenCalled();
+    } finally {
+      if (savedDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedDb;
+      if (savedSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = savedSecret;
+      if (savedRequired === undefined) delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+      else process.env.ARCHON_WEB_AUTH_REQUIRED = savedRequired;
+    }
+  });
+
+  // -- Errors and OpenAPI -------------------------------------------------------
+
+  test('returns nested 500 on a store exception without logging user content', async () => {
+    const { handle } = liveIdleSetup();
+    const before = handle.snapshot();
+    mockGetWorkflowRun.mockRejectedValue(new Error('run store down'));
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    await expectSteeringError(res, 500, 'internal_error');
+    expectNoSteeringMutation(handle, before);
+
+    const serialized = JSON.stringify(mockApiLogError.mock.calls);
+    expect(serialized).toContain('api.workflow_node_keepalive_failed');
+    expect(serialized).toContain(STEER_RUN_ID);
+    expect(serialized).toContain(STEER_NODE_ID);
+    expect(serialized).not.toContain('keepalive_completed');
+  });
+
+  test('every rejected request leaves handle state, queue contents, and transcript rows unchanged', async () => {
+    const { handle } = liveIdleSetup();
+    queueSteerItem(handle, STEER_MESSAGE_ID, 'must-survive-rejections');
+    const before = handle.snapshot();
+    const { app } = makeApp();
+
+    // Closed → 409
+    handle.close();
+    await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
+    // Restore a fresh live idle handle for remaining rejection cases.
+    getSteeringRegistry().clearForTests();
+    const restored = liveIdleSetup();
+    queueSteerItem(restored.handle, STEER_MESSAGE_ID, 'must-survive-rejections');
+    const restoredBefore = restored.handle.snapshot();
+
+    restored.handle.park();
+    await expectSteeringError(await postNodeKeepalive(app), 422, 'not_steerable_here');
+    expectNoSteeringMutation(restored.handle, {
+      ...restoredBefore,
+      phase: 'parked',
+    } as SteeringHandleSnapshot);
+
+    // Detached cold path — no handle, no mutation surfaces available
+    getSteeringRegistry().clearForTests();
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    await expectSteeringError(await postNodeKeepalive(app), 422, 'not_steerable_here');
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    expect(mockAddMessage).not.toHaveBeenCalled();
+    expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
+
+    // Keep the original closed-handle before assertion meaningful
+    expect(before.queued).toEqual([
+      expect.objectContaining({ messageId: STEER_MESSAGE_ID, message: 'must-survive-rejections' }),
+    ]);
+  });
+
+  test('generated OpenAPI contains the bodyless keepalive path and strict minimal success schema', async () => {
+    const { app } = makeApp();
+    const res = await app.request('/api/openapi.json');
+    expect(res.status).toBe(200);
+    const doc = (await res.json()) as Record<string, unknown>;
+
+    const resolveRef = (node: unknown): unknown => {
+      if (typeof node !== 'object' || node === null || !('$ref' in node)) return node;
+      const ref = (node as { $ref: string }).$ref;
+      if (!ref.startsWith('#/')) return node;
+      return ref
+        .slice(2)
+        .split('/')
+        .reduce<unknown>(
+          (acc, seg) =>
+            typeof acc === 'object' && acc !== null
+              ? (acc as Record<string, unknown>)[seg]
+              : undefined,
+          doc
+        );
+    };
+    const prop = (schema: unknown, key: string): unknown =>
+      typeof schema === 'object' && schema !== null
+        ? (schema as { properties?: Record<string, unknown> }).properties?.[key]
+        : undefined;
+
+    const paths = doc.paths as Record<
+      string,
+      {
+        post?: {
+          requestBody?: unknown;
+          responses?: Record<string, unknown>;
+        };
+      }
+    >;
+    const keepaliveRoute = paths['/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive'];
+    expect(keepaliveRoute?.post).toBeDefined();
+    // Bodyless: no requestBody on the operation.
+    expect(keepaliveRoute?.post?.requestBody).toBeUndefined();
+
+    const okResponse = keepaliveRoute?.post?.responses?.['200'] as
+      | { content?: Record<string, { schema?: unknown }> }
+      | undefined;
+    const respSchema = resolveRef(okResponse?.content?.['application/json']?.schema) as {
+      type?: string;
+      required?: string[];
+      additionalProperties?: boolean;
+      properties?: Record<string, unknown>;
+    };
+    expect(prop(respSchema, 'success')).toMatchObject({ enum: [true] });
+    expect(respSchema.required).toEqual(['success']);
+    // Strict object: only success, no sub_state / timestamp / message.
+    expect(Object.keys(respSchema.properties ?? {}).sort()).toEqual(['success']);
+    expect(prop(respSchema, 'sub_state')).toBeUndefined();
+
+    const schemas = (doc.components as { schemas: Record<string, unknown> }).schemas;
+    expect(schemas['KeepaliveWorkflowNodeResponse']).toBeDefined();
   });
 });

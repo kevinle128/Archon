@@ -509,6 +509,7 @@ import {
   sendWorkflowNodeBodySchema,
   sendWorkflowNodeResponseSchema,
   interruptWorkflowNodeResponseSchema,
+  keepaliveWorkflowNodeResponseSchema,
   steeringErrorSchema,
   readWorkflowNodeQueueParamsSchema,
   readWorkflowNodeQueueResponseSchema,
@@ -1673,6 +1674,38 @@ const interruptWorkflowNodeRoute = createRoute({
   },
 });
 
+const keepaliveWorkflowNodeRoute = createRoute({
+  method: 'post',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive',
+  tags: ['Workflows'],
+  summary: 'Re-arm the idle-after-interrupt inactivity timer for a running node',
+  description:
+    'Bodyless composer keepalive for a live in-process agent node. On a live ' +
+    'idle-after-interrupt handle this re-arms the fixed 30-minute inactivity ' +
+    'timer; on a live generating handle it is a lifecycle no-op. Never writes ' +
+    'a transcript row, workflow event, queue item, or log of user content, and ' +
+    'never returns `sub_state`. Parked or detached targets are 422; closed or ' +
+    'terminal targets are 409.',
+  request: {
+    params: z.object({
+      runId: z.string().min(1),
+      nodeId: z.string().min(1),
+    }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: keepaliveWorkflowNodeResponseSchema } },
+      description: 'Keepalive accepted — timer re-armed or live generating no-op',
+    },
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
 const withdrawWorkflowNodeRoute = createRoute({
   method: 'delete',
   path: '/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}',
@@ -2415,6 +2448,21 @@ export function registerApiRoutes(
   app.use('/api/workflows/runs/:runId/nodes/:nodeId/queue', async (c, next) => {
     if (c.req.method !== 'GET') return next();
     c.header('Cache-Control', 'no-store');
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    return next();
+  });
+
+  // Steering keepalive authentication must run before the install-wide API
+  // gate and before OpenAPI parameter validation so a gated unauthenticated
+  // caller receives the nested steering 401 rather than the generic API gate
+  // shape. POST-only and bodyless — nothing here parses a body.
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/keepalive', async (c, next) => {
+    if (c.req.method !== 'POST') return next();
     if (isWebAuthEnabled() || isApiGateEnabled()) {
       const requester = await resolveAuthContext(c);
       if (!requester) {
@@ -5549,6 +5597,115 @@ export function registerApiRoutes(
       } catch (error) {
         getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_interrupt_failed');
         return steeringError(c, 500, 'internal_error', 'Failed to interrupt node');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive - Re-arm idle timer
+  //
+  // Hot path mirrors the queue-read invariant: one registry get + snapshot()
+  // with NO event-history scan while a handle is present (executor seals
+  // before the first awaited terminal write). Parked is 422 here (unlike
+  // queue-read) because no provider session can accept a redirect. Final
+  // awaited run re-read + handle phase re-read win over a concurrent seal
+  // before recordComposerActivity() mutates anything.
+  registerOpenApiRoute(
+    keepaliveWorkflowNodeRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        // Hot path: classify closed / parked / live without reading events.
+        const handle = getSteeringRegistry().get(runId, nodeId);
+        if (handle !== undefined) {
+          const phase = handle.snapshot().phase;
+          if (phase === 'closed') {
+            return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+          }
+          if (phase === 'parked') {
+            return steeringError(
+              c,
+              422,
+              'not_steerable_here',
+              'No live steering session for this node in this process'
+            );
+          }
+          // live candidate — continue to the final awaited gates below.
+        } else {
+          // Cold path: project persisted events only (no pending-interaction
+          // read — keepalive never steers ask/permission state).
+          const events = await workflowEventDb.listWorkflowEvents(runId);
+          const nodeState = projectApiWorkflowNodeStates(events).find(
+            state => state.nodeId === nodeId
+          );
+          if (nodeState === undefined) {
+            return steeringError(c, 404, 'not_found', 'Workflow node not found');
+          }
+          if (TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+            return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+          }
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        // Final async gate: a concurrent terminal transition wins. Everything
+        // below re-reads the handle phase and calls recordComposerActivity()
+        // synchronously — no await may sit between the post-await phase check
+        // and the activity mutation.
+        const latestRun = await workflowDb.getWorkflowRun(runId);
+        if (latestRun === null) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        const latestHandle = getSteeringRegistry().get(runId, nodeId);
+        if (latestHandle === undefined) {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+        const latestPhase = latestHandle.snapshot().phase;
+        if (latestPhase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (latestPhase === 'parked') {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        latestHandle.recordComposerActivity();
+        return c.json({ success: true as const }, 200);
+      } catch (error) {
+        // Content-free: keepalive never carries user text on the wire.
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_keepalive_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to record keepalive');
       }
     },
     steeringValidationErrorHook

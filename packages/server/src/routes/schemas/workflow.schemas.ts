@@ -674,3 +674,22 @@ export const readWorkflowNodeQueueResponseSchema = z
   .openapi('ReadWorkflowNodeQueueResponse');
 
 export type ReadWorkflowNodeQueueResponse = z.infer<typeof readWorkflowNodeQueueResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive (steering, #192)
+// ---------------------------------------------------------------------------
+
+/**
+ * Keepalive success receipt (Story 2.12). Bodyless request; the wire carries
+ * only `{ success: true }` — never `sub_state`, a timestamp, or message text.
+ * The route re-arms a live idle handle (or is a no-op on live generating) and
+ * never writes a transcript row, event, or queue item.
+ */
+export const keepaliveWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+  })
+  .strict()
+  .openapi('KeepaliveWorkflowNodeResponse');
+
+export type KeepaliveWorkflowNodeResponse = z.infer<typeof keepaliveWorkflowNodeResponseSchema>;
