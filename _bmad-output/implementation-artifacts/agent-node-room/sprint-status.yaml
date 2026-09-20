@@ -77,5 +77,5 @@ development_status:
   2-10-see-queued-guidance-while-viewing-a-finished-iteration: backlog
   2-11-recover-messages-that-were-never-sent-when-the-node-ends: backlog
   2-12-fail-an-abandoned-redirect-safely-after-30-minutes: backlog
-  2-13-preserve-message-order-and-attribution-under-concurrent-operators: backlog
+  2-13-preserve-message-order-and-attribution-under-concurrent-operators: done
   epic-2-retrospective: optional

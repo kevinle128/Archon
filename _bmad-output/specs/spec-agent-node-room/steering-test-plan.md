@@ -63,7 +63,15 @@ Per `steering-api-contract.md`.
 
 ## Concurrent operators
 
-- two docks on one node interleave in the registry's server-side receipt order (no per-node lock); each row is attributed by `operator_user_id`; per-operator written order holds within each sender's stream
+- **Global order is `accept()` order** at `NodeSteeringHandle.accept()` — not browser click order, request-creation order, response-completion order, or any timestamp sort. The node queue is shared and deliberately visible to every permitted reader.
+- **Within-sender order** holds only when one dock/request stream waits for its prior send response before sending the next. Two tabs for the same identity are separate streams; the server promises only receipt order across them.
+- **No cross-user leakage** means no sender substitution on a written or displayed row (`operator_user_id` / display name stay bound to the originating request). It does **not** mean private per-user queues.
+- **Queue GET intentionally omits attribution** — public items are exactly `{ message_id, message }`. Attribution lives on the handle snapshot and on transcript operator rows (`origin`, `operator_user_id`, `message_id`).
+- **Characterization map (Story 2.13 / #193):**
+  - mixed-sender registry FIFO, idempotent cross-sender duplicate-id replay, and idle `send_now` wake-batch order — `packages/workflows/src/steering-registry.test.ts`
+  - deterministic overlapping Hono-route streams (hold A at identity resolution, let B finish, release A) — `overlapping identity streams preserve accept order and request attribution` in `packages/server/src/routes/api.workflow-runs.test.ts`
+  - strengthened direct natural-drain, idle `send_now`, and loop-drain mixed-sender paths — `packages/workflows/src/dag-executor.test.ts`
+  - full-chain two-operator journeys on both shells — `[V:steer.concurrent-operators-console]` and `[V:steer.concurrent-operators-legacy]` in `e2e/ui/agent-queue-convergence.spec.ts` (observed pre-drain queue order is the oracle for transcript + DOM; sibling node isolation in the same journey)
 
 ## Steering UI — end-to-end, both shells
 

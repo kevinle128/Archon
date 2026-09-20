@@ -583,9 +583,17 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(reasonId, 'Queue exposes aria-describedby for the blocked reason').toBeTruthy();
     await expect(room.locator(`[id="${reasonId ?? ''}"]`)).toHaveText(ASK_BLOCKED_REASON);
     await expect(room.locator('[role="status"]')).toContainText(ASK_BLOCKED_REASON);
-    // aria-disabled keeps the control tabbable instead of removing it.
-    await queue.focus();
-    expect(await queue.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
+    // The run-detail refresh may replace the dock while this check is running;
+    // refocus the current button until the settled, aria-disabled control owns focus.
+    await expect
+      .poll(
+        async () => {
+          await queue.focus();
+          return queue.evaluate(el => el.ownerDocument.activeElement === el);
+        },
+        { timeout: T.medium, message: 'aria-disabled Queue remains focusable' }
+      )
+      .toBe(true);
 
     await field.fill('do not send me');
     // aria-disabled (not a native disabled) keeps the control focusable and
@@ -690,15 +698,26 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(hint.ratio, 'hint text ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
       expect(queueLabel.ratio, 'queue label ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
 
+      // Keyboard focus establishes :focus-visible so the accent-bright outline paints.
+      // resolveColorIn must host on a container — textarea cannot append probe children.
       await field.focus();
+      await field.press('End');
       const ring = await field.evaluate(el => {
         const style = el.ownerDocument.defaultView?.getComputedStyle(el);
-        return { outline: style?.outlineColor ?? '', width: style?.outlineWidth ?? '' };
+        return {
+          outline: style?.outlineColor ?? '',
+          width: style?.outlineWidth ?? '',
+          offset: style?.outlineOffset ?? '',
+          focusVisible: el.matches(':focus-visible'),
+        };
       });
-      const ringColor = await resolveColorIn(field, ring.outline);
+      expect(ring.focusVisible, 'keyboard focus carries :focus-visible').toBe(true);
+      expect(ring.width, 'focus ring has a visible width').toBe('2px');
+      const accent = await resolveColorIn(room, 'var(--accent-bright)');
+      const ringColor = await resolveColorIn(room, ring.outline);
       const dockBg = await effectiveBackground(field);
       const ringRatio = contrastRatio(ringColor.c, dockBg.c);
-      expect(ring.width, 'focus ring has a visible width').not.toBe('0px');
+      expect(ringColor.resolved, 'focus outline resolves to --accent-bright').toBe(accent.resolved);
       expect(ringRatio, 'focus indicator ≥ 3:1').toBeGreaterThanOrEqual(3.0);
 
       const bandScroll = queueList(room).locator('xpath=..');

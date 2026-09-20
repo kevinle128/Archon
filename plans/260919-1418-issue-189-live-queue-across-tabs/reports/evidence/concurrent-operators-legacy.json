@@ -1,0 +1,46 @@
+{
+  "surface": "legacy",
+  "tag": "56c34d864006",
+  "nodeA": "steer-a",
+  "nodeB": "steer-b",
+  "viewport": { "width": 460, "height": 900 },
+  "runId": "4a5a871f09d189f53a1e791e1e367ad2",
+  "identities": { "starter": true, "teammate": false },
+  "preDrain": {
+    "queueOrder": [
+      "ff72c5de-5e05-4db9-a514-4e40fe6a0c16",
+      "6af7e50d-d6a8-40a3-b01c-d341f77cbe7a",
+      "bcd41c2d-bd14-4f63-9b1d-0c93d1482681",
+      "6fcaa631-ac63-455b-93ca-57da2d1fbc09"
+    ],
+    "idA1": "6af7e50d-d6a8-40a3-b01c-d341f77cbe7a",
+    "idA2": "bcd41c2d-bd14-4f63-9b1d-0c93d1482681",
+    "idB1": "ff72c5de-5e05-4db9-a514-4e40fe6a0c16",
+    "idB2": "6fcaa631-ac63-455b-93ca-57da2d1fbc09",
+    "idX1": "5a672313-681d-490a-8849-953e3d1d3e1d",
+    "starterRoomIds": [
+      "ff72c5de-5e05-4db9-a514-4e40fe6a0c16",
+      "6af7e50d-d6a8-40a3-b01c-d341f77cbe7a",
+      "bcd41c2d-bd14-4f63-9b1d-0c93d1482681",
+      "6fcaa631-ac63-455b-93ca-57da2d1fbc09"
+    ],
+    "teammateRoomIds": [
+      "ff72c5de-5e05-4db9-a514-4e40fe6a0c16",
+      "6af7e50d-d6a8-40a3-b01c-d341f77cbe7a",
+      "bcd41c2d-bd14-4f63-9b1d-0c93d1482681",
+      "6fcaa631-ac63-455b-93ca-57da2d1fbc09"
+    ],
+    "serverB": ["5a672313-681d-490a-8849-953e3d1d3e1d"]
+  },
+  "postDrain": {
+    "transcriptIds": [
+      "ff72c5de-5e05-4db9-a514-4e40fe6a0c16",
+      "6af7e50d-d6a8-40a3-b01c-d341f77cbe7a",
+      "bcd41c2d-bd14-4f63-9b1d-0c93d1482681",
+      "6fcaa631-ac63-455b-93ca-57da2d1fbc09"
+    ],
+    "starterUserId": "29b340fb-929e-4101-835b-3618caf0ae03",
+    "teammateUserId": "22e45da98310658c9e54565f21b4923b",
+    "steerBIds": ["5a672313-681d-490a-8849-953e3d1d3e1d"]
+  }
+}

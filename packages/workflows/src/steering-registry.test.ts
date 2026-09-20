@@ -11,12 +11,16 @@ import {
 // ---------------------------------------------------------------------------
 
 let seq = 0;
-function msg(id?: string, text = `guidance-${seq}`): QueuedOperatorMessage {
+function msg(
+  id?: string,
+  text = `guidance-${seq}`,
+  operatorUserId: string | null = 'user-1'
+): QueuedOperatorMessage {
   seq += 1;
   return {
     messageId: id ?? `00000000-0000-4000-8000-${String(seq).padStart(12, '0')}`,
     message: text,
-    operatorUserId: 'user-1',
+    operatorUserId,
     receivedAt: `2026-09-19T01:00:${String(seq % 60).padStart(2, '0')}.000Z`,
   };
 }
@@ -258,8 +262,8 @@ describe('idempotency', () => {
   test('duplicate id with different prose keeps the original and adds no item', () => {
     const registry = createSteeringRegistry();
     const handle = registry.register('run-1', 'node-1');
-    handle.enqueue(msg('m-1', 'original prose'));
-    const dup = handle.enqueue(msg('m-1', 'different prose'));
+    handle.enqueue(msg('m-1', 'original prose', 'op-a'));
+    const dup = handle.enqueue(msg('m-1', 'different prose', 'op-b'));
     expect(dup).toEqual({
       ok: true,
       duplicate: true,
@@ -267,6 +271,7 @@ describe('idempotency', () => {
     });
     expect(handle.pendingCount()).toBe(1);
     expect(handle.snapshot().queued[0]?.message).toBe('original prose');
+    expect(handle.snapshot().queued[0]?.operatorUserId).toBe('op-a');
   });
 
   test('more than 500 accepted ids still leaves the first id idempotent', () => {
@@ -357,6 +362,35 @@ describe('drain', () => {
     const handle = registry.register('run-1', 'node-1');
     expect(handle.drain()).toEqual([]);
     expect(handle.snapshot().phase).toBe('live');
+  });
+
+  test('mixed senders keep order and attribution through drain', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    const a1 = msg('a1', 'from-a-1', 'op-a');
+    const b1 = msg('b1', 'from-b-1', 'op-b');
+    const a2 = msg('a2', 'from-a-2', 'op-a');
+    const b2 = msg('b2', 'from-b-2', 'op-b');
+    handle.accept(a1, 'queue');
+    handle.accept(b1, 'queue');
+    handle.accept(a2, 'queue');
+    handle.accept(b2, 'queue');
+
+    const queued = handle.snapshot().queued;
+    expect(queued.map(m => m.messageId)).toEqual(['a1', 'b1', 'a2', 'b2']);
+    expect(queued.map(m => m.operatorUserId)).toEqual(['op-a', 'op-b', 'op-a', 'op-b']);
+    expect(queued.filter(m => m.operatorUserId === 'op-a').map(m => m.messageId)).toEqual([
+      'a1',
+      'a2',
+    ]);
+    expect(queued.filter(m => m.operatorUserId === 'op-b').map(m => m.messageId)).toEqual([
+      'b1',
+      'b2',
+    ]);
+
+    const drained = handle.drain();
+    expect(drained).toEqual([a1, b1, a2, b2]);
+    expect(handle.drain()).toEqual([]);
   });
 });
 
@@ -862,8 +896,8 @@ describe('accept + enterIdle', () => {
     const token = handle.beginTurn(new AbortController());
     handle.interrupt();
     const waiter = handle.enterIdle(token);
-    const first = msg('m-1', 'first');
-    const second = msg('m-2', 'second');
+    const first = msg('m-1', 'first', 'op-a');
+    const second = msg('m-2', 'second', 'op-b');
     const trigger = msg('m-3', 'go');
     handle.accept(first, 'queue');
     handle.accept(second, 'send_now'); // non-blank: drains [m-1, m-2] itself

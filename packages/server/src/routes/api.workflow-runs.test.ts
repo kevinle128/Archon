@@ -6562,6 +6562,7 @@ const STEER_STARTER_ID = 'user-steer-starter';
 const STEER_MESSAGE_ID = '11111111-2222-4333-8444-555555555555';
 const STEER_MESSAGE_ID_2 = '22222222-3333-4444-8555-666666666666';
 const STEER_MESSAGE_ID_3 = '33333333-4444-4555-8666-777777777777';
+const STEER_MESSAGE_ID_4 = '44444444-5555-4666-8777-888888888888';
 
 function mockSteerableRun(overrides: Partial<MockWorkflowRun> = {}): MockWorkflowRun {
   return {
@@ -6990,6 +6991,134 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       STEER_MESSAGE_ID_3,
     ]);
     expect(queued.map(m => m.message)).toEqual(['first', 'second', 'third']);
+  });
+
+  test('overlapping identity streams preserve accept order and request attribution', async () => {
+    const handle = liveSetup();
+    const { app } = makeApp();
+
+    const OP_A = 'op-a';
+    const OP_B = 'op-b';
+    // B1/B2 then A1/A2 after release — receipt order is fixed by the identity gate.
+    const A1 = STEER_MESSAGE_ID;
+    const A2 = STEER_MESSAGE_ID_2;
+    const B1 = STEER_MESSAGE_ID_3;
+    const B2 = STEER_MESSAGE_ID_4;
+
+    let releaseA!: () => void;
+    const aHeld = new Promise<void>(resolve => {
+      releaseA = resolve;
+    });
+    let markAEntered!: () => void;
+    const aEntered = new Promise<void>(resolve => {
+      markAEntered = resolve;
+    });
+
+    const defaultIdentity = async (
+      _platform: string,
+      platformUserId: string,
+      _displayName?: string
+    ) => ({
+      id: platformUserId,
+      display_name: platformUserId,
+      email: null,
+      role: 'admin' as const,
+      created_at: new Date(),
+      updated_at: new Date(),
+    });
+
+    mockFindOrCreateUserByPlatformIdentity.mockImplementation(
+      async (platform: string, platformUserId: string, displayName?: string) => {
+        if (platformUserId === OP_A) {
+          markAEntered();
+          await aHeld;
+        }
+        return defaultIdentity(platform, platformUserId, displayName);
+      }
+    );
+
+    let a1Promise: Promise<Response> | undefined;
+    try {
+      a1Promise = postNodeSend(app, sendPayload({ message_id: A1, message: 'from-a-1' }), {
+        'X-Archon-User': OP_A,
+      });
+      await aEntered;
+
+      const b1Res = await postNodeSend(app, sendPayload({ message_id: B1, message: 'from-b-1' }), {
+        'X-Archon-User': OP_B,
+      });
+      expect(b1Res.status).toBe(200);
+      expect(await b1Res.json()).toEqual({
+        success: true,
+        message_id: B1,
+        state: 'queued',
+      });
+
+      const b2Res = await postNodeSend(app, sendPayload({ message_id: B2, message: 'from-b-2' }), {
+        'X-Archon-User': OP_B,
+      });
+      expect(b2Res.status).toBe(200);
+      expect(await b2Res.json()).toEqual({
+        success: true,
+        message_id: B2,
+        state: 'queued',
+      });
+
+      // B reached synchronous accept() while A is still held at identity resolution.
+      expect(handle.snapshot().queued.map(m => m.messageId)).toEqual([B1, B2]);
+      expect(handle.snapshot().queued.map(m => m.operatorUserId)).toEqual([OP_B, OP_B]);
+
+      releaseA();
+      const a1Res = await a1Promise;
+      expect(a1Res.status).toBe(200);
+      expect(await a1Res.json()).toEqual({
+        success: true,
+        message_id: A1,
+        state: 'queued',
+      });
+
+      const a2Res = await postNodeSend(app, sendPayload({ message_id: A2, message: 'from-a-2' }), {
+        'X-Archon-User': OP_A,
+      });
+      expect(a2Res.status).toBe(200);
+      expect(await a2Res.json()).toEqual({
+        success: true,
+        message_id: A2,
+        state: 'queued',
+      });
+
+      const queued = handle.snapshot().queued;
+      expect(queued.map(m => m.messageId)).toEqual([B1, B2, A1, A2]);
+      expect(queued.map(m => m.operatorUserId)).toEqual([OP_B, OP_B, OP_A, OP_A]);
+      expect(queued.map(m => m.message)).toEqual(['from-b-1', 'from-b-2', 'from-a-1', 'from-a-2']);
+      expect(new Set(queued.map(m => m.messageId)).size).toBe(4);
+      expect(queued.filter(m => m.operatorUserId === OP_B).map(m => m.messageId)).toEqual([B1, B2]);
+      expect(queued.filter(m => m.operatorUserId === OP_A).map(m => m.messageId)).toEqual([A1, A2]);
+
+      const queueRes = await getNodeQueue(app);
+      expect(queueRes.status).toBe(200);
+      const queueBody = (await queueRes.json()) as {
+        success: boolean;
+        queued: Array<Record<string, unknown>>;
+      };
+      expect(queueBody).toEqual({
+        success: true,
+        queued: [
+          { message_id: B1, message: 'from-b-1' },
+          { message_id: B2, message: 'from-b-2' },
+          { message_id: A1, message: 'from-a-1' },
+          { message_id: A2, message: 'from-a-2' },
+        ],
+      });
+      for (const row of queueBody.queued) {
+        expect(Object.keys(row).sort()).toEqual(['message', 'message_id']);
+      }
+    } finally {
+      // Do not leave the held app request running if an earlier assertion fails.
+      releaseA();
+      await a1Promise?.catch(() => undefined);
+      mockFindOrCreateUserByPlatformIdentity.mockImplementation(defaultIdentity);
+    }
   });
 
   test('replays the original receipt for a duplicate id before and after drain', async () => {

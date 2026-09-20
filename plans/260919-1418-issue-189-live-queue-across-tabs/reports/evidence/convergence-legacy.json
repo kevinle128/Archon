@@ -1,35 +1,35 @@
 {
   "surface": "legacy",
-  "tag": "286479213f61",
+  "tag": "0406f37b41bf",
   "nodeId": "steer-a",
   "viewport": { "width": 460, "height": 900 },
-  "runId": "b479aad5fd1af98ad14f8ef9424ed9b9",
+  "runId": "48298084512079656c5c260a80cb12ae",
   "identities": { "starterA": true, "starterB": true, "teammate": false },
   "draftsBefore": {
-    "starterBField": "draft-alpha-286479213f61",
-    "starterBStorage": "{\"draft\":\"draft-alpha-286479213f61\",\"pendingRetry\":null}",
-    "teammateField": "draft-beta-286479213f61",
-    "teammateStorage": "{\"draft\":\"draft-beta-286479213f61\",\"pendingRetry\":null}"
+    "starterBField": "draft-alpha-0406f37b41bf",
+    "starterBStorage": "{\"draft\":\"draft-alpha-0406f37b41bf\",\"pendingRetry\":null}",
+    "teammateField": "draft-beta-0406f37b41bf",
+    "teammateStorage": "{\"draft\":\"draft-beta-0406f37b41bf\",\"pendingRetry\":null}"
   },
   "twoRow": {
-    "starterId": "47ddffea-b697-4714-9cb9-56f096b29f7f",
-    "teammateId": "429d71c2-32b0-4213-a13c-5852170ad1fa",
-    "orderedIds": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"],
+    "starterId": "58f8af03-29d6-4b13-b106-5050da9e81ca",
+    "teammateId": "84ed0caf-d22b-4658-909c-d4600989400e",
+    "orderedIds": ["58f8af03-29d6-4b13-b106-5050da9e81ca", "84ed0caf-d22b-4658-909c-d4600989400e"],
     "observations": {
       "views": {
         "starterA": [
-          "47ddffea-b697-4714-9cb9-56f096b29f7f",
-          "429d71c2-32b0-4213-a13c-5852170ad1fa"
+          "58f8af03-29d6-4b13-b106-5050da9e81ca",
+          "84ed0caf-d22b-4658-909c-d4600989400e"
         ],
         "starterB": [
-          "47ddffea-b697-4714-9cb9-56f096b29f7f",
-          "429d71c2-32b0-4213-a13c-5852170ad1fa"
+          "58f8af03-29d6-4b13-b106-5050da9e81ca",
+          "84ed0caf-d22b-4658-909c-d4600989400e"
         ],
-        "teammate": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"]
+        "teammate": ["58f8af03-29d6-4b13-b106-5050da9e81ca", "84ed0caf-d22b-4658-909c-d4600989400e"]
       },
       "identities": {
-        "starter": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"],
-        "teammate": ["47ddffea-b697-4714-9cb9-56f096b29f7f", "429d71c2-32b0-4213-a13c-5852170ad1fa"]
+        "starter": ["58f8af03-29d6-4b13-b106-5050da9e81ca", "84ed0caf-d22b-4658-909c-d4600989400e"],
+        "teammate": ["58f8af03-29d6-4b13-b106-5050da9e81ca", "84ed0caf-d22b-4658-909c-d4600989400e"]
       }
     },
     "visual": {
@@ -39,7 +39,7 @@
           "hasMaxH33vh": true,
           "maxHeight": "297px",
           "overflowY": "auto",
-          "bandText": "queued · 2starter-one-286479213f61sentdeletedraft-beta-286479213f61sentdelete",
+          "bandText": "queued · 2starter-one-0406f37b41bfsentdeletedraft-beta-0406f37b41bfsentdelete",
           "hasThisTabOnlyInBand": false,
           "hasSurfaceElevatedBand": true,
           "bandImmediatelyBeforeComposer": true,
@@ -59,7 +59,7 @@
           "hasMaxH33vh": true,
           "maxHeight": "297px",
           "overflowY": "auto",
-          "bandText": "queued · 2starter-one-286479213f61sentdeletedraft-beta-286479213f61sentdelete",
+          "bandText": "queued · 2starter-one-0406f37b41bfsentdeletedraft-beta-0406f37b41bfsentdelete",
           "hasThisTabOnlyInBand": false,
           "hasSurfaceElevatedBand": true,
           "bandImmediatelyBeforeComposer": true,
@@ -79,7 +79,7 @@
           "hasMaxH33vh": true,
           "maxHeight": "297px",
           "overflowY": "auto",
-          "bandText": "queued · 2starter-one-286479213f61sentdeletedraft-beta-286479213f61sentdelete",
+          "bandText": "queued · 2starter-one-0406f37b41bfsentdeletedraft-beta-0406f37b41bfsentdelete",
           "hasThisTabOnlyInBand": false,
           "hasSurfaceElevatedBand": true,
           "bandImmediatelyBeforeComposer": true,
@@ -95,19 +95,19 @@
       }
     }
   },
-  "activeBeforeFirstRemoval": "button:delete · starter-one-286479213f61",
-  "activeAfterFirstRemoval": "button:delete · draft-beta-286479213f61",
+  "activeBeforeFirstRemoval": "button:delete · starter-one-0406f37b41bf",
+  "activeAfterFirstRemoval": "button:delete · draft-beta-0406f37b41bf",
   "oneRow": {
-    "orderedIds": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
+    "orderedIds": ["84ed0caf-d22b-4658-909c-d4600989400e"],
     "observations": {
       "views": {
-        "starterA": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
-        "starterB": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
-        "teammate": ["429d71c2-32b0-4213-a13c-5852170ad1fa"]
+        "starterA": ["84ed0caf-d22b-4658-909c-d4600989400e"],
+        "starterB": ["84ed0caf-d22b-4658-909c-d4600989400e"],
+        "teammate": ["84ed0caf-d22b-4658-909c-d4600989400e"]
       },
       "identities": {
-        "starter": ["429d71c2-32b0-4213-a13c-5852170ad1fa"],
-        "teammate": ["429d71c2-32b0-4213-a13c-5852170ad1fa"]
+        "starter": ["84ed0caf-d22b-4658-909c-d4600989400e"],
+        "teammate": ["84ed0caf-d22b-4658-909c-d4600989400e"]
       }
     },
     "visual": {
@@ -116,7 +116,7 @@
         "hasMaxH33vh": true,
         "maxHeight": "297px",
         "overflowY": "auto",
-        "bandText": "queued · 1draft-beta-286479213f61sentdelete",
+        "bandText": "queued · 1draft-beta-0406f37b41bfsentdelete",
         "hasThisTabOnlyInBand": false,
         "hasSurfaceElevatedBand": true,
         "bandImmediatelyBeforeComposer": true,
@@ -133,7 +133,7 @@
     "starterBDeleteCount": 0,
     "teammateDeleteCount": 0
   },
-  "activeBeforeSecondRemoval": "button:delete · draft-beta-286479213f61",
+  "activeBeforeSecondRemoval": "button:delete · draft-beta-0406f37b41bf",
   "activeAfterEmpty": "textarea",
   "final": {
     "orderedIds": [],
@@ -149,14 +149,14 @@
       }
     },
     "drafts": {
-      "starterBField": "draft-alpha-286479213f61",
-      "starterBStorage": "{\"draft\":\"draft-alpha-286479213f61\",\"pendingRetry\":null}",
+      "starterBField": "draft-alpha-0406f37b41bf",
+      "starterBStorage": "{\"draft\":\"draft-alpha-0406f37b41bf\",\"pendingRetry\":null}",
       "teammateField": ""
     },
     "requestCounts": {
-      "starterAGets": 4,
-      "starterBGets": 4,
-      "teammateGets": 3,
+      "starterAGets": 5,
+      "starterBGets": 5,
+      "teammateGets": 4,
       "starterBDeletes": 0,
       "teammateDeletes": 1
     }
