@@ -2,6 +2,8 @@
 
 activation_steps_prepend = [
   "Require an explicit target spec slug before document discovery. Resolve {output_folder}/specs/spec-{target_slug}/ and its canonical SPEC.md or PRD.md. If resolution fails, stop with INVALID_ASSESSMENT_INPUT.",
+  "Before document discovery, inspect the selected Epic frontmatter and body for approved mockup or prototype references. If none are found, stop and ask the user whether approved mockups exist. Never infer that no mockup exists. If the user confirms none exist, record that answer and continue. If mockups exist, require their exact paths, load all of them, and complete the full mockup coverage check before continuing.",
+  "When approved mockups exist, build a numbered atomic inventory from the rendered product UI and behavior before using PRD, Architecture, Epic, Story, README reconciliation notes, or future labels to interpret that inventory. Keep controls with the same label as separate items whenever their state, target, timing, scope, or result differs.",
 ]
 
 persistent_facts = [
@@ -15,4 +17,16 @@ persistent_facts = [
   "Never select a generic root-level PRD, architecture, UX, or epics file unless its frontmatter explicitly belongs to the requested target.",
   "All selected source documents must share the same target lineage.",
   "If requirements and epics describe different product scopes, classify the run as INVALID_ASSESSMENT_INPUT, return to document discovery, and do not calculate coverage, issue counts, or readiness status.",
+  "When approved mockups exist, inventory every visible control, state, transition, and behavior.",
+  "Every visible control, state, transition, and behavior in an approved mockup is current implementation scope. Approved mockups never contain future product features.",
+  "Create a Mockup Feature Behavior Matrix with one row per atomic mockup behavior. Each row must contain a stable feature ID, exact mockup file and location, visible control or state, precondition, user action, affected item or items, delivery or transition timing, expected result, remaining state, exact PRD requirement, exact Architecture decision, exact Epic or Story acceptance criterion, and comparison status.",
+  "Use only these comparison statuses: MATCHED, PARTIAL, MISSING, CONFLICT, and UNCLEAR.",
+  "Mark a row MATCHED only when the precondition, user action, affected item or items, timing, expected result, and remaining state are equivalent in the mockup, PRD, Architecture, and Epic or Story. A shared feature name, nearby reference, broad capability, or link is not evidence of equivalent behavior.",
+  "Map every mockup item to an explicit PRD requirement, Architecture decision, and Epic or Story acceptance criterion, and quote or precisely cite the clauses that implement the complete behavior. Never merge separate matrix rows only because they use the same label or control family.",
+  "A planning document, decision record, handoff note, backlog gate, milestone label, or historical owner-decision entry cannot remove, defer, or downgrade a feature that remains visible in an approved mockup.",
+  "If PRD, Architecture, Epic, Story, or any supporting document labels a visible mockup behavior as future, post-v1, gated, deferred, removed, superseded, or out of scope, mark the matrix row CONFLICT.",
+  "If a mockup behavior is unclear, stop and ask the user. Do not infer, omit, rename, defer, or reinterpret it.",
+  "If the product decision changes, the approved mockup must be updated first. Until the mockup, PRD, Architecture, and Epic or Story all describe the same current behavior, implementation readiness remains NOT READY.",
+  "Before the final assessment, include the complete Mockup Feature Behavior Matrix in the readiness report and calculate mockup coverage from its atomic rows. Do not replace the matrix with a prose summary or a broad feature mapping table.",
+  "Implementation readiness is NOT READY while any matrix row is PARTIAL, MISSING, CONFLICT, or UNCLEAR, or while any row lacks an exact PRD, Architecture, and Epic or Story citation.",
 ]
