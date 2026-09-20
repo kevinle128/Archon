@@ -1,0 +1,103 @@
+{
+  "feature": "Fail an abandoned redirect safely after 30 minutes (ANR Story 2.12, issue #192)",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Handle-owned inactivity timer and standard-node expiry",
+      "description": "As the workflow engine operator, I want the steering handle to own a fixed 30-minute inactivity timer that settles the idle-after-interrupt wait exactly once, so that an abandoned redirect on a standard AI node fails once with an exact, structured, non-retryable error instead of waiting forever.",
+      "acceptanceCriteria": [
+        "enterIdle() arms one 1,800,000 ms timer; advancing fake time to the deadline resolves the idle waiter once with { kind: 'expired' } and closes the handle",
+        "recordComposerActivity() re-arms the full interval only on a live idle handle and is a no-op on generating, parked, or closed handles, creating no timer",
+        "send_now, terminateIdleAwait(), close(), park(), discard(), unregister(), and clearForTests() each clear the timer; expiry/send_now/termination are first-wins in both deterministic call orders and a post-expiry send_now id receives closed",
+        "Standard-node expiry emits exactly one node_failed event with error 'interrupted by operator, no redirect received' and failure_reason 'idle_after_interrupt_timeout', and emits no node_completed and no nodeIdleTimedOut completion-path behavior",
+        "With retry.on_error: all the provider starts only one attempt (no retry notice or delay) because shouldRetryNodeFailure() returns false for the structured reason before ordinary classification",
+        "Re-arm via recordComposerActivity() before the original deadline keeps the node idle past that deadline and fails it only after one fresh full interval; send_now continues the same provider session with no late failure; the Cancel poll still ends an idle node when no stream is active",
+        "cd packages/workflows && bun test src/steering-registry.test.ts && bun test src/dag-executor.test.ts && bun run type-check all pass with new tests written before implementation and fake timers restored after each test"
+      ],
+      "technicalNotes": "Phase 1 (phase-01-start.md). steering-registry.ts: extend SteeringIdleWake (:97) with { kind: 'expired' }; add one private timeout field + module-local 1_800_000 ms constant on NodeSteeringHandle (:128); arm inside enterIdle() (:267); clear in seal() (:430) and before accept send_now resolves; add recordComposerActivity() and idle-only terminateIdleAwait() (close + resolve 'terminated' in one synchronous mutation); unregister() (:505) closes the handle before deleting. dag-executor.ts: raceIdleWake() (:521) receives the handle and the run-status poll settles via terminateIdleAwait(); add module-local constants for the exact error and 'idle_after_interrupt_timeout'; internal failureReason?: 'idle_after_interrupt_timeout' on NodeExecutionResult (never on public NodeOutput); shouldRetryNodeFailure() (:998) returns false for it; add finishIdleExpired() beside finishCancelled() (:3274) persisting node_failed with failure_reason + duration + lifecycle scope + iteration data; explicit wake.kind === 'expired' branch before terminated at :3572; do NOT throw expiry through the broad outer catch. No timer service, event emitter, config surface, or ExecuteWorkflowOptions field. Use jest fake timers, restore in finally/afterEach; cover one Claude and one non-Claude fixture. No root bun test.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Loop-node idle-expiry parity and engine invariants",
+      "description": "As the workflow engine operator, I want AI loop nodes to expire through the same fixed handle timer and structured failure reason, so that the loop path fails once through its own iteration and node finalizers and automatic retry cannot start a second loop attempt.",
+      "acceptanceCriteria": [
+        "A Claude loop fixture and a non-Claude loop fixture (with its real abort shape) each expire after 1,800,000 ms under fake timers and return the exact error 'interrupted by operator, no redirect received'",
+        "The persisted loop terminal is one node_failed event carrying failure_reason 'idle_after_interrupt_timeout'; at most one loop_iteration_failed diagnostic exists and there is no second node_failed, no node_completed, and no loop_iteration_completed for the expired attempt",
+        "failLoopIteration() is called with the exact user-visible error as both the iteration error and the explicit third nodeError argument (no 'Loop iteration N failed:' prefix), and failure_reason is persisted through LoopFailureExtras.data",
+        "retry.on_error: all does not execute a second loop provider attempt after expiry (internal camel-case failureReason on the failed loop result blocks the shared retry loop)",
+        "Composer activity re-arms the full interval without advancing the loop or resolving the idle waiter; send_now resumes the interrupted iteration on the prior session and reaches normal completion checks; Cancel wins through the existing loop cancellation result with no late expiry",
+        "Expiry never calls upsertWorkflowNodeSession, never writes an operator transcript row for queued-but-undelivered message ids, does not touch the stream nodeIdleTimedOut completion path, leaves the registry singleton empty after executor cleanup, and the closed handle retains its pending snapshot until unregister",
+        "cd packages/workflows && bun test src/dag-executor.test.ts && bun test src/steering-registry.test.ts && bun run type-check all pass"
+      ],
+      "technicalNotes": "Phase 2 (phase-02-loop-node-idle-await-parity.md). dag-executor.ts only: pass the loop's interruptible handle to the Phase-1 raceIdleWake() (:7196 call site); explicit wake.kind === 'expired' branch before the terminated path; failLoopIteration() at :6132; extend loop failure extras with internal failureReason returned on the failed result; keep iteration number/cost/token/output/execution-scope fields the existing finalizer owns. Do NOT use the standard-node finalizer inside the loop; do NOT move expiry after output validation or loop-completion evaluation. Fake timers restored per test; add loop parity, no-auto-retry, transcript, session-upsert, and cleanup assertions to dag-executor.test.ts.",
+      "dependsOn": ["US-001"],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Keepalive route, OpenAPI schema, and generated types",
+      "description": "As a web client, I want an authenticated bodyless POST keepalive endpoint that re-arms a live idle handle without writing anything, so that composer activity can keep a redirect window open with a ratified minimal contract and generated types.",
+      "acceptanceCriteria": [
+        "POST /api/workflows/runs/{runId}/nodes/{nodeId}/keepalive has no request body and returns exactly { success: true } on live idle handles (calling recordComposerActivity() once) and live generating handles (lifecycle no-op)",
+        "Auth uses resolveAuthContext under the existing steering grant: starter, another authenticated member, a non-owning admin, and an identity-less caller on an ungated install all succeed; a gated unauthenticated caller gets the nested 401 unauthenticated response; no owner or role check is added",
+        "Hot path classifies closed handle as 409 node_finished, parked as 422 not_steerable_here, live as success candidate without scanning workflow event history; cold path projects persisted events to return 404 unknown node, 409 terminal node, 422 known non-terminal detached node",
+        "After the final awaited run lookup, handle phase is re-read: a handle that closed during the await returns 409 with no activity call; one that parked returns 422 with no activity call; a disappeared/terminal run returns 404/409",
+        "Every rejected request leaves handle state, queue contents, and transcript rows unchanged; repeated keepalive calls are safe; an internal failure returns nested 500 internal_error without logging user content",
+        "OpenAPI document contains the bodyless request and strict minimal success schema; keepaliveWorkflowNodeResponseSchema is a strict object { success: z.literal(true) } with type derived via z.infer, z imported from @hono/zod-openapi",
+        "packages/web/src/lib/api.generated.d.ts regenerated from THIS worktree's server via openapi-typescript (never hand-edited); diff adds the keepalive path and schema and removes no unrelated paths",
+        "cd packages/server && bun test src/routes/api.workflow-runs.test.ts && bun run type-check, and cd packages/web && bun run type-check all pass"
+      ],
+      "technicalNotes": "Phase 3 (phase-03-keepalive-server-route-and-openapi-schema.md). workflow.schemas.ts: add keepaliveWorkflowNodeResponseSchema + KeepaliveWorkflowNodeResponse via z.infer. api.ts: add keepaliveWorkflowNodeRoute beside send/interrupt, register via registerOpenApiRoute(..., steeringValidationErrorHook) (wrapper :4241, steering routes :5363-5647, steeringError nested shape { success: false, error: { code, message } }). Handler order: auth -> run 404 -> terminal run 409 -> handle classify (hot/cold) -> final awaited run re-read -> handle re-read -> synchronous recordComposerActivity() -> { success: true }. Statuses 401/403-parity/404/409/422/500. No sub_state, message body, timestamp, transcript/event row, or log content. Type generation: generate:types targets port 3090; if this worktree does not own 3090 use a checked private port (e.g. 3192), temporary ARCHON_HOME via mktemp, wait on /api/health, run `bun x openapi-typescript http://127.0.0.1:3192/api/openapi.json -o packages/web/src/lib/api.generated.d.ts`, stop only that server, remove only that temp dir.",
+      "dependsOn": ["US-001"],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Both docks: idle keepalive, disclosures, and timeout presentation",
+      "description": "As an operator on either web shell, I want typing in the idle composer to keep the redirect window open and to see the exact disclosures and timeout-failure state, so that the 30-minute bound is visible and the failed node presents the canonical terminal UI on Legacy and Console.",
+      "acceptanceCriteria": [
+        "Both clients (packages/web/src/lib/api.ts and packages/web/src/experiments/console/skills/runs.ts) expose keepaliveWorkflowNode(runId, nodeId) as a bodyless POST typed with generated KeepaliveWorkflowNodeResponse, errors normalized through each client's existing steering error path (no request body, JSON content type, automatic retry, or local sub-state update)",
+        "Idle dock renders the exact stop disclosure 'stopped after the last completed tool call · files already written stay written' with 'no redirect ends this node after 30 min of inactivity · typing keeps it open' directly below it, in that order",
+        "First textarea focus or change while idle sends one keepalive immediately; a burst within one second is coalesced; activity after the window sends again; a rejected call is caught (no unhandled rejection) and later activity can retry",
+        "No keepalive is sent for Send now focus/click, Queue, generating, queue-only, interrupting, blocked, finished, detached, or finished-iteration modes; keepalive attaches only to the textarea's own onFocus/onChange gated on derived idle mode (composer-well onFocusCapture stays for focus bookkeeping only); run/node scope changes reset the throttle",
+        "latestNodeFailedByIdleExpiry(events, nodeId) selector in execution-room-model.ts returns true only when the latest logical execution failed with failure_reason 'idle_after_interrupt_timeout' using compareWorkflowEvents ordering; later node_started/node_completed/node_skipped/node_skipped_prior_success/node_retry_requested clears it; sibling-node and loop-iteration events don't affect it",
+        "Timeout terminal presentation removes textarea, Stop, Queue, Send now, and delete controls; shows 'interrupted by operator, no redirect received · failed after 30-minute idle timeout' even with zero unmatched items; keeps the ordered read-only Never sent band when items exist; exposes exactly one polite status 'node failed · interrupted with no redirect · none of this was sent' and NOT the generic node finished alert",
+        "Focus moves to the last transcript row or scroller when the composer disappears and never lands on <body>; finished mode is selected even when the Never sent list is empty",
+        "Room integration tests in NodeTranscriptPane.test.tsx and ConsoleNodeRoom.test.tsx prove the timeout presentation flows from structured event data and that a later retry/success clears stale timeout copy; Console isolation test still passes (no @/components imports)",
+        "cd packages/web && NODE_ENV=development bun test src/lib/steering-dock.test.ts src/lib/execution-room-model.test.ts src/components/workflows/ComposerDock.test.tsx src/components/workflows/NodeTranscriptPane.test.tsx src/experiments/console/components/ConsoleComposerDock.test.tsx src/experiments/console/components/ConsoleNodeRoom.test.tsx && bun run type-check all pass with tests written before implementation"
+      ],
+      "technicalNotes": "Phase 4 (phase-04-web-docks-disclosure-and-keepalive.md). steering-dock.ts: keep existing stop disclosure constant (:103), add the three new exact-copy strings as shared constants, extend finished-mode decision with an explicit timeout-failure boolean — all framework-free. execution-room-model.ts: add the narrow selector owning the literal failure_reason comparison (fold at :480, compareWorkflowEvents :407). NodeTranscriptPane.tsx and ConsoleNodeRoom.tsx derive the boolean from the already-present event list and pass only the boolean to the dock; never import @archon/workflows into web. Each dock gets an injectable keepalive prop defaulted to its shell's API helper; 1-second LEADING throttle in component refs; reset on run/node scope change and new idle epoch; ignore stale request completion after scope/epoch change; do not update React state from the response. Keep duplicated shell JSX thin and semantically identical; no debounce library or new hook file. Do NOT send keepalive from Send now (Story 2.12 contract overrides EXPERIENCE.md). Visual bar for next story: 460x900 and 1440x900, no room-driven horizontal overflow, Send now >=84x32px, queue/Never sent band full width capped at 33vh, 2px focus ring >=3:1, transcript last row not covered by sibling dock.",
+      "dependsOn": ["US-003"],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "End-to-end evidence, contract proofs, validation, and closeout",
+      "description": "As a maintainer, I want real browser proof of the keepalive journey and the timeout terminal state on both shells plus all repository gates green, so that Story 2.12 can be closed with verified evidence and the tracker updated.",
+      "acceptanceCriteria": [
+        "e2e/ui/agent-interrupt-redirect.spec.ts extended (not duplicated) proves on both console and legacy parameterizations: real idle-after-interrupt with run status running, both exact disclosure lines visible in order, textarea focus sends one bodyless keepalive POST returning exactly { success: true }, one-second burst coalesced, post-window activity resends, Send now sends no keepalive, post-redirect generating sends no keepalive, redirect resumes the same provider session to completion, and no request contains draft text or message content",
+        "e2e/ui/agent-never-sent.spec.ts extended with an isolated-worker SQLite fixture: real steerable run reaches idle, queued messages plus a raw draft exist, node ends via the real terminal path, the worker's isolated database sets run status failed and updates that test event's data to the exact engine shape with failure_reason 'idle_after_interrupt_timeout', and reopening the room proves the full terminal presentation on both shells (ordered Never sent list, exact timeout failure text, single polite status, no generic timeout alert, no mutation controls, focus on transcript row/scroller, empty-list case still shows failure disclosure without an empty shell)",
+        "No browser test waits 30 minutes, and no product test endpoint, timeout env var, production fixture branch, or database helper outside the e2e test is added; the persisted fixture is labeled terminal-presentation evidence, not engine-timer proof",
+        "Visual evidence captured and inspected on both shells at 460x900 and 1440x900 (recording actual room width and Console panel width): no horizontal overflow, disclosures/failure text visible and unclipped, control target sizes and focus-ring contrast intact, band keeps 33vh cap, transcript final row not covered, timeout state has no interactive dock control; screenshots read before acceptance",
+        "packages/core/src/operations/workflow-retry.ts and its test verified: target node among invalidated ids, session deletion before retry dispatch, all providers for workflow/scope/node removed — smallest missing assertion added only if a real gap is exposed; no second timeout-specific session-clearing path added",
+        "Full verification order passes: focused workflows tests + type-check, server tests + type-check, web tests + type-check, bun --filter @archon/core test, bun run build:web, cd e2e && npm run typecheck && ARCHON_E2E_PROOF=1 npx playwright test -c playwright.config.ts ui/agent-interrupt-redirect.spec.ts ui/agent-never-sent.spec.ts, then root bun run validate; no root bun test; no check:schema-upgrades needed",
+        "Only after all gates pass: sprint-status.yaml entry 2-12-fail-an-abandoned-redirect-safely-after-30-minutes set to done, plan/phase statuses completed, formatter check passes, and evidence written under plans/260920-1154-issue-192-fail-abandoned-redirect-30min/reports/evidence/ with Story 2.12 names (Story 2.3 evidence untouched)"
+      ],
+      "technicalNotes": "Phase 5 (phase-05-integration-proofs-and-validation.md). Two complementary proofs: fake-timer engine tests (already landed in US-001/US-002) prove the real 1,800,000 ms lifecycle; Playwright proves the real route + persisted-event presentation. Reuse existing fake provider, real web dispatch, real interrupt route, both-shell helpers, and the shipped terminal-reconciliation journey. Add a keepalive-path request tracker in the interrupt-redirect spec. The nine-perspective final review (bounded-recoverable outcome not a watchdog; one timer/one waiter no public seam; exact OpenAPI/event discriminator/generated types/steering errors; auth, first-wins, no-auto-retry, timer+session+transcript integrity; one timer per idle handle, throttled client rate, no hot-path event scan; coverage across both node paths/clients/docks/terminal/retry/reconciliation; each test layer proves its claim; no migration/config/orphan/incompatible reader; no generic timer framework/duplicate contract/prose cause parser). PR uses .github/pull_request_template.md with unused sections and instructional comments removed and 'Closes #192' in the body; do NOT edit CHANGELOG.md; do not weaken tests to get green.",
+      "dependsOn": ["US-001", "US-002", "US-003", "US-004"],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
