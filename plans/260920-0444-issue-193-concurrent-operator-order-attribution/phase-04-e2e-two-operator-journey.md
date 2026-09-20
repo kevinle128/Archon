@@ -1,173 +1,124 @@
 ---
 phase: 4
-title: 'E2E two-operator journey'
+title: 'End-to-end two-operator journey'
 status: pending
 priority: P1
-effort: '5h'
-dependencies: [3]
+effort: '3h'
+dependencies: [1, 2, 3]
 ---
 
-# Phase 4: E2E two-operator journey
+# Phase 4: End-to-end two-operator journey
 
 ## Goal
 
-Drive two authenticated identities (starter and teammate) through the real
-server, registry, executor and both web shells on one live node while a sibling
-node runs concurrently, and prove in the browser that the attributed operator
-rows appear in receipt order with the right display names and that the sibling
-node shows none of them.
+Add the one missing full-chain criterion: two distinct identity contexts launch
+overlapping dock sends to one live node, the real registry chooses the global
+order, the executor persists that order with correct identities, the read model
+projects the matching names, and a sibling node remains isolated.
 
-## Scout pass (run before editing)
+## Reuse, do not recreate
 
-1. Read `e2e/ui/agent-queue-convergence.spec.ts` (two contexts via
-   `createIdentityContext(browser, baseURL, 'starter' | 'teammate')`, pair
-   fixture, evidence dir pattern) and `e2e/ui/agent-queue-guidance.spec.ts:300-500`
-   (`waitForNodeStarted`, `transcriptTexts`, `trackSendRequests`,
-   `listNodeMessages`, DOM assertions on `[data-operator-label]`).
-2. Confirm `E2E_TEAMMATE_WEB_USER = 'e2e-hitl-teammate'`
-   (`e2e/lib/playwright/archon-runtime.ts:102`) and that only the starter is
-   seeded with display name `e2e-starter` (`:368-390`). The teammate is created
-   lazily by `findOrCreateUserByPlatformIdentity('web', header, header)`, so
-   its display name is the header value. Expected labels:
-   `operator · e2e-starter` and `operator · e2e-hitl-teammate`.
-   The database is worker-scoped (`e2e/README.md`: each worker has an isolated
-   temporary home and SQLite database) and other specs in the same worker may
-   sight the teammate first, but every path creates it through
-   `createIdentityContext` with the header as display name, so the label is
-   the same regardless of spec order. If the label ever renders as the 8-char
-   short id, check the seeding/lazy-create path before the spec expectation.
-   <!-- Updated: Red Team 2026-09-20 — finding A4 (test-order precondition) -->
-3. Confirm the pair fixture (`e2e/fixtures/workflows/e2e-queue-guidance-pair.yaml`)
-   runs `steer-a` and `steer-b` in one layer with `delayMs: 45000` and no
-   `emitTool`. The fake provider parses the scenario from the *prompt*; a
-   guidance turn's prompt has no scenario block, so the resumed turn completes
-   immediately with `[e2e-fake] deterministic response`
-   (`packages/providers/src/e2e-fake/provider.ts:690-703`). No fixture change
-   is expected; if the drained turn does not appear, add `"echoPrompt": true`
-   to both nodes and adjust the echo assertion.
-4. Check the `e2e/package.json` scripts and `playwright.config.ts` for tag
-   conventions (`[P1] [V:<id>]`) and the worker-scoped `archon` fixture.
+Extend `e2e/ui/agent-queue-convergence.spec.ts` instead of adding a separate
+large spec. It already owns:
 
-## Context links
+- starter/teammate browser contexts;
+- Console and Legacy room navigation;
+- the two-node `e2e-queue-guidance-pair` fixture;
+- queue GET, DOM id, node-start, viewport, and queue-visual helpers.
 
-- Story 2.9 two-view spec: `e2e/ui/agent-queue-convergence.spec.ts`
-- Story 2.8 single-operator drain spec: `e2e/ui/agent-queue-guidance.spec.ts`
-- Row label: `operator · <name>` rendered in both shells (`[data-operator-label]`)
-- Test plan section to satisfy: `steering-test-plan.md` → "Concurrent operators"
+Import `listNodeMessages` from `e2e/lib/playwright/run-detail.ts`. Keep the
+fixture unchanged: both nodes' bounded 45-second first turns provide the
+pre-drain observation window, and the fake provider's resumed turn completes
+without a new scenario block.
 
-## Key insights
+## Scenario
 
-- The browser cannot make two requests arrive in a chosen order, so this
-  phase is an **end-to-end rendering and attribution proof**, not an
-  independent order-causality proof: the receipt-order invariant itself is
-  pinned by Phases 1–2 with controlled interleaving. Here the spec records the
-  `message_id` of each send response in completion order per context (an
-  observation independent of the registry), then checks that the transcript's
-  operator rows are exactly the union, that each context's ids appear in that
-  context's own send order (independent check), and that the rows' order
-  equals the `GET /queue` snapshot taken after all sends completed
-  (self-consistency check between queue read and transcript write).
-  <!-- Updated: Red Team 2026-09-20 — finding A2 (self-referential order) -->
-- Two browser contexts with different `extraHTTPHeaders` are two operators.
-  Each context's dock serializes its own sends (`sendInFlight`), which is what
-  makes the per-context order meaningful.
-- Use `steer-b` as the leakage control: the teammate queues one message there;
-  `steer-a`'s transcript and queue must never contain it, and vice versa.
+Add one parameterized test per existing `surface` loop:
 
-## Requirements
+`[P1] [V:steer.concurrent-operators-${surface}] overlapping operators keep queue, transcript, and attribution aligned on ${surface}`
 
-- Functional: both shells; two identities; ≥2 messages per identity on
-  `steer-a` interleaved by alternating which context presses `Queue`; one
-  message on `steer-b`; after completion, `steer-a` rows = 4 attributed rows in
-  the pre-drain queue order, `steer-b` rows = 1; DOM labels match; the
-  `operator_user_id`s are two distinct non-empty strings, and the `steer-b` row
-  carries the teammate's id.
-- Non-functional: evidence screenshots at 460px (Legacy) and the Console
-  panel width, saved under this plan's `reports/evidence/`; test runtime
-  bounded by `T.xlong * 2`; no reliance on wall-clock ordering.
+1. Create starter and teammate contexts/pages at the existing 460x900 narrow
+   viewport. Start the pair workflow and wait for `steer-a` and `steer-b` to
+   emit `node_started`.
+2. Open `steer-a` in both identities' rooms. Verify the starter view reports
+   starter identity and teammate view reports non-starter, using the existing
+   run-detail seam.
+3. Round 1: pre-fill distinct starter A1 and teammate B1 text, register both
+   response listeners, then press both docks' Queue shortcuts inside one
+   `Promise.all`. Await both responses and record their caller ids.
+4. Round 2: only after both round-1 responses, repeat concurrently for A2/B2.
+   This preserves A1 before A2 and B1 before B2 while allowing either global
+   interleaving.
+5. Send one distinct teammate message X1 to `steer-b` through the teammate
+   request context with an explicit UUID. This is the cross-node control.
+6. Immediately snapshot both server queues. For `steer-a`, assert exactly the
+   four A/B ids, no duplicates, A1 precedes A2, and B1 precedes B2. Save this
+   observed array as `queueOrder`; do not prescribe whether A or B won either
+   round. For `steer-b`, assert exactly `[X1]`.
+7. Before drain, assert both `steer-a` rooms converge on `queueOrder` and the
+   four-row queue state.
+8. Wait for the real workflow to complete and read both node transcripts.
+   Filter operator rows and assert:
+   - `steer-a` ids exactly equal `queueOrder` and `seq` is increasing;
+   - A rows have display name `e2e-starter`, one stable non-null user id, and
+     the starter texts;
+   - B rows have display name `e2e-hitl-teammate`, a different stable non-null
+     user id, and the teammate texts;
+   - `steer-b` contains only X1 and uses the same teammate user id/name;
+   - no A/B id or text appears under the wrong node or sender.
+9. Reopen the completed `steer-a` room in both contexts and assert DOM operator
+   rows, labels, bodies, and `sent` badges follow `queueOrder` exactly.
 
-## Files to create / modify
+The route test in Phase 2 owns deterministic server overlap. This journey owns
+the real server/registry/executor/database/read-model/rendering chain and uses
+the queue snapshot as the authoritative order oracle.
 
-- Create: `e2e/ui/agent-concurrent-operators.spec.ts`
-- Modify (only if scout step 3 fails): `e2e/fixtures/workflows/e2e-queue-guidance-pair.yaml`
+## Visual acceptance criteria
 
-## Tests before (write first)
+No visual design changes are permitted. The authority is `EXPERIENCE.md`,
+`DESIGN.md`, and `mockups/key-steering-dock.html` under the Agent Node Room UX
+artifact directory. Legacy's room contract is 460px; the Console mock is drawn
+at a 520px panel, and the existing E2E also checks Console inside a 1440x900
+page viewport. For this scenario, use the established 460x900 narrow viewport
+on both surfaces and retain the neighboring wide-Console regression:
 
-For `surface of ['console','legacy']`, test
-`[P1] [V:steer.concurrent-operators-${surface}] two operators' guidance keeps receipt order and attribution on ${surface}`:
+- before drain, both identities show the same four queue rows in `queueOrder`,
+  with `queued · 4`, no duplicate rows, and no cross-node text;
+- after completion, both show four operator rows in that order, each with the
+  correct `operator · <name>` label, full body text, and `sent` badge;
+- existing queue-band geometry, accessible labels, focus, narrow overflow,
+  and Console-at-1440-page-viewport checks in the neighboring convergence test
+  remain green. Do not call 1440px a panel width, duplicate those measurements,
+  or create new design snapshots unless a product UI defect is found.
 
-1. Start the pair workflow via the starter context (`archon.startWorkflowViaWeb`).
-2. Create `starterCtx` and `teammateCtx`; open the `steer-a` room in each on
-   the chosen surface; wait for `node_started` on both nodes.
-3. Interleave: starter queues `S1`; teammate queues `T1`; starter queues `S2`;
-   teammate queues `T2` (each press awaits its POST response via
-   `trackSendRequests`). Teammate additionally opens `steer-b` and queues `X1`.
-4. Snapshot `GET /queue` for `steer-a` from either context → `queueOrder`
-   (expect 4 ids: a permutation of `{S1,S2,T1,T2}` with `S1<S2` and `T1<T2`).
-   Snapshot `steer-b` → `[X1]`.
-5. Both views converge on `QUEUED · 4` on `steer-a` (reuse the convergence
-   helper pattern).
-6. Wait for the run to complete. `listNodeMessages(steer-a)` operator rows:
-   ids equal `queueOrder`; the S-ids appear in the starter context's recorded
-   send-completion order and the T-ids in the teammate's; `operator_display_name`s map to `e2e-starter` for
-   S-ids and `e2e-hitl-teammate` for T-ids; two distinct `operator_user_id`s;
-   all four rows precede the drained-turn assistant row. `steer-b` rows: exactly
-   `[X1]` attributed to the teammate; none of `S*`/`T*` present.
-7. DOM on both contexts' `steer-a` room: `[data-operator-label]` texts in
-   document order equal the labels derived from `queueOrder`; `steer-b` room
-   shows one operator row. Capture evidence screenshots.
+## Files
 
-## Refactor (protected code)
+- Modify: `e2e/ui/agent-queue-convergence.spec.ts`
+- No fixture or product file change expected.
 
-None expected in product code. If the teammate label renders as the 8-char
-short id instead of the header, the lazy-create display-name path regressed —
-investigate `users.ts` before touching the spec's expectation.
-
-## Tests after
-
-None beyond the "before" set.
-
-## Regression gate
+## Validation
 
 ```bash
-bun run build:web
-cd e2e && npm ci && npx playwright install chromium && npx playwright test agent-concurrent-operators
-cd e2e && npx playwright test agent-queue-convergence agent-queue-guidance   # neighbours still green
+(cd e2e && npm run typecheck)
+(cd e2e && npx playwright test agent-queue-convergence --grep 'steer.concurrent-operators')
+(cd e2e && npx playwright test agent-queue-convergence)
 ```
 
-## Implementation steps
+Run the new scenarios twice if the first implementation exposed any timing
+failure; remove the race source rather than widening timeouts blindly.
 
-1. Run the scout pass; copy the helper imports from the convergence spec.
-2. Write the spec with the seven steps above; keep helpers local unless the
-   convergence spec already exports them.
-3. Run on both surfaces; save evidence under
-   `plans/260920-0444-issue-193-concurrent-operator-order-attribution/reports/evidence/`.
-4. Write `reports/phase-04-evidence.md` listing the scenario ids and paths.
+## Acceptance
 
-## Todo
+- Both Legacy and Console scenarios pass against isolated real SQLite/runtime
+  workers and the real fake-provider transport.
+- Client sends in each round are launched together; assertions never depend on
+  which sender wins.
+- Queue order, transcript order, sender metadata, display names, and DOM order
+  are tied by caller ids, not by text matching alone.
+- Sibling-node and sender isolation are proven in the same journey.
 
-- [ ] spec created and tagged
-- [ ] both surfaces green locally
-- [ ] evidence screenshots saved
-- [ ] evidence report written
+## Failure handling
 
-## Success criteria
-
-- Both `[V:steer.concurrent-operators-*]` scenarios pass twice in a row.
-- No product code changed, or the change is covered by a unit test from
-  Phases 1–3.
-
-## Risk assessment
-
-- Medium: E2E timing. Mitigated by the 45 s fixture delay and by asserting
-  against the observed queue snapshot rather than the press order.
-- Low: teammate display name. Pinned by scout step 2.
-
-## Security considerations
-
-- End-to-end proof that a second authenticated operator's messages are
-  attributed to that operator and never to the run starter.
-
-## Next steps
-
-Phase 5 records evidence and closes the story.
+If the queue has drained before step 6, first reduce setup work before the send
+rounds. Change the bounded fixture delay only if measured CI evidence shows the
+existing 45 seconds is insufficient; do not add arbitrary sleeps.
