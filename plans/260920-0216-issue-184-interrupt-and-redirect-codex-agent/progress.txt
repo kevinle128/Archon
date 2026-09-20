@@ -1,0 +1,68 @@
+## Codebase Patterns
+
+### Codex interrupt spike (diagnostic only)
+- **Where**: `packages/providers/src/codex/interrupt-resume-spike.ts`
+- **Pattern**: Real-SDK gate mirrors Claude's `interrupt-resume-spike.ts` shape — disposable mkdtemp git repo, explicit settlement timeouts, unhandledRejection/uncaughtException recorders, sanitized markdown report under the plan `reports/` dir. Never export from package barrel; never flip capabilities here.
+- **Script**: `packages/providers` → `bun run spike:interrupt:codex`
+- **Measured terminal (macOS + Linux @ 0.144.5)**: throw `AbortError` / message fragment exactly `The operation was aborted.` (not `Codex Exec exited with signal …`). Phase 2 predicate must stay this narrow unless Windows measures a different variant.
+- **Gotcha**: Docker Linux needs writable `~/.codex` (not `:ro`) and `procps` for `ps`-based descendant capture. Linuxkit counts as Linux evidence; never as Windows.
+
+### Codex SDK thread id timing
+- **Where**: `packages/providers/src/codex/provider.ts` (`streamCodexEvents`)
+- **Pattern**: New thread id arrives only on `thread.started`, not synchronously on `startThread()`. Operator Stop must defer abort until a non-empty id is retained.
+
+---
+
+## 2026-09-19 — US-001: Measure the locked Codex SDK abort/resume protocol
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/codex/interrupt-resume-spike.ts` — new bounded credentialed real-SDK spike (cases A–D)
+- `packages/providers/package.json` — added `spike:interrupt:codex` script
+- `plans/260920-0216-issue-184-interrupt-and-redirect-codex-agent/reports/codex-interrupt-resume-spike.md` — sanitized multi-OS report (overall BLOCKED: Windows untested)
+
+**Acceptance criteria verified**:
+- [x] Spike exists; uses `startThread().runStreamed()` / `resumeThread(id)`; script added
+- [x] Runtime version required exactly `0.144.5`; declared `^0.144.5` reported separately
+- [x] Disposable mkdtemp git repo with nonce; sandbox workspace-write / network off / approval never; removed in finally
+- [x] Case A: mid-tool interrupt with id retain, descendant capture, terminal fragments, settlement bound (PASS macOS + Linux)
+- [x] Case B: early intent deferred until id (PASS macOS + Linux; same terminal class)
+- [x] Case C: three resumeThread cycles with prior context (PASS macOS + Linux; never startThread fallback)
+- [x] Case D: process-table descendants cleaned; 0 unhandledRejection/uncaughtException
+- [x] Sanitized report committed with per-OS sections; overall BLOCKED for untested Windows (not skipped/passed)
+- [x] No production behavior changed; `bun x tsc --noEmit` in packages/providers passes
+
+**Learnings**:
+- Abort via `TurnOptions.signal` settles the async iterator with `AbortError` / `The operation was aborted.` on both darwin-arm64 and linux-arm64 (linuxkit) at SDK 0.144.5 — do not require the unobserved `Codex Exec exited with signal …` string for Phase 2.
+- Linux Docker evidence needs writable Codex home + `ps` (procps); read-only `~/.codex` fails app-server init before any thread.started.
+- Overall report remains BLOCKED until native Windows is measured; US-002 gate must not start.
+
+---
+
+## Blocker Ledger
+
+BLOCKER US-002 | gate=reports/codex-interrupt-resume-spike.md full-matrix PASS (native Linux+macOS+Windows) | cause=windows family BLOCKED — no native Windows host: /usr/local/bin/prlctl missing, ARCHON_WINDOWS_VM unavailable, CI test.yml matrix is ubuntu-latest only (no windows-latest), no remote Windows runner path for credentialed spike | action=cannot clear without operator-provided native Windows host or Parallels VM; did not implement Phase 2 or flip interrupt capability; left US-002 passes:false | 2026-09-19T20:30:59Z
+
+---
+
+## 2026-09-19 — US-002: Codex provider/executor interrupt slice with strict same-thread resume
+
+**Status**: BLOCKED (hard — external host)
+**Files changed**: none (gate failed before implementation)
+
+**Acceptance criteria verified**:
+- [ ] Gate: spike report PASS on native Linux, macOS, and Windows — FAIL: report Outcome is **BLOCKED** (windows untested). macos PASS, linux PASS only.
+- [ ] All remaining Phase-2 criteria not attempted — AC1 forbids proceeding on a BLOCKED report.
+
+**Attempts to clear**:
+- Confirmed spike report still overall BLOCKED for windows (section exists, no evidence).
+- Probed Parallels path from `test-windows` skill: `prlctl` not installed (`/usr/local/bin/prlctl` missing); no Parallels Desktop app present.
+- Probed CI: `.github/workflows/test.yml` matrix `os: [ubuntu-latest]` only; no `windows-latest` workflow target to run `bun run spike:interrupt:codex`.
+- Credentials (`OPENAI_API_KEY`) present on macOS host only — insufficient without a native Windows runtime for descendant cleanup + abort terminal measurement.
+
+**Learnings**:
+- US-001 correctly remains `passes: true` as a diagnostic that recorded BLOCKED for the untested family; US-002 must not start production work until the report Outcome flips to PASS including windows.
+- Do not weaken the three-OS gate, invent a Windows terminal variant, or flip `interrupt: 'stream-abort'` on partial evidence.
+
+---
+
