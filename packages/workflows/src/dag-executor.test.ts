@@ -26648,8 +26648,10 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'first note', 'op-a');
-        enqueue(RUN_ID, 'review', 'm-2', 'second note', 'op-b');
+        enqueue(RUN_ID, 'review', 'a1', 'a1', 'op-a');
+        enqueue(RUN_ID, 'review', 'b1', 'b1', 'op-b');
+        enqueue(RUN_ID, 'review', 'a2', 'a2', 'op-a');
+        enqueue(RUN_ID, 'review', 'b2', 'b2', 'op-b');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 'sess-turn-1' };
         return;
@@ -26661,7 +26663,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    expect(sendQueryArg<string>(1, 0)).toBe('first note\n\nsecond note');
+    expect(sendQueryArg<string>(1, 0)).toBe('a1\n\nb1\n\na2\n\nb2');
     expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-turn-1');
     const options = sendQueryArg<SendQueryOptions>(1, 3);
     expect(options.forkSession).toBe(false);
@@ -26675,19 +26677,33 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     const rows = await store.listNodeMessages(RUN_ID, 'review');
     const operatorRows = rows.filter(isOperatorTextRow);
-    expect(operatorRows.map(r => r.payload.text)).toEqual(['first note', 'second note']);
-    expect(operatorRows.map(r => r.metadata.operator_user_id)).toEqual(['op-a', 'op-b']);
-    expect(operatorRows.map(r => r.metadata.message_id)).toEqual(['m-1', 'm-2']);
+    expect(operatorRows.map(r => r.payload.text)).toEqual(['a1', 'b1', 'a2', 'b2']);
+    expect(operatorRows.map(r => r.metadata.operator_user_id)).toEqual([
+      'op-a',
+      'op-b',
+      'op-a',
+      'op-b',
+    ]);
+    expect(operatorRows.map(r => r.metadata.message_id)).toEqual(['a1', 'b1', 'a2', 'b2']);
+    expect(
+      operatorRows
+        .filter(r => r.metadata.operator_user_id === 'op-a')
+        .map(r => r.metadata.message_id)
+    ).toEqual(['a1', 'a2']);
+    expect(
+      operatorRows
+        .filter(r => r.metadata.operator_user_id === 'op-b')
+        .map(r => r.metadata.message_id)
+    ).toEqual(['b1', 'b2']);
     const firstTurnText = rows.find(r => r.kind === 'text' && r.payload.text === 'turn one');
     const secondTurnText = rows.find(r => r.kind === 'text' && r.payload.text === 'turn two');
     expect(firstTurnText).toBeDefined();
     expect(secondTurnText).toBeDefined();
     expect(firstTurnText!.seq).toBeLessThan(operatorRows[0]!.seq);
-    expect(operatorRows[1]!.seq).toBeLessThan(secondTurnText!.seq);
+    expect(operatorRows[3]!.seq).toBeLessThan(secondTurnText!.seq);
     const causedAttempt = secondTurnText!.metadata?.execution?.attempt_id;
     expect(causedAttempt).toBeDefined();
-    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(causedAttempt);
-    expect(operatorRows[1]!.metadata.execution?.attempt_id).toBe(causedAttempt);
+    expect(operatorRows.every(r => r.metadata.execution?.attempt_id === causedAttempt)).toBe(true);
     expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
   });
 
@@ -26962,7 +26978,8 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'adjust course');
+        enqueue(RUN_ID, 'my-loop', 'm-a', 'adjust course a', 'op-a');
+        enqueue(RUN_ID, 'my-loop', 'm-b', 'adjust course b', 'op-b');
         yield { type: 'assistant', content: 'iteration one work' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -26979,7 +26996,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     ]);
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    expect(sendQueryArg<string>(1, 0)).toBe('adjust course');
+    expect(sendQueryArg<string>(1, 0)).toBe('adjust course a\n\nadjust course b');
     expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
     expect(sendQueryArg<SendQueryOptions>(1, 3).forkSession).toBe(false);
     expect(storedEventTypes(store)).toContain('node_completed');
@@ -26987,17 +27004,20 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     const rows = await store.listNodeMessages(RUN_ID, 'my-loop');
     const operatorRows = rows.filter(isOperatorTextRow);
-    expect(operatorRows).toHaveLength(1);
-    expect(operatorRows[0]!.payload.text).toBe('adjust course');
+    expect(operatorRows).toHaveLength(2);
+    expect(operatorRows.map(r => r.payload.text)).toEqual(['adjust course a', 'adjust course b']);
+    expect(operatorRows.map(r => r.metadata.message_id)).toEqual(['m-a', 'm-b']);
+    expect(operatorRows.map(r => r.metadata.operator_user_id)).toEqual(['op-a', 'op-b']);
     const caused = rows.find(r => r.kind === 'text' && r.payload.text.includes('adjusted'));
     expect(caused).toBeDefined();
-    expect(operatorRows[0]!.seq).toBeLessThan(caused!.seq);
-    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
-      caused!.metadata?.execution?.attempt_id
-    );
-    expect(operatorRows[0]!.metadata.execution?.loop_ancestry).toEqual([
-      { node_id: 'my-loop', iteration: 1 },
-    ]);
+    expect(operatorRows[0]!.seq).toBeLessThan(operatorRows[1]!.seq);
+    expect(operatorRows[1]!.seq).toBeLessThan(caused!.seq);
+    const causedAttempt = caused!.metadata?.execution?.attempt_id;
+    expect(causedAttempt).toBeDefined();
+    expect(operatorRows.every(r => r.metadata.execution?.attempt_id === causedAttempt)).toBe(true);
+    const expectedAncestry = [{ node_id: 'my-loop', iteration: 1 }];
+    expect(operatorRows[0]!.metadata.execution?.loop_ancestry).toEqual(expectedAncestry);
+    expect(operatorRows[1]!.metadata.execution?.loop_ancestry).toEqual(expectedAncestry);
   });
 
   it('fails without draining when the latest loop guidance turn omits a session id', async () => {
@@ -27301,17 +27321,29 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return handle;
   }
 
-  function steeringMessage(messageId: string, message: string) {
+  function steeringMessage(
+    messageId: string,
+    message: string,
+    operatorUserId: string | null = 'op-1'
+  ) {
     return {
       messageId,
       message,
-      operatorUserId: 'op-1',
+      operatorUserId,
       receivedAt: new Date().toISOString(),
     };
   }
 
-  function enqueue(runId: string, stepName: string, messageId: string, message: string): void {
-    const result = liveHandle(runId, stepName).enqueue(steeringMessage(messageId, message));
+  function enqueue(
+    runId: string,
+    stepName: string,
+    messageId: string,
+    message: string,
+    operatorUserId: string | null = 'op-1'
+  ): void {
+    const result = liveHandle(runId, stepName).enqueue(
+      steeringMessage(messageId, message, operatorUserId)
+    );
     if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
   }
 
@@ -27329,9 +27361,15 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return row.kind === 'text' && row.metadata?.origin === 'operator';
   }
 
-  function sendNow(runId: string, stepName: string, messageId: string, message: string): void {
+  function sendNow(
+    runId: string,
+    stepName: string,
+    messageId: string,
+    message: string,
+    operatorUserId: string | null = 'op-1'
+  ): void {
     const result = liveHandle(runId, stepName).accept(
-      steeringMessage(messageId, message),
+      steeringMessage(messageId, message, operatorUserId),
       'send_now'
     );
     if (!result.ok) throw new Error(`send_now refused: ${result.reason}`);
@@ -27463,10 +27501,10 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     // Two queue-intent rows land as awaiting_send_now; send_now drains all
     // three in receipt order into ONE redirect turn.
-    enqueue(RUN_ID, 'review', 'm-old-1', 'old note one');
-    enqueue(RUN_ID, 'review', 'm-old-2', 'old note two');
+    enqueue(RUN_ID, 'review', 'm-old-1', 'old note one', 'op-a');
+    enqueue(RUN_ID, 'review', 'm-old-2', 'old note two', 'op-a');
     expect(idle.snapshot().queued.length).toBe(2);
-    sendNow(RUN_ID, 'review', 'm-new', 'new instruction');
+    sendNow(RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27491,6 +27529,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       'new instruction',
     ]);
     expect(operatorRows.map(r => r.metadata.message_id)).toEqual(['m-old-1', 'm-old-2', 'm-new']);
+    expect(operatorRows.map(r => r.metadata.operator_user_id)).toEqual(['op-a', 'op-a', 'op-b']);
     const interrupted = rows.find(r => r.kind === 'status' && r.payload.state === 'interrupted');
     const resumed = rows.find(r => r.kind === 'text' && r.payload.text === 'redirected output');
     expect(interrupted).toBeDefined();
