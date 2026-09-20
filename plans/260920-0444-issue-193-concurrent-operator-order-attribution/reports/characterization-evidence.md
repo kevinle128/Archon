@@ -1,7 +1,7 @@
 # Characterization evidence — Issue #193 / Story 2.13
 
-**Branch**: `archon/thread-1d25203e`  
-**Date**: 2026-09-20  
+**Branch**: `archon/thread-1d25203e`
+**Date**: 2026-09-20
 **Scope**: Prove concurrent-operator receipt order and attribution through registry → route → executor → E2E (Legacy + Console). Test/docs-only; no production defect found.
 
 ## Verdict

@@ -144,5 +144,3 @@ BLOCKER US-005 | gate=playwright agent-queue-guidance --grep steer.visual | caus
 BLOCKER US-005 | gate=bun test ./scripts/verify-feature-gate.test.ts | cause=SPEC.md/DESIGN.md/EXPERIENCE.md sha drift vs visual-config pins + stale ui.visual binding | action=chore(unblock) refresh pins + run-ui.json binding | 2026-09-20
 
 ---
-
-

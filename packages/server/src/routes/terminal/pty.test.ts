@@ -193,9 +193,18 @@ describe('spawnTerminalPty', () => {
             output += decoder.decode(chunk);
           },
         });
-        pty.write('echo READY; sleep 30\n');
+        // A distinctive prompt lets the test wait until Bash reclaims the
+        // terminal after the foreground `sleep` receives Ctrl-C. Writing the
+        // follow-up command immediately can feed it to the child instead.
+        pty.write("PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
         await waitFor(() => output.includes('READY'), 10_000, 'READY');
+        const outputBeforeInterrupt = output.length;
         pty.write('\x03');
+        await waitFor(
+          () => output.slice(outputBeforeInterrupt).includes('ARCHON_PTY>'),
+          10_000,
+          'shell prompt after SIGINT'
+        );
         pty.write('echo INTERRUPTED; exit\n');
         await waitFor(() => output.includes('INTERRUPTED'), 2_000, 'INTERRUPTED');
         await pty.exited;

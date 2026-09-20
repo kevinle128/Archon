@@ -583,9 +583,17 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(reasonId, 'Queue exposes aria-describedby for the blocked reason').toBeTruthy();
     await expect(room.locator(`[id="${reasonId ?? ''}"]`)).toHaveText(ASK_BLOCKED_REASON);
     await expect(room.locator('[role="status"]')).toContainText(ASK_BLOCKED_REASON);
-    // aria-disabled keeps the control tabbable instead of removing it.
-    await queue.focus();
-    expect(await queue.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
+    // The run-detail refresh may replace the dock while this check is running;
+    // refocus the current button until the settled, aria-disabled control owns focus.
+    await expect
+      .poll(
+        async () => {
+          await queue.focus();
+          return queue.evaluate(el => el.ownerDocument.activeElement === el);
+        },
+        { timeout: T.medium, message: 'aria-disabled Queue remains focusable' }
+      )
+      .toBe(true);
 
     await field.fill('do not send me');
     // aria-disabled (not a native disabled) keeps the control focusable and

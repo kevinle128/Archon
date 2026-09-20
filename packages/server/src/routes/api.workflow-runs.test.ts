@@ -7037,8 +7037,9 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       }
     );
 
+    let a1Promise: Promise<Response> | undefined;
     try {
-      const a1Promise = postNodeSend(app, sendPayload({ message_id: A1, message: 'from-a-1' }), {
+      a1Promise = postNodeSend(app, sendPayload({ message_id: A1, message: 'from-a-1' }), {
         'X-Archon-User': OP_A,
       });
       await aEntered;
@@ -7113,6 +7114,9 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
         expect(Object.keys(row).sort()).toEqual(['message', 'message_id']);
       }
     } finally {
+      // Do not leave the held app request running if an earlier assertion fails.
+      releaseA();
+      await a1Promise?.catch(() => undefined);
       mockFindOrCreateUserByPlatformIdentity.mockImplementation(defaultIdentity);
     }
   });
