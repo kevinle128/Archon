@@ -6,6 +6,7 @@ import {
   type NodeSteeringHandle,
   type QueuedOperatorMessage,
   type SteeringIdleWake,
+  SteeringRegistry,
 } from './steering-registry';
 
 // ---------------------------------------------------------------------------
@@ -1003,7 +1004,7 @@ describe('idle-after-interrupt inactivity timer', () => {
   });
 
   function enterIdleHandle(): {
-    registry: ReturnType<typeof createSteeringRegistry>;
+    registry: SteeringRegistry;
     handle: NodeSteeringHandle;
     waiter: Promise<SteeringIdleWake>;
   } {

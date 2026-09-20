@@ -28311,37 +28311,45 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     });
 
     /**
-     * Wait for idle after the provider fixture has switched to fake timers
-     * immediately before the abort result (so enterIdle arms a fake timer).
-     * Before fake timers arm, yield with a 1ms real sleep (same as awaitIdle);
-     * after, advance 1ms fake time per spin.
+     * Per-test gate: provider fixture arms fake timers immediately before the
+     * abort result and resolves this promise so the waiter can poll without
+     * real wall-clock sleeps (ts-no-test-timers).
      */
-    async function awaitIdleUnderFake(
+    function createFakeArmGate(): {
+      armed: Promise<void>;
+      arm: () => void;
+    } {
+      let resolveArmed!: () => void;
+      const armed = new Promise<void>(resolve => {
+        resolveArmed = resolve;
+      });
+      return {
+        armed,
+        arm: () => {
+          jest.useFakeTimers({ now: Date.now() });
+          resolveArmed();
+        },
+      };
+    }
+
+    /**
+     * After the provider has armed fake timers, flush only zero-delay work
+     * until idle is projected. Never runAllTimers — that would fire the
+     * 30-minute expiry before the caller can assert pre-deadline state.
+     */
+    async function awaitIdleFast(
       runId: string,
-      stepName: string
+      stepName: string,
+      fakeArmed: Promise<void>
     ): Promise<NodeSteeringHandle> {
+      await fakeArmed;
       for (let i = 0; i < 10_000; i++) {
         const handle = getSteeringRegistry().get(runId, stepName);
         if (handle?.steeringSubState() === 'idle-after-interrupt') return handle;
-        let fakeActive = true;
-        try {
-          jest.advanceTimersByTime(1);
-        } catch {
-          fakeActive = false;
-        }
-        if (!fakeActive) {
-          // Executor still on real timers — same yield as awaitIdle.
-          await Bun.sleep(1);
-        } else {
-          await Promise.resolve();
-        }
+        jest.advanceTimersByTime(0);
+        await Promise.resolve();
       }
       throw new Error(`handle ${runId}/${stepName} never reached idle-after-interrupt`);
-    }
-
-    /** Arm fake timers just before the abort-marked result so enterIdle uses them. */
-    function armFakeTimersBeforeAbortResult(): void {
-      jest.useFakeTimers({ now: Date.now() });
     }
 
     function nodeFailedData(
@@ -28365,21 +28373,26 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       ).length;
     }
 
+    function platformMessages(platform: IWorkflowPlatform): string[] {
+      return (platform.sendMessage as ReturnType<typeof mock>).mock.calls.map(c => String(c[1]));
+    }
+
     it('Claude fixture expires after 1_800_000 ms with exact error and failure_reason', async () => {
+      const gate = createFakeArmGate();
       mockSendQueryDag.mockImplementation(async function* () {
         void liveHandle(RUN_ID, 'review').interrupt();
         yield { type: 'assistant', content: 'partial' };
-        armFakeTimersBeforeAbortResult();
+        gate.arm();
         yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
       });
       const store = createMockStore();
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
-      await awaitIdleUnderFake(RUN_ID, 'review');
+      await awaitIdleFast(RUN_ID, 'review', gate.armed);
       expect(storedEventTypes(store)).not.toContain('node_failed');
 
       jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
-      await run;
+      const platform = await run;
 
       expect(countNodeFailed(store, 'review')).toBe(1);
       const data = nodeFailedData(store, 'review');
@@ -28388,6 +28401,10 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(storedEventTypes(store)).not.toContain('node_completed');
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
       expect(getSteeringRegistry().get(RUN_ID, 'review')).toBeUndefined();
+      // Not the stream idle-timeout completion path (nodeIdleTimedOut).
+      expect(platformMessages(platform).some(m => /completed via idle timeout/i.test(m))).toBe(
+        false
+      );
     });
 
     it('non-Claude deepseek fixture expires with the same structured failure', async () => {
@@ -28403,10 +28420,11 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         getType: () => 'deepseek',
         getCapabilities: () => DEEPSEEK_CAPABILITIES,
       }));
+      const gate = createFakeArmGate();
       try {
         mockSendQueryDag.mockImplementation(async function* () {
           void liveHandle(DEEPSEEK_RUN, 'review').interrupt();
-          armFakeTimersBeforeAbortResult();
+          gate.arm();
           yield {
             type: 'result',
             sessionId: 'ds-sess-1',
@@ -28421,7 +28439,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
           assistant: 'deepseek',
         });
 
-        await awaitIdleUnderFake(DEEPSEEK_RUN, 'review');
+        await awaitIdleFast(DEEPSEEK_RUN, 'review', gate.armed);
         jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
         await run;
 
@@ -28442,10 +28460,11 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     });
 
     it('retry.on_error: all starts only one provider attempt after expiry', async () => {
+      const gate = createFakeArmGate();
       mockSendQueryDag.mockImplementation(async function* () {
         void liveHandle(RUN_ID, 'review').interrupt();
         yield { type: 'assistant', content: 'partial' };
-        armFakeTimersBeforeAbortResult();
+        gate.arm();
         yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
       });
       const store = createMockStore();
@@ -28476,32 +28495,29 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         minimalConfig
       );
 
-      await awaitIdleUnderFake(RUN_ID, 'review');
+      await awaitIdleFast(RUN_ID, 'review', gate.armed);
       jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
-      // Any retry delay would also be fake — advance a cushion and prove no second attempt.
       jest.advanceTimersByTime(60_000);
       await run;
 
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
       expect(countNodeFailed(store, 'review')).toBe(1);
       expect(nodeFailedData(store, 'review').failure_reason).toBe(FAILURE_REASON);
-      const msgs = (platform.sendMessage as ReturnType<typeof mock>).mock.calls.map(c =>
-        String(c[1])
-      );
-      expect(msgs.some(m => /retry/i.test(m))).toBe(false);
+      expect(platformMessages(platform).some(m => /retry/i.test(m))).toBe(false);
     });
 
     it('recordComposerActivity before deadline keeps idle past original deadline then expires', async () => {
+      const gate = createFakeArmGate();
       mockSendQueryDag.mockImplementation(async function* () {
         void liveHandle(RUN_ID, 'review').interrupt();
         yield { type: 'assistant', content: 'partial' };
-        armFakeTimersBeforeAbortResult();
+        gate.arm();
         yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
       });
       const store = createMockStore();
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
-      const idle = await awaitIdleUnderFake(RUN_ID, 'review');
+      const idle = await awaitIdleFast(RUN_ID, 'review', gate.armed);
       jest.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
       idle.recordComposerActivity();
       jest.advanceTimersByTime(1);
@@ -28517,28 +28533,26 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     });
 
     it('send_now wins over expiry — same session continues with no late failure', async () => {
+      const gate = createFakeArmGate();
       let calls = 0;
       mockSendQueryDag.mockImplementation(async function* () {
         calls++;
         if (calls === 1) {
           void liveHandle(RUN_ID, 'review').interrupt();
           yield { type: 'assistant', content: 'partial' };
-          armFakeTimersBeforeAbortResult();
+          gate.arm();
           yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
           return;
         }
-        // Guidance turn runs under whatever clock is active after send_now.
         yield { type: 'assistant', content: 'redirected' };
         yield { type: 'result', sessionId: 'sess-2' };
       });
       const store = createMockStore();
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
-      await awaitIdleUnderFake(RUN_ID, 'review');
+      await awaitIdleFast(RUN_ID, 'review', gate.armed);
       sendNow(RUN_ID, 'review', 'm-1', 'continue please');
-      // Expiry must not fire after send_now cleared the timer.
       jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
-      // Allow the guidance turn to finish (may need real timers for I/O after restore).
       jest.useRealTimers();
       await run;
 
@@ -28549,20 +28563,20 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     });
 
     it('Cancel poll while idle ends with Cancelled by user when no stream is active', async () => {
+      const gate = createFakeArmGate();
       let cancelled = false;
       const store = createMockStore();
       store.getWorkflowRunStatus = mock(async () => (cancelled ? 'cancelled' : 'running'));
       mockSendQueryDag.mockImplementation(async function* () {
         void liveHandle(RUN_ID, 'review').interrupt();
         yield { type: 'assistant', content: 'partial' };
-        armFakeTimersBeforeAbortResult();
+        gate.arm();
         yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
       });
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
-      await awaitIdleUnderFake(RUN_ID, 'review');
+      await awaitIdleFast(RUN_ID, 'review', gate.armed);
       cancelled = true;
-      // Cancel poll cadence is CANCEL_CHECK_INTERVAL_MS (10s) under the same fake clock.
       jest.advanceTimersByTime(10_000);
       for (let i = 0; i < 30; i++) await Promise.resolve();
       await run;
@@ -28576,14 +28590,15 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     it('send_now and expiry boundary orders settle exactly once', async () => {
       // Order A: expiry first.
       {
+        const gate = createFakeArmGate();
         mockSendQueryDag.mockImplementation(async function* () {
           void liveHandle(RUN_ID, 'review').interrupt();
-          armFakeTimersBeforeAbortResult();
+          gate.arm();
           yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
         });
         const store = createMockStore();
         const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
-        await awaitIdleUnderFake(RUN_ID, 'review');
+        await awaitIdleFast(RUN_ID, 'review', gate.armed);
         jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
         expect(() => sendNow(RUN_ID, 'review', 'm-late', 'too late')).toThrow(/refused|closed/);
         await run;
@@ -28595,12 +28610,13 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
       // Order B: send_now first.
       {
+        const gate = createFakeArmGate();
         let calls = 0;
         mockSendQueryDag.mockImplementation(async function* () {
           calls++;
           if (calls === 1) {
             void liveHandle(RUN_ID, 'review').interrupt();
-            armFakeTimersBeforeAbortResult();
+            gate.arm();
             yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
             return;
           }
@@ -28609,7 +28625,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         });
         const store = createMockStore();
         const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
-        await awaitIdleUnderFake(RUN_ID, 'review');
+        await awaitIdleFast(RUN_ID, 'review', gate.armed);
         sendNow(RUN_ID, 'review', 'm-1', 'go');
         jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
         jest.useRealTimers();
