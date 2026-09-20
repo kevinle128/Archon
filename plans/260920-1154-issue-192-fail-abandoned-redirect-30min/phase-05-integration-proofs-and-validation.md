@@ -1,6 +1,6 @@
 ---
 title: 'Phase 5: End-to-end evidence, compatibility, and closeout'
-status: todo
+status: completed
 ---
 
 # Phase 5: End-to-end evidence, compatibility, and closeout
@@ -179,13 +179,13 @@ Only after focused tests, browser evidence, and `bun run validate` pass:
 
 ## Exit criteria
 
-- [ ] Real browser activity reaches the real keepalive route on both shells.
-- [ ] Fake-timer tests prove the fixed production duration and re-arm behavior.
-- [ ] Persisted-event browser coverage proves the exact failed state on both shells.
-- [ ] `Never sent` and fresh retry are proved through their existing owners.
-- [ ] All narrow, package, build, browser, and repository gates pass.
-- [ ] All screenshots were inspected at both required viewports.
-- [ ] Tracker and plan status change only after the final green diff.
+- [x] Real browser activity reaches the real keepalive route on both shells.
+- [x] Fake-timer tests prove the fixed production duration and re-arm behavior.
+- [x] Persisted-event browser coverage proves the exact failed state on both shells.
+- [x] `Never sent` and fresh retry are proved through their existing owners.
+- [x] All narrow, package, build, browser, and repository gates pass.
+- [x] All screenshots were inspected at both required viewports.
+- [x] Tracker and plan status change only after the final green diff.
 
 ## Rollback
 

@@ -25,45 +25,45 @@ shape, and the 4 other call sites at `dag-executor.ts:2263`, `3630`, `3676`,
 `finishCancelled` (verbatim, `dag-executor.ts:3274-3312`):
 
 ```ts
-  const finishCancelled = async (): Promise<NodeExecutionResult> => {
-    steeringHandle?.close();
-    const duration = Date.now() - nodeStartTime;
-    getLog().info({ nodeId: node.id, durationMs: duration }, 'dag_node_cancelled_during_streaming');
+const finishCancelled = async (): Promise<NodeExecutionResult> => {
+  steeringHandle?.close();
+  const duration = Date.now() - nodeStartTime;
+  getLog().info({ nodeId: node.id, durationMs: duration }, 'dag_node_cancelled_during_streaming');
 
-    deps.store
-      .createWorkflowEvent({
-        workflow_run_id: workflowRun.id,
-        event_type: 'node_failed',
-        step_name: stepName,
-        data: withLifecycleScopeData(workflowRun, undefined, executionScope, {
-          error: 'Cancelled by user',
-          duration_ms: duration,
-          ...iterationData,
-        }),
-      })
-      .catch((err: Error) => {
-        getLog().error(
-          { err, workflowRunId: workflowRun.id, eventType: 'node_failed' },
-          'workflow_event_persist_failed'
-        );
-      });
-
-    emitter.emit({
-      type: 'node_failed',
-      runId: workflowRun.id,
-      nodeId: node.id,
-      nodeName: node.command ?? node.id,
-      error: 'Cancelled by user',
+  deps.store
+    .createWorkflowEvent({
+      workflow_run_id: workflowRun.id,
+      event_type: 'node_failed',
+      step_name: stepName,
+      data: withLifecycleScopeData(workflowRun, undefined, executionScope, {
+        error: 'Cancelled by user',
+        duration_ms: duration,
+        ...iterationData,
+      }),
+    })
+    .catch((err: Error) => {
+      getLog().error(
+        { err, workflowRunId: workflowRun.id, eventType: 'node_failed' },
+        'workflow_event_persist_failed'
+      );
     });
 
-    await recordFailedStatus('Cancelled by user');
+  emitter.emit({
+    type: 'node_failed',
+    runId: workflowRun.id,
+    nodeId: node.id,
+    nodeName: node.command ?? node.id,
+    error: 'Cancelled by user',
+  });
 
-    // Clean up throttle entries
-    lastNodeCancelCheck.delete(`${workflowRun.id}:${node.id}`);
-    lastNodeActivityUpdate.delete(`${workflowRun.id}:${node.id}`);
+  await recordFailedStatus('Cancelled by user');
 
-    return { state: 'failed', output: nodeOutputText, error: 'Cancelled by user' };
-  };
+  // Clean up throttle entries
+  lastNodeCancelCheck.delete(`${workflowRun.id}:${node.id}`);
+  lastNodeActivityUpdate.delete(`${workflowRun.id}:${node.id}`);
+
+  return { state: 'failed', output: nodeOutputText, error: 'Cancelled by user' };
+};
 ```
 
 Shape to mirror for a new "expired, no redirect" fail branch: (1)
@@ -85,43 +85,40 @@ the idle-await `terminated` branch (`dag-executor.ts:3583`, see §2).
 ## 2. Idle-await in `executeNodeInternal` (verbatim, `dag-executor.ts:3548-3584`)
 
 ```ts
-      if (turnInterrupted && interruptibleHandle !== undefined && lastPassToken !== undefined) {
-        // The redirect resumes the session that was interrupted: this turn's
-        // own emitted id when a result carried one, else the id the turn was
-        // resuming (a throw can interrupt before any result arrives). A
-        // fresh first turn with neither fails fast rather than dropping the
-        // queued guidance into an unresumable session.
-        const interruptedSessionId = newSessionId ?? turnResumeId;
-        if (interruptedSessionId === undefined) {
-          // Missing interrupted session id is an explicit failure (#183) —
-          // never resume a fresh session and never lose the queued guidance.
-          steeringHandle?.close();
-          throw new Error(
-            `Node '${node.id}' was interrupted but the provider turn returned no session id to resume — failing instead of losing resumability.`
-          );
-        }
-        getLog().info(
-          { nodeId: node.id, workflowRunId: workflowRun.id },
-          'dag.node_turn_interrupted'
-        );
-        // ONE 'interrupted' status row — awaited so the committed transcript
-        // outcome precedes the interrupt request's resolution (the UI reads it
-        // before rendering the idle dock).
-        await recordNodeStatus('interrupted');
-        const idleWaiter = interruptibleHandle.enterIdle(lastPassToken);
-        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
-        if (wake.kind === 'send_now') {
-          // Same-session redirect: carry drained objects; join at the guidance head.
-          turnGuidanceMessages = wake.messages;
-          turnResumeId = interruptedSessionId;
-          turnIsGuidance = true;
-          continue turns;
-        }
-        // Discard / terminal-status wake — land on the existing Cancel path so
-        // the run ends exactly as a mid-stream cancel would.
-        nodeAbortController.abort();
-        return await finishCancelled();
-      }
+if (turnInterrupted && interruptibleHandle !== undefined && lastPassToken !== undefined) {
+  // The redirect resumes the session that was interrupted: this turn's
+  // own emitted id when a result carried one, else the id the turn was
+  // resuming (a throw can interrupt before any result arrives). A
+  // fresh first turn with neither fails fast rather than dropping the
+  // queued guidance into an unresumable session.
+  const interruptedSessionId = newSessionId ?? turnResumeId;
+  if (interruptedSessionId === undefined) {
+    // Missing interrupted session id is an explicit failure (#183) —
+    // never resume a fresh session and never lose the queued guidance.
+    steeringHandle?.close();
+    throw new Error(
+      `Node '${node.id}' was interrupted but the provider turn returned no session id to resume — failing instead of losing resumability.`
+    );
+  }
+  getLog().info({ nodeId: node.id, workflowRunId: workflowRun.id }, 'dag.node_turn_interrupted');
+  // ONE 'interrupted' status row — awaited so the committed transcript
+  // outcome precedes the interrupt request's resolution (the UI reads it
+  // before rendering the idle dock).
+  await recordNodeStatus('interrupted');
+  const idleWaiter = interruptibleHandle.enterIdle(lastPassToken);
+  const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
+  if (wake.kind === 'send_now') {
+    // Same-session redirect: carry drained objects; join at the guidance head.
+    turnGuidanceMessages = wake.messages;
+    turnResumeId = interruptedSessionId;
+    turnIsGuidance = true;
+    continue turns;
+  }
+  // Discard / terminal-status wake — land on the existing Cancel path so
+  // the run ends exactly as a mid-stream cancel would.
+  nodeAbortController.abort();
+  return await finishCancelled();
+}
 ```
 
 This is the exact point where a new 30-min expiry branch must be spliced: a
@@ -139,62 +136,62 @@ today; this is new surface the story must add.
 ## 3. Idle-await in `executeLoopNode` (verbatim, `dag-executor.ts:7165-7220`)
 
 ```ts
-      if (turnInterrupted && interruptibleHandle !== undefined && turnToken !== undefined) {
-        // The redirect resumes the loop's conversation thread: attempt 0's
-        // session id when this turn emitted one, else the inherited thread a
-        // re-ask pass was anchored to. A re-ask's own throwaway session is
-        // deliberately NOT a redirect target (same #2563 threading rule as
-        // the natural boundary).
-        const interruptedSessionId = settledTurnSessionId ?? currentSessionId;
-        if (interruptedSessionId === undefined) {
-          // Missing interrupted session id is an explicit failure (#183) —
-          // never resume a fresh session and never lose the queued guidance.
-          steering.steeringHandle?.close();
-          const resumabilityError = `Loop node '${node.id}' was interrupted but the provider turn returned no session id to resume — failing instead of losing resumability.`;
-          return await failLoopIteration(
-            resumabilityError,
-            {
-              costUsd: loopTotalCostUsd,
-              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
-              loopIterations: i,
-              data: { iteration: i },
-            },
-            resumabilityError
-          );
-        }
-        getLog().info(
-          { nodeId: node.id, workflowRunId: workflowRun.id, iteration: i },
-          'loop_node.turn_interrupted'
-        );
-        // ONE 'interrupted' status row — awaited so the committed transcript
-        // outcome precedes the interrupt request's resolution.
-        await recordLoopStatus(iterationExecutionScope, 'interrupted', String(i));
-        const idleWaiter = interruptibleHandle.enterIdle(turnToken);
-        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
-        if (wake.kind === 'send_now') {
-          // Same-session redirect: carry drained objects; join at the guidance head.
-          turnGuidanceMessages = wake.messages;
-          turnResumeId = interruptedSessionId;
-          turnIsGuidance = true;
-          continue turns;
-        }
-        // Discard / terminal-status wake — land on the existing cancel path so
-        // the run ends exactly as a mid-stream stop would.
-        const effectiveStatus =
-          (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ?? 'cancelled';
-        await safeSendMessage(
-          platform,
-          conversationId,
-          `Loop node '${node.id}' stopped during iteration ${String(i)} (${effectiveStatus})`,
-          msgContext
-        );
-        return await failLoopIteration(`Workflow ${effectiveStatus}`, {
-          costUsd: loopTotalCostUsd,
-          ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
-          loopIterations: i,
-          data: { status: effectiveStatus, iteration: i },
-        });
-      }
+if (turnInterrupted && interruptibleHandle !== undefined && turnToken !== undefined) {
+  // The redirect resumes the loop's conversation thread: attempt 0's
+  // session id when this turn emitted one, else the inherited thread a
+  // re-ask pass was anchored to. A re-ask's own throwaway session is
+  // deliberately NOT a redirect target (same #2563 threading rule as
+  // the natural boundary).
+  const interruptedSessionId = settledTurnSessionId ?? currentSessionId;
+  if (interruptedSessionId === undefined) {
+    // Missing interrupted session id is an explicit failure (#183) —
+    // never resume a fresh session and never lose the queued guidance.
+    steering.steeringHandle?.close();
+    const resumabilityError = `Loop node '${node.id}' was interrupted but the provider turn returned no session id to resume — failing instead of losing resumability.`;
+    return await failLoopIteration(
+      resumabilityError,
+      {
+        costUsd: loopTotalCostUsd,
+        ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+        loopIterations: i,
+        data: { iteration: i },
+      },
+      resumabilityError
+    );
+  }
+  getLog().info(
+    { nodeId: node.id, workflowRunId: workflowRun.id, iteration: i },
+    'loop_node.turn_interrupted'
+  );
+  // ONE 'interrupted' status row — awaited so the committed transcript
+  // outcome precedes the interrupt request's resolution.
+  await recordLoopStatus(iterationExecutionScope, 'interrupted', String(i));
+  const idleWaiter = interruptibleHandle.enterIdle(turnToken);
+  const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
+  if (wake.kind === 'send_now') {
+    // Same-session redirect: carry drained objects; join at the guidance head.
+    turnGuidanceMessages = wake.messages;
+    turnResumeId = interruptedSessionId;
+    turnIsGuidance = true;
+    continue turns;
+  }
+  // Discard / terminal-status wake — land on the existing cancel path so
+  // the run ends exactly as a mid-stream stop would.
+  const effectiveStatus =
+    (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ?? 'cancelled';
+  await safeSendMessage(
+    platform,
+    conversationId,
+    `Loop node '${node.id}' stopped during iteration ${String(i)} (${effectiveStatus})`,
+    msgContext
+  );
+  return await failLoopIteration(`Workflow ${effectiveStatus}`, {
+    costUsd: loopTotalCostUsd,
+    ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+    loopIterations: i,
+    data: { status: effectiveStatus, iteration: i },
+  });
+}
 ```
 
 Structurally identical to §2's shape, but the loop path's failure helper is
@@ -401,19 +398,21 @@ public API and NEVER waits for the poll side's `setTimeout(tick, CANCEL_CHECK_IN
 to actually fire. Two representative patterns:
 
 Real-timer poll helper used to detect idle entry (`dag-executor.test.ts:27379-27386`):
+
 ```ts
-  /** Poll until the handle projects the idle sub-state (or give up loudly). */
-  async function awaitIdle(runId: string, stepName: string): Promise<NodeSteeringHandle> {
-    for (let i = 0; i < 2000; i++) {
-      const handle = getSteeringRegistry().get(runId, stepName);
-      if (handle?.steeringSubState() === 'idle-after-interrupt') return handle;
-      await Bun.sleep(1);
-    }
-    throw new Error(`handle ${runId}/${stepName} never reached idle-after-interrupt`);
+/** Poll until the handle projects the idle sub-state (or give up loudly). */
+async function awaitIdle(runId: string, stepName: string): Promise<NodeSteeringHandle> {
+  for (let i = 0; i < 2000; i++) {
+    const handle = getSteeringRegistry().get(runId, stepName);
+    if (handle?.steeringSubState() === 'idle-after-interrupt') return handle;
+    await Bun.sleep(1);
   }
+  throw new Error(`handle ${runId}/${stepName} never reached idle-after-interrupt`);
+}
 ```
 
 Winning the race via the `waiter` side directly, both outcomes:
+
 - `send_now` outcome: `sendNow(runId, stepName, messageId, message)` calls
   `liveHandle(...).accept(message, 'send_now')` (`dag-executor.test.ts:27364-27376`),
   which synchronously resolves `idleWaiter` inside `NodeSteeringHandle.accept`

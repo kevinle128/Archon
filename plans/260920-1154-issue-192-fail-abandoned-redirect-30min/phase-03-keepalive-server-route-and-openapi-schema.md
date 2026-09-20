@@ -1,6 +1,6 @@
 ---
 title: 'Phase 3: Keepalive route and generated contract'
-status: todo
+status: completed
 ---
 
 # Phase 3: Keepalive route and generated contract
@@ -119,12 +119,12 @@ Also compare the generated diff and confirm that it adds the keepalive path and 
 
 ## Exit criteria
 
-- [ ] The route matches the ratified request, response, error, and actor contracts.
-- [ ] A terminal transition during the request wins before the activity mutation.
-- [ ] The live path does not scan workflow event history.
-- [ ] No route outcome writes a message, transcript row, workflow event, or queue item.
-- [ ] The generated file came from this worktree and contains no unrelated loss.
-- [ ] No server process or temporary Archon home remains after generation.
+- [x] The route matches the ratified request, response, error, and actor contracts.
+- [x] A terminal transition during the request wins before the activity mutation.
+- [x] The live path does not scan workflow event history.
+- [x] No route outcome writes a message, transcript row, workflow event, or queue item.
+- [x] The generated file came from this worktree and contains no unrelated loss.
+- [x] No server process or temporary Archon home remains after generation.
 
 ## Risks and rollback
 

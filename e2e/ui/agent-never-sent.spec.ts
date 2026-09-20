@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +13,7 @@ import {
   E2E_STARTER_WEB_USER,
   QUEUE_GUIDANCE_LOOP_NODE,
   QUEUE_GUIDANCE_NODE,
+  type ArchonRuntime,
 } from '../lib/playwright/archon-runtime';
 import {
   createIdentityContext,
@@ -39,6 +41,17 @@ const EVIDENCE_DIR = join(
   'evidence'
 );
 const MEASUREMENTS_FILE = join(EVIDENCE_DIR, 'never-sent-measurements.json');
+const IDLE_TIMEOUT_EVIDENCE_DIR = join(
+  REPO_ROOT,
+  'plans',
+  '260920-1154-issue-192-fail-abandoned-redirect-30min',
+  'reports',
+  'evidence'
+);
+const IDLE_TIMEOUT_MEASUREMENTS_FILE = join(
+  IDLE_TIMEOUT_EVIDENCE_DIR,
+  'us-005-terminal-measurements.json'
+);
 
 const SCROLLER_TESTID: Record<Surface, string> = {
   console: 'console-node-room-scroll',
@@ -49,6 +62,9 @@ const NARROW = { width: 460, height: 900 } as const;
 const WIDE = { width: 1440, height: 900 } as const;
 
 const NEVER_SENT_DISCLOSURE = 'node finished · none of this was sent';
+const IDLE_TIMEOUT_FAILURE_TEXT =
+  'interrupted by operator, no redirect received · failed after 30-minute idle timeout';
+const IDLE_TIMEOUT_STATUS = 'node failed · interrupted with no redirect · none of this was sent';
 const FIRST_MESSAGE = 'never-sent first';
 const SECOND_MESSAGE = 'never-sent second';
 const DRAFT_RAW = '  still typing  ';
@@ -180,6 +196,91 @@ async function abandonRun(
   expect(res.status, `abandon ${runId}`).toBe(200);
 }
 
+/**
+ * Terminal-presentation fixture only: wait for the real Cancel finalizer, then
+ * atomically label its persisted node_failed event as the engine's structured
+ * idle-expiry shape. The fake-timer workflow tests prove the 30-minute timer;
+ * this isolated worker database edit proves the browser's persisted-event UI.
+ */
+function markTerminalPresentationAsIdleExpiry(
+  archon: ArchonRuntime,
+  runId: string,
+  nodeId: string
+): void {
+  const script = `
+    import { Database } from 'bun:sqlite';
+    const dbPathKey = 'E2E_DB_PATH';
+    const runIdKey = 'E2E_RUN_ID';
+    const nodeIdKey = 'E2E_NODE_ID';
+    const db = new Database(process.env[dbPathKey]);
+    const runId = process.env[runIdKey];
+    const nodeId = process.env[nodeIdKey];
+    if (!runId || !nodeId) throw new Error('terminal presentation fixture missing run or node');
+    let event;
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      event = db
+        .query("SELECT id, data FROM remote_agent_workflow_events WHERE workflow_run_id = ? AND step_name = ? AND event_type = 'node_failed' ORDER BY created_at DESC, id DESC LIMIT 1")
+        .get(runId, nodeId);
+      if (event) break;
+      await Bun.sleep(25);
+    }
+    if (!event) throw new Error('real node_failed event did not persist');
+    const data = JSON.parse(String(event.data ?? '{}'));
+    data.error = 'interrupted by operator, no redirect received';
+    data.failure_reason = 'idle_after_interrupt_timeout';
+    db.run('BEGIN IMMEDIATE');
+    try {
+      db.run('UPDATE remote_agent_workflow_events SET data = ? WHERE id = ?', [JSON.stringify(data), event.id]);
+      db.run("UPDATE remote_agent_workflow_runs SET status = 'failed' WHERE id = ?", [runId]);
+      db.run('COMMIT');
+    } catch (error) {
+      db.run('ROLLBACK');
+      throw error;
+    }
+  `;
+  const result = spawnSync('bun', ['-e', script], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      E2E_DB_PATH: join(archon.home, 'archon.db'),
+      E2E_RUN_ID: runId,
+      E2E_NODE_ID: nodeId,
+    },
+  });
+  if (result.status !== 0) {
+    throw new Error(`terminal presentation fixture failed:\n${result.stderr}\n${result.stdout}`);
+  }
+}
+
+/** Hold the SSE-driven run refetch until the isolated DB fixture is complete. */
+async function holdRunDetailResponse(
+  page: Page,
+  runId: string
+): Promise<{ release: () => void; unroute: () => Promise<void> }> {
+  const pathname = `/api/workflows/runs/${encodeURIComponent(runId)}`;
+  let releaseGate: () => void = () => undefined;
+  const gate = new Promise<void>(resolve => {
+    releaseGate = resolve;
+  });
+  const handler = async (route: import('@playwright/test').Route): Promise<void> => {
+    if (new URL(route.request().url()).pathname !== pathname) {
+      await route.continue();
+      return;
+    }
+    await gate;
+    await route.continue();
+  };
+  await page.route('**/api/workflows/runs/**', handler);
+  return {
+    release: (): void => {
+      releaseGate();
+    },
+    unroute: async (): Promise<void> => {
+      await page.unroute('**/api/workflows/runs/**', handler);
+    },
+  };
+}
+
 /** Milestone 1: run cancelled; Never sent must stay hidden while node still unsettled. */
 async function assertNoNeverSentWhileUnsettled(
   page: Page,
@@ -245,6 +346,37 @@ async function assertNeverSentBox(
   }
   await expect(neverSentAlert(room)).toHaveCount(1);
   await expect(neverSentAlert(room)).toHaveText(NEVER_SENT_DISCLOSURE);
+  await expect(guidanceField(room)).toHaveCount(0);
+  await expect(queueButton(room)).toHaveCount(0);
+  await expect(room.getByRole('button', { name: /^delete ·/ })).toHaveCount(0);
+  await expect(sendNowButton(room)).toHaveCount(0);
+  await expect(stopButton(room)).toHaveCount(0);
+}
+
+async function assertIdleExpiryNeverSentBox(
+  room: Locator,
+  expected: { messageId: string | null; text: string }[]
+): Promise<void> {
+  const list = neverSentList(room);
+  await expect(list).toBeVisible({ timeout: T.long });
+  await expect(list).toHaveAttribute('aria-label', `Never sent, ${String(expected.length)}`);
+  const items = list.getByRole('listitem');
+  await expect(items).toHaveCount(expected.length);
+  for (let i = 0; i < expected.length; i += 1) {
+    const entry = expected[i]!;
+    const item = items.nth(i);
+    await expect(item).toHaveText(entry.text);
+    if (entry.messageId === null) {
+      expect(await item.getAttribute('data-message-id')).toBeNull();
+    } else {
+      await expect(item).toHaveAttribute('data-message-id', entry.messageId);
+    }
+  }
+  await expect(room.getByText(IDLE_TIMEOUT_FAILURE_TEXT)).toBeVisible();
+  await expect(
+    room.locator('[role="status"]').filter({ hasText: IDLE_TIMEOUT_STATUS })
+  ).toHaveCount(1);
+  await expect(neverSentAlert(room)).toHaveCount(0);
   await expect(guidanceField(room)).toHaveCount(0);
   await expect(queueButton(room)).toHaveCount(0);
   await expect(room.getByRole('button', { name: /^delete ·/ })).toHaveCount(0);
@@ -375,6 +507,16 @@ async function captureEvidence(target: Locator, name: string, testInfo: TestInfo
   await testInfo.attach(name, { body: shot, contentType: 'image/png' });
 }
 
+async function captureIdleTimeoutEvidence(
+  target: Locator,
+  name: string,
+  testInfo: TestInfo
+): Promise<void> {
+  mkdirSync(IDLE_TIMEOUT_EVIDENCE_DIR, { recursive: true });
+  const shot = await target.screenshot({ path: join(IDLE_TIMEOUT_EVIDENCE_DIR, name) });
+  await testInfo.attach(name, { body: shot, contentType: 'image/png' });
+}
+
 function mergeMeasurements(section: string, data: Record<string, unknown>): void {
   mkdirSync(EVIDENCE_DIR, { recursive: true });
   const current = existsSync(MEASUREMENTS_FILE)
@@ -382,6 +524,15 @@ function mergeMeasurements(section: string, data: Record<string, unknown>): void
     : {};
   current[section] = data;
   writeFileSync(MEASUREMENTS_FILE, `${JSON.stringify(current, null, 2)}\n`);
+}
+
+function mergeIdleTimeoutMeasurements(section: string, data: Record<string, unknown>): void {
+  mkdirSync(IDLE_TIMEOUT_EVIDENCE_DIR, { recursive: true });
+  const current = existsSync(IDLE_TIMEOUT_MEASUREMENTS_FILE)
+    ? (JSON.parse(readFileSync(IDLE_TIMEOUT_MEASUREMENTS_FILE, 'utf8')) as Record<string, unknown>)
+    : {};
+  current[section] = data;
+  writeFileSync(IDLE_TIMEOUT_MEASUREMENTS_FILE, `${JSON.stringify(current, null, 2)}\n`);
 }
 
 interface Rgba {
@@ -745,6 +896,131 @@ for (const surface of ['console', 'legacy'] as const) {
     await assertNeverSentBox(room, [{ messageId, text: IDLE_QUEUE_MESSAGE }]);
     await assertNoOperatorMessageIds(page, run.runId, QUEUE_GUIDANCE_NODE, [messageId]);
     await captureEvidence(room, `e4-3-${surface}-idle-never-sent.png`, testInfo);
+  });
+
+  test(`[P1] [V:steer.idle-timeout-${surface}] persisted idle-expiry terminal presentation on ${surface}`, async ({
+    page,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 3);
+    await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });
+    await page.setViewportSize(NARROW);
+
+    const run = await archon.startWorkflowViaWeb(
+      E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+      `e2e idle-timeout terminal ${surface}`
+    );
+    await waitForNodeStarted(page, run.runId, QUEUE_GUIDANCE_NODE);
+    const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
+    const field = guidanceField(room);
+    await expect(field).toBeVisible({ timeout: T.medium });
+    await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'generating');
+
+    const interrupted = page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname === interruptPathname(run.runId, QUEUE_GUIDANCE_NODE)
+    );
+    await stopButton(room).click();
+    expect((await interrupted).status()).toBe(200);
+    await expect(sendNowButton(room)).toBeVisible({ timeout: T.medium });
+    await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'idle-after-interrupt');
+
+    const messageId = randomUUID();
+    const queued = await archon.starterFetch(sendPathname(run.runId, QUEUE_GUIDANCE_NODE), {
+      method: 'POST',
+      body: JSON.stringify({
+        message: IDLE_QUEUE_MESSAGE,
+        message_id: messageId,
+        intent: 'queue',
+      }),
+    });
+    expect(queued.status).toBe(200);
+    await expect(room.getByText('will send · 1')).toBeVisible({ timeout: T.long });
+    await field.fill(DRAFT_RAW);
+    await field.focus();
+
+    const heldRunDetail = await holdRunDetailResponse(page, run.runId);
+    try {
+      await abandonRun(page, archon, run.runId);
+      markTerminalPresentationAsIdleExpiry(archon, run.runId, QUEUE_GUIDANCE_NODE);
+    } finally {
+      heldRunDetail.release();
+      await heldRunDetail.unroute();
+    }
+
+    const persisted = await getRunDetail(page, run.runId);
+    expect(persisted.status).toBe('failed');
+    expect(
+      persisted.events.find(
+        event => event.event_type === 'node_failed' && event.step_name === QUEUE_GUIDANCE_NODE
+      )?.data
+    ).toMatchObject({
+      error: 'interrupted by operator, no redirect received',
+      failure_reason: 'idle_after_interrupt_timeout',
+    });
+
+    await expect(room.getByText(IDLE_TIMEOUT_FAILURE_TEXT)).toBeVisible({ timeout: T.long });
+    await assertIdleExpiryNeverSentBox(room, [
+      { messageId, text: IDLE_QUEUE_MESSAGE },
+      { messageId: null, text: DRAFT_RAW },
+    ]);
+    const timeoutStatus = room.locator('[role="status"]').filter({ hasText: IDLE_TIMEOUT_STATUS });
+    await expect(timeoutStatus).toHaveCount(1);
+    await expect(timeoutStatus).toHaveText(IDLE_TIMEOUT_STATUS);
+    await expect(neverSentAlert(room)).toHaveCount(0);
+    await expect
+      .poll(async () => focusTarget(page, surface), {
+        timeout: T.medium,
+        message: 'timeout terminal focus remains in the transcript',
+      })
+      .toMatch(/^(last-row|scroller)$/);
+    await expectNoRoomDrivenOverflow(room, `${surface}-idle-timeout-460`);
+    const narrowRoomWidth = (await room.boundingBox())?.width ?? 0;
+    await captureIdleTimeoutEvidence(room, `us-005-${surface}-460-idle-timeout.png`, testInfo);
+
+    await page.setViewportSize(WIDE);
+    await expectNoRoomDrivenOverflow(room, `${surface}-idle-timeout-1440`);
+    const wideRoomWidth = (await room.boundingBox())?.width ?? 0;
+    await captureIdleTimeoutEvidence(room, `us-005-${surface}-1440-idle-timeout.png`, testInfo);
+    mergeIdleTimeoutMeasurements(`terminal-${surface}`, {
+      roomWidth460: narrowRoomWidth,
+      roomWidth1440: wideRoomWidth,
+      consolePanelWidth: surface === 'console' ? wideRoomWidth : null,
+    });
+
+    const emptyRun = await archon.startWorkflowViaWeb(
+      E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+      `e2e idle-timeout empty ${surface}`
+    );
+    await waitForNodeStarted(page, emptyRun.runId, QUEUE_GUIDANCE_NODE);
+    const emptyRoom = await openGuidanceRoom(page, surface, emptyRun.runId, QUEUE_GUIDANCE_NODE);
+    const emptyInterrupted = page.waitForResponse(
+      response =>
+        new URL(response.url()).pathname === interruptPathname(emptyRun.runId, QUEUE_GUIDANCE_NODE)
+    );
+    await stopButton(emptyRoom).click();
+    expect((await emptyInterrupted).status()).toBe(200);
+    await expect(sendNowButton(emptyRoom)).toBeVisible({ timeout: T.medium });
+
+    const heldEmptyRunDetail = await holdRunDetailResponse(page, emptyRun.runId);
+    try {
+      await abandonRun(page, archon, emptyRun.runId);
+      markTerminalPresentationAsIdleExpiry(archon, emptyRun.runId, QUEUE_GUIDANCE_NODE);
+    } finally {
+      heldEmptyRunDetail.release();
+      await heldEmptyRunDetail.unroute();
+    }
+
+    await expect(emptyRoom.getByText(IDLE_TIMEOUT_FAILURE_TEXT)).toBeVisible({ timeout: T.long });
+    await expect(neverSentList(emptyRoom)).toHaveCount(0);
+    await expect(
+      emptyRoom.locator('[role="status"]').filter({ hasText: IDLE_TIMEOUT_STATUS })
+    ).toHaveCount(1);
+    await expect(neverSentAlert(emptyRoom)).toHaveCount(0);
+    await expect(guidanceField(emptyRoom)).toHaveCount(0);
+    await expect(queueButton(emptyRoom)).toHaveCount(0);
+    await expect(sendNowButton(emptyRoom)).toHaveCount(0);
+    await expect(stopButton(emptyRoom)).toHaveCount(0);
   });
 
   test(`[P1] [V:steer.never-sent-draft-${surface}] half-typed draft folds in last on ${surface}`, async ({

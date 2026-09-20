@@ -193,9 +193,10 @@ describe('spawnTerminalPty', () => {
             output += decoder.decode(chunk);
           },
         });
-        // Distinctive prompt + cleared PROMPT_COMMAND so CI profile scripts
-        // cannot rewrite PS1 before we observe the post-SIGINT reprint.
-        pty.write("PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
+        // Use a command marker, not the shell prompt. A login profile can
+        // legally replace Bash with the user's configured shell and change
+        // PS1, while Ctrl-C must still let the queued command run.
+        pty.write('echo READY; sleep 30\n');
         await waitFor(
           () => output.includes('READY'),
           10_000,
@@ -207,23 +208,18 @@ describe('spawnTerminalPty', () => {
         // process group yet; \x03 written then is a literal byte, not SIGINT.
         await Bun.sleep(250);
         const outputBeforeInterrupt = output.length;
-        const sawShellAfterInterrupt = (): boolean =>
-          output.slice(outputBeforeInterrupt).includes('ARCHON_PTY>');
+        const sawInterruptConfirmation = (): boolean =>
+          output.slice(outputBeforeInterrupt).includes('INTERRUPTED');
         pty.write('\x03');
+        pty.write('echo INTERRUPTED; exit\n');
         try {
-          await waitFor(sawShellAfterInterrupt, 1_500, 'shell prompt after SIGINT', () => output);
+          await waitFor(sawInterruptConfirmation, 1_500, 'command after SIGINT', () => output);
         } catch {
           // Retry once — the first Ctrl-C can still lose the process-group race.
           pty.write('\x03');
-          await waitFor(sawShellAfterInterrupt, 8_000, 'shell prompt after SIGINT', () => output);
+          pty.write('echo INTERRUPTED; exit\n');
+          await waitFor(sawInterruptConfirmation, 8_000, 'command after SIGINT', () => output);
         }
-        pty.write('echo INTERRUPTED; exit\n');
-        await waitFor(
-          () => output.includes('INTERRUPTED'),
-          5_000,
-          'INTERRUPTED',
-          () => output
-        );
         await pty.exited;
       } finally {
         pty?.kill();

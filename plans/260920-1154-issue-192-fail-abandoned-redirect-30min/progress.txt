@@ -169,3 +169,27 @@
 - Blocked + idle still mounts the textarea; agentMode-only keepalive violated AC.
 
 ---
+
+## 2026-09-20 — US-005: E2E evidence, contract proofs, validation, and closeout
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/agent-interrupt-redirect.spec.ts` — both-shell real keepalive journey and idle screenshots
+- `e2e/ui/agent-never-sent.spec.ts` — both-shell terminal-presentation journey and terminal screenshots
+- `packages/server/src/routes/terminal/pty.test.ts` — shell-independent Ctrl-C completion marker
+- `reports/evidence/` — Story 2.12 screenshots and room measurements
+
+**Acceptance criteria verified**:
+- [x] Real idle activity reaches the bodyless keepalive route on both shells and does not include draft text
+- [x] Fake-timer workflow tests prove the 1,800,000 ms timer and re-arm behavior
+- [x] The persisted event fixture proves both-shell terminal presentation without a 30-minute browser wait
+- [x] Existing workflow retry coverage proves target invalidation and provider-session deletion before dispatch
+- [x] Idle and terminal screenshots at 460x900 and 1440x900 were inspected without overflow or clipped required copy
+- [x] Focused package checks, `bun run build:web`, browser typecheck and Playwright, and `bun run validate` passed
+- [x] PRD, plan, phase, and sprint tracker status changed after the final green validation
+
+**Validation**:
+- `ARCHON_E2E_PROOF=1 npx playwright test e2e/ui/agent-interrupt-redirect.spec.ts e2e/ui/agent-never-sent.spec.ts` — 27 passed
+- `bun run validate` — passed
+
+---

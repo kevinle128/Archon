@@ -59,6 +59,13 @@ const OPERATOR_EVIDENCE_DIR = join(
   'reports',
   'evidence'
 );
+const IDLE_TIMEOUT_EVIDENCE_DIR = join(
+  REPO_ROOT,
+  'plans',
+  '260920-1154-issue-192-fail-abandoned-redirect-30min',
+  'reports',
+  'evidence'
+);
 const MEASUREMENTS_FILE = join(EVIDENCE_DIR, 'us-005-measurements.json');
 
 const SCROLLER_TESTID: Record<Surface, string> = {
@@ -68,6 +75,8 @@ const SCROLLER_TESTID: Record<Surface, string> = {
 
 const INTERRUPT_DISCLOSURE =
   'stopped after the last completed tool call · files already written stay written';
+const IDLE_INACTIVITY_DISCLOSURE =
+  'no redirect ends this node after 30 min of inactivity · typing keeps it open';
 const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
 const AGENT_INTERRUPTING = 'agent interrupting';
 const AGENT_IDLE = 'agent idle · Send now delivers';
@@ -93,6 +102,10 @@ function sendPathname(runId: string, nodeId: string): string {
 
 function interruptPathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/interrupt`;
+}
+
+function keepalivePathname(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/keepalive`;
 }
 
 /** Counts POSTs to a node route so no-request guards are provable. */
@@ -596,6 +609,7 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     const sends = trackPosts(page, sendPathname(run.runId, QUEUE_GUIDANCE_NODE));
     const interrupts = trackPosts(page, interruptPathname(run.runId, QUEUE_GUIDANCE_NODE));
+    const keepalives = trackPosts(page, keepalivePathname(run.runId, QUEUE_GUIDANCE_NODE));
     const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
     const field = guidanceField(room);
 
@@ -662,6 +676,20 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(sendNowButton(room)).toBeVisible({ timeout: T.medium });
       await expect(room.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
       await expect(room.getByText(INTERRUPT_DISCLOSURE)).toBeVisible();
+      await expect(room.getByText(IDLE_INACTIVITY_DISCLOSURE)).toBeVisible();
+      const disclosureOrder = await room.evaluate(
+        (roomEl, lines) => {
+          const [stop, inactivity] = lines.map(line =>
+            Array.from(roomEl.querySelectorAll('p')).find(p => p.textContent === line)
+          );
+          if (stop === undefined || inactivity === undefined) return false;
+          return Boolean(
+            stop.compareDocumentPosition(inactivity) & Node.DOCUMENT_POSITION_FOLLOWING
+          );
+        },
+        [INTERRUPT_DISCLOSURE, IDLE_INACTIVITY_DISCLOSURE]
+      );
+      expect(disclosureOrder, 'idle disclosures stay in design order').toBe(true);
       await expect(room.getByText('will send · 2')).toBeVisible();
       const items = willSendList(room).getByRole('listitem');
       await expect(items).toHaveCount(2);
@@ -689,6 +717,44 @@ for (const surface of ['console', 'legacy'] as const) {
       }, SCROLLER_TESTID[surface]);
       expect(['last-row', 'scroller'], 'focus lands on the transcript').toContain(focus);
       await captureEvidence(room, `us-005-${surface}-idle-after-interrupt.png`, testInfo);
+      await captureEvidence(
+        room,
+        `us-005-${surface}-idle-after-interrupt.png`,
+        testInfo,
+        IDLE_TIMEOUT_EVIDENCE_DIR
+      );
+    });
+
+    await test.step('textarea activity keeps the redirect window open without sending guidance', async () => {
+      const firstKeepalive = page.waitForResponse(
+        response =>
+          new URL(response.url()).pathname === keepalivePathname(run.runId, QUEUE_GUIDANCE_NODE)
+      );
+      await field.focus();
+      const firstResponse = await firstKeepalive;
+      expect(firstResponse.status()).toBe(200);
+      expect(await firstResponse.json()).toEqual({ success: true });
+      expect(firstResponse.request().postData(), 'keepalive has no request body').toBeNull();
+      expect(keepalives.count(), 'focus sends the leading keepalive').toBe(1);
+
+      await field.fill('idle keepalive burst');
+      await field.press('End');
+      await field.press('x');
+      expect(keepalives.count(), 'one-second burst is coalesced').toBe(1);
+
+      await page.waitForTimeout(1100);
+      const secondKeepalive = page.waitForResponse(
+        response =>
+          new URL(response.url()).pathname === keepalivePathname(run.runId, QUEUE_GUIDANCE_NODE)
+      );
+      await field.press('y');
+      const secondResponse = await secondKeepalive;
+      expect(secondResponse.status()).toBe(200);
+      expect(await secondResponse.json()).toEqual({ success: true });
+      expect(secondResponse.request().postData(), 'resend remains bodyless').toBeNull();
+      expect(keepalives.count(), 'activity after the window sends again').toBe(2);
+      expect(keepalives.bodies(), 'keepalive never carries draft text').toEqual([null, null]);
+      await field.fill('');
     });
 
     await test.step('blank Send now and its shortcut issue no request', async () => {
@@ -703,6 +769,7 @@ for (const surface of ['console', 'legacy'] as const) {
     });
 
     await test.step('Send now posts only the typed message; the band drains', async () => {
+      const keepaliveCountBeforeSendNow = keepalives.count();
       const sendNowResponse = page.waitForResponse(
         res => new URL(res.url()).pathname === sendPathname(run.runId, QUEUE_GUIDANCE_NODE)
       );
@@ -727,6 +794,14 @@ for (const surface of ['console', 'legacy'] as const) {
       // redirect turn runs its bounded delay.
       await expect(stopButton(room)).toBeVisible();
       await expect(dockStatus(room)).toContainText(AGENT_GENERATING);
+      expect(keepalives.count(), 'Send now does not post keepalive').toBe(
+        keepaliveCountBeforeSendNow
+      );
+      await field.focus();
+      await field.press('z');
+      expect(keepalives.count(), 'generating composer activity posts no keepalive').toBe(
+        keepaliveCountBeforeSendNow
+      );
     });
 
     await test.step('same-session redirect completes with three operator rows before the echo', async () => {
@@ -1206,6 +1281,12 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(room.getByText(INTERRUPT_DISCLOSURE)).toBeVisible();
       await expectNoRoomDrivenOverflow(room, `${surface}@460-idle`);
       await captureEvidence(room, `us-005-${surface}-460-idle.png`, testInfo);
+      await captureEvidence(
+        room,
+        `us-005-${surface}-460-idle.png`,
+        testInfo,
+        IDLE_TIMEOUT_EVIDENCE_DIR
+      );
 
       const sendNow = sendNowButton(room);
       const sendMetrics = await sendNow.evaluate(el => {
@@ -1324,6 +1405,12 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(wideRoom.getByText(INTERRUPT_DISCLOSURE)).toBeVisible();
       await expectNoRoomDrivenOverflow(wideRoom, `${surface}@1440-idle`);
       await captureEvidence(wideRoom, `us-005-${surface}-1440-idle.png`, testInfo);
+      await captureEvidence(
+        wideRoom,
+        `us-005-${surface}-1440-idle.png`,
+        testInfo,
+        IDLE_TIMEOUT_EVIDENCE_DIR
+      );
       mergeMeasurements(`viewport-${surface}`, {
         wide1440: (await wideRoom.boundingBox())?.width ?? 0,
       });

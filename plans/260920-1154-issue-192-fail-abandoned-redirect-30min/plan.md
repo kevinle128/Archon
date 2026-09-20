@@ -1,7 +1,7 @@
 ---
 title: 'ANR Story 2.12 — Fail an abandoned redirect safely after 30 minutes'
 description: 'Bound idle-after-interrupt with a fixed 30-minute inactivity timer, re-arm it from authenticated composer activity, and fail the node once when no redirect arrives.'
-status: pending
+status: completed
 issue: 192
 branch: archon/thread-cfc1f82b
 tags: [anr, epic-2, steering, workflow-engine, accessibility, tdd]
@@ -178,36 +178,36 @@ No new public documentation page currently owns live node steering; the OpenAPI 
 
 ## Phases
 
-| Phase | Work                                                                                                    | Status  |
-| ----- | ------------------------------------------------------------------------------------------------------- | ------- |
-| 1     | [Handle-owned timer and standard-node expiry](./phase-01-start.md)                                      | Pending |
-| 2     | [Loop parity and failure invariants](./phase-02-loop-node-idle-await-parity.md)                         | Pending |
-| 3     | [Keepalive route and generated contract](./phase-03-keepalive-server-route-and-openapi-schema.md)       | Pending |
-| 4     | [Both docks, accessibility, and failure presentation](./phase-04-web-docks-disclosure-and-keepalive.md) | Pending |
-| 5     | [End-to-end evidence, compatibility, and closeout](./phase-05-integration-proofs-and-validation.md)     | Pending |
+| Phase | Work                                                                                                    | Status   |
+| ----- | ------------------------------------------------------------------------------------------------------- | -------- |
+| 1     | [Handle-owned timer and standard-node expiry](./phase-01-start.md)                                      | Complete |
+| 2     | [Loop parity and failure invariants](./phase-02-loop-node-idle-await-parity.md)                         | Complete |
+| 3     | [Keepalive route and generated contract](./phase-03-keepalive-server-route-and-openapi-schema.md)       | Complete |
+| 4     | [Both docks, accessibility, and failure presentation](./phase-04-web-docks-disclosure-and-keepalive.md) | Complete |
+| 5     | [End-to-end evidence, compatibility, and closeout](./phase-05-integration-proofs-and-validation.md)     | Complete |
 
 ## Acceptance criteria
 
-- [ ] A standard AI node and an AI loop node each fail once after exactly 1,800,000 milliseconds of idle-after-interrupt inactivity under fake timers.
-- [ ] The terminal error is exactly `interrupted by operator, no redirect received`.
-- [ ] Expiry emits one terminal `node_failed` event with `failure_reason: 'idle_after_interrupt_timeout'` and never emits `node_completed` for that attempt.
-- [ ] Expiry does not use or set the existing stream `nodeIdleTimedOut` completion path.
-- [ ] YAML `retry.on_error: all` does not start another provider attempt after this failure.
-- [ ] Composer keepalive activity re-arms the full fixed interval and does not resolve idle-await.
-- [ ] `send_now`, workflow Cancel, and expiry are first-wins and leave no timer, waiter, or late mutation.
-- [ ] The existing Cancel poll still ends an idle node when no provider stream is active.
-- [ ] The keepalive route has no request body and returns exactly `{ success: true }` on live generating and live idle handles.
-- [ ] The keepalive route returns the established nested steering errors for 401, 404, 409, 422, and 500 outcomes.
-- [ ] Parked and detached handles return 422, while terminal or closed handles return 409.
-- [ ] Both API clients use the generated `KeepaliveWorkflowNodeResponse` type.
-- [ ] Both docks send keepalive only for textarea focus or changes while idle.
-- [ ] `Send now`, `Queue`, generating state, terminal state, and finished-iteration state send no keepalive.
-- [ ] Both docks show the exact stop disclosure, exact inactivity disclosure, exact visible timeout failure text, and exact polite failure announcement.
-- [ ] Timeout failure removes all mutation controls, preserves transcript focus, and renders unmatched items as the read-only `Never sent` list.
-- [ ] The idle and failed layouts match the design at a 460 px viewport and at a 1440 × 900 page viewport with the Console panel at its actual constrained width.
-- [ ] There is no room-driven horizontal overflow, clipped copy, covered focus, or undersized existing control.
-- [ ] A supported failed-node retry starts with no interrupted provider session.
-- [ ] Focused tests, both browser journeys, `bun run build:web`, and `bun run validate` pass.
+- [x] A standard AI node and an AI loop node each fail once after exactly 1,800,000 milliseconds of idle-after-interrupt inactivity under fake timers.
+- [x] The terminal error is exactly `interrupted by operator, no redirect received`.
+- [x] Expiry emits one terminal `node_failed` event with `failure_reason: 'idle_after_interrupt_timeout'` and never emits `node_completed` for that attempt.
+- [x] Expiry does not use or set the existing stream `nodeIdleTimedOut` completion path.
+- [x] YAML `retry.on_error: all` does not start another provider attempt after this failure.
+- [x] Composer keepalive activity re-arms the full fixed interval and does not resolve idle-await.
+- [x] `send_now`, workflow Cancel, and expiry are first-wins and leave no timer, waiter, or late mutation.
+- [x] The existing Cancel poll still ends an idle node when no provider stream is active.
+- [x] The keepalive route has no request body and returns exactly `{ success: true }` on live generating and live idle handles.
+- [x] The keepalive route returns the established nested steering errors for 401, 404, 409, 422, and 500 outcomes.
+- [x] Parked and detached handles return 422, while terminal or closed handles return 409.
+- [x] Both API clients use the generated `KeepaliveWorkflowNodeResponse` type.
+- [x] Both docks send keepalive only for textarea focus or changes while idle.
+- [x] `Send now`, `Queue`, generating state, terminal state, and finished-iteration state send no keepalive.
+- [x] Both docks show the exact stop disclosure, exact inactivity disclosure, exact visible timeout failure text, and exact polite failure announcement.
+- [x] Timeout failure removes all mutation controls, preserves transcript focus, and renders unmatched items as the read-only `Never sent` list.
+- [x] The idle and failed layouts match the design at a 460 px viewport and at a 1440 × 900 page viewport with the Console panel at its actual constrained width.
+- [x] There is no room-driven horizontal overflow, clipped copy, covered focus, or undersized existing control.
+- [x] A supported failed-node retry starts with no interrupted provider session.
+- [x] Focused tests, both browser journeys, `bun run build:web`, and `bun run validate` pass.
 
 ## Compatibility, rollout, and rollback
 

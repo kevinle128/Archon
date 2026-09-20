@@ -6,12 +6,12 @@ Status: DONE. Read-only — no files modified.
 
 ### Route table (OpenAPI `createRoute` definitions)
 
-| Route var | Method | Path | Definition lines |
-|---|---|---|---|
-| `sendWorkflowNodeRoute` | POST | `/api/workflows/runs/{runId}/nodes/{nodeId}/send` | `api.ts:1607-1641` |
-| `interruptWorkflowNodeRoute` | POST | `/api/workflows/runs/{runId}/nodes/{nodeId}/interrupt` | `api.ts:1643-1674` |
-| `withdrawWorkflowNodeRoute` | DELETE | `/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}` | `api.ts:1676-1702` |
-| `readWorkflowNodeQueueRoute` | GET | `/api/workflows/runs/{runId}/nodes/{nodeId}/queue` | `api.ts:1704-1735` |
+| Route var                    | Method | Path                                                           | Definition lines   |
+| ---------------------------- | ------ | -------------------------------------------------------------- | ------------------ |
+| `sendWorkflowNodeRoute`      | POST   | `/api/workflows/runs/{runId}/nodes/{nodeId}/send`              | `api.ts:1607-1641` |
+| `interruptWorkflowNodeRoute` | POST   | `/api/workflows/runs/{runId}/nodes/{nodeId}/interrupt`         | `api.ts:1643-1674` |
+| `withdrawWorkflowNodeRoute`  | DELETE | `/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}` | `api.ts:1676-1702` |
+| `readWorkflowNodeQueueRoute` | GET    | `/api/workflows/runs/{runId}/nodes/{nodeId}/queue`             | `api.ts:1704-1735` |
 
 All four share `tags: ['Workflows']` and the `steeringJsonError(description)` helper (`api.ts:691-696`) for every non-2xx response entry, which wires each error status to the shared `steeringErrorSchema` (from `workflow.schemas.ts`).
 
@@ -77,8 +77,7 @@ registerOpenApiRoute(
       // establish the target. The projection is authoritative for lifecycle —
       // a stale live handle can never beat a terminal run/node.
       const events = await workflowEventDb.listWorkflowEvents(runId);
-      const pendingInteractions =
-        await workflowPendingInteractionDb.listPendingInteractions(runId);
+      const pendingInteractions = await workflowPendingInteractionDb.listPendingInteractions(runId);
       const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
         state => state.nodeId === nodeId
       );
@@ -98,7 +97,9 @@ registerOpenApiRoute(
       }
       if (handle === undefined) {
         return steeringError(
-          c, 422, 'not_steerable_here',
+          c,
+          422,
+          'not_steerable_here',
           'No live steering session for this node in this process'
         );
       }
@@ -125,10 +126,19 @@ registerOpenApiRoute(
       if (!result.ok) {
         return result.reason === 'closed'
           ? steeringError(c, 409, 'node_finished', 'Workflow node is finished')
-          : steeringError(c, 422, 'not_steerable_here', 'No live steering session for this node in this process');
+          : steeringError(
+              c,
+              422,
+              'not_steerable_here',
+              'No live steering session for this node in this process'
+            );
       }
       return c.json(
-        { success: true as const, message_id: result.receipt.messageId, state: result.receipt.state },
+        {
+          success: true as const,
+          message_id: result.receipt.messageId,
+          state: result.receipt.state,
+        },
         200
       );
     } catch (error) {
@@ -162,8 +172,7 @@ registerOpenApiRoute(
       }
 
       const events = await workflowEventDb.listWorkflowEvents(runId);
-      const pendingInteractions =
-        await workflowPendingInteractionDb.listPendingInteractions(runId);
+      const pendingInteractions = await workflowPendingInteractionDb.listPendingInteractions(runId);
       const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
         state => state.nodeId === nodeId
       );
@@ -182,7 +191,12 @@ registerOpenApiRoute(
         return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
       }
       if (handle === undefined) {
-        return steeringError(c, 422, 'not_steerable_here', 'No live steering session for this node in this process');
+        return steeringError(
+          c,
+          422,
+          'not_steerable_here',
+          'No live steering session for this node in this process'
+        );
       }
 
       // Final async gate: a concurrent terminal transition wins.
@@ -197,13 +211,21 @@ registerOpenApiRoute(
       const settlement = await handle.interrupt();
       switch (settlement) {
         case 'idle-after-interrupt':
-          return c.json({ success: true as const, sub_state: 'idle-after-interrupt' as const }, 200);
+          return c.json(
+            { success: true as const, sub_state: 'idle-after-interrupt' as const },
+            200
+          );
         case 'generating':
           return c.json({ success: true as const, sub_state: 'generating' as const }, 200);
         case 'node_finished':
           return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
         case 'not_steerable_here':
-          return steeringError(c, 422, 'not_steerable_here', 'No live steering session for this node in this process');
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
       }
     } catch (error) {
       getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_interrupt_failed');
@@ -410,11 +432,24 @@ async function expectSteeringError(res: Response, status: number, code: string):
 For interrupt specifically (lines 7221-7293):
 
 ```ts
-function postNodeInterrupt(app, headers = {}, runId = STEER_RUN_ID, nodeId = STEER_NODE_ID): Promise<Response> {
-  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/interrupt`, { method: 'POST', headers });
+function postNodeInterrupt(
+  app,
+  headers = {},
+  runId = STEER_RUN_ID,
+  nodeId = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/interrupt`, {
+    method: 'POST',
+    headers,
+  });
 }
 
-interface InterruptibleSetup { handle: NodeSteeringHandle; controller: AbortController; token: number; aborts: () => number; }
+interface InterruptibleSetup {
+  handle: NodeSteeringHandle;
+  controller: AbortController;
+  token: number;
+  aborts: () => number;
+}
 
 /** Running run + node_started projection + live INTERRUPTIBLE handle mid-turn. */
 function liveInterruptibleSetup(nodeId = STEER_NODE_ID): InterruptibleSetup {
@@ -424,7 +459,10 @@ function liveInterruptibleSetup(nodeId = STEER_NODE_ID): InterruptibleSetup {
   const controller = new AbortController();
   let abortCount = 0;
   const originalAbort = controller.abort.bind(controller);
-  controller.abort = () => { abortCount++; originalAbort(); };
+  controller.abort = () => {
+    abortCount++;
+    originalAbort();
+  };
   const token = handle.beginTurn(controller);
   return { handle, controller, token, aborts: () => abortCount };
 }
@@ -447,7 +485,11 @@ test('returns 200 and queues one item for the run starter', async () => {
   const res = await postNodeSend(app, sendPayload(), { 'X-Archon-User': STEER_STARTER_ID });
 
   expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID, state: 'queued' });
+  expect(await res.json()).toEqual({
+    success: true,
+    message_id: STEER_MESSAGE_ID,
+    state: 'queued',
+  });
   const queued = handle.snapshot().queued;
   expect(queued).toHaveLength(1);
   expect(queued[0]?.operatorUserId).toBe(STEER_STARTER_ID);
@@ -457,8 +499,12 @@ test('returns 200 for another authenticated member identity', async () => {
   const handle = liveSetup();
   mockFindOrCreateUserByPlatformIdentity.mockImplementationOnce(
     async (_platform: string, platformUserId: string) => ({
-      id: platformUserId, display_name: platformUserId, email: null,
-      role: 'member' as const, created_at: new Date(), updated_at: new Date(),
+      id: platformUserId,
+      display_name: platformUserId,
+      email: null,
+      role: 'member' as const,
+      created_at: new Date(),
+      updated_at: new Date(),
     })
   );
   const { app } = makeApp();
@@ -550,7 +596,7 @@ test('returns 409 for a terminal run even with a stale live handle', async () =>
 
 1. **Exact URL pattern and keepalive convention.** `send` = `POST /api/workflows/runs/{runId}/nodes/{nodeId}/send` (`api.ts:1609`); `interrupt` = `POST /api/workflows/runs/{runId}/nodes/{nodeId}/interrupt` (`api.ts:1645`). By the same convention, keepalive would be `POST /api/workflows/runs/{runId}/nodes/{nodeId}/keepalive`.
 
-2. **Reaching the `NodeSteeringHandle`.** Every steering route does `const handle = getSteeringRegistry().get(runId, nodeId)` (e.g. `api.ts:5389, 5495, 5586`) after independently confirming via `workflowDb.getWorkflowRun` + `workflowEventDb.listWorkflowEvents`/`projectApiWorkflowNodeStates` that the run/node is not terminal — the projection is authoritative over a possibly-stale handle. A keepalive handler would follow the identical ladder (404/409/422 checks in the same order) then call a new handle method. No such method exists yet in `packages/workflows/src/steering-registry.ts` today — there is currently **no idle-after-interrupt timer at all** in the registry (`NodeSteeringHandle` has no timer field; `enterIdle()` at `steering-registry.ts:267-282` only stores an `idleWaiter` resolved by `accept()`'s send_now release or by `seal()` on terminal transitions). The generic 30-minute idle timeout that exists today, `STEP_IDLE_TIMEOUT_MS` (`packages/workflows/src/utils/idle-timeout.ts:22`, `30 * 60 * 1000`), is a *different* mechanism — it bounds a node's overall step/loop-iteration idle time via `withIdleTimeout()` (`dag-executor.ts:2415-2486, 6414-6434, 7002`), not the interrupt-specific idle-after-interrupt sub-state. Story 2.12's 30-minute abandoned-redirect timer over `idle-after-interrupt` is new work; a `recordComposerActivity()`-style method on `NodeSteeringHandle` (to reset that new timer without touching `idleWaiter`/`subState`) does not exist in the current codebase and would need to be added alongside whatever timer mechanism implements the 30-minute fail.
+2. **Reaching the `NodeSteeringHandle`.** Every steering route does `const handle = getSteeringRegistry().get(runId, nodeId)` (e.g. `api.ts:5389, 5495, 5586`) after independently confirming via `workflowDb.getWorkflowRun` + `workflowEventDb.listWorkflowEvents`/`projectApiWorkflowNodeStates` that the run/node is not terminal — the projection is authoritative over a possibly-stale handle. A keepalive handler would follow the identical ladder (404/409/422 checks in the same order) then call a new handle method. No such method exists yet in `packages/workflows/src/steering-registry.ts` today — there is currently **no idle-after-interrupt timer at all** in the registry (`NodeSteeringHandle` has no timer field; `enterIdle()` at `steering-registry.ts:267-282` only stores an `idleWaiter` resolved by `accept()`'s `send_now` release or by `seal()` on terminal transitions). The generic 30-minute idle timeout that exists today, `STEP_IDLE_TIMEOUT_MS` (`packages/workflows/src/utils/idle-timeout.ts:22`, `30 * 60 * 1000`), is a separate mechanism — it bounds a node's overall step/loop-iteration idle time via `withIdleTimeout()` (`dag-executor.ts:2415-2486, 6414-6434, 7002`), not the interrupt-specific idle-after-interrupt sub-state. Story 2.12's 30-minute abandoned-redirect timer over `idle-after-interrupt` is new work; a `recordComposerActivity()`-style method on `NodeSteeringHandle` (to reset that new timer without touching `idleWaiter`/`subState`) does not exist in the current codebase and would need to be added alongside whatever timer mechanism implements the 30-minute fail.
 
 3. **Interrupt's JSON body / `sub_state` field.** `interrupt`'s 200 body is `{ success: true, sub_state: 'idle-after-interrupt' | 'generating' }` (`interruptWorkflowNodeResponseSchema`, `workflow.schemas.ts:582-590`). This is the response-schema convention every steering route follows: `{ success: true, ...fields }` on 200 (`.strict()`, unique per route — `message_id`+`state` for send, `sub_state` for interrupt, `message_id` for withdraw, `queued` array for queue-read), and the single shared `{ success: false, error: { code, message } }` (`steeringErrorSchema`) on every non-2xx.
 

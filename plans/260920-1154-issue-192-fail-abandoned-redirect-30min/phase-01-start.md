@@ -1,6 +1,6 @@
 ---
 title: 'Phase 1: Handle-owned timer and standard-node expiry'
-status: todo
+status: completed
 ---
 
 # Phase 1: Handle-owned timer and standard-node expiry
@@ -112,11 +112,11 @@ bun run type-check
 
 ## Exit criteria
 
-- [ ] Every registry settlement clears its timeout and resolves the idle waiter at most once.
-- [ ] Standard-node expiry produces one exact, structured failure.
-- [ ] Automatic node retry cannot restart the abandoned redirect.
-- [ ] Cancel and same-session `send_now` behavior remain unchanged.
-- [ ] No public timeout option or workflow-language field exists.
+- [x] Every registry settlement clears its timeout and resolves the idle waiter at most once.
+- [x] Standard-node expiry produces one exact, structured failure.
+- [x] Automatic node retry cannot restart the abandoned redirect.
+- [x] Cancel and same-session `send_now` behavior remain unchanged.
+- [x] No public timeout option or workflow-language field exists.
 
 ## Risks and rollback
 

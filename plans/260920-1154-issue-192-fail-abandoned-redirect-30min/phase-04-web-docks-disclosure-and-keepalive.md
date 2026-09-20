@@ -1,6 +1,6 @@
 ---
 title: 'Phase 4: Both docks, accessibility, and failure presentation'
-status: todo
+status: completed
 ---
 
 # Phase 4: Both docks, accessibility, and failure presentation
@@ -205,12 +205,12 @@ Run the existing Console isolation test in the package's normal test script or f
 
 ## Exit criteria
 
-- [ ] Both shells use generated types through their existing client boundary.
-- [ ] Activity is immediate, throttled, idle-only, and never attached to `Send now` focus.
-- [ ] Terminal cause derives from structured event data and clears on retry.
-- [ ] Visible and accessible timeout copy matches the design authority exactly.
-- [ ] Finished focus and read-only behavior remain correct with zero or many unmatched items.
-- [ ] The 460 px and wide visual acceptance criteria are ready for Phase 5 browser proof.
+- [x] Both shells use generated types through their existing client boundary.
+- [x] Activity is immediate, throttled, idle-only, and never attached to `Send now` focus.
+- [x] Terminal cause derives from structured event data and clears on retry.
+- [x] Visible and accessible timeout copy matches the design authority exactly.
+- [x] Finished focus and read-only behavior remain correct with zero or many unmatched items.
+- [x] The 460 px and wide visual acceptance criteria are ready for Phase 5 browser proof.
 
 ## Risks and rollback
 

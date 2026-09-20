@@ -1,0 +1,12 @@
+{
+  "terminal-console": {
+    "roomWidth460": 460,
+    "roomWidth1440": 696,
+    "consolePanelWidth": 696
+  },
+  "terminal-legacy": {
+    "roomWidth460": 460,
+    "roomWidth1440": 1440,
+    "consolePanelWidth": null
+  }
+}

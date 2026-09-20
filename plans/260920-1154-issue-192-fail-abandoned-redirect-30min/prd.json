@@ -96,8 +96,8 @@
       "technicalNotes": "Phase 5 (phase-05-integration-proofs-and-validation.md). Two complementary proofs: fake-timer engine tests (already landed in US-001/US-002) prove the real 1,800,000 ms lifecycle; Playwright proves the real route + persisted-event presentation. Reuse existing fake provider, real web dispatch, real interrupt route, both-shell helpers, and the shipped terminal-reconciliation journey. Add a keepalive-path request tracker in the interrupt-redirect spec. The nine-perspective final review (bounded-recoverable outcome not a watchdog; one timer/one waiter no public seam; exact OpenAPI/event discriminator/generated types/steering errors; auth, first-wins, no-auto-retry, timer+session+transcript integrity; one timer per idle handle, throttled client rate, no hot-path event scan; coverage across both node paths/clients/docks/terminal/retry/reconciliation; each test layer proves its claim; no migration/config/orphan/incompatible reader; no generic timer framework/duplicate contract/prose cause parser). PR uses .github/pull_request_template.md with unused sections and instructional comments removed and 'Closes #192' in the body; do NOT edit CHANGELOG.md; do not weaken tests to get green.",
       "dependsOn": ["US-001", "US-002", "US-003", "US-004"],
       "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Verified after focused package, browser, build, and repository gates passed. Evidence includes both-shell 460x900 and 1440x900 idle and terminal screenshots plus Console room-width measurements."
     }
   ]
 }

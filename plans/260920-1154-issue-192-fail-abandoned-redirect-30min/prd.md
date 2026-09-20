@@ -69,13 +69,13 @@ keepalive while live+idle ───────> clear and re-arm timer only
 
 ## Exact copy (design authority — do not paraphrase)
 
-| Where | Exact text |
-| ----- | ---------- |
-| Idle disclosure line 1 (existing, keep) | `stopped after the last completed tool call · files already written stay written` |
-| Idle disclosure line 2 (new, directly below) | `no redirect ends this node after 30 min of inactivity · typing keeps it open` |
-| Timeout visible failure text | `interrupted by operator, no redirect received · failed after 30-minute idle timeout` |
-| Timeout polite status (replaces generic terminal alert) | `node failed · interrupted with no redirect · none of this was sent` |
-| Engine error string | `interrupted by operator, no redirect received` |
+| Where                                                   | Exact text                                                                            |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Idle disclosure line 1 (existing, keep)                 | `stopped after the last completed tool call · files already written stay written`     |
+| Idle disclosure line 2 (new, directly below)            | `no redirect ends this node after 30 min of inactivity · typing keeps it open`        |
+| Timeout visible failure text                            | `interrupted by operator, no redirect received · failed after 30-minute idle timeout` |
+| Timeout polite status (replaces generic terminal alert) | `node failed · interrupted with no redirect · none of this was sent`                  |
+| Engine error string                                     | `interrupted by operator, no redirect received`                                       |
 
 ## Goals and success metrics
 
@@ -191,15 +191,15 @@ keepalive while live+idle ───────> clear and re-arm timer only
 - Run package-focused tests from their package dirs; **do not run root `bun test`**.
 - `bun --filter @archon/core test` runs whole (package-resolution setup); `bun run build:web`;
   `cd e2e && npm run typecheck && ARCHON_E2E_PROOF=1 npx playwright test -c playwright.config.ts
-  ui/agent-interrupt-redirect.spec.ts ui/agent-never-sent.spec.ts`; root `bun run validate` last.
+ui/agent-interrupt-redirect.spec.ts ui/agent-never-sent.spec.ts`; root `bun run validate` last.
 - TDD: failing tests first, then implementation, then the phase verification commands.
 
 ## Story overview
 
-| ID | Title | Phase | Depends on |
-| -- | ----- | ----- | ---------- |
-| US-001 | Handle-owned inactivity timer and standard-node expiry | 1 | — |
-| US-002 | Loop-node idle-expiry parity and engine invariants | 2 | US-001 |
-| US-003 | Keepalive route, OpenAPI schema, generated types | 3 | US-001 |
-| US-004 | Both docks: keepalive, disclosures, timeout presentation | 4 | US-003 |
-| US-005 | E2E evidence, contract proofs, validation, closeout | 5 | US-001–004 |
+| ID     | Title                                                    | Phase | Depends on |
+| ------ | -------------------------------------------------------- | ----- | ---------- |
+| US-001 | Handle-owned inactivity timer and standard-node expiry   | 1     | —          |
+| US-002 | Loop-node idle-expiry parity and engine invariants       | 2     | US-001     |
+| US-003 | Keepalive route, OpenAPI schema, generated types         | 3     | US-001     |
+| US-004 | Both docks: keepalive, disclosures, timeout presentation | 4     | US-003     |
+| US-005 | E2E evidence, contract proofs, validation, closeout      | 5     | US-001–004 |

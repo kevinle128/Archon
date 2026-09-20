@@ -1,6 +1,6 @@
 ---
 title: 'Phase 2: Loop parity and failure invariants'
-status: todo
+status: completed
 ---
 
 # Phase 2: Loop parity and failure invariants
@@ -73,11 +73,11 @@ bun run type-check
 
 ## Exit criteria
 
-- [ ] Standard and loop nodes use the same fixed handle timer and wake reason.
-- [ ] Each path uses its own established terminal finalizer.
-- [ ] Each path persists the same exact error and structured failure reason.
-- [ ] Neither path automatically retries, completes, persists a session, or writes a queued operator row after expiry.
-- [ ] Same-session loop redirect and Cancel behavior remain green.
+- [x] Standard and loop nodes use the same fixed handle timer and wake reason.
+- [x] Each path uses its own established terminal finalizer.
+- [x] Each path persists the same exact error and structured failure reason.
+- [x] Neither path automatically retries, completes, persists a session, or writes a queued operator row after expiry.
+- [x] Same-session loop redirect and Cancel behavior remain green.
 
 ## Risks and rollback
 
