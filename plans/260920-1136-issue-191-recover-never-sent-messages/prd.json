@@ -84,8 +84,8 @@
       "technicalNotes": "Implement phase-03 sections B and C exactly. Files: packages/web/src/lib/execution-room-model.ts (+test), packages/web/src/components/workflows/WorkflowExecution.tsx (+test; existing refetchInterval ~line 440, nodeExecutions passed ~1023), packages/web/src/experiments/console/routes/RunDetailPage.tsx (+test; 30 s heartbeat setInterval ~line 242, invalidate() from '../store/cache', detail.rawEvents/nodeExecutions ~266\u2013287). Accept the API's optional array shape; use generated NodeExecution/WorkflowEvent shapes or structural readonly subsets \u2014 do not duplicate an enum in a public type.",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: packages/web/src/lib/execution-room-model.ts/.test.ts, WorkflowExecution.tsx/.test.tsx, RunDetailPage.tsx/.test.tsx. T3.5–T3.14 green; web type-check and focused eslint clean."
     },
     {
       "id": "US-005",

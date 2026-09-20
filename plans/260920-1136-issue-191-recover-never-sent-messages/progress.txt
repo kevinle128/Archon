@@ -1,5 +1,20 @@
 ## Codebase Patterns
 
+### Raw-history terminal predicate + catch-up interval
+- **Where**: `packages/web/src/lib/execution-room-model.ts` (`isTerminalNodeExecutionStatus`, `resolveRunDetailRefetchIntervalMs`)
+- **Pattern**: Only `completed`/`failed`/`skipped` are terminal executions. Live runs always poll 3s; terminal runs poll 3s only while `hasUnsettledNodeExecutions` is true.
+- **Example**: `resolveRunDetailRefetchIntervalMs('cancelled', [{status:'running'}]) === 3000`; settled/empty/undefined → `false`.
+
+### Logical execution key fold
+- **Where**: `latestNodeExecutionKey`
+- **Pattern**: Sort by `event_order` → timestamp → id. Ask `interaction_resolved` with `kind:'ask' && resumed:true` arms one continuation so the next same-node `node_started` keeps the prior key; terminal/`node_retry_requested` clears an unused marker.
+- **Example**: start occ-1 → ask resume → start occ-2 keeps `occ-1`.
+
+### Console terminal catch-up is distinct from live heartbeat
+- **Where**: `RunDetailPage.tsx`
+- **Pattern**: 30s heartbeat only for `running`/`paused`. Separate 3s `invalidate(K.run)` only for terminal + unsettled raw executions. Never stack both.
+- **Example**: cancelled + running execution → 3000 interval; completed + all terminal → no interval.
+
 ### Ask resolution pre-resolution filter
 - **Where**: `packages/server/src/routes/workflow-execution-history.ts` (`isPreResolutionStart`, owner finders)
 - **Pattern**: Answered Ask closure only considers starts with `sortedIndex < resolvedEventIndex` so later resume starts do not create multi-candidate ambiguity; purge has no before-index filter.
@@ -105,5 +120,33 @@
 - Answered-resume owner matching must ignore post-resolution starts or unique outer-container match fails when the resumed outer is already open.
 - Keep loop fixture occurrence ids disjoint from unrelated completed pairs; `find(occurrence_id)` is not node-scoped.
 - freezeJson immutability checks cannot round-trip `Date` fields — assert Date identity separately.
+
+---
+
+## 2026-09-20T07:47:03Z — US-004: Raw-history helpers + terminal catch-up in both parents
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/execution-room-model.ts` — hasUnsettledNodeExecutions, hasTerminalNodeEvidence, latestNodeExecutionKey, resolveRunDetailRefetchIntervalMs
+- `packages/web/src/lib/execution-room-model.test.ts` — T3.5–T3.9 + interval helper coverage
+- `packages/web/src/components/workflows/WorkflowExecution.tsx` — terminal+unsettled 3s refetch via shared helper; refetchIntervalInBackground
+- `packages/web/src/components/workflows/WorkflowExecution.test.tsx` — T3.10/T3.11/T3.14 + mount smoke
+- `packages/web/src/experiments/console/routes/RunDetailPage.tsx` — distinct 3s terminal catch-up invalidation
+- `packages/web/src/experiments/console/routes/RunDetailPage.test.tsx` — T3.12–T3.14 interval spies + nodeExecutions fixture
+
+**Acceptance criteria verified**:
+- [x] T3.5–T3.9 written and passing
+- [x] unsettled table: undefined/empty/all-terminal false; running/awaiting/pending/unknown true
+- [x] hasTerminalNodeEvidence requires ≥1 all-terminal selected-node executions; siblings ignored
+- [x] latestNodeExecutionKey order + Ask resume retention + terminal/retry clear + loop/sibling ignore
+- [x] WorkflowExecution live 3s retained; terminal+unsettled also 3s via resolveRunDetailRefetchIntervalMs
+- [x] RunDetailPage 30s live heartbeat preserved; distinct 3s terminal catch-up; never stacked
+- [x] settled/empty terminal idle (T3.14); no status writes / timeout inference
+- [x] only raw nodeExecutions drive unsettled/terminal catch-up
+- [x] bun test three targets + web type-check + focused eslint clean
+
+**Learnings**:
+- React Query refetchInterval is focus-gated unless `refetchIntervalInBackground: true`; happy-dom + fake timers also fight RQ's timeoutManager — prefer pure interval helper tests plus setInterval spies for Console's direct timers.
+- Console catch-up must key off `hasUnsettledNodeExecutions(detail?.nodeExecutions)` boolean so settlement clears the effect without array-identity churn alone.
 
 ---
