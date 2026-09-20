@@ -1,0 +1,148 @@
+## Codebase Patterns
+
+### Registry msg() helper operator attribution
+- **Where**: `packages/workflows/src/steering-registry.test.ts` `msg()`
+- **Pattern**: Third optional arg `operatorUserId: string | null = 'user-1'` keeps existing call sites unchanged while mixed-sender tests pass distinct op-a/op-b ids.
+- **Example**: `msg('a1', 'from-a-1', 'op-a')`
+
+### Accept-order is the sole ordering oracle
+- **Where**: `NodeSteeringHandle.accept()` / `drain()` / idle `send_now` batch
+- **Pattern**: Snapshot and drain preserve synchronous accept() array order; first non-blank `send_now` while idle drains the whole pending batch in that order. No timers or timestamps for ordering truth.
+
+### Route identity-gate interleaving
+- **Where**: `packages/server/src/routes/api.workflow-runs.test.ts` overlapping identity streams test
+- **Pattern**: Temporary `mockFindOrCreateUserByPlatformIdentity` keyed by header value; resolve `aEntered` then `await releaseA` for op-a only. Restores default identity mock in `finally`. Proves B accept() while A is pre-accept without timers or registry spies.
+- **Example**: `if (platformUserId === 'op-a') { markAEntered(); await aHeld; }`
+
+### Executor optional operator id on interrupt helpers
+- **Where**: `packages/workflows/src/dag-executor.test.ts` interrupt suite `steeringMessage`/`enqueue`/`sendNow`
+- **Pattern**: Optional 5th arg `operatorUserId: string | null = 'op-1'` (and matching 3rd arg on `steeringMessage`) keeps existing single-sender call sites while mixed-sender drain paths pass distinct ids. Direct #181 suite already had the same shape on `enqueue`.
+- **Example**: `enqueue(RUN_ID, 'review', 'm-old-1', 'old note one', 'op-a'); sendNow(RUN_ID, 'review', 'm-new', 'new instruction', 'op-b')`
+
+### E2E concurrent dock rounds + queueOrder oracle
+- **Where**: `e2e/ui/agent-queue-convergence.spec.ts` `steer.concurrent-operators-*`
+- **Pattern**: Pre-fill both docks, register per-page `waitForResponse`, press both `Meta+Enter` inside one `Promise.all`; after both round-1 responses, repeat for round 2. Snapshot server queue immediately as `queueOrder` (do not prescribe A/B winners). Transcript + DOM must equal that order; sibling node gets one explicit-UUID API send as isolation control.
+- **Example**: `await Promise.all([starterField.press('Meta+Enter'), teammateField.press('Meta+Enter')])`
+
+
+
+
+---
+
+## 2026-09-20T05:52:31Z — US-001: Registry mixed-sender characterization
+
+**Status**: PASSED
+**Files changed**:
+- packages/workflows/src/steering-registry.test.ts — optional operatorUserId on msg(); mixed-sender drain test; cross-sender duplicate-id keeps original attribution; idle send_now wake batch retains op-a then op-b
+
+**Acceptance criteria verified**:
+- [x] msg() accepts optional operatorUserId defaulting to 'user-1'
+- [x] 'mixed senders keep order and attribution through drain' accepts a1,b1,a2,b2; snapshot/drain order + per-sender subsequences; second drain empty
+- [x] duplicate id different prose: original op-a, replay op-b, stored row stays op-a + original prose
+- [x] idle send_now: queued op-a, releasing op-b; wake batch retains both senders in accepted order
+- [x] `(cd packages/workflows && bun test src/steering-registry.test.ts src/node-transcript.test.ts)` — 71 pass, 0 fail
+- [x] No timers/DB/server/fs fixture; no production code change
+
+**Learnings**:
+- Production accept/drain already preserves object identity and order; characterization only needed.
+- Idle send_now first-wins drain includes previously queued messages plus the releasing message in accept order.
+
+---
+
+## 2026-09-20T06:05:00Z — US-002: Deterministic route concurrency test
+
+**Status**: PASSED
+**Files changed**:
+- packages/server/src/routes/api.workflow-runs.test.ts — STEER_MESSAGE_ID_4; overlapping identity streams test with aEntered/releaseA identity gate; handle [B1,B2,A1,A2] + queue GET two-field shape
+
+**Acceptance criteria verified**:
+- [x] Test named 'overlapping identity streams preserve accept order and request attribution' in queued-guidance describe
+- [x] Temporary identity mock blocks op-a via aEntered/releaseA; default restored in finally
+- [x] Start A1 → hold; B1 200; B2 200; release A → A1 200; A2 200
+- [x] Handle [B1,B2,A1,A2] senders [op-b,op-b,op-a,op-a], original text, no duplicate ids, per-sender subsequences
+- [x] Queue GET same id/text order; objects exactly message_id + message
+- [x] Every send response is existing 200 receipt shape
+- [x] Focused -t 'overlapping identity streams' pass; full api.workflow-runs.test.ts 296 pass / 0 fail
+- [x] No timers/microtask gates/registry spies/route contract change/production code
+
+**Learnings**:
+- Identity resolution is the correct hold point: one await before accept(), header-keyed, no shared run-id ambiguity.
+- Public queue omits attribution by design; handle snapshot is the attribution oracle for route tests.
+
+---
+
+## 2026-09-20T06:18:00Z — US-003: Executor mixed-sender transcript chain
+
+**Status**: PASSED
+**Files changed**:
+- packages/workflows/src/dag-executor.test.ts — direct drain a1/b1/a2/b2 mixed batch; interrupt helpers optional operatorUserId; old-plus-new send_now op-a/op-a/op-b senders; loop guidance dual op-a/op-b with shared attempt/ancestry
+
+**Acceptance criteria verified**:
+- [x] Direct drain enqueues a1/op-a, b1/op-b, a2/op-a, b2/op-b; prompt a1\\n\\nb1\\n\\na2\\n\\nb2; seq-ordered ids/senders; stable per-sender subsequences; all four rows share caused attempt and precede assistant
+- [x] steeringMessage/enqueue/sendNow optional operator id default op-1; old-plus-new queued op-a + releasing op-b; transcript senders [op-a, op-a, op-b]
+- [x] Loop guidance enqueues op-a + op-b; prompt/ids/senders/seq/caused attempt/identical loop ancestry
+- [x] `(cd packages/workflows && bun test src/dag-executor.test.ts)` — 659 pass, 0 fail
+- [x] `(cd packages/server && bun test src/routes/api.workflow-runs.test.ts)` — 296 pass, 0 fail
+- [x] No sibling-node tests, timers, mock modules, production abstractions, or executor production change
+
+**Learnings**:
+- All three production drain paths already preserved mixed-sender order and metadata; characterization-only strengthenings.
+- Interrupt-suite helpers needed the same optional operatorUserId shape the #181 enqueue already had.
+
+---
+
+
+## 2026-09-20T06:06:05Z — US-004: E2E two-operator journey on Legacy and Console
+
+**Status**: PASSED
+**Files changed**:
+- e2e/ui/agent-queue-convergence.spec.ts — parameterized concurrent-operators scenarios for console + legacy; listNodeMessages import; two-round overlapping dock sends; steer-b X1 control; queueOrder oracle through transcript + DOM
+
+**Acceptance criteria verified**:
+- [x] Test named `[P1] [V:steer.concurrent-operators-${surface}] ...` per surface loop
+- [x] Starter/teammate 460x900; pair workflow; steer-a/b node_started; starter/non-starter via getRunDetail
+- [x] Round 1 concurrent A1/B1 then round 2 concurrent A2/B2 after both responses
+- [x] Teammate X1 to steer-b via request.post with explicit UUID
+- [x] Queue snapshots: steer-a four ids A1 before A2, B1 before B2, no dups as queueOrder; steer-b [X1]
+- [x] Pre-drain both rooms converge on queueOrder + queued · 4, no X1 leakage
+- [x] Post-complete transcript ids == queueOrder, increasing seq; e2e-starter vs e2e-hitl-teammate names/ids; steer-b only X1
+- [x] Reopened rooms: operator rows/labels/bodies/sent badges follow queueOrder
+- [x] `(cd e2e && npm run typecheck)` pass; concurrent-operators 2/2; full agent-queue-convergence 6/6
+- [x] No fixture/product/visual change; no arbitrary sleeps
+
+**Learnings**:
+- Production chain already preserved mixed-sender order end-to-end; characterization-only E2E.
+- e2e package needs `--include=dev` when env has `omit=dev`; web dist must exist via `bun run build:web`.
+- Queue snapshot is a sufficient order oracle without prescribing round winners.
+
+---
+
+## 2026-09-20T06:40:00Z — US-005: Closeout: evidence report, test plan, tracker, gates
+
+**Status**: PASSED
+**Files changed**:
+- `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` — replaced generic concurrent-operators bullet with accept()-order semantics + characterization map to registry/route/executor/E2E tests
+- `plans/260920-0444-issue-193-concurrent-operator-order-attribution/reports/characterization-evidence.md` — new evidence report (commands, scenario ids, unblock notes; no production defect)
+- `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml` — only `2-13-…` → `done`
+
+**Acceptance criteria verified**:
+- [x] steering-test-plan concurrent-operators maps registry + route + executor + two V:steer.concurrent-operators-* scenarios
+- [x] Semantics: accept() order; within-sender one-stream wait; shared queue ≠ private visibility; queue GET omits attribution
+- [x] characterization-evidence.md created with commands/pass-fail/scenario ids/production-defect=none
+- [x] Only 2-13 entry → done after gates
+- [x] Narrow gates: registry+transcript 71; api.workflow-runs 296; dag-executor 659; e2e typecheck; concurrent-operators 2/2
+- [x] Neighbor: agent-queue-convergence + agent-queue-guidance (16 pass, 1 flaky retry); `bun run validate` exit 0
+- [x] bun.lock + e2e/package-lock.json unchanged; no evergreen product docs/migrations/config/generated/background processes
+
+**Learnings**:
+- Closeout unblocked three pre-existing gates via separate `chore(unblock):` commits (prettier, focus-ring resolveColorIn-on-textarea, visual-config pins) — none are #193 product defects.
+- `resolveColorIn` must host on a container; never a `<textarea>`.
+- Updating visual-config sha256 also requires refreshing the catalog `ui.visual` runner binding digest.
+
+BLOCKER US-005 | gate=bun run format:check | cause=steering-dock.test.ts prettier drift from Story 2.10 | action=chore(unblock) prettier rewrite | 2026-09-20
+BLOCKER US-005 | gate=playwright agent-queue-guidance --grep steer.visual | cause=resolveColorIn(field) into textarea → empty color ~1.03 contrast | action=chore(unblock) host probe on room + keyboard focus-visible | 2026-09-20
+BLOCKER US-005 | gate=bun test ./scripts/verify-feature-gate.test.ts | cause=SPEC.md/DESIGN.md/EXPERIENCE.md sha drift vs visual-config pins + stale ui.visual binding | action=chore(unblock) refresh pins + run-ui.json binding | 2026-09-20
+
+---
+
+
