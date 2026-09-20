@@ -196,7 +196,12 @@ describe('spawnTerminalPty', () => {
         // Distinctive prompt + cleared PROMPT_COMMAND so CI profile scripts
         // cannot rewrite PS1 before we observe the post-SIGINT reprint.
         pty.write("PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
-        await waitFor(() => output.includes('READY'), 10_000, 'READY', () => output);
+        await waitFor(
+          () => output.includes('READY'),
+          10_000,
+          'READY',
+          () => output
+        );
         // READY is printed in the same command list as `sleep`. On loaded
         // Ubuntu runners the kernel may not have made `sleep` the foreground
         // process group yet; \x03 written then is a literal byte, not SIGINT.
@@ -213,7 +218,12 @@ describe('spawnTerminalPty', () => {
           await waitFor(sawShellAfterInterrupt, 8_000, 'shell prompt after SIGINT', () => output);
         }
         pty.write('echo INTERRUPTED; exit\n');
-        await waitFor(() => output.includes('INTERRUPTED'), 5_000, 'INTERRUPTED', () => output);
+        await waitFor(
+          () => output.includes('INTERRUPTED'),
+          5_000,
+          'INTERRUPTED',
+          () => output
+        );
         await pty.exited;
       } finally {
         pty?.kill();
