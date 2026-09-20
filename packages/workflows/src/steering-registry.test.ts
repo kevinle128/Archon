@@ -6,7 +6,7 @@ import {
   type NodeSteeringHandle,
   type QueuedOperatorMessage,
   type SteeringIdleWake,
-  SteeringRegistry,
+  type SteeringRegistry,
 } from './steering-registry';
 
 // ---------------------------------------------------------------------------
