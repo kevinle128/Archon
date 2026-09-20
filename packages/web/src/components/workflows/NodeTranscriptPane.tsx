@@ -102,6 +102,12 @@ export interface NodeTranscriptPaneProps {
   finishedIteration?: FinishedIterationView | null;
   /** Existing execution-selection callback used by the Go control. */
   onSelectLiveRow?: (liveRowId: string) => void;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -135,6 +141,9 @@ export function NodeTranscriptPane({
   askDrafts,
   onAskDraftChange,
   finishedIteration = null,
+  nodeTerminal = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds = null,
   onSelectLiveRow,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
@@ -583,7 +592,7 @@ export function NodeTranscriptPane({
       {scroller}
       {controls}
       <ComposerDock
-        key={`steering:${resolvedScopeKey}`}
+        key={`steering:run:${runId}|node:${row.nodeId}`}
         runId={runId}
         nodeId={row.nodeId}
         nodeLabel={agentDisplayName || row.nodeId}
@@ -598,6 +607,9 @@ export function NodeTranscriptPane({
           setAutoFocusTarget(null);
         }}
         focusLastRow={focusLastRow}
+        nodeTerminal={nodeTerminal}
+        nodeExecutionKey={nodeExecutionKey}
+        writtenOperatorMessageIds={writtenOperatorMessageIds}
       />
     </RoomRegion>
   );

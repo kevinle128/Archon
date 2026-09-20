@@ -106,6 +106,12 @@ export interface ConsoleNodeRoomProps {
   onSelectRow?: (rowId: string) => void;
   /** Proven finished-iteration descriptor from the parent pane. */
   finishedIteration?: FinishedIterationView | null;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   showToolCalls?: boolean;
   showSystem?: boolean;
   closeLabel?: 'Close' | 'Back';
@@ -485,6 +491,9 @@ export function ConsoleNodeRoom({
   headerOptions,
   onSelectRow,
   finishedIteration = null,
+  nodeTerminal = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds = null,
   showToolCalls = true,
   showSystem = true,
   closeLabel = 'Close',
@@ -1076,7 +1085,7 @@ export function ConsoleNodeRoom({
           {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock
-              key={`steering:${resolvedScopeKey}`}
+              key={`steering:run:${run.id}|node:${row.nodeId}`}
               runId={run.id}
               nodeId={row.nodeId}
               nodeLabel={agentDisplayName || row.nodeId}
@@ -1091,6 +1100,9 @@ export function ConsoleNodeRoom({
                 setAutoFocusTarget(null);
               }}
               focusLastRow={focusLastRow}
+              nodeTerminal={nodeTerminal}
+              nodeExecutionKey={nodeExecutionKey}
+              writtenOperatorMessageIds={writtenOperatorMessageIds}
             />
           ) : null}
         </RoomRegion>

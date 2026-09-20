@@ -1234,4 +1234,125 @@ describe('RunDetailPage inspect selection', () => {
 
     setIntervalSpy.mockRestore();
   });
+
+  test('T3.16 RunDetailPage passes raw nodeExecutions into the inspect pane chain', async () => {
+    function findPropsWithKey(start: Element, key: string): Record<string, unknown> | null {
+      const fiberKey = Object.keys(start).find(candidate => candidate.startsWith('__reactFiber$'));
+      if (fiberKey === undefined) return null;
+      interface Fiber {
+        memoizedProps?: unknown;
+        child?: Fiber | null;
+        sibling?: Fiber | null;
+        return?: Fiber | null;
+      }
+      const startFiber = (start as unknown as Record<string, Fiber>)[fiberKey];
+      const stack: Fiber[] = [startFiber];
+      const seen = new Set<Fiber>();
+      while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (fiber === undefined || seen.has(fiber)) continue;
+        seen.add(fiber);
+        const props = fiber.memoizedProps;
+        if (
+          props !== null &&
+          typeof props === 'object' &&
+          !Array.isArray(props) &&
+          key in (props as Record<string, unknown>)
+        ) {
+          return props as Record<string, unknown>;
+        }
+        if (fiber.child) stack.push(fiber.child);
+        if (fiber.sibling) stack.push(fiber.sibling);
+      }
+      let up: Fiber | null | undefined = startFiber.return;
+      while (up !== null && up !== undefined) {
+        const props = up.memoizedProps;
+        if (
+          props !== null &&
+          typeof props === 'object' &&
+          !Array.isArray(props) &&
+          key in (props as Record<string, unknown>)
+        ) {
+          return props as Record<string, unknown>;
+        }
+        up = up.return;
+      }
+      return null;
+    }
+
+    stubPageFetch({
+      status: 'completed',
+      nodeStates: [
+        { nodeId: 'review', name: 'Review', status: 'completed', retryEpoch: 0 },
+        { nodeId: 'build', name: 'Build', status: 'completed', retryEpoch: 0 },
+      ],
+      nodeExecutions: [
+        { node_id: 'review', status: 'completed', occurrence_id: 'occ-review' },
+        { node_id: 'build', status: 'completed', occurrence_id: 'occ-build' },
+      ],
+      events: [
+        {
+          id: 'start-review',
+          workflow_run_id: runId,
+          event_type: 'node_started',
+          step_index: null,
+          step_name: 'review',
+          data: { occurrence_id: 'occ-review' },
+          created_at: CREATED_AT,
+          event_order: 1,
+        },
+        {
+          id: 'done-review',
+          workflow_run_id: runId,
+          event_type: 'node_completed',
+          step_index: null,
+          step_name: 'review',
+          data: { occurrence_id: 'occ-review' },
+          created_at: CREATED_AT,
+          event_order: 2,
+        },
+      ],
+      workflowNodes: [
+        { id: 'review', prompt: 'Review the change.' },
+        { id: 'build', prompt: 'Build the change.', depends_on: ['review'] },
+      ],
+    });
+
+    await act(async () => {
+      renderPage('?node=review');
+    });
+    await flushUntil(
+      'review room',
+      () => host.querySelector('[data-testid="console-inspect-room"]') !== null
+    );
+
+    const room = host.querySelector('[data-testid="console-inspect-room"]');
+    expect(room).not.toBeNull();
+    if (room === null) throw new Error('missing room');
+    const props = findPropsWithKey(room, 'nodeTerminal');
+    expect(props).not.toBeNull();
+    expect(props?.nodeTerminal).toBe(true);
+    expect(props?.nodeExecutionKey).toBe('occ-review');
+
+    // Empty nodeExecutions defaults safe (false). Stub first, then revalidate.
+    stubPageFetch({
+      status: 'running',
+      nodeStates: [{ nodeId: 'review', name: 'Review', status: 'running', retryEpoch: 0 }],
+      nodeExecutions: [],
+      workflowNodes: [{ id: 'review', prompt: 'Review the change.' }],
+    });
+    invalidate('run');
+    await act(async () => {
+      renderPage('?node=review');
+    });
+    await flushUntil(
+      'review room default',
+      () => host.querySelector('[data-testid="console-inspect-room"]') !== null
+    );
+    const defaultRoom = host.querySelector('[data-testid="console-inspect-room"]');
+    expect(defaultRoom).not.toBeNull();
+    if (defaultRoom === null) throw new Error('missing default room');
+    const defaultProps = findPropsWithKey(defaultRoom, 'nodeTerminal');
+    expect(defaultProps?.nodeTerminal).toBe(false);
+  });
 });

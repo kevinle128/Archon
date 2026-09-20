@@ -763,6 +763,7 @@ export function RunDetailPage(): ReactElement {
                 messages={messageList}
                 events={events}
                 rawEvents={detail.rawEvents}
+                nodeExecutions={detail.nodeExecutions}
                 nodeStates={inspectNodeStates}
                 approval={detail.approval}
                 logEntries={logEntries}

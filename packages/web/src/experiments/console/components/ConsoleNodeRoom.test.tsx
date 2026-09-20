@@ -5459,4 +5459,201 @@ describe('ConsoleNodeRoom', () => {
       outside.remove();
     });
   });
+
+  describe('T3.15–T3.17 node-terminal pass-through and dock rekey', () => {
+    function findPropsWithKey(start: Element, key: string): Record<string, unknown> | null {
+      const fiberKey = Object.keys(start).find(candidate => candidate.startsWith('__reactFiber$'));
+      if (fiberKey === undefined) return null;
+      interface Fiber {
+        memoizedProps?: unknown;
+        child?: Fiber | null;
+        sibling?: Fiber | null;
+        return?: Fiber | null;
+      }
+      const startFiber = (start as unknown as Record<string, Fiber>)[fiberKey];
+      const stack: Fiber[] = [startFiber];
+      const seen = new Set<Fiber>();
+      while (stack.length > 0) {
+        const fiber = stack.pop();
+        if (fiber === undefined || seen.has(fiber)) continue;
+        seen.add(fiber);
+        const props = fiber.memoizedProps;
+        if (
+          props !== null &&
+          typeof props === 'object' &&
+          !Array.isArray(props) &&
+          key in (props as Record<string, unknown>)
+        ) {
+          return props as Record<string, unknown>;
+        }
+        if (fiber.child) stack.push(fiber.child);
+        if (fiber.sibling) stack.push(fiber.sibling);
+      }
+      let up: Fiber | null | undefined = startFiber.return;
+      while (up !== null && up !== undefined) {
+        const props = up.memoizedProps;
+        if (
+          props !== null &&
+          typeof props === 'object' &&
+          !Array.isArray(props) &&
+          key in (props as Record<string, unknown>)
+        ) {
+          return props as Record<string, unknown>;
+        }
+        up = up.return;
+      }
+      return null;
+    }
+
+    test('T3.16 pass-through pins nodeTerminal and nodeExecutionKey on the dock', async () => {
+      const emptyLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+      await act(async () => {
+        renderRoom({
+          nodeId: 'review',
+          selectedRow: row({ nodeId: 'review', label: 'Review', status: 'running' }),
+          definitionNodes: [{ id: 'review', prompt: 'Write' }],
+          nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          nodeTerminal: true,
+          nodeExecutionKey: 'occ-review-1',
+        });
+      });
+      await flush();
+
+      const start = host.querySelector('textarea') ?? host;
+      const props = findPropsWithKey(start, 'nodeTerminal');
+      expect(props).not.toBeNull();
+      expect(props?.nodeTerminal).toBe(true);
+      expect(props?.nodeExecutionKey).toBe('occ-review-1');
+    });
+
+    test('T3.17 occurrence switch keeps observed receipt under stable run/node dock key', async () => {
+      let queued: { message_id: string; message: string }[] = [
+        { message_id: 'id-a', message: 'alpha receipt' },
+      ];
+      queueFetchSpy?.mockRestore();
+      queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+        input: RequestInfo | URL,
+        init?: RequestInit
+      ): Promise<Response> => {
+        const raw =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const method = (init?.method ?? 'GET').toUpperCase();
+        let pathname = raw;
+        try {
+          pathname = new URL(raw, 'http://localhost').pathname;
+        } catch {
+          pathname = raw.split('?')[0] ?? raw;
+        }
+        if (method === 'GET' && pathname.endsWith('/queue')) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ success: true, queued }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            })
+          );
+        }
+        return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+      }) as typeof fetch);
+
+      const emptyLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+      const occ1 = row({
+        id: 'occ-1',
+        nodeId: 'review',
+        label: 'Review ×1',
+        status: 'completed',
+        selection: {
+          kind: 'occurrence',
+          occurrenceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        },
+      });
+      const occ2 = row({
+        id: 'occ-2',
+        nodeId: 'review',
+        label: 'Review ×2',
+        status: 'running',
+        selection: {
+          kind: 'occurrence',
+          occurrenceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        },
+      });
+
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-1', status: 'running' }),
+          nodeId: 'review',
+          selectedRow: occ2,
+          definitionNodes: [{ id: 'review', prompt: 'Write' }],
+          nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          nodeTerminal: false,
+          nodeExecutionKey: 'logical-1',
+          scopeKey: 'run:run-1|node:review|sel:occurrence:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        });
+      });
+
+      await act(async () => {
+        for (let i = 0; i < 40; i += 1) {
+          await Promise.resolve();
+          if ((host.textContent ?? '').toLowerCase().includes('alpha receipt')) break;
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+      expect((host.textContent ?? '').toLowerCase()).toContain('alpha receipt');
+
+      queued = [];
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-1', status: 'running' }),
+          nodeId: 'review',
+          selectedRow: occ1,
+          definitionNodes: [{ id: 'review', prompt: 'Write' }],
+          nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          nodeTerminal: false,
+          nodeExecutionKey: 'logical-1',
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+          scopeKey: 'run:run-1|node:review|sel:occurrence:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        });
+      });
+      await act(async () => {
+        for (let i = 0; i < 20; i += 1) {
+          await Promise.resolve();
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+
+      await act(async () => {
+        renderRoom({
+          run: run({ id: 'run-1', status: 'running' }),
+          nodeId: 'review',
+          selectedRow: occ1,
+          definitionNodes: [{ id: 'review', prompt: 'Write' }],
+          nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          nodeTerminal: true,
+          nodeExecutionKey: 'logical-1',
+          writtenOperatorMessageIds: new Set(),
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+          scopeKey: 'run:run-1|node:review|sel:occurrence:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        });
+      });
+      await flush();
+
+      const list = host.querySelector('[aria-label="Never sent, 1"]');
+      expect(list).not.toBeNull();
+      expect(list?.textContent ?? '').toContain('alpha receipt');
+      expect(host.textContent ?? '').toContain('node finished · none of this was sent');
+    });
+  });
 });
