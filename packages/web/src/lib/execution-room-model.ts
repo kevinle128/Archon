@@ -10,6 +10,11 @@ import type { RoomSurface } from './room-split-layout';
 
 type WorkflowEvent = components['schemas']['WorkflowEvent'];
 
+export interface ExecutionLoopAncestryEntry {
+  readonly nodeId: string;
+  readonly iteration: number;
+}
+
 export type ExecutionRowSelection =
   | { kind: 'node' }
   | { kind: 'loop_iteration'; iteration: number }
@@ -21,7 +26,13 @@ export type ExecutionRowSelection =
       retryEpoch?: number;
       iteration?: number;
       routeActivationSeq?: number;
+      loopAncestry?: readonly ExecutionLoopAncestryEntry[];
     };
+
+export interface FinishedIterationView {
+  readonly liveRowId: string;
+  readonly liveIteration: number;
+}
 
 export interface ExecutionRow {
   id: string;
@@ -61,6 +72,15 @@ interface ExecutionChoiceRow {
   nodeId: string;
   status: string;
   order: number;
+}
+
+interface FinishedIterationRow {
+  id: string;
+  nodeId: string;
+  status: string;
+  order: number;
+  selection: ExecutionRowSelection;
+  unknownScope?: boolean;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -145,6 +165,96 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
   const running = forNode.filter(row => row.status === 'running');
   if (running.length > 0) return latestByOrder(running);
   return latestByOrder(forNode);
+}
+
+function sameAncestryPrefix(
+  left: readonly ExecutionLoopAncestryEntry[],
+  right: readonly ExecutionLoopAncestryEntry[]
+): boolean {
+  const leftPrefix = left.slice(0, -1);
+  const rightPrefix = right.slice(0, -1);
+  if (leftPrefix.length !== rightPrefix.length) return false;
+  for (let index = 0; index < leftPrefix.length; index += 1) {
+    const a = leftPrefix[index];
+    const b = rightPrefix[index];
+    if (a === undefined || b === undefined) return false;
+    if (a.nodeId !== b.nodeId || a.iteration !== b.iteration) return false;
+  }
+  return true;
+}
+
+/**
+ * Prove a same-lineage live iteration for a finished occurrence selection.
+ * Fail closed on any identity doubt — shells only render finished-iteration
+ * mode when this returns non-null.
+ */
+export function resolveFinishedIterationView(input: {
+  rows: readonly FinishedIterationRow[];
+  selected: FinishedIterationRow;
+  nodeStatus: string;
+  live: boolean;
+}): FinishedIterationView | null {
+  if (!input.live) return null;
+  if (input.nodeStatus !== 'running' && input.nodeStatus !== 'awaiting') return null;
+
+  const selected = input.selected;
+  if (selected.unknownScope === true || selected.status !== 'completed') return null;
+  if (selected.selection.kind !== 'occurrence') return null;
+
+  const selectedAncestry = selected.selection.loopAncestry;
+  if (selectedAncestry === undefined || selectedAncestry.length === 0) return null;
+  const selectedFinal = selectedAncestry[selectedAncestry.length - 1];
+  if (selectedFinal === undefined) return null;
+  if (selected.selection.iteration !== selectedFinal.iteration) return null;
+
+  const selectedIteration = selectedFinal.iteration;
+  const selectedRetry = selected.selection.retryEpoch ?? 0;
+  const selectedRoute = selected.selection.routeActivationSeq;
+
+  const candidates = input.rows.filter(row => {
+    if (row.id === selected.id) return false;
+    if (row.nodeId !== selected.nodeId) return false;
+    if (row.unknownScope === true) return false;
+    if (row.status !== 'running' && row.status !== 'awaiting') return false;
+    if (row.selection.kind !== 'occurrence') return false;
+
+    const ancestry = row.selection.loopAncestry;
+    if (ancestry === undefined || ancestry.length === 0) return false;
+    const finalEntry = ancestry[ancestry.length - 1];
+    if (finalEntry === undefined) return false;
+    if (row.selection.iteration !== finalEntry.iteration) return false;
+    if (finalEntry.iteration <= selectedIteration) return false;
+    if (finalEntry.nodeId !== selectedFinal.nodeId) return false;
+    if ((row.selection.retryEpoch ?? 0) !== selectedRetry) return false;
+
+    const candidateRoute = row.selection.routeActivationSeq;
+    if (selectedRoute === undefined || candidateRoute === undefined) {
+      if (selectedRoute !== candidateRoute) return false;
+    } else if (selectedRoute !== candidateRoute) {
+      return false;
+    }
+
+    return sameAncestryPrefix(ancestry, selectedAncestry);
+  });
+
+  if (candidates.length === 0) return null;
+
+  const awaiting = candidates.filter(row => row.status === 'awaiting');
+  const preferred =
+    awaiting.length > 0
+      ? latestByOrder(awaiting)
+      : latestByOrder(candidates.filter(row => row.status === 'running'));
+
+  if (preferred.selection.kind !== 'occurrence') return null;
+  const preferredAncestry = preferred.selection.loopAncestry;
+  if (preferredAncestry === undefined || preferredAncestry.length === 0) return null;
+  const preferredFinal = preferredAncestry[preferredAncestry.length - 1];
+  if (preferredFinal === undefined) return null;
+
+  return {
+    liveRowId: preferred.id,
+    liveIteration: preferredFinal.iteration,
+  };
 }
 
 export function chooseExecutionForInteraction<

@@ -6,6 +6,8 @@
  * persistence, and the nested steering error surface both API helpers
  * normalize onto.
  */
+import type { FinishedIterationView } from './execution-room-model';
+
 export interface LocalSentReceipt {
   readonly messageId: string;
   readonly message: string;
@@ -62,7 +64,12 @@ export interface SteeringDockState {
   readonly queueGeneration: number;
 }
 
-export type SteeringDockMode = 'hidden' | 'blocked' | 'detached' | 'composer';
+export type SteeringDockMode =
+  | 'hidden'
+  | 'blocked'
+  | 'detached'
+  | 'composer'
+  | 'finished-iteration';
 
 /** The agent sub-state the dock renders — interrupting is UI-local only. */
 export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | 'idle';
@@ -79,23 +86,40 @@ export const STEERING_AGENT_INTERRUPTING = 'agent interrupting';
 export const STEERING_AGENT_IDLE = 'agent idle · Send now delivers';
 export const STEERING_AGENT_GENERATING = 'agent generating';
 
+/** Exact finished-iteration disclosure; N is the proven live iteration. */
+export function finishedIterationDisclosure(liveIteration: number): string {
+  return `reading a finished iteration · the agent is working in iteration ${String(liveIteration)}`;
+}
+
+/** Exact Go control label for the finished-iteration dock. */
+export function goToIterationLabel(liveIteration: number): string {
+  return `Go to iteration ${String(liveIteration)}`;
+}
+
 const STEERING_NOT_STEERABLE_CODE = 'not_steerable_here';
 const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
 
 /**
- * Visibility/block precedence: a non-live run or non-generating row hides the
- * dock entirely (historical/cold executions must never issue a request); a
- * real pending ask keeps its blocked reason even when a refusal is stored —
- * no request should have been made from that state; only then does a stored
- * 422 `not_steerable_here` flip the dock to the detached disclosure.
+ * Visibility/block precedence: a non-live run hides the dock entirely; a
+ * proven finished-iteration descriptor wins before the terminal-row hide
+ * check so a completed occurrence on a still-live loop can surface the
+ * read-only dock; otherwise a non-generating row hides the dock
+ * (historical/cold executions must never issue a request); a real pending
+ * ask keeps its blocked reason even when a refusal is stored — no request
+ * should have been made from that state; only then does a stored 422
+ * `not_steerable_here` flip the dock to the detached disclosure.
  */
 export function steeringDockMode(input: {
   rowStatus: string;
   live: boolean;
   hasPendingAsk: boolean;
   refusal: SteeringRefusal | null;
+  finishedIteration?: FinishedIterationView | null;
 }): SteeringDockMode {
   if (!input.live) return 'hidden';
+  if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
+    return 'finished-iteration';
+  }
   if (input.rowStatus !== 'running' && input.rowStatus !== 'awaiting') return 'hidden';
   if (steeringBlockedReason(input) !== null) return 'blocked';
   if (input.refusal?.code === STEERING_NOT_STEERABLE_CODE) return 'detached';
@@ -611,6 +635,12 @@ export interface QueuePollingOptions {
    * fired — the pair `applyQueueSnapshot` needs to discard a stale read.
    */
   readonly onSnapshot: (snapshot: QueueSnapshot, generationAtRequest: number) => void;
+  /**
+   * Optional per-failure hook for read-only renderers. Invoked once with the
+   * normalized error before the existing retry/stop decision. Omitted callers
+   * keep today's behavior unchanged.
+   */
+  readonly onError?: (error: SteeringRequestError) => void;
   /** Reconcile cadence (~1s in the docks). */
   readonly intervalMs: number;
   readonly setTimer?: typeof setTimeout;
@@ -623,12 +653,11 @@ export interface QueuePollingOptions {
  * never overlap. Each request samples `currentGeneration` at fire time and
  * hands it to `onSnapshot` so the caller can discard a stale read.
  * Synchronous throws and rejections both normalize through
- * `toSteeringRequestError`: 422, transport (0), and 5xx reschedule silently;
- * any other 4xx stops the loop without a snapshot callback. The returned
- * cleanup aborts the in-flight request, clears the pending timer, and
- * suppresses every late settle — an abort caused by stop() never schedules
- * a retry. No read-error callback exists because Story 2.9 adds no
- * read-specific UI.
+ * `toSteeringRequestError`; optional `onError` receives that error once before
+ * the retry/stop decision. 422, transport (0), and 5xx reschedule; any other
+ * 4xx stops the loop without a snapshot callback. The returned cleanup aborts
+ * the in-flight request, clears the pending timer, and suppresses every late
+ * settle — an abort caused by stop() never schedules a retry.
  */
 export function startQueuePolling(options: QueuePollingOptions): () => void {
   const setTimer = options.setTimer ?? setTimeout;
@@ -653,7 +682,9 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
     const settle = (error: unknown): void => {
       if (stopped || epoch !== myEpoch) return;
       controller = null;
-      const status = toSteeringRequestError(error).status;
+      const normalized = toSteeringRequestError(error);
+      options.onError?.(normalized);
+      const status = normalized.status;
       const retryable = status === 422 || status === 0 || status >= 500;
       if (!retryable) {
         stopped = true;

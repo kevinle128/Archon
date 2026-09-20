@@ -163,6 +163,10 @@ describe('ConsoleComposerDock', () => {
       live: boolean;
       hasPendingAsk: boolean;
       subState: SteeringSubState;
+      finishedIteration: { liveRowId: string; liveIteration: number } | null;
+      onSelectLiveRow: (liveRowId: string) => void;
+      autoFocusTarget: 'field' | 'go' | null;
+      onAutoFocusApplied: () => void;
       send: SendNodeGuidance;
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
@@ -183,6 +187,10 @@ describe('ConsoleComposerDock', () => {
           live: overrides.live ?? true,
           hasPendingAsk: overrides.hasPendingAsk ?? false,
           subState: overrides.subState,
+          finishedIteration: overrides.finishedIteration,
+          onSelectLiveRow: overrides.onSelectLiveRow,
+          autoFocusTarget: overrides.autoFocusTarget,
+          onAutoFocusApplied: overrides.onAutoFocusApplied,
           send: overrides.send ?? nextSend,
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
@@ -1474,5 +1482,245 @@ describe('ConsoleComposerDock', () => {
     await flush();
     expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
     expect(host.textContent ?? '').toContain('from scope b');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Story 2.10 (#190) — finished-iteration read-only dock.
+  // ---------------------------------------------------------------------------
+
+  const FINISHED = {
+    liveRowId: 'occ-live',
+    liveIteration: 3,
+  } as const;
+
+  test('finished-iteration renders exact disclosure and Go label', async () => {
+    const selected: string[] = [];
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (id): void => {
+        selected.push(id);
+      },
+    });
+    expect(host.textContent).toContain(
+      'reading a finished iteration · the agent is working in iteration 3'
+    );
+    const go = [...host.querySelectorAll('button')].find(
+      button => (button.textContent ?? '').trim() === 'Go to iteration 3'
+    );
+    expect(go).not.toBeUndefined();
+    expect(go === undefined ? '' : go.className).toContain('min-h-[32px]');
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.textContent).not.toContain('Cmd/Ctrl+Enter to send');
+    expect(
+      [...host.querySelectorAll('button')].some(b => (b.textContent ?? '').trim() === 'Queue')
+    ).toBe(false);
+  });
+
+  test('finished-iteration without onSelectLiveRow renders nothing', async () => {
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+    });
+    expect(host.querySelector('button')).toBeNull();
+    expect(host.textContent ?? '').not.toContain('reading a finished iteration');
+  });
+
+  test('finished-iteration hydrates ordered band without delete controls', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+    });
+    expect(readCalls).toHaveLength(1);
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+    expect(host.textContent).toContain('queued · 2');
+    const list = host.querySelector('ul[aria-label="Queued messages, 2"]');
+    expect(list).not.toBeNull();
+    const items = [...(list?.querySelectorAll('li') ?? [])];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.getAttribute('data-message-id')).toBe('id-a');
+    expect(items[1]?.getAttribute('data-message-id')).toBe('id-b');
+    expect(items[0]?.textContent).toContain('sent');
+    expect(deleteButtons()).toHaveLength(0);
+    const scroll = list?.parentElement;
+    expect(scroll?.className ?? '').toContain('max-h-[33vh]');
+    expect(scroll?.className ?? '').toContain('overflow-y-auto');
+  });
+
+  test('finished-iteration empty queue renders no band', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+    });
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('ul')).toBeNull();
+    expect(host.textContent ?? '').not.toContain('queued ·');
+  });
+
+  test('finished-iteration Go calls parent with liveRowId only', async () => {
+    const selected: string[] = [];
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (id): void => {
+        selected.push(id);
+      },
+    });
+    const go = [...host.querySelectorAll('button')].find(
+      button => (button.textContent ?? '').trim() === 'Go to iteration 3'
+    );
+    await act(async () => {
+      if (go === undefined) throw new Error('missing Go button');
+      go.click();
+    });
+    await flush();
+    expect(selected).toEqual(['occ-live']);
+    expect(calls).toHaveLength(0);
+    expect(withdrawCalls).toHaveLength(0);
+  });
+
+  test('finished-iteration never mutates via pointer or keyboard', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'parked' }]));
+    await act(async () => {
+      host.dispatchEvent(new win.MouseEvent('click', { bubbles: true }) as unknown as Event);
+      host.dispatchEvent(
+        new win.KeyboardEvent('keydown', {
+          key: 'Enter',
+          metaKey: true,
+          bubbles: true,
+          cancelable: true,
+        }) as unknown as Event
+      );
+    });
+    await flush();
+    expect(calls).toHaveLength(0);
+    expect(withdrawCalls).toHaveLength(0);
+    expect(readCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('finished-iteration hides draft and restores it on live return', async () => {
+    const storage = win.sessionStorage;
+    await renderDock({ storage });
+    await setDraft('keep me across finished');
+    expect(field().value).toBe('keep me across finished');
+
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      storage,
+    });
+    expect(host.querySelector('textarea')).toBeNull();
+
+    await renderDock({ storage, rowStatus: 'running' });
+    expect(field().value).toBe('keep me across finished');
+  });
+
+  test('finished-iteration 422 shows detached alert, clears band, keeps polling', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'stale' }]));
+    expect(host.textContent).toContain('stale');
+
+    await settleRejection(
+      ctrl,
+      new SteeringRequestError(422, 'not_steerable_here', 'No live steering session')
+    );
+    expect(host.textContent).toContain(DETACHED);
+    expect(host.textContent ?? '').not.toContain('stale');
+    expect(host.querySelector('ul')).toBeNull();
+    // Still finished mode — disclosure remains
+    expect(host.textContent).toContain('reading a finished iteration');
+
+    await waitForPending(ctrl);
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-b', message: 'restored' }]));
+    expect(host.textContent ?? '').not.toContain(DETACHED);
+    expect(host.textContent).toContain('restored');
+  });
+
+  test('finished-iteration network/5xx keep last snapshot and never show detached', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'kept' }]));
+    await settleRejection(ctrl, new SteeringRequestError(0, null, 'network'));
+    expect(host.textContent).toContain('kept');
+    expect(host.textContent ?? '').not.toContain(DETACHED);
+    await settleRejection(ctrl, new SteeringRequestError(503, null, 'unavailable'));
+    expect(host.textContent).toContain('kept');
+    expect(host.textContent ?? '').not.toContain(DETACHED);
+  });
+
+  test('finished-iteration 409 clears snapshot, stops poll, never labeled detached', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      pollIntervalMs: 1,
+      readQueue: ctrl.read,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'gone' }]));
+    const readsBefore = readCalls.length;
+    await settleRejection(ctrl, new SteeringRequestError(409, 'run_terminal', 'run ended'));
+    expect(host.querySelector('ul')).toBeNull();
+    expect(host.textContent ?? '').not.toContain(DETACHED);
+    expect(host.textContent).toContain('reading a finished iteration');
+
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 20));
+    });
+    await flush();
+    expect(readCalls.length).toBe(readsBefore + 1);
+  });
+
+  test('existing composer/blocked/hidden modes remain unchanged without descriptor', async () => {
+    await renderDock({ rowStatus: 'running' });
+    expect(host.querySelector('textarea')).not.toBeNull();
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send');
+
+    await renderDock({ rowStatus: 'awaiting', hasPendingAsk: true });
+    expect(host.querySelector('textarea')).not.toBeNull();
+    expect(
+      [...host.querySelectorAll('button')].some(b => (b.textContent ?? '').trim() === 'Queue')
+    ).toBe(true);
+
+    await renderDock({ rowStatus: 'completed' });
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('button')).toBeNull();
   });
 });

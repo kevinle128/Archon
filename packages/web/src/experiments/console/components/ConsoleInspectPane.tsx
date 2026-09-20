@@ -6,6 +6,7 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 
 import {
   buildExecutionHeader,
+  resolveFinishedIterationView,
   type ExecutionHeaderModel,
   type ExecutionRow,
 } from '@/lib/execution-room-model';
@@ -227,6 +228,20 @@ export function ConsoleInspectPane({
   const roomOpen = selectedNodeId !== null;
   const ratio = clampRoomRatio(roomRatio);
   const sizes = roomPanelSizes(ratio);
+  const selectedNodeState =
+    selectedRow === null
+      ? undefined
+      : nodeStates.find(state => state.nodeId === selectedRow.nodeId);
+  // Descriptor only when the host can act on Go via the existing selection path.
+  const finishedIteration =
+    selectedRow === null
+      ? null
+      : resolveFinishedIterationView({
+          rows: logEntries.map(entry => entry.row),
+          selected: selectedRow,
+          nodeStatus: selectedNodeState?.status ?? selectedRow.status,
+          live: isInspectRunLive(run.status),
+        });
   const headerModel: ExecutionHeaderModel | null =
     selectedRow === null
       ? null
@@ -340,6 +355,7 @@ export function ConsoleInspectPane({
           onSelectRow={(rowId: string): void => {
             onSelectNode(selectedNodeId, rowId);
           }}
+          finishedIteration={finishedIteration}
           showToolCalls={showToolCalls}
           showSystem={showSystem}
           closeLabel={mode === 'single' ? 'Back' : 'Close'}

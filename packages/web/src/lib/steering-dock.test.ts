@@ -9,7 +9,9 @@ import {
   canSubmitGuidance,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  finishedIterationDisclosure,
   focusTargetAfterSnapshot,
+  goToIterationLabel,
   isQueueShortcut,
   loadSteeringDraft,
   nextFocusAfterRemoval,
@@ -78,6 +80,7 @@ function modeFor(
     live?: boolean;
     hasPendingAsk?: boolean;
     refusal?: { code: string | null; message: string } | null;
+    finishedIteration?: { liveRowId: string; liveIteration: number } | null;
   }
 ): string {
   return steeringDockMode({
@@ -85,6 +88,7 @@ function modeFor(
     live: overrides?.live ?? true,
     hasPendingAsk: overrides?.hasPendingAsk ?? false,
     refusal: overrides?.refusal ?? null,
+    finishedIteration: overrides?.finishedIteration,
   });
 }
 
@@ -135,6 +139,29 @@ describe('steeringDockMode visibility table', () => {
       'composer'
     );
     expect(modeFor('running', { refusal: { code: null, message: 'offline' } })).toBe('composer');
+  });
+
+  test('a valid finished-iteration descriptor on a completed row selects finished-iteration before terminal hide', () => {
+    expect(
+      modeFor('completed', {
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished-iteration');
+  });
+
+  test('non-live still hides even with a finished-iteration descriptor', () => {
+    expect(
+      modeFor('completed', {
+        live: false,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('hidden');
+  });
+
+  test('absent finished-iteration descriptor leaves the visibility table unchanged', () => {
+    expect(modeFor('completed')).toBe('hidden');
+    expect(modeFor('running')).toBe('composer');
+    expect(modeFor('awaiting')).toBe('blocked');
   });
 });
 
@@ -228,6 +255,12 @@ describe('canSubmitGuidance', () => {
   test('Send now needs a non-blank newly typed draft even with queued receipts', () => {
     expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft: '' })).toBe(false);
     expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft: '  ' })).toBe(false);
+  });
+
+  test('finished-iteration mode refuses submit', () => {
+    expect(
+      canSubmitGuidance({ mode: 'finished-iteration', sendInFlight: false, draft: 'x' })
+    ).toBe(false);
   });
 });
 
@@ -709,6 +742,17 @@ describe('wording', () => {
     expect(STEERING_AGENT_INTERRUPTING).toBe('agent interrupting');
     expect(STEERING_AGENT_IDLE).toBe('agent idle · Send now delivers');
     expect(STEERING_AGENT_GENERATING).toBe('agent generating');
+  });
+
+  test('finished-iteration disclosure and Go label match the ratified copy', () => {
+    expect(finishedIterationDisclosure(2)).toBe(
+      'reading a finished iteration · the agent is working in iteration 2'
+    );
+    expect(goToIterationLabel(2)).toBe('Go to iteration 2');
+    expect(finishedIterationDisclosure(11)).toBe(
+      'reading a finished iteration · the agent is working in iteration 11'
+    );
+    expect(goToIterationLabel(11)).toBe('Go to iteration 11');
   });
 });
 
@@ -1193,6 +1237,95 @@ describe('startQueuePolling', () => {
       await flush();
       expect(snapshots).toHaveLength(0);
       expect(clock.pending.size).toBe(0);
+      stop();
+    }
+  });
+
+  test('onError receives the normalized error once per failed read before retry/stop', async () => {
+    const clock = fakeClock();
+    const errors: SteeringRequestError[] = [];
+    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    const stop = startQueuePolling({
+      read: () => {
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        reads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      onError: error => {
+        errors.push(error);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      reads[0].reject(new SteeringRequestError(422, 'not_steerable_here', 'detached'));
+      await flush();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.status).toBe(422);
+      expect(errors[0]?.code).toBe('not_steerable_here');
+      expect(clock.pending.size).toBe(1);
+
+      clock.runNext();
+      reads[1].reject(new SteeringRequestError(409, 'node_finished', 'done'));
+      await flush();
+      expect(errors).toHaveLength(2);
+      expect(errors[1]?.status).toBe(409);
+      expect(clock.pending.size).toBe(0);
+    } finally {
+      stop();
+    }
+  });
+
+  test('omitted onError keeps retry/stop behavior identical', async () => {
+    const clock = fakeClock();
+    const snapshots: unknown[] = [];
+    const { reads, stop } = pollHarness(clock, gen => {
+      snapshots.push(gen);
+    });
+    try {
+      reads[0].reject(new SteeringRequestError(422, 'not_steerable_here', 'detached'));
+      await flush();
+      expect(snapshots).toHaveLength(0);
+      expect(clock.pending.size).toBe(1);
+      clock.runNext();
+      reads[1].resolve({ queued: [{ message_id: 'a', message: 'alpha' }] });
+      await flush();
+      expect(snapshots).toEqual([0]);
+    } finally {
+      stop();
+    }
+  });
+
+  test('onError fires for a synchronous throw and still retries 422', () => {
+    const clock = fakeClock();
+    const errors: SteeringRequestError[] = [];
+    let calls = 0;
+    const stop = startQueuePolling({
+      read: () => {
+        calls++;
+        throw new SteeringRequestError(422, 'not_steerable_here', 'detached');
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      onError: error => {
+        errors.push(error);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      expect(calls).toBe(1);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.status).toBe(422);
+      expect(clock.pending.size).toBe(1);
+      clock.runNext();
+      expect(calls).toBe(2);
+      expect(errors).toHaveLength(2);
+    } finally {
       stop();
     }
   });

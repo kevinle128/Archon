@@ -5154,4 +5154,309 @@ describe('ConsoleNodeRoom', () => {
       expect(body.querySelector('strong')?.textContent).toBe('hello');
     });
   });
+
+  describe('finished-iteration dock', () => {
+    const FINISHED_ROW = row({
+      id: 'occ-1',
+      nodeId: 'loop',
+      label: 'Loop ×1',
+      status: 'completed',
+      order: 0,
+      sourceIndex: 0,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        attemptId: '11111111-1111-4111-8111-111111111111',
+        iteration: 1,
+        loopAncestry: [{ nodeId: 'loop', iteration: 1 }],
+      },
+    });
+    const LIVE_ROW = row({
+      id: 'occ-2',
+      nodeId: 'loop',
+      label: 'Loop ×2',
+      status: 'running',
+      order: 1,
+      sourceIndex: 1,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        attemptId: '22222222-2222-4222-8222-222222222222',
+        iteration: 2,
+        loopAncestry: [{ nodeId: 'loop', iteration: 2 }],
+      },
+    });
+    const emptyLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+
+    test('renders finished dock when descriptor and selection callback are provided', async () => {
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+        });
+      });
+      await flush();
+      expect(host.textContent).toContain(
+        'reading a finished iteration · the agent is working in iteration 2'
+      );
+      expect(
+        [...host.querySelectorAll('button')].some(
+          b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+        )
+      ).toBe(true);
+      expect(host.querySelector('textarea')).toBeNull();
+    });
+
+    test('omits finished dock when selection callback is missing', async () => {
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+        });
+      });
+      await flush();
+      expect(host.textContent ?? '').not.toContain('reading a finished iteration');
+    });
+
+    test('Go invokes existing selection callback with liveRowId', async () => {
+      const selected: string[] = [];
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (id): void => {
+            selected.push(id);
+          },
+        });
+      });
+      await flush();
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+      expect(selected).toEqual(['occ-2']);
+    });
+
+    test('after Go to live row, focus lands on the composer field', async () => {
+      const selected: string[] = [];
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (id): void => {
+            selected.push(id);
+          },
+        });
+      });
+      await flush();
+
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+      expect(selected).toEqual(['occ-2']);
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: LIVE_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: null,
+          onSelectRow: (id): void => {
+            selected.push(id);
+          },
+        });
+      });
+      await flush();
+
+      const field = host.querySelector('textarea');
+      expect(field).not.toBeNull();
+      expect((win.document.activeElement as unknown) === field).toBe(true);
+    });
+
+    test('after Go when target became finished, focus lands on the new Go button', async () => {
+      const advancedLive = row({
+        ...LIVE_ROW,
+        id: 'occ-3',
+        status: 'completed',
+        order: 2,
+        label: 'Loop ×2 done',
+        selection: {
+          kind: 'occurrence',
+          occurrenceId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+          attemptId: '33333333-3333-4333-8333-333333333333',
+          iteration: 2,
+          loopAncestry: [{ nodeId: 'loop', iteration: 2 }],
+        },
+      });
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+        });
+      });
+      await flush();
+
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: advancedLive,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-4', liveIteration: 3 },
+          onSelectRow: (): void => undefined,
+        });
+      });
+      await flush();
+
+      const newGo = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 3'
+      );
+      expect(newGo).not.toBeUndefined();
+      expect((win.document.activeElement as unknown) === newGo).toBe(true);
+    });
+
+    test('after Go when dock disappears, focus lands on transcript scroller', async () => {
+      const terminalRow = row({
+        ...LIVE_ROW,
+        status: 'completed',
+      });
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+        });
+      });
+      await flush();
+
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: terminalRow,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'completed' })],
+          isLive: false,
+          loadMessages: emptyLoad,
+          finishedIteration: null,
+        });
+      });
+      await flush();
+
+      const scroller = host.querySelector('[data-testid="console-node-room-scroll"]');
+      expect(scroller).not.toBeNull();
+      expect(host.querySelector('textarea')).toBeNull();
+      expect(
+        [...host.querySelectorAll('button')].some(b =>
+          (b.textContent ?? '').includes('Go to iteration')
+        )
+      ).toBe(false);
+      expect((win.document.activeElement as unknown) === scroller).toBe(true);
+    });
+
+    test('unrelated remount does not steal focus', async () => {
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+        });
+      });
+      await flush();
+
+      const outside = win.document.createElement('button');
+      outside.textContent = 'outside';
+      win.document.body.appendChild(outside);
+      outside.focus();
+      expect((win.document.activeElement as unknown) === outside).toBe(true);
+
+      await act(async () => {
+        renderRoom({
+          nodeId: 'loop',
+          selectedRow: FINISHED_ROW,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          nodeStates: [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          onSelectRow: (): void => undefined,
+        });
+      });
+      await flush();
+
+      expect((win.document.activeElement as unknown) === outside).toBe(true);
+      outside.remove();
+    });
+  });
 });

@@ -10,6 +10,7 @@
  * reconstruction so existing runs remain displayable.
  */
 import type { NodeExecution, WorkflowEventResponse, WorkflowNodeStateResponse } from '@/lib/api';
+import type { ExecutionLoopAncestryEntry } from '@/lib/execution-room-model';
 
 export type LogRowSelection =
   | { kind: 'node' }
@@ -22,6 +23,7 @@ export type LogRowSelection =
       retryEpoch?: number;
       iteration?: number;
       routeActivationSeq?: number;
+      loopAncestry?: readonly ExecutionLoopAncestryEntry[];
     };
 
 export interface LogRow {
@@ -104,7 +106,12 @@ function labelForExecution(baseName: string, exec: NodeExecution): string {
 
 function occurrenceSelection(exec: NodeExecution): LogRowSelection {
   if (exec.occurrence_id === undefined) return { kind: 'node' };
-  const lastLoop = exec.loop_ancestry?.[exec.loop_ancestry.length - 1];
+  const wireAncestry = exec.loop_ancestry;
+  const loopAncestry: readonly ExecutionLoopAncestryEntry[] | undefined =
+    wireAncestry !== undefined && wireAncestry.length > 0
+      ? wireAncestry.map(entry => ({ nodeId: entry.node_id, iteration: entry.iteration }))
+      : undefined;
+  const lastLoop = loopAncestry?.[loopAncestry.length - 1];
   return {
     kind: 'occurrence',
     occurrenceId: exec.occurrence_id,
@@ -114,6 +121,7 @@ function occurrenceSelection(exec: NodeExecution): LogRowSelection {
     ...(exec.route_activation_seq !== undefined
       ? { routeActivationSeq: exec.route_activation_seq }
       : {}),
+    ...(loopAncestry !== undefined ? { loopAncestry } : {}),
   };
 }
 

@@ -494,4 +494,78 @@ describe('buildLogRows', () => {
       routeActivationSeq: 3,
     });
   });
+
+  test('maps one-entry and nested loop_ancestry to camelCase without losing order', () => {
+    const rows = buildLogRows(
+      [nodeState({ nodeId: 'body', name: 'Body', status: 'running' })],
+      [],
+      [
+        {
+          node_id: 'body',
+          status: 'completed',
+          occurrence_id: 'occ-one',
+          attempt_id: 'att-one',
+          retry_epoch: 0,
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+        },
+        {
+          node_id: 'body',
+          status: 'running',
+          occurrence_id: 'occ-nested',
+          attempt_id: 'att-nested',
+          retry_epoch: 1,
+          route_activation_seq: 2,
+          loop_ancestry: [
+            { node_id: 'outer', iteration: 1 },
+            { node_id: 'body', iteration: 3 },
+          ],
+        },
+      ]
+    );
+
+    expect(rows[0]?.selection).toEqual({
+      kind: 'occurrence',
+      occurrenceId: 'occ-one',
+      attemptId: 'att-one',
+      retryEpoch: 0,
+      iteration: 1,
+      loopAncestry: [{ nodeId: 'loop', iteration: 1 }],
+    });
+    expect(rows[0]?.label).toBe('Body ×1');
+    expect(rows[0]?.status).toBe('completed');
+    expect(rows[0]?.id).toBe('exec:body:occ-one:att-one:0');
+
+    expect(rows[1]?.selection).toEqual({
+      kind: 'occurrence',
+      occurrenceId: 'occ-nested',
+      attemptId: 'att-nested',
+      retryEpoch: 1,
+      iteration: 3,
+      routeActivationSeq: 2,
+      loopAncestry: [
+        { nodeId: 'outer', iteration: 1 },
+        { nodeId: 'body', iteration: 3 },
+      ],
+    });
+    expect(rows[1]?.label).toBe('Body ×3');
+    expect(rows[1]?.status).toBe('running');
+    expect(rows[1]?.id).toBe('exec:body:occ-nested:att-nested:1');
+  });
+
+  test('event-fallback rows do not fabricate loop ancestry', () => {
+    const rows = buildLogRows(
+      [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })],
+      [
+        workflowEvent({
+          id: 'iter-1',
+          event_type: 'loop_iteration_started',
+          step_name: 'loop',
+          data: { iteration: 1 },
+        }),
+      ]
+    );
+
+    expect(rows[0]?.selection).toEqual({ kind: 'loop_iteration', iteration: 1 });
+    expect(rows[0]?.selection).not.toHaveProperty('loopAncestry');
+  });
 });
