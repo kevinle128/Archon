@@ -1,9 +1,9 @@
 ---
 title: 'Issue 192: fail an abandoned redirect safely after 30 minutes'
-description: 'Implementation-ready plan for Story 2.12: a fixed 30-minute inactivity timer on idle-after-interrupt that fails the node on an explicit branch, re-armed by an authenticated keepalive route driven from composer activity, disclosed in both docks, and reconciled as NEVER SENT with cause-naming copy.'
+description: 'Verified implementation plan for Story 2.12: bound idle-after-interrupt with a fixed inactivity timer, authenticated composing keepalive, explicit node failure, fresh-session retry, and accessible dock states.'
 status: pending
 priority: P1
-effort: '5 phases · ~20h'
+effort: '5 phases · ~22h'
 issue: 'https://github.com/kevinle128/Archon/issues/192'
 branch: archon/thread-f6f11c80
 tags: [issue-192, agent-node-room, story-2-12, workflows, server, web, e2e, feature]
@@ -12,401 +12,306 @@ blocks: []
 created: 2026-09-20
 mode: deep
 tdd: true
+verifiedAt: d89ff7b6762d38b25d3df95a7f88191c44955ca5
 ---
 
 # Issue 192: fail an abandoned redirect safely after 30 minutes
 
-## Outcome
+## Goal and user outcome
 
-An interrupt-capable agent node that the operator stopped and then abandoned
-no longer hangs forever. While the node sits in `idle-after-interrupt`, a fresh
-fixed 30-minute **inactivity** timer runs on the node's live steering handle.
-Composer activity (keystroke or focus, never `Send now`) reaches an
-authenticated `POST …/nodes/:nodeId/keepalive` route that re-arms the timer
-without resolving idle-await. When the timer expires first, the executor fails
-the node exactly once with the error `interrupted by operator, no redirect
-received` on an explicit fail branch — never the streaming idle timeout, which
-*completes* a node. Idle-await still resolves exactly once among `Send now`,
-the idle cancel poll, and timer expiry, and the cancel poll stays reachable
-with no provider stream active. Queued messages left on the handle at expiry
-are recovered by Story 2.11's terminal reconciliation as `NEVER SENT`, with the
-cause-naming announcement the UX authority specifies. Retrying the failed node
-through `workflow retry-node` starts a fresh provider session. Both docks
-disclose the limit up front in accessible text.
+Story 2.12 closes the unbounded wait introduced by interrupt-and-redirect. When
+an interruptible agent has settled in `idle-after-interrupt`, 30 minutes with
+no composer activity must fail that node exactly once with
+`interrupted by operator, no redirect received`. Keystroke or focus activity
+must re-arm the timer through an authenticated, bodyless keepalive request
+without sending prose or waking the executor. `Send now`, workflow Cancel, and
+expiry remain a first-wins race. Any queued messages are recovered by Story
+2.11 as `NEVER SENT`; retrying through the supported node-retry operation starts
+a fresh provider session. Legacy and Console disclose the limit before it can
+surprise the operator.
 
-This is Story 2.12 from
-`_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`. Its
-dependencies, Story 2.3 (interrupt/idle-await, #183) and Story 2.11 (never-sent
-reconciliation, #191), are `done` in the sprint tracker.
+This matches GitHub issue #192 and Story 2.12 in
+`_bmad-output/planning-artifacts/epics-agent-node-room/epics.md`. The tracker
+shows both blockers, Stories 2.3 and 2.11, as `done`; Story 2.12 remains
+`backlog` until this implementation and its evidence pass.
 
 ## Acceptance criteria
 
-| ID      | Measurable result                                                                                                                                                                                                                                                                                                    | Evidence                                                    |
-| ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| AC1     | From `idle-after-interrupt`, 30 minutes of composer inactivity fails the node once with `interrupted by operator, no redirect received`; no `node_completed`, no `completed via idle timeout` message, `nodeIdleTimedOut` untouched. Holds for prompt/command nodes, loop nodes, and loop-group bodies.               | Phase 1 registry tests, Phase 2 executor tests, Phase 5 E2E |
-| AC2     | Keystroke or focus activity while idle reaches the authenticated keepalive route, which re-arms the fixed timer without resolving idle-await; `Send now` never issues a keepalive because it resolves idle-await.                                                                                                     | Phase 1, Phase 3 route tests, Phase 4 component tests       |
-| AC3     | Idle-await resolves exactly once: the first of workflow Cancel (idle status poll), `Send now`, or timer expiry wins; the others are torn down; the cancel poll remains reachable with no provider stream.                                                                                                             | Phase 1 and Phase 2 tests                                   |
-| AC4     | Queued messages present at expiry are restored as `NEVER SENT` by Story 2.11's reconciliation after the node's terminal event, with the cause-naming alert `node failed · interrupted with no redirect · none of this was sent`.                                                                                       | Phase 2 (queue count), Phase 4 tests, Phase 5 E2E           |
-| AC5     | Retrying the 30-minute failure through the supported failed-node action runs the node with a fresh provider session (resume id `undefined`); the interrupted session id is never persisted or threaded.                                                                                                              | Phase 2 characterization tests                              |
-| AC6     | In `idle-after-interrupt`, both docks render the disclosure `no redirect ends this node after 30 min of inactivity · typing keeps it open` as accessible text, matching anatomy on Legacy and Console.                                                                                                                | Phase 4 tests, Phase 5 visual/a11y E2E                      |
-| Tracker | Focused evidence is recorded, spec/test-plan authorities are synced, and the Story 2.12 tracker entry moves to `done` only after all gates pass.                                                                                                                                                                      | Phase 5                                                     |
+| ID      | Measurable result                                                                                                                                                                                                                                                                                                                                         | Proof                                                                  |
+| ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| AC1     | After 30 minutes of genuine composer inactivity in `idle-after-interrupt`, the prompt/command node, AI loop node, or loop-group body fails once with the exact error. It emits no `node_completed`, never posts `completed via idle timeout`, and does not set `nodeIdleTimedOut`.                                                                        | Registry and executor tests; real-timer E2E                            |
+| AC2     | Focus or editing keystrokes while idle cause authenticated keepalive requests. A request re-arms but never resolves idle-await. A burst is bounded to at most one request per 30 seconds, and a final activity inside a window is represented by a trailing request no later than the window boundary. `Send now` causes no additional keepalive request. | Scheduler, component, route, and E2E tests                             |
+| AC3     | The first of `send_now`, the idle run-status poll, timer expiry, or handle teardown settles the one waiter; losing paths are cancelled and cannot produce a second terminal outcome. The Cancel poll remains active without a provider stream.                                                                                                            | Deterministic registry and executor tests                              |
+| AC4     | If accepted queue rows remain when expiry fails the node, terminal reconciliation restores them in order as `NEVER SENT`, with exactly one alert: `node failed · interrupted with no redirect · none of this was sent`. With no unmatched rows, no empty terminal dock is rendered.                                                                       | Component and E2E tests                                                |
+| AC5     | The supported failed-node retry operation deletes persisted node sessions for the target and descendants; the expiry result carries no resumable session; the retried node's first provider call is fresh.                                                                                                                                                | Existing core retry test, executor test, and E2E session-id comparison |
+| AC6     | While idle, both docks expose the exact text `no redirect ends this node after 30 min of inactivity · typing keeps it open` after the existing Stop disclosure. The text is present in the accessibility tree and remains complete, readable, and overflow-free in the authoritative Legacy 460px panel and Console desktop panel states.                 | Component tests, AX-tree checks, screenshots, geometry assertions      |
+| AC7     | `POST /api/workflows/runs/{runId}/nodes/{nodeId}/keepalive` is bodyless, OpenAPI-registered, uses the existing steering actor grant and nested error shape, writes no row, returns `{ success: true }` for a live handle, and preserves the interrupt route's 401/404/409/422 safety boundaries.                                                          | Route/OpenAPI/client tests                                             |
+| AC8     | Restart behavior is documented truthfully: the timer and handle are process-local, a restart does not autonomously fail or resume the running node, and operator recovery is abandon/cancel followed by `archon workflow retry-node` when desired. No persistence or schema work is introduced.                                                           | Authority review and source-backed docs updates                        |
+| Tracker | Focused evidence exists and the Story 2.12 tracker entry changes to `done` only after every required gate passes.                                                                                                                                                                                                                                         | Phase 5                                                                |
 
-## Repository evidence and resolved decisions
+## Verified repository evidence and decisions
 
-Evidence was checked at worktree `49abef22` (branch `archon/thread-f6f11c80`).
+Evidence below was re-checked at `d89ff7b6`; the prior draft's claims and its
+older `49abef22` validation log are not accepted as evidence.
 
-1. **The idle-await seam already exists and resolves once.**
-   `NodeSteeringHandle.enterIdle(token)` (`packages/workflows/src/steering-registry.ts`)
-   returns ONE `idleWaiter` promise; `accept(message,'send_now')` resolves it
-   with the drained batch, and every `seal()` (close / park / discard)
-   resolves it `terminated`. The executor parks on it in `raceIdleWake()`
-   (`packages/workflows/src/dag-executor.ts` ~line 520), which races the
-   waiter against a `getWorkflowRunStatus` poll on `CANCEL_CHECK_INTERVAL_MS`
-   and tears the loser down synchronously. The timer therefore belongs on the
-   handle: it becomes a third resolver of the same single-resolve waiter, so
-   exactly-once is inherited rather than re-implemented, and the route can
-   reach it via `getSteeringRegistry().get(runId, nodeId)` exactly as the
-   interrupt route does.
-2. **The existing idle timeout completes; this timer must fail.**
-   `withIdleTimeout` / `nodeIdleTimedOut` (`utils/idle-timeout.ts`,
-   `dag-executor.ts` ~3524) post `completed via idle timeout` and take the
-   completion path. `engine-integration.md` §"idle-await bound" forbids
-   reusing it. The expiry wake takes a dedicated fail finalizer modelled on
-   `finishCancelled()` (~3274) with the exact error string, and the loop
-   site goes through `failLoopIteration` (~6132).
-3. **Both idle sites must change.** `executeNodeInternal` (~3571) and
-   `executeLoopNode` (~7195) each call `enterIdle` + `raceIdleWake` and branch
-   on `wake.kind`. Loop-group bodies run through `executeNodeInternal`, so the
-   first site covers them.
-4. **No fake timers anywhere.** Verified on Bun 1.3.14:
-   `jest.useFakeTimers()` fires `setTimeout`, but `Bun.sleep` hangs under it,
-   `dag-executor.test.ts` polls with `Bun.sleep(1)` (`awaitIdle`), and a test
-   that throws before `useRealTimers()` would stall every later describe on
-   Bun's 5000 ms timeout. Decision: the inactivity duration is **injectable at
-   registry construction** (`createSteeringRegistry({ idleAwaitInactivityMs })`)
-   plus a `setIdleAwaitInactivityMsForTests()` hook on the singleton;
-   `clearForTests()` restores the default so the executor suite's existing
-   shared `afterEach` structurally undoes any override. All tests use real
-   short durations; the 30-minute default is proven by spying on
-   `globalThis.setTimeout`'s delay argument.
-   <!-- Updated: Red Team 2026-09-20 — Assumption Destroyer F1, F5 -->
-5. **E2E needs a shortened timer.** The only env-gated test seam precedent is
-   `ARCHON_E2E_FAKE_PROVIDER` (`packages/providers/src/e2e-fake/registration.ts`,
-   set by `e2e/lib/playwright/archon-runtime.ts`). Decision: the singleton
-   honours `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` **only** when
-   `ARCHON_E2E_FAKE_PROVIDER === '1'` **exactly** (the fake-provider gate's
-   own truthiness check would accept `'false'`), and only when the value is a
-   positive safe integer — so a stray variable can never shorten the ratified
-   30 minutes on a real install. No YAML field, no config key: NFR6 says the
-   timer is fixed.
-   <!-- Updated: Red Team 2026-09-20 — Security F1, F5 -->
-6. **Keepalive on a non-idle handle is a harmless no-op.** The contract
-   (`steering-api-contract.md`) defines only the success shape
-   `{ success: true }`. Decision: a live handle that is not idle (generating,
-   between turns) returns 200 with no timer change; terminal run/node or
-   closed handle → 409 `node_finished`; no handle → 422 `not_steerable_here`;
-   the guard ladder and actor grant are copied from the interrupt route. The
-   route writes no row and never logs message content (there is none).
-7. **Fresh session on retry is true by construction; prove it.**
-   `runLayers` starts with `lastSequentialSession: undefined` on every
-   `executeDagWorkflow` call; the cursor is set only for `state === 'completed'`
-   (~10562); `upsertWorkflowNodeSession` runs only when `output.state ===
-   'completed'` (~10403). The fail finalizer returns `state: 'failed'` without
-   a `sessionId`. Phase 2 adds a characterization test asserting the retried
-   `sendQuery` receives `resumeSessionId === undefined`. A `persist_session`
-   node may still resume an OLDER persisted scope session from a prior run —
-   that is existing persist semantics, not the interrupted context.
-8. **UX copy is authoritative and specific.**
-   `_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md`
-   line 178 fixes the idle disclosure
-   `no redirect ends this node after 30 min of inactivity · typing keeps it open`,
-   and line 256 (SC 4.1.3-B) requires the fail path's never-sent announcement
-   to name its cause: `node failed · interrupted with no redirect · none of
-   this was sent`. Story 2.11's plan explicitly excluded "Story 2.12's
-   idle-expiry timer/copy", so the cause-naming copy is this story's. The dock
-   learns the cause from the raw `NodeExecution.error` of the selected node
-   (the server already projects `error` from `node_failed.data.error` in
-   `workflow-execution-history.ts`); the web keeps a local copy of the engine
-   constant because `@archon/web` cannot import `@archon/workflows`
-   (precedent: `TRIGGER_RULES`). Matching our own fixed engine constant is not
-   prose parsing.
-9. **Both docks are byte-identical in the affected region.**
-   `packages/web/src/components/workflows/ComposerDock.tsx` and
-   `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`
-   share the idle disclosure block, textarea handlers, and submit logic
-   (verified by diff at lines ~800–860 / ~806–866). UX-DR8 requires identical
-   anatomy, so Phase 4 mirrors every edit and keeps shared logic in
-   `packages/web/src/lib/steering-dock.ts`.
-10. **Keepalive throttling is client-side and leading-edge.** The spec says
-    "debounced". With a 30-minute window, a leading-edge throttle of 30 s per
-    mounted dock is sufficient and never delays the first re-arm: the worst
-    case is a re-arm 30 s earlier than the last keystroke. The throttle is a
-    pure helper in `steering-dock.ts` so it is unit-tested without React.
-    Keepalive failures are intentionally swallowed at the call site with a
-    comment — the queue poll and run detail are the authority on state, and
-    a 409/422 there means the dock is already leaving idle.
-11. **Late responses stay inert.** Story 2.11 introduced per-dock
-    `attemptGenerationRef`; keepalive must be gated on `agentMode === 'idle'`
-    at call time and must not touch dock state on success, so no generation
-    check is needed beyond the existing pattern for errors (none surface).
-12. **New route ⇒ regenerated web types.** `api.generated.d.ts` is generated
-    from the running server (`bun --filter @archon/web generate:types`, server
-    on 3090). Phase 3 sequences this explicitly and never hand-edits the file.
+1. **The existing idle waiter owns the race.**
+   `NodeSteeringHandle.enterIdle()` in
+   `packages/workflows/src/steering-registry.ts` creates one waiter;
+   `accept(..., 'send_now')` and every `seal()` synchronously take and clear it.
+   `raceIdleWake()` in `dag-executor.ts` already races that waiter with the
+   run-status poll and clears the poll timer when either side wins. Expiry must
+   be one more waiter result, not a parallel lifecycle controller.
+2. **Streaming idle timeout is the wrong mechanism.** `withIdleTimeout` sets
+   `nodeIdleTimedOut` and completes the node. Story 2.12 and
+   `engine-integration.md` require a distinct fail result, so neither that
+   wrapper nor its completion message changes.
+3. **Prompt failure already has a correct finalizer.** The generic
+   `executeNodeInternal` catch closes the steering handle before its first
+   awaited terminal write, logs the error, emits/persists one `node_failed`,
+   records failed status, clears throttle maps, and returns a failed result
+   without a session id. The explicit expiry branch should log context and
+   throw the exact error into this path. A new 80-line duplicate finalizer
+   would create drift. The loop path is different and must call the existing
+   `failLoopIteration(..., nodeError)` helper with the exact outer error.
+4. **All relevant execution sites are known.** Prompt/command nodes and
+   loop-group bodies enter idle in `executeNodeInternal`; AI loop nodes have a
+   separate idle branch in `executeLoopNode`. Both must recognize `expired`.
+5. **The supported retry contract is stronger than the draft assumed.**
+   `prepareWorkflowNodeRetry()` in
+   `packages/core/src/operations/workflow-retry.ts` deletes persisted node
+   sessions for every invalidated node before dispatch, and
+   `workflow-retry.test.ts` already pins it. `runLayers` also starts each DAG
+   execution with an empty sequential-session cursor and only persists a
+   completed result. The plan therefore verifies the real supported action;
+   it does not simulate a raw `retryContext` while allowing an older
+   `persist_session` row to resume.
+6. **The keepalive contract is additive.**
+   `steering-api-contract.md` already names the bodyless route, success shape,
+   steering actor grant, and no-row boundary. The interrupt handler provides
+   the guard order and final re-read. Resolved edge semantics are: live idle →
+   re-arm and 200; live generating/between-turn or queue-only → 200 no-op;
+   parked or missing live handle → 422; terminal run/node or closed handle →
+   409; unknown run/node → 404.
+7. **A leading-only throttle violates genuine inactivity.** If the final
+   keystroke occurs just after a leading request, the server could expire up to
+   30 seconds before 30 minutes have elapsed from that activity. Use a
+   leading-plus-trailing 30-second coalescer: first activity sends immediately,
+   activity during the window schedules one trailing send at the boundary, and
+   continued activity remains bounded to one request per window. This may fail
+   up to 30 seconds late, never early because a legitimate activity was
+   omitted. Pending work is cancelled when the idle attempt ends.
+8. **The web can classify the cause from existing raw evidence.** The server's
+   `projectWorkflowExecutionHistory()` already projects `error`, timestamps,
+   and `retry_epoch` into `NodeExecution`. Cause detection must require all
+   selected-node executions to be terminal and evaluate the latest row by
+   retry epoch, then effective start/end timestamp, then stable array position.
+   This prevents an old expiry from resurfacing after a successful retry.
+   `@archon/web` keeps a local exact string because it cannot import
+   `@archon/workflows`; the real E2E is the cross-package drift guard.
+9. **The authoritative design adds copy, not new anatomy.** `EXPERIENCE.md`
+   fixes both exact strings and says a finished node has no dock when nothing
+   is undelivered. `DESIGN.md`, `key-steering-dock.html`,
+   `key-legacy-node-room.html`, and `key-console-node-room.html` fix the dock
+   order, tokens, 33vh queue cap, Legacy 460px panel, and no-overflow behavior.
+   The static mockups predate the Story 2.12 sentence; the final UX document is
+   authoritative for that delta. Add it to the existing disclosure slot, use
+   existing typography/colors, and do not add a countdown, warning, or button.
+10. **The E2E helpers need two real changes.** `createArchonRuntime()` currently
+    cannot pass server-only env, and `getRunDetail()`'s local node-execution
+    type omits `error`, timestamps, and `retry_epoch` even though the generated
+    API supplies them. The standalone E2E package also requires
+    `bun run build:web` and its own `npm run typecheck`; it has no axe
+    dependency, but existing specs use Chromium `Accessibility.queryAXTree`.
+11. **Restart recovery in current docs is overstated.** The registry, executor
+    continuation, and timer all die with the server. No startup mechanism
+    resumes a persisted `running` node, and the project rule forbids an
+    autonomous staleness failure across process boundaries. The supported
+    recovery is an explicit abandon/cancel to make the run retryable, followed
+    by CLI `archon workflow retry-node`; the core retry operation accepts a
+    latest `running` node on a retryable run, while the current web Retry action
+    intentionally renders only failed/completed nodes. Canonical docs that say
+    “resumes normally” must be corrected as part of this story.
 
 ## Scope
 
 Included:
 
-- Registry: inactivity timer on `NodeSteeringHandle`, `keepalive()`, a new
-  `expired` idle wake, injectable duration, E2E-gated env override.
-- Executor: explicit fail branch at both idle sites, exact error string, no
-  session cursor, unconsumed-queue warning, characterization of cancel-poll
-  reachability, exactly-once, and fresh-session retry.
-- Server: keepalive route + schema + OpenAPI + regenerated web types + client
-  helper.
-- Web: idle disclosure, keepalive throttle helper and wiring in both docks,
-  cause-naming never-sent alert threaded from raw execution evidence in both
-  surfaces.
-- E2E on the real executor with the fake provider and a shortened timer,
-  evidence, authority sync (`steering-test-plan.md`, `steering-api-contract.md`
-  wording check, architecture walkthrough if it names the timer), tracker
-  closeout.
+- A fixed 30-minute timer, re-arm operation, deterministic timer seam, new
+  `expired` wake, and tightly gated E2E duration override in the registry.
+- Explicit expiry handling at prompt/command, loop, and loop-group-body paths.
+- Authenticated keepalive route, OpenAPI schema, generated web types, and web
+  client helper.
+- Leading-plus-trailing keepalive coalescing, idle disclosure, strict terminal
+  cause classification, and cause-specific `NEVER SENT` copy in both docks.
+- Real-executor E2E for activity, expiry, reconciliation, accessibility,
+  visual states, and supported fresh-session retry.
+- Corrections to current steering authorities and tracker closeout.
 
 Excluded:
 
-- Any configurable/YAML/`.archon/config.yaml` timer value (NFR6: fixed).
-- Countdown, warning toast, or extend button in the dock (EXPERIENCE.md: "No
-  progress bar and no countdown").
-- Changes to the interrupt/send/withdraw/queue routes' contracts.
-- Story 2.13 ordering/attribution work.
-- Post-v1 `delivered` state or soft-inject (G1–G4).
+- YAML, `.archon/config.yaml`, or user-configurable duration; the product value
+  remains fixed at 30 minutes.
+- Timer persistence, cross-process steering, restart auto-recovery, or any
+  autonomous stale-run mutation.
+- Countdown, progress, pre-expiry warning, extend button, toast, or new color.
+- Changes to send/interrupt/withdraw/queue semantics, Story 2.13 ordering, or
+  post-v1 `delivered`/soft-inject work.
+- Database schema or migration changes.
 
-## Design
+## Implementation design
 
-### 1. Registry timer (Phase 1)
+### 1. Registry-owned inactivity timer
 
-```ts
-export const STEERING_IDLE_AWAIT_INACTIVITY_MS = 30 * 60_000;
+Add `expired` to `SteeringIdleWake`. Each interruptible handle receives the
+duration and a scheduler whose production implementation wraps `setTimeout`,
+uses the repository's guarded `unref` pattern, and returns a cancellation
+function. `enterIdle()` arms after installing the waiter; `keepalive()` re-arms
+only while the live waiter is idle; `send_now`, `seal`, park, close, discard,
+and test cleanup cancel it. Expiry takes and clears the waiter but leaves the
+handle live long enough for ordinary failure teardown and Story 2.11 queue
+reconciliation.
 
-export type SteeringIdleWake =
-  | { readonly kind: 'send_now'; readonly messages: readonly QueuedOperatorMessage[] }
-  | { readonly kind: 'terminated' }
-  | { readonly kind: 'expired' };
-```
+Unit tests inject a manual scheduler and drive captured callbacks; executor
+tests use a narrow `@internal expireIdleForTests()` handle seam. Do not mutate
+singleton duration and do not rely on 5–600ms wall-clock sleeps. The singleton
+may read `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` only when
+`ARCHON_E2E_FAKE_PROVIDER === '1'`; accept integer values from 1 through the
+30-minute production constant and fall back otherwise.
 
-`NodeSteeringHandle` gains a private `idleTimer` and the constructor option
-`idleAwaitInactivityMs` (supplied by the registry). `enterIdle(token)` arms the
-timer after installing the waiter; expiry resolves the waiter `{ kind:
-'expired' }` and clears `idleWaiter` only. The handle stays `live` and keeps
-projecting `idle-after-interrupt` until the executor's fail finalizer seals it
-synchronously — the same microtask-sized window the Cancel path already has,
-and a send accepted inside it lands as `awaiting_send_now`, is never drained,
-and is recovered by Story 2.11. `keepalive(): 'rearmed' | 'not_idle'` re-arms
-only when `phase === 'live'`,
-`subState === 'idle-after-interrupt'`, and a waiter exists. `accept(...,
-'send_now')`'s first-wins release and `seal()` both clear the timer. Nothing
-else changes; `drain`, `withdraw`, `snapshot` are untouched.
+### 2. Cause-aligned executor failure
 
-### 2. Executor fail branch (Phase 2)
+Export the exact engine error constant. In `executeNodeInternal`, log the
+expiry and throw `new Error(IDLE_AWAIT_EXPIRED_ERROR)`; the existing generic
+catch remains the sole prompt/command failure finalizer. Do not abort the node
+controller or touch `nodeIdleTimedOut`. In `executeLoopNode`, log and return
+through `failLoopIteration`, passing the exact error as both the iteration and
+outer node error. Preserve `send_now` and Cancel semantics; when the loop's
+status poll wins, seal the handle synchronously before its existing awaited
+status/message work so the losing inactivity timer is actually torn down.
 
-At both idle sites, after the `send_now` branch:
+### 3. Bodyless keepalive API
 
-```ts
-if (wake.kind === 'expired') {
-  return await finishIdleAwaitExpired(); // prompt/command site
-}
-```
+Register the route through `registerOpenApiRoute(...,
+steeringValidationErrorHook)`, using the interrupt route's auth/state ladder
+and final run re-read. After that last await, call `handle.keepalive()`
+synchronously and return `{ success: true }`. The route writes no durable row
+and logs no content. Regenerate `api.generated.d.ts` from a freshly started
+server and add a no-body client helper with normalized steering errors.
 
-`finishIdleAwaitExpired` is a sibling of `finishCancelled`: seal the handle,
-log `dag.node_idle_await_expired`, write `node_failed` with
-`error: IDLE_AWAIT_EXPIRED_ERROR`, emit `node_failed`, `recordFailedStatus`,
-clear throttle maps, return `{ state: 'failed', output: nodeOutputText, error }`
-(no `sessionId`). The loop site calls `failLoopIteration(IDLE_AWAIT_EXPIRED_ERROR, …)`
-after a `safeSendMessage` naming the iteration. `terminated` keeps landing on
-the existing Cancel path unchanged.
+### 4. Both dock surfaces
 
-### 3. Keepalive route (Phase 3)
+A framework-free coalescer in `steering-dock.ts` owns immediate/trailing
+scheduling, cancellation, and handled rejection. Both docks trigger it on
+focus and non-submit key activity only while idle. Attempt change, leaving
+idle, unmount, and `Send now` cancel pending trailing work; `Send now` itself
+does not call keepalive. Late completion cannot alter UI state or schedule work
+for another attempt.
 
-`POST /api/workflows/runs/{runId}/nodes/{nodeId}/keepalive`, bodyless,
-`keepaliveWorkflowNodeResponseSchema = { success: true }`, registered through
-`registerOpenApiRoute` with `steeringValidationErrorHook`; guard ladder copied
-from the interrupt handler; then `handle.keepalive()` and 200 regardless of
-`'rearmed' | 'not_idle'`. Client: `keepaliveNode(runId, nodeId)` in
-`packages/web/src/lib/api.ts` beside `interruptNode`.
+Thread `idleAwaitExpired` through the same Legacy/Console parents that already
+compute `nodeTerminal`. Render the exact 30-minute sentence directly after the
+existing Stop disclosure. Use the cause-specific alert only when a terminal
+`NEVER SENT` box actually exists; an expired node with no unmatched rows
+renders no empty dock and relies on the existing node-failure presentation.
 
-### 4. Dock (Phase 4)
+### 5. End-to-end proof and authority sync
 
-`steering-dock.ts` adds `STEERING_IDLE_AWAIT_DISCLOSURE`,
-`STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE`, `IDLE_AWAIT_EXPIRED_ERROR`,
-`neverSentDisclosure(idleAwaitExpired)`, and a pure
-`createKeepaliveThrottle(nowFn, windowMs)` returning `shouldSend(): boolean`.
-Both docks: render the new disclosure line under the existing interrupt
-disclosure when `idle`; call the throttled keepalive from the textarea
-`onKeyDown` (skipping the queue/send shortcut) and `onFocus` while
-`agentMode === 'idle'`; accept an optional `idleAwaitExpired` prop and pass it
-to `neverSentDisclosure`. `execution-room-model.ts` adds
-`hasIdleAwaitExpiredEvidence(executions, nodeId)`; the two parents that already
-compute `nodeTerminal` compute it and thread it through the same five
-components.
-
-### 5. E2E and closeout (Phase 5)
-
-`e2e/ui/agent-idle-await-expiry.spec.ts` runs the real `e2e-queue-guidance`
-interruptible scenario with `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` set by the
-runtime, proves disclosure text, keepalive request interception on keystroke,
-no keepalive on `Send now`, expiry → `node_failed` with the exact error, and the
-cause-naming `NEVER SENT` box on both surfaces. Evidence lands under
-`reports/evidence/`; authorities and the tracker are updated last.
+Run a dedicated E2E worker with an 8-second server timer under the fake-provider
+gate. Prove a real timeout, a server re-arm, no extra keepalive on Send now,
+queued-message recovery on both surfaces, AX-tree text, geometry, and a fresh
+provider session after the existing Retry action. Update the E2E run-detail
+type so assertions compile. Correct the canonical steering docs' restart
+claim, record the deterministic timer strategy and route semantics, and move
+the tracker only after all gates pass.
 
 ## Phases
 
-| #   | Phase                                                                                              | Status  |
-| --- | -------------------------------------------------------------------------------------------------- | ------- |
-| 1   | [Registry inactivity timer and keepalive](./phase-01-registry-inactivity-timer-and-keepalive.md)   | Pending |
-| 2   | [Executor explicit fail branch](./phase-02-executor-explicit-fail-branch.md)                       | Pending |
-| 3   | [Keepalive route and client](./phase-03-keepalive-route-and-client.md)                             | Pending |
-| 4   | [Dock disclosure, keepalive wiring, fail copy](./phase-04-dock-disclosure-keepalive-fail-copy.md)  | Pending |
-| 5   | [E2E evidence, authority sync, closeout](./phase-05-e2e-evidence-authority-sync-closeout.md)       | Pending |
+| #   | Phase                                                                                             | Status  |
+| --- | ------------------------------------------------------------------------------------------------- | ------- |
+| 1   | [Registry inactivity timer and keepalive](./phase-01-registry-inactivity-timer-and-keepalive.md)  | Pending |
+| 2   | [Executor explicit fail branch](./phase-02-executor-explicit-fail-branch.md)                      | Pending |
+| 3   | [Keepalive route and client](./phase-03-keepalive-route-and-client.md)                            | Pending |
+| 4   | [Dock disclosure, keepalive wiring, fail copy](./phase-04-dock-disclosure-keepalive-fail-copy.md) | Pending |
+| 5   | [E2E evidence, authority sync, closeout](./phase-05-e2e-evidence-authority-sync-closeout.md)      | Pending |
 
-## Dependency map
+## Dependency and delivery order
 
-- Phase 1 has no dependencies and is fully specified (deep mode).
-- Phase 2 depends on Phase 1 (`expired` wake, injectable duration). **Phases
-  1 and 2 ship in the same PR**: until Phase 2 lands, an `expired` wake falls
-  through both idle sites' else-branch into the Cancel wording.
-- Phase 3 depends on Phase 1 (`keepalive()`); independent of Phase 2.
-- Phase 4 depends on Phase 3 (client helper, generated types) and on Phase 2
-  only for the engine error constant's final spelling.
-- Phase 5 depends on Phases 1–4; it also owns the env-gated E2E runtime wiring
-  that Phase 1 makes possible.
+- Phase 1 establishes the only new engine contract.
+- Phase 2 and Phase 3 consume distinct Phase 1 surfaces. They may be developed
+  independently, but Phase 1 must never deploy without Phase 2 because an
+  unhandled `expired` wake would be misclassified as Cancel.
+- Phase 4 requires the route/client and final engine string.
+- Phase 5 requires all prior phases.
+- Phases 1 and 2 are one atomic rollout and rollback unit. The server route is
+  additive; the web and server ship in the same single-tenant artifact.
 
-Phases 2 and 3 may run in parallel after Phase 1 (disjoint files:
-`dag-executor.ts`/`.test.ts` vs `api.ts`/`workflow.schemas.ts`/
-`api.workflow-runs.test.ts`/`api.ts` (web)).
+## Complete affected-file inventory
 
-## Cross-plan dependencies
+The phase files own exact edits. Direct and indirect surfaces are:
 
-| Relationship | Plan                                                           | Status |
-| ------------ | -------------------------------------------------------------- | ------ |
-| Builds on    | `260919-0139-issue-183-interrupt-and-redirect-claude-agent`    | done   |
-| Builds on    | `260920-1136-issue-191-recover-never-sent-messages`            | done   |
+- `packages/workflows/src/steering-registry.ts` and `.test.ts`
+- `packages/workflows/src/dag-executor.ts` and `.test.ts`
+- `packages/core/src/operations/workflow-retry.test.ts` (rerun existing fresh-session deletion contract; change only if a missing characterization is found)
+- `packages/server/src/routes/api.ts`, `api.workflow-runs.test.ts`, and
+  `schemas/workflow.schemas.ts`
+- `packages/web/src/lib/api.ts`, new focused API helper test, and regenerated
+  `api.generated.d.ts`
+- `packages/web/src/lib/steering-dock.ts` / `.test.ts`,
+  `execution-room-model.ts` / `.test.ts`
+- Both composer docks and their tests; `LegacyGraphLogsPane`,
+  `LegacyNodeRoom`, `NodeTranscriptPane`, `ConsoleInspectPane`, and
+  `ConsoleNodeRoom` plus the affected pass-through tests
+- `e2e/lib/playwright/suite.ts`, `archon-runtime.ts`, `run-detail.ts`, and new
+  `e2e/ui/agent-idle-await-expiry.spec.ts`
+- Canonical steering spec/companions and the steering architecture walkthrough
+  listed in Phase 5, plus `sprint-status.yaml`
 
-## Verification gates (whole plan)
+## Whole-plan verification gates
+
+Run the narrow phase gates first, then:
 
 ```bash
 bun run type-check
-bun run lint
-bun --filter @archon/workflows test
-bun --filter @archon/server test
-bun --filter @archon/web test
+bun run lint --max-warnings 0
+bun run format:check
+bun run build:web
+(cd e2e && npm run typecheck)
+(cd e2e && npx playwright test -c playwright.config.ts ui/agent-idle-await-expiry.spec.ts ui/agent-interrupt-redirect.spec.ts ui/agent-never-sent.spec.ts)
 bun run validate
 ```
 
-`bun run validate` must pass before the PR. The E2E suite in Phase 5 runs
-through `e2e/` per its README.
+Do not run root `bun test`; use package scripts as documented. The E2E runtime
+must track and stop its server/CLI children, and type generation must stop the
+specific server PID it starts on port 3090.
 
-## Risks
+## Compatibility, operations, and rollback
 
-- **Timer fires during the synchronous `send_now` release.** Both run on the
-  JS event loop; `accept()` is synchronous and clears the timer before
-  resolving the waiter, and an expiry callback checks `idleWaiter !== undefined`
-  before resolving. Covered by Phase 1 T1.9.
-- **Handle sealed by Cancel while the timer is pending.** `seal()` clears the
-  timer; the poll's `terminated` wake wins. Phase 1 T1.7, Phase 2 T2.5.
-- **Keepalive storm from a held key.** Leading-edge 30 s throttle per dock;
-  the route is O(1) and writes nothing.
-- **Generated types drift.** Phase 3 regenerates and commits
-  `api.generated.d.ts`; `bun run validate` fails on stale generated files.
-- **E2E timing.** The shortened timer must comfortably exceed the fake
-  provider's interrupt settle time; Phase 5 chooses 8 s and waits with
-  Playwright polling, never fixed sleeps.
+- No migration, schema upgrade, durable state, or data backfill.
+- Old clients ignore the additive route; the matching web/server build uses
+  it. A web rollback simply stops issuing keepalives.
+- Deploy/revert registry expiry and executor consumption together. Reverting
+  only executor handling is unsafe.
+- Timers are per live idle handle, unref'd, and O(1); keepalive writes no row.
+  Browser traffic is bounded to one request per active idle dock per 30-second
+  window plus one leading request. Multiple operators may intentionally keep
+  the same node alive under the existing shared steering grant.
+- On server restart, no timer survives. Do not infer abandonment by age. The
+  operator explicitly abandons/cancels the orphaned run, then uses
+  `archon workflow retry-node` if desired; Phase 5 makes the docs say this.
+- Rollback cannot recover a session or queued message already lost to a
+  process restart. Normal code rollback otherwise needs no data action.
 
-- **Server restart during idle-await (accepted limitation).** The registry,
-  timer, and the executor's parked continuation are process-local by the
-  Story 2.3 design; a restart at minute 10 leaves the run `running` with an
-  `interrupted` status row and no timer, exactly as it leaves any mid-stream
-  node. AGENTS.md's *No Autonomous Lifecycle Mutation Across Process
-  Boundaries* rule forbids a startup sweep that fails such rows on a staleness
-  guess; the existing operator surfaces (`workflow abandon`, retry-node) are
-  the recovery path. Phase 5 records this in the test-plan authority; no code
-  in this story addresses it. <!-- Updated: Red Team 2026-09-20 — Failure Mode F1 -->
+## Final implementation review checklist
 
-## Rollback
+Before marking the plan complete, re-review the implementation against:
 
-Each phase is independently revertible (Phases 1 and 2 revert together). The only cross-package contract is the
-new route (additive) and the `expired` union member (additive). No schema,
-migration, or data change.
-
-## Red Team Review
-
-### Session — 2026-09-20
-**Findings:** 15 (10 accepted, 5 rejected; 2 duplicates merged)
-**Severity breakdown:** 3 Critical, 4 High, 8 Medium
-**Reviewers:** Security Adversary (Fact Checker — 27 claims sampled, 27 verified, 0 failed), Failure Mode Analyst (Flow Tracer — 5 paths traced, all consistent), Assumption Destroyer (Scope Auditor).
-
-| #  | Finding                                                                 | Severity | Disposition        | Applied To          |
-| -- | ----------------------------------------------------------------------- | -------- | ------------------ | ------------------- |
-| 1  | Env gate copies a truthiness check (`'false'` enables it)                | Critical | Accept             | Phase 1 §12, plan §5 |
-| 2  | Keepalive route has no server-side cap; any authenticated caller extends | High     | Reject             | —                   |
-| 3  | Duplicated error-string constant has no compile-time sync                | Medium   | Accept (merged w/ 14) | Phase 4 T4.3, Phase 5 E5 |
-| 4  | Handle sealed before the terminal DB write                               | Medium   | Reject             | —                   |
-| 5  | E2E ms override not bounds-checked                                        | Medium   | Accept             | Phase 1 §12, T1.11  |
-| 6  | Singleton duration override can leak across describes                    | Critical | Accept             | Phase 1 §10, T1.10; Phase 2 |
-| 7  | Playwright option declared but not consumed by the `archon` fixture      | High     | Accept             | Phase 5 step 2      |
-| 8  | No "latest execution" ordering exists to reuse                           | High     | Accept             | Phase 4 §2, T4.7    |
-| 9  | Loop-site `safeSendMessage` arity wrong in snippet                       | Medium   | Accept             | Phase 2 §4          |
-| 10 | Fake-timer isolation relies on a bare `afterEach`                        | Medium   | Accept             | Phase 1, plan §4    |
-| 11 | Server restart during idle-await orphans the run                         | Critical | Accept (document)  | plan Risks          |
-| 12 | Loop-group body error is wrapped at the outer node                       | High     | Accept             | Phase 2 T2.8, Phase 4 §2 |
-| 13 | Loop-site terminated path tears the timer down late                      | Medium   | Accept (test only) | Phase 2 T2.5b       |
-| 14 | Expiry-vs-send_now race untested at executor level                       | Medium   | Reject             | —                   |
-| 15 | Duplicate of #3                                                           | Medium   | Merged             | —                   |
-
-Rejection rationale:
-
-- **#2** — The inactivity semantics are owner-ratified (SC 2.2.1,
-  `SPEC.md:144`) and the steering actor grant deliberately lets any
-  authenticated identity steer (`steering-test-plan.md:49`); a keepalive is
-  the same capability as typing, and a server-side cap would contradict the
-  ratified "adjustable by activity" design. This is a product decision the
-  plan must not reverse; it is surfaced here for the owner.
-- **#4** — Seal-before-terminal-write is the existing `finishCancelled`
-  ordering (`dag-executor.ts:3274-3276`); the plan already documents the
-  window, and changing it is outside this story.
-- **#14** — A test that schedules `send_now` to land "as close as possible"
-  to a real timer is nondeterministic (AGENTS.md: no flaky timing). The
-  first-wins invariant lives in one synchronous mutation in `accept()` and is
-  pinned deterministically by Phase 1 T1.9 with real short timers.
-
-### Whole-Plan Consistency Sweep
-
-Decision delta: no fake timers anywhere (plan §4, Phase 1 insights/tests);
-`clearForTests()` resets the duration override (Phase 1 §10, Phase 2 tests
-preamble); exact `=== '1'` env gate with bounds check (plan §5, Phase 1 §12,
-T1.11); explicit `NodeExecution` ordering and selected-node-id evaluation
-(Phase 4 §2, T4.7); loop-group exact assertion on the body row (Phase 2 T2.8);
-loop-site cancel teardown test (T2.5b); `archon` fixture consumes
-`idleAwaitMs` (Phase 5 §2); Phases 1+2 same PR (dependency map, rollback);
-restart limitation recorded (Risks). Swept all six files for "fake timer",
-"advanceTimersByTime", "mirrors `registerE2eFakeProvider`", and "same ordering
-the module already uses" — every remaining mention is the negation or the
-corrected form. No unresolved contradictions.
-
-## Validation Log
-
-### Verification Results — 2026-09-20
-- Claims checked: 27 (Fact Checker) + 5 traced flows (Flow Tracer) + 8 state lifetimes (Scope Auditor)
-- Verified: 27 | Failed: 0 | Unverified: 0
-- Tier: Full (5 phases)
-- Failures: none — every cited path, symbol, route, env key, spec line, and UX
-  copy string matched the worktree at `49abef22`.
-
-### Interview
-Not run: this plan was produced in an unattended `ak-feature` session that
-returns the plan path as structured output. The decision points a reviewer
-should confirm before cooking are recorded as Red Team #2 (server-side
-keepalive cap — rejected as contradicting the owner-ratified inactivity
-semantics) and plan decision 8 (cause-naming NEVER SENT copy included from
-`EXPERIENCE.md:256`, which Story 2.11 explicitly deferred to 2.12).
+1. Product: abandoned redirects terminate, active composition does not expire early.
+2. Architecture: one registry waiter owns the race; prompt failure uses the existing finalizer.
+3. Contracts: exact strings, statuses, generated types, actor grant, retry-session deletion.
+4. Reliability/data integrity: first-wins settlement, queue reconciliation, no autonomous restart mutation.
+5. Performance: unref'd O(1) timers, bounded client traffic, no durable write per keystroke.
+6. Completeness: prompt, loop, loop-group, both docks, empty/non-empty terminal states.
+7. Verification: deterministic unit seams plus one real-timer E2E and fresh-session proof.
+8. Operations: server PID cleanup, restart limitation, atomic Phase 1/2 rollout and rollback.
+9. Maintainability: no duplicate finalizer, no global test duration mutation, no speculative config.
 
 <!-- slug: issue-192-fail-abandoned-redirect-after-30-minutes -->

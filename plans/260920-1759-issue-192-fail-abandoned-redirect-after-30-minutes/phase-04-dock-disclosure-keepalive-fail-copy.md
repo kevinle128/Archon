@@ -1,187 +1,198 @@
 ---
 phase: 4
-title: 'Phase 4: Dock disclosure, keepalive wiring, fail copy'
+title: 'Phase 4: Dock disclosure, keepalive wiring, and fail copy'
 status: pending
 priority: P1
-effort: '5h'
+effort: '6h'
 dependencies: [2, 3]
 ---
 
-# Phase 4: Dock disclosure, keepalive wiring, fail copy
+# Phase 4: Dock disclosure, keepalive wiring, and fail copy
 
 ## Goal
 
-On both docks: disclose the 30-minute limit in accessible text while
-`idle-after-interrupt`; send a throttled keepalive on keystroke or focus in
-that state (never on `Send now`); and, when the node's terminal evidence is the
-30-minute failure, announce Story 2.11's `NEVER SENT` box with the
-cause-naming copy — all framework-free logic in `steering-dock.ts`, mirrored
-edits in the two docks, and the evidence threaded through the same components
-that already carry `nodeTerminal`.
+Make Legacy and Console truthfully disclose the inactivity bound, translate
+focus/keystroke activity into bounded keepalive calls without early expiry, and
+name the expiry cause when Story 2.11 restores queued messages. Preserve the
+authoritative dock anatomy and finished-empty behavior.
 
-## Context links
+## Design authority and current code
 
-- `packages/web/src/lib/steering-dock.ts`: constants block (~96–108),
-  `steeringAgentMode`, `isQueueShortcut`, `STEERING_NEVER_SENT_DISCLOSURE`.
-- `packages/web/src/components/workflows/ComposerDock.tsx` and
-  `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`:
-  props (`send`/`interrupt`/`withdraw`/`readQueue` are injectable), idle
-  disclosure `<p>` (~823 / ~829), textarea `onChange`/`onKeyDown` (~836 /
-  ~842), `submit()` (~518 / ~524), finished alert (~662 / ~668).
-- `packages/web/src/lib/execution-room-model.ts`: `hasTerminalNodeEvidence`
-  (~453) and its callers `LegacyGraphLogsPane.tsx:284`,
-  `ConsoleInspectPane.tsx:251`; prop chain `LegacyGraphLogsPane →
-  LegacyNodeRoom → NodeTranscriptPane → ComposerDock` and `ConsoleInspectPane →
-  ConsoleNodeRoom → ConsoleComposerDock`.
-- `EXPERIENCE.md` line 178 (idle disclosure copy) and line 256 (fail
-  announcement copy); `DESIGN.md` dock tokens (no new colour, mono 10.5px
-  disclosure line).
-- Tests: `steering-dock.test.ts`, `ComposerDock.test.tsx`,
-  `ConsoleComposerDock.test.tsx`, `NodeTranscriptPane.test.tsx`,
-  `ConsoleNodeRoom.test.tsx`, `execution-room-model.test.ts`.
+- `EXPERIENCE.md` fixes the exact idle and expiry strings, says the disclosure
+  belongs in the composer well, and says a finished node with no undelivered
+  message has no dock.
+- `DESIGN.md` and the co-located `key-steering-dock.html`,
+  `key-legacy-node-room.html`, and `key-console-node-room.html` fix the layout,
+  tokens, queue-band cap, and responsive panels. They contain no conflicting
+  Story 2.12 copy; `EXPERIENCE.md` is the authority for the new line.
+- `ComposerDock.tsx` and `ConsoleComposerDock.tsx` have the same affected
+  anatomy and injectable API functions. Mirror their shell edits; keep state
+  logic framework-free in `packages/web/src/lib/steering-dock.ts`.
+- `LegacyGraphLogsPane` and `ConsoleInspectPane` already compute terminal
+  evidence and own the raw `NodeExecution[]` needed for cause detection.
+- The generated `NodeExecution` type already includes status, error,
+  `retry_epoch`, `started_at`, and `ended_at`.
 
-## File inventory
+## Files
 
-| File                                                                           | Action | Size  | Test impact                                     |
-| ------------------------------------------------------------------------------ | ------ | ----- | ----------------------------------------------- |
-| `packages/web/src/lib/steering-dock.ts`                                        | Modify | ~+45  | New constants + two pure helpers                |
-| `packages/web/src/lib/steering-dock.test.ts`                                   | Modify | ~+80  | T4.1–T4.6                                       |
-| `packages/web/src/lib/execution-room-model.ts`                                 | Modify | ~+20  | `hasIdleAwaitExpiredEvidence`                   |
-| `packages/web/src/lib/execution-room-model.test.ts`                            | Modify | ~+40  | T4.7                                            |
-| `packages/web/src/components/workflows/ComposerDock.tsx`                       | Modify | ~+40  | Disclosure, keepalive, fail copy, new props     |
-| `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx`      | Modify | ~+40  | Mirror of the above                             |
-| `packages/web/src/components/workflows/ComposerDock.test.tsx`                  | Modify | ~+120 | T4.8–T4.14                                      |
-| `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` | Modify | ~+120 | T4.8–T4.14 (Console)                            |
-| `NodeTranscriptPane.tsx`, `LegacyNodeRoom.tsx`, `LegacyGraphLogsPane.tsx`      | Modify | ~+5 ea | Thread `idleAwaitExpired`                      |
-| `ConsoleNodeRoom.tsx`, `ConsoleInspectPane.tsx`                                | Modify | ~+5 ea | Thread `idleAwaitExpired`                      |
-| `NodeTranscriptPane.test.tsx`, `ConsoleNodeRoom.test.tsx`                      | Modify | ~+30 ea | T4.15 pass-through                            |
+| Area            | Files                                                                                                                                  |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared behavior | `packages/web/src/lib/steering-dock.ts`, `.test.ts`                                                                                    |
+| Cause evidence  | `packages/web/src/lib/execution-room-model.ts`, `.test.ts`                                                                             |
+| Legacy          | `components/workflows/ComposerDock.tsx`, `LegacyGraphLogsPane.tsx`, `LegacyNodeRoom.tsx`, `NodeTranscriptPane.tsx`, and affected tests |
+| Console         | `experiments/console/components/ConsoleComposerDock.tsx`, `ConsoleInspectPane.tsx`, `ConsoleNodeRoom.tsx`, and affected tests          |
 
-## Tests before
+The affected pass-through tests are the co-located `ComposerDock`,
+`LegacyGraphLogsPane`, `LegacyNodeRoom`, `NodeTranscriptPane`,
+`ConsoleComposerDock`, `ConsoleInspectPane`, and `ConsoleNodeRoom` test files.
 
-Pure core (`steering-dock.test.ts`):
+## Shared behavior design
 
-| ID   | Test                                                  | Required assertion                                                                                                                                                       |
-| ---- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| T4.1 | idle disclosure copy is exact                         | `STEERING_IDLE_AWAIT_DISCLOSURE === 'no redirect ends this node after 30 min of inactivity · typing keeps it open'`.                                                     |
-| T4.2 | fail disclosure copy is exact and distinct            | `STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE === 'node failed · interrupted with no redirect · none of this was sent'`; `neverSentDisclosure(false)` returns the 2.11 copy; `neverSentDisclosure(true)` returns the new copy. |
-| T4.3 | engine error constant mirrors the executor            | `IDLE_AWAIT_EXPIRED_ERROR === 'interrupted by operator, no redirect received'` (comment: mirrors `@archon/workflows` dag-executor; change both). This unit test cannot detect drift on its own — Phase 5 E5/E6 are the cross-package guard. |
-| T4.4 | keepalive throttle is leading-edge                    | `createKeepaliveThrottle(now, 30_000)`: first `shouldSend()` true; at +29_999 false; at +30_000 true; window is 30 s by default (`STEERING_KEEPALIVE_THROTTLE_MS`).       |
-| T4.5 | throttle reset                                        | `reset()` makes the next call true immediately (used on attempt-generation reset and on entering idle).                                                                  |
-| T4.6 | shortcut exclusion helper                             | `isKeepaliveKeystroke(event)` is false for the Cmd/Ctrl+Enter queue shortcut (reuses `isQueueShortcut`) and for IME composing events; true for a plain character key.  |
+1. Add exact constants:
+   - `STEERING_IDLE_AWAIT_DISCLOSURE` =
+     `no redirect ends this node after 30 min of inactivity · typing keeps it open`
+   - `STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE` =
+     `node failed · interrupted with no redirect · none of this was sent`
+   - local `IDLE_AWAIT_EXPIRED_ERROR` =
+     `interrupted by operator, no redirect received`
+   - `STEERING_KEEPALIVE_COALESCE_MS = 30_000`
 
-Room model (`execution-room-model.test.ts`):
+   Keep the local engine string documented as an intentional package-boundary
+   mirror. Do not import `@archon/workflows` into the web package.
 
-| ID   | Test                                            | Required assertion                                                                                                                                                                                 |
-| ---- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T4.7 | idle-await-expired evidence is strict           | True only when `hasTerminalNodeEvidence` is true AND the latest execution for the node has `status:'failed'` and `error === IDLE_AWAIT_EXPIRED_ERROR`; false for other errors, other nodes, running rows, or no rows. "Latest" = highest `retry_epoch` (missing → 0), then latest `started_at` (ISO string compare), then last array position. Include a retry-then-success case: rows `[failed(expired, epoch 0), completed(epoch 1)]` → false. |
+2. `neverSentDisclosure(idleAwaitExpired)` selects the Story 2.12 alert only
+   for that exact cause; all other terminal reconciliation keeps Story 2.11's
+   existing copy.
+3. Add a framework-free `createKeepaliveCoalescer` with injected clock and
+   scheduler for tests. Required behavior:
+   - first eligible activity calls `send()` immediately;
+   - activity during the 30-second window marks one trailing send due at the
+     window boundary; more activity does not add timers;
+   - after the trailing send, continued activity begins the next bounded
+     window; thus the final activity is represented no more than 30 seconds
+     later and never expires early because it was omitted;
+   - `dispose()` cancels pending work and makes callbacks/in-flight completion
+     inert;
+   - a rejected request does not mutate UI or disable the window. Future
+     activity remains coalesced and can drive the one trailing request at the
+     boundary; attach a rejection handler so no unhandled promise escapes and
+     a persistent outage cannot turn held keys into a request storm.
 
-Docks (`ComposerDock.test.tsx` and `ConsoleComposerDock.test.tsx`, identical
-matrix; inject `keepalive` as a mock prop like `interrupt`):
+   A leading-only throttle is forbidden: it can allow expiry before 30 minutes
+   have elapsed from the last keystroke.
 
-| ID    | Test                                                   | Required assertion                                                                                                                                         |
-| ----- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T4.8  | idle renders both disclosure lines                     | With `subState:'idle-after-interrupt'`, the interrupt disclosure and the idle-await disclosure are both visible `<p>` text in the well, in that order.       |
-| T4.9  | non-idle renders neither new line                      | `generating` and queue-only show no 30-minute text.                                                                                                        |
-| T4.10 | keystroke while idle sends one keepalive               | Type three characters quickly → `keepalive` called once with `(runId, nodeId)`; draft updated normally.                                                     |
-| T4.11 | focus while idle sends a keepalive                     | Focus the textarea → one call; a second focus within the window → no additional call.                                                                       |
-| T4.12 | Send now never sends a keepalive                       | With a draft, press Cmd+Enter (and separately click `Send now`) → `send` called with `intent:'send_now'` and `keepalive` not called; queue-mode Cmd+Enter likewise. |
-| T4.13 | keystrokes while generating send nothing               | `subState:'generating'`, type → `keepalive` not called.                                                                                                     |
-| T4.14 | keepalive failure is silent and inert                  | `keepalive` rejects with a 422 `SteeringRequestError` → no refusal text, no state change, no unhandled rejection (assert with a spy on `console.error` unused). |
-| T4.15 | fail copy on the never-sent box                        | `nodeTerminal:true`, `idleAwaitExpired:true`, one unmatched receipt → exactly one `role="alert"` whose text is the new fail copy; with `idleAwaitExpired:false` the 2.11 copy. |
-| T4.16 | attempt reset clears the throttle                      | After a `nodeExecutionKey` change, the first idle keystroke sends again even inside the previous window.                                                    |
+4. Add a small key predicate that excludes only the exact keyboard shortcut
+   that the dock will execute as `Send now`. IME/composition keystrokes count
+   as activity when they are not an actual submit shortcut.
 
-Panes / rooms (`NodeTranscriptPane.test.tsx`, `ConsoleNodeRoom.test.tsx`):
+## Cause-evidence design
 
-| ID    | Test                                          | Required assertion                                                           |
-| ----- | --------------------------------------------- | ---------------------------------------------------------------------------- |
-| T4.17 | `idleAwaitExpired` passes through to the dock | Rendering with the prop true reaches the dock (the fail copy appears with a never-sent fixture). |
+Add `hasIdleAwaitExpiredEvidence(executions, selectedNodeId)` next to
+`hasTerminalNodeEvidence`:
 
-## Refactor (protected changes)
+1. Filter to the selected node. Require at least one row and require every row
+   for that node to be terminal; otherwise false so reconciliation cannot race
+   a new attempt.
+2. Select the latest row by highest `retry_epoch` (missing = 0), then latest
+   effective timestamp (`started_at ?? ended_at ?? ''`), then later original
+   array position as a stable tie-breaker.
+3. Return true only when that row is `failed` and its error exactly equals the
+   local expiry constant.
+4. Evaluate the actual selected id. A loop-group body uses `grp.body`; the
+   outer `grp` row intentionally contains a composite error and must not drive
+   the body dock.
 
-1. `steering-dock.ts`: add `STEERING_IDLE_AWAIT_DISCLOSURE`,
-   `STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE`, `IDLE_AWAIT_EXPIRED_ERROR`,
-   `STEERING_KEEPALIVE_THROTTLE_MS = 30_000`, `neverSentDisclosure(idleAwaitExpired: boolean)`,
-   `createKeepaliveThrottle(now: () => number = Date.now, windowMs = STEERING_KEEPALIVE_THROTTLE_MS): { shouldSend(): boolean; reset(): void }`,
-   and `isKeepaliveKeystroke(event: SteeringShortcutEvent): boolean`.
-2. `execution-room-model.ts`: add `hasIdleAwaitExpiredEvidence(executions,
-   nodeId)` next to `hasTerminalNodeEvidence`. No single-row "latest" selector
-   exists for `NodeExecution[]` today (the module's helpers are aggregate
-   `some`/`every`), so define the ordering explicitly: highest `retry_epoch`
-   (undefined → 0), then latest `started_at`, then last array position. This
-   keeps a retried-and-completed node from resurfacing the stale expiry copy.
-   Evaluate it against the **selected node id** the dock is mounted on — for a
-   loop-group body that is the namespaced body row (`grp.body`), whose error
-   is the exact engine string; the outer group row carries a composite wrapper
-   and is never the dock's node.
-   <!-- Updated: Red Team 2026-09-20 — Assumption Destroyer F3, Failure Mode F2 -->
-3. Both parents (`LegacyGraphLogsPane.tsx`, `ConsoleInspectPane.tsx`): compute
-   `idleAwaitExpired` beside `nodeTerminal` and pass it down; thread the
-   optional boolean prop (default `false`) through `LegacyNodeRoom`,
-   `NodeTranscriptPane`, `ConsoleNodeRoom` to each dock.
-4. Both docks (mirror exactly):
-   - New optional props `keepalive = keepaliveNode` and `idleAwaitExpired = false`.
-   - A `keepaliveThrottleRef = useRef(createKeepaliveThrottle())`; call
-     `reset()` inside the existing attempt-generation reset effect and when
-     `agentMode` transitions into `idle`.
-   - `const touchKeepalive = (): void => { if (agentMode !== 'idle') return;
-     if (!keepaliveThrottleRef.current.shouldSend()) return; void
-     keepalive(runId, nodeId).catch(() => undefined); }` with the comment:
-     intentional silent fallback — keepalive is a best-effort hint; the queue
-     poll and run detail are the authority on whether the node is still idle.
-   - Textarea: `onFocus={touchKeepalive}`; in `onKeyDown`, when the event is
-     the queue shortcut keep the existing `submit()` path and do NOT call
-     `touchKeepalive`; otherwise `if (isKeepaliveKeystroke(...)) touchKeepalive()`.
-   - Render `<p>{STEERING_IDLE_AWAIT_DISCLOSURE}</p>` with the same classes as
-     the interrupt disclosure, directly below it, only when `idle`.
-   - Finished alert: `{neverSentDisclosure(idleAwaitExpired)}`.
-5. Do not add a countdown, warning, or extend control; do not persist
-   anything; do not change the 2.11 reconciliation trigger.
+Compute this beside `nodeTerminal` in `LegacyGraphLogsPane` and
+`ConsoleInspectPane`, then thread an optional `idleAwaitExpired` boolean through
+the existing room/pane chain to each dock. Do not add a new global store.
 
-## Tests after
+## Dock integration
 
-T4.1–T4.17 pass on both surfaces; every existing dock, pane, and room test
-passes unchanged (the new `<p>` must not break existing text-order
-assertions — if one asserts the interrupt disclosure is the only `<p>`, update
-it to assert order instead).
+Apply the same behavior to both docks:
 
-## Regression gate
+1. Add injectable `keepalive = keepaliveNode` and
+   `idleAwaitExpired = false` props.
+2. Create one coalescer per active execution attempt. Its send callback first
+   confirms that the same attempt is still `idle`; attempt-key change, leaving
+   idle, unmount, and submit dispose it. A late result cannot affect a new
+   attempt.
+3. On textarea focus and non-submit keydown while idle, call `touch()`. Preserve
+   draft editing, Enter/newline, and current shortcut behavior. Clicking or
+   pressing `Send now` invokes only the existing send path and cancels pending
+   trailing keepalive work; it does not make a keepalive call of its own.
+4. Render the new sentence in the existing disclosure slot directly after the
+   Stop explanation, using the same mono 10.5px/disclosure classes and no new
+   color or icon. Render only in `idle-after-interrupt`.
+5. For a finished node with unmatched receipts, feed
+   `neverSentDisclosure(idleAwaitExpired)` to the existing single
+   `role="alert"` band. Preserve restored text/id/order and the 33vh cap.
+6. If the expired node has no unmatched receipts or local draft, render no
+   terminal dock shell. Existing node-failure UI remains responsible for the
+   failure itself.
+
+## Tests first
+
+### Pure helpers and evidence
+
+| ID   | Case                 | Required assertions                                                                                                                                                                                              |
+| ---- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T4.1 | Exact copies         | All three strings match authority byte-for-byte; normal terminal copy is unchanged.                                                                                                                              |
+| T4.2 | Immediate + trailing | First touch sends immediately; touches at +1/+29,999ms create one trailing call at +30,000ms; no early or duplicate call.                                                                                        |
+| T4.3 | Continuous activity  | Across multiple windows, calls are bounded to one at each boundary and the last activity is represented within 30 seconds.                                                                                       |
+| T4.4 | Dispose/reset        | Pending callback is cancelled and stale/in-flight completion cannot send or alter a replacement coalescer.                                                                                                       |
+| T4.5 | Failure handling     | Rejection is handled; a later touch remains bounded and can drive the scheduled trailing call; no UI refusal state or request storm is produced.                                                                 |
+| T4.6 | Submit shortcut      | Actual Cmd/Ctrl+Enter submit is excluded; plain, navigation, and composing activity is eligible.                                                                                                                 |
+| T4.7 | Cause classification | Exact latest expiry is true; wrong node/error/status, unsettled row, and no row are false. Expiry epoch 0 followed by completed epoch 1 is false. Test timestamp and array tie-breaks, plus `grp.body` vs `grp`. |
+
+### Both composer docks
+
+Run the same matrix for Legacy and Console:
+
+| ID    | Case                        | Required assertions                                                                                                                                                           |
+| ----- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T4.8  | Idle disclosure             | Existing Stop text then exact 30-minute text, both readable in DOM; generating/queue-only/finished states omit the new line.                                                  |
+| T4.9  | Activity burst              | Focus plus rapid typing produces one immediate keepalive; draft content and caret behavior remain correct.                                                                    |
+| T4.10 | Send now exclusion          | Prepare a non-empty draft, snapshot keepalive count, click and keyboard-submit separately, and assert send uses `intent:'send_now'` while keepalive count does not increase.  |
+| T4.11 | Non-idle                    | Focus/typing while generating or finished sends no keepalive.                                                                                                                 |
+| T4.12 | Rejection                   | A failed keepalive is handled and later idle activity remains eligible for the bounded trailing call; no refusal banner/state, console error, or per-key retry storm appears. |
+| T4.13 | Attempt cleanup             | Leaving idle or changing `nodeExecutionKey` prevents scheduled old-attempt work; first activity in a new idle attempt sends immediately.                                      |
+| T4.14 | Cause-specific terminal box | One unmatched receipt plus expiry evidence yields one alert with exact cause copy; other terminal errors retain existing copy and original message identity/order.            |
+| T4.15 | Empty terminal state        | Expiry evidence with no unmatched receipt/draft renders no empty dock or alert.                                                                                               |
+| T4.16 | Prop chain                  | Parent evidence reaches the correct selected Legacy/Console dock, including a namespaced loop-group body.                                                                     |
+
+## Visual acceptance criteria
+
+Verify all states in both shells, using the design tokens and geometry already
+present:
+
+| State                   | Required visual result                                                                                                                                               |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Idle, empty queue       | Two disclosure lines in order above the textarea; full text may wrap but is never clipped/ellipsized; `Send now` remains fully visible.                              |
+| Idle, queued            | Existing `WILL SEND` band remains above disclosures, retains 33vh cap/scroll, and composer/control positions do not shift horizontally.                              |
+| Expired, queued         | Read-only full-width `NEVER SENT` band with exact alert; no textarea, Stop, Queue, or Send now. Focus handoff lands on the last transcript row/scroller, never body. |
+| Expired, no queue/draft | No empty dock shell; existing failed-node state remains visible.                                                                                                     |
+
+Check the authoritative Legacy 460px panel and Console at a 1440×900 desktop
+viewport/panel width. In each: no horizontal overflow, overlap, truncated copy,
+or off-screen button; long copy wraps within its flexible cell; queue text keeps
+its existing scroll cap. No countdown, progress bar, warning toast, extend
+button, new color, or motion is allowed.
+
+## Verification
 
 ```bash
-bun test packages/web/src/lib/
-NODE_ENV=development bun test packages/web/src/components/
-NODE_ENV=development bun test packages/web/src/experiments/console/
+bun test packages/web/src/lib/steering-dock.test.ts packages/web/src/lib/execution-room-model.test.ts
+NODE_ENV=development bun test packages/web/src/components/workflows/
+NODE_ENV=development bun test packages/web/src/experiments/console/components/
 bun --filter @archon/web type-check
 bun x eslint packages/web/src --max-warnings 0
 ```
 
-## Test scenario matrix
+## Risks and rollback
 
-| Path     | Scenario                                        | Tests                  |
-| -------- | ----------------------------------------------- | ---------------------- |
-| Critical | disclosure present only when idle, exact copy   | T4.1, T4.8, T4.9       |
-| Critical | keepalive on keystroke/focus, never on Send now | T4.10–T4.13            |
-| High     | cause-naming never-sent announcement            | T4.2, T4.7, T4.15, T4.17 |
-| Medium   | throttle semantics and reset                    | T4.4, T4.5, T4.16      |
-| Medium   | silent keepalive failure                        | T4.14                  |
-| Low      | error constant parity                           | T4.3                   |
-
-## Dependency map
-
-- Requires Phase 3 (`keepaliveNode`, generated type) and Phase 2 (constant).
-- Feeds Phase 5 (E2E asserts the same strings and request interception).
-
-## Risk assessment
-
-- Double keepalive from `onFocus` + first keystroke — the throttle collapses
-  them (T4.11 + T4.10 sequence).
-- A held key generates auto-repeat keydown events — throttle bounds it.
-- Threading a boolean through five components is mechanical but easy to drop
-  on one surface — T4.17 exists on both surfaces.
-
-## Security considerations
-
-Keepalive sends no content. No new storage.
-
-## Rollback
-
-Revert the web files; no generated or server artifact changes in this phase.
+- Multiple tabs/operators may each send keepalives; that follows the existing
+  shared steering grant. Per-dock coalescing bounds accidental bursts.
+- Exact error matching is safe because it matches an Archon-owned typed cause,
+  not arbitrary user or vendor prose. The E2E guards the duplicated string.
+- Web changes are independently reversible after callers stop using the route;
+  no stored UI state or migration needs rollback.

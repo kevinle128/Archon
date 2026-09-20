@@ -3,7 +3,7 @@ phase: 1
 title: 'Phase 1: Registry inactivity timer and keepalive'
 status: pending
 priority: P1
-effort: '3h'
+effort: '4h'
 dependencies: []
 ---
 
@@ -11,136 +11,104 @@ dependencies: []
 
 ## Goal
 
-Give `NodeSteeringHandle` a fixed 30-minute inactivity timer that is armed on
-idle entry, re-armed by `keepalive()`, cleared by `Send now` and every seal,
-and resolves the existing single-resolve idle waiter with a new `expired` wake
-— so exactly-once resolution is inherited from the waiter the executor already
-parks on, and the duration is injectable for tests and the E2E runtime.
+Make the existing idle waiter expire after a fixed 30 minutes of inactivity,
+re-arm it without waking the executor, and preserve the handle's existing
+first-wins semantics. Provide deterministic test control without changing the
+production singleton or sleeping on millisecond timers.
 
-## Context links
+## Evidence and constraints
 
-- `packages/workflows/src/steering-registry.ts` — `enterIdle`, `accept`,
-  `seal`, `SteeringIdleWake`, `SteeringRegistry`, `getSteeringRegistry`,
-  `createSteeringRegistry`, `clearForTests`.
-- `packages/workflows/src/steering-registry.test.ts` — describes
-  `accept + enterIdle`, `interrupt`, `discardRun`, `park/resume/close`.
-- `_bmad-output/specs/spec-agent-node-room/engine-integration.md` — "The
-  idle-await bound" paragraph and step 2 of the multi-turn loop.
-- `_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` — "Engine —
-  idle-await lifecycle (fake timers)".
-- `packages/providers/src/e2e-fake/registration.ts` — the
-  `ARCHON_E2E_FAKE_PROVIDER` env-gate precedent.
+- Owner: `packages/workflows/src/steering-registry.ts`; tests:
+  `packages/workflows/src/steering-registry.test.ts`.
+- `enterIdle()` installs one `idleWaiter`. `send_now` and `seal()` already take
+  and clear that waiter synchronously.
+- Park, close, discard, `closeIfEmpty`, and `clearForTests` all flow through
+  `seal()`/`discard()`; cancelling the timer there covers every teardown.
+- Queue-intent acceptance while idle must remain queued and must neither wake
+  nor re-arm the timer.
+- The duration is a fixed product rule, not workflow/configuration syntax.
+- Use the codebase's existing timer `unref` convention: cast the returned
+  handle to `{ unref?: () => void }`, test its presence, then call it.
 
-## Key insights
+## Files
 
-- The waiter created by `enterIdle` is the single point of resolution; a timer
-  that resolves it is automatically exclusive with `send_now` and `seal`
-  because each clears `idleWaiter` before resolving.
-- Bun 1.3.14 supports `jest.useFakeTimers()`, but `Bun.sleep` hangs under
-  fake timers and a test that throws before `afterEach` restores real timers
-  would stall every later describe on Bun's 5000 ms timeout (the "bimodal"
-  class in AGENTS.md). Decision: **no fake timers anywhere in this plan.**
-  Registry tests use short injected durations (5–40 ms); the 30-minute default
-  is proven by spying on `globalThis.setTimeout` and asserting the delay
-  argument.
-  <!-- Updated: Red Team 2026-09-20 — Assumption Destroyer F5 -->
-- The timer must never keep the process alive on its own: call `.unref?.()`
-  on the returned handle (Bun returns a `Timer` with `unref`), guarded so the
-  browser-free type is not assumed.
+| File                                               | Action                                                                       |
+| -------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `packages/workflows/src/steering-registry.ts`      | Add timer, scheduler seam, keepalive, wake kind, gated E2E duration resolver |
+| `packages/workflows/src/steering-registry.test.ts` | Add deterministic lifecycle and resolver coverage                            |
 
-## File inventory
+## Design
 
-| File                                                  | Action | Size   | Test impact                                          |
-| ----------------------------------------------------- | ------ | ------ | ---------------------------------------------------- |
-| `packages/workflows/src/steering-registry.ts`         | Modify | ~+90   | New behaviour under test; existing tests unchanged   |
-| `packages/workflows/src/steering-registry.test.ts`    | Modify | ~+220  | New `idle-await inactivity timer` describe (T1.x)    |
+1. Export
+   `STEERING_IDLE_AWAIT_INACTIVITY_MS = 30 * 60_000` and extend
+   `SteeringIdleWake` with `{ readonly kind: 'expired' }`.
+2. Define a narrow scheduler type:
 
-No new files. No changes to `dag-executor.ts` in this phase (Phase 2 consumes
-the new wake kind; until then the executor's `wake.kind` switch is exhaustive
-on `send_now`/else and treats `expired` like `terminated` — acceptable for
-one commit, but Phase 2 must land before release).
+   ```ts
+   type ScheduleIdleExpiry = (callback: () => void, delayMs: number) => () => void;
+   ```
 
-## Tests before (write first, watch them fail)
+   Its production implementation creates one timeout, conditionally `unref`s
+   it, and returns an idempotent function that clears it. Export the production
+   function only with `@internal` if direct testing is needed.
 
-Add `describe('idle-await inactivity timer', …)` to
-`steering-registry.test.ts`. Use `createSteeringRegistry({ idleAwaitInactivityMs })`
-with real short durations for every case; for the default-duration case use
-`spyOn(globalThis, 'setTimeout')` and restore it in the test's `finally`.
+3. `SteeringRegistry` accepts optional `idleAwaitInactivityMs` and
+   `scheduleIdleExpiry` constructor options and supplies both to new handles.
+   `createSteeringRegistry(options?)` forwards them. Existing register callers
+   and per-handle `interruptible` options stay unchanged.
+4. Store one `cancelIdleExpiry` function and a monotonic expiry generation on
+   `NodeSteeringHandle`. `enterIdle(token)` installs the waiter first and then
+   arms the timer. Re-arm invalidates the prior generation, cancels its job,
+   and schedules a callback carrying the new generation.
+5. Expiry first verifies that its captured generation is still current. A
+   stale/cancelled callback is inert even if the scheduler invokes it. The
+   current expiry clears its cancellation slot, synchronously takes and clears
+   `idleWaiter`, and resolves `{ kind: 'expired' }`. It does not change phase,
+   sub-state, queue, accepted-id memory, or turn state. Until executor teardown,
+   queue-intent messages still receive `awaiting_send_now` and remain available
+   to terminal reconciliation.
+6. Add `keepalive(): 'rearmed' | 'not_idle'`. Return `rearmed` only when the
+   handle is interruptible, `phase === 'live'`, sub-state is
+   `idle-after-interrupt`, and the waiter still exists. Otherwise change
+   nothing and return `not_idle`.
+7. In the synchronous `send_now` release, cancel the timer before resolving
+   the waiter. In `seal()`, cancel before resolving `terminated`. These are the
+   only shared settlement points.
+8. Add a narrow `@internal expireIdleForTests(): void` that invokes the same
+   expiry transition (and cancels any scheduled job first). Executor tests use
+   this instead of a mutable singleton duration.
+9. Add `resolveIdleAwaitInactivityMs(environment)` and have singleton
+   construction pass the runtime environment. It returns the production
+   constant unless `ARCHON_E2E_FAKE_PROVIDER === '1'` exactly. Under that gate,
+   accept `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` only when it parses to an integer
+   in `[1, STEERING_IDLE_AWAIT_INACTIVITY_MS]`; malformed, zero, negative,
+   exponential overflow, fractional, and over-default values fall back.
+10. Update module/type comments to distinguish timer expiry from the
+    completing stream idle timeout. Add no config key, YAML field, database
+    state, or message-content logging.
 
-| ID    | Test                                                     | Required assertion                                                                                                                                                                                |
-| ----- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T1.1  | default duration is exactly 30 minutes                   | `STEERING_IDLE_AWAIT_INACTIVITY_MS === 30 * 60_000`; a registry built with no option arms `enterIdle` via `setTimeout(fn, 1_800_000)` (spy on `globalThis.setTimeout`, restored in `finally`); the waiter is then resolved by `close()` so no real timer survives. |
-| T1.2  | expiry resolves the idle waiter exactly once             | With `idleAwaitInactivityMs: 20`, `await enterIdle(t)` yields `{ kind: 'expired' }`; a second `enterIdle` is impossible (no live turn) and `keepalive()` afterwards returns `'not_idle'`.        |
-| T1.3  | keepalive re-arms without resolving idle-await           | `idleAwaitInactivityMs: 30`: call `keepalive()` at 20 ms and 40 ms; the waiter is still pending at 55 ms and resolves `expired` by ~75 ms. `steeringSubState()` stays `idle-after-interrupt`.      |
-| T1.4  | keepalive returns `'rearmed'` only while idle             | Live generating handle (after `beginTurn`) → `'not_idle'`; between turns (settled) → `'not_idle'`; idle → `'rearmed'`; closed/parked → `'not_idle'`; queue-only handle → `'not_idle'`.         |
-| T1.5  | send_now cancels the timer                               | Idle handle with 20 ms timer; `accept(msg,'send_now')` at 5 ms resolves `send_now`; after 40 ms no further resolution and no thrown/unhandled rejection; `pendingCount()` is 0.                   |
-| T1.6  | queue-intent accept does not re-arm or resolve           | Idle handle with 30 ms timer; `accept(msg,'queue')` at 5 ms; waiter still resolves `expired` at ~30 ms (not ~35 ms) and the message remains pending (`pendingCount() === 1`).                     |
-| T1.7  | seal paths clear the timer                               | For `close()`, `park()`, and `discardRun()` with a 10 ms timer: waiter resolves `terminated`; after 30 ms real time there is no second resolution (counter on `.then`) and `clearTimeout` was called (spy).   |
-| T1.8  | expiry leaves the handle live and idle-projecting        | After `expired`, `phase` is `live`, `steeringSubState()` is `idle-after-interrupt`, `accept(msg,'queue')` still succeeds with `awaiting_send_now`, and `closeIfEmpty()` returns `false`.           |
-| T1.9  | expiry racing send_now is first-wins                     | 10 ms timer: `accept(msg,'send_now')` at 0 ms → waiter resolved `send_now` once and nothing after 30 ms; separately, `await` the expiry then `accept(msg,'send_now')` → `expired` once, the send lands `awaiting_send_now`, `pendingCount() === 1`. |
-| T1.10 | injectable duration is per registry; test hook resets    | Two registries with different `idleAwaitInactivityMs` arm different timers; `setIdleAwaitInactivityMsForTests(5)` affects handles registered afterwards only; **`clearForTests()` restores the default** so the shared executor-suite `afterEach` structurally undoes any override. |
-| T1.11 | singleton env gate is exact and bounds-checked           | `resolveIdleAwaitInactivityMs(env)` returns the 30-minute default unless `env.ARCHON_E2E_FAKE_PROVIDER === '1'` **exactly** (`'true'`, `'0'`, `'false'`, unset → default even with the ms var set); with the flag `'1'`: `'5'` → 5; `'0'`, `'-1'`, `'1e999'`, `'abc'`, `''` → default (guard: `Number.isSafeInteger(n) && n > 0`). |
-| T1.12 | timer does not hold the event loop                       | The armed timer's handle has `unref` invoked when available (spy on `globalThis.setTimeout` return or assert the handle's `hasRef?.() === false`).                                                |
+## Tests first
 
-Run: `bun test packages/workflows/src/steering-registry.test.ts` — T1.x must
-fail (missing exports/methods) before the refactor.
+Build a small manual scheduler in the test file: collect scheduled jobs and
+their delays, expose `fire(job)` and cancellation state, and never advance
+global clocks.
 
-## Refactor (protected changes)
+| ID    | Case                              | Required assertions                                                                                                                                                         |
+| ----- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| T1.1  | Production default                | Constant equals `1_800_000`; a default registry schedules that exact delay on idle entry.                                                                                   |
+| T1.2  | Expiry                            | Firing the active job resolves the waiter once as `expired`; `keepalive()` is then `not_idle`.                                                                              |
+| T1.3  | Re-arm                            | `keepalive()` cancels the prior job, schedules one new full-duration job, leaves the waiter pending, and preserves `idle-after-interrupt`. Firing a cancelled job is inert. |
+| T1.4  | State guard                       | Generating, between-turn, queue-only, parked, closed, and already-expired handles return `not_idle` without scheduling. Only live idle returns `rearmed`.                   |
+| T1.5  | `send_now` wins                   | It cancels the job, drains once in accepted order, resolves `send_now`, and a later forced callback cannot resolve again.                                                   |
+| T1.6  | Queue intent                      | It neither re-arms nor resolves; expiry leaves the row pending with `awaiting_send_now`.                                                                                    |
+| T1.7  | Every seal wins                   | close, park, discard, `closeIfEmpty`, and `clearForTests` cancel the active job and resolve `terminated` once.                                                              |
+| T1.8  | Post-expiry reconciliation window | Phase remains live/idle; queue acceptance succeeds; `pendingCount()` reflects the row; `closeIfEmpty()` is false while queued.                                              |
+| T1.9  | Deterministic first-wins orders   | Drive send then expiry, expiry then send, and teardown then expiry. In every order the waiter has one result and no queue is silently drained.                              |
+| T1.10 | Registry isolation                | Two registries with different duration/scheduler options schedule independently; clearing one does not alter the other or any singleton setting.                            |
+| T1.11 | E2E env gate                      | Exact fake flag plus valid lower duration is accepted. Unset/`true`/`false`/`0` fake flag, invalid duration, fraction, and value above 30 minutes all return default.       |
+| T1.12 | Production scheduler              | The timeout is conditionally unref'd and its returned cancel function clears it once; test with spies/fake handles, not fake clocks.                                        |
 
-1. Export `STEERING_IDLE_AWAIT_INACTIVITY_MS = 30 * 60_000` with a docblock
-   citing NFR6 and the owner-ratified value.
-2. Extend `SteeringIdleWake` with `{ readonly kind: 'expired' }` and update
-   the docblock: `expired` means the fixed inactivity timer fired first — the
-   executor takes its explicit fail branch, never the completing idle timeout.
-3. `NodeSteeringHandle` constructor accepts
-   `{ interruptible?: boolean; idleAwaitInactivityMs?: number }`; store
-   `idleAwaitInactivityMs` (default the constant). Add private
-   `idleTimer: ReturnType<typeof setTimeout> | undefined`.
-4. Private `armIdleTimer()`: clear any existing timer; `setTimeout(() =>
-   this.expireIdle(), ms)`; call `.unref?.()`. Private `clearIdleTimer()`.
-5. Private `expireIdle()`: `this.idleTimer = undefined`; if `idleWaiter` is
-   undefined return; otherwise take and clear the waiter and resolve
-   `{ kind: 'expired' }`. Do not change `phase` or `subState`.
-6. `enterIdle(token)`: after creating the waiter, `armIdleTimer()`.
-7. `keepalive(): 'rearmed' | 'not_idle'`: return `'not_idle'` unless
-   `interruptible && phase === 'live' && subState === 'idle-after-interrupt'
-   && idleWaiter !== undefined`; otherwise `armIdleTimer()` and return
-   `'rearmed'`. Never touches the queue, accepted map, or turn state.
-8. `accept()`: in the first-wins `send_now` release block, `clearIdleTimer()`
-   before resolving the waiter.
-9. `seal()`: `clearIdleTimer()` before resolving the waiter `terminated`.
-10. `SteeringRegistry` constructor accepts `{ idleAwaitInactivityMs?: number }`
-    and passes it to every `new NodeSteeringHandle`. Add
-    `setIdleAwaitInactivityMsForTests(ms: number | undefined)` next to
-    `clearForTests()` with the same `@internal` framing, and make
-    `clearForTests()` also reset the override to the constructor value — the
-    executor suite's existing shared `afterEach` already calls
-    `clearForTests()`, so a Phase 2 test that throws or times out can never
-    leak a shortened timer into later describes.
-    <!-- Updated: Red Team 2026-09-20 — Assumption Destroyer F1 -->
-11. `createSteeringRegistry(options?)` forwards the option.
-12. `resolveIdleAwaitInactivityMs(env: NodeJS.ProcessEnv = process.env)`
-    (exported with an `@internal` docblock for T1.11): returns the default
-    unless `env.ARCHON_E2E_FAKE_PROVIDER === '1'` — an **exact** string
-    comparison, deliberately stricter than `registerE2eFakeProvider`'s
-    truthiness check (`registration.ts:16`), because `'false'`/`'0'` are truthy
-    strings; then parses `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` with `Number()`
-    and accepts it only when `Number.isSafeInteger(n) && n > 0`, else the
-    default. `getSteeringRegistry()` constructs the singleton with it. Comment:
-    env-gated test seam, no-op in production. (Hardening the fake-provider
-    gate itself is out of this story's scope — note it in the PR.)
-    <!-- Updated: Red Team 2026-09-20 — Security F1, F5 -->
-13. Update the module header docblock's per-turn paragraph with one sentence on
-    the inactivity timer and `keepalive()`.
-
-## Tests after (new behaviour)
-
-All T1.x pass. Additionally re-run the existing `accept + enterIdle`,
-`interrupt`, `discardRun`, and `park/resume/close` describes unchanged — they
-must not require edits (the timer is invisible unless it fires, and their
-handles are sealed or resolved within milliseconds).
-
-## Regression gate
+## Verification
 
 ```bash
 bun test packages/workflows/src/steering-registry.test.ts
@@ -148,41 +116,14 @@ bun --filter @archon/workflows type-check
 bun x eslint packages/workflows/src/steering-registry.ts packages/workflows/src/steering-registry.test.ts --max-warnings 0
 ```
 
-Pass condition: every test in the file passes; typecheck and lint report zero
-errors and zero warnings; no test leaves a pending timer (every idle handle is
-resolved or sealed before the test returns).
+All existing interruption, park/resume, discard, and queue tests must remain
+green. No test may leave an idle handle or real timeout alive.
 
-## Test scenario matrix (deep mode)
+## Risks and rollback
 
-| Path     | Scenario                                                  | Tests        |
-| -------- | --------------------------------------------------------- | ------------ |
-| Critical | expiry resolves once; send_now/seal clear timer           | T1.2,5,7,9   |
-| Critical | keepalive re-arms only while idle and never resolves      | T1.3,4       |
-| High     | default value is 30 minutes; injectable per registry      | T1.1,10      |
-| High     | env gate cannot shorten the timer without the fake flag   | T1.11        |
-| Medium   | post-expiry handle state is live/idle until executor seal | T1.8         |
-| Medium   | queue-intent accept is inert for the timer                | T1.6         |
-| Medium   | unref'd timer                                             | T1.12        |
-
-## Dependency map
-
-- Feeds Phase 2 (`expired` wake + `setIdleAwaitInactivityMsForTests`).
-- Feeds Phase 3 (`keepalive()` return contract).
-- Feeds Phase 5 (`ARCHON_E2E_STEERING_IDLE_AWAIT_MS` gate).
-
-## Risk assessment
-
-- Timer leakage between tests → every test seals or resolves its handles
-  before returning, and `clearForTests()` resets the duration override.
-- A future refactor that resolves the waiter without clearing the timer →
-  T1.7/T1.9 pin the invariant; `expireIdle` also guards on a missing waiter.
-
-## Security considerations
-
-None new: no message content is logged; the env gate is inert unless the
-fake-provider flag is exactly `'1'`, and the parsed value is bounds-checked.
-
-## Rollback
-
-Revert the two files. The `expired` union member is additive; nothing
-downstream is consumed until Phase 2.
+- A stale callback cannot win after re-arm because both cancellation and the
+  captured generation guard the expiry transition.
+- The E2E override cannot shorten a normal install because both the exact fake
+  flag and bounds check are required.
+- Deploy and revert this phase with Phase 2. Reverting Phase 2 alone would
+  misclassify the new wake. There is no data rollback.
