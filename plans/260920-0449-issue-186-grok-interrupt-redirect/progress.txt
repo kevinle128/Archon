@@ -56,3 +56,28 @@
 BLOCKER US-002 | gate=Phase-1 decision rules (B0–B9 macOS+Linux + W1 Windows) | cause=B7/B9 mid-tool descendant survival + settlement>1s on macOS; HOST-LINUX and W1 unavailable | action=record BLOCKED; keep capability false; operator re-run on Linux/Windows required before Phase 2 | 2026-09-20
 
 ---
+
+## 2026-09-20T07:19:30Z — US-002: Grok provider stream-abort seam
+
+**Status**: BLOCKED (ENTRY GATE — no production edit)
+**Files changed**: none (entry gate forbids provider/parser production work)
+
+**Acceptance criteria verified**:
+- [x] ENTRY GATE honored: no production edit; blocker recorded in prd.json notes
+- [ ] Remaining US-002 ACs not attempted — gated on PASS round-2 validation log
+
+**Evidence re-checked this iteration**:
+- Report: `plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md` overall **BLOCKED**
+- plan.md validation log: POSIX tree B7/B9 BLOCKED; HOST-LINUX BLOCKED; W1 BLOCKED; Supported hosts BLOCKED
+- M candidate on macOS non-tool path: `first-stdout-event` (~300 ms LAT PASS) — insufficient alone because descendant/host gates failed
+- Cannot unblock in-agent: no native Linux/Windows host; mid-tool child survival is CLI tree behavior, not a missing unit-test fix
+
+**Learnings**:
+- US-001 `passes: true` means the diagnostic/report work finished honestly, not that Phase-1 release gates are green
+- US-002 first AC is a hard stop: missing/failed host|prompt|fork|descendant|latency evidence ⇒ zero production edits
+- Hard blocker needs operator hosts + mid-tool reap proof; spinning Phase 2 offline would violate the plan
+
+BLOCKER US-002 | gate=ENTRY GATE / plan.md validation log from PASS round-2 | cause=B7/B9 descendantsAlive + settlement>1s mid-tool; HOST-LINUX/W1 unavailable; report overall BLOCKED | action=no production change; notes updated; terminal hard-block pending operator evidence | 2026-09-20
+
+---
+

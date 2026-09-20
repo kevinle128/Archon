@@ -51,7 +51,7 @@
       "dependsOn": ["US-001"],
       "priority": 2,
       "passes": false,
-      "notes": ""
+      "notes": "ENTRY GATE blocked iteration 2: no production edit. Round-2 report plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md overall BLOCKED. Failed/missing mandatory evidence: B7 mid-tool owned-tree descendantsAlive=true settlement=9951ms; B9 Cancel tree descendantsAlive=true; HOST-MAC BLOCKED via B7/B9; HOST-LINUX unavailable; W1 Windows unavailable. plan.md validation log mirrors same. Requires operator native Linux+Windows re-run and mid-tool tree-reap proof before Phase 2."
     },
     {
       "id": "US-003",
