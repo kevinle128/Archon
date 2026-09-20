@@ -857,14 +857,15 @@ describe('projectWorkflowExecutionHistory', () => {
       event_type: 'node_started',
       created_at: '2026-09-07T00:00:04.000Z',
       event_order: 3,
-      data: { occurrence_id: OCCURRENCE_B, attempt_id: ATTEMPT_B, type: 'prompt' },
+      // Prompt Ask resume re-enters the same scoped execution.
+      data: { occurrence_id: OCCURRENCE_A, attempt_id: ATTEMPT_A, type: 'prompt' },
     });
     const laterTerminal = event({
       id: 'later-done',
       event_type: 'node_completed',
       created_at: '2026-09-07T00:00:05.000Z',
       event_order: 4,
-      data: { occurrence_id: OCCURRENCE_B, attempt_id: ATTEMPT_B },
+      data: { occurrence_id: OCCURRENCE_A, attempt_id: ATTEMPT_A },
     });
     const answered = interaction({
       id: 'answered-1',
@@ -895,8 +896,30 @@ describe('projectWorkflowExecutionHistory', () => {
       ended_at: resolvedAt,
       duration_ms: 2000,
     });
-    const keptLater = happy.find(item => item.occurrence_id === OCCURRENCE_B);
-    expect(keptLater).toMatchObject({ status: 'completed' });
+    // The lifecycle pair after resume remains present as the terminal segment.
+    expect(happy).toHaveLength(2);
+    expect(happy[1]).toMatchObject({
+      occurrence_id: OCCURRENCE_A,
+      attempt_id: ATTEMPT_A,
+      status: 'completed',
+    });
+
+    // A later retry/other occurrence for the same node is not proof that this
+    // scoped Ask resumed. Leave the parked segment open rather than guessing.
+    const unrelatedLaterStart = event({
+      id: 'unrelated-later-start',
+      event_type: 'node_started',
+      created_at: '2026-09-07T00:00:04.000Z',
+      event_order: 3,
+      data: { occurrence_id: OCCURRENCE_B, attempt_id: ATTEMPT_B, type: 'prompt' },
+    });
+    const unrelatedLater = projectWorkflowExecutionHistory({
+      events: [preStart, resolvedEvent, unrelatedLaterStart],
+      pendingInteractions: [answered],
+    });
+    expect(unrelatedLater.find(item => item.occurrence_id === OCCURRENCE_A)?.status).toBe(
+      'running'
+    );
 
     // resumed:false → no retirement.
     const notResumed = projectWorkflowExecutionHistory({

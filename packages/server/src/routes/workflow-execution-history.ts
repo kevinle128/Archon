@@ -338,7 +338,11 @@ function laterStartProvesOwner(
   return hasLaterMatchingStart(
     sortedEvents,
     afterIndex,
-    (row, _data) => row.event_type === 'node_started' && row.step_name === execution.node_id
+    (row, data) =>
+      row.event_type === 'node_started' &&
+      row.step_name === execution.node_id &&
+      asString(data.occurrence_id) === execution.occurrence_id &&
+      asString(data.attempt_id) === execution.attempt_id
   );
 }
 

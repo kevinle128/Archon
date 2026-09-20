@@ -2,7 +2,7 @@
 
 Recover messages that were never sent when the node ends.
 
-Date: 2026-09-20  
+Date: 2026-09-20
 Run: real-executor Playwright + focused unit/component suites + `bun run validate`.
 
 ## AC map

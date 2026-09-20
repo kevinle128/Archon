@@ -48,7 +48,7 @@
             "textOverflow": "ellipsis",
             "whiteSpace": "nowrap",
             "overflow": "hidden",
-            "scrollWider": true
+            "scrollWider": false
           }
         ],
         "focusableControls": 0,
