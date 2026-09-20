@@ -14,6 +14,18 @@
 - **Where**: `packages/workflows/src/dag-executor.ts` `raceIdleWake`
 - **Pattern**: Pass the handle; on non-continuing status call `handle.terminateIdleAwait()` instead of resolving a separate race promise. Await only the handle waiter; stop the poll in `finally`.
 
+
+### Keepalive route hot/cold classification
+- **Where**: `packages/server/src/routes/api.ts` (`keepaliveWorkflowNodeRoute`)
+- **Pattern**: Mirror queue-read: hot path = registry get + snapshot only (no event scan). closed→409, parked→422 (unlike queue-read which allows parked), live→candidate. Cold path projects events for 404/409/422. Final awaited run re-read + handle phase re-read before synchronous `recordComposerActivity()`. Pre-gate POST middleware for nested 401. Success is strict `{ success: true }` only — never `sub_state`.
+- **Example**: Handle closes during final `getWorkflowRun` await → 409 and activity spy never called.
+
+
+### Dock keepalive leading throttle
+- **Where**: `ComposerDock.tsx` / `ConsoleComposerDock.tsx`
+- **Pattern**: Injectable `keepalive` prop; refs for last-sent timestamp + epoch. Send immediately on first idle textarea focus/change; coalesce within 1000 ms; reopen throttle on rejection if epoch/scope still current; bump epoch on run/node scope change and idle entry. Never update React state from the response. Never attach to Send now or well onFocusCapture.
+- **Example**: `maybeKeepalive()` gated on `agentMode === 'idle'`; rooms pass only `timeoutFailure={latestNodeFailedByIdleExpiry(events, nodeId)}`.
+
 ---
 
 ## 2026-09-20 — US-001: Handle-owned inactivity timer and standard-node expiry
@@ -86,5 +98,74 @@
 **Learnings**:
 - Loop nodes are excluded by `isPersistableNode` — cannot arm loop upsert via `persist_session`. Non-vacuous upsert suppression proof belongs on a standard prompt/command node.
 - Downstream `trigger_rule: all_done` prompt substitution is the clean way to observe failed-loop `output` (bash shell-quotes the value).
+
+---
+
+## 2026-09-20 — US-003: Keepalive route, OpenAPI schema, and generated types
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/schemas/workflow.schemas.ts` — `keepaliveWorkflowNodeResponseSchema` + `KeepaliveWorkflowNodeResponse` via z.infer
+- `packages/server/src/routes/api.ts` — bodyless keepalive route, pre-gate auth middleware, hot/cold handler with final-await races
+- `packages/server/src/routes/api.workflow-runs.test.ts` — actor matrix, live idle/generating, parked/closed/cold, race gates, mutation-negative, OpenAPI
+- `packages/web/src/lib/api.generated.d.ts` — regenerated via openapi-typescript against this worktree on PORT=3192 (platform creds unset)
+
+**Acceptance criteria verified**:
+- [x] Bodyless POST returns exactly `{ success: true }`; idle calls `recordComposerActivity` once; generating is lifecycle no-op
+- [x] Steering grant actor matrix + nested 401; no owner/role check
+- [x] Hot path no event scan; closed 409, parked 422, live candidate; cold 404/409/422
+- [x] Final await races: close→409 no activity, park→422 no activity, terminal/disappeared run 409/404
+- [x] Rejections leave queue/transcript/handle unchanged; repeated keepalive safe; nested 500 content-free
+- [x] OpenAPI bodyless + strict `{ success: true }` schema via z.infer from `@hono/zod-openapi`
+- [x] Generated types add keepalive path/schema only
+- [x] `bun test src/routes/api.workflow-runs.test.ts` + server/web `type-check` pass
+
+**Learnings**:
+- Parked is 422 for keepalive (no redirect session) even though queue-read allows parked reads.
+- Type generation must unset `TELEGRAM_BOT_TOKEN` / `GITHUB_TOKEN` (and related) so the private server stays Web-only.
+- `generate:types` is hard-coded to 3090; use a free private port + direct `openapi-typescript` when 3090 is owned elsewhere.
+
+---
+
+## 2026-09-20 — US-004: Both docks: idle keepalive, disclosures, and timeout presentation
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — idle inactivity/timeout copy constants; finished mode accepts timeoutFailure even with empty Never sent
+- `packages/web/src/lib/steering-dock.test.ts` — copy + timeout finished-mode tests
+- `packages/web/src/lib/execution-room-model.ts` — latestNodeFailedByIdleExpiry selector
+- `packages/web/src/lib/execution-room-model.test.ts` — ordering, clear-on-retry, sibling isolation
+- `packages/web/src/lib/api.ts` + `experiments/console/skills/runs.ts` — keepaliveWorkflowNode bodyless POST
+- `ComposerDock.tsx` + `ConsoleComposerDock.tsx` — 1s leading idle-only keepalive; timeout terminal UI
+- `NodeTranscriptPane.tsx` + `ConsoleNodeRoom.tsx` — derive timeoutFailure from events
+- Matching dock + room tests
+
+**Acceptance criteria verified**:
+- [x] Both clients expose typed bodyless keepaliveWorkflowNode via existing steering error path
+- [x] Idle dock shows stop disclosure then inactivity line in order
+- [x] First focus/change keepalive; burst coalesced; post-window resend; rejection catch + retry
+- [x] No keepalive outside idle textarea; scope reset; well onFocusCapture unchanged
+- [x] latestNodeFailedByIdleExpiry structured failure_reason with ordering + clear rules
+- [x] Timeout terminal removes mutation controls; exact failure text; polite status; Never sent when present
+- [x] Finished mode with empty Never sent; focus handoff preserved
+- [x] Room integration + Console isolation
+- [x] Focused web gate 592 pass + type-check
+
+**Learnings**:
+- Timeout finished must not use role=alert for the generic never-sent disclosure; one polite status only.
+- Keepalive throttle lives in component refs — no shared hook file (two call sites).
+- Rooms pass only a boolean; never thread failure prose or import @archon/workflows into web.
+
+---
+
+## 2026-09-20 — US-004 fix-up: composer-mode keepalive gate
+
+**Status**: PASSED
+**Files changed**:
+- ComposerDock.tsx / ConsoleComposerDock.tsx — mode === 'composer' && idle gate; idle-epoch in useLayoutEffect
+- Matching dock tests — blocked+idle regression
+
+**Learnings**:
+- Blocked + idle still mounts the textarea; agentMode-only keepalive violated AC.
 
 ---
