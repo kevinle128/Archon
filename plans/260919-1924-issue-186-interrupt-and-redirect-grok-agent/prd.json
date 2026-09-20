@@ -1,0 +1,99 @@
+{
+  "feature": "Interrupt and redirect a running Grok agent (Issue #186)",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Grok protocol/process/version/platform spike gate",
+      "description": "As an Archon maintainer, I want a diagnostic-only real-CLI spike that proves Grok's interruption, session-persistence, child-process, timing, version, and native-Windows behavior, so that production code only advertises 'stream-abort' against recorded evidence.",
+      "acceptanceCriteria": [
+        "packages/providers/src/grok/interrupt-resume-spike.ts exists as a diagnostic-only runner (not exported, not run in CI), modeled on packages/providers/src/claude/interrupt-resume-spike.ts sanitized-output and timeout patterns",
+        "packages/providers/package.json gains a spike:interrupt:grok script beside the existing spike:interrupt:claude entry",
+        "The spike resolves the binary via resolveGrokBinaryPath, records exact `grok --version`, passes --no-auto-update and --sandbox workspace on model invocations, runs in a fresh temporary git repo (never the Archon checkout or home), uses caller-generated UUIDs + non-secret nonces, and in `finally` terminates spike-owned processes, deletes only the exact spike-created sessions via `grok sessions delete <id>` from the matching cwd, and removes the temp dir",
+        "Experiments S0-S4 are implemented with one shared line parser and one result schema recording event types, end.stopReason, session-ID equality, standalone/final usage presence, exit value, signal-to-exit duration, child liveness, and resume booleans only",
+        "S0 (preflight: --session-id accepted, exit 0, end.sessionId equals assigned UUID, minimum-version identified), S1 (POSIX mid-tool Stop: real slow-tool child proven via its own PID file, SIGTERM exit <1s and within grace without SIGKILL, exact child PID gone, same-ID resume with retained context), S2 (earliest Stop before first stdout line, same-ID resume), S3 (repeated Stop on the S1 session), S4 (native Windows through the actual resolved .exe/.cmd/cmd.exe path used by buildSpawnCommand)",
+        "plans/reports/spike-260920-0243-grok-interrupt-resume.md exists with environment, exact version, commands, event/timing tables, cleanup result, minimum-version decision, process-group decision, and explicit PASS or BLOCKED for each of the 7 release gates in phase-01; no credentials, prompt/model output, home paths, or session contents in the report",
+        "S0-S2 evidence recorded on native macOS and Linux, S3 on at least one POSIX platform, S4 on native Windows (not WSL); if any gate fails the report is marked BLOCKED, evidence attached to issue #186, and the story stops rather than converting failure into a known limitation",
+        "Existing Grok parser/provider tests still pass: `cd packages/providers && bun test src/grok/event-parser.test.ts && bun test src/grok/provider.test.ts`",
+        "`bun run lint --max-warnings 0` passes from repo root",
+        "No production provider or capability code changed in this story"
+      ],
+      "technicalNotes": "Phase 1 of the plan (phase-01-grok-stream-abort-spike-gate.md). Installed CLI is grok 1.0.34; bundled docs state SIGINT/SIGTERM save session to last completed tool call and exit 130/143, and --session-id may accompany --resume only when forking. Fork syntax needs no paid experiment (docs + buildGrokArgs unit tests cover --resume <old> --fork-session --session-id <new>). Do not duplicate engine queue/race cases already covered by the 19 generic #183 tests in packages/workflows/src/dag-executor.test.ts. Orphan check must create a temporary slow-tool script that writes its own PID, then check/clean that exact PID \u2014 no broad pkill/pgrep. The four blocking questions the report must answer: (1) does SIGTERM preserve a resumable session when Stop arrives immediately after spawn; (2) does the real native Windows launch path exit gracefully and preserve the same session; (3) does Grok reap a long-running tool child and what grace interval reliably permits persistence; (4) what minimum CLI version can be supported and diagnosed honestly. Phase 2 starts only when the report records a pass on all gates.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": false,
+      "notes": "Review corrected the runner and re-ran native macOS S0-S3. The runner now verifies retained context, observes S3 after assistant text, bounds timers, cleans the exact child PID, and supports the Windows wrapper shape. Unchanged ACs still require native Linux and Windows evidence; S2 earliest-stop same-session resume fails on grok 1.0.34 and S4 is unproven. No production capability flip."
+    },
+    {
+      "id": "US-002",
+      "title": "Grok provider stream-abort seam",
+      "description": "As an Archon operator, I want the Grok provider to honor interruptSignal by gracefully ending only the current CLI turn with a resumable normalized result, so that Stop keeps the node running and Send now continues the same session while Cancel, natural completion, and real failures keep their causality.",
+      "acceptanceCriteria": [
+        "Entry gate: the Phase 1 report's exact CLI version, minimum-version decision, graceful-exit bound, process-group decision, and Windows result are copied into the work context; if any release gate is not PASS, the story stops",
+        "buildGrokArgs returns the optional assigned session ID alongside args/model/effort; with interruptSignal present, new sessions and forked resumes get a node:crypto.randomUUID() passed via --session-id, resumed non-fork turns use resumeSessionId with no --session-id flag; without interruptSignal argv is byte-for-byte unchanged (T1, T2)",
+        "Pre-spawn ordering: Cancel checked then interrupt before binary resolution, both rechecked before spawn, listeners installed after spawn with immediate recheck so a signal fired during setup is caught exactly once (T3, T4); spent interrupt fails with 'Query interrupted'",
+        "event-parser.ts gains hasEnded() (true for any validly parsed end including one with no session ID, independent of getSessionId()) and buildInterruptedResult(sessionId: string, terminalReason, resumed) where the session ID parameter is a required string; closeOutstandingTools accepts 'unknown'|'interrupted' defaulting to 'unknown' and returns the emitted list (P1-P6)",
+        "Causal shutdown state (none|interrupt|fault + forcedKill flag): first claimant wins; parser/stream failures claim fault before terminating; Stop claims interrupt only while the process is alive, before parser.hasEnded(), and when no fault owns shutdown; settlement order is Cancel check, forced-kill failure, graceful interrupt result, late I/O/protocol/non-zero-exit, normal result (T9-T13)",
+        "Graceful interrupt result: each open tool closed exactly once with toolOutcome 'interrupted'; one non-error result with terminalReason 'aborted_tools' if a tool was open else 'aborted_streaming'; concrete session ID (parser.getSessionId() ?? assignedSessionId ?? resumeSessionId \u2014 reported mismatch logs structured warning and reported ID wins); any authoritative aggregate usage from end retained; return happens before non-zero-exit handling so expected exit 143 stays interrupted (T5-T8, T11)",
+        "Honest failure: SIGKILL escalation produces a distinct non-abort failure with a structured escalation log (T13); no assigned/resumed/reported ID at interrupt settlement fails fast rather than emitting an abort marker (T15); end.sessionId differing from assigned ID uses the reported ID with structured warning and no user-facing system chunk (T14)",
+        "Cleanup: both signal listeners removed, escalation timer cleared, process awaited once, no extra kill after exit (T16); T17 (own and signal a POSIX process group, Windows path per S4) is included only if Phase 1 evidence requires group termination \u2014 fields are not added speculatively",
+        "Interrupt grace period uses the Phase-1-measured bound; the constant is named/commented with its evidence report and encodes no sample math as runtime policy; Cancel's existing five-second behavior is kept unless Phase 1 disproved it",
+        "GROK_CAPABILITIES.interrupt flips from false to 'stream-abort' only after all provider/parser tests pass; AgentRequestOptions.interruptSignal, ProviderCapabilities.interrupt, and result terminalReason comments in packages/providers/src/types.ts are updated to describe native and stream-abort providers, not Claude alone",
+        "usage-contract.test.ts pins that a no-end interrupt does not fabricate aggregate spend (modified only if needed); no executor/registry behavior changes and no Grok-specific terminal reason is introduced",
+        "All parser tests P1-P6 and provider tests T1-T16 pass (T17 if evidence-required); every existing Grok provider, parser, and usage-contract test remains green unless its asserted public contract intentionally changed",
+        "`cd packages/providers && bun test src/grok/event-parser.test.ts && bun test src/grok/provider.test.ts && bun test src/grok/usage-contract.test.ts && bun test src/registry.test.ts && bun test src/observability.test.ts` passes",
+        "`bun run type-check` and `bun run lint --max-warnings 0` pass from repo root"
+      ],
+      "technicalNotes": "Phase 2 (phase-02-grok-provider-stream-abort-seam.md). Files: packages/providers/src/grok/{provider.ts,event-parser.ts,capabilities.ts,provider.test.ts,event-parser.test.ts}, packages/providers/src/types.ts (comments), usage-contract.test.ts only if needed. Extend the existing fake spawner with a controllable process (stdout stays open, optional end flush, chosen exit code, records SIGTERM/SIGKILL) \u2014 all tests offline. Handlers must be idempotent: no multiple timers, no duplicate signals. Never combine the two signals with AbortSignal.any(). Never use getSessionId() === undefined as a not-ended proxy. The unconditional closeOutstandingTools() call is replaced, not followed by a second close. Structured logs distinguish query_interrupted, session-ID mismatch, graceful-timeout escalation, and real transport/protocol failures without leaking prompt content. If Phase 1 proved group termination is needed, extend GrokProcess/GrokSpawnOptions with the minimum PID/group fields; otherwise do not add them.",
+      "dependsOn": ["US-001"],
+      "priority": 2,
+      "passes": false,
+      "notes": "Blocked on Phase 1 entry gate. Fresh macOS evidence: CLI grok 1.0.34 (3736acbc8658) [stable]; exact-tested build is the floor; grace 5000ms (S1 13ms, S2 0ms); POSIX process group REQUIRED (child survived); Windows S4 unproven. Release gates 2 (S2 earliest-stop resume) and 5 (native Windows) are BLOCKED, so the plan forbids the production seam and capability flip. No provider/parser/capability code changed. Needs a product scope decision or a newer-CLI S2 and native-Windows re-spike."
+    },
+    {
+      "id": "US-003",
+      "title": "Engine conformance: direct, loop, loop-group",
+      "description": "As an Archon maintainer, I want Grok-shaped conformance tests proving the shipped provider-neutral executor accepts the stream-abort chunk sequence on all provider-calling paths, so that direct nodes, AI loops, and loop-group bodies all park and resume identically without engine changes.",
+      "acceptanceCriteria": [
+        "G1 (direct AI node, mid-tool): exactly one 'interrupted' status; exactly one tool_completed with tool_outcome 'interrupted'; no node failure; idle-after-interrupt reached; Send now resumes the same session ID with forkSession: false; two queued messages plus the new message arrive in receipt order; node can complete",
+        "G2 (AI loop, mid-text): interrupt parks inside the current iteration; Send now resumes the same ID; the interrupted pass consumes no iteration and triggers no output validation; loop completes without node failure",
+        "G3 (provider-calling loop-group body, mid-tool): the namespaced step parks and resumes; interrupted tool outcome persists exactly once; no parent/body node failure; group continues normally",
+        "The mock provider identifies as Grok, returns GROK_CAPABILITIES, and yields the exact Phase 2 chunk shape: optional tool, interrupted tool_result, then a non-error result carrying the assigned/resumed ID and normalized terminal reason",
+        "G1-G3 are added adjacent to the existing #183 interrupt suite in packages/workflows/src/dag-executor.test.ts, reusing liveHandle, awaitIdle, sendNow, event helpers, and provider mock seams rather than building a second harness; the 19 generic #183 cases are not duplicated",
+        "The INTERRUPT_TERMINAL_REASONS comment in packages/workflows/src/dag-executor.ts is corrected to describe Archon's closed normalized vocabulary (forwarded by Claude, synthesized by stream-abort providers) \u2014 comment-only change, no executor logic touched",
+        "No Grok-specific branch is introduced in the executor, steering-registry, routes, stores, or UI; packages/providers/src/types.ts is not edited again in this story",
+        "If any scenario fails, the shared engine contract is diagnosed rather than weakening assertions or adding a provider-name branch; a non-comment executor change is treated as a plan change requiring re-verification of all generic #183 cases",
+        "`cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt'` passes",
+        "`cd packages/workflows && bun run test` passes (full package script, since all three executor paths share the file)",
+        "`bun run type-check` and `bun run lint --max-warnings 0` pass from repo root"
+      ],
+      "technicalNotes": "Phase 3 (phase-03-engine-conformance-direct-loop-loop-group.md). Files: packages/workflows/src/dag-executor.test.ts (add G1-G3), packages/workflows/src/dag-executor.ts (comments only \u2014 INTERRUPT_TERMINAL_REASONS at ~line 457). G1 proves the transcript data both existing readers render as '\u26a0 interrupted'; no new browser test needed because Story 2.3 already tests the shared dock/read model. No UI file is in scope; if implementation reveals a UI change is necessary, pause and add visual assertions for Legacy at 460px and Console at 520px against _bmad-output/specs/spec-agent-node-room/control-states.md before proceeding.",
+      "dependsOn": ["US-002"],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Capability matrix, docs, doctor, validation, closeout",
+      "description": "As an Archon operator, I want the proved capability published with actionable version/platform guidance and a full-repo validation gate, so that Stop works only on supported Grok CLIs and the story closes with mapped evidence.",
+      "acceptanceCriteria": [
+        "packages/providers/src/grok/config.ts exports the minimum supported stream-abort CLI version constant (single owner; imported by doctor rather than duplicating a literal)",
+        "packages/cli/src/commands/doctor.ts checkGrok parses the documented `grok --version` format and fails with an upgrade command/message before the authenticated `grok models` probe when the configured version is older; unparsable output fails closed with the raw non-secret version string and upgrade guidance (no compatibility claim); no new dependency added for version compare",
+        "doctor tests cover: exact minimum and newer versions pass and continue to models; an older version fails before models with required + actual versions; unparsable output fails clearly; unconfigured Grok still skips; authentication failure behavior unchanged after a supported version",
+        "packages/docs-web/src/content/docs/reference/provider-capabilities.md regenerated via `bun run generate:capability-matrix` showing Grok stream-abort \u2014 cells never hand-edited, and the generated matrix stays host-independent (no process.platform dependence in static capabilities)",
+        "packages/docs-web/src/content/docs/getting-started/ai-assistants.md Grok guide documents: Stop ends the current Grok workflow turn and keeps the node running for Send now on the same session; in-flight tools show interrupted and tool-made file changes are not rolled back; interrupt-then-continue is not hook-based soft injection; the exact Phase-1 minimum CLI version plus how to check/update; supported platforms exactly matching Phase 1 evidence (no Windows claim by inference); forced termination or failed persistence reported as provider failure; no-end interrupted turns may lack aggregate token/USD accounting (no estimated-cost promise)",
+        "plans/reports/acceptance-260920-0243-issue-186-grok-interrupt.md created, mapping every acceptance criterion from plan.md to evidence: goal/final behavior, AC-by-AC evidence, Phase 1 report path + exact CLI version + platforms + grace interval + process-group outcome, focused and full validation commands with pass/fail, docs/capability/doctor evidence, explicit statement that no route/schema/YAML/UI source changed, no-end accounting limitation, rollback steps and residual risk",
+        "Nine-perspective final review completed (product outcome; architecture/technical correctness; public/internal contracts; security/reliability/data integrity; performance/scalability; implementation completeness; testing/verification; operations/compatibility/migration/rollback; simplicity/maintainability) with every finding resolved or recorded as a blocker, and affected checks plus `bun run validate` re-run after fixes",
+        "_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml changes only `2-6-interrupt-and-redirect-a-running-grok-agent` from backlog to done \u2014 done last, after review",
+        "Focused suites pass: `cd packages/providers && bun test src/grok/event-parser.test.ts src/grok/provider.test.ts src/grok/usage-contract.test.ts src/registry.test.ts`; `cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt' && bun run test`; `cd packages/cli && bun test src/commands/doctor.test.ts`",
+        "`bun run generate:capability-matrix && bun run check:capability-matrix && bun run validate` pass from repo root with no hidden or retried failures; bare `bun test` from the repo root is never used",
+        "If a PR is opened: body uses .github/pull_request_template.md with unused conditional sections and instructional comments removed, includes spike and acceptance evidence, and contains 'Closes #186' (no Workflow Language Constitution citation \u2014 YAML surface unchanged)"
+      ],
+      "technicalNotes": "Phase 4 (phase-04-capability-matrix-docs-and-closeout.md). Closeout order is binding: focused tests + matrix regen, guide update + docs checks, `bun run validate`, acceptance report, nine-perspective review, then sprint-status flip last. check:schema-upgrades is not applicable \u2014 no schema/migration changes are planned; if a schema change appears, stop and revise the plan. Rollback for the whole feature is code-only: restore GROK_CAPABILITIES.interrupt to false and regenerate the matrix; persisted caller-assigned session IDs remain valid opaque IDs needing no cleanup.",
+      "dependsOn": ["US-001", "US-002", "US-003"],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}

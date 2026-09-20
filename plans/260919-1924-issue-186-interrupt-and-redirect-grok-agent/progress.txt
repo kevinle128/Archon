@@ -1,0 +1,91 @@
+## Codebase Patterns
+
+### Grok headless spike runner
+- **Where**: `packages/providers/src/grok/interrupt-resume-spike.ts`
+- **Pattern**: Diagnostic-only real-CLI spike modeled on Claude interrupt spike: temp git cwd, resolveGrokBinaryPath, `--no-auto-update` + `--sandbox workspace`, caller UUIDs, shared NDJSON line parser, exact-PID slow-tool orphan check, `grok sessions delete <id>` cleanup, sanitized JSON + optional markdown report. Signal deaths leave Node `exitCode` null — track `processExited` / `signalCode` and map SIGTERM→143.
+- **Example**: `bun run spike:interrupt:grok` with optional `GROK_SPIKE_REPORT_PATH` / `GROK_SPIKE_ONLY`
+
+### Grok interrupt evidence (1.0.34 macOS)
+- SIGTERM parent exit is fast (~0–13ms) without SIGKILL
+- Mid-tool Stop + same-ID resume works
+- Earliest Stop (immediate post-spawn) does NOT yield resumable same-ID session
+- Slow-tool child PID survives parent — Phase 2 needs process group
+- Native Windows not run in this environment
+
+---
+
+## 2026-09-20 — US-001: Grok protocol/process/version/platform spike gate
+
+**Status**: BLOCKED (reclassified by final review; unchanged native Linux and Windows evidence criteria remain unmet)
+**Files changed**:
+- `packages/providers/src/grok/interrupt-resume-spike.ts` — diagnostic S0–S4 runner
+- `packages/providers/package.json` — `spike:interrupt:grok` script
+- `plans/reports/spike-260920-0243-grok-interrupt-resume.md` — sanitized evidence; overall BLOCKED
+
+**Acceptance criteria verified**:
+- [x] spike file exists as diagnostic-only runner modeled on Claude spike
+- [x] package.json gains spike:interrupt:grok
+- [x] resolveGrokBinaryPath, version, --no-auto-update, --sandbox workspace, temp git repo, UUID cleanup
+- [x] S0–S4 implemented with shared parser/result schema
+- [x] S0–S4 experiment definitions implemented; macOS S0–S3 re-run during review, S4 skipped on non-Windows
+- [x] report exists with explicit gates; issue attachment was not verified by this review
+- [ ] Native Linux and Windows evidence is unavailable; the report is BLOCKED and the unchanged story criterion therefore does not pass
+- [x] existing Grok parser/provider tests pass
+- [x] bun run lint --max-warnings 0 passes
+- [x] no production provider/capability code changed
+
+**Learnings**:
+- Node signal exits leave exitCode null; do not treat null exitCode as “still running”
+- Grok auto-backgrounds long shell tools ~15s; interrupt before that for mid-tool
+- Tool name is `run_terminal_command` (docs still mention `run_terminal_cmd`)
+- Docker Linux + `--sandbox workspace` fails hooks-paths verification even with bubblewrap/privileged
+
+---
+
+## 2026-09-20 — US-002: Grok provider stream-abort seam
+
+**Status**: BLOCKED (entry gate — no production code)
+**Phase 1 gate values (copied into work context)**:
+- CLI version (exact): `grok 1.0.34 (3736acbc8658) [stable]`
+- Minimum-version decision: floor = exact tested build; older unproven; doctor should fail below
+- Graceful-exit bound / proposed grace: 5000 ms (S1 13 ms; S2 0 ms; no SIGKILL)
+- Process-group decision: REQUIRED — exact slow-tool child PID survived parent exit on macOS
+- Windows result: S4 not run — no native Windows host; gate 5 BLOCKED
+
+**Release gates from** `plans/reports/spike-260920-0243-grok-interrupt-resume.md`:
+- Gate 1 assigned session IDs: PASS
+- Gate 2 S1/S2/S3 same-session resume: **BLOCKED** (S2 earliest-stop resumeSame=false)
+- Gate 3 SIGTERM <1s no SIGKILL: PASS
+- Gate 4 child reaped or process-group required: PASS (group required)
+- Gate 5 native Windows S4: **BLOCKED** (unproven)
+- Gate 6 min CLI version explicit: PASS
+- Gate 7 usage presence no invented spend: PASS
+
+**Acceptance criteria**:
+- [x] Entry gate values copied; story STOPPED because gates 2 and 5 are not PASS
+- [ ] Remaining Phase 2 ACs not started — plan forbids production seam / capability flip until gates pass or product revises scope
+
+**Why this cannot be unblocked in-loop**:
+- S2 failure is Grok CLI behavior (immediate post-spawn SIGTERM does not yield resumable same-ID session). Code cannot invent session durability the CLI did not persist. Needs product scope revision or a newer CLI re-spike that proves S2.
+- S4 requires a native Windows host under Archon’s real `.cmd`/`cmd.exe` launch path. No Parallels/Windows VM available here (`prlctl` absent).
+- Plan.md: “Platform support is proved … or implementation stops for an explicit scope decision before capability publication.” Verdict explicitly: do not start Phase 2 production seam / do not flip `stream-abort` while gates 2 and 5 remain BLOCKED.
+
+**Learnings**:
+- US-002 first AC is a hard stop, not a soft warning — honest BLOCKED report from US-001 correctly freezes Phase 2.
+- Process-group ownership is already mandated by S1 evidence for any future unblocked Phase 2 (T17 required).
+
+BLOCKER US-002 | gate=Phase1 release gates 2+5 (entry gate of phase-02) | cause=S2 earliest-stop same-session resume failed on grok 1.0.34 macOS; S4 native Windows unproven; report overall BLOCKED; plan forbids production seam | action=no production edits; waiting on product scope decision and/or native Windows + S2 re-spike | 2026-09-20
+
+---
+
+## 2026-09-20 — Final review correction
+
+**Status**: BLOCKED
+
+- Repaired `interrupt-resume-spike.ts`: it now type-checks; validates a non-secret pre-interrupt context token rather than a fresh prompt; interrupts S3 after assistant text rather than setup output; uses cancellable timers; cleans the exact surviving child PID; and follows the provider's Windows command wrapper for version and cleanup commands.
+- Fresh macOS S0-S3 evidence confirms S1 and S3 retain context, while S2 still exits before any stdout and cannot resume the assigned session. S4 and native Linux remain unproven.
+- `US-001` was reset to `passes: false`; its unchanged native Linux/Windows acceptance criterion is not met. `US-002` through `US-004` remain false. No production provider, capability, executor, UI, documentation, or doctor changes were made.
+
+BLOCKER US-001 | gate=native Linux and Windows evidence plus all Phase 1 release gates | cause=S2 earliest-stop same-session resume fails on grok 1.0.34 macOS; native Linux sandbox cannot start; S4 needs a native Windows host | action=runner and macOS evidence repaired; external product/runtime decision and native platform access still required | 2026-09-20
+
+---
