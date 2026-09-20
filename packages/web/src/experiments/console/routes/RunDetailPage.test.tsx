@@ -9,6 +9,7 @@ import { RunDetailHeader } from '../components/RunDetailHeader';
 import { WorkflowEnvResolvedTable } from '../components/WorkflowEnvResolvedTable';
 import { toRun, type Run } from '../primitives/run';
 import type {
+  NodeExecution,
   PendingInteraction,
   RunDetailResponse,
   WorkflowEvent,
@@ -430,6 +431,7 @@ describe('RunDetailPage inspect selection', () => {
       runError?: boolean;
       metadata?: Record<string, unknown>;
       nodeStates?: WorkflowNodeState[];
+      nodeExecutions?: NodeExecution[];
       events?: WorkflowEvent[];
       workflowNodes?: DagNode[];
       pendingInteractions?: PendingInteraction[];
@@ -476,6 +478,9 @@ describe('RunDetailPage inspect selection', () => {
             },
             events: options.events ?? eventsFor(runId),
             nodeStates: options.nodeStates ?? NODE_STATES,
+            ...(options.nodeExecutions !== undefined
+              ? { nodeExecutions: options.nodeExecutions }
+              : {}),
             pending_interactions: options.pendingInteractions ?? [],
             usage: null,
             viewer_is_starter: options.viewerIsStarter ?? false,
@@ -1147,5 +1152,86 @@ describe('RunDetailPage inspect selection', () => {
     const alert = host.querySelector('[role="alert"]');
     expect(alert?.className).toContain('text-error');
     expect(host.textContent).not.toContain('Awaiting input (');
+  });
+
+  test('T3.12 live run keeps 30 s heartbeat and never starts a 3 s live interval', async () => {
+    const intervalDelays: number[] = [];
+    const realSetInterval = globalThis.setInterval.bind(globalThis);
+    const setIntervalSpy = spyOn(globalThis, 'setInterval').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (typeof timeout === 'number') intervalDelays.push(timeout);
+      return realSetInterval(handler, timeout, ...(args as []));
+    }) as typeof setInterval);
+
+    stubPageFetch({
+      status: 'running',
+      nodeExecutions: [{ node_id: 'build', status: 'running' }],
+    });
+    await act(async () => {
+      renderPage();
+    });
+    await flushUntil('live title', () => (host.textContent ?? '').includes(workflow));
+
+    expect(intervalDelays.filter(delay => delay === 30000).length).toBeGreaterThanOrEqual(1);
+    expect(intervalDelays.some(delay => delay === 3000)).toBe(false);
+
+    setIntervalSpy.mockRestore();
+  });
+
+  test('T3.13 terminal + unsettled schedules a distinct 3 s invalidation interval', async () => {
+    const intervalDelays: number[] = [];
+    const realSetInterval = globalThis.setInterval.bind(globalThis);
+    const setIntervalSpy = spyOn(globalThis, 'setInterval').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (typeof timeout === 'number') intervalDelays.push(timeout);
+      return realSetInterval(handler, timeout, ...(args as []));
+    }) as typeof setInterval);
+
+    stubPageFetch({
+      status: 'cancelled',
+      nodeExecutions: [{ node_id: 'build', status: 'running' }],
+    });
+    await act(async () => {
+      renderPage();
+    });
+    await flushUntil('cancelled title', () => (host.textContent ?? '').includes(workflow));
+
+    expect(intervalDelays.filter(delay => delay === 3000).length).toBeGreaterThanOrEqual(1);
+    expect(intervalDelays.some(delay => delay === 30000)).toBe(false);
+
+    setIntervalSpy.mockRestore();
+  });
+
+  test('T3.14 settled terminal Console history stays idle', async () => {
+    const intervalDelays: number[] = [];
+    const realSetInterval = globalThis.setInterval.bind(globalThis);
+    const setIntervalSpy = spyOn(globalThis, 'setInterval').mockImplementation(((
+      handler: TimerHandler,
+      timeout?: number,
+      ...args: unknown[]
+    ) => {
+      if (typeof timeout === 'number') intervalDelays.push(timeout);
+      return realSetInterval(handler, timeout, ...(args as []));
+    }) as typeof setInterval);
+
+    stubPageFetch({
+      status: 'completed',
+      nodeExecutions: [{ node_id: 'review', status: 'completed' }],
+    });
+    await act(async () => {
+      renderPage();
+    });
+    await flushUntil('completed title', () => (host.textContent ?? '').includes(workflow));
+
+    expect(intervalDelays.some(delay => delay === 3000)).toBe(false);
+    expect(intervalDelays.some(delay => delay === 30000)).toBe(false);
+
+    setIntervalSpy.mockRestore();
   });
 });

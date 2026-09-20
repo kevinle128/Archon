@@ -8,11 +8,15 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  hasTerminalNodeEvidence,
+  hasUnsettledNodeExecutions,
+  latestNodeExecutionKey,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
   resetRoomVisit,
   resolveFinishedIterationView,
+  resolveRunDetailRefetchIntervalMs,
   roomOpenerId,
   runtimeForSelection,
   type ExecutionLoopAncestryEntry,
@@ -901,5 +905,435 @@ describe('room visit transitions', () => {
     expect(next.scrollTopByScope).toEqual({});
     expect(next.appliedDeepLinkNode).toBeNull();
     expect(previous.runId).toBe('run-1');
+  });
+});
+
+type NodeExecution = components['schemas']['NodeExecution'];
+
+function nodeExecution(
+  overrides: Partial<NodeExecution> & Pick<NodeExecution, 'node_id' | 'status'>
+): NodeExecution {
+  return { ...overrides };
+}
+
+function orderedEvent(overrides: {
+  id: string;
+  event_type: string;
+  step_name?: string | null;
+  created_at?: string;
+  event_order?: number | null;
+  data?: Record<string, unknown>;
+}): WorkflowEvent {
+  return {
+    id: overrides.id,
+    workflow_run_id: 'run-1',
+    event_type: overrides.event_type,
+    step_index: null,
+    step_name: overrides.step_name === undefined ? NODE_ID : overrides.step_name,
+    data: overrides.data ?? {},
+    created_at: overrides.created_at ?? RUN_STARTED_AT,
+    event_order: overrides.event_order,
+  };
+}
+
+describe('hasUnsettledNodeExecutions (T3.5)', () => {
+  test('undefined, empty, and all-terminal history are settled', () => {
+    expect(hasUnsettledNodeExecutions(undefined)).toBe(false);
+    expect(hasUnsettledNodeExecutions(null)).toBe(false);
+    expect(hasUnsettledNodeExecutions([])).toBe(false);
+    expect(
+      hasUnsettledNodeExecutions([
+        nodeExecution({ node_id: 'a', status: 'completed' }),
+        nodeExecution({ node_id: 'b', status: 'failed' }),
+        nodeExecution({ node_id: 'c', status: 'skipped' }),
+      ])
+    ).toBe(false);
+  });
+
+  test('running, awaiting, pending, and unknown future statuses are unsettled', () => {
+    expect(hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'running' })])).toBe(
+      true
+    );
+    expect(hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'awaiting' })])).toBe(
+      true
+    );
+    expect(hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'pending' })])).toBe(
+      true
+    );
+    expect(
+      hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'future-unknown-status' })])
+    ).toBe(true);
+    expect(
+      hasUnsettledNodeExecutions([
+        nodeExecution({ node_id: 'a', status: 'completed' }),
+        nodeExecution({ node_id: 'b', status: 'running' }),
+      ])
+    ).toBe(true);
+  });
+});
+
+describe('hasTerminalNodeEvidence (T3.6–T3.8)', () => {
+  test('missing node or any nonterminal execution is false', () => {
+    expect(hasTerminalNodeEvidence(undefined, NODE_ID)).toBe(false);
+    expect(hasTerminalNodeEvidence([], NODE_ID)).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: 'other', status: 'completed' })], NODE_ID)
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'running' })], NODE_ID)
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'awaiting' })], NODE_ID)
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'pending' })], NODE_ID)
+    ).toBe(false);
+  });
+
+  test('one or more executions all terminal is true', () => {
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'completed' })], NODE_ID)
+    ).toBe(true);
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: NODE_ID, status: 'failed' }),
+          nodeExecution({ node_id: NODE_ID, status: 'skipped' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('older completed iteration does not mask a live occurrence', () => {
+    const mixed = [
+      nodeExecution({ node_id: NODE_ID, status: 'completed', occurrence_id: 'occ-1' }),
+      nodeExecution({ node_id: NODE_ID, status: 'running', occurrence_id: 'occ-2' }),
+    ];
+    expect(hasTerminalNodeEvidence(mixed, NODE_ID)).toBe(false);
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: NODE_ID, status: 'completed', occurrence_id: 'occ-1' }),
+          nodeExecution({ node_id: NODE_ID, status: 'failed', occurrence_id: 'occ-2' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('sibling terminal history cannot mark the selected node terminal', () => {
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: 'sibling', status: 'completed' }),
+          nodeExecution({ node_id: 'sibling', status: 'failed' }),
+          nodeExecution({ node_id: NODE_ID, status: 'running' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: 'sibling', status: 'completed' }),
+          nodeExecution({ node_id: NODE_ID, status: 'completed' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+});
+
+describe('latestNodeExecutionKey (T3.9)', () => {
+  test('sorts by event_order then timestamp then id, not array order', () => {
+    const events = [
+      orderedEvent({
+        id: 'late-array-first',
+        event_type: 'node_started',
+        event_order: 3,
+        data: { occurrence_id: 'occ-3' },
+      }),
+      orderedEvent({
+        id: 'early',
+        event_type: 'node_started',
+        event_order: 1,
+        data: { occurrence_id: 'occ-1' },
+      }),
+      orderedEvent({
+        id: 'mid',
+        event_type: 'node_started',
+        event_order: 2,
+        data: { occurrence_id: 'occ-2' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(events, NODE_ID)).toBe('occ-3');
+  });
+
+  test('falls back to timestamp and id when event_order ties or is missing', () => {
+    const byTime = [
+      orderedEvent({
+        id: 'b',
+        event_type: 'node_started',
+        created_at: '2026-09-08T00:00:02.000Z',
+        data: { occurrence_id: 'occ-b' },
+      }),
+      orderedEvent({
+        id: 'a',
+        event_type: 'node_started',
+        created_at: '2026-09-08T00:00:01.000Z',
+        data: { occurrence_id: 'occ-a' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(byTime, NODE_ID)).toBe('occ-b');
+
+    const byId = [
+      orderedEvent({
+        id: 'z-start',
+        event_type: 'node_started',
+        created_at: RUN_STARTED_AT,
+        event_order: 1,
+        data: { occurrence_id: 'occ-z' },
+      }),
+      orderedEvent({
+        id: 'a-start',
+        event_type: 'node_started',
+        created_at: RUN_STARTED_AT,
+        event_order: 1,
+        data: { occurrence_id: 'occ-a' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(byId, NODE_ID)).toBe('occ-z');
+  });
+
+  test('normal starts adopt nonempty occurrence_id or event-id fallback', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-1');
+    expect(
+      latestNodeExecutionKey(
+        [orderedEvent({ id: 'start-fallback', event_type: 'node_started', event_order: 1 })],
+        NODE_ID
+      )
+    ).toBe('start-fallback');
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-empty',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: '' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('start-empty');
+  });
+
+  test('resumed Ask keeps the prior key across the next same-node start', () => {
+    const events = [
+      orderedEvent({
+        id: 'start-1',
+        event_type: 'node_started',
+        event_order: 1,
+        data: { occurrence_id: 'occ-outer-1' },
+      }),
+      orderedEvent({
+        id: 'ask-resume',
+        event_type: 'interaction_resolved',
+        event_order: 2,
+        data: { kind: 'ask', resumed: true, tool_use_id: 'tool-1' },
+      }),
+      orderedEvent({
+        id: 'start-2',
+        event_type: 'node_started',
+        event_order: 3,
+        data: { occurrence_id: 'occ-outer-2' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(events, NODE_ID)).toBe('occ-outer-1');
+  });
+
+  test('resumed Ask with no earlier key adopts the next start identity', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'ask-first',
+            event_type: 'interaction_resolved',
+            event_order: 1,
+            data: { kind: 'ask', resumed: true },
+          }),
+          orderedEvent({
+            id: 'start-after',
+            event_type: 'node_started',
+            event_order: 2,
+            data: { occurrence_id: 'occ-after' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-after');
+  });
+
+  test('retry or generic resume after terminal adopts a new key', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({ id: 'fail-1', event_type: 'node_failed', event_order: 2 }),
+          orderedEvent({ id: 'retry-1', event_type: 'node_retry_requested', event_order: 3 }),
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 4,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-2');
+
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-a',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-a' },
+          }),
+          orderedEvent({ id: 'done-a', event_type: 'node_completed', event_order: 2 }),
+          orderedEvent({
+            id: 'start-b',
+            event_type: 'node_started',
+            event_order: 3,
+            data: { occurrence_id: 'occ-b' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-b');
+  });
+
+  test('terminal or retry clears an unused Ask continuation marker', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({
+            id: 'ask-resume',
+            event_type: 'interaction_resolved',
+            event_order: 2,
+            data: { kind: 'ask', resumed: true },
+          }),
+          orderedEvent({ id: 'fail-1', event_type: 'node_failed', event_order: 3 }),
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 4,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-2');
+  });
+
+  test('ignores loop-iteration starts, siblings, and non-ask resolutions', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({
+            id: 'loop-iter',
+            event_type: 'loop_iteration_started',
+            event_order: 2,
+            data: { occurrence_id: 'occ-loop' },
+          }),
+          orderedEvent({
+            id: 'sibling-start',
+            event_type: 'node_started',
+            step_name: 'sibling',
+            event_order: 3,
+            data: { occurrence_id: 'occ-sib' },
+          }),
+          orderedEvent({
+            id: 'perm-resolved',
+            event_type: 'interaction_resolved',
+            event_order: 4,
+            data: { kind: 'permission', resumed: true },
+          }),
+          orderedEvent({
+            id: 'ask-not-resumed',
+            event_type: 'interaction_resolved',
+            event_order: 5,
+            data: { kind: 'ask', resumed: false },
+          }),
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 6,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-2');
+  });
+});
+
+describe('resolveRunDetailRefetchIntervalMs (T3.10–T3.14 core)', () => {
+  test('live and non-terminal statuses always keep the 3 s cadence', () => {
+    expect(resolveRunDetailRefetchIntervalMs('running', undefined)).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs('paused', [])).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs('pending', undefined)).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs(undefined, undefined)).toBe(3000);
+  });
+
+  test('terminal + unsettled keeps 3 s; settled/empty/missing stops', () => {
+    expect(
+      resolveRunDetailRefetchIntervalMs('cancelled', [
+        nodeExecution({ node_id: 'a', status: 'running' }),
+      ])
+    ).toBe(3000);
+    expect(
+      resolveRunDetailRefetchIntervalMs('failed', [
+        nodeExecution({ node_id: 'a', status: 'awaiting' }),
+      ])
+    ).toBe(3000);
+    expect(
+      resolveRunDetailRefetchIntervalMs('completed', [
+        nodeExecution({ node_id: 'a', status: 'failed' }),
+      ])
+    ).toBe(false);
+    expect(resolveRunDetailRefetchIntervalMs('cancelled', [])).toBe(false);
+    expect(resolveRunDetailRefetchIntervalMs('cancelled', undefined)).toBe(false);
   });
 });

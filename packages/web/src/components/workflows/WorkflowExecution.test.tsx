@@ -6,6 +6,7 @@ import { act, createElement, useState, type ReactElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { MemoryRouter, useNavigate } from 'react-router';
 import { QueryClient, QueryClientProvider, notifyManager } from '@tanstack/react-query';
+import { resolveRunDetailRefetchIntervalMs } from '@/lib/execution-room-model';
 
 import type { WorkflowExecutionBody } from './WorkflowExecution';
 import type { WorkflowRunView } from './source-control/dag-run-tabs';
@@ -1017,5 +1018,174 @@ describe('WorkflowExecution room visit', () => {
         active !== null &&
         (active === roomAsk || (active instanceof win.Node && roomAsk.contains(active)))
     ).toBe(true);
+  });
+});
+
+describe('WorkflowExecution terminal catch-up (T3.10–T3.11, T3.14)', () => {
+  test('T3.10 live run keeps the existing 3 s refetch cadence', () => {
+    expect(
+      resolveRunDetailRefetchIntervalMs('running', [{ node_id: 'review', status: 'running' }])
+    ).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs('paused', undefined)).toBe(3000);
+  });
+
+  test('T3.11 cancelled + raw running keeps 3 s catch-up until settled', () => {
+    expect(
+      resolveRunDetailRefetchIntervalMs('cancelled', [{ node_id: 'review', status: 'running' }])
+    ).toBe(3000);
+    expect(
+      resolveRunDetailRefetchIntervalMs('cancelled', [{ node_id: 'review', status: 'failed' }])
+    ).toBe(false);
+  });
+
+  test('T3.14 settled or empty terminal history makes no periodic request', () => {
+    expect(
+      resolveRunDetailRefetchIntervalMs('completed', [{ node_id: 'review', status: 'completed' }])
+    ).toBe(false);
+    expect(resolveRunDetailRefetchIntervalMs('failed', [])).toBe(false);
+    expect(resolveRunDetailRefetchIntervalMs('cancelled', undefined)).toBe(false);
+  });
+
+  let win: Window;
+  let host: Element;
+  let root: Root;
+  let queryClient: QueryClient;
+  let fetchSpy: { mockRestore: () => void };
+
+  function baseDetail(
+    status: Awaited<ReturnType<typeof getWorkflowRun>>['run']['status'],
+    nodeExecutions?: Awaited<ReturnType<typeof getWorkflowRun>>['nodeExecutions']
+  ): Awaited<ReturnType<typeof getWorkflowRun>> {
+    return {
+      run: {
+        id: 'run-catchup',
+        workflow_name: 'demo',
+        conversation_id: 'conv-1',
+        parent_conversation_id: null,
+        codebase_id: null,
+        status,
+        user_message: 'go',
+        metadata: {},
+        started_at: CREATED_AT,
+        completed_at:
+          status === 'running' || status === 'paused' || status === 'pending'
+            ? null
+            : '2026-09-06T00:01:00.000Z',
+        last_activity_at: CREATED_AT,
+        working_path: null,
+        user_id: 'user-1',
+        parent_run_id: null,
+        output_root: null,
+        conversation_platform_id: null,
+      },
+      events: [
+        workflowEvent({
+          id: 'start-review',
+          workflow_run_id: 'run-catchup',
+          event_type: 'node_started',
+          step_name: 'review',
+        }),
+      ],
+      nodeStates: [{ nodeId: 'review', name: 'Review', status: 'running', retryEpoch: 0 }],
+      nodeExecutions,
+      pending_interactions: [],
+      usage: null,
+      viewer_is_starter: true,
+      starter_display_name: 'Avery',
+    };
+  }
+
+  beforeEach(() => {
+    notifyManager.setScheduler((cb: () => void): void => {
+      cb();
+    });
+    notifyManager.setNotifyFunction((cb: () => void): void => {
+      act(cb);
+    });
+    win = installHappyDom();
+    const el = win.document.createElement('div');
+    win.document.body.appendChild(el);
+    el.style.width = '1200px';
+    el.style.height = '800px';
+    host = el as unknown as Element;
+    root = createRoot(host);
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+      },
+    });
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+    fetchSpy?.mockRestore();
+    win.close();
+    restoreGlobals();
+    notifyManager.setScheduler((cb: () => void): void => {
+      setTimeout(cb, 0);
+    });
+    notifyManager.setNotifyFunction((cb: () => void): void => {
+      cb();
+    });
+  });
+
+  async function flush(): Promise<void> {
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
+  async function flushUntil(label: string, predicate: () => boolean): Promise<void> {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await flush();
+      if (predicate()) return;
+    }
+    throw new Error(`${label}: ${host.textContent ?? ''}`);
+  }
+
+  test('T3.11 parent mounts cancelled + unsettled without writing status', async () => {
+    const detail = baseDetail('cancelled', [
+      { node_id: 'review', status: 'running', occurrence_id: 'occ-1' },
+    ]);
+    fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((input: RequestInfo | URL) => {
+      const path = requestPath(input);
+      if (path === '/api/workflows/runs/run-catchup') {
+        return Promise.resolve(jsonResponse(detail));
+      }
+      if (path === '/api/workflows/demo') {
+        return Promise.resolve(jsonResponse(visitWorkflowDefinition()));
+      }
+      if (path.includes('/nodes/') && path.endsWith('/messages')) {
+        return Promise.resolve(
+          jsonResponse({ messages: [], hasMore: false, highWatermark: 0 } satisfies {
+            messages: never[];
+            hasMore: boolean;
+            highWatermark: number;
+          })
+        );
+      }
+      return Promise.resolve(jsonResponse({ error: `unmocked ${path}` }, 404));
+    }) as typeof fetch);
+
+    await act(async () => {
+      root.render(
+        createElement(
+          MemoryRouter,
+          { initialEntries: ['/legacy/workflows/runs/run-catchup'] },
+          createElement(
+            QueryClientProvider,
+            { client: queryClient },
+            createElement(workflowExecution.WorkflowExecution, { runId: 'run-catchup' })
+          )
+        )
+      );
+    });
+    await flushUntil('run title', () => (host.textContent ?? '').includes('demo'));
+    expect(host.textContent).toContain('demo');
   });
 });

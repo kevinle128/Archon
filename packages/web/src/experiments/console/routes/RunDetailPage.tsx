@@ -48,6 +48,7 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  hasUnsettledNodeExecutions,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
@@ -249,6 +250,23 @@ export function RunDetailPage(): ReactElement {
       clearInterval(id);
     };
   }, [runId, status, conversationPlatformId]);
+
+  // Terminal catch-up: after cancel/complete/fail the run can settle before the
+  // executor writes node_failed (or the read projection closes a purged Ask).
+  // Poll raw history every 3s until every execution is terminal — read-only,
+  // never stacked with the live 30s heartbeat, no timeout inference.
+  const terminalCatchUpUnsettled = hasUnsettledNodeExecutions(detail?.nodeExecutions);
+  useEffect(() => {
+    if (runId === undefined) return;
+    if (status !== 'completed' && status !== 'failed' && status !== 'cancelled') return;
+    if (!terminalCatchUpUnsettled) return;
+    const id = setInterval(() => {
+      invalidate(K.run(runId));
+    }, 3000);
+    return (): void => {
+      clearInterval(id);
+    };
+  }, [runId, status, terminalCatchUpUnsettled]);
 
   // Surface the artifact count on the tab even when the user hasn't visited
   // the panel yet. Cheap call — the server walks one directory. Must live
