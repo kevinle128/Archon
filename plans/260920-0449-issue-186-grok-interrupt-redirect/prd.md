@@ -86,9 +86,9 @@ Never run root `bun test` — `bun run validate` uses package-isolated test comm
 
 ## Story overview
 
-| ID     | Title                                         | Plan phase | Depends on        | Core deliverable |
-| ------ | --------------------------------------------- | ---------- | ----------------- | ---------------- |
-| US-001 | Round-2 runtime evidence gate (spike)         | Phase 1    | —                 | Refactored diagnostic + sanitized PASS/BLOCKED report + filled validation log |
-| US-002 | Grok provider stream-abort seam               | Phase 2    | US-001            | Provider/parser seam + P1–P6/T1–T18 green; capability still `false` |
-| US-003 | Executor conformance: direct + AI loop        | Phase 3    | US-002            | Exact subtype predicate + G0–G4 conformance green |
-| US-004 | Capability publication, docs, and closeout    | Phase 4    | US-001..US-003    | `'stream-abort'` flip + matrix + guide + acceptance report + sprint done + PR |
+| ID     | Title                                      | Plan phase | Depends on     | Core deliverable                                                              |
+| ------ | ------------------------------------------ | ---------- | -------------- | ----------------------------------------------------------------------------- |
+| US-001 | Round-2 runtime evidence gate (spike)      | Phase 1    | —              | Refactored diagnostic + sanitized PASS/BLOCKED report + filled validation log |
+| US-002 | Grok provider stream-abort seam            | Phase 2    | US-001         | Provider/parser seam + P1–P6/T1–T18 green; capability still `false`           |
+| US-003 | Executor conformance: direct + AI loop     | Phase 3    | US-002         | Exact subtype predicate + G0–G4 conformance green                             |
+| US-004 | Capability publication, docs, and closeout | Phase 4    | US-001..US-003 | `'stream-abort'` flip + matrix + guide + acceptance report + sprint done + PR |
