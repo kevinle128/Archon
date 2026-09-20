@@ -37,7 +37,7 @@
       "dependsOn": ["US-001"],
       "priority": 2,
       "passes": true,
-      "notes": "Implemented iteration 2. Files: dag-executor.ts (loop expired branch + LoopFailureExtras.failureReason), dag-executor.test.ts (loop idle-expiry parity suite). Gates: registry+executor tests, type-check, eslint, prettier."
+      "notes": "Implemented iteration 2 + fix-up. Files: dag-executor.ts (loop expired branch, LoopFailureExtras.failureReason, output: lastIterationOutput), dag-executor.test.ts (loop parity + prior-output all_done reader; standard expiry persist_session non-vacuous upsert). Gates: separate bun test executor + registry, type-check, eslint, prettier."
     },
     {
       "id": "US-003",

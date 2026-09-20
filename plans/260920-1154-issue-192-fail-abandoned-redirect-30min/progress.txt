@@ -75,3 +75,16 @@
 - Pending queue survives `expireIdle`/`close`; unregister only drops the registry entry — hold the handle ref to assert snapshot after cleanup.
 
 ---
+
+## 2026-09-20 — US-002 fix-up: lastIterationOutput + non-vacuous upsert proof
+
+**Status**: PASSED
+**Files changed**:
+- `dag-executor.ts` — `output: lastIterationOutput` on loop idle-expiry extras
+- `dag-executor.test.ts` — two-iteration Claude loop + all_done reader asserts prior output; standard-node expiry uses `persist_session: true` so get runs and upsert stays uncalled
+
+**Learnings**:
+- Loop nodes are excluded by `isPersistableNode` — cannot arm loop upsert via `persist_session`. Non-vacuous upsert suppression proof belongs on a standard prompt/command node.
+- Downstream `trigger_rule: all_done` prompt substitution is the clean way to observe failed-loop `output` (bash shell-quotes the value).
+
+---
