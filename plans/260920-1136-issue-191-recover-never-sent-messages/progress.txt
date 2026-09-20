@@ -1,0 +1,245 @@
+## Codebase Patterns
+
+### Finished mode over live:false after Cancel
+- **Where**: `steering-dock.ts` `steeringDockMode` + dock finished focus effect
+- **Pattern**: nonempty neverSent + nodeTerminal selects finished *before* live:false hide, so Cancel recovery survives run non-live. Entering finished re-hands focus to transcript if focus would be body.
+- **Example**: cancel while field focused → node_failed → Never sent box + focus last-row/scroller.
+
+### Node-wide reconcile drain (separate from transcript pageState)
+- **Where**: `NodeTranscriptPane.tsx` / `ConsoleNodeRoom.tsx` reconcile effect
+- **Pattern**: When `nodeTerminal`, `drainNodeMessages({ selection: { kind:'node', rowId: executionKey } })` with no-op `onState`; publish `collectWrittenOperatorMessageIds` only if `complete && error===null`; retry 1s on incomplete/error; abort+clear written ids on run/node/key change or terminal false. Never feed into `pageState`.
+- **Example**: Occurrence-selected finished row still loads display with occurrenceId; reconcile calls omit occurrenceId/attemptId.
+
+### Raw-history terminal predicate + catch-up interval
+- **Where**: `packages/web/src/lib/execution-room-model.ts` (`isTerminalNodeExecutionStatus`, `resolveRunDetailRefetchIntervalMs`)
+- **Pattern**: Only `completed`/`failed`/`skipped` are terminal executions. Live runs always poll 3s; terminal runs poll 3s only while `hasUnsettledNodeExecutions` is true.
+- **Example**: `resolveRunDetailRefetchIntervalMs('cancelled', [{status:'running'}]) === 3000`; settled/empty/undefined → `false`.
+
+### Logical execution key fold
+- **Where**: `latestNodeExecutionKey`
+- **Pattern**: Sort by `event_order` → timestamp → id. Ask `interaction_resolved` with `kind:'ask' && resumed:true` arms one continuation so the next same-node `node_started` keeps the prior key; terminal/`node_retry_requested` clears an unused marker.
+- **Example**: start occ-1 → ask resume → start occ-2 keeps `occ-1`.
+
+### Console terminal catch-up is distinct from live heartbeat
+- **Where**: `RunDetailPage.tsx`
+- **Pattern**: 30s heartbeat only for `running`/`paused`. Separate 3s `invalidate(K.run)` only for terminal + unsettled raw executions. Never stack both.
+- **Example**: cancelled + running execution → 3000 interval; completed + all terminal → no interval.
+
+### Ask resolution pre-resolution filter
+- **Where**: `packages/server/src/routes/workflow-execution-history.ts` (`isPreResolutionStart`, owner finders)
+- **Pattern**: Answered Ask closure only considers starts with `sortedIndex < resolvedEventIndex` so later resume starts do not create multi-candidate ambiguity; purge has no before-index filter.
+- **Example**: Two open `type:'loop'` containers → without the filter, outer owner stays open; with it, only the parked outer fails.
+
+### Observed ledger append-if-new
+- **Where**: `packages/web/src/lib/steering-dock.ts` (`appendObservedIfNew`)
+- **Pattern**: Local helper keyed by `messageId`; returns the same array reference when nothing is new so React identity short-circuits stay intact.
+- **Example**: `applyQueueSnapshot` appends snapshot rows to the ledger before replacing `sent`; empty later snapshots clear `sent` only.
+
+### Finished mode gate
+- **Where**: `steeringDockMode`
+- **Pattern**: `'finished'` requires nonempty `neverSent` AND `nodeTerminal === true`. `live:false` still hides first. Null/empty `neverSent` leaves the prior visibility table unchanged.
+- **Example**: Terminal-looking selected rows without `nodeTerminal` never select finished.
+
+### Dock mode union coupling
+- **Where**: `ComposerDock.tsx` / `ConsoleComposerDock.tsx` `controlsMounted`
+- **Pattern**: Local mode parameter unions must track `SteeringDockMode` (import the shared type) or package type-check breaks when a new mode is added.
+
+### Attempt generation + suppressPersist on key reset
+- **Where**: `ComposerDock.tsx` / `ConsoleComposerDock.tsx` layout reset effect
+- **Pattern**: Bump `attemptGenerationRef` on non-null key replacement (and scope change); capture gen at async start; ignore continuations when gen drifts. On reset, `suppressPersistRef` skips one ordinary save after writing `{ draft, pendingRetry: null }`.
+- **Example**: Queue/Send-now/withdraw/interrupt/poll onSnapshot all gate on `attemptGenerationRef.current === attemptGen`.
+
+---
+
+## 2026-09-20T07:04:41Z — US-001: Shared core: observed ledger, reconciliation, finished mode
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/steering-dock.ts` — observedLedger/neverSent, finished mode, reconcileNeverSent, collectWrittenOperatorMessageIds, copy helpers
+- `packages/web/src/lib/steering-dock.test.ts` — T1.1–T1.22 plus existing coverage
+- `packages/web/src/components/workflows/ComposerDock.tsx` — controlsMounted accepts SteeringDockMode
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — same type widen
+
+**Acceptance criteria verified**:
+- [x] T1.1–T1.22 written and passing with existing tests
+- [x] observedLedger ordered/deduped; neverSent null until reconcile
+- [x] local success + valid snapshots observe; stale gen inert; empty snapshot keeps history
+- [x] only confirmed withdraw removes ledger ids
+- [x] reconcileNeverSent order, purity, idempotence, [] when empty
+- [x] finished mode requires nodeTerminal + nonempty neverSent
+- [x] collectWrittenOperatorMessageIds strict operator text + message_id
+- [x] exact copy helpers/constants
+- [x] no persistence/fetches/timers/new module
+- [x] bun test + web type-check + focused eslint clean
+
+**Learnings**:
+- Prettier/lint-staged may rewrite test formatting on commit — expect insertion count drift.
+- Adding `'finished'` to SteeringDockMode forces a type widen in both docks even before UI work (US-002).
+- Snapshot identity short-circuit must include ledger: pre-populate observedLedger in tests that expect `toBe(state)`.
+
+---
+
+## 2026-09-20T07:21:09Z — US-002: Read-only NEVER SENT box in both docks
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/ComposerDock.tsx` — props, attempt reset/generation, reconcile effect, finished branch, controlsMounted
+- `packages/web/src/components/workflows/ComposerDock.test.tsx` — T2.1–T2.18
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` — mirror of Legacy wiring
+- `packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` — T2.1–T2.18
+
+**Acceptance criteria verified**:
+- [x] T2.1–T2.18 in both dock test files
+- [x] optional writtenOperatorMessageIds / nodeTerminal / nodeExecutionKey
+- [x] reconcile only when written non-null, neverSent null, nodeTerminal, no withdraw, queueWasObservable
+- [x] withdraw in flight blocks reconcile; success omits / failure restores
+- [x] finished anatomy + single alert; no controls
+- [x] controlsMounted: finished-iteration yes, finished no; focus handoff
+- [x] execution-key reset clears attempt state, keeps draft, clears pendingRetry
+- [x] same-key / occurrence preserve; run/node change clears
+- [x] attempt generation guards async continuations; poll deps include key
+- [x] finished list stable after reconcile
+- [x] both dock suites + isolation + type-check + eslint clean
+
+**Learnings**:
+- Inject `send`/`withdraw` via renderDock overrides; mutating `nextSend` after render does not update the mounted dock.
+- `controlsMounted('finished-iteration')` is required so Go→finished uses focusLastRow.
+- Explicit `pendingRetry: null` storage write must suppress the ordinary save effect in the same commit or the stale UUID is rewritten.
+- finished-iteration 409 stop assertion is timing-sensitive; assert no growth after rejection rather than `readsBefore + 1`.
+
+---
+
+## 2026-09-20T07:32:41Z — US-003: Server projection: scoped purged/answered Ask closure
+
+**Status**: PASSED
+**Files changed**:
+- `packages/server/src/routes/workflow-execution-history.ts` — purged/answered Ask read-model closure after lifecycle pairing; start-meta indexes; ancestry-prefix owners; pre-resolution filter for answered resume
+- `packages/server/src/routes/workflow-execution-history.test.ts` — T3.1–T3.4
+
+**Acceptance criteria verified**:
+- [x] T3.1–T3.4 written first and passing
+- [x] purged ask with complete scope fails exact open execution; Date resolved_at → ISO ended_at; duration from ordered endpoints
+- [x] re-ask same-occurrence adoption clears stale start timing
+- [x] loop_ancestry closes unique iteration + outer container; siblings stay open
+- [x] answered requires interaction_resolved resumed:true + later corresponding starts; later executions kept
+- [x] missing scope/time, permission, sibling, unmatched, multi-candidate, pending fail closed
+- [x] inputs unchanged; no fabricated lifecycle rows
+- [x] bun test + server type-check + focused eslint clean
+
+**Learnings**:
+- Answered-resume owner matching must ignore post-resolution starts or unique outer-container match fails when the resumed outer is already open.
+- Keep loop fixture occurrence ids disjoint from unrelated completed pairs; `find(occurrence_id)` is not node-scoped.
+- freezeJson immutability checks cannot round-trip `Date` fields — assert Date identity separately.
+
+---
+
+## 2026-09-20T07:47:03Z — US-004: Raw-history helpers + terminal catch-up in both parents
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/execution-room-model.ts` — hasUnsettledNodeExecutions, hasTerminalNodeEvidence, latestNodeExecutionKey, resolveRunDetailRefetchIntervalMs
+- `packages/web/src/lib/execution-room-model.test.ts` — T3.5–T3.9 + interval helper coverage
+- `packages/web/src/components/workflows/WorkflowExecution.tsx` — terminal+unsettled 3s refetch via shared helper; refetchIntervalInBackground
+- `packages/web/src/components/workflows/WorkflowExecution.test.tsx` — T3.10/T3.11/T3.14 + mount smoke
+- `packages/web/src/experiments/console/routes/RunDetailPage.tsx` — distinct 3s terminal catch-up invalidation
+- `packages/web/src/experiments/console/routes/RunDetailPage.test.tsx` — T3.12–T3.14 interval spies + nodeExecutions fixture
+
+**Acceptance criteria verified**:
+- [x] T3.5–T3.9 written and passing
+- [x] unsettled table: undefined/empty/all-terminal false; running/awaiting/pending/unknown true
+- [x] hasTerminalNodeEvidence requires ≥1 all-terminal selected-node executions; siblings ignored
+- [x] latestNodeExecutionKey order + Ask resume retention + terminal/retry clear + loop/sibling ignore
+- [x] WorkflowExecution live 3s retained; terminal+unsettled also 3s via resolveRunDetailRefetchIntervalMs
+- [x] RunDetailPage 30s live heartbeat preserved; distinct 3s terminal catch-up; never stacked
+- [x] settled/empty terminal idle (T3.14); no status writes / timeout inference
+- [x] only raw nodeExecutions drive unsettled/terminal catch-up
+- [x] bun test three targets + web type-check + focused eslint clean
+
+**Learnings**:
+- React Query refetchInterval is focus-gated unless `refetchIntervalInBackground: true`; happy-dom + fake timers also fight RQ's timeoutManager — prefer pure interval helper tests plus setInterval spies for Console's direct timers.
+- Console catch-up must key off `hasUnsettledNodeExecutions(detail?.nodeExecutions)` boolean so settlement clears the effect without array-identity churn alone.
+
+---
+
+## 2026-09-20T08:20:00Z — US-005: Node-terminal derivation, pass-through, dock rekey
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` — derive nodeTerminal/nodeExecutionKey from raw history; pass to LegacyNodeRoom
+- `packages/web/src/components/workflows/LegacyNodeRoom.tsx` — pass-through terminal/key/written ids to NodeTranscriptPane
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — dock rekey to run/node; pass terminal props
+- `packages/web/src/experiments/console/routes/RunDetailPage.tsx` — pass raw nodeExecutions into InspectPane
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` — derive and pass terminal/key
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — dock rekey + pass-through
+- matching `*.test.tsx` — T3.15–T3.17 prop pins and occurrence ledger survival
+
+**Acceptance criteria verified**:
+- [x] T3.15–T3.17 written first and passing
+- [x] Legacy derives terminal/key from raw nodeExecutions/events; siblings ignored
+- [x] Console chain RunDetailPage → InspectPane → room → dock; nodeStates never prove terminal
+- [x] Defaults false/null when executions missing
+- [x] Dock React key is stable run/node; todo/pageState stay occurrence-scoped
+- [x] Occurrence switch + empty queue keeps observed receipt under same execution key
+- [x] bun test six targets + console-isolation + web type-check + focused eslint clean
+
+**Learnings**:
+- PaneHarness selection is useState-initialized; runId change clears selection via effect — clickRow for mid-test selection changes.
+- invalidate() must run after stubbing fetch so revalidation hits the new stub.
+- finished mode needs writtenOperatorMessageIds non-null; room pass-through of that set enables T3.17 without US-006 drain.
+
+---
+
+## 2026-09-20T08:18:07Z — US-006: Node-wide reconciliation drain in both panes
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — separate node-wide reconcile drain; publish written ids only on complete+no error; 1s retry; abort/clear on run/node/key/terminal drop
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — T3.18–T3.26
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — mirror drain path
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — T3.18–T3.26; T3.17 uses drain-owned empty complete page
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — T3.17 no longer injects writtenOperatorMessageIds
+
+**Acceptance criteria verified**:
+- [x] T3.18–T3.26 written first and passing in both pane suites
+- [x] nodeTerminal:false never starts/publishes reconciliation
+- [x] terminal drain is kind:'node' without occurrenceId/attemptId; displayed occurrence rows unchanged
+- [x] complete absence restores; operator row filters; assistant/tool/malformed ids ignored
+- [x] error/incomplete retries at 1s; reset aborts stale work; key change starts fresh; finished-iteration observer recovered
+- [x] drain state separate from pageState; dock gets terminal/key/written set
+- [x] focused tests + console-isolation + web suite + type-check + eslint clean
+
+**Learnings**:
+- Shared loadMessages serves both drains; distinguish node-wide vs occurrence by options.occurrenceId.
+- complete empty pages need highWatermark/nextCursor (compatibility empty pages error).
+- After key change while terminal, draft-only never-sent can reappear via reconcile — T2.14 pattern: assert old receipt gone, then terminal false restores draft field.
+- External writtenOperatorMessageIds pane prop is ignored; drain owns the set passed to docks.
+
+---
+
+## 2026-09-20T09:36:08Z — US-007: Real-executor E2E, evidence, authority sync, tracker closeout
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/ui/agent-never-sent.spec.ts` — E4.1–E4.5, E4.7–E4.8 both shells
+- `e2e/ui/agent-queue-guidance.spec.ts` — E4.6 natural-drain negative
+- `e2e/ui/agent-finished-iteration.spec.ts` — finished-iteration never-sent observer
+- `e2e/lib/playwright/run-detail.ts` — nodeExecutions.status pass-through
+- `packages/web/src/lib/steering-dock.ts` + docks — finished precedes live:false; finished focus handoff
+- AD-11 spine, walkthrough, steering-test-plan, key-steering-dock mockup
+- evidence under `reports/evidence/`, acceptance report, sprint-status 2-11 done
+
+**Acceptance criteria verified**:
+- [x] E4.1–E4.8 executable, no test.fixme
+- [x] Cancel two-milestone node_failed (not dag_node_failed)
+- [x] Observer/idle-queue/draft/finished-iter/focus/visual
+- [x] E4.6 natural delivery has no Never sent
+- [x] Authority sync after green behavior
+- [x] acceptance report AC1–AC6 map
+- [x] bun run validate zero; tracker done only after
+
+**Learnings**:
+- Cancel publishes run non-live before node_failed; finished must not require live:true once neverSent+nodeTerminal.
+- Idle-after-interrupt send returns state `awaiting_send_now`, not `queued`.
+- Legacy Execution select needs iteration events before room open for Iteration 2 option.
+
+---

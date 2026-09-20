@@ -396,3 +396,125 @@ export function applyRoomDeepLink(
     { nodeId: queryNode, rowId: row.id, openerId: null }
   );
 }
+
+type NodeExecution = components['schemas']['NodeExecution'];
+
+/** Only completed/failed/skipped are terminal raw execution statuses. */
+function isTerminalNodeExecutionStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'skipped';
+}
+
+function compareWorkflowEvents(left: WorkflowEvent, right: WorkflowEvent): number {
+  const orderLeft = left.event_order ?? Number.MAX_SAFE_INTEGER;
+  const orderRight = right.event_order ?? Number.MAX_SAFE_INTEGER;
+  if (orderLeft !== orderRight) return orderLeft - orderRight;
+  const leftMs = Date.parse(left.created_at);
+  const rightMs = Date.parse(right.created_at);
+  const byTime = (Number.isFinite(leftMs) ? leftMs : 0) - (Number.isFinite(rightMs) ? rightMs : 0);
+  if (byTime !== 0) return byTime;
+  return left.id.localeCompare(right.id);
+}
+
+/**
+ * True when any raw execution is still open. Undefined/empty history is settled
+ * (no catch-up traffic). Unknown future statuses fail closed as unsettled.
+ */
+export function hasUnsettledNodeExecutions(
+  executions: readonly NodeExecution[] | null | undefined
+): boolean {
+  if (executions === null || executions === undefined || executions.length === 0) {
+    return false;
+  }
+  return executions.some(execution => !isTerminalNodeExecutionStatus(execution.status));
+}
+
+function isTerminalRunStatus(status: string): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+/**
+ * Live runs poll every 3s. Terminal runs keep the same 3s cadence only while
+ * raw nodeExecutions still contain an unsettled row; otherwise polling stops.
+ */
+export function resolveRunDetailRefetchIntervalMs(
+  status: string | undefined,
+  executions: readonly NodeExecution[] | null | undefined
+): number | false {
+  if (status !== undefined && isTerminalRunStatus(status)) {
+    return hasUnsettledNodeExecutions(executions) ? 3000 : false;
+  }
+  return 3000;
+}
+
+/**
+ * True only when the selected node has ≥1 raw execution and every one of them
+ * is terminal. Sibling history never marks the selected node terminal.
+ */
+export function hasTerminalNodeEvidence(
+  executions: readonly NodeExecution[] | null | undefined,
+  nodeId: string
+): boolean {
+  if (executions === null || executions === undefined || executions.length === 0) {
+    return false;
+  }
+  const forNode = executions.filter(execution => execution.node_id === nodeId);
+  if (forNode.length === 0) return false;
+  return forNode.every(execution => isTerminalNodeExecutionStatus(execution.status));
+}
+
+/**
+ * Stable logical execution key for a node from ordered raw events.
+ * Ask resume (`interaction_resolved` kind ask + resumed true) keeps the prior
+ * key across the next same-node start; every other start adopts occurrence/event
+ * identity. Loop-iteration starts and siblings are ignored.
+ */
+export function latestNodeExecutionKey(
+  events: readonly WorkflowEvent[] | null | undefined,
+  nodeId: string
+): string | null {
+  if (events === null || events === undefined || events.length === 0) return null;
+
+  let key: string | null = null;
+  let askContinuationArmed = false;
+
+  for (const event of events.slice().sort(compareWorkflowEvents)) {
+    if (event.step_name !== nodeId) continue;
+
+    if (event.event_type === 'interaction_resolved') {
+      const data = event.data as Record<string, unknown>;
+      if (data.kind === 'ask' && data.resumed === true) {
+        askContinuationArmed = true;
+      }
+      continue;
+    }
+
+    if (
+      event.event_type === 'node_retry_requested' ||
+      event.event_type === 'node_completed' ||
+      event.event_type === 'node_failed' ||
+      event.event_type === 'node_skipped' ||
+      event.event_type === 'node_skipped_prior_success'
+    ) {
+      askContinuationArmed = false;
+      continue;
+    }
+
+    if (event.event_type !== 'node_started') continue;
+
+    const occurrence = (event.data as Record<string, unknown>).occurrence_id;
+    const identity =
+      typeof occurrence === 'string' && occurrence.length > 0 ? occurrence : event.id;
+
+    if (askContinuationArmed) {
+      askContinuationArmed = false;
+      if (key === null) {
+        key = identity;
+      }
+      continue;
+    }
+
+    key = identity;
+  }
+
+  return key;
+}

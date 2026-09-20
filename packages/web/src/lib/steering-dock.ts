@@ -7,6 +7,7 @@
  * normalize onto.
  */
 import type { FinishedIterationView } from './execution-room-model';
+import type { NodeMessageRow } from './node-message-pages';
 
 export interface LocalSentReceipt {
   readonly messageId: string;
@@ -29,10 +30,27 @@ export interface SteeringRefusal {
 /** The agent's projected sub-state inside a still-running node. */
 export type SteeringSubState = 'generating' | 'idle-after-interrupt';
 
+export interface NeverSentEntry {
+  /** Null only for a raw unsent draft that never received a message id. */
+  readonly messageId: string | null;
+  readonly message: string;
+}
+
 export interface SteeringDockState {
   /** Projected agent sub-state; null means a live queue-only handle. */
   readonly subState: SteeringSubState | null;
   readonly sent: readonly LocalSentReceipt[];
+  /**
+   * Every receipt this mounted attempt has observed, ordered by first
+   * observation and deduplicated by messageId. Later snapshot omission never
+   * erases entries; only this tab's confirmed withdraw removes one.
+   */
+  readonly observedLedger: readonly LocalSentReceipt[];
+  /**
+   * One-shot terminal reconciliation result. `null` until
+   * `reconcileNeverSent` runs; `[]` means everything observed was written.
+   */
+  readonly neverSent: readonly NeverSentEntry[] | null;
   /** A send (Queue or Send now) request is in flight. */
   readonly sendInFlight: boolean;
   /** UI-local Stop press in flight; never projected or persisted. */
@@ -69,7 +87,8 @@ export type SteeringDockMode =
   | 'blocked'
   | 'detached'
   | 'composer'
-  | 'finished-iteration';
+  | 'finished-iteration'
+  | 'finished';
 
 /** The agent sub-state the dock renders — interrupting is UI-local only. */
 export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | 'idle';
@@ -85,6 +104,7 @@ export const STEERING_INTERRUPT_DISCLOSURE =
 export const STEERING_AGENT_INTERRUPTING = 'agent interrupting';
 export const STEERING_AGENT_IDLE = 'agent idle · Send now delivers';
 export const STEERING_AGENT_GENERATING = 'agent generating';
+export const STEERING_NEVER_SENT_DISCLOSURE = 'node finished · none of this was sent';
 
 /** Exact finished-iteration disclosure; N is the proven live iteration. */
 export function finishedIterationDisclosure(liveIteration: number): string {
@@ -100,14 +120,20 @@ const STEERING_NOT_STEERABLE_CODE = 'not_steerable_here';
 const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
 
 /**
- * Visibility/block precedence: a non-live run hides the dock entirely; a
- * proven finished-iteration descriptor wins before the terminal-row hide
- * check so a completed occurrence on a still-live loop can surface the
- * read-only dock; otherwise a non-generating row hides the dock
- * (historical/cold executions must never issue a request); a real pending
+ * Visibility/block precedence: a nonempty never-sent result with explicit
+ * node-terminal evidence selects finished first (so Cancel that flips the run
+ * non-live after observation still surfaces recovery); otherwise a non-live
+ * run hides the dock entirely; a proven finished-iteration descriptor wins
+ * before the terminal-row hide check so a completed occurrence on a still-live
+ * loop can surface the read-only dock; otherwise a non-generating row hides the
+ * dock (historical/cold executions must never issue a request); a real pending
  * ask keeps its blocked reason even when a refusal is stored — no request
  * should have been made from that state; only then does a stored 422
  * `not_steerable_here` flip the dock to the detached disclosure.
+ *
+ * Reconcile still never *triggers* on `!live` alone — finished requires both
+ * nonempty neverSent and nodeTerminal. Cold opens of terminal runs stay hidden
+ * because they never observed a ledger.
  */
 export function steeringDockMode(input: {
   rowStatus: string;
@@ -115,7 +141,17 @@ export function steeringDockMode(input: {
   hasPendingAsk: boolean;
   refusal: SteeringRefusal | null;
   finishedIteration?: FinishedIterationView | null;
+  neverSent?: readonly NeverSentEntry[] | null;
+  nodeTerminal?: boolean;
 }): SteeringDockMode {
+  if (
+    input.nodeTerminal === true &&
+    input.neverSent !== null &&
+    input.neverSent !== undefined &&
+    input.neverSent.length > 0
+  ) {
+    return 'finished';
+  }
   if (!input.live) return 'hidden';
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {
     return 'finished-iteration';
@@ -212,6 +248,15 @@ export function willSendListLabel(count: number): string {
   return `Will send, ${count.toString()}`;
 }
 
+/** Lowercase DOM source heading; the renderer applies CSS uppercase tracking. */
+export function neverSentBandHeader(count: number): string {
+  return `never sent · ${count.toString()}`;
+}
+
+export function neverSentListLabel(count: number): string {
+  return `Never sent, ${count.toString()}`;
+}
+
 export function queueButtonAccessibleName(count: number): string {
   return `Queue · Cmd/Ctrl+Enter to send · ${queuedCountPhrase(count)}`;
 }
@@ -224,6 +269,8 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
   return {
     subState: subState ?? null,
     sent: [],
+    observedLedger: [],
+    neverSent: null,
     sendInFlight: false,
     interruptInFlight: false,
     inFlightBatch: null,
@@ -233,6 +280,21 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     withdrawingMessageId: null,
     queueGeneration: 0,
   };
+}
+
+/** Append receipts the first time each messageId is observed; preserve order. */
+function appendObservedIfNew(
+  ledger: readonly LocalSentReceipt[],
+  entries: readonly LocalSentReceipt[]
+): readonly LocalSentReceipt[] {
+  let next: LocalSentReceipt[] | null = null;
+  for (const entry of entries) {
+    const exists = (next ?? ledger).some(row => row.messageId === entry.messageId);
+    if (exists) continue;
+    if (next === null) next = [...ledger];
+    next.push(entry);
+  }
+  return next ?? ledger;
 }
 
 /**
@@ -290,7 +352,8 @@ export function resolveGuidanceSuccess(
   // A replayed success never duplicates the row but still bumps
   // `queueGeneration`, because the server accepted the mutation either way.
   // An active withdraw id is preserved across send resolve.
-  if (state.sent.some(entry => entry.messageId === receipt.message_id)) {
+  const existing = state.sent.find(entry => entry.messageId === receipt.message_id);
+  if (existing !== undefined) {
     return {
       ...state,
       sendInFlight: false,
@@ -298,16 +361,15 @@ export function resolveGuidanceSuccess(
       refusal: null,
       withdrawingMessageId: state.withdrawingMessageId,
       queueGeneration: state.queueGeneration + 1,
+      observedLedger: appendObservedIfNew(state.observedLedger, [existing]),
     };
   }
-  const sent = [
-    ...state.sent,
-    {
-      messageId: receipt.message_id,
-      message: state.pendingRetry?.message ?? '',
-      state: receipt.state ?? 'queued',
-    },
-  ];
+  const accepted: LocalSentReceipt = {
+    messageId: receipt.message_id,
+    message: state.pendingRetry?.message ?? '',
+    state: receipt.state ?? 'queued',
+  };
+  const sent = [...state.sent, accepted];
   return {
     ...state,
     sent,
@@ -317,6 +379,7 @@ export function resolveGuidanceSuccess(
     withdrawingMessageId: state.withdrawingMessageId,
     queueGeneration: state.queueGeneration + 1,
     notice: queuedCountPhrase(sent.length),
+    observedLedger: appendObservedIfNew(state.observedLedger, [accepted]),
   };
 }
 
@@ -385,6 +448,7 @@ export function resolveSendNowSuccess(
 ): SteeringDockState {
   if (!state.sendInFlight || state.inFlightBatch === null) return state;
   if (state.pendingRetry?.messageId !== receipt.message_id) return state;
+  const observedLedger = appendObservedIfNew(state.observedLedger, state.inFlightBatch);
   // A Queue request with an ambiguous response may be retried after the node
   // becomes idle. Idempotency replays its original `queued` receipt and cannot
   // release the idle waiter. Keep the resolved message in Will send and require
@@ -400,6 +464,7 @@ export function resolveSendNowSuccess(
       refusal: null,
       queueGeneration: state.queueGeneration + 1,
       notice: willSendCountPhrase(state.inFlightBatch.length),
+      observedLedger,
     };
   }
   return {
@@ -411,6 +476,7 @@ export function resolveSendNowSuccess(
     subState: 'generating',
     queueGeneration: state.queueGeneration + 1,
     notice: STEERING_AGENT_GENERATING,
+    observedLedger,
   };
 }
 
@@ -494,9 +560,11 @@ export function resolveWithdrawSuccess(
 ): SteeringDockState {
   if (state.withdrawingMessageId !== messageId) return state;
   const sent = state.sent.filter(entry => entry.messageId !== messageId);
+  const observedLedger = state.observedLedger.filter(entry => entry.messageId !== messageId);
   return {
     ...state,
     sent,
+    observedLedger,
     withdrawingMessageId: null,
     refusal: null,
     queueGeneration: state.queueGeneration + 1,
@@ -589,13 +657,85 @@ export function applyQueueSnapshot(
     message: row.message,
     state: 'queued',
   }));
-  const unchanged =
+  const observedLedger = appendObservedIfNew(state.observedLedger, nextSent);
+  const sentUnchanged =
     nextSent.length === state.sent.length &&
     nextSent.every(
       (row, i) => row.messageId === state.sent[i].messageId && row.message === state.sent[i].message
     );
-  if (unchanged) return state;
-  return { ...state, sent: nextSent };
+  if (sentUnchanged && observedLedger === state.observedLedger) return state;
+  return { ...state, sent: nextSent, observedLedger };
+}
+
+/**
+ * One-shot terminal reconciliation: restore every observed-but-unwritten
+ * receipt, then an unmatched pending submission, then a different nonblank
+ * raw draft. Pure — mutates no other state field. Writes `[]` when nothing
+ * qualifies (never leaves `neverSent` null after a call).
+ */
+export function reconcileNeverSent(
+  state: SteeringDockState,
+  input: {
+    readonly writtenMessageIds: ReadonlySet<string>;
+    readonly draft: string;
+  }
+): SteeringDockState {
+  const neverSent: NeverSentEntry[] = [];
+  const listedIds = new Set<string>();
+
+  for (const entry of state.observedLedger) {
+    if (input.writtenMessageIds.has(entry.messageId) || listedIds.has(entry.messageId)) continue;
+    listedIds.add(entry.messageId);
+    neverSent.push({ messageId: entry.messageId, message: entry.message });
+  }
+
+  const pending = state.pendingRetry;
+  if (
+    pending !== null &&
+    !input.writtenMessageIds.has(pending.messageId) &&
+    !listedIds.has(pending.messageId)
+  ) {
+    listedIds.add(pending.messageId);
+    neverSent.push({ messageId: pending.messageId, message: pending.message });
+  }
+
+  const draft = input.draft;
+  if (draft.trim().length > 0 && draft !== pending?.message) {
+    neverSent.push({ messageId: null, message: draft });
+  }
+
+  if (
+    state.neverSent !== null &&
+    state.neverSent.length === neverSent.length &&
+    state.neverSent.every(
+      (entry, index) =>
+        entry.messageId === neverSent[index]?.messageId &&
+        entry.message === neverSent[index]?.message
+    )
+  ) {
+    return state;
+  }
+
+  return { ...state, neverSent };
+}
+
+/**
+ * Collect message ids that the node-wide operator transcript actually wrote.
+ * Only text rows with `metadata.origin === 'operator'` and a non-empty
+ * `metadata.message_id` count — assistant/tool/malformed rows are ignored.
+ */
+export function collectWrittenOperatorMessageIds(rows: readonly NodeMessageRow[]): Set<string> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (row.kind !== 'text') continue;
+    const metadata = row.metadata;
+    if (metadata?.origin !== 'operator') continue;
+    const messageId = metadata.message_id;
+    if (typeof messageId === 'string' && messageId.length > 0) {
+      ids.add(messageId);
+    }
+  }
+  return ids;
 }
 
 /**

@@ -7,6 +7,7 @@ import {
   beginSendNow,
   beginWithdraw,
   canSubmitGuidance,
+  collectWrittenOperatorMessageIds,
   createSteeringDockState,
   deleteButtonAccessibleName,
   finishedIterationDisclosure,
@@ -14,11 +15,14 @@ import {
   goToIterationLabel,
   isQueueShortcut,
   loadSteeringDraft,
+  neverSentBandHeader,
+  neverSentListLabel,
   nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
   queuedCountPhrase,
+  reconcileNeverSent,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
   resolveInterruptError,
@@ -43,6 +47,7 @@ import {
   STEERING_DETACHED_DISCLOSURE,
   STEERING_INTERRUPT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
+  STEERING_NEVER_SENT_DISCLOSURE,
   STEERING_SEND_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   SteeringRequestError,
@@ -52,9 +57,11 @@ import {
   willSendCountPhrase,
   willSendListLabel,
   type LocalSentReceipt,
+  type NeverSentEntry,
   type QueuedGuidanceRow,
   type SteeringDockState,
 } from './steering-dock';
+import type { NodeMessageRow } from './node-message-pages';
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -81,6 +88,8 @@ function modeFor(
     hasPendingAsk?: boolean;
     refusal?: { code: string | null; message: string } | null;
     finishedIteration?: { liveRowId: string; liveIteration: number } | null;
+    neverSent?: readonly NeverSentEntry[] | null;
+    nodeTerminal?: boolean;
   }
 ): string {
   return steeringDockMode({
@@ -89,6 +98,8 @@ function modeFor(
     hasPendingAsk: overrides?.hasPendingAsk ?? false,
     refusal: overrides?.refusal ?? null,
     finishedIteration: overrides?.finishedIteration,
+    neverSent: overrides?.neverSent,
+    nodeTerminal: overrides?.nodeTerminal,
   });
 }
 
@@ -914,6 +925,7 @@ describe('applyQueueSnapshot', () => {
 
   test('returns the identical state object when the snapshot is identical', () => {
     const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
       sendInFlight: true,
       pendingRetry: { messageId: 'p', message: 'wip' },
       refusal: { code: 'stale', message: 'old' },
@@ -1408,5 +1420,419 @@ describe('startQueuePolling', () => {
     await flush();
     expect(clock2.pending.size).toBe(0);
     expect(reads2).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 2.11 (#191) Phase 1 — observed ledger, reconciliation, finished mode.
+// ---------------------------------------------------------------------------
+
+describe('observed ledger and never-sent reconciliation (T1.1–T1.22)', () => {
+  const CREATED_AT = '2026-09-12T00:00:00.000Z';
+
+  function operatorText(id: string, seq: number, body: string, messageId?: string): NodeMessageRow {
+    return {
+      id,
+      seq,
+      kind: 'text',
+      payload: { text: body },
+      created_at: CREATED_AT,
+      metadata: {
+        origin: 'operator',
+        ...(messageId === undefined ? {} : { message_id: messageId }),
+      },
+    };
+  }
+
+  function assistantText(id: string, seq: number, body: string): NodeMessageRow {
+    return {
+      id,
+      seq,
+      kind: 'text',
+      payload: { text: body },
+      created_at: CREATED_AT,
+      metadata: { message_id: 'assistant-should-ignore' },
+    };
+  }
+
+  function toolRow(id: string, seq: number): NodeMessageRow {
+    return {
+      id,
+      seq,
+      kind: 'tool',
+      payload: { name: 'bash', id: 'tool-1' },
+      created_at: CREATED_AT,
+      metadata: { origin: 'operator', message_id: 'tool-should-ignore' },
+    };
+  }
+
+  test('T1.1 constructor initializes terminal state', () => {
+    const state = createSteeringDockState();
+    expect(state.observedLedger).toEqual([]);
+    expect(state.neverSent).toBeNull();
+  });
+
+  test('T1.2 local guidance successes are observed once', () => {
+    let counter = 0;
+    const newId = (): string => `g-${(++counter).toString()}`;
+    let state = createSteeringDockState();
+    const first = beginGuidanceSubmission(state, 'alpha', newId);
+    state = resolveGuidanceSuccess(first.state, { message_id: first.messageId });
+    const second = beginGuidanceSubmission(state, 'beta', newId);
+    state = resolveGuidanceSuccess(second.state, { message_id: second.messageId });
+    expect(state.observedLedger.map(entry => entry.messageId)).toEqual([
+      first.messageId,
+      second.messageId,
+    ]);
+    const replay = resolveGuidanceSuccess(
+      { ...state, pendingRetry: { messageId: first.messageId, message: 'alpha' } },
+      { message_id: first.messageId }
+    );
+    expect(replay.observedLedger).toHaveLength(2);
+    expect(replay.observedLedger.map(entry => entry.messageId)).toEqual([
+      first.messageId,
+      second.messageId,
+    ]);
+  });
+
+  test('T1.3 Send-now success observes its new receipt', () => {
+    let counter = 0;
+    const newId = (): string => `sn-${(++counter).toString()}`;
+    let state = createSteeringDockState('idle-after-interrupt');
+    const queued = beginGuidanceSubmission(state, 'first', newId);
+    state = resolveGuidanceSuccess(queued.state, { message_id: queued.messageId });
+    const priorIds = state.observedLedger.map(entry => entry.messageId);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    const next = resolveSendNowSuccess(begun.state, {
+      message_id: begun.messageId,
+      state: 'awaiting_send_now',
+    });
+    expect(next.sent).toEqual([]);
+    expect(next.observedLedger.map(entry => entry.messageId)).toEqual([
+      ...priorIds,
+      begun.messageId,
+    ]);
+  });
+
+  test('T1.4 valid shared snapshot extends observation history', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'a', message: 'alpha' },
+          { message_id: 'b', message: 'beta-remote' },
+        ],
+      },
+      0
+    );
+    expect(next.sent).toEqual([receipt('a', 'alpha'), receipt('b', 'beta-remote')]);
+    expect(next.observedLedger).toEqual([receipt('a', 'alpha'), receipt('b', 'beta-remote')]);
+  });
+
+  test('T1.5 later omission does not erase history', () => {
+    let state = applyQueueSnapshot(
+      createSteeringDockState(),
+      { queued: [{ message_id: 'a', message: 'alpha' }] },
+      0
+    );
+    expect(state.observedLedger).toEqual([receipt('a', 'alpha')]);
+    state = applyQueueSnapshot(state, { queued: [] }, 0);
+    expect(state.sent).toEqual([]);
+    expect(state.observedLedger).toEqual([receipt('a', 'alpha')]);
+  });
+
+  test('T1.6 stale generation is inert', () => {
+    const state = stateWith([receipt('a', 'alpha')], {
+      observedLedger: [receipt('a', 'alpha')],
+      queueGeneration: 3,
+    });
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'b', message: 'beta' },
+          { message_id: 'a', message: 'alpha' },
+        ],
+      },
+      2
+    );
+    expect(next).toBe(state);
+    expect(next.observedLedger).toBe(state.observedLedger);
+    expect(next.sent).toEqual([receipt('a', 'alpha')]);
+  });
+
+  test('T1.7 own confirmed withdraw removes history', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+    });
+    const resolved = resolveWithdrawSuccess(beginWithdraw(state, 'a'), 'a');
+    expect(resolved.sent).toEqual([receipt('b', 'beta')]);
+    expect(resolved.observedLedger).toEqual([receipt('b', 'beta')]);
+    // Unknown id while idle is a no-op (no active withdraw).
+    expect(resolveWithdrawSuccess(state, 'missing')).toBe(state);
+  });
+
+  test('T1.8 failure/interrupt transitions preserve history', () => {
+    const ledger = [receipt('a', 'alpha')];
+    const base = stateWith(ledger, {
+      observedLedger: ledger,
+      pendingRetry: { messageId: 'p', message: 'pending' },
+    });
+    const failed = resolveGuidanceFailure(base, { code: null, message: 'lost' });
+    expect(failed.observedLedger).toBe(base.observedLedger);
+    const sendFailed = resolveSendNowFailure(
+      { ...base, inFlightBatch: ledger, sendInFlight: true },
+      { code: null, message: 'lost' }
+    );
+    expect(sendFailed.observedLedger).toBe(base.observedLedger);
+    const withdrawFailed = resolveWithdrawFailure(beginWithdraw(base, 'a'), 'a', {
+      code: 'x',
+      message: 'nope',
+    });
+    expect(withdrawFailed.observedLedger).toBe(base.observedLedger);
+    const interrupting = beginInterrupt(base);
+    expect(interrupting.observedLedger).toBe(base.observedLedger);
+    const interrupted = resolveInterruptOutcome(interrupting, 'idle-after-interrupt');
+    expect(interrupted.observedLedger).toBe(base.observedLedger);
+    const interruptErr = resolveInterruptError(interrupting, {
+      code: null,
+      message: 'nope',
+    });
+    expect(interruptErr.observedLedger).toBe(base.observedLedger);
+  });
+
+  test('T1.9 reconcile restores unmatched observed ids', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'textA'), receipt('b', 'textB')],
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(['a']),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([{ messageId: 'b', message: 'textB' }]);
+  });
+
+  test('T1.10 reconcile handles a vanished shared snapshot', () => {
+    let state = applyQueueSnapshot(
+      createSteeringDockState(),
+      { queued: [{ message_id: 'a', message: 'shared A' }] },
+      0
+    );
+    state = applyQueueSnapshot(state, { queued: [] }, 0);
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([{ messageId: 'a', message: 'shared A' }]);
+  });
+
+  test('T1.11 written ids remove all delivered candidates', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(['a', 'b']),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([]);
+    expect(next.neverSent).not.toBeNull();
+  });
+
+  test('T1.12 unmatched pending submission is restored', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'alpha')],
+      pendingRetry: { messageId: 'R', message: 'pending text' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([
+      { messageId: 'a', message: 'alpha' },
+      { messageId: 'R', message: 'pending text' },
+    ]);
+  });
+
+  test('T1.13 written/observed pending is not duplicated', () => {
+    const written = reconcileNeverSent(
+      stateWith([], {
+        observedLedger: [],
+        pendingRetry: { messageId: 'R', message: 'pending' },
+      }),
+      { writtenMessageIds: new Set(['R']), draft: '' }
+    );
+    expect(written.neverSent).toEqual([]);
+
+    const observed = reconcileNeverSent(
+      stateWith([], {
+        observedLedger: [receipt('R', 'pending')],
+        pendingRetry: { messageId: 'R', message: 'pending' },
+      }),
+      { writtenMessageIds: new Set(), draft: '' }
+    );
+    expect(observed.neverSent).toEqual([{ messageId: 'R', message: 'pending' }]);
+  });
+
+  test('T1.14 a different raw draft follows pending', () => {
+    const state = stateWith([], {
+      pendingRetry: { messageId: 'R', message: 'old' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '  new text  ',
+    });
+    expect(next.neverSent).toEqual([
+      { messageId: 'R', message: 'old' },
+      { messageId: null, message: '  new text  ' },
+    ]);
+    const whitespaceOnly = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '   \n\t  ',
+    });
+    expect(whitespaceOnly.neverSent).toEqual([{ messageId: 'R', message: 'old' }]);
+  });
+
+  test('T1.15 unchanged pending/draft is one item', () => {
+    const state = stateWith([], {
+      pendingRetry: { messageId: 'R', message: 'same text' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: 'same text',
+    });
+    expect(next.neverSent).toEqual([{ messageId: 'R', message: 'same text' }]);
+  });
+
+  test('T1.16 in-flight edit loses nothing', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+      pendingRetry: { messageId: 'R', message: 'pending' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(['a']),
+      draft: 'edited draft',
+    });
+    expect(next.neverSent).toEqual([
+      { messageId: 'b', message: 'beta' },
+      { messageId: 'R', message: 'pending' },
+      { messageId: null, message: 'edited draft' },
+    ]);
+  });
+
+  test('T1.17 reconciliation is idempotent/pure', () => {
+    const sent = [receipt('keep', 'visible')];
+    const pendingRetry = { messageId: 'R', message: 'pending' };
+    const refusal = { code: 'stale', message: 'old' };
+    const notice = '1 message queued';
+    const state = stateWith(sent, {
+      observedLedger: [receipt('a', 'alpha')],
+      pendingRetry,
+      refusal,
+      notice,
+      sendInFlight: true,
+      interruptInFlight: true,
+      withdrawingMessageId: 'keep',
+      queueGeneration: 4,
+      subState: 'generating',
+    });
+    const first = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: 'draft',
+    });
+    const second = reconcileNeverSent(first, {
+      writtenMessageIds: new Set(),
+      draft: 'draft',
+    });
+    expect(second).toBe(first);
+    expect(first.sent).toBe(sent);
+    expect(first.pendingRetry).toBe(pendingRetry);
+    expect(first.refusal).toBe(refusal);
+    expect(first.notice).toBe(notice);
+    expect(first.sendInFlight).toBe(true);
+    expect(first.interruptInFlight).toBe(true);
+    expect(first.withdrawingMessageId).toBe('keep');
+    expect(first.queueGeneration).toBe(4);
+    expect(first.subState).toBe('generating');
+    expect(first.observedLedger).toBe(state.observedLedger);
+  });
+
+  test('T1.18 finished mode requires explicit node terminal', () => {
+    const neverSent: NeverSentEntry[] = [{ messageId: 'a', message: 'alpha' }];
+    expect(
+      modeFor('completed', {
+        nodeTerminal: true,
+        neverSent,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished');
+    expect(modeFor('running', { neverSent, nodeTerminal: false })).toBe('composer');
+    expect(modeFor('completed', { neverSent, nodeTerminal: false })).toBe('hidden');
+    // Cancel flips the run non-live before/after nodeTerminal; finished still
+    // wins when both neverSent and nodeTerminal are present (E4.1 Cancel path).
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
+    expect(modeFor('completed', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
+    // live:false alone still hides — no finished without neverSent+nodeTerminal.
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: false })).toBe('hidden');
+  });
+
+  test('T1.19 empty/unreconciled result preserves old table', () => {
+    expect(modeFor('running', { neverSent: null, nodeTerminal: true })).toBe('composer');
+    expect(modeFor('running', { neverSent: [], nodeTerminal: true })).toBe('composer');
+    expect(modeFor('awaiting', { neverSent: [], nodeTerminal: true })).toBe('blocked');
+    expect(modeFor('completed', { neverSent: null, nodeTerminal: true })).toBe('hidden');
+    expect(
+      modeFor('completed', {
+        neverSent: [],
+        nodeTerminal: true,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished-iteration');
+    expect(
+      modeFor('running', {
+        neverSent: null,
+        nodeTerminal: true,
+        refusal: { code: 'not_steerable_here', message: 'detached' },
+      })
+    ).toBe('detached');
+  });
+
+  test('T1.20 copy and accessible labels are exact', () => {
+    expect(neverSentBandHeader(1)).toBe('never sent · 1');
+    expect(neverSentBandHeader(3)).toBe('never sent · 3');
+    expect(neverSentListLabel(2)).toBe('Never sent, 2');
+    expect(STEERING_NEVER_SENT_DISCLOSURE).toBe('node finished · none of this was sent');
+  });
+
+  test('T1.21 queue-observer mode does not decide terminality', () => {
+    const neverSent: NeverSentEntry[] = [{ messageId: 'a', message: 'alpha' }];
+    expect(modeFor('running', { neverSent })).toBe('composer');
+    expect(modeFor('awaiting', { neverSent })).toBe('blocked');
+    expect(
+      modeFor('completed', {
+        neverSent,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished-iteration');
+    expect(modeFor('running', { neverSent, nodeTerminal: true })).toBe('finished');
+  });
+
+  test('T1.22 written-id extractor is strict', () => {
+    const rows: NodeMessageRow[] = [
+      operatorText('op-1', 1, 'keep me', 'msg-1'),
+      operatorText('op-2', 2, 'no id'),
+      operatorText('op-3', 3, 'blank id', ''),
+      assistantText('as-1', 4, 'assistant'),
+      toolRow('tool-1', 5),
+      {
+        id: 'status-1',
+        seq: 6,
+        kind: 'status',
+        payload: { state: 'running' },
+        created_at: CREATED_AT,
+        metadata: { origin: 'operator', message_id: 'status-should-ignore' },
+      },
+    ];
+    expect([...collectWrittenOperatorMessageIds(rows)]).toEqual(['msg-1']);
   });
 });

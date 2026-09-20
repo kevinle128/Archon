@@ -23,8 +23,10 @@ import {
   createNodeMessageState,
   drainNodeMessages,
   nodeMessageScopeKey,
+  type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -106,6 +108,12 @@ export interface ConsoleNodeRoomProps {
   onSelectRow?: (rowId: string) => void;
   /** Proven finished-iteration descriptor from the parent pane. */
   finishedIteration?: FinishedIterationView | null;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   showToolCalls?: boolean;
   showSystem?: boolean;
   closeLabel?: 'Close' | 'Back';
@@ -485,6 +493,9 @@ export function ConsoleNodeRoom({
   headerOptions,
   onSelectRow,
   finishedIteration = null,
+  nodeTerminal = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds: _externalWrittenIds = null,
   showToolCalls = true,
   showSystem = true,
   closeLabel = 'Close',
@@ -507,6 +518,8 @@ export function ConsoleNodeRoom({
   const [pageState, setPageState] = useState<NodeMessageState>(() =>
     createNodeMessageState(resolvedScopeKey)
   );
+  /** Node-wide written operator ids from the terminal reconcile drain. null until complete. */
+  const [reconcileWrittenIds, setReconcileWrittenIds] = useState<ReadonlySet<string> | null>(null);
   const [follow, setFollow] = useState(() =>
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
@@ -634,6 +647,54 @@ export function ConsoleNodeRoom({
     rowId,
     run.id,
   ]);
+
+  // Separate node-wide reconcile drain — never feeds pageState/transcript.
+  useEffect(() => {
+    if (!nodeTerminal || nodeKey === null || !agentActive) {
+      setReconcileWrittenIds(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const runId = run.id;
+    const executionRowId = nodeExecutionKey ?? `run:${runId}|node:${nodeKey}`;
+    const selection: NodeMessageSelection = { kind: 'node', rowId: executionRowId };
+
+    const runReconcileDrain = async (): Promise<void> => {
+      if (cancelled || controller.signal.aborted) return;
+      const next = await drainNodeMessages({
+        runId,
+        nodeId: nodeKey,
+        selection,
+        loader: loadMessagesRef.current,
+        signal: controller.signal,
+        state: createNodeMessageState(nodeMessageScopeKey(runId, nodeKey, selection)),
+        onState: (): void => {
+          // Intentionally ignore intermediate pages — never touch transcript state.
+        },
+      });
+      if (cancelled || controller.signal.aborted) return;
+      if (next.complete && next.error === null) {
+        setReconcileWrittenIds(collectWrittenOperatorMessageIds(next.rows));
+        return;
+      }
+      timer = setTimeout(() => {
+        void runReconcileDrain();
+      }, 1000);
+    };
+
+    setReconcileWrittenIds(null);
+    void runReconcileDrain();
+
+    return (): void => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
+      setReconcileWrittenIds(null);
+    };
+  }, [agentActive, nodeExecutionKey, nodeKey, nodeTerminal, run.id]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -1076,7 +1137,7 @@ export function ConsoleNodeRoom({
           {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock
-              key={`steering:${resolvedScopeKey}`}
+              key={`steering:run:${run.id}|node:${row.nodeId}`}
               runId={run.id}
               nodeId={row.nodeId}
               nodeLabel={agentDisplayName || row.nodeId}
@@ -1091,6 +1152,9 @@ export function ConsoleNodeRoom({
                 setAutoFocusTarget(null);
               }}
               focusLastRow={focusLastRow}
+              nodeTerminal={nodeTerminal}
+              nodeExecutionKey={nodeExecutionKey}
+              writtenOperatorMessageIds={reconcileWrittenIds}
             />
           ) : null}
         </RoomRegion>

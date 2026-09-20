@@ -54,6 +54,12 @@ export interface LegacyNodeRoomProps {
   onSelectRow?: (rowId: string) => void;
   /** Proven finished-iteration descriptor; pass-through only. */
   finishedIteration?: FinishedIterationView | null;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   onClose?: () => void;
   closeLabel?: 'Close' | 'Back';
   scopeKey?: string;
@@ -112,6 +118,9 @@ export function LegacyNodeRoom({
   headerOptions,
   onSelectRow,
   finishedIteration = null,
+  nodeTerminal = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds = null,
   onClose,
   closeLabel = 'Close',
   scopeKey,
@@ -194,6 +203,9 @@ export function LegacyNodeRoom({
             askDrafts={askDrafts}
             onAskDraftChange={onAskDraftChange}
             finishedIteration={finishedIteration}
+            nodeTerminal={nodeTerminal}
+            nodeExecutionKey={nodeExecutionKey}
+            writtenOperatorMessageIds={writtenOperatorMessageIds}
             onSelectLiveRow={onSelectRow}
           />
         );

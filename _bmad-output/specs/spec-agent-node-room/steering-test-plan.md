@@ -58,7 +58,8 @@ Per `steering-api-contract.md`.
 
 - the executor is the sole writer; the row is a `text` row with `metadata` `{ origin='operator', operator_user_id, message_id }`; no new table, no widened `kind`; placed by `seq` between the turn it redirected and the turn it caused
 - the message stays `sent` on every provider (v1 floor); nothing advances past `sent`
-- terminal reconciliation runs **only** on the node's terminal event: each `sent` id matches a written `message_id`; an unmatched id returns as `NEVER SENT`; assert it never runs on a live refetch (a Cancel mid-flight must not mis-mark a delivered message)
+- terminal reconciliation runs **only** on actual node-terminal evidence (persisted `node_completed`/`node_failed`, or exact-scope purged-Ask projection): each observed ledger id matches a written `message_id`; an unmatched id returns as `NEVER SENT`; assert it never runs on a live refetch or on run-level terminal status alone (a Cancel mid-flight must not mis-mark a delivered message)
+- **Story 2.11 focused coverage** — core: `packages/web/src/lib/steering-dock.test.ts` (T1.1–T1.22 ledger/reconcile/finished mode); docks: `ComposerDock.test.tsx` + `ConsoleComposerDock.test.tsx` (T2.1–T2.18); server projection: `packages/server/src/routes/workflow-execution-history.test.ts` (T3.1–T3.4 exact-scope purged Ask + nested owners, answered resume guard, fail-closed ambiguity); parents: `execution-room-model.test.ts`, `WorkflowExecution.test.tsx`, `RunDetailPage.test.tsx` (T3.5–T3.14 raw-history helpers + 3 s catch-up); panes: `NodeTranscriptPane.test.tsx` + `ConsoleNodeRoom.test.tsx` (T3.15–T3.26 node-terminal pass-through + node-wide drain); E2E: `e2e/ui/agent-never-sent.spec.ts` (E4.1–E4.5, E4.7–E4.8 Cancel/observer/idle-queue/draft/finished-iteration/focus/visual on both shells), natural-drain negative in `agent-queue-guidance.spec.ts` (E4.6), finished-iteration observer in `agent-finished-iteration.spec.ts`
 - display-name projection (AD-12 / Story 2.8): the served operator row carries `operator_display_name` from the read-time join; a non-null sender always gets a trimmed name or the 8-char short id (server-owned fallback); `null` is reserved for identity-less rows; the web does not fetch users
 
 ## Concurrent operators
@@ -95,6 +96,8 @@ Extend the node-room E2E on **Legacy and Console**.
 - the interrupted tool call renders `⚠ interrupted`, not `✕ failed`, on a non-Claude provider (proves the reader fold)
 - accessibility: colour-free status glyph, per-transition polite live-region announcement, assertive delivery-failure `role="alert"`, focus transfer on dock change (never `<body>`), `Enter` inserts a newline and never sends, `prefers-reduced-motion`, `aria-describedby` on the ask-blocked Send
 - visual checks at **460px** (Legacy) and the Console panel width
+
+- **Story 2.11 never-sent E2E** — `e2e/ui/agent-never-sent.spec.ts` covers Cancel two-milestone waits (`cancelled` without box → `node_failed` + failed execution → ordered `Never sent, n`), cross-tab observation ledger, idle-after-interrupt `intent:'queue'` without Send now, half-typed draft fold-in, finished-iteration observer recovery, single `role="alert"` + transcript focus handoff, and 460px/1440px visual evidence under `plans/260920-1136-issue-191-recover-never-sent-messages/reports/evidence/`
 
 ## Boundary checks
 

@@ -175,6 +175,9 @@ describe('ComposerDock', () => {
       storage: Storage;
       nodeLabel: string;
       focusLastRow: () => void;
+      writtenOperatorMessageIds: ReadonlySet<string> | null;
+      nodeTerminal: boolean;
+      nodeExecutionKey: string | null;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -198,6 +201,9 @@ describe('ComposerDock', () => {
           pollIntervalMs: overrides.pollIntervalMs ?? 60_000,
           storage: overrides.storage,
           focusLastRow: overrides.focusLastRow,
+          writtenOperatorMessageIds: overrides.writtenOperatorMessageIds,
+          nodeTerminal: overrides.nodeTerminal,
+          nodeExecutionKey: overrides.nodeExecutionKey,
         })
       );
     });
@@ -1794,7 +1800,6 @@ describe('ComposerDock', () => {
     // may already be in flight when settleSnapshot returns (CI flake).
     const afterStop = readCalls.length;
     expect(afterStop).toBeGreaterThanOrEqual(2);
-
     await act(async () => {
       await new Promise(resolve => setTimeout(resolve, 20));
     });
@@ -1815,5 +1820,755 @@ describe('ComposerDock', () => {
     await renderDock({ rowStatus: 'completed' });
     expect(host.querySelector('textarea')).toBeNull();
     expect(host.textContent ?? '').toBe('');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Story 2.11 (#191) — NEVER SENT finished box (T2.1–T2.18).
+  // ---------------------------------------------------------------------------
+
+  const NEVER_SENT_ALERT = 'node finished · none of this was sent';
+
+  function neverSentList(): Element | null {
+    return host.querySelector('ul[aria-label^="Never sent, "]');
+  }
+
+  function neverSentItems(): HTMLLIElement[] {
+    const list = neverSentList();
+    if (list === null) return [];
+    return [...list.querySelectorAll('li')] as unknown as HTMLLIElement[];
+  }
+
+  test('T2.1 restores exact unmatched receipts', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha' },
+        { message_id: 'id-b', message: 'beta' },
+      ])
+    );
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(['id-a']),
+      pollIntervalMs: 60_000,
+    });
+    const list = neverSentList();
+    expect(list?.getAttribute('aria-label')).toBe('Never sent, 1');
+    const items = neverSentItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-message-id')).toBe('id-b');
+    expect(items[0]?.textContent).toBe('beta');
+    expect(host.textContent).toContain(NEVER_SENT_ALERT);
+  });
+
+  test('T2.2 shared receipt survives snapshot omission', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 1,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'remote-a', message: 'from peer' }]));
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('li')).toBeNull();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 1,
+    });
+    const items = neverSentItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-message-id')).toBe('remote-a');
+    expect(items[0]?.textContent).toBe('from peer');
+  });
+
+  test('T2.3 all matched hides dock', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      rowStatus: 'completed',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(['id-a']),
+      pollIntervalMs: 60_000,
+    });
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(neverSentList()).toBeNull();
+    expect(host.textContent ?? '').not.toContain(NEVER_SENT_ALERT);
+    expect(host.textContent ?? '').toBe('');
+  });
+
+  test('T2.4 pending submission is retained', async () => {
+    const pending = deferred<SendWorkflowNodeResponse>();
+    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return pending.promise;
+    };
+    await renderDock({ nodeExecutionKey: 'exec-1', send: hangingSend });
+    await setDraft('pending text');
+    await clickQueue();
+    expect(calls).toHaveLength(1);
+    const pendingId = calls[0]?.body.message_id;
+    expect(pendingId).toBeTruthy();
+    await renderDock({
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+    });
+    const items = neverSentItems();
+    expect(items.some(item => item.getAttribute('data-message-id') === pendingId)).toBe(true);
+    expect(items.some(item => (item.textContent ?? '').includes('pending text'))).toBe(true);
+  });
+
+  test('T2.5 edited field retains both values', async () => {
+    const pending = deferred<SendWorkflowNodeResponse>();
+    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return pending.promise;
+    };
+    await renderDock({ nodeExecutionKey: 'exec-1', send: hangingSend });
+    await setDraft('old');
+    await clickQueue();
+    const pendingId = calls[0]?.body.message_id ?? '';
+    await setDraft('  new  ');
+    await renderDock({
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+    });
+    const items = neverSentItems();
+    expect(items).toHaveLength(2);
+    expect(items[0]?.getAttribute('data-message-id')).toBe(pendingId);
+    expect(items[0]?.textContent).toBe('old');
+    expect(items[1]?.getAttribute('data-message-id')).toBeNull();
+    expect(items[1]?.textContent).toBe('  new  ');
+  });
+
+  test('T2.6 unchanged field is not duplicated', async () => {
+    const pending = deferred<SendWorkflowNodeResponse>();
+    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return pending.promise;
+    };
+    await renderDock({ nodeExecutionKey: 'exec-1', send: hangingSend });
+    await setDraft('same text');
+    await clickQueue();
+    const pendingId = calls[0]?.body.message_id ?? '';
+    expect(field().value).toBe('same text');
+    await renderDock({
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+    });
+    const items = neverSentItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-message-id')).toBe(pendingId);
+    expect(items[0]?.textContent).toBe('same text');
+  });
+
+  test('T2.7 exact finished anatomy', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'only' }]));
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    const heading = host.querySelector('h3');
+    expect(heading?.textContent).toBe('never sent · 1');
+    expect(heading?.className ?? '').toContain('uppercase');
+    expect(heading?.className ?? '').toContain('tracking-[0.07em]');
+    expect(neverSentList()?.getAttribute('aria-label')).toBe('Never sent, 1');
+    const alerts = [...host.querySelectorAll('[role="alert"]')];
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.textContent).toBe(NEVER_SENT_ALERT);
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    expect(deleteButtons()).toHaveLength(0);
+    expect(
+      [...host.querySelectorAll('button')].some(b => {
+        const t = (b.textContent ?? '').trim();
+        return t === 'Stop' || t === 'Queue' || t === 'Send now' || t.startsWith('Go to');
+      })
+    ).toBe(false);
+    expect(host.textContent ?? '').not.toContain('Cmd/Ctrl+Enter');
+  });
+
+  test('T2.8 live/non-event states never reconcile', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: false,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentList()).toBeNull();
+    expect(host.querySelector('textarea')).not.toBeNull();
+
+    // Cancel: run goes non-live while nodeTerminal is true. Observed receipts
+    // still reconcile into finished — live:false alone must not hide recovery.
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      live: false,
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentList()).not.toBeNull();
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      rowStatus: 'completed',
+      nodeTerminal: false,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentList()).toBeNull();
+    expect(host.textContent ?? '').toBe('');
+  });
+
+  test('T2.9 blocked is eligible', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      rowStatus: 'awaiting',
+      hasPendingAsk: true,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-q', message: 'queued while ask' }]));
+    await renderDock({
+      readQueue: ctrl.read,
+      rowStatus: 'awaiting',
+      hasPendingAsk: true,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    const items = neverSentItems();
+    expect(items).toHaveLength(1);
+    expect(items[0]?.getAttribute('data-message-id')).toBe('id-q');
+  });
+
+  test('T2.10 observer eligibility follows history', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-fi', message: 'seen in finished-iter' }])
+    );
+    await renderDock({
+      readQueue: ctrl.read,
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentItems()[0]?.getAttribute('data-message-id')).toBe('id-fi');
+
+    // Always-detached / never-observed stays ineligible.
+    await renderDock({
+      runId: 'run-detached-only',
+      rowStatus: 'completed',
+      nodeExecutionKey: 'exec-new',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+    });
+    expect(neverSentList()).toBeNull();
+    expect(host.textContent ?? '').toBe('');
+
+    // Observer-then-detached retains ledger.
+    const ctrl2 = controllableRead();
+    const okSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return okReceipt(body.message_id, 'queued');
+    };
+    const detachSend: SendNodeGuidance = async () => {
+      throw new SteeringRequestError(422, 'not_steerable_here', 'No live steering session');
+    };
+    await renderDock({
+      runId: 'run-obs-det',
+      readQueue: ctrl2.read,
+      nodeExecutionKey: 'exec-od',
+      pollIntervalMs: 60_000,
+      send: okSend,
+    });
+    await settleSnapshot(ctrl2, okQueue([{ message_id: 'id-od', message: 'before detach' }]));
+    await renderDock({
+      runId: 'run-obs-det',
+      readQueue: ctrl2.read,
+      nodeExecutionKey: 'exec-od',
+      pollIntervalMs: 60_000,
+      send: detachSend,
+    });
+    await setDraft('trigger detach');
+    await clickQueue();
+    expect(host.textContent).toContain(DETACHED);
+    await renderDock({
+      runId: 'run-obs-det',
+      readQueue: ctrl2.read,
+      nodeExecutionKey: 'exec-od',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+      send: detachSend,
+    });
+    expect(neverSentItems().some(i => i.getAttribute('data-message-id') === 'id-od')).toBe(true);
+  });
+
+  test('T2.11 own withdraw stays withdrawn', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'keep' },
+        { message_id: 'id-b', message: 'drop' },
+      ])
+    );
+    await clickDelete(1);
+    expect(withdrawCalls.some(c => c.messageId === 'id-b')).toBe(true);
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    const ids = neverSentItems().map(i => i.getAttribute('data-message-id'));
+    expect(ids).toEqual(['id-a']);
+  });
+
+  test('T2.12 strict-mode/rerender is idempotent', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'once' }]));
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.textContent).toBe(NEVER_SENT_ALERT);
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+      nodeLabel: 'implement-renamed',
+    });
+    const alert2 = host.querySelector('[role="alert"]');
+    expect(alert2).toBe(alert);
+    expect(neverSentItems()).toHaveLength(1);
+    expect([...host.querySelectorAll('[role="alert"]')]).toHaveLength(1);
+  });
+
+  test('T2.13 focus exits removed controls safely', async () => {
+    const focused: string[] = [];
+    const focusLastRow = (): void => {
+      focused.push('last-row');
+    };
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      focusLastRow,
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'focus me out' }]));
+    await act(async () => {
+      field().focus();
+    });
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      focusLastRow,
+      pollIntervalMs: 60_000,
+    });
+    expect(focused).toContain('last-row');
+    const box = neverSentList();
+    expect(box).not.toBeNull();
+
+    focused.length = 0;
+    const ctrl2 = controllableRead();
+    await renderDock({
+      runId: 'run-go',
+      readQueue: ctrl2.read,
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      nodeExecutionKey: 'exec-go',
+      focusLastRow,
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl2, okQueue([{ message_id: 'id-g', message: 'from go' }]));
+    const go = [...host.querySelectorAll('button')].find(b =>
+      (b.textContent ?? '').includes('Go to iteration')
+    );
+    await act(async () => {
+      go?.focus();
+    });
+    await renderDock({
+      runId: 'run-go',
+      readQueue: ctrl2.read,
+      rowStatus: 'completed',
+      finishedIteration: FINISHED,
+      onSelectLiveRow: (): void => undefined,
+      nodeExecutionKey: 'exec-go',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      focusLastRow,
+      pollIntervalMs: 60_000,
+    });
+    expect(focused).toContain('last-row');
+  });
+
+  test('T2.14 new execution resets attempt state', async () => {
+    const storage = win.sessionStorage;
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      storage,
+      pollIntervalMs: 60_000,
+    });
+    await setDraft('keep draft');
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-old', message: 'old attempt' }]));
+    const pending = deferred<SendWorkflowNodeResponse>();
+    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return pending.promise;
+    };
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      storage,
+      pollIntervalMs: 60_000,
+      send: hangingSend,
+    });
+    await setDraft('retry seed');
+    await clickQueue();
+    const oldRetryId = calls[0]?.body.message_id ?? '';
+    expect(oldRetryId).toBeTruthy();
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      storage,
+      pollIntervalMs: 60_000,
+      send: hangingSend,
+    });
+    expect(neverSentList()).not.toBeNull();
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-2',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      storage,
+      pollIntervalMs: 60_000,
+    });
+
+    const ids = neverSentItems()
+      .map(i => i.getAttribute('data-message-id'))
+      .filter(id => id !== null);
+    expect(ids).not.toContain('id-old');
+    expect(ids).not.toContain(oldRetryId);
+
+    const freshSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return okReceipt(body.message_id, 'queued');
+    };
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-2',
+      nodeTerminal: false,
+      storage,
+      pollIntervalMs: 60_000,
+      send: freshSend,
+    });
+    // Draft text survives the attempt reset.
+    expect(field().value).toBe('retry seed');
+    const key = 'archon:steering-draft:run-1:grp.body';
+    const raw = storage.getItem(key);
+    if (raw !== null) {
+      const parsed = JSON.parse(raw) as { draft?: string; pendingRetry?: unknown };
+      expect(parsed.pendingRetry).toBeNull();
+      expect(parsed.draft).toBe('retry seed');
+    }
+    await setDraft('fresh submit');
+    const before = calls.length;
+    await clickQueue();
+    expect(calls.length).toBe(before + 1);
+    expect(calls[calls.length - 1]?.body.message_id).not.toBe(oldRetryId);
+  });
+
+  test('T2.15 scope and occurrence changes are distinct', async () => {
+    const storage = win.sessionStorage;
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      storage,
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'ledger keep' }]));
+    await setDraft('draft-a');
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      storage,
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentItems()[0]?.getAttribute('data-message-id')).toBe('id-a');
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      storage,
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentItems()[0]?.getAttribute('data-message-id')).toBe('id-a');
+
+    storage.setItem(
+      'archon:steering-draft:run-2:other.node',
+      JSON.stringify({ draft: 'other draft', pendingRetry: null })
+    );
+    await renderDock({
+      runId: 'run-2',
+      nodeId: 'other.node',
+      nodeExecutionKey: 'exec-x',
+      storage,
+      pollIntervalMs: 60_000,
+    });
+    expect(field().value).toBe('other draft');
+    expect(host.textContent ?? '').not.toContain('ledger keep');
+    expect(neverSentList()).toBeNull();
+  });
+
+  test('T2.16 finished box stays stable', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 1,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'first' },
+        { message_id: 'id-b', message: 'second' },
+      ])
+    );
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(['id-a']),
+      pollIntervalMs: 1,
+    });
+    const before = neverSentItems().map(i => ({
+      id: i.getAttribute('data-message-id'),
+      text: i.textContent,
+    }));
+    expect(before).toEqual([{ id: 'id-b', text: 'second' }]);
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(['id-a', 'id-extra']),
+      pollIntervalMs: 1,
+    });
+    const after = neverSentItems().map(i => ({
+      id: i.getAttribute('data-message-id'),
+      text: i.textContent,
+    }));
+    expect(after).toEqual(before);
+  });
+
+  test('T2.17 terminal waits for own withdraw', async () => {
+    const ctrl = controllableRead();
+    const withdrawPending = deferred<WithdrawWorkflowNodeResponse>();
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return withdrawPending.promise;
+    };
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'A' },
+        { message_id: 'id-b', message: 'B' },
+      ])
+    );
+    await clickDelete(0);
+    expect(withdrawCalls.some(c => c.messageId === 'id-a')).toBe(true);
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentList()).toBeNull();
+
+    await act(async () => {
+      withdrawPending.resolve({ success: true, message_id: 'id-a' });
+    });
+    await flush();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentItems().map(i => i.getAttribute('data-message-id'))).toEqual(['id-b']);
+  });
+
+  test('T2.17b withdraw failure restores A after transient clears', async () => {
+    const ctrl = controllableRead();
+    const withdrawPending = deferred<WithdrawWorkflowNodeResponse>();
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return withdrawPending.promise;
+    };
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'A' }]));
+    await clickDelete(0);
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentList()).toBeNull();
+    await act(async () => {
+      withdrawPending.reject(new SteeringRequestError(409, 'node_finished', 'still there'));
+    });
+    await flush();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentItems().map(i => i.getAttribute('data-message-id'))).toEqual(['id-a']);
+  });
+
+  test('T2.18 prior-attempt async work is inert', async () => {
+    const storage = win.sessionStorage;
+    const sendPending = deferred<SendWorkflowNodeResponse>();
+    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
+      calls.push({ runId, nodeId, body });
+      return sendPending.promise;
+    };
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-a',
+      storage,
+      pollIntervalMs: 60_000,
+      send: hangingSend,
+    });
+    await setDraft('attempt-a');
+    await clickQueue();
+    const oldId = calls[0]?.body.message_id ?? '';
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-b',
+      storage,
+      pollIntervalMs: 60_000,
+    });
+    expect(field().value).toBe('attempt-a');
+    const key = 'archon:steering-draft:run-1:grp.body';
+    expect(JSON.parse(storage.getItem(key) ?? '{}').pendingRetry).toBeNull();
+
+    await act(async () => {
+      sendPending.resolve(okReceipt(oldId, 'queued'));
+    });
+    await flush();
+    expect(host.textContent ?? '').not.toContain(oldId);
+    const queued = host.querySelector('ul[aria-label^="Queued messages"]');
+    expect(queued).toBeNull();
+    expect(JSON.parse(storage.getItem(key) ?? '{}').pendingRetry).toBeNull();
+    expect(field().value).toBe('attempt-a');
   });
 });

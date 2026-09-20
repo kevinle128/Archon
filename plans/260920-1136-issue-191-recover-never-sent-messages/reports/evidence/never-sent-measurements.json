@@ -1,0 +1,114 @@
+{
+  "e4-8-console": {
+    "narrow": {
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.7px",
+        "elision": [
+          {
+            "textOverflow": "ellipsis",
+            "whiteSpace": "nowrap",
+            "overflow": "hidden",
+            "scrollWider": true
+          }
+        ],
+        "focusableControls": 0,
+        "wrapHeight": 33.265625,
+        "vh33": 297
+      },
+      "headerContrast": {
+        "ratio": 7.896852661998161,
+        "color": "oklch(0.745 0.014 265)",
+        "bg": "oklch(0.205 0.009 265)"
+      },
+      "alertContrast": {
+        "ratio": 7.896852661998161,
+        "color": "oklch(0.745 0.014 265)",
+        "bg": "oklch(0.205 0.009 265)"
+      },
+      "itemContrast": {
+        "ratio": 7.896852661998161,
+        "color": "oklch(0.745 0.014 265)",
+        "bg": "oklch(0.205 0.009 265)"
+      },
+      "letterSpacingPx": 0.7
+    },
+    "wide": {
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.7px",
+        "elision": [
+          {
+            "textOverflow": "ellipsis",
+            "whiteSpace": "nowrap",
+            "overflow": "hidden",
+            "scrollWider": false
+          }
+        ],
+        "focusableControls": 0,
+        "wrapHeight": 33.265625,
+        "vh33": 297
+      },
+      "headerContrast": {
+        "ratio": 7.896852661998161,
+        "color": "oklch(0.745 0.014 265)",
+        "bg": "oklch(0.205 0.009 265)"
+      },
+      "alertContrast": {
+        "ratio": 7.896852661998161,
+        "color": "oklch(0.745 0.014 265)",
+        "bg": "oklch(0.205 0.009 265)"
+      },
+      "itemContrast": {
+        "ratio": 7.896852661998161,
+        "color": "oklch(0.745 0.014 265)",
+        "bg": "oklch(0.205 0.009 265)"
+      },
+      "letterSpacingPx": 0.7
+    }
+  },
+  "e4-8-legacy": {
+    "narrow": {
+      "geometry": {
+        "hasMaxH33vh": true,
+        "maxHeight": "297px",
+        "overflowY": "auto",
+        "textTransform": "uppercase",
+        "letterSpacing": "0.7px",
+        "elision": [
+          {
+            "textOverflow": "ellipsis",
+            "whiteSpace": "nowrap",
+            "overflow": "hidden",
+            "scrollWider": true
+          }
+        ],
+        "focusableControls": 0,
+        "wrapHeight": 33.265625,
+        "vh33": 297
+      },
+      "headerContrast": {
+        "ratio": 5.329994439962213,
+        "color": "oklch(0.65 0.01 260)",
+        "bg": "oklch(0.22 0.01 260)"
+      },
+      "alertContrast": {
+        "ratio": 5.329994439962213,
+        "color": "oklch(0.65 0.01 260)",
+        "bg": "oklch(0.22 0.01 260)"
+      },
+      "itemContrast": {
+        "ratio": 5.329994439962213,
+        "color": "oklch(0.65 0.01 260)",
+        "bg": "oklch(0.22 0.01 260)"
+      },
+      "letterSpacingPx": 0.7
+    }
+  }
+}

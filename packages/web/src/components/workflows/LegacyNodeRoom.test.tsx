@@ -733,6 +733,11 @@ describe('LegacyNodeRoom dispatcher', () => {
     definitionPending?: boolean;
     events?: readonly WorkflowEventResponse[];
     runStatus?: WorkflowRunStatus;
+    nodeTerminal?: boolean;
+    nodeExecutionKey?: string | null;
+    writtenOperatorMessageIds?: ReadonlySet<string> | null;
+    scopeKey?: string;
+    finishedIteration?: { liveRowId: string; liveIteration: number } | null;
   }): void {
     root.render(
       createElement(
@@ -756,6 +761,15 @@ describe('LegacyNodeRoom dispatcher', () => {
           actionStates: {},
           onSubmitAsk: async (): Promise<void> => undefined,
           nodeState: undefined,
+          nodeTerminal: args.nodeTerminal,
+          nodeExecutionKey: args.nodeExecutionKey,
+          writtenOperatorMessageIds: args.writtenOperatorMessageIds,
+          scopeKey: args.scopeKey,
+          finishedIteration: args.finishedIteration,
+          onSelectRow:
+            args.finishedIteration === undefined || args.finishedIteration === null
+              ? undefined
+              : (): void => undefined,
         })
       )
     );
@@ -1191,6 +1205,231 @@ describe('LegacyNodeRoom dispatcher', () => {
       expect(markup).not.toContain('aria-label="Todo"');
     }
     expect(requests).toHaveLength(0);
+  });
+
+  function findPropsWithKey(start: Element, key: string): Record<string, unknown> | null {
+    const fiberKey = Object.keys(start).find(candidate => candidate.startsWith('__reactFiber$'));
+    if (fiberKey === undefined) return null;
+    interface Fiber {
+      memoizedProps?: unknown;
+      child?: Fiber | null;
+      sibling?: Fiber | null;
+      return?: Fiber | null;
+    }
+    const startFiber = (start as unknown as Record<string, Fiber>)[fiberKey];
+    const stack: Fiber[] = [startFiber];
+    const seen = new Set<Fiber>();
+    while (stack.length > 0) {
+      const fiber = stack.pop();
+      if (fiber === undefined || seen.has(fiber)) continue;
+      seen.add(fiber);
+      const props = fiber.memoizedProps;
+      if (
+        props !== null &&
+        typeof props === 'object' &&
+        !Array.isArray(props) &&
+        key in (props as Record<string, unknown>)
+      ) {
+        return props as Record<string, unknown>;
+      }
+      if (fiber.child) stack.push(fiber.child);
+      if (fiber.sibling) stack.push(fiber.sibling);
+    }
+    let up: Fiber | null | undefined = startFiber.return;
+    while (up !== null && up !== undefined) {
+      const props = up.memoizedProps;
+      if (
+        props !== null &&
+        typeof props === 'object' &&
+        !Array.isArray(props) &&
+        key in (props as Record<string, unknown>)
+      ) {
+        return props as Record<string, unknown>;
+      }
+      up = up.return;
+    }
+    return null;
+  }
+
+  test('T3.15 pass-through pins nodeTerminal and nodeExecutionKey on the dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          runStatus: 'running',
+          nodeTerminal: true,
+          nodeExecutionKey: 'occ-command-1',
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const field = host.querySelector('textarea');
+      // Terminal + no written ids yet keeps composer until reconcile; still pin dock props.
+      const start = field ?? host;
+      const props = findPropsWithKey(start, 'nodeTerminal');
+      expect(props).not.toBeNull();
+      expect(props?.nodeTerminal).toBe(true);
+      expect(props?.nodeExecutionKey).toBe('occ-command-1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('T3.17 occurrence switch keeps observed receipt under stable run/node dock key', async () => {
+    let queued: { message_id: string; message: string }[] = [
+      { message_id: 'id-a', message: 'alpha receipt' },
+    ];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return new Response(JSON.stringify({ success: true, queued }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'GET' && pathname.includes('/messages')) {
+        return new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      const occ1Row = row({
+        id: 'occ-1',
+        nodeId: 'command',
+        label: 'Command ×1',
+        status: 'completed',
+        selection: {
+          kind: 'occurrence',
+          occurrenceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        },
+      });
+      const occ2Row = row({
+        id: 'occ-2',
+        nodeId: 'command',
+        label: 'Command ×2',
+        status: 'running',
+        selection: {
+          kind: 'occurrence',
+          occurrenceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        },
+      });
+
+      // Observe on the live occurrence first so the composer dock is mounted.
+      await act(async () => {
+        renderRoom({
+          row: occ2Row,
+          loadMessages,
+          definitionNodes: [{ id: 'command', prompt: 'work' }],
+          runStatus: 'running',
+          nodeTerminal: false,
+          nodeExecutionKey: 'logical-1',
+          scopeKey: 'run:run-1|node:command|sel:occurrence:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        });
+      });
+
+      await act(async () => {
+        for (let i = 0; i < 40; i += 1) {
+          await Promise.resolve();
+          if ((host.textContent ?? '').toLowerCase().includes('alpha receipt')) break;
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+      expect((host.textContent ?? '').toLowerCase()).toContain('alpha receipt');
+
+      // Switch to the finished occurrence; empty later snapshot must not erase A.
+      queued = [];
+      await act(async () => {
+        renderRoom({
+          row: occ1Row,
+          loadMessages,
+          definitionNodes: [{ id: 'command', prompt: 'work' }],
+          runStatus: 'running',
+          nodeTerminal: false,
+          nodeExecutionKey: 'logical-1',
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          scopeKey: 'run:run-1|node:command|sel:occurrence:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        });
+      });
+      await act(async () => {
+        for (let i = 0; i < 20; i += 1) {
+          await Promise.resolve();
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+
+      await act(async () => {
+        renderRoom({
+          row: occ1Row,
+          loadMessages,
+          definitionNodes: [{ id: 'command', prompt: 'work' }],
+          runStatus: 'running',
+          nodeTerminal: true,
+          nodeExecutionKey: 'logical-1',
+          finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+          scopeKey: 'run:run-1|node:command|sel:occurrence:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        });
+      });
+      await act(async () => {
+        for (let i = 0; i < 40; i += 1) {
+          await Promise.resolve();
+          if ((host.textContent ?? '').includes('node finished · none of this was sent')) break;
+          const { promise, resolve } = Promise.withResolvers<undefined>();
+          setTimeout(resolve, 25);
+          await promise;
+        }
+      });
+
+      const list = host.querySelector('[aria-label="Never sent, 1"]');
+      expect(list).not.toBeNull();
+      expect(list?.textContent ?? '').toContain('alpha receipt');
+      expect(host.textContent ?? '').toContain('node finished · none of this was sent');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

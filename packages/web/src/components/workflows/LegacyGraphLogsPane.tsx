@@ -23,6 +23,8 @@ import {
 import { readApprovalContext, type WebApprovalContext } from '@/lib/approval-context';
 import {
   chooseExecutionForNode,
+  hasTerminalNodeEvidence,
+  latestNodeExecutionKey,
   resolveFinishedIterationView,
   roomOpenerId,
   type ExecutionHeaderModel,
@@ -278,6 +280,10 @@ export function LegacyGraphLogsPane({
           nodeStatus: selectedNodeState?.status ?? selectedRow.status,
           live: isLiveRunStatus(runStatus),
         });
+  const nodeTerminal =
+    selectedNodeId === null ? false : hasTerminalNodeEvidence(nodeExecutions, selectedNodeId);
+  const nodeExecutionKey =
+    selectedNodeId === null ? null : latestNodeExecutionKey(events, selectedNodeId);
 
   const parentMessagesQuery = useQuery({
     queryKey: ['runChatMessages', parentPlatformId],
@@ -527,6 +533,8 @@ export function LegacyGraphLogsPane({
         headerOptions={headerOptions}
         onSelectRow={onSelectExecution}
         finishedIteration={finishedIteration}
+        nodeTerminal={nodeTerminal}
+        nodeExecutionKey={nodeExecutionKey}
         onClose={onCloseRoom}
         closeLabel={mode === 'single' ? 'Back' : 'Close'}
         scopeKey={scopeKey}

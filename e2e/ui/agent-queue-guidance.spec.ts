@@ -491,6 +491,11 @@ for (const surface of ['console', 'legacy'] as const) {
         timeout: T.medium,
       });
       await expect(freshRoom.getByText('delivered')).toHaveCount(0);
+
+      // E4.6 — natural delivery must never show the never-sent finished box.
+      await expect(freshRoom.getByRole('list', { name: /^Never sent/ })).toHaveCount(0);
+      await expect(freshRoom.getByText('node finished · none of this was sent')).toHaveCount(0);
+      await expect(freshRoom.getByText(/^never sent ·/i)).toHaveCount(0);
       await expect(guidanceField(freshRoom)).toHaveCount(0);
     });
   });

@@ -2718,4 +2718,287 @@ describe('LegacyGraphLogsPane', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  function findPropsWithKey(start: Element, key: string): Record<string, unknown> | null {
+    const fiberKey = Object.keys(start).find(candidate => candidate.startsWith('__reactFiber$'));
+    if (fiberKey === undefined) return null;
+    interface Fiber {
+      memoizedProps?: unknown;
+      child?: Fiber | null;
+      sibling?: Fiber | null;
+      return?: Fiber | null;
+    }
+    const startFiber = (start as unknown as Record<string, Fiber>)[fiberKey];
+    const stack: Fiber[] = [startFiber];
+    const seen = new Set<Fiber>();
+    while (stack.length > 0) {
+      const fiber = stack.pop();
+      if (fiber === undefined || seen.has(fiber)) continue;
+      seen.add(fiber);
+      const props = fiber.memoizedProps;
+      if (
+        props !== null &&
+        typeof props === 'object' &&
+        !Array.isArray(props) &&
+        key in (props as Record<string, unknown>)
+      ) {
+        return props as Record<string, unknown>;
+      }
+      if (fiber.child) stack.push(fiber.child);
+      if (fiber.sibling) stack.push(fiber.sibling);
+    }
+    let up: Fiber | null | undefined = startFiber.return;
+    while (up !== null && up !== undefined) {
+      const props = up.memoizedProps;
+      if (
+        props !== null &&
+        typeof props === 'object' &&
+        !Array.isArray(props) &&
+        key in (props as Record<string, unknown>)
+      ) {
+        return props as Record<string, unknown>;
+      }
+      up = up.return;
+    }
+    return null;
+  }
+
+  test('T3.15 Legacy wrapper passes exact node terminal inputs; siblings ignored', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const events: WorkflowEventResponse[] = [
+        {
+          id: 'start-a',
+          workflow_run_id: 'run-1',
+          event_type: 'node_started',
+          step_index: null,
+          step_name: 'alpha',
+          data: { occurrence_id: 'occ-a' },
+          created_at: CREATED_AT,
+          event_order: 1,
+        },
+        {
+          id: 'done-a',
+          workflow_run_id: 'run-1',
+          event_type: 'node_completed',
+          step_index: null,
+          step_name: 'alpha',
+          data: { occurrence_id: 'occ-a' },
+          created_at: CREATED_AT,
+          event_order: 2,
+        },
+        {
+          id: 'start-b',
+          workflow_run_id: 'run-1',
+          event_type: 'node_started',
+          step_index: null,
+          step_name: 'beta',
+          data: { occurrence_id: 'occ-b' },
+          created_at: CREATED_AT,
+          event_order: 3,
+        },
+      ];
+
+      await act(async () => {
+        renderLogs({
+          runId: 'run-1',
+          nodeStates: [
+            { nodeId: 'alpha', name: 'Alpha', status: 'completed', retryEpoch: 0 },
+            { nodeId: 'beta', name: 'Beta', status: 'running', retryEpoch: 0 },
+          ],
+          events,
+          definitionNodes: [
+            { id: 'alpha', prompt: 'A' },
+            { id: 'beta', prompt: 'B' },
+          ],
+          definitionPending: false,
+          runStatus: 'running',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          nodeExecutions: [
+            { node_id: 'alpha', status: 'completed', occurrence_id: 'occ-a' },
+            { node_id: 'beta', status: 'running', occurrence_id: 'occ-b' },
+          ],
+          initialSelectedNodeId: 'alpha',
+          initialSelectedLogRowId: 'start-a',
+        });
+      });
+      await flush();
+
+      const room = host.querySelector('[data-testid="legacy-node-room"]');
+      expect(room).not.toBeNull();
+      if (room === null) throw new Error('missing room');
+      const props = findPropsWithKey(room, 'nodeTerminal');
+      expect(props).not.toBeNull();
+      expect(props?.nodeTerminal).toBe(true);
+      expect(props?.nodeExecutionKey).toBe('occ-a');
+
+      // Sibling beta is running — click selects it without remounting the harness.
+      await clickRow('Beta');
+      await flush();
+      const betaRoom = host.querySelector('[data-testid="legacy-node-room"]');
+      expect(betaRoom).not.toBeNull();
+      if (betaRoom === null) throw new Error('missing beta room');
+      const betaProps = findPropsWithKey(betaRoom, 'nodeTerminal');
+      expect(betaProps?.nodeTerminal).toBe(false);
+      expect(betaProps?.nodeExecutionKey).toBe('occ-b');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('T3.17 completed occurrence selection stays nonterminal with stable execution key', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const liveId =
+        'exec:loop:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:22222222-2222-4222-8222-222222222222:1';
+      const events: WorkflowEventResponse[] = [
+        {
+          id: 'start-1',
+          workflow_run_id: 'run-loop',
+          event_type: 'node_started',
+          step_index: null,
+          step_name: 'loop',
+          data: { occurrence_id: 'logical-key-1' },
+          created_at: CREATED_AT,
+          event_order: 1,
+        },
+        {
+          id: 'start-2',
+          workflow_run_id: 'run-loop',
+          event_type: 'node_started',
+          step_index: null,
+          step_name: 'loop',
+          data: { occurrence_id: 'logical-key-1' },
+          created_at: CREATED_AT,
+          event_order: 2,
+        },
+      ];
+
+      await act(async () => {
+        renderLogs({
+          runId: 'run-loop',
+          nodeStates: [{ nodeId: 'loop', name: 'Loop', status: 'running', retryEpoch: 0 }],
+          events,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          definitionPending: false,
+          runStatus: 'running',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          nodeExecutions: [
+            {
+              node_id: 'loop',
+              status: 'completed',
+              occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              attempt_id: '11111111-1111-4111-8111-111111111111',
+              loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+            },
+            {
+              node_id: 'loop',
+              status: 'running',
+              occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              attempt_id: '22222222-2222-4222-8222-222222222222',
+              loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+            },
+          ],
+          initialSelectedNodeId: 'loop',
+          initialSelectedLogRowId: finishedId,
+        });
+      });
+      await flush();
+
+      const room = host.querySelector('[data-testid="legacy-node-room"]');
+      expect(room).not.toBeNull();
+      if (room === null) throw new Error('missing room');
+      const finishedProps = findPropsWithKey(room, 'nodeTerminal');
+      expect(finishedProps?.nodeTerminal).toBe(false);
+      expect(finishedProps?.nodeExecutionKey).toBe('logical-key-1');
+
+      await act(async () => {
+        renderLogs({
+          runId: 'run-loop',
+          nodeStates: [{ nodeId: 'loop', name: 'Loop', status: 'running', retryEpoch: 0 }],
+          events,
+          definitionNodes: [{ id: 'loop', prompt: 'iterate' }],
+          definitionPending: false,
+          runStatus: 'running',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          nodeExecutions: [
+            {
+              node_id: 'loop',
+              status: 'completed',
+              occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              attempt_id: '11111111-1111-4111-8111-111111111111',
+              loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+            },
+            {
+              node_id: 'loop',
+              status: 'running',
+              occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+              attempt_id: '22222222-2222-4222-8222-222222222222',
+              loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+            },
+          ],
+          initialSelectedNodeId: 'loop',
+          initialSelectedLogRowId: liveId,
+        });
+      });
+      await flush();
+
+      const liveRoom = host.querySelector('[data-testid="legacy-node-room"]');
+      expect(liveRoom).not.toBeNull();
+      if (liveRoom === null) throw new Error('missing live room');
+      const liveProps = findPropsWithKey(liveRoom, 'nodeTerminal');
+      expect(liveProps?.nodeTerminal).toBe(false);
+      expect(liveProps?.nodeExecutionKey).toBe('logical-key-1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

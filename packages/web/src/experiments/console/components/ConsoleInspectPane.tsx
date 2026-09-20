@@ -6,6 +6,8 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 
 import {
   buildExecutionHeader,
+  hasTerminalNodeEvidence,
+  latestNodeExecutionKey,
   resolveFinishedIterationView,
   type ExecutionHeaderModel,
   type ExecutionRow,
@@ -23,6 +25,7 @@ import {
 } from '../primitives/console-resizable';
 import type {
   AskAnswerBody,
+  NodeExecution,
   PendingInteraction,
   WorkflowEvent,
   WorkflowNodeMessage,
@@ -61,6 +64,7 @@ export interface ConsoleInspectPaneProps {
   events: RunEvent[];
   rawEvents: WorkflowEvent[];
   nodeStates: WorkflowNodeState[];
+  nodeExecutions?: readonly NodeExecution[];
   approval: unknown;
   logEntries: ConsoleLogEntry[];
   usage: UsageReport | null;
@@ -175,6 +179,7 @@ export function ConsoleInspectPane({
   events,
   rawEvents,
   nodeStates,
+  nodeExecutions,
   approval,
   logEntries,
   usage,
@@ -242,6 +247,10 @@ export function ConsoleInspectPane({
           nodeStatus: selectedNodeState?.status ?? selectedRow.status,
           live: isInspectRunLive(run.status),
         });
+  const nodeTerminal =
+    selectedNodeId === null ? false : hasTerminalNodeEvidence(nodeExecutions, selectedNodeId);
+  const nodeExecutionKey =
+    selectedNodeId === null ? null : latestNodeExecutionKey(rawEvents, selectedNodeId);
   const headerModel: ExecutionHeaderModel | null =
     selectedRow === null
       ? null
@@ -356,6 +365,8 @@ export function ConsoleInspectPane({
             onSelectNode(selectedNodeId, rowId);
           }}
           finishedIteration={finishedIteration}
+          nodeTerminal={nodeTerminal}
+          nodeExecutionKey={nodeExecutionKey}
           showToolCalls={showToolCalls}
           showSystem={showSystem}
           closeLabel={mode === 'single' ? 'Back' : 'Close'}
