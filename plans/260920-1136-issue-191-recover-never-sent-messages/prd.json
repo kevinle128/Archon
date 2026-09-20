@@ -85,7 +85,7 @@
       "dependsOn": ["US-003"],
       "priority": 4,
       "passes": true,
-      "notes": "Implemented in iteration 4. Files: packages/web/src/lib/execution-room-model.ts/.test.ts, WorkflowExecution.tsx/.test.tsx, RunDetailPage.tsx/.test.tsx. T3.5–T3.14 green; web type-check and focused eslint clean."
+      "notes": "Implemented in iteration 4. Files: packages/web/src/lib/execution-room-model.ts/.test.ts, WorkflowExecution.tsx/.test.tsx, RunDetailPage.tsx/.test.tsx. T3.5\u2013T3.14 green; web type-check and focused eslint clean."
     },
     {
       "id": "US-005",
@@ -102,9 +102,8 @@
       ],
       "technicalNotes": "Implement phase-03 section D exactly (steps 6\u20139). Files: packages/web/src/components/workflows/LegacyGraphLogsPane.tsx, LegacyNodeRoom.tsx, NodeTranscriptPane.tsx (rekey only \u2014 drain is US-006), packages/web/src/experiments/console/routes/RunDetailPage.tsx, components/ConsoleInspectPane.tsx, ConsoleNodeRoom.tsx (rekey only). Uses helpers from US-004. The nodeTerminal signal stays false for an already-completed selected iteration while a later occurrence runs; for a parked Ask the US-003 server projection supplies the failed execution.",
       "dependsOn": ["US-004"],
-      "priority": 5,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: LegacyGraphLogsPane.tsx/.test.tsx, LegacyNodeRoom.tsx/.test.tsx, NodeTranscriptPane.tsx, RunDetailPage.tsx/.test.tsx, ConsoleInspectPane.tsx/.test.tsx, ConsoleNodeRoom.tsx/.test.tsx. T3.15\u2013T3.17 green; console-isolation, web type-check, focused eslint clean."
     },
     {
       "id": "US-006",
@@ -125,8 +124,8 @@
       "technicalNotes": "Implement phase-03 section E exactly (steps 10\u201313). Files: packages/web/src/components/workflows/NodeTranscriptPane.tsx (drainNodeMessages already imported ~line 20, used ~239 for the displayed transcript \u2014 the reconciliation drain is a SEPARATE call/state) and packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx. Build test rows with the real message shape: kind:'text', metadata.origin:'operator', metadata.message_id; make queue snapshots configurable so tests exercise the real dock's observed ledger. Full Phase 3 verification list is in the phase file (~line 276) \u2014 run it all for this closing story.",
       "dependsOn": ["US-005"],
       "priority": 6,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 6. Files: NodeTranscriptPane.tsx/.test.tsx, ConsoleNodeRoom.tsx/.test.tsx, LegacyNodeRoom.test.tsx (T3.17 drain-owned). T3.18\u2013T3.26 green; web type-check, focused eslint, @archon/web test green."
     },
     {
       "id": "US-007",

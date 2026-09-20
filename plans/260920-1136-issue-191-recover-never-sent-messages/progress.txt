@@ -1,5 +1,10 @@
 ## Codebase Patterns
 
+### Node-wide reconcile drain (separate from transcript pageState)
+- **Where**: `NodeTranscriptPane.tsx` / `ConsoleNodeRoom.tsx` reconcile effect
+- **Pattern**: When `nodeTerminal`, `drainNodeMessages({ selection: { kind:'node', rowId: executionKey } })` with no-op `onState`; publish `collectWrittenOperatorMessageIds` only if `complete && error===null`; retry 1s on incomplete/error; abort+clear written ids on run/node/key change or terminal false. Never feed into `pageState`.
+- **Example**: Occurrence-selected finished row still loads display with occurrenceId; reconcile calls omit occurrenceId/attemptId.
+
 ### Raw-history terminal predicate + catch-up interval
 - **Where**: `packages/web/src/lib/execution-room-model.ts` (`isTerminalNodeExecutionStatus`, `resolveRunDetailRefetchIntervalMs`)
 - **Pattern**: Only `completed`/`failed`/`skipped` are terminal executions. Live runs always poll 3s; terminal runs poll 3s only while `hasUnsettledNodeExecutions` is true.
@@ -148,5 +153,60 @@
 **Learnings**:
 - React Query refetchInterval is focus-gated unless `refetchIntervalInBackground: true`; happy-dom + fake timers also fight RQ's timeoutManager — prefer pure interval helper tests plus setInterval spies for Console's direct timers.
 - Console catch-up must key off `hasUnsettledNodeExecutions(detail?.nodeExecutions)` boolean so settlement clears the effect without array-identity churn alone.
+
+---
+
+## 2026-09-20T08:20:00Z — US-005: Node-terminal derivation, pass-through, dock rekey
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` — derive nodeTerminal/nodeExecutionKey from raw history; pass to LegacyNodeRoom
+- `packages/web/src/components/workflows/LegacyNodeRoom.tsx` — pass-through terminal/key/written ids to NodeTranscriptPane
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — dock rekey to run/node; pass terminal props
+- `packages/web/src/experiments/console/routes/RunDetailPage.tsx` — pass raw nodeExecutions into InspectPane
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` — derive and pass terminal/key
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — dock rekey + pass-through
+- matching `*.test.tsx` — T3.15–T3.17 prop pins and occurrence ledger survival
+
+**Acceptance criteria verified**:
+- [x] T3.15–T3.17 written first and passing
+- [x] Legacy derives terminal/key from raw nodeExecutions/events; siblings ignored
+- [x] Console chain RunDetailPage → InspectPane → room → dock; nodeStates never prove terminal
+- [x] Defaults false/null when executions missing
+- [x] Dock React key is stable run/node; todo/pageState stay occurrence-scoped
+- [x] Occurrence switch + empty queue keeps observed receipt under same execution key
+- [x] bun test six targets + console-isolation + web type-check + focused eslint clean
+
+**Learnings**:
+- PaneHarness selection is useState-initialized; runId change clears selection via effect — clickRow for mid-test selection changes.
+- invalidate() must run after stubbing fetch so revalidation hits the new stub.
+- finished mode needs writtenOperatorMessageIds non-null; room pass-through of that set enables T3.17 without US-006 drain.
+
+---
+
+## 2026-09-20T08:18:07Z — US-006: Node-wide reconciliation drain in both panes
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — separate node-wide reconcile drain; publish written ids only on complete+no error; 1s retry; abort/clear on run/node/key/terminal drop
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — T3.18–T3.26
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — mirror drain path
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — T3.18–T3.26; T3.17 uses drain-owned empty complete page
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — T3.17 no longer injects writtenOperatorMessageIds
+
+**Acceptance criteria verified**:
+- [x] T3.18–T3.26 written first and passing in both pane suites
+- [x] nodeTerminal:false never starts/publishes reconciliation
+- [x] terminal drain is kind:'node' without occurrenceId/attemptId; displayed occurrence rows unchanged
+- [x] complete absence restores; operator row filters; assistant/tool/malformed ids ignored
+- [x] error/incomplete retries at 1s; reset aborts stale work; key change starts fresh; finished-iteration observer recovered
+- [x] drain state separate from pageState; dock gets terminal/key/written set
+- [x] focused tests + console-isolation + web suite + type-check + eslint clean
+
+**Learnings**:
+- Shared loadMessages serves both drains; distinguish node-wide vs occurrence by options.occurrenceId.
+- complete empty pages need highWatermark/nextCursor (compatibility empty pages error).
+- After key change while terminal, draft-only never-sent can reappear via reconcile — T2.14 pattern: assert old receipt gone, then terminal false restores draft field.
+- External writtenOperatorMessageIds pane prop is ignored; drain owns the set passed to docks.
 
 ---
