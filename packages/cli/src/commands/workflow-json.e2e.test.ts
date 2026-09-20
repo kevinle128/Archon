@@ -1514,7 +1514,15 @@ describe('workflow resume/retry/cancel --json CLI dispatch E2E — real subproce
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     expect(logContent).toContain("Retry target node 'missing-target'");
-    expect(queryRunStatus(runId)).toBe('failed');
+    // The worker prints the invalid-node message, then still holds the SQLite
+    // write lock while it rolls back the claim. queryRunStatus returns null on
+    // SQLITE_BUSY, so poll the durable status the same way as 3.3D-CLI-044/045.
+    let status = queryRunStatus(runId);
+    for (let i = 0; i < 80 && status !== 'failed'; i++) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      status = queryRunStatus(runId);
+    }
+    expect(status).toBe('failed');
   });
 
   // 3.3D-CLI-025 [P0] R1-F23 — resume success envelope for a paused run
