@@ -1,0 +1,110 @@
+{
+  "feature": "Interrupt and redirect a running OMP agent (Issue #185 / Story 2.5)",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Baseline + OMP interrupt spike harness and raw characterization",
+      "description": "As an Archon maintainer, I want a restored dependency baseline and a sanitized real-binary OMP spike harness that characterizes how the installed OMP CLI responds to SIGTERM mid-turn, so that the provider seam can be designed against observed behavior instead of guesses.",
+      "acceptanceCriteria": [
+        "`bun install --frozen-lockfile` run at repo root; focused baseline green: `cd packages/providers && bun test src/community/omp/event-parser.test.ts && bun test src/community/omp/provider.test.ts && bun test src/community/omp/session-usage.test.ts && bun test src/registry.test.ts && bun run type-check`. The prior `@archon/paths` resolution failure is treated as environment, not product evidence.",
+        "`packages/providers/src/community/omp/interrupt-resume-spike.ts` exists (not exported from package index) and `packages/providers/package.json` has `\"spike:interrupt:omp\": \"bun src/community/omp/interrupt-resume-spike.ts\"`, mirroring the Claude spike at `src/claude/interrupt-resume-spike.ts` + package.json:39.",
+        "Spike uses `resolveOmpBinaryPath`, a unique `mkdtemp` git repo, the operator's existing OMP login; never mutates a real repo, never auto-retries model calls, tracks every owned PID, reaps in `finally`, never uses broad `pkill` patterns.",
+        "Two independent cases implemented: (1) interrupt after first assistant text delta; (2) start a bounded shell tool that writes its own PID to a file with a unique marker, interrupt after `tool_execution_start` while active.",
+        "Raw characterization leg records per case: exact `omp --version`, OS/arch, JSONL event-type order (whether `session` is first), session-header latency, which stdout event should trigger the signal, SIGTERM-to-child-exit time, whether SIGKILL fired, event types seen after SIGTERM (tool end, `message_end`, `agent_end`, usage), and whether any owned descendant survives.",
+        "Output contains only sanitized facts — no prompts, generated text, credentials, raw session ids, or paths outside the disposable repo (hashed/redacted session correlation only).",
+        "Spike file also scaffolds the post-implementation conformance leg (OmpProvider instantiated with a spike-only spawner that tees stdout — one branch to provider, one recording event types/timing) so signal-to-full-provider-return is measurable after US-002; it may be inert until the provider seam exists.",
+        "Raw characterization findings recorded in a sanitized interim note (e.g. `plans/reports/omp-interrupt-resume-spike.md` draft section or spike stdout capture) naming the observed trigger event per case.",
+        "No production provider/parser/executor files modified; `OMP_CAPABILITIES.interrupt` remains `false`."
+      ],
+      "technicalNotes": "Phase 1 first half. Spike conventions: `packages/providers/src/claude/interrupt-resume-spike.ts`; script precedent `packages/providers/package.json:39`. Binary resolution: `packages/providers/src/community/omp/binary-resolver.ts`. Installed omp reports 18.1.21 at `/Users/agent/.bun/bin/omp` — record actual version at run time. This platform (macOS) is one of three the resolver supports; note in findings which platforms remain uncharacterized. Never run root `bun test`.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Provider/parser stream-abort seam (TDD)",
+      "description": "As an Archon maintainer, I want OmpProvider and OmpEventParser to normalize an operator-owned graceful termination into one deterministic `stream_aborted` result — with first-cause termination tracking, bounded pre-header deferral, truthful resume reporting, and full cleanup — so that OMP turns can be interrupted without weakening Cancel or hiding real failures.",
+      "acceptanceCriteria": [
+        "Tests written BEFORE production edits; `makeRunningProcess` extended with explicit exit code and controllable close/error timing; no second real 5 s wait added (fake timers if reliable in this file, else consolidate Cancel+Stop escalation assertions into the one existing real-timer test).",
+        "All 14 provider/parser test cases from phase-01 test plan pass: (1) never-aborted interruptSignal = identical argv/chunks as no signal, late post-completion abort sends nothing; (2) immediate fresh-turn Stop still spawns, waits for session header, one SIGTERM, real id returned; turn-event-before-header and 500 ms timeout each yield unmarked `omp_interrupt_session_unavailable`; (3) mid-text Stop drains coalesced deltas once then exactly one last marked result with no completion/error fields; (4) active-tool Stop maps Stop-caused errored end to `interrupted`, late success stays `success`, open tool stays open; (5) Cancel alone and Cancel+Stop keep `Query aborted`, co-fire sends at most one SIGTERM; (6) interrupt-owned stdout rejection/truncated JSON after SIGTERM stays a graceful marked result, earlier transport/protocol error keeps its original error; (7) `agent_end` then Stop before close stays natural unmarked; (8) forced escalation emits unmarked `omp_interrupt_force_killed` error, no success classification; (9) fresh exit before header = incomplete/error result, never fabricated interrupted session, header timer cleared on every exit; (10) interrupted ordinary-resume equality/mismatch and fork with/without header set `resumed` conservatively, existing normal resume/fork tests unchanged; (11) observed primary usage + hidden-session delta enrichment survive interrupt (minimal temp hidden-session layout built in the test — no nonexistent `omp/__fixtures__` dependency); (12) listener/timer cleanup after normal, graceful-interrupt, first-cause failure, and force-kill paths; (13) all existing suites unchanged and green; (14) registry asserts exactly `['claude']` native and `['omp']` stream-abort.",
+        "provider.ts: single termination path with first-writer-wins cause `interrupt|interrupt-unresumable|cancel|transport|protocol|cleanup` and SIGKILL-actually-fired tracking replacing the unlabelled `terminate()` calls (currently ~:396,:407,:419,:437,:443,:518); node `abortSignal` keeps pre-spawn guard (:317) and wins classification whenever aborted.",
+        "Pending-interrupt deferral: if parser lacks session and has not seen `agent_end`, record pending request and wait at most `INTERRUPT_SESSION_HEADER_WAIT_MS = 500`; fire SIGTERM as soon as the header is consumed, before yielding later work; turn activity before header / deadline / early exit → `interrupt-unresumable` + unmarked `omp_interrupt_session_unavailable` error after reap. No pre-aborted no-spawn guard added for interruptSignal.",
+        "event-parser.ts narrow methods added: `hasSession()`, `hasTurnActivity()`, `hasNaturalTurnEnded()`, `beginOperatorInterrupt()`, `drainPendingAssistant()` (idempotent over existing flushAssistant at :335), `buildInterruptedResult(resumed)`; interrupt mode entered only after interrupt ownership won; errored end for tool active at interrupt start emits one `tool_result` `toolOutcome:'interrupted'` with no failure warning; normal parsing byte-for-byte unchanged when interrupt mode never begins.",
+        "`buildInterruptedResult` contains only session + accounting/model fields (`tokens`,`cost`,`numTurns`,`usageBreakdown`,`resolvedModel`), `resumed` when applicable, `terminalReason: STREAM_ABORTED_TERMINAL_REASON`; omits `stopReason`, `structuredOutput`, `isError`, `errorSubtype`, `errors` even if prior subevents populated them; never fabricates a session id.",
+        "`resumed` on interrupted results only: ordinary `--resume` true iff observed id === requested id; `--fork` true iff session header observed; no request → field omitted; otherwise false. Non-interrupted success/error resume/fork behavior unchanged.",
+        "SIGKILL path: drain safe buffered text, emit ONE unmarked `isError` result `errorSubtype:'omp_interrupt_force_killed'` with observed accounting/session metadata — no marker, no idle classification.",
+        "Interrupted path order: drain pending assistant → yield single marked result → existing hidden-session usage enrichment fail-soft → return without trailing throw; only existing safe identifiers logged.",
+        "`STREAM_ABORTED_TERMINAL_REASON = 'stream_aborted' as const` exported from `packages/providers/src/types.ts`; `terminalReason` (:350-356), `interruptSignal` (:601-609), and capability (:843-847) comments broadened to cover adapter-synthesized stream-abort markers.",
+        "No changes to OMP argv, env, spawn permissions, happy-path chunk order, hidden-session storage, or the 5 s SIGKILL fallback.",
+        "`OMP_CAPABILITIES.interrupt` still `false` at end of this story (flip belongs to US-003 after the gate).",
+        "Green: `cd packages/providers && bun test src/community/omp/event-parser.test.ts && bun test src/community/omp/provider.test.ts && bun test src/community/omp/session-usage.test.ts && bun test src/registry.test.ts && bun run type-check`."
+      ],
+      "technicalNotes": "Phase 1 second half, decisions D2/D3/D4. Termination ownership rules: cancel > first-cause transport/protocol > interrupt > cleanup; a Stop racing natural `agent_end` stays natural. Parser keeps session header swallowed (:160-165) but must expose hasSession/hasTurnActivity/hasNaturalTurnEnded. Read phase-01 'Implementation contract' and 'Test plan' sections in full before editing. Capability flip is deliberately excluded.",
+      "dependsOn": ["US-001"],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Real-binary conformance gate, sanitized report, capability flip",
+      "description": "As an Archon maintainer, I want the post-implementation conformance leg of the spike run against the real installed OMP on every platform where the capability will be advertised, with sanitized evidence recorded, so that `OMP_CAPABILITIES.interrupt` flips to `'stream-abort'` only on proven graceful, resumable, descendant-free behavior.",
+      "acceptanceCriteria": [
+        "`cd packages/providers && bun run spike:interrupt:omp` runs the conformance leg end-to-end through OmpProvider (spike-only teeing spawner) for both assistant and active-tool cases.",
+        "Per advertised platform, evidence shows: `session` header before work events; graceful termination (SIGTERM without SIGKILL on POSIX, or an equivalently graceful empirically-proven mechanism elsewhere); signal-to-full-provider-return < 1,000 ms; `--resume <id>` reports the exact same id, reaches `agent_end`, and proves prior context via boolean challenge; no OMP child or uniquely-marked tool descendant alive after provider return.",
+        "`plans/reports/omp-interrupt-resume-spike.md` written with version/platform-keyed sanitized evidence (omp --version, OS/arch per run, event names, timings, exit classes, hashed session correlation); zero prompts, generated text, credentials, raw session ids, or non-temp paths.",
+        "Platform coverage = every platform where the release will advertise OMP interrupt (macOS + Linux + Windows under the current resolver) OR an explicitly recorded owner-approved platform-specific scope in the report/plan; a macOS-only pass must not silently expose Stop elsewhere.",
+        "Only after the gate passes for the advertised scope: `OMP_CAPABILITIES.interrupt` set to `'stream-abort'` in `capabilities.ts:25` and `registry.test.ts` asserts `['claude']` is the only `'native'` and `['omp']` the only `'stream-abort'` provider.",
+        "If any pass condition fails — login unavailable, platform unavailable, version differs from relied-on evidence, > 1 s provider return, forceful termination, id changed/lost on resume, surviving descendant — the capability stays `false`, the reason is recorded in the report, and the story reports BLOCKED rather than working around it (a surviving descendant specifically means the plan is blocked pending a separately-reviewed cross-platform owned-process-tree design).",
+        "Post-flip focused suite green: `cd packages/providers && bun test src/community/omp/provider.test.ts && bun test src/community/omp/event-parser.test.ts && bun test src/community/omp/session-usage.test.ts && bun test src/registry.test.ts && bun run type-check`."
+      ],
+      "technicalNotes": "Phase 1 mandatory gate (decision D1) — the release blocker from plan.md 'Release blocker — platform-wide capability evidence'. In this headless run only macOS is directly testable; if Linux/Windows cannot be exercised, record that gap explicitly — do NOT flip the capability on macOS-only evidence unless an owner-approved platform-scoped decision is already on record. `bun run validate` NOT required here (Phase 3 owns it).",
+      "dependsOn": ["US-002"],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Executor `stream_aborted` marker + OMP conformance tests",
+      "description": "As an Archon maintainer, I want the dag-executor to recognize the provider-normalized `stream_aborted` terminal reason and prove OMP-shaped direct and AI-loop executions idle, redirect, and resume on the same session, so that operator Stop works for OMP through the existing five-case classifier without changing unrelated executor behavior.",
+      "acceptanceCriteria": [
+        "Test order honored: (1) baseline `cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt and redirect'` recorded clean; (2) unflagged-marker and unmarked-force-kill cases added first and remain natural/failure; (3) OMP direct + AI-loop cases added and confirmed failing before the marker change; (4) production change made; (5) focused + full suite green.",
+        "Production diff limited to `dag-executor.ts`: import `STREAM_ABORTED_TERMINAL_REASON` from `@archon/providers/types`, add to `INTERRUPT_TERMINAL_REASONS` (:457-460), update the comment to describe two provider-native Claude reasons plus a provider-normalized stream-abort reason. No prefix/prose/stderr matching added.",
+        "`isAbortLikeStreamError` unchanged; no branching on `'native'` vs `'stream-abort'`; queue ordering, Cancel placement, validation bypass, status persistence, idle timeout, and session selection untouched.",
+        "Test helper widened narrowly: `assistant` accepts `'omp'` (helper at ~:25914 / :27179), `omp: {}` added to test config; no full Claude-matrix parameterization, no loop-group duplicate.",
+        "All 11 matrix rows green using OMP-shaped async generators reacting to per-turn `interruptSignal`: marked result after Stop (direct) idles with node running, open tool settled `interrupted` once, one interrupted status, no `node_failed`, Send-now drains old-then-new, second call same session id completes; marked result after Stop (AI loop) idles current iteration without consuming iteration/completion check, second call same session id, loop completes; marked result lacking first-turn session → each path's explicit 'no session id to resume' failure, no fresh session or silent guidance loss; marked result + `isError:true` + operator flag (direct) still idles per case-2 rule; marked result without operator flag (direct) → natural path, no idle/interrupted status; force-kill/unmarked provider error + flag (direct) → node fails; natural result racing Stop (direct) unchanged; thrown `Query aborted` after earlier result supplied session (direct) → case-3 idles and resumes known id; thrown `Query aborted` with no known session (direct) → interrupt classification but explicit session safety check fails; redirected result `resumed:false` + new observed id (direct) → existing cold-resume warning recorded, executor uses observed id; OMP capability pin (direct) → mock provider receives defined interrupt signal and projected sub-state is `generating`.",
+        "Terminal marked result carries no `structuredOutput` into output validation; usage/model captured before classification is accounted exactly once (shared-contract regressions pinned for the OMP shape).",
+        "Existing #183 cases remain green; no loop-group behavior change; no server/route/registry/persistence/UI production file touched (if one is needed, stop and reassess).",
+        "Green: `cd packages/workflows && bun test src/dag-executor.test.ts -t 'interrupt and redirect' && bun test src/dag-executor.test.ts && bun test src/steering-registry.test.ts && bun run type-check`."
+      ],
+      "technicalNotes": "Phase 2, decision D5. Marker consumed at dag-executor.ts:2692 (direct) and :6413 (AI loop); interruptSignal passed at :2435 and :6325. The two paths classify independently — both need fixtures. Requires US-003's exported constant (transitively US-002). Phase 2 is blocked until the Phase 1 real-binary gate passes per the plan.",
+      "dependsOn": ["US-003"],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-005",
+      "title": "Contract/docs sync, matrix regeneration, sprint closeout",
+      "description": "As an Archon maintainer, I want the canonical engine/test companions, public OMP docs, generated capability matrix, and sprint status to match the verified implementation, with all repository gates green, so that Story 2.5 closes cleanly against Issue #185.",
+      "acceptanceCriteria": [
+        "`_bmad-output/specs/spec-agent-node-room/engine-integration.md` updated: OMP owns a per-turn interrupt signal, waits for the real session header when needed, uses the proven graceful platform mechanism (SIGTERM on POSIX), returns ONE deterministic `stream_aborted` result carrying session/accounting evidence; Cancel still dominates; natural-end races stay natural; force-kill/first-cause failures are unmarked and fail the node.",
+        "`_bmad-output/specs/spec-agent-node-room/steering-test-plan.md` updated: executor case-2 classifies the marked result only with the matching operator flag; case-3 abort-like throw retained as defensive compatibility (fixture kept) for when a session id was already observed — not the primary first-turn shape; direct + AI-loop conformance required, no separate loop-group provider path claimed.",
+        "Historical `sources/` copies untouched; Story 2.5 conditional Given/Then not weakened; anchors/rationale that remain true preserved; no unrelated stories rewritten.",
+        "`packages/docs-web/src/content/docs/getting-started/ai-assistants.md` OMP section gains the smallest user-facing note: Stop ends only the current OMP turn via graceful process interruption (no node cancel, no file rollback); after idle, Send now sends queued guidance as next turn on same OMP session (no RPC soft-inject); characterized version/platform pairs identified with re-check recommendation on version/platform change; unexpected protocol/termination behavior fails the node rather than pretending redirect is safe; usage retained best-effort and an unfinished provider event may lack final primary-turn usage. No duplicated route-auth/dock-layout/capability-table content; no hardcoded timing constants; no spike-report link in the public guide.",
+        "`bun run generate:capability-matrix` run; `bun run check:capability-matrix` passes; OMP cell under `Turn interrupt (operator Stop)` shows `**stream-abort**`, Claude stays `**native**`; generated file never hand-edited.",
+        "`git diff` confirms zero server/UI production file changes; if any exist, the conditional visual gate applies (`cd e2e && bun run typecheck`, `bun run --cwd e2e test:ui -- --grep 'interrupt and redirect'` in a clean worktree, new evidence placed deliberately — #183's tracked evidence not silently overwritten).",
+        "Preliminary `bun run validate` at repo root green; then `sprint-status.yaml` `2-5-interrupt-and-redirect-a-running-omp-agent` flipped `backlog` → `done`; final `bun run validate` green with the status edit included (restore `backlog` if the final gate fails).",
+        "If a PR is requested: targets `develop`, body copies `.github/pull_request_template.md`, cites `plans/reports/omp-interrupt-resume-spike.md` + the direct/loop tests, and includes `Closes #185`."
+      ],
+      "technicalNotes": "Phase 3, decision D6. Doc edits only after code/test behavior is known (US-002..US-004 done). `provider-steering-matrix.md`'s stream-abort statement is already correct — do not touch. Root `bun test` forbidden — `bun run validate` only. If US-003 ended BLOCKED with capability left `false`, this story still performs companion/docs hygiene describing the queue-only OMP state truthfully, but sprint status must NOT flip to `done` — record the blocker instead.",
+      "dependsOn": ["US-004"],
+      "priority": 5,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
