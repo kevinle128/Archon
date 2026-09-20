@@ -193,35 +193,48 @@ describe('spawnTerminalPty', () => {
             output += decoder.decode(chunk);
           },
         });
-        // A distinctive prompt lets the test wait until Bash reclaims the
-        // terminal after the foreground `sleep` receives Ctrl-C. Writing the
-        // follow-up command immediately can feed it to the child instead.
-        pty.write("PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
-        await waitFor(() => output.includes('READY'), 10_000, 'READY');
+        // Distinctive prompt + cleared PROMPT_COMMAND so CI profile scripts
+        // cannot rewrite PS1 before we observe the post-SIGINT reprint.
+        pty.write("PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
+        await waitFor(() => output.includes('READY'), 10_000, 'READY', () => output);
+        // READY is printed in the same command list as `sleep`. On loaded
+        // Ubuntu runners the kernel may not have made `sleep` the foreground
+        // process group yet; \x03 written then is a literal byte, not SIGINT.
+        await Bun.sleep(250);
         const outputBeforeInterrupt = output.length;
+        const sawShellAfterInterrupt = (): boolean =>
+          output.slice(outputBeforeInterrupt).includes('ARCHON_PTY>');
         pty.write('\x03');
-        await waitFor(
-          () => output.slice(outputBeforeInterrupt).includes('ARCHON_PTY>'),
-          10_000,
-          'shell prompt after SIGINT'
-        );
+        try {
+          await waitFor(sawShellAfterInterrupt, 1_500, 'shell prompt after SIGINT', () => output);
+        } catch {
+          // Retry once — the first Ctrl-C can still lose the process-group race.
+          pty.write('\x03');
+          await waitFor(sawShellAfterInterrupt, 8_000, 'shell prompt after SIGINT', () => output);
+        }
         pty.write('echo INTERRUPTED; exit\n');
-        await waitFor(() => output.includes('INTERRUPTED'), 2_000, 'INTERRUPTED');
+        await waitFor(() => output.includes('INTERRUPTED'), 5_000, 'INTERRUPTED', () => output);
         await pty.exited;
       } finally {
         pty?.kill();
         await rm(dir, { recursive: true, force: true });
       }
     },
-    30000
+    45_000
   );
 });
 
-async function waitFor(predicate: () => boolean, timeoutMs: number, label: string): Promise<void> {
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs: number,
+  label: string,
+  dump?: () => string
+): Promise<void> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     if (predicate()) return;
     await Bun.sleep(20);
   }
-  throw new Error(`Timed out waiting for ${label}`);
+  const detail = dump ? ` output=${JSON.stringify(dump())}` : '';
+  throw new Error(`Timed out waiting for ${label}${detail}`);
 }
