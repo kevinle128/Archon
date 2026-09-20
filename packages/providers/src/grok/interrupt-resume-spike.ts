@@ -1,6 +1,6 @@
 /**
  * Diagnostic-only Grok turn-interrupt spike.
- * Do not export from the providers package barrel. Do not call from tests or CI.
+ * Do not export from the providers package barrel. Do not run the live spike in tests or CI.
  *
  * Proves Phase-1 release gates against the real Grok CLI before production code
  * advertises interrupt: 'stream-abort':
@@ -88,7 +88,7 @@ interface ReleaseGate {
   evidence: string;
 }
 
-interface SpikeDocument {
+export interface SpikeDocument {
   schemaVersion: 1;
   kind: 'grok-interrupt-resume-spike';
   cliVersion: string;
@@ -108,6 +108,20 @@ interface SpikeDocument {
   };
   overall: 'PASS' | 'BLOCKED';
 }
+
+type SanitizedExperimentResult = Omit<
+  ExperimentResult,
+  'assignedSessionId' | 'reportedSessionId' | 'childPid'
+>;
+
+export type SanitizedSpikeDocument = Omit<SpikeDocument, 'experiments' | 'cleanup'> & {
+  experiments: SanitizedExperimentResult[];
+  cleanup: {
+    sessionsDeleted: number;
+    sessionsDeleteFailed: string[];
+    tempDirRemoved: boolean;
+  };
+};
 
 interface RunOutcome {
   exitCode: number | null;
@@ -311,7 +325,7 @@ function normalizeExitCode(obs: ExitObservation | null): number | null {
   return null;
 }
 
-async function consumeStdout(
+export async function consumeStdout(
   child: SpawnedGrokChild,
   onEvent?: (event: ParsedLine) => void,
   expectedText?: string
@@ -336,6 +350,25 @@ async function consumeStdout(
   let textOutput = '';
   let buffer = '';
 
+  const recordParsedLine = (parsed: ParsedLine | null): void => {
+    if (!parsed) return;
+    onEvent?.(parsed);
+    eventTypes.push(parsed.type);
+    if (parsed.type === 'usage') standaloneUsageSeen = true;
+    if (parsed.type === 'end') {
+      endStopReason = parsed.stopReason ?? null;
+      reportedSessionId = parsed.sessionId ?? null;
+      finalUsageSeen = Boolean(parsed.hasEndUsage) || finalUsageSeen;
+    }
+    if (
+      parsed.type === 'tool_call' ||
+      (parsed.type === 'tool_call_update' && parsed.toolStatus === 'in_progress')
+    ) {
+      sawToolInProgress = true;
+    }
+    if (parsed.type === 'text' && parsed.text !== undefined) textOutput += parsed.text;
+  };
+
   try {
     for await (const chunk of child.stdout) {
       if (firstStdoutAtMs === null) {
@@ -345,35 +378,13 @@ async function consumeStdout(
       buffer += piece;
       let nl = buffer.indexOf('\n');
       while (nl >= 0) {
-        const parsed = parseLine(buffer.slice(0, nl));
+        recordParsedLine(parseLine(buffer.slice(0, nl)));
         buffer = buffer.slice(nl + 1);
-        if (parsed) {
-          onEvent?.(parsed);
-          eventTypes.push(parsed.type);
-          if (parsed.type === 'usage') standaloneUsageSeen = true;
-          if (parsed.type === 'end') {
-            endStopReason = parsed.stopReason ?? null;
-            reportedSessionId = parsed.sessionId ?? null;
-            finalUsageSeen = Boolean(parsed.hasEndUsage) || finalUsageSeen;
-          }
-          if (
-            parsed.type === 'tool_call' ||
-            (parsed.type === 'tool_call_update' && parsed.toolStatus === 'in_progress')
-          ) {
-            sawToolInProgress = true;
-          }
-          if (parsed.type === 'text' && parsed.text !== undefined) textOutput += parsed.text;
-        }
         nl = buffer.indexOf('\n');
       }
     }
     if (buffer.trim().length > 0) {
-      const parsed = parseLine(buffer);
-      if (parsed) {
-        onEvent?.(parsed);
-        eventTypes.push(parsed.type);
-        if (parsed.type === 'text' && parsed.text !== undefined) textOutput += parsed.text;
-      }
+      recordParsedLine(parseLine(buffer));
     }
   } catch {
     // stdout may close under signal; recorded types so far still count
@@ -554,11 +565,12 @@ async function waitForStdout(
   }
 }
 
-function writeSlowToolScript(cwd: string): { pidPath: string; command: string } {
+export function writeSlowToolScript(cwd: string): { pidPath: string; command: string } {
   const isWindows = process.platform === 'win32';
   const scriptName = isWindows ? 'slow_tool.cmd' : 'slow_tool.sh';
   const scriptPath = join(cwd, scriptName);
   const pidPath = join(cwd, SLOW_PID_FILE);
+  rmSync(pidPath, { force: true });
   writeFileSync(
     scriptPath,
     isWindows
@@ -852,7 +864,11 @@ async function runS3(
   return result;
 }
 
-async function runS4(binaryPath: string, cwd: string): Promise<ExperimentResult> {
+async function runS4(
+  binaryPath: string,
+  cwd: string,
+  trackSession: (sessionId: string | null | undefined) => void
+): Promise<ExperimentResult> {
   const result = emptyExperiment('S4', 'win32');
   if (process.platform !== 'win32') {
     result.notes.push('host-is-not-native-windows');
@@ -860,7 +876,9 @@ async function runS4(binaryPath: string, cwd: string): Promise<ExperimentResult>
     return result;
   }
   const s1 = await runS1(binaryPath, cwd, 'win32');
+  trackSession(s1.assignedSessionId);
   const s2 = await runS2(binaryPath, cwd, 'win32');
+  trackSession(s2.assignedSessionId);
   result.eventTypes = [...s1.eventTypes, ...s2.eventTypes];
   result.assignedSessionId = s1.assignedSessionId;
   result.reportedSessionId = s1.reportedSessionId;
@@ -1051,6 +1069,24 @@ function renderReport(doc: SpikeDocument): string {
   return `${lines.join('\n')}\n`;
 }
 
+export function sanitizeSpikeDocument(doc: SpikeDocument): SanitizedSpikeDocument {
+  return {
+    ...doc,
+    experiments: doc.experiments.map(experiment => {
+      const { assignedSessionId, reportedSessionId, childPid, ...sanitized } = experiment;
+      void assignedSessionId;
+      void reportedSessionId;
+      void childPid;
+      return sanitized;
+    }),
+    cleanup: {
+      sessionsDeleted: doc.cleanup.sessionsDeleted.length,
+      sessionsDeleteFailed: doc.cleanup.sessionsDeleteFailed,
+      tempDirRemoved: doc.cleanup.tempDirRemoved,
+    },
+  };
+}
+
 async function main(): Promise<void> {
   const binaryPath = await resolveGrokBinaryPath(process.env.GROK_SPIKE_BIN_PATH, process.env);
   const hostKind = process.env.GROK_SPIKE_HOST_KIND === 'container' ? 'container' : 'native';
@@ -1099,14 +1135,15 @@ async function main(): Promise<void> {
       experiments.push(s3);
     }
     if (want('S4')) {
-      if (skipS4 && process.platform !== 'win32') {
+      if (skipS4) {
         const skipped = emptyExperiment('S4', 'win32');
-        skipped.notes.push('not-run-on-non-windows-host');
+        skipped.notes.push(
+          process.platform === 'win32' ? 'skipped-by-environment' : 'not-run-on-non-windows-host'
+        );
         skipped.passed = false;
         experiments.push(skipped);
       } else {
-        const s4 = await runS4(binaryPath, cwd);
-        track(s4.assignedSessionId);
+        const s4 = await runS4(binaryPath, cwd, track);
         experiments.push(s4);
       }
     }
@@ -1157,7 +1194,7 @@ async function main(): Promise<void> {
       writeFileSync(reportPath, renderReport(document), 'utf8');
     }
 
-    process.stdout.write(`${JSON.stringify(document)}\n`);
+    process.stdout.write(`${JSON.stringify(sanitizeSpikeDocument(document))}\n`);
     if (document.overall !== 'PASS') process.exitCode = 1;
   } catch (error) {
     for (const id of sessions) {

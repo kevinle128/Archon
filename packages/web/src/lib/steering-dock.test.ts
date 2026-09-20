@@ -258,9 +258,9 @@ describe('canSubmitGuidance', () => {
   });
 
   test('finished-iteration mode refuses submit', () => {
-    expect(
-      canSubmitGuidance({ mode: 'finished-iteration', sendInFlight: false, draft: 'x' })
-    ).toBe(false);
+    expect(canSubmitGuidance({ mode: 'finished-iteration', sendInFlight: false, draft: 'x' })).toBe(
+      false
+    );
   });
 });
 
