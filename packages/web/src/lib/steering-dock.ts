@@ -101,6 +101,12 @@ export const STEERING_SEND_FAILED_MESSAGE = "couldn't send · back in the queue"
 export const STEERING_INTERRUPT_FAILED_MESSAGE = "couldn't interrupt · try again";
 export const STEERING_INTERRUPT_DISCLOSURE =
   'stopped after the last completed tool call · files already written stay written';
+export const STEERING_IDLE_INACTIVITY_DISCLOSURE =
+  'no redirect ends this node after 30 min of inactivity · typing keeps it open';
+export const STEERING_IDLE_TIMEOUT_FAILURE_TEXT =
+  'interrupted by operator, no redirect received · failed after 30-minute idle timeout';
+export const STEERING_IDLE_TIMEOUT_STATUS =
+  'node failed · interrupted with no redirect · none of this was sent';
 export const STEERING_AGENT_INTERRUPTING = 'agent interrupting';
 export const STEERING_AGENT_IDLE = 'agent idle · Send now delivers';
 export const STEERING_AGENT_GENERATING = 'agent generating';
@@ -122,9 +128,10 @@ const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
 /**
  * Visibility/block precedence: a nonempty never-sent result with explicit
  * node-terminal evidence selects finished first (so Cancel that flips the run
- * non-live after observation still surfaces recovery); otherwise a non-live
- * run hides the dock entirely; a proven finished-iteration descriptor wins
- * before the terminal-row hide check so a completed occurrence on a still-live
+ * non-live after observation still surfaces recovery); a structured idle-timeout
+ * failure also selects finished even with an empty Never sent list; otherwise a
+ * non-live run hides the dock entirely; a proven finished-iteration descriptor
+ * wins before the terminal-row hide check so a completed occurrence on a still-live
  * loop can surface the read-only dock; otherwise a non-generating row hides the
  * dock (historical/cold executions must never issue a request); a real pending
  * ask keeps its blocked reason even when a refusal is stored — no request
@@ -132,8 +139,8 @@ const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
  * `not_steerable_here` flip the dock to the detached disclosure.
  *
  * Reconcile still never *triggers* on `!live` alone — finished requires both
- * nonempty neverSent and nodeTerminal. Cold opens of terminal runs stay hidden
- * because they never observed a ledger.
+ * nonempty neverSent and nodeTerminal (or timeoutFailure + nodeTerminal). Cold
+ * opens of terminal runs stay hidden because they never observed a ledger.
  */
 export function steeringDockMode(input: {
   rowStatus: string;
@@ -143,14 +150,14 @@ export function steeringDockMode(input: {
   finishedIteration?: FinishedIterationView | null;
   neverSent?: readonly NeverSentEntry[] | null;
   nodeTerminal?: boolean;
+  /** Structured idle-after-interrupt timeout failure for this node. */
+  timeoutFailure?: boolean;
 }): SteeringDockMode {
-  if (
-    input.nodeTerminal === true &&
-    input.neverSent !== null &&
-    input.neverSent !== undefined &&
-    input.neverSent.length > 0
-  ) {
-    return 'finished';
+  if (input.nodeTerminal === true) {
+    if (input.timeoutFailure === true) return 'finished';
+    if (input.neverSent !== null && input.neverSent !== undefined && input.neverSent.length > 0) {
+      return 'finished';
+    }
   }
   if (!input.live) return 'hidden';
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {

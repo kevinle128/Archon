@@ -518,3 +518,41 @@ export function latestNodeExecutionKey(
 
   return key;
 }
+
+/**
+ * True when the latest logical execution for `nodeId` failed with structured
+ * `failure_reason: 'idle_after_interrupt_timeout'`. Ordering uses
+ * `compareWorkflowEvents`. A later start/complete/skip/retry for the same node
+ * clears the cause; sibling-node and loop-iteration events are ignored.
+ */
+export function latestNodeFailedByIdleExpiry(
+  events: readonly WorkflowEvent[] | null | undefined,
+  nodeId: string
+): boolean {
+  if (events === null || events === undefined || events.length === 0) return false;
+
+  let failedByIdle = false;
+
+  for (const event of events.slice().sort(compareWorkflowEvents)) {
+    if (event.step_name !== nodeId) continue;
+    if (event.event_type.startsWith('loop_iteration_')) continue;
+
+    if (
+      event.event_type === 'node_started' ||
+      event.event_type === 'node_completed' ||
+      event.event_type === 'node_skipped' ||
+      event.event_type === 'node_skipped_prior_success' ||
+      event.event_type === 'node_retry_requested'
+    ) {
+      failedByIdle = false;
+      continue;
+    }
+
+    if (event.event_type !== 'node_failed') continue;
+
+    const data = asRecord(event.data);
+    failedByIdle = data !== null && data.failure_reason === 'idle_after_interrupt_timeout';
+  }
+
+  return failedByIdle;
+}

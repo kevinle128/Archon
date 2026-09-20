@@ -149,6 +149,7 @@ function workflowEvent(overrides: {
   event_type?: string;
   step_name?: string | null;
   data?: Record<string, unknown>;
+  event_order?: number | null;
 }): WorkflowEvent {
   return {
     id: 'event-1',
@@ -6161,6 +6162,174 @@ describe('ConsoleNodeRoom', () => {
       const list = host.querySelector('[aria-label="Never sent, 1"]');
       expect(list).not.toBeNull();
       expect(list?.textContent ?? '').toContain('alpha from finished band');
+    });
+  });
+
+  // Story 2.12 — idle timeout terminal presentation through room events.
+  describe('Story 2.12 idle timeout via events', () => {
+    const TIMEOUT_FAIL =
+      'interrupted by operator, no redirect received · failed after 30-minute idle timeout';
+    const TIMEOUT_STATUS = 'node failed · interrupted with no redirect · none of this was sent';
+    const NEVER_SENT_ALERT = 'node finished · none of this was sent';
+
+    const timeoutFailEvents: readonly WorkflowEvent[] = [
+      workflowEvent({
+        id: 'start-1',
+        event_type: 'node_started',
+        step_name: 'review',
+        event_order: 1,
+        data: { occurrence_id: 'occ-1' },
+      }),
+      workflowEvent({
+        id: 'fail-1',
+        event_type: 'node_failed',
+        step_name: 'review',
+        event_order: 2,
+        data: {
+          error: 'interrupted by operator, no redirect received',
+          failure_reason: 'idle_after_interrupt_timeout',
+        },
+      }),
+    ];
+
+    function emptyLoad(): Promise<WorkflowNodeMessagesResponse> {
+      return Promise.resolve({
+        messages: [],
+        hasMore: false,
+        highWatermark: 0,
+        nextCursor: '0',
+      });
+    }
+
+    function failedRoom(overrides: {
+      events: readonly WorkflowEvent[];
+      nodeTerminal: boolean;
+      nodeExecutionKey?: string | null;
+      selectedStatus?: LogRow['status'];
+      runStatus?: Run['status'];
+      isLive?: boolean;
+    }): Parameters<typeof renderRoom>[0] {
+      const selectedStatus = overrides.selectedStatus ?? 'failed';
+      return {
+        run: run({ id: 'run-1', status: overrides.runStatus ?? 'failed' }),
+        nodeId: 'review',
+        selectedRow: row({
+          nodeId: 'review',
+          label: 'Review',
+          status: selectedStatus,
+        }),
+        definitionNodes: [{ id: 'review', prompt: 'Write' }],
+        nodeStates: [
+          nodeState({
+            nodeId: 'review',
+            name: 'Review',
+            status: selectedStatus,
+          }),
+        ],
+        events: overrides.events,
+        isLive: overrides.isLive ?? false,
+        loadMessages: emptyLoad,
+        nodeTerminal: overrides.nodeTerminal,
+        nodeExecutionKey: overrides.nodeExecutionKey ?? 'logical-1',
+      };
+    }
+
+    test('timeout failure events show exact copy with no mutation controls', async () => {
+      await act(async () => {
+        renderRoom(
+          failedRoom({
+            events: timeoutFailEvents,
+            nodeTerminal: true,
+          })
+        );
+      });
+      await flush();
+
+      expect(host.querySelector('textarea')).toBeNull();
+      expect(host.textContent).toContain(TIMEOUT_FAIL);
+      expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+      const status = host.querySelector('[role="status"]');
+      expect(status?.textContent).toBe(TIMEOUT_STATUS);
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      // Dock mutation controls must be gone; room chrome Close may remain.
+      const labels = Array.from(host.querySelectorAll('button')).map(btn =>
+        (btn.textContent ?? '').trim()
+      );
+      expect(labels.every(label => label === 'Close' || label === 'Back')).toBe(true);
+      expect(labels).not.toContain('Send now');
+      expect(labels).not.toContain('Queue');
+      expect(labels).not.toContain('Stop');
+    });
+
+    test('later node_started, node_retry_requested, or node_completed clears stale timeout copy', async () => {
+      await act(async () => {
+        renderRoom(
+          failedRoom({
+            events: timeoutFailEvents,
+            nodeTerminal: true,
+          })
+        );
+      });
+      await flush();
+      expect(host.textContent).toContain(TIMEOUT_FAIL);
+      expect(host.querySelector('[role="status"]')?.textContent).toBe(TIMEOUT_STATUS);
+
+      const clearCases: {
+        event_type: 'node_started' | 'node_retry_requested' | 'node_completed';
+        nodeTerminal: boolean;
+        selectedStatus: LogRow['status'];
+        runStatus: Run['status'];
+        isLive: boolean;
+      }[] = [
+        {
+          event_type: 'node_started',
+          nodeTerminal: false,
+          selectedStatus: 'running',
+          runStatus: 'running',
+          isLive: true,
+        },
+        {
+          event_type: 'node_retry_requested',
+          nodeTerminal: false,
+          selectedStatus: 'running',
+          runStatus: 'running',
+          isLive: true,
+        },
+        {
+          event_type: 'node_completed',
+          nodeTerminal: true,
+          selectedStatus: 'completed',
+          runStatus: 'completed',
+          isLive: false,
+        },
+      ];
+
+      for (const clear of clearCases) {
+        await act(async () => {
+          renderRoom(
+            failedRoom({
+              events: [
+                ...timeoutFailEvents,
+                workflowEvent({
+                  id: `clear-${clear.event_type}`,
+                  event_type: clear.event_type,
+                  step_name: 'review',
+                  event_order: 3,
+                }),
+              ],
+              nodeTerminal: clear.nodeTerminal,
+              nodeExecutionKey: 'logical-2',
+              selectedStatus: clear.selectedStatus,
+              runStatus: clear.runStatus,
+              isLive: clear.isLive,
+            })
+          );
+        });
+        await flush();
+        expect(host.textContent).not.toContain(TIMEOUT_FAIL);
+        expect(host.querySelector('[role="status"]')?.textContent ?? '').not.toBe(TIMEOUT_STATUS);
+        expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+      }
     });
   });
 });

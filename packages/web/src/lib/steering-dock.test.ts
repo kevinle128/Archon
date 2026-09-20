@@ -45,6 +45,9 @@ import {
   STEERING_ASK_BLOCKED_REASON,
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_IDLE_INACTIVITY_DISCLOSURE,
+  STEERING_IDLE_TIMEOUT_FAILURE_TEXT,
+  STEERING_IDLE_TIMEOUT_STATUS,
   STEERING_INTERRUPT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_NEVER_SENT_DISCLOSURE,
@@ -90,6 +93,7 @@ function modeFor(
     finishedIteration?: { liveRowId: string; liveIteration: number } | null;
     neverSent?: readonly NeverSentEntry[] | null;
     nodeTerminal?: boolean;
+    timeoutFailure?: boolean;
   }
 ): string {
   return steeringDockMode({
@@ -100,6 +104,7 @@ function modeFor(
     finishedIteration: overrides?.finishedIteration,
     neverSent: overrides?.neverSent,
     nodeTerminal: overrides?.nodeTerminal,
+    timeoutFailure: overrides?.timeoutFailure,
   });
 }
 
@@ -750,6 +755,17 @@ describe('wording', () => {
     expect(STEERING_INTERRUPT_DISCLOSURE).toBe(
       'stopped after the last completed tool call · files already written stay written'
     );
+    expect(STEERING_IDLE_INACTIVITY_DISCLOSURE).toBe(
+      'no redirect ends this node after 30 min of inactivity · typing keeps it open'
+    );
+    expect(STEERING_IDLE_TIMEOUT_FAILURE_TEXT).toBe(
+      'interrupted by operator, no redirect received · failed after 30-minute idle timeout'
+    );
+    expect(STEERING_IDLE_TIMEOUT_STATUS).toBe(
+      'node failed · interrupted with no redirect · none of this was sent'
+    );
+    expect(STEERING_IDLE_INACTIVITY_DISCLOSURE).not.toBe(STEERING_INTERRUPT_DISCLOSURE);
+    expect(STEERING_IDLE_TIMEOUT_STATUS).not.toBe(STEERING_NEVER_SENT_DISCLOSURE);
     expect(STEERING_AGENT_INTERRUPTING).toBe('agent interrupting');
     expect(STEERING_AGENT_IDLE).toBe('agent idle · Send now delivers');
     expect(STEERING_AGENT_GENERATING).toBe('agent generating');
@@ -1795,6 +1811,35 @@ describe('observed ledger and never-sent reconciliation (T1.1–T1.22)', () => {
         refusal: { code: 'not_steerable_here', message: 'detached' },
       })
     ).toBe('detached');
+  });
+
+  test('T1.19b idle-timeout failure selects finished even with empty Never sent', () => {
+    expect(
+      modeFor('failed', {
+        nodeTerminal: true,
+        timeoutFailure: true,
+        neverSent: null,
+      })
+    ).toBe('finished');
+    expect(
+      modeFor('failed', {
+        nodeTerminal: true,
+        timeoutFailure: true,
+        neverSent: [],
+      })
+    ).toBe('finished');
+    expect(
+      modeFor('running', {
+        live: false,
+        nodeTerminal: true,
+        timeoutFailure: true,
+        neverSent: null,
+      })
+    ).toBe('finished');
+    // timeoutFailure alone without nodeTerminal does not force finished.
+    expect(modeFor('failed', { timeoutFailure: true, neverSent: null })).toBe('hidden');
+    // non-timeout terminal empty list still preserves old table.
+    expect(modeFor('failed', { nodeTerminal: true, neverSent: [] })).toBe('hidden');
   });
 
   test('T1.20 copy and accessible labels are exact', () => {

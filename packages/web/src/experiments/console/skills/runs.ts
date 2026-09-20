@@ -159,6 +159,7 @@ export type SendWorkflowNodeBody = components['schemas']['SendWorkflowNodeBody']
 export type SendWorkflowNodeResponse = components['schemas']['SendWorkflowNodeResponse'];
 export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkflowNodeResponse'];
 export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowNodeQueueResponse'];
+export type KeepaliveWorkflowNodeResponse = components['schemas']['KeepaliveWorkflowNodeResponse'];
 
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send.
@@ -245,6 +246,27 @@ export async function readNodeGuidanceQueue(
         cache: 'no-store',
         ...(options?.signal === undefined ? {} : { signal: options.signal }),
       }
+    );
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive — Story 2.12 bodyless
+ * composer keepalive. Re-arms the idle-after-interrupt timer on a live idle
+ * handle; generating is a lifecycle no-op. No request body (requestJson adds
+ * JSON content type only when a body is present), no auto-retry, no local
+ * sub-state update. Refusals surface as SteeringRequestError.
+ */
+export async function keepaliveWorkflowNode(
+  runId: string,
+  nodeId: string
+): Promise<KeepaliveWorkflowNodeResponse> {
+  try {
+    return await requestJson<KeepaliveWorkflowNodeResponse>(
+      `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/keepalive`,
+      { method: 'POST' }
     );
   } catch (error) {
     throw toSteeringRequestError(error);

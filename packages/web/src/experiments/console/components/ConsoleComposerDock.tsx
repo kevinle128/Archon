@@ -57,6 +57,9 @@ import {
   syncProjectedSubState,
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_IDLE_INACTIVITY_DISCLOSURE,
+  STEERING_IDLE_TIMEOUT_FAILURE_TEXT,
+  STEERING_IDLE_TIMEOUT_STATUS,
   STEERING_INTERRUPT_DISCLOSURE,
   STEERING_NEVER_SENT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
@@ -74,10 +77,12 @@ import type { FinishedIterationView } from '@/lib/execution-room-model';
 
 import {
   interruptNode,
+  keepaliveWorkflowNode,
   readNodeGuidanceQueue,
   sendNodeGuidance,
   withdrawNodeGuidance,
   type InterruptWorkflowNodeResponse,
+  type KeepaliveWorkflowNodeResponse,
   type ReadWorkflowNodeQueueResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
@@ -107,6 +112,13 @@ export type ReadNodeGuidanceQueue = (
   nodeId: string,
   options?: { signal?: AbortSignal }
 ) => Promise<ReadWorkflowNodeQueueResponse>;
+
+export type KeepaliveNode = (
+  runId: string,
+  nodeId: string
+) => Promise<KeepaliveWorkflowNodeResponse>;
+
+const KEEP_ALIVE_THROTTLE_MS = 1000;
 
 export interface ConsoleComposerDockProps {
   runId: string;
@@ -145,6 +157,8 @@ export interface ConsoleComposerDockProps {
   withdraw?: WithdrawNodeGuidance;
   /** Queue snapshot reader; defaults to the Console API helper. */
   readQueue?: ReadNodeGuidanceQueue;
+  /** Bodyless keepalive; defaults to the Console API helper. */
+  keepalive?: KeepaliveNode;
   /** Poll cadence in ms; production default 1000, narrow test seam only. */
   pollIntervalMs?: number;
   storage?: Storage;
@@ -171,6 +185,12 @@ export interface ConsoleComposerDockProps {
    * preserving the raw draft. Default null.
    */
   nodeExecutionKey?: string | null;
+  /**
+   * Structured idle-after-interrupt timeout failure for this node. When true
+   * with nodeTerminal, selects finished presentation even with an empty
+   * Never sent list.
+   */
+  timeoutFailure?: boolean;
 }
 
 const FIELD_CLASSES = [
@@ -213,12 +233,14 @@ export function ConsoleComposerDock({
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
   readQueue = readNodeGuidanceQueue,
+  keepalive = keepaliveWorkflowNode,
   pollIntervalMs = 1000,
   storage,
   focusLastRow,
   writtenOperatorMessageIds = null,
   nodeTerminal = false,
   nodeExecutionKey = null,
+  timeoutFailure = false,
 }: ConsoleComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
   const storageKey = steeringDraftStorageKey(runId, nodeId);
@@ -243,6 +265,11 @@ export function ConsoleComposerDock({
   /** Skip one ordinary persist after an explicit pendingRetry:null write. */
   const suppressPersistRef = useRef(false);
   const draftRef = useRef('');
+  /** Leading keepalive throttle timestamp; 0 means open. */
+  const lastKeepaliveAtRef = useRef(0);
+  /** Bumped on run/node scope change or a new idle epoch. */
+  const keepaliveEpochRef = useRef(0);
+  const prevAgentModeRef = useRef<string | null>(null);
   const [dock, setDock] = useState<SteeringDockState>(() => ({
     ...createSteeringDockState(subState),
     pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
@@ -269,6 +296,7 @@ export function ConsoleComposerDock({
     finishedIteration: usableFinishedIteration,
     neverSent: dock.neverSent,
     nodeTerminal,
+    timeoutFailure,
   });
 
   // Attempt reset + observation marking run in layout before passive async
@@ -280,6 +308,9 @@ export function ConsoleComposerDock({
     if (scopeChanged) {
       prevScopeRef.current = storageKey;
       attemptGenerationRef.current += 1;
+      keepaliveEpochRef.current += 1;
+      lastKeepaliveAtRef.current = 0;
+      prevAgentModeRef.current = null;
       queueWasObservableRef.current = false;
       prevExecutionKeyRef.current = nodeExecutionKey;
       prevNodeTerminalRef.current = nodeTerminal;
@@ -521,6 +552,40 @@ export function ConsoleComposerDock({
   const agentMode = steeringAgentMode(dock);
   const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
 
+  // Entering a new idle epoch re-opens the keepalive throttle window.
+  useEffect(() => {
+    if (agentMode === 'idle' && prevAgentModeRef.current !== 'idle') {
+      keepaliveEpochRef.current += 1;
+      lastKeepaliveAtRef.current = 0;
+    }
+    prevAgentModeRef.current = agentMode;
+  }, [agentMode]);
+
+  const maybeKeepalive = (): void => {
+    if (agentMode !== 'idle') return;
+    const now = Date.now();
+    if (
+      lastKeepaliveAtRef.current !== 0 &&
+      now - lastKeepaliveAtRef.current < KEEP_ALIVE_THROTTLE_MS
+    ) {
+      return;
+    }
+    lastKeepaliveAtRef.current = now;
+    const epoch = keepaliveEpochRef.current;
+    const scope = storageKey;
+    void keepalive(runId, nodeId).then(
+      (): void => {
+        // Response is intentionally ignored — no React state update.
+      },
+      (): void => {
+        // Re-open the throttle so later activity can retry after a rejection.
+        if (keepaliveEpochRef.current === epoch && prevScopeRef.current === scope) {
+          lastKeepaliveAtRef.current = 0;
+        }
+      }
+    );
+  };
+
   const submit = (): void => {
     if (!canSubmit) return;
     const submittedDraft = draft;
@@ -632,41 +697,67 @@ export function ConsoleComposerDock({
     );
   }
 
-  if (mode === 'finished' && dock.neverSent !== null && dock.neverSent.length > 0) {
-    const entries = dock.neverSent;
+  if (mode === 'finished') {
+    const entries = dock.neverSent ?? [];
+    const showBand = entries.length > 0;
+    // Non-timeout finished still requires a nonempty Never sent list.
+    if (!timeoutFailure && !showBand) {
+      return null;
+    }
     return (
       <section
-        aria-labelledby={bandHeaderId}
+        {...(showBand ? { 'aria-labelledby': bandHeaderId } : {})}
         className="flex-none border-t border-border bg-surface-elevated"
       >
-        <h3
-          id={bandHeaderId}
-          className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
-        >
-          {neverSentBandHeader(entries.length)}
-        </h3>
-        <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
-          <ul aria-label={neverSentListLabel(entries.length)}>
-            {entries.map((entry, index) => (
-              <li
-                key={entry.messageId ?? `draft-${String(index)}`}
-                {...(entry.messageId !== null ? { 'data-message-id': entry.messageId } : {})}
-                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
-              >
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {entry.message}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <p
-          ref={neverSentAlertRef}
-          role="alert"
-          className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
-        >
-          {STEERING_NEVER_SENT_DISCLOSURE}
-        </p>
+        {showBand ? (
+          <>
+            <h3
+              id={bandHeaderId}
+              className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+            >
+              {neverSentBandHeader(entries.length)}
+            </h3>
+            <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+              <ul aria-label={neverSentListLabel(entries.length)}>
+                {entries.map((entry, index) => (
+                  <li
+                    key={entry.messageId ?? `draft-${String(index)}`}
+                    {...(entry.messageId !== null ? { 'data-message-id': entry.messageId } : {})}
+                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                  >
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {entry.message}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        ) : null}
+        {timeoutFailure ? (
+          <>
+            <p
+              className={
+                showBand
+                  ? 'border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary'
+                  : 'px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary'
+              }
+            >
+              {STEERING_IDLE_TIMEOUT_FAILURE_TEXT}
+            </p>
+            <div role="status" className="sr-only">
+              {STEERING_IDLE_TIMEOUT_STATUS}
+            </div>
+          </>
+        ) : (
+          <p
+            ref={neverSentAlertRef}
+            role="alert"
+            className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+          >
+            {STEERING_NEVER_SENT_DISCLOSURE}
+          </p>
+        )}
       </section>
     );
   }
@@ -827,9 +918,10 @@ export function ConsoleComposerDock({
         className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]"
       >
         {idle ? (
-          <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
-            {STEERING_INTERRUPT_DISCLOSURE}
-          </p>
+          <div className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+            <p>{STEERING_INTERRUPT_DISCLOSURE}</p>
+            <p>{STEERING_IDLE_INACTIVITY_DISCLOSURE}</p>
+          </div>
         ) : null}
         <label htmlFor={fieldId} className="sr-only">
           message to {nodeLabel}
@@ -839,8 +931,12 @@ export function ConsoleComposerDock({
           ref={fieldRef}
           value={draft}
           rows={2}
+          onFocus={(): void => {
+            maybeKeepalive();
+          }}
           onChange={(event): void => {
             setDraft(event.target.value);
+            maybeKeepalive();
           }}
           onKeyDown={(event): void => {
             if (

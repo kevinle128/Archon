@@ -24,7 +24,10 @@ import {
   type NodeMessageState,
 } from '@/lib/node-message-pages';
 import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
-import type { FinishedIterationView } from '@/lib/execution-room-model';
+import {
+  latestNodeFailedByIdleExpiry,
+  type FinishedIterationView,
+} from '@/lib/execution-room-model';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -663,6 +666,7 @@ export function NodeTranscriptPane({
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
         nodeExecutionKey={nodeExecutionKey}
+        timeoutFailure={latestNodeFailedByIdleExpiry(events, row.nodeId)}
         writtenOperatorMessageIds={reconcileWrittenIds}
       />
     </RoomRegion>

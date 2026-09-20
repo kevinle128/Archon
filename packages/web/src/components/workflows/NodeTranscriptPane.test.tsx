@@ -2990,4 +2990,145 @@ describe('NodeTranscriptPane', () => {
       expect(list?.textContent ?? '').toContain('alpha from finished band');
     });
   });
+
+  // Story 2.12 — idle timeout terminal presentation through room events.
+  describe('Story 2.12 idle timeout via events', () => {
+    const TIMEOUT_FAIL =
+      'interrupted by operator, no redirect received · failed after 30-minute idle timeout';
+    const TIMEOUT_STATUS = 'node failed · interrupted with no redirect · none of this was sent';
+    const NEVER_SENT_ALERT = 'node finished · none of this was sent';
+
+    function orderedEvent(overrides: {
+      id: string;
+      event_type: string;
+      step_name?: string | null;
+      event_order?: number;
+      data?: Record<string, unknown>;
+    }): WorkflowEventResponse {
+      return {
+        id: overrides.id,
+        workflow_run_id: 'run-1',
+        event_type: overrides.event_type,
+        step_index: null,
+        step_name: overrides.step_name === undefined ? 'review' : overrides.step_name,
+        data: overrides.data ?? {},
+        created_at: CREATED_AT,
+        event_order: overrides.event_order,
+      };
+    }
+
+    const timeoutFailEvents: readonly WorkflowEventResponse[] = [
+      orderedEvent({
+        id: 'start-1',
+        event_type: 'node_started',
+        event_order: 1,
+        data: { occurrence_id: 'occ-1' },
+      }),
+      orderedEvent({
+        id: 'fail-1',
+        event_type: 'node_failed',
+        event_order: 2,
+        data: {
+          error: 'interrupted by operator, no redirect received',
+          failure_reason: 'idle_after_interrupt_timeout',
+        },
+      }),
+    ];
+
+    function emptyMessages(): WorkflowNodeMessagesResponse {
+      return { messages: [], hasMore: false, highWatermark: 0, nextCursor: '0' };
+    }
+
+    test('timeout failure events show exact copy with no mutation controls', async () => {
+      const loadMessages: NodeMessageLoader = async () => emptyMessages();
+
+      await act(async () => {
+        renderPane({
+          row: { ...REVIEW_ROW, status: 'failed' },
+          runStatus: 'failed',
+          loadMessages,
+          events: timeoutFailEvents,
+          nodeTerminal: true,
+          nodeExecutionKey: 'logical-1',
+        });
+      });
+      await flush();
+
+      expect(host.querySelector('textarea')).toBeNull();
+      expect(host.textContent).toContain(TIMEOUT_FAIL);
+      expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+      const status = host.querySelector('[role="status"]');
+      expect(status?.textContent).toBe(TIMEOUT_STATUS);
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+      expect(host.querySelector('button')).toBeNull();
+    });
+
+    test('later node_started, node_retry_requested, or node_completed clears stale timeout copy', async () => {
+      const loadMessages: NodeMessageLoader = async () => emptyMessages();
+
+      await act(async () => {
+        renderPane({
+          row: { ...REVIEW_ROW, status: 'failed' },
+          runStatus: 'failed',
+          loadMessages,
+          events: timeoutFailEvents,
+          nodeTerminal: true,
+          nodeExecutionKey: 'logical-1',
+        });
+      });
+      await flush();
+      expect(host.textContent).toContain(TIMEOUT_FAIL);
+      expect(host.querySelector('[role="status"]')?.textContent).toBe(TIMEOUT_STATUS);
+
+      const clearCases: {
+        event_type: 'node_started' | 'node_retry_requested' | 'node_completed';
+        nodeTerminal: boolean;
+        rowStatus: LogRow['status'];
+        runStatus: WorkflowRunStatus;
+      }[] = [
+        {
+          event_type: 'node_started',
+          nodeTerminal: false,
+          rowStatus: 'running',
+          runStatus: 'running',
+        },
+        {
+          event_type: 'node_retry_requested',
+          nodeTerminal: false,
+          rowStatus: 'running',
+          runStatus: 'running',
+        },
+        {
+          event_type: 'node_completed',
+          nodeTerminal: true,
+          rowStatus: 'completed',
+          runStatus: 'completed',
+        },
+      ];
+
+      for (const clear of clearCases) {
+        await act(async () => {
+          renderPane({
+            row: { ...REVIEW_ROW, status: clear.rowStatus },
+            runStatus: clear.runStatus,
+            loadMessages,
+            events: [
+              ...timeoutFailEvents,
+              orderedEvent({
+                id: `clear-${clear.event_type}`,
+                event_type: clear.event_type,
+                event_order: 3,
+              }),
+            ],
+            nodeTerminal: clear.nodeTerminal,
+            nodeExecutionKey: 'logical-2',
+          });
+        });
+        await flush();
+        expect(host.textContent).not.toContain(TIMEOUT_FAIL);
+        expect(host.querySelector('[role="status"]')?.textContent ?? '').not.toBe(TIMEOUT_STATUS);
+        expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+      }
+    });
+  });
 });

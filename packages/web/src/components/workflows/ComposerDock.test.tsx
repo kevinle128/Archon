@@ -14,6 +14,7 @@ import type {
 import { SteeringRequestError, type SteeringSubState } from '@/lib/steering-dock';
 import type {
   InterruptNode,
+  KeepaliveNode,
   ReadNodeGuidanceQueue,
   SendNodeGuidance,
   WithdrawNodeGuidance,
@@ -171,6 +172,7 @@ describe('ComposerDock', () => {
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
       readQueue: ReadNodeGuidanceQueue;
+      keepalive: import('./ComposerDock').KeepaliveNode;
       pollIntervalMs: number;
       storage: Storage;
       nodeLabel: string;
@@ -178,6 +180,7 @@ describe('ComposerDock', () => {
       writtenOperatorMessageIds: ReadonlySet<string> | null;
       nodeTerminal: boolean;
       nodeExecutionKey: string | null;
+      timeoutFailure: boolean;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -198,12 +201,14 @@ describe('ComposerDock', () => {
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
           readQueue: overrides.readQueue ?? nextRead,
+          keepalive: overrides.keepalive,
           pollIntervalMs: overrides.pollIntervalMs ?? 60_000,
           storage: overrides.storage,
           focusLastRow: overrides.focusLastRow,
           writtenOperatorMessageIds: overrides.writtenOperatorMessageIds,
           nodeTerminal: overrides.nodeTerminal,
           nodeExecutionKey: overrides.nodeExecutionKey,
+          timeoutFailure: overrides.timeoutFailure,
         })
       );
     });
@@ -807,6 +812,9 @@ describe('ComposerDock', () => {
     expect(sendNowButton()).not.toBeNull();
     expect(host.textContent).toContain(
       'stopped after the last completed tool call · files already written stay written'
+    );
+    expect(host.textContent).toContain(
+      'no redirect ends this node after 30 min of inactivity · typing keeps it open'
     );
     const send = sendNowButton();
     expect(send.getAttribute('aria-label')?.startsWith('Send now')).toBe(true);
@@ -2570,5 +2578,176 @@ describe('ComposerDock', () => {
     expect(queued).toBeNull();
     expect(JSON.parse(storage.getItem(key) ?? '{}').pendingRetry).toBeNull();
     expect(field().value).toBe('attempt-a');
+  });
+
+  // Story 2.12 — idle keepalive + timeout terminal presentation.
+  const IDLE_STOP =
+    'stopped after the last completed tool call · files already written stay written';
+  const IDLE_TIMEOUT_LINE =
+    'no redirect ends this node after 30 min of inactivity · typing keeps it open';
+  const TIMEOUT_FAIL =
+    'interrupted by operator, no redirect received · failed after 30-minute idle timeout';
+  const TIMEOUT_STATUS = 'node failed · interrupted with no redirect · none of this was sent';
+
+  function reactOnFocus(node: Element): (() => void) | undefined {
+    const fiberKey = Object.keys(node).find(key => key.startsWith('__reactProps$'));
+    if (fiberKey === undefined) return undefined;
+    return (node as unknown as Record<string, { onFocus?: () => void }>)[fiberKey]?.onFocus;
+  }
+
+  test('2.12 idle renders both exact disclosure lines in order', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    const text = host.textContent ?? '';
+    const stopAt = text.indexOf(IDLE_STOP);
+    const timeoutAt = text.indexOf(IDLE_TIMEOUT_LINE);
+    expect(stopAt).toBeGreaterThanOrEqual(0);
+    expect(timeoutAt).toBeGreaterThan(stopAt);
+  });
+
+  test('2.12 first textarea focus and change send one keepalive; burst coalesced', async () => {
+    const keepaliveCalls: { runId: string; nodeId: string }[] = [];
+    const keepalive: KeepaliveNode = async (runId, nodeId) => {
+      keepaliveCalls.push({ runId, nodeId });
+      return { success: true };
+    };
+    await renderDock({ subState: 'idle-after-interrupt', keepalive });
+    await act(async () => {
+      reactOnFocus(field())?.();
+    });
+    await flush();
+    expect(keepaliveCalls).toEqual([{ runId: 'run-1', nodeId: 'grp.body' }]);
+    await setDraft('a');
+    await setDraft('ab');
+    await setDraft('abc');
+    expect(keepaliveCalls).toHaveLength(1);
+  });
+
+  test('2.12 activity after the throttle window sends again', async () => {
+    const keepaliveCalls: number[] = [];
+    const keepalive: KeepaliveNode = async () => {
+      keepaliveCalls.push(Date.now());
+      return { success: true };
+    };
+    await renderDock({ subState: 'idle-after-interrupt', keepalive });
+    await act(async () => {
+      reactOnFocus(field())?.();
+    });
+    await flush();
+    expect(keepaliveCalls).toHaveLength(1);
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 1100));
+    });
+    await setDraft('later');
+    expect(keepaliveCalls).toHaveLength(2);
+  });
+
+  test('2.12 rejected keepalive is caught and later activity retries', async () => {
+    let failOnce = true;
+    const keepaliveCalls: string[] = [];
+    const keepalive: KeepaliveNode = async () => {
+      if (failOnce) {
+        failOnce = false;
+        keepaliveCalls.push('fail');
+        throw new SteeringRequestError(500, 'internal_error', 'boom');
+      }
+      keepaliveCalls.push('ok');
+      return { success: true };
+    };
+    await renderDock({ subState: 'idle-after-interrupt', keepalive });
+    await act(async () => {
+      reactOnFocus(field())?.();
+    });
+    await flush();
+    expect(keepaliveCalls).toEqual(['fail']);
+    await setDraft('retry');
+    await flush();
+    expect(keepaliveCalls).toEqual(['fail', 'ok']);
+  });
+
+  test('2.12 non-idle modes send no keepalive', async () => {
+    const keepaliveCalls: number[] = [];
+    const keepalive: KeepaliveNode = async () => {
+      keepaliveCalls.push(1);
+      return { success: true };
+    };
+    for (const subState of [undefined, 'generating' as const]) {
+      keepaliveCalls.length = 0;
+      await renderDock({ subState, keepalive });
+      const ta = host.querySelector('textarea');
+      if (ta !== null) {
+        await act(async () => {
+          reactOnFocus(ta)?.();
+        });
+        await setDraft('x');
+      }
+      expect(keepaliveCalls).toHaveLength(0);
+    }
+  });
+
+  test('2.12 scope change resets throttle so first activity sends', async () => {
+    const keepaliveCalls: string[] = [];
+    const keepalive: KeepaliveNode = async (_r, nodeId) => {
+      keepaliveCalls.push(nodeId);
+      return { success: true };
+    };
+    await renderDock({ subState: 'idle-after-interrupt', keepalive, nodeId: 'a' });
+    await act(async () => {
+      reactOnFocus(field())?.();
+    });
+    await flush();
+    expect(keepaliveCalls).toEqual(['a']);
+    await renderDock({ subState: 'idle-after-interrupt', keepalive, nodeId: 'b' });
+    await act(async () => {
+      reactOnFocus(field())?.();
+    });
+    await flush();
+    expect(keepaliveCalls).toEqual(['a', 'b']);
+  });
+
+  test('2.12 timeout terminal removes controls and shows exact copy with empty list', async () => {
+    await renderDock({
+      rowStatus: 'failed',
+      live: false,
+      nodeTerminal: true,
+      timeoutFailure: true,
+      writtenOperatorMessageIds: new Set(),
+      nodeExecutionKey: 'exec-1',
+      focusLastRow: () => undefined,
+    });
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.textContent).toContain(TIMEOUT_FAIL);
+    expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+    const status = host.querySelector('[role="status"]');
+    expect(status?.textContent).toBe(TIMEOUT_STATUS);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('button')).toBeNull();
+  });
+
+  test('2.12 timeout terminal keeps ordered Never sent band and one polite status', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      rowStatus: 'failed',
+      live: false,
+      nodeTerminal: true,
+      timeoutFailure: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(host.textContent).toContain('never sent · 1');
+    expect(host.textContent).toContain('alpha');
+    expect(host.textContent).toContain(TIMEOUT_FAIL);
+    expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+    expect(host.querySelector('[role="status"]')?.textContent).toBe(TIMEOUT_STATUS);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('button')).toBeNull();
   });
 });

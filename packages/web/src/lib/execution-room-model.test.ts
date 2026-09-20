@@ -11,6 +11,7 @@ import {
   hasTerminalNodeEvidence,
   hasUnsettledNodeExecutions,
   latestNodeExecutionKey,
+  latestNodeFailedByIdleExpiry,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
@@ -1335,5 +1336,180 @@ describe('resolveRunDetailRefetchIntervalMs (T3.10–T3.14 core)', () => {
     ).toBe(false);
     expect(resolveRunDetailRefetchIntervalMs('cancelled', [])).toBe(false);
     expect(resolveRunDetailRefetchIntervalMs('cancelled', undefined)).toBe(false);
+  });
+});
+
+describe('latestNodeFailedByIdleExpiry', () => {
+  test('matching latest node_failed returns true', () => {
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({
+            id: 'fail-1',
+            event_type: 'node_failed',
+            event_order: 2,
+            data: {
+              error: 'interrupted by operator, no redirect received',
+              failure_reason: 'idle_after_interrupt_timeout',
+            },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('ordinary latest failure returns false', () => {
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [
+          orderedEvent({ id: 'start-1', event_type: 'node_started', event_order: 1 }),
+          orderedEvent({
+            id: 'fail-1',
+            event_type: 'node_failed',
+            event_order: 2,
+            data: { error: 'boom' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+  });
+
+  test('later start complete skip or prior-success clears the cause', () => {
+    const base = [
+      orderedEvent({ id: 'start-1', event_type: 'node_started', event_order: 1 }),
+      orderedEvent({
+        id: 'fail-1',
+        event_type: 'node_failed',
+        event_order: 2,
+        data: { failure_reason: 'idle_after_interrupt_timeout' },
+      }),
+    ];
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [
+          ...base,
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 3,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [...base, orderedEvent({ id: 'done-2', event_type: 'node_completed', event_order: 3 })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [...base, orderedEvent({ id: 'skip-2', event_type: 'node_skipped', event_order: 3 })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [
+          ...base,
+          orderedEvent({
+            id: 'skip-prior',
+            event_type: 'node_skipped_prior_success',
+            event_order: 3,
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+  });
+
+  test('node_retry_requested clears the cause before the new start', () => {
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [
+          orderedEvent({ id: 'start-1', event_type: 'node_started', event_order: 1 }),
+          orderedEvent({
+            id: 'fail-1',
+            event_type: 'node_failed',
+            event_order: 2,
+            data: { failure_reason: 'idle_after_interrupt_timeout' },
+          }),
+          orderedEvent({ id: 'retry-1', event_type: 'node_retry_requested', event_order: 3 }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+  });
+
+  test('sibling-node and loop-iteration events do not change the result', () => {
+    expect(
+      latestNodeFailedByIdleExpiry(
+        [
+          orderedEvent({ id: 'start-1', event_type: 'node_started', event_order: 1 }),
+          orderedEvent({
+            id: 'fail-1',
+            event_type: 'node_failed',
+            event_order: 2,
+            data: { failure_reason: 'idle_after_interrupt_timeout' },
+          }),
+          orderedEvent({
+            id: 'sib-fail',
+            event_type: 'node_failed',
+            step_name: 'sibling',
+            event_order: 3,
+            data: { failure_reason: 'idle_after_interrupt_timeout' },
+          }),
+          orderedEvent({
+            id: 'loop-fail',
+            event_type: 'loop_iteration_failed',
+            event_order: 4,
+            data: { failure_reason: 'idle_after_interrupt_timeout' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('ordering uses compareWorkflowEvents rather than array order', () => {
+    const events = [
+      orderedEvent({
+        id: 'later-in-array',
+        event_type: 'node_failed',
+        event_order: 1,
+        data: { failure_reason: 'idle_after_interrupt_timeout' },
+      }),
+      orderedEvent({
+        id: 'earlier-in-array-but-later-order',
+        event_type: 'node_completed',
+        event_order: 2,
+      }),
+    ];
+    expect(latestNodeFailedByIdleExpiry(events, NODE_ID)).toBe(false);
+
+    const timeoutWins = [
+      orderedEvent({
+        id: 'complete-first-in-array',
+        event_type: 'node_completed',
+        event_order: 1,
+      }),
+      orderedEvent({
+        id: 'timeout-second-in-array',
+        event_type: 'node_failed',
+        event_order: 2,
+        data: { failure_reason: 'idle_after_interrupt_timeout' },
+      }),
+    ];
+    expect(latestNodeFailedByIdleExpiry(timeoutWins, NODE_ID)).toBe(true);
   });
 });

@@ -15,6 +15,7 @@ import {
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
   buildExecutionHeader,
+  latestNodeFailedByIdleExpiry,
   type ExecutionHeaderModel,
   type FinishedIterationView,
 } from '@/lib/execution-room-model';
@@ -1154,6 +1155,7 @@ export function ConsoleNodeRoom({
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}
               nodeExecutionKey={nodeExecutionKey}
+              timeoutFailure={latestNodeFailedByIdleExpiry(events, row.nodeId)}
               writtenOperatorMessageIds={reconcileWrittenIds}
             />
           ) : null}
