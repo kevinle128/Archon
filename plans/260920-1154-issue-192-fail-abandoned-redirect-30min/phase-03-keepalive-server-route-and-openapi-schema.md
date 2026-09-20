@@ -1,116 +1,138 @@
 ---
-title: "Phase 3: Keepalive server route + OpenAPI schema"
+title: 'Phase 3: Keepalive route and generated contract'
 status: todo
 ---
 
-# Phase 3: Keepalive server route + OpenAPI schema
+# Phase 3: Keepalive route and generated contract
 
-## Context links
+## Outcome
 
-- Scout: `plans/reports/scout-260920-1843-server-steering-routes.md` (route ladder, actor grant,
-  schemas, test scaffolding).
-- `steering-api-contract.md`; `steering-test-plan.md` "Registry and routes".
+Add the ratified authenticated keepalive endpoint and regenerate the web OpenAPI types from this worktree's server.
+The endpoint only re-arms a live idle handle and never writes a row or delivers a message.
 
-## Overview
+## Contract
 
-Add an authenticated, bodyless `keepalive` route that re-arms the executor's idle-await timer by
-calling `NodeSteeringHandle.recordComposerActivity()` (Phase 1). Modeled exactly on the existing
-`interrupt` route.
+- Method and path: `POST /api/workflows/runs/{runId}/nodes/{nodeId}/keepalive`.
+- Request body: none.
+- Success response: exactly `{ success: true }`.
+- Authentication: `resolveAuthContext` under the existing steering actor grant.
+- Errors: the shared `{ success: false, error: { code, message } }` schema.
+- Statuses: 401, declared 403 parity, 404, 409, 422, and 500.
+- No owner check, role check, message body, timestamp, `sub_state`, transcript row, event row, or log content.
 
-## Key insights
+## Tests first
 
-- Steering routes: `send` (`api.ts:5337-5462`), `interrupt` (`:5464-5555`), withdraw
-  (`DELETE …/queue/{messageId}`), queue GET. All registered via
-  `registerOpenApiRoute(routeConst, handler, steeringValidationErrorHook)`.
-- Shared precedence ladder: 404 unknown run/node → 409 `node_finished` (terminal run/node/closed
-  handle) → 422 `not_steerable_here` (no live handle) → re-check latest run status → mutate.
-- **Actor grant** = "any resolved identity": `resolveAuthContext(c)` (`api.ts:2469-2516`) must
-  resolve *some* identity when `isWebAuthEnabled() || isApiGateEnabled()`; starter, other member,
-  non-owning admin all allowed; identity-less run allowed on an ungated install; unauthenticated
-  → 401 only when gated. The declared `403` is never raised (do not add one).
-- Response convention: 200 `{ success:true, ...fields }`; non-2xx shared `steeringErrorSchema`
-  (`workflow.schemas.ts:596-604`). `interrupt` returns `{ success:true, sub_state }`
-  (`interruptWorkflowNodeResponseSchema:582-590`).
-- Helpers to reuse: `steeringError()` (`api.ts:2310-2322`), `steeringJsonError()` (`:691-696`),
-  `getSteeringRegistry().get(runId, nodeId)`.
+Add tests to `packages/server/src/routes/api.workflow-runs.test.ts` with the existing steering fixtures and error helpers.
 
-## Requirements
+1. The actor matrix allows the starter, another authenticated member, a non-owning admin, and an identity-less caller on an ungated install.
+2. A gated unauthenticated caller receives the nested 401 `unauthenticated` response.
+3. A live idle handle returns exactly `{ success: true }` and calls `recordComposerActivity()` once.
+4. A live generating handle returns exactly `{ success: true }`, while the handle method remains a lifecycle no-op.
+5. Repeated keepalive calls are safe and create no queue or transcript mutation.
+6. A parked handle and a known non-terminal node without a local handle return 422 `not_steerable_here`.
+7. A closed handle, terminal node, or terminal run returns 409 `node_finished`.
+8. An unknown run or node returns 404 `not_found`.
+9. A handle that closes during the final awaited run lookup returns 409 and receives no activity call.
+10. A handle that parks during that await returns 422 and receives no activity call.
+11. An internal failure returns the nested 500 `internal_error` response without logging user content.
+12. The OpenAPI document contains a bodyless request and the strict minimal success schema.
+13. Every rejected request leaves handle state, queue contents, and transcript rows unchanged.
 
-- [ ] Route `POST /api/workflows/runs/{runId}/nodes/{nodeId}/keepalive`, bodyless, registered via
-      `registerOpenApiRoute` in `registerApiRoutes` (`api.ts:2295`).
-- [ ] Handler follows the ladder verbatim; on a live handle calls `handle.recordComposerActivity()`
-      and returns `{ success:true, sub_state }` echoing the current projected sub-state
-      (`idle-after-interrupt` on an idle handle; `generating` if it raced back to generating — a
-      no-op re-arm).
-- [ ] Identity via `resolveAuthContext`, sharing the exact grant path used by send/interrupt (do
-      not add ownership/role checks).
-- [ ] OpenAPI request/response schemas in `workflow.schemas.ts` modeled on the interrupt schemas
-      (`keepaliveWorkflowNodeResponseSchema` = `{ success, sub_state }`; errors via
-      `steeringErrorSchema`).
-- [ ] Regenerate `packages/web/src/lib/api.generated.d.ts` (`bun --filter @archon/web
-      generate:types` — **requires the dev server running**; start it, regen, stop it). No
-      hand-edit of the generated file.
+## Schema changes
 
-## TDD — Tests Before (`api.workflow-runs.test.ts`)
+In `packages/server/src/routes/schemas/workflow.schemas.ts`, add:
 
-Reuse fixtures (`makeApp`, `liveInterruptibleSetup`/`idleInterruptibleSetup`, `expectSteeringError`).
+- `keepaliveWorkflowNodeResponseSchema` as a strict object with only `success: z.literal(true)`.
+- `KeepaliveWorkflowNodeResponse` through `z.infer<typeof keepaliveWorkflowNodeResponseSchema>`.
 
-1. Actor grant matrix on keepalive: starter → 200, other member → 200, non-owning admin → 200,
-   identity-less run (ungated) → 200, unauthenticated (gated) → 401. (Mirror the existing
-   "actor ladder matches send" test.)
-2. Idle handle → 200 `{ success:true, sub_state:'idle-after-interrupt' }` and the handle records
-   activity (spy/assert `recordComposerActivity` invoked once).
-3. `generating` handle → 200 `{ success:true, sub_state:'generating' }`, a no-op (does not resolve
-   idle, does not fail).
-4. Terminal node/closed handle → 409 `node_finished`; detached run / no live handle → 422
-   `not_steerable_here`.
-5. Unknown run/node → 404; idempotent — repeated keepalive is a safe no-op each time.
-6. A rejected keepalive leaves node, queue, and transcript unchanged.
+Use the existing import from `@hono/zod-openapi`.
+Do not create a parallel interface.
 
-## Refactor
+## Route implementation
 
-- None to existing routes; keepalive is additive. Extract nothing unless the ladder is already a
-  shared helper (reuse `steeringError`).
+Add `keepaliveWorkflowNodeRoute` beside send and interrupt in `packages/server/src/routes/api.ts`.
+Register it with `registerOpenApiRoute(..., steeringValidationErrorHook)`.
 
-## TDD — Tests After
+Use this order:
 
-- Items 1–6 pass; the OpenAPI spec (`GET /api/openapi.json`) includes the keepalive route and the
-  regenerated web types expose it.
+1. Resolve authentication and enforce only the existing steering grant.
+2. Read the run and return 404 if it does not exist.
+3. Return 409 if the run is terminal.
+4. Read the in-process handle.
+5. On the hot path, classify `closed` as 409, `parked` as 422, and `live` as a candidate success without reading the event history.
+6. On the cold path with no handle, project persisted events to return 404 for an unknown node, 409 for a terminal node, or 422 for a known non-terminal detached node.
+7. Re-read the run as the final awaited gate.
+8. Return 404 or 409 if the run disappeared or became terminal.
+9. Re-read the handle snapshot after that await.
+10. Return 409 for closed, 422 for parked or missing, and otherwise call `recordComposerActivity()` synchronously.
+11. Return `{ success: true }`.
 
-## Todo
+The hot path follows the proven queue-read invariant that the executor seals the handle before its first awaited terminal write.
+This avoids an event-history scan for each typing request.
 
-- [ ] Write route tests (1–6); run — fail.
-- [ ] Add schemas in `workflow.schemas.ts`.
-- [ ] Add the handler + `createRoute` + `registerOpenApiRoute` in `api.ts`.
-- [ ] Start dev server → `bun --filter @archon/web generate:types` → stop server.
-- [ ] Green route tests + type-check.
+## Generated types
 
-## Success criteria
+Regenerate `packages/web/src/lib/api.generated.d.ts` from this worktree's OpenAPI document.
+Never edit it by hand.
 
-- [ ] `bun test packages/server/src/routes/api.workflow-runs.test.ts` green.
-- [ ] `api.generated.d.ts` contains the keepalive route; `bun --filter @archon/server type-check`
-      + `bun --filter @archon/web type-check` clean.
+The normal generator is hard-coded to port 3090.
+Before starting a server, inspect that port and do not stop or reuse a process owned by another worktree or user.
+If this worktree does not already own port 3090, use a checked, deterministic private port such as 3192 and run `openapi-typescript` against that URL directly.
 
-## Regression gate
+Use a temporary `ARCHON_HOME`, track the exact server PID or tool session, wait for `/api/health`, generate the file, stop only that server, and remove only that temporary directory.
 
-```
-bun test packages/server/src/routes/api.workflow-runs.test.ts
-bun --filter @archon/server type-check
-bun --filter @archon/web type-check
+Example shape when port 3192 is free:
+
+```bash
+lsof -i :3090
+lsof -i :3192
+task_archon_home="$(mktemp -d)"
+ARCHON_HOME="$task_archon_home" PORT=3192 bun --filter @archon/server dev
+bun x openapi-typescript http://127.0.0.1:3192/api/openapi.json -o packages/web/src/lib/api.generated.d.ts
 ```
 
-## Risk assessment
+Run the generator from a second terminal or tracked command session after the server is ready.
+Run the server as a tracked process in the implementation environment.
+Do not copy the example as an untracked detached shell process.
 
-- Forgetting the types regen (server must be running) → web can't call the route type-safely;
-  make it an explicit step, not an assumed side effect.
-- Adding a 403/ownership check would contradict the shipped grant model — do not.
+## Files
 
-## Security considerations
+| File                                                     | Action                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------- |
+| `packages/server/src/routes/schemas/workflow.schemas.ts` | Add the strict success schema and inferred type.              |
+| `packages/server/src/routes/api.ts`                      | Add the OpenAPI route and handler.                            |
+| `packages/server/src/routes/api.workflow-runs.test.ts`   | Add route, race, actor, mutation-negative, and OpenAPI tests. |
+| `packages/web/src/lib/api.generated.d.ts`                | Regenerate from the worktree server.                          |
 
-- Keepalive is in the Send/Interrupt route family: authenticated, no message content, no new
-  stored data. It only re-arms an in-memory timer; it cannot resolve idle-await or mutate the
-  queue.
+## Verification
 
-## Next steps
+```bash
+cd packages/server
+bun test src/routes/api.workflow-runs.test.ts
+bun run type-check
 
-Phase 4 wires the docks to call this route (debounced) and to disclose the 30-minute limit.
+cd ../web
+bun run type-check
+```
+
+Also compare the generated diff and confirm that it adds the keepalive path and schema without removing unrelated paths.
+
+## Exit criteria
+
+- [ ] The route matches the ratified request, response, error, and actor contracts.
+- [ ] A terminal transition during the request wins before the activity mutation.
+- [ ] The live path does not scan workflow event history.
+- [ ] No route outcome writes a message, transcript row, workflow event, or queue item.
+- [ ] The generated file came from this worktree and contains no unrelated loss.
+- [ ] No server process or temporary Archon home remains after generation.
+
+## Risks and rollback
+
+- Returning `sub_state` would violate the ratified public response.
+- Treating a parked handle as success would keep a node alive where no provider session can accept a redirect.
+- Generating against a foreign server can erase unrelated generated routes.
+- Rollback removes an additive route and generated type and needs no data migration.
+
+## Next phase
+
+Wire the generated type into both web API clients and implement the two-shell interaction and failure presentation.

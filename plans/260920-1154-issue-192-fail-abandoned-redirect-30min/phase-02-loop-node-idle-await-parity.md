@@ -1,90 +1,90 @@
 ---
-title: "Phase 2: Loop-node idle-await parity"
+title: 'Phase 2: Loop parity and failure invariants'
 status: todo
 ---
 
-# Phase 2: Loop-node idle-await parity
+# Phase 2: Loop parity and failure invariants
 
-## Context links
+## Outcome
 
-- Phase 1 (primitives + constants reused here).
-- `steering-test-plan.md`: *"every engine turn-loop assertion also runs against
-  `executeLoopNode` … plus the loop-only case — `Send now` continues the interrupted iteration
-  on the same session before the normal loop-completion check."*
-- Scout: `plans/reports/scout-260920-1843-executor-fail-retry.md` (loop fail family).
+Apply the fixed idle-after-interrupt expiry to AI loop nodes and prove the complete engine contract for both executor paths.
+The loop must fail through its existing iteration and node finalizers, and automatic retry must not start a new loop attempt.
 
-## Overview
+## Source anchors
 
-AI loop nodes are steerable in v1, so the 30-minute idle-await bound must apply identically to
-`executeLoopNode`. The only difference from Phase 1 is the **fail family**: the loop path uses
-`failLoopIteration` (`dag-executor.ts:6132-6166`) → `failLoopNode` (`:5864+`), not
-`finishCancelled`.
+- `executeLoopNode()` in `packages/workflows/src/dag-executor.ts` has its own interrupted-turn idle block.
+- `failLoopIteration()` emits the iteration failure and delegates the single node terminal to `failLoopNode()`.
+- The loop's `send_now` branch resumes the interrupted iteration on the same provider session before the ordinary completion checks.
+- `runNodeRetryLoop()` wraps the loop result and therefore applies `retry.on_error: all` unless the structured reason blocks it.
 
-## Key insights
+## Tests first
 
-- Loop idle-await handling: `dag-executor.ts:7165-7220` mirrors the node block —
-  `enterIdle(turnToken)` → `raceIdleWake` → `send_now` continues the interrupted iteration on the
-  same session before the loop-completion check; else terminates via the loop cancel path.
-- Loop teardown `finally` is the wrapper at `:5684-5731` (`unregister` at `:5727`); it already
-  handles an ordinary `state:'failed'` return with no new code.
-- The same injected `idleAwaitTimeoutMs` from Phase 1 must reach this call site.
+Add the loop matrix to `packages/workflows/src/dag-executor.test.ts` before the branch implementation.
+Use fake timers and restore them after each test.
 
-## Requirements
+1. A Claude loop fixture expires after 1,800,000 milliseconds and returns the exact error.
+2. A non-Claude loop fixture with its real abort shape reaches the same result.
+3. The persisted node terminal is one `node_failed` event with `failure_reason: 'idle_after_interrupt_timeout'`.
+4. One `loop_iteration_failed` diagnostic may also exist, but there must not be a second `node_failed` terminal.
+5. No `node_completed` or `loop_iteration_completed` event is emitted for the expired attempt.
+6. Composer activity re-arms the full interval without advancing the loop or resolving the idle waiter.
+7. `send_now` before expiry resumes the interrupted iteration on its prior session and reaches the normal completion check.
+8. Cancel wins through the existing loop cancellation result and leaves no late expiry.
+9. `retry.on_error: all` does not execute a second loop provider attempt after expiry.
+10. Pending queued message ids have no operator transcript row after expiry.
+11. The closed handle retains its pending snapshot until the existing unregister path removes it, so client reconciliation can classify the observed ids as unmatched.
 
-- [ ] `executeLoopNode` idle-await (`:7195`) calls the Phase-1 `raceIdleWake(…, handle,
-      idleAwaitTimeoutMs)`.
-- [ ] Add a `wake.kind === 'expired'` branch that fails the loop with
-      `IDLE_AWAIT_NO_REDIRECT_ERROR` via `failLoopIteration`/`failLoopNode` (loop family), never
-      `finishCancelled`, never a completing idle-timeout, never `node_completed`.
-- [ ] `Send now` before expiry continues the interrupted iteration on the same session
-      (unchanged); expiry occurs before the normal loop-completion check.
+## Implementation
 
-## TDD — Tests Before
+- Pass the loop's interruptible handle to the Phase 1 `raceIdleWake()` call.
+- Branch explicitly on `wake.kind === 'expired'` before the terminated path.
+- Call `failLoopIteration()` with the exact user-visible error as both the iteration error and its explicit third `nodeError` argument so the default `Loop iteration N failed:` prefix is not used.
+- Pass `failure_reason: 'idle_after_interrupt_timeout'` through `LoopFailureExtras.data` so `failLoopNode()` persists it on `node_failed`.
+- Extend the loop failure extras with the internal camel-case `failureReason` value and return it on the loop's failed result so the shared retry loop refuses an automatic retry.
+- Keep the loop iteration number, cost, token, output, and execution-scope fields that the existing finalizer already owns.
+- Do not use the standard-node finalizer inside the loop.
+- Do not move expiry after output validation or loop-completion evaluation.
 
-Re-run the Phase-1 engine matrix (items 6–10) against `executeLoopNode` (`dag-executor.test.ts`),
-one Claude + one non-Claude fixture:
+## Engine-wide proof checks
 
-1. Loop interrupt → idle; silence past injected timeout → loop node fails once with
-   `IDLE_AWAIT_NO_REDIRECT_ERROR`; assert loop-family fail event, negatives (no `node_completed`,
-   no `nodeIdleTimedOut`, no completing-idle-timeout).
-2. Loop keepalive re-arm keeps the iteration alive; fails only after a fresh interval.
-3. Loop `Send now` before expiry continues the interrupted iteration on the same session and
-   reaches the loop-completion check normally.
-4. Loop cancel-poll still reaches the node with no stream.
+After node and loop coverage is green, add or strengthen focused assertions for these indirect contracts:
 
-## Refactor
+- Expiry never calls `upsertWorkflowNodeSession` because the result is failed.
+- Expiry never writes an operator transcript row for a queued but undelivered message.
+- The existing stream idle timeout still has its old completion behavior and is not called by this path.
+- The existing run-status Cancel poll remains reachable with no live stream.
+- The registry singleton is empty after executor cleanup.
 
-- Update the loop call site to the new `raceIdleWake` signature; keep the loop cancel/terminate
-  branch unchanged; only add the `expired` branch.
+## Files
 
-## TDD — Tests After
+| File                                          | Action                                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `packages/workflows/src/dag-executor.ts`      | Add the loop expiry branch and structured terminal data.                            |
+| `packages/workflows/src/dag-executor.test.ts` | Add loop parity, no-auto-retry, transcript, session-upsert, and cleanup assertions. |
 
-- Loop items 1–4 pass; the loop-completion check is unaffected on non-interrupted iterations
-  (existing loop tests stay green).
+## Verification
 
-## Todo
-
-- [ ] Write loop idle-await tests (1–4); run — fail.
-- [ ] Wire `raceIdleWake` + `expired` branch into `executeLoopNode` via the loop fail family.
-- [ ] Green loop tests.
-
-## Success criteria
-
-- [ ] `bun test packages/workflows/src/dag-executor.test.ts` green including loop idle-await.
-- [ ] Loop and node expiry share the constant + message but use their own fail families.
-
-## Regression gate
-
-```
-bun test packages/workflows/src/dag-executor.test.ts
-bun --filter @archon/workflows type-check
+```bash
+cd packages/workflows
+bun test src/dag-executor.test.ts
+bun test src/steering-registry.test.ts
+bun run type-check
 ```
 
-## Risk assessment
+## Exit criteria
 
-- Using the node fail family inside the loop would corrupt loop iteration/state accounting —
-  assert the loop fail flows through `failLoopIteration`/`failLoopNode`.
+- [ ] Standard and loop nodes use the same fixed handle timer and wake reason.
+- [ ] Each path uses its own established terminal finalizer.
+- [ ] Each path persists the same exact error and structured failure reason.
+- [ ] Neither path automatically retries, completes, persists a session, or writes a queued operator row after expiry.
+- [ ] Same-session loop redirect and Cancel behavior remain green.
 
-## Next steps
+## Risks and rollback
 
-Phase 3 exposes the keepalive route that drives `recordComposerActivity()`.
+- Skipping `failLoopIteration()` would corrupt loop audit and status accounting.
+- Prefixing the node error with loop prose would break the exact product error contract.
+- Rollback needs no migration and leaves any already written failure event readable by older code.
+
+## Next phase
+
+Expose authenticated composer activity through the ratified bodyless keepalive route.
