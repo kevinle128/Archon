@@ -80,7 +80,7 @@ function buildProviderEnv(requestEnv?: Record<string, string>): Record<string, s
   return { ...baseEnv, ...(requestEnv ?? {}) };
 }
 
-function buildSpawnCommand(binaryPath: string, args: string[]): string[] {
+export function buildSpawnCommand(binaryPath: string, args: string[]): string[] {
   if (process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(binaryPath)) {
     return ['cmd.exe', '/d', '/s', '/c', binaryPath, ...args];
   }
