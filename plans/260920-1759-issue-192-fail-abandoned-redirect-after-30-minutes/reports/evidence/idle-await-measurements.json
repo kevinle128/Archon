@@ -49,7 +49,7 @@
         "height": 900
       }
     },
-    "idleAt": 1789910629782,
+    "idleAt": 1789912526178,
     "keepaliveCount": 0
   },
   "expired-empty-console": {
@@ -76,9 +76,9 @@
       }
     },
     "keepaliveCount": 1,
-    "lastActivity": 1789910629897,
-    "failedAt": 1789910638473,
-    "elapsed": 8576,
+    "lastActivity": 1789912526299,
+    "failedAt": 1789912534876,
+    "elapsed": 8577,
     "latestError": "interrupted by operator, no redirect received"
   },
   "idle-empty-legacy": {
@@ -131,7 +131,7 @@
         "height": 900
       }
     },
-    "idleAt": 1789910648491,
+    "idleAt": 1789912544849,
     "keepaliveCount": 0
   },
   "expired-empty-legacy": {
@@ -158,18 +158,18 @@
       }
     },
     "keepaliveCount": 1,
-    "lastActivity": 1789910648598,
-    "failedAt": 1789910657156,
-    "elapsed": 8558,
+    "lastActivity": 1789912544957,
+    "failedAt": 1789912553507,
+    "elapsed": 8550,
     "latestError": "interrupted by operator, no redirect received"
   },
   "rearm-console": {
-    "idleAt": 1789910668131,
-    "rearmAt": 1789910674157,
-    "failedAt": 1789910683081,
+    "idleAt": 1789912564424,
+    "rearmAt": 1789912571217,
+    "failedAt": 1789912579927,
     "keepaliveCount": 1,
-    "fromRearm": 8924,
-    "totalLifetime": 14950
+    "fromRearm": 8710,
+    "totalLifetime": 15503
   },
   "send-now-exclusion": {
     "clickKeepalivesBefore": 1,
@@ -180,16 +180,16 @@
     "sendBodies": [
       {
         "message": "<<E2E_SCENARIO>>{\"echoPrompt\":true,\"delayMs\":1500}<</E2E_SCENARIO>>expiry-redirect",
-        "message_id": "8b42e6a3-acda-4b8b-9258-b46c7a266cee",
+        "message_id": "e06e2fac-6ab4-40d5-b437-a80f075fc791",
         "intent": "send_now"
       }
     ]
   },
   "retry-legacy": {
-    "interruptedToolId": "e2e-fake-tool-e2e-fake-5d44e926-a77c-497d-9da4-4d659b76bbae",
-    "retriedToolId": "e2e-fake-tool-e2e-fake-a7189abe-d084-4fa5-a848-f1d93b79b0aa",
-    "interruptedSession": "e2e-fake-5d44e926-a77c-497d-9da4-4d659b76bbae",
-    "retriedSession": "e2e-fake-a7189abe-d084-4fa5-a848-f1d93b79b0aa",
+    "interruptedToolId": "e2e-fake-tool-e2e-fake-99fff65f-5163-4a00-b6e4-463d16f09e9b",
+    "retriedToolId": "e2e-fake-tool-e2e-fake-583eedc6-54fb-465d-b58d-9c45c435489c",
+    "interruptedSession": "e2e-fake-99fff65f-5163-4a00-b6e4-463d16f09e9b",
+    "retriedSession": "e2e-fake-583eedc6-54fb-465d-b58d-9c45c435489c",
     "failedRetryEpoch": 0,
     "retriedRetryEpoch": 1
   },
@@ -252,8 +252,8 @@
         "height": 900
       }
     },
-    "idleAt": 1789910639284,
-    "messageId": "2a3339a1-d019-4920-81b7-4759ae47d507"
+    "idleAt": 1789912535624,
+    "messageId": "78bac335-6999-4900-abeb-0df9fb3bfd9d"
   },
   "idle-queued-legacy": {
     "geometry": {
@@ -314,8 +314,8 @@
         "height": 900
       }
     },
-    "idleAt": 1789910658207,
-    "messageId": "51ee7bd2-1c6a-4004-8c3a-ae801f0a3274"
+    "idleAt": 1789912554483,
+    "messageId": "d6e16ae1-10ff-4701-a70f-2cce8650b788"
   },
   "expired-queued-console": {
     "geometry": {
@@ -349,10 +349,10 @@
         "height": 900
       }
     },
-    "idleAt": 1789910639284,
-    "failedAt": 1789910647701,
-    "elapsed": 8417,
-    "messageId": "2a3339a1-d019-4920-81b7-4759ae47d507",
+    "idleAt": 1789912535624,
+    "failedAt": 1789912544034,
+    "elapsed": 8410,
+    "messageId": "78bac335-6999-4900-abeb-0df9fb3bfd9d",
     "bandCap": {
       "hasMaxH33vh": true,
       "maxHeight": "297px",
@@ -394,10 +394,10 @@
         "height": 900
       }
     },
-    "idleAt": 1789910658207,
-    "failedAt": 1789910666586,
-    "elapsed": 8379,
-    "messageId": "51ee7bd2-1c6a-4004-8c3a-ae801f0a3274",
+    "idleAt": 1789912554483,
+    "failedAt": 1789912562886,
+    "elapsed": 8403,
+    "messageId": "d6e16ae1-10ff-4701-a70f-2cce8650b788",
     "bandCap": {
       "hasMaxH33vh": true,
       "maxHeight": "297px",

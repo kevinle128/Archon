@@ -22,7 +22,7 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 - **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now' }`.
   `message_id` is the correlation key for terminal reconciliation (CAP-11 / AD-11) and, post-G1, for `delivered`.
 - **interrupt** — `{}` (no body); the target is the live turn on the registry handle.
-- **keepalive** — `{}` (no body); it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
+- **keepalive** — no request body; it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
 - **withdraw** — `{}` (no body); `message_id` is the path parameter. Removes that message from the registry queue if it is still present.
 - **queue read** — bodyless GET: no request body and no query parameters; `runId`/`nodeId` are the only path parameters.
 

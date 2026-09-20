@@ -103,6 +103,21 @@ function keepalivePathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/keepalive`;
 }
 
+/**
+ * Wait for a real elapsed-time boundary without a long fixed sleep. The idle
+ * expiry proof intentionally observes the live server clock, while polling
+ * keeps the test responsive to an early failure and avoids opaque pauses.
+ */
+async function waitForElapsed(startedAt: number, elapsedMs: number): Promise<void> {
+  await expect
+    .poll(() => Date.now() - startedAt, {
+      timeout: elapsedMs + 2_000,
+      intervals: [250, 500, 1_000],
+      message: `elapsed time reaches ${String(elapsedMs)}ms`,
+    })
+    .toBeGreaterThanOrEqual(elapsedMs);
+}
+
 function trackPosts(
   page: Page,
   pathname: string
@@ -723,7 +738,7 @@ test('[P1] [V:steer.idle-await-rearm] E3 Console real server re-arm past origina
   const idleAt = await interruptToIdle(page, room, run.runId, QUEUE_GUIDANCE_NODE);
 
   // Let most of the original interval elapse, then create one activity request.
-  await new Promise(resolve => setTimeout(resolve, 6_000));
+  await waitForElapsed(idleAt, 6_000);
   const field = guidanceField(room);
   const keepaliveResponse = page.waitForResponse(
     res =>
@@ -738,11 +753,7 @@ test('[P1] [V:steer.idle-await-rearm] E3 Console real server re-arm past origina
   expect(keepalives.count()).toBeGreaterThanOrEqual(1);
 
   // Prove the node remains running beyond the original deadline.
-  const pastOriginal = idleAt + IDLE_AWAIT_MS + 1_000;
-  const waitPastOriginal = Math.max(0, pastOriginal - Date.now());
-  if (waitPastOriginal > 0) {
-    await new Promise(resolve => setTimeout(resolve, waitPastOriginal));
-  }
+  await waitForElapsed(idleAt, IDLE_AWAIT_MS + 1_000);
   const stillRunning = await getNodeState(page, run.runId, QUEUE_GUIDANCE_NODE);
   expect(stillRunning?.status, 'node survives past original deadline after re-arm').toBe('running');
   expect(stillRunning?.steeringSubState).toBe('idle-after-interrupt');
