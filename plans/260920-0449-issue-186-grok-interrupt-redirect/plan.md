@@ -167,18 +167,18 @@ If implementation unexpectedly requires a UI change, stop and re-scope it agains
 
 Phase 1 must fill this table before Phase 2 begins. Blank or failed entries are blockers, not optional decisions.
 
-| Evidence             | Required result                                                                       | Recorded result |
-| -------------------- | ------------------------------------------------------------------------------------- | --------------- |
-| Grok build           | Exact binary/version/hash; current stable checked                                     | —               |
-| Safe boundary `M`    | Production-observable; current prompt and inherited context survive                   | —               |
-| Stop acknowledgement | `< 1,000 ms` in every cold/warm sample on each host                                   | —               |
-| Fresh turn           | Assigned id resumes with current marker                                               | —               |
-| Resumed turn         | Same id resumes with old + current markers; immediate-stop policy decided by evidence | —               |
-| Forked turn          | Assigned fork id resumes with source + fork markers; source remains unchanged         | —               |
-| POSIX process tree   | Exact child gone after graceful Stop/Cancel                                           | —               |
-| Windows launch/tree  | Real `.cmd`/`cmd.exe` path; same-session resume and exact descendants gone            | —               |
-| Supported hosts      | Native macOS, Linux, Windows all pass                                                 | —               |
-| Grace interval       | Measured graceful shutdown bound with margin below 1,000 ms total                     | —               |
+| Evidence             | Required result                                                                       | Recorded result                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Grok build           | Exact binary/version/hash; current stable checked                                     | `grok 1.0.34 (3736acbc8658) [stable]` on native macOS arm64 / Bun 1.3.14 (report `plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md`). Validated build only — not a minimum floor.                  |
+| Safe boundary `M`    | Production-observable; current prompt and inherited context survive                   | **PASS on macOS text/reasoning/tool shapes:** `first-stdout-event` (owned-tree). Marker retention true; request→settlement ~300 ms.                                                                                |
+| Stop acknowledgement | `< 1,000 ms` in every cold/warm sample on each host                                   | **PASS on macOS LAT:** new n=10 min/med/max 293/311/318; resumed 268/277/289; forked 298/307/325 — all under 1000 ms, 0 failures. Linux/Windows: **BLOCKED** (hosts unavailable).                                  |
+| Fresh turn           | Assigned id resumes with current marker                                               | **PASS (macOS B0/B2):** B0 natural + B2 interrupt at M retain current marker.                                                                                                                                      |
+| Resumed turn         | Same id resumes with old + current markers; immediate-stop policy decided by evidence | **PASS (macOS B3):** inherited+current markers; policy = wait for M (request early, signal at M).                                                                                                                  |
+| Forked turn          | Assigned fork id resumes with source + fork markers; source remains unchanged         | **PASS (macOS B4):** fork retains source+fork markers; sourceWithoutFork true.                                                                                                                                     |
+| POSIX process tree   | Exact child gone after graceful Stop/Cancel                                           | **BLOCKED:** B7/B9 mid-tool owned-tree still leave exact tool-child fingerprint alive after parent exit (settlement also >1s because M deferred to pid-file). Non-tool Stop at `first-stdout-event` reaps cleanly. |
+| Windows launch/tree  | Real `.cmd`/`cmd.exe` path; same-session resume and exact descendants gone            | **BLOCKED** — no native Windows host in this environment (`W1` pending operator evidence).                                                                                                                         |
+| Supported hosts      | Native macOS, Linux, Windows all pass                                                 | **BLOCKED** — macOS incomplete (B7/B9); native Linux unavailable; native Windows unavailable. Containers/WSL not substituted.                                                                                      |
+| Grace interval       | Measured graceful shutdown bound with margin below 1,000 ms total                     | Interrupt path uses 800 ms SIGTERM→SIGKILL ceiling; non-tool Stop at M settles ~300 ms without SIGKILL. Cancel grace remains 5000 ms. Mid-tool pid-file path cannot meet 1000 ms request→settlement on this host.  |
 
 ## Remaining questions
 
