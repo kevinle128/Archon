@@ -5936,6 +5936,11 @@ async function executeLoopNodeInner(
     loopIterations?: number;
     /** Extra persisted node_failed payload (e.g. the failing command name). */
     data?: Record<string, unknown>;
+    /**
+     * Internal structured failure reason (Story 2.12). Returned on the failed
+     * loop result so runNodeRetryLoop refuses automatic retry; never public.
+     */
+    failureReason?: 'idle_after_interrupt_timeout';
   }
 
   const failLoopNode = async (
@@ -5976,6 +5981,7 @@ async function executeLoopNodeInner(
       ...(extras.costUsd !== undefined ? { costUsd: extras.costUsd } : {}),
       ...(extras.tokens !== undefined ? { tokens: extras.tokens } : {}),
       ...(extras.loopIterations !== undefined ? { loopIterations: extras.loopIterations } : {}),
+      ...(extras.failureReason !== undefined ? { failureReason: extras.failureReason } : {}),
     };
   };
 
@@ -7278,9 +7284,27 @@ async function executeLoopNodeInner(
           turnIsGuidance = true;
           continue turns;
         }
+        if (wake.kind === 'expired') {
+          // Abandoned redirect — fail through the loop finalizer with the exact
+          // user-visible error (no "Loop iteration N failed:" prefix) and the
+          // structured reason that blocks automatic retry.
+          return await failLoopIteration(
+            IDLE_AFTER_INTERRUPT_ERROR,
+            {
+              costUsd: loopTotalCostUsd,
+              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+              loopIterations: i,
+              data: {
+                failure_reason: IDLE_AFTER_INTERRUPT_FAILURE_REASON,
+                iteration: i,
+              },
+              failureReason: IDLE_AFTER_INTERRUPT_FAILURE_REASON,
+            },
+            IDLE_AFTER_INTERRUPT_ERROR
+          );
+        }
         // Discard / terminal-status wake — land on the existing cancel path so
         // the run ends exactly as a mid-stream stop would.
-        // Idle-expiry (`expired`) loop parity is Story 2.12 US-002.
         const effectiveStatus =
           (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ?? 'cancelled';
         await safeSendMessage(

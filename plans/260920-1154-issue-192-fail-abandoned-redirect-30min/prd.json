@@ -17,8 +17,8 @@
       "technicalNotes": "Phase 1 (phase-01-start.md). steering-registry.ts: extend SteeringIdleWake (:97) with { kind: 'expired' }; add one private timeout field + module-local 1_800_000 ms constant on NodeSteeringHandle (:128); arm inside enterIdle() (:267); clear in seal() (:430) and before accept send_now resolves; add recordComposerActivity() and idle-only terminateIdleAwait() (close + resolve 'terminated' in one synchronous mutation); unregister() (:505) closes the handle before deleting. dag-executor.ts: raceIdleWake() (:521) receives the handle and the run-status poll settles via terminateIdleAwait(); add module-local constants for the exact error and 'idle_after_interrupt_timeout'; internal failureReason?: 'idle_after_interrupt_timeout' on NodeExecutionResult (never on public NodeOutput); shouldRetryNodeFailure() (:998) returns false for it; add finishIdleExpired() beside finishCancelled() (:3274) persisting node_failed with failure_reason + duration + lifecycle scope + iteration data; explicit wake.kind === 'expired' branch before terminated at :3572; do NOT throw expiry through the broad outer catch. No timer service, event emitter, config surface, or ExecuteWorkflowOptions field. Use jest fake timers, restore in finally/afterEach; cover one Claude and one non-Claude fixture. No root bun test.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented iteration 1; test-quality fix-up + TDD red proof (HEAD^ production → recordComposerActivity TypeError). Files: steering-registry.ts/.test.ts, dag-executor.ts/.test.ts. Gates: registry+executor tests, type-check, eslint, prettier."
     },
     {
       "id": "US-002",
@@ -36,8 +36,8 @@
       "technicalNotes": "Phase 2 (phase-02-loop-node-idle-await-parity.md). dag-executor.ts only: pass the loop's interruptible handle to the Phase-1 raceIdleWake() (:7196 call site); explicit wake.kind === 'expired' branch before the terminated path; failLoopIteration() at :6132; extend loop failure extras with internal failureReason returned on the failed result; keep iteration number/cost/token/output/execution-scope fields the existing finalizer owns. Do NOT use the standard-node finalizer inside the loop; do NOT move expiry after output validation or loop-completion evaluation. Fake timers restored per test; add loop parity, no-auto-retry, transcript, session-upsert, and cleanup assertions to dag-executor.test.ts.",
       "dependsOn": ["US-001"],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented iteration 2. Files: dag-executor.ts (loop expired branch + LoopFailureExtras.failureReason), dag-executor.test.ts (loop idle-expiry parity suite). Gates: registry+executor tests, type-check, eslint, prettier."
     },
     {
       "id": "US-003",

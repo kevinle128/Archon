@@ -1,0 +1,77 @@
+## Codebase Patterns
+
+### Idle-after-interrupt timer ownership
+- **Where**: `packages/workflows/src/steering-registry.ts` (`NodeSteeringHandle`)
+- **Pattern**: One private `setTimeout` field + module-local `1_800_000` ms constant. Arm in `enterIdle`, clear in `seal`/`send_now`/`expireIdle`. First-wins via clearing `idleWaiter` before resolve. `recordComposerActivity` only re-arms when live + idle + waiter present.
+- **Example**: `terminateIdleAwait()` → `seal('node_finished')` so Cancel poll shares the same waiter as expiry.
+
+### Executor idle expiry under fake timers
+- **Where**: `packages/workflows/src/dag-executor.test.ts` (`idle-after-interrupt timeout`)
+- **Pattern**: Keep setup on real timers; provider fixture calls `gate.arm()` → `jest.useFakeTimers()` immediately before the abort-marked result and resolves a promise. `awaitIdleFast` awaits that promise then spins with `advanceTimersByTime(0)` only (never `Bun.sleep`, never `runAllTimers`).
+- **Example**: `const gate = createFakeArmGate(); … gate.arm(); yield abortResult; await awaitIdleFast(…, gate.armed); jest.advanceTimersByTime(1_800_000)`.
+
+### raceIdleWake settles Cancel through the handle
+- **Where**: `packages/workflows/src/dag-executor.ts` `raceIdleWake`
+- **Pattern**: Pass the handle; on non-continuing status call `handle.terminateIdleAwait()` instead of resolving a separate race promise. Await only the handle waiter; stop the poll in `finally`.
+
+---
+
+## 2026-09-20 — US-001: Handle-owned inactivity timer and standard-node expiry
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/steering-registry.ts` — expired wake kind, fixed timer, recordComposerActivity, terminateIdleAwait, unregister closes first
+- `packages/workflows/src/steering-registry.test.ts` — fake-timer registry coverage (arm/re-arm/first-wins/cleanup)
+- `packages/workflows/src/dag-executor.ts` — raceIdleWake via handle, finishIdleExpired, failureReason + shouldRetry guard, standard-node expired branch
+- `packages/workflows/src/dag-executor.test.ts` — Claude + deepseek expiry, no-retry, re-arm, send_now win, Cancel poll, boundary orders
+
+**Acceptance criteria verified**:
+- [x] enterIdle arms 1_800_000 ms timer; fake advance resolves `{ kind: 'expired' }` and closes handle
+- [x] recordComposerActivity re-arms live idle only; no-op on generating/parked/closed
+- [x] send_now / terminateIdleAwait / close / park / discard / unregister / clearForTests clear timer; first-wins; post-expiry send_now → closed
+- [x] Standard-node expiry: one node_failed with exact error + failure_reason; no node_completed
+- [x] retry.on_error: all → one provider attempt; shouldRetryNodeFailure returns false for structured reason
+- [x] Re-arm keeps past original deadline; send_now same session; Cancel poll ends idle node
+- [x] `bun test src/steering-registry.test.ts` + `bun test src/dag-executor.test.ts` + `bun run type-check` pass
+
+**Learnings**:
+- Full-suite fake timers from test start stall the executor; arm fake timers mid-stream at the abort result instead.
+- Coordinate idle wait with a promise from the arm call — no real wall-clock sleep in new tests.
+- Loop call site must pass the new raceIdleWake handle arg, but expired loop parity stays US-002 (do not half-implement failureReason there).
+- TDD red proof: `git show HEAD^:…` into production files → `recordComposerActivity is not a function`; restore via `git restore --source=HEAD`.
+
+---
+
+## 2026-09-20 — US-001 fix-up: test quality + TDD red proof
+
+**Status**: PASSED (gates re-run post-format)
+**Files changed**:
+- `steering-registry.test.ts` — `SteeringRegistry` top-level type on helper
+- `dag-executor.test.ts` — promise-gated fake arm, no Bun.sleep, platform idle-timeout assertion
+
+**Acceptance criteria re-verified**: exact three gates + eslint + prettier after lint-staged format.
+
+---
+
+## 2026-09-20 — US-002: Loop-node idle-expiry parity and engine invariants
+
+**Status**: PASSED
+**Files changed**:
+- `packages/workflows/src/dag-executor.ts` — loop `wake.kind === 'expired'` branch before terminated; `LoopFailureExtras.failureReason` returned from `failLoopNode`
+- `packages/workflows/src/dag-executor.test.ts` — loop idle-expiry parity suite (Claude + deepseek, no-retry, re-arm, send_now, Cancel, pending snapshot/transcript)
+
+**Acceptance criteria verified**:
+- [x] Claude + non-Claude loop fixtures expire after 1_800_000 ms with exact error
+- [x] One `node_failed` with `failure_reason`; at most one `loop_iteration_failed`; no second terminal, no `node_completed`/`loop_iteration_completed`
+- [x] `failLoopIteration` exact error as iteration + nodeError (no prefix); `failure_reason` via extras.data
+- [x] `retry.on_error: all` → one provider attempt; internal `failureReason` blocks retry
+- [x] Composer re-arm, send_now same-session completion, Cancel wins without late expiry
+- [x] No session upsert, no operator transcript for queued ids, no stream idle-timeout path, registry empty after cleanup, closed handle retains pending
+- [x] `bun test src/dag-executor.test.ts` + `bun test src/steering-registry.test.ts` + `bun run type-check` pass
+
+**Learnings**:
+- Loop must use `failLoopIteration(exact, extras, exact)` — third arg is the only way to suppress the `Loop iteration N failed:` prefix on the node terminal.
+- `failureReason` must ride `LoopFailureExtras` → `failLoopNode` return; `data.failure_reason` alone does not block `runNodeRetryLoop`.
+- Pending queue survives `expireIdle`/`close`; unregister only drops the registry entry — hold the handle ref to assert snapshot after cleanup.
+
+---

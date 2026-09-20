@@ -28635,5 +28635,281 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         expect(calls).toBe(2);
       }
     });
+
+    describe('loop idle-expiry parity', () => {
+      const LOOP_NODE = {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      } as const;
+
+      function countEvent(store: IWorkflowStore, eventType: string, stepName?: string): number {
+        return (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.filter(call => {
+          const arg = call[0] as { event_type: string; step_name?: string };
+          if (arg.event_type !== eventType) return false;
+          if (stepName !== undefined && arg.step_name !== stepName) return false;
+          return true;
+        }).length;
+      }
+
+      function loopIterationFailedData(store: IWorkflowStore): {
+        error?: string;
+        iteration?: number;
+      } {
+        const failed = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
+          call => (call[0] as { event_type: string }).event_type === 'loop_iteration_failed'
+        );
+        if (!failed) throw new Error('expected loop_iteration_failed');
+        return (failed[0] as { data: { error?: string; iteration?: number } }).data;
+      }
+
+      it('Claude loop fixture expires after 1_800_000 ms with exact error and failure_reason', async () => {
+        const gate = createFakeArmGate();
+        mockSendQueryDag.mockImplementation(async function* () {
+          void liveHandle(RUN_ID, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'iteration work' };
+          gate.arm();
+          yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+        });
+        const store = createMockStore();
+        const run = invokeDag(store, [LOOP_NODE]);
+
+        await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
+        expect(storedEventTypes(store)).not.toContain('node_failed');
+
+        jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+        const platform = await run;
+
+        expect(countNodeFailed(store, 'my-loop')).toBe(1);
+        const data = nodeFailedData(store, 'my-loop');
+        expect(data.error).toBe(EXACT_ERROR);
+        expect(data.failure_reason).toBe(FAILURE_REASON);
+        // Exact error — no "Loop iteration N failed:" prefix on the terminal.
+        expect(data.error).not.toMatch(/^Loop iteration /);
+        expect(countEvent(store, 'loop_iteration_failed')).toBe(1);
+        expect(loopIterationFailedData(store).error).toBe(EXACT_ERROR);
+        expect(countEvent(store, 'node_failed', 'my-loop')).toBe(1);
+        expect(storedEventTypes(store)).not.toContain('node_completed');
+        expect(storedEventTypes(store)).not.toContain('loop_iteration_completed');
+        expect(mockSendQueryDag.mock.calls.length).toBe(1);
+        expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+        expect(store.upsertWorkflowNodeSession).not.toHaveBeenCalled();
+        expect(platformMessages(platform).some(m => /completed via idle timeout/i.test(m))).toBe(
+          false
+        );
+      });
+
+      it('non-Claude deepseek loop fixture expires with the same structured failure', async () => {
+        const DEEPSEEK_RUN = 'deepseek-loop-idle-expiry-run';
+        const registered = getRegistration('deepseek');
+        const priorCaps = registered.capabilities;
+        Reflect.set(registered, 'capabilities', {
+          ...DEEPSEEK_CAPABILITIES,
+          interrupt: 'native' as const,
+        });
+        mockGetAgentProviderDag.mockImplementation(() => ({
+          sendQuery: mockSendQueryDag,
+          getType: () => 'deepseek',
+          getCapabilities: () => DEEPSEEK_CAPABILITIES,
+        }));
+        const gate = createFakeArmGate();
+        try {
+          mockSendQueryDag.mockImplementation(async function* () {
+            void liveHandle(DEEPSEEK_RUN, 'my-loop').interrupt();
+            gate.arm();
+            yield {
+              type: 'result',
+              sessionId: 'ds-loop-sess-1',
+              stopReason: 'aborted',
+              isError: true,
+              errorSubtype: 'deepseek_aborted',
+            };
+          });
+          const store = createMockStore();
+          const run = invokeDag(store, [LOOP_NODE], {
+            runId: DEEPSEEK_RUN,
+            assistant: 'deepseek',
+          });
+
+          await awaitIdleFast(DEEPSEEK_RUN, 'my-loop', gate.armed);
+          jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+          await run;
+
+          expect(countNodeFailed(store, 'my-loop')).toBe(1);
+          const data = nodeFailedData(store, 'my-loop');
+          expect(data.error).toBe(EXACT_ERROR);
+          expect(data.failure_reason).toBe(FAILURE_REASON);
+          expect(storedEventTypes(store)).not.toContain('node_completed');
+          expect(storedEventTypes(store)).not.toContain('loop_iteration_completed');
+          expect(mockSendQueryDag.mock.calls.length).toBe(1);
+        } finally {
+          Reflect.set(registered, 'capabilities', priorCaps);
+          mockGetAgentProviderDag.mockImplementation(() => ({
+            sendQuery: mockSendQueryDag,
+            getType: () => 'claude',
+            getCapabilities: mockClaudeCapabilities,
+          }));
+        }
+      });
+
+      it('retry.on_error: all starts only one loop provider attempt after expiry', async () => {
+        const gate = createFakeArmGate();
+        mockSendQueryDag.mockImplementation(async function* () {
+          void liveHandle(RUN_ID, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'partial' };
+          gate.arm();
+          yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+        });
+        const store = createMockStore();
+        const platform = createMockPlatform();
+        const run = executeDagWorkflow(
+          createMockDeps(store),
+          platform,
+          'conv-dag',
+          testDir,
+          {
+            name: 'interrupt-test',
+            nodes: [
+              {
+                id: 'my-loop',
+                loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+                retry: { max_attempts: 3, delay_ms: 1, on_error: 'all' },
+              },
+            ],
+          },
+          makeWorkflowRun(RUN_ID),
+          'claude',
+          undefined,
+          join(testDir, 'artifacts'),
+          join(testDir, 'state'),
+          join(testDir, 'logs'),
+          'main',
+          'docs/',
+          minimalConfig
+        );
+
+        await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
+        jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+        jest.advanceTimersByTime(60_000);
+        await run;
+
+        expect(mockSendQueryDag.mock.calls.length).toBe(1);
+        expect(countNodeFailed(store, 'my-loop')).toBe(1);
+        expect(nodeFailedData(store, 'my-loop').failure_reason).toBe(FAILURE_REASON);
+        expect(platformMessages(platform).some(m => /retry/i.test(m))).toBe(false);
+      });
+
+      it('recordComposerActivity re-arms full interval without advancing the loop', async () => {
+        const gate = createFakeArmGate();
+        mockSendQueryDag.mockImplementation(async function* () {
+          void liveHandle(RUN_ID, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'partial' };
+          gate.arm();
+          yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+        });
+        const store = createMockStore();
+        const run = invokeDag(store, [LOOP_NODE]);
+
+        const idle = await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
+        jest.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
+        idle.recordComposerActivity();
+        jest.advanceTimersByTime(1);
+        expect(idle.steeringSubState()).toBe('idle-after-interrupt');
+        expect(storedEventTypes(store)).not.toContain('node_failed');
+        expect(mockSendQueryDag.mock.calls.length).toBe(1);
+
+        jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+        await run;
+
+        expect(countNodeFailed(store, 'my-loop')).toBe(1);
+        expect(nodeFailedData(store, 'my-loop').error).toBe(EXACT_ERROR);
+        expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      });
+
+      it('send_now resumes interrupted loop iteration on prior session with normal completion', async () => {
+        const gate = createFakeArmGate();
+        let calls = 0;
+        mockSendQueryDag.mockImplementation(async function* () {
+          calls++;
+          if (calls === 1) {
+            void liveHandle(RUN_ID, 'my-loop').interrupt();
+            yield { type: 'assistant', content: 'partial' };
+            gate.arm();
+            yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+            return;
+          }
+          yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+          yield { type: 'result', sessionId: 'loop-sess-2' };
+        });
+        const store = createMockStore();
+        const run = invokeDag(store, [LOOP_NODE]);
+
+        await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
+        sendNow(RUN_ID, 'my-loop', 'm-1', 'continue please');
+        jest.advanceTimersByTime(IDLE_TIMEOUT_MS * 2);
+        jest.useRealTimers();
+        await run;
+
+        expect(mockSendQueryDag.mock.calls.length).toBe(2);
+        expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+        expect(storedEventTypes(store)).toContain('node_completed');
+        expect(storedEventTypes(store)).not.toContain('node_failed');
+      });
+
+      it('Cancel poll while loop idle ends via existing cancellation with no late expiry', async () => {
+        const gate = createFakeArmGate();
+        let cancelled = false;
+        const store = createMockStore();
+        store.getWorkflowRunStatus = mock(async () => (cancelled ? 'cancelled' : 'running'));
+        mockSendQueryDag.mockImplementation(async function* () {
+          void liveHandle(RUN_ID, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'partial' };
+          gate.arm();
+          yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+        });
+        const run = invokeDag(store, [LOOP_NODE]);
+
+        await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
+        cancelled = true;
+        jest.advanceTimersByTime(10_000);
+        for (let i = 0; i < 30; i++) await Promise.resolve();
+        await run;
+
+        expect(nodeFailedError(store, 'my-loop')).toMatch(/cancelled/i);
+        expect(countNodeFailed(store, 'my-loop')).toBe(1);
+        expect(nodeFailedData(store, 'my-loop').failure_reason).toBeUndefined();
+        expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      });
+
+      it('queued undelivered messages leave no operator transcript row; closed handle retains pending until unregister', async () => {
+        const gate = createFakeArmGate();
+        mockSendQueryDag.mockImplementation(async function* () {
+          void liveHandle(RUN_ID, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'partial' };
+          gate.arm();
+          yield { type: 'result', sessionId: 'loop-sess-1', terminalReason: 'aborted_streaming' };
+        });
+        const store = createMockStore();
+        const run = invokeDag(store, [LOOP_NODE]);
+
+        const idle = await awaitIdleFast(RUN_ID, 'my-loop', gate.armed);
+        enqueue(RUN_ID, 'my-loop', 'm-queued', 'never delivered');
+        expect(idle.pendingCount()).toBe(1);
+
+        jest.advanceTimersByTime(IDLE_TIMEOUT_MS);
+        await run;
+
+        // Handle object retains pending after close; registry is empty after cleanup.
+        expect(idle.snapshot().phase).toBe('closed');
+        expect(idle.pendingCount()).toBe(1);
+        expect(idle.snapshot().queued[0]?.messageId).toBe('m-queued');
+        expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
+
+        const rows = await store.listNodeMessages(RUN_ID, 'my-loop');
+        const operatorRows = rows.filter(isOperatorTextRow);
+        expect(operatorRows).toHaveLength(0);
+        expect(countNodeFailed(store, 'my-loop')).toBe(1);
+        expect(nodeFailedData(store, 'my-loop').error).toBe(EXACT_ERROR);
+      });
+    });
   });
 });
