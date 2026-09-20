@@ -1,158 +1,153 @@
 ---
 phase: 1
-title: "Unblock evidence gates (spike round 2)"
-status: pending
+title: 'Runtime evidence gate'
+status: blocked
 priority: P1
-effort: "1-1.5d"
+effort: 'implementation plus three native-host runs'
 dependencies: []
 ---
 
-# Phase 1: Unblock evidence gates (spike round 2)
+# Phase 1: runtime evidence gate
 
 ## Goal
 
-Turn the two BLOCKED release gates from PR #217 into PASS-with-evidence or an explicit recorded decision, and measure the four numbers Phase 2 hard-codes: the session-materialization boundary `M`, `INTERRUPT_ARM_TIMEOUT_MS`, the interrupt grace, and the process-group/Windows termination path. No production code changes in this phase.
+Repair the round-one diagnostic and determine whether the current Grok Build headless transport can satisfy Story 2.6 as written. This phase changes no production provider, executor, capability, route, or UI behavior.
 
-## Context links
+The output is a sanitized report and completed `plan.md` validation log proving or blocking:
 
-- Spike round 1 evidence: issue #186 comment (2026-09-20) and `plans/reports/spike-260920-0243-grok-interrupt-resume.md` on branch `archon/thread-e5318172`.
-- Spike runner: `packages/providers/src/grok/interrupt-resume-spike.ts` (same branch; `runGrokTurn` at ~L394, `runS2` at ~L768, gate table at ~L885).
-- Production spawn and argv: `packages/providers/src/grok/provider.ts:58-74` (`defaultSpawner`), `:83-88` (`buildSpawnCommand`), `:110-154` (`buildGrokArgs`).
-- Executor fail-fast on missing interrupted session id: `packages/workflows/src/dag-executor.ts:3554-3561` (direct), `:7176` (loop).
-- Sibling spikes for shape: `packages/providers/src/claude/interrupt-resume-spike.ts`, `packages/providers/src/codex/interrupt-resume-spike.ts`, `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`.
+- a production-observable safe interrupt boundary `M`;
+- current-turn prompt retention on new, resumed, and forked sessions;
+- complete Stop settlement below 1,000 ms;
+- exact descendant cleanup on POSIX and Windows; and
+- the exact CLI build and native hosts tested.
 
-## Key insights from round 1
+## Starting evidence and corrections
 
-- S2 exited in 0 ms after SIGTERM with `firstStdoutAtMs === null`: the CLI never started, so no session could have been written. The gate as written ("context retained") is unsatisfiable for a turn whose prompt never reached the model. Round 2 must locate the **earliest event after which the assigned session resumes**, not retest 0 ms.
-- S1 (mid-tool) and S3 (mid-text, repeated Stop) resume the same id with retained context — the boundary lies between "no stdout" and "first assistant text".
-- Gate 3: signal→exit was 6 ms / 7 ms; the 5 000 ms grace is cleanup insurance, not latency.
-- Gate 4: the slow-tool grandchild survived. Bun 1.3.14 in this worktree accepts `Bun.spawn({ detached: true })`, and `process.kill(-pid, 'SIGTERM')` reaps the grandchild (verified 2026-09-20 with a `sh -c 'sleep 30 & …'` probe).
-- The round-1 runner passed `--sandbox workspace` and `--no-auto-update`; production `buildGrokArgs` passes neither. Round 2 must run the **production argv shape** (plus `--session-id`) for the signal/session path so the evidence matches what ships; the sandbox and tool-restriction flags stay as the one recorded spike-only delta (see Refactor step 1).
-- CI has no Windows runner (`.github/workflows/test.yml:17`; comment at `:64` notes it may be re-added).
+Cherry-pick commit `2fb341bd` only. It contains:
 
-## Files to create / modify
+- `packages/providers/src/grok/interrupt-resume-spike.ts`;
+- `packages/providers/package.json` (`spike:interrupt:grok`); and
+- `plans/reports/spike-260920-0243-grok-interrupt-resume.md`.
 
-| File | Action | Size | Test impact |
-|------|--------|------|-------------|
-| `packages/providers/src/grok/interrupt-resume-spike.ts` | cherry-pick from `archon/thread-e5318172`, then modify | +150–250 lines | diagnostic only, not in `test` script |
-| `packages/providers/package.json` | cherry-pick `spike:interrupt:grok` script | 1 line | none |
-| `plans/reports/spike-260920-0243-grok-interrupt-resume.md` | cherry-pick (round-1 evidence, unchanged) | — | none |
-| `.github/workflows/grok-interrupt-spike-windows.yml` | create (`workflow_dispatch` only, `windows-latest`) | ~60 lines | not part of `test.yml`; never runs on push/PR |
-| `plans/reports/spike-<yymmdd-hhmm>-grok-interrupt-resume-round-2.md` | create | ~120 lines | evidence artifact |
-| `plans/260920-0449-issue-186-grok-interrupt-redirect/plan.md` | modify (record Phase 1 values in the Validation Log) | small | — |
+Do not cherry-pick PR #217's old plan, PRD, progress ledger, or checkpoint commits. Before extending the runner, reproduce its S0/S1/S2/S3 facts on native macOS and record any drift.
 
-## Requirements
+The round-one runner is not sufficient as written:
 
-- [ ] R1 Find `M`: the earliest stream event after which `--resume <assigned-id>` succeeds and the planted context token is retained.
-- [ ] R2 Re-prove S1/S3 under the production spawn shape (`detached: true`, group SIGTERM, production argv) — resume and child-reap both hold.
-- [ ] R3 Measure `firstStdoutAtMs` across ≥5 cold runs to set `INTERRUPT_ARM_TIMEOUT_MS` with margin.
-- [ ] R4 Produce native Windows S4 evidence under the real `cmd.exe /d /s /c grok.cmd` launch path, or record precisely why it could not be produced.
-- [ ] R5 Re-confirm the version floor against the build under test; if a newer stable build is available, also run S2/S2b/S2c on it.
-- [ ] R6 Sanitized report with a gate table; no prompts, model output, home paths, or session contents; delete only spike-created sessions.
+- it treats same-id resume with an **older** marker as proof for an interrupted resumed turn, so it does not prove that turn's current prompt survived;
+- it never exercises `--resume <source> --fork-session --session-id <target>`;
+- it measures SIGTERM after spawn and after first text, but does not find the earliest production-observable safe boundary;
+- it uses spike-only sandbox/feature flags and a Node spawn shape rather than the production `buildGrokArgs`/Bun spawn path;
+- its gate permits a surviving child merely by saying a process group will be needed; round two must actually prove the chosen tree-kill mechanism; and
+- it does not test the approved sub-second end-to-end acknowledgement.
 
-## Tests before (characterization gates that must still hold)
+## Files
 
-Run the cherry-picked runner unchanged first to confirm round-1 results reproduce on this machine before adding scenarios:
+| File                                                               | Action                                              |
+| ------------------------------------------------------------------ | --------------------------------------------------- |
+| `packages/providers/src/grok/interrupt-resume-spike.ts`            | Cherry-pick, then refactor and extend.              |
+| `packages/providers/package.json`                                  | Cherry-pick the diagnostic script only.             |
+| `plans/reports/spike-260920-0243-grok-interrupt-resume.md`         | Preserve as immutable round-one evidence.           |
+| `plans/reports/spike-<timestamp>-grok-interrupt-resume-round-2.md` | Add the sanitized native-host results and verdict.  |
+| `plans/260920-0449-issue-186-grok-interrupt-redirect/plan.md`      | Fill the validation log only from the final report. |
+
+Do not add a permanent credentialed GitHub Actions workflow. The diagnostic is operator-run from a reviewed commit on trusted macOS, Linux, and Windows hosts. That avoids making arbitrary branch code eligible to execute with `XAI_API_KEY`.
+
+## Diagnostic design
+
+### Use the production argument and spawn contracts
+
+- Build each invocation through `buildGrokArgs()` and `buildSpawnCommand()` rather than maintaining a second flag implementation. Export only the minimal direct-module helper needed by the diagnostic; do not add a package-barrel export.
+- Model safety restrictions as ordinary production node options (`allowed_tools`/`denied_tools`) so the actual argument builder owns them. Run in a disposable git repository with a fixed benign prompt.
+- Disable the CLI auto-updater for reproducibility using the officially documented automation flag or environment variable and record that one deliberate difference. Do not assert that `--sandbox workspace` is semantically neutral; it already changed Linux startup behavior in round one, so it is not used for contract evidence.
+- Add a `legacy` and `owned-tree` spawn mode. `owned-tree` must match the proposed production shape: a detached process group on POSIX and the exact Windows tree-control primitive being evaluated. Record exact parent and descendant process fingerprints, not process names.
+
+### Make prompt-retention checks turn-specific
+
+Every prompt plants a unique non-secret marker. A continuation succeeds only when it returns the exact markers expected for that session:
+
+- fresh: current marker;
+- resumed: inherited marker **and** current resumed-turn marker;
+- fork: inherited source marker **and** current fork-turn marker; and
+- repeated interrupt: every marker from the retained conversation, including the latest interrupted turn.
+
+The report records booleans only, never marker values or model output. A same id with a missing current marker is a failure.
+
+### Candidate boundary and latency sampling
+
+Replace the `interruptImmediately` / `interruptOnFirstText` booleans with a typed trigger:
+
+- `spawn` (negative control);
+- `first-stdout-event` with the raw event type recorded;
+- `first-event:<type>` for `available_commands`, `thought`, `text`, and `tool_call` as observed; and
+- `pid-file` for the long-running tool scenario.
+
+Separate the operator Stop request from the eventual termination trigger. The runner must support requesting Stop immediately after listener registration while deferring the actual tree signal until a candidate boundary. It records spawn-to-request, request-to-boundary, request-to-signal, signal-to-exit, request-to-provider-settlement, exit code, escalation, expected id, reported id, resume result, marker-retention booleans, and exact descendant cleanup.
+
+Choose `M` as the earliest explicit event predicate that passes all identity and current-prompt checks for text-only, reasoning-first, and tool-first turns. A content-dependent event that some turns omit is not a valid boundary by itself; an `end` that arrives before `M` is natural completion. Then run at least 10 new-session, 10 resumed-session, and 10 forked-session samples per required host with Stop requested before `M` and termination deferred to `M`. Every request-to-settlement sample must be below 1,000 ms; report min/median/max by turn kind and host. There is no 30-second fallback or percentile-based waiver.
+
+## Scenario matrix
+
+| ID  | Scenario                                                                                              | Required result                                                                                                                                                                                                |
+| --- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B0  | New assigned session completes naturally                                                              | Exit 0; `end.sessionId` equals the assigned UUID; continuation returns the current marker.                                                                                                                     |
+| B1  | New assigned session interrupted at spawn                                                             | Negative control: record failure/success without redefining the contract. It must never be counted as `M` unless current marker retention and latency both pass.                                               |
+| B2  | New assigned session; Stop requested before each candidate boundary, signal deferred to that boundary | Identify earliest valid `M`; resume same id with the current marker; no KILL escalation; complete request-to-settlement path under 1,000 ms. Repeat with text-only, reasoning-first, and tool-first prompts.   |
+| B3  | Existing session resumed; Stop requested before `M`, plus immediate-signal comparison at/after `M`    | Resume the same id and retain inherited + current markers. This decides whether resumed turns may signal immediately or must also wait for `M`; every production candidate stays under the full request bound. |
+| B4  | Existing source forked with caller-assigned target; Stop requested before `M`                         | Target id resumes with inherited + fork markers; source session still resumes without the fork marker; full request-to-settlement path stays under 1,000 ms.                                                   |
+| B5  | Repeated Stop on the same retained session                                                            | Each interrupted turn retains its new marker and one session id; no stale trigger/listener contaminates the next turn.                                                                                         |
+| B6  | Mid-tool Stop in `legacy` mode                                                                        | Characterize whether the exact tool child survives; this is comparison evidence only.                                                                                                                          |
+| B7  | Mid-tool Stop in `owned-tree` mode                                                                    | Parent and exact tool descendants exit; same target session and current marker resume; no manual cleanup required.                                                                                             |
+| B8  | Natural completion races Stop                                                                         | Natural terminal `end` wins without a kill or an abort classification.                                                                                                                                         |
+| B9  | Node-Cancel tree termination shape                                                                    | Exact descendants exit within the bounded grace; this does not need session resume.                                                                                                                            |
+| W1  | B0–B9 through native Windows resolution (`.exe` or `.cmd`/`cmd.exe`)                                  | Same semantic results and exact tree cleanup using the recorded Windows primitive.                                                                                                                             |
+
+Run the full matrix on native macOS, native Linux, and native Windows. Containers and WSL may be recorded as supplemental evidence but do not replace the corresponding native host. Use the same reviewed runner commit and Grok release version on all three; record any platform-specific build identifiers separately. A cross-version comparison is supplemental and cannot replace one common release passing all required hosts.
+
+## Decision rules
+
+Phase 2 may begin only when all of these are true:
+
+1. B0–B9 pass on native macOS and Linux, and W1 passes on native Windows.
+2. `M` is a production-parser predicate that covers every exercised first-progress shape without reading undocumented session internals or model prose.
+3. Fresh, resumed, and forked continuations retain the interrupted turn's current marker.
+4. Every pre-`M` Stop request-to-settlement sample for new, resumed, and forked turns is under 1,000 ms.
+5. The exact process tree is gone after Stop and Cancel without broad process-name cleanup.
+6. The report contains exact build/host/Bun versions, command shape, timing summary, and sanitized gate table.
+
+If any rule fails, keep the plan status `blocked`, keep `GROK_CAPABILITIES.interrupt` false, and record the exact failed gate. Do not choose a later-but-slow boundary, POSIX-only publication, prompt-loss caveat, or fresh-session fallback. A transport change such as ACP would require a new evidence/design pass because it changes the existing provider contract.
+
+One successful build establishes the **validated build**, not a minimum-version range. Check the official changelog/current stable and record both. Do not add a doctor rejection or support-floor constant from this phase alone.
+
+## Security and cleanup
+
+- Run only fixed diagnostic prompts in a disposable repository. The one tool scenario invokes a fixed sleep/PID helper created inside that repository.
+- Scope `XAI_API_KEY` to the diagnostic process. Do not print environment values, raw stderr, prompts, markers, model text, session contents, absolute home paths, or command payloads.
+- Bound stdout/stderr capture. Reports contain event types and booleans only.
+- Delete only UUIDs created by the runner, from the matching disposable cwd. On failure, report unsafely retained UUIDs for manual cleanup without deleting unrelated sessions.
+- Track and terminate only exact child fingerprints created by the runner. Verify start identity before cleanup to avoid PID-reuse damage.
+- Remove the temporary repository in `finally`; report cleanup failures.
+
+## Validation
 
 ```bash
 cd packages/providers
-GROK_SPIKE_ONLY=S0,S1,S3 bun run spike:interrupt:grok
+bun run type-check
+bun test src/grok/provider.test.ts
+bun test src/grok/event-parser.test.ts
+
+# Operator-run separately on each required native host.
+GROK_SPIKE_REPORT_PATH=<host-specific-report> bun run spike:interrupt:grok
+
+cd ../..
+bun run lint --max-warnings 0
+bun run format:check
 ```
 
-Expected: S0 PASS (id echoed), S1 resume same/retained = true/true with `childAlive=true`, S3 same/retained = true/true. If S1's grandchild no longer survives, the round-1 process-group decision is stale — record it, do not skip D2.
+The diagnostic is intentionally outside the package `test` script because it requires credentials, network access, and API spend. The offline gates still prove it compiles and does not alter current Grok behavior.
 
-## Refactor (runner changes)
+## Exit artifacts
 
-1. **Production argv parity, one recorded delta.** Replace the runner's `buildHeadlessArgs` with a call into the real `buildGrokArgs` (export is already public) plus the `--session-id` flag, so the signal/session path matches what ships. The spike then **always appends** `--sandbox workspace`, `--no-auto-update`, and an explicit tool allow/deny list (`--tools run_terminal_command` only for S1/S1g, `--disallowed-tools` shell for the others). Record this as the single deliberate delta from production in the report: the sandbox confines file access and does not touch signal or session semantics, and the spike's threat model (real credential, `bypassPermissions`, CI runner) is not production's trusted single-tenant runtime (red-team #1).
-2. **Production spawn shape.** Add a `spawnMode: 'legacy' | 'detached-group'` switch. `detached-group` uses `Bun.spawn({ detached: true, … })` and signals with `process.kill(-pid, sig)`; `legacy` keeps the Node `child_process` path for A/B comparison. Default to `detached-group`.
-3. **Boundary scenarios** in `runGrokTurn` via a single `interruptAt` option replacing `interruptImmediately` / `interruptOnFirstText`:
-   - `'spawn'` (S2, retained for comparison),
-   - `'first-stdout-line'` (**S2b**: any event, typically `available_commands`),
-   - `'first-event:thought'` (**S2c**),
-   - `'first-event:text'` (S3 equivalent),
-   - `'pid-file'` (S1),
-   - `'spawn'` with `resumeSessionId` set (**S3b**).
-   Each records `firstStdoutAtMs`, `interruptAtMs`, `signalToExitMs`, `usedSigkill`, exit code, `resumeExit`, `resumeSameSession`, `resumeContextRetained`.
-4. **S1g** — S1 under `detached-group`: assert the exact grandchild PID is gone within 1 s of parent exit without manual SIGKILL, and that same-id resume still works.
-5. **Cold-start sampling** — `S0×5` loop recording `firstStdoutAtMs`; report min/median/max.
-6. **Gate table update.** Gate 2 becomes "S1g, S2b-or-S2c, S3 resume same session with retained context" and names the chosen `M`. Add gate 8: "M boundary identified and ≤ 2 s after first stdout". Keep gates 1, 3–7 as round 1 defined them.
-7. **Windows job.** `.github/workflows/grok-interrupt-spike-windows.yml`: `on: workflow_dispatch` only; `runs-on: windows-latest`; hardened per red-team #1/#4/#5:
-   - `permissions: contents: read`; checkout with `persist-credentials: false` (repo convention, see `.github/workflows/e2e-smoke.yml`); bind the job to a protected `environment:` requiring manual approval so a dispatch on an arbitrary ref cannot run with the secret unreviewed.
-   - Install Bun and the Grok CLI **pinned to the floor release with a checksum** (confirm the public installer/package name from the Grok docs — a Phase 1 task) in a step that runs **before** any secret is in scope.
-   - Export `XAI_API_KEY` from the repository secret only in the spike step; `echo "::add-mask::"` it first. Run `GROK_SPIKE_ONLY=S0,S4 GROK_SPIKE_HOST_KIND=native bun run spike:interrupt:grok` with stdout/stderr captured to files.
-   - A post-step fails the job if the captured stdout, stderr, or rendered report contains the secret value (`Select-String -SimpleMatch` on the literal); only then upload the report as an artifact.
-   - Fail loudly if the secret is absent rather than skipping S4 silently.
-
-## Tests after (round-2 experiments — these are the phase's tests)
-
-| ID | Host | Scenario | PASS condition |
-|----|------|----------|----------------|
-| S0×5 | macOS native (+ Linux native if available) | cold start, assigned id | exit 0, id echoed, `firstStdoutAtMs` recorded per run |
-| S1g | macOS native | mid-tool SIGTERM, `detached-group` | exit 143, no SIGKILL, grandchild gone ≤ 1 s, resume same/retained |
-| S2 | macOS native | SIGTERM at spawn (control) | recorded; expected to still FAIL resume |
-| S2b | macOS native | SIGTERM at first stdout line | exit 143/130, no SIGKILL, resume same = true; retained recorded |
-| S2c | macOS native | SIGTERM at first `thought` | same as S2b |
-| S3 | macOS native | repeated Stop on S1g session, `detached-group` | resume same/retained |
-| **S3b** | macOS native | resumed turn on the S1g session, SIGTERM **at spawn** (pre-stdout) | exit 143/130, no SIGKILL, `--resume <same-id>` succeeds and the S1g context token is retained (red-team #16) |
-| S4 | **windows-latest** (native) | S1-style and S2b-style under `cmd.exe … grok.cmd` | graceful exit, same-id resume, no orphaned `node`/`grok` process (check with `tasklist`) |
-
-Decision rules:
-
-- `M` = the earliest of {first-stdout-line, first `thought`, first `text`} whose scenario passes resume **same session**. Context retention at `M` is recorded; if the prompt was not yet persisted at `M`, Phase 2 documents that a Stop before the first model output loses the original prompt text (the operator's `Send now` message becomes the turn's content) — this is acceptable only if `M` is also before any model output, otherwise choose the later marker.
-- Resumed-turn policy: if S3b passes, Phase 2 fires Stop immediately on resumed turns (no `stop-pending`) and settles on `resumeSessionId`; if it fails, resumed turns use the same `M`-armed path as fresh turns.
-- `INTERRUPT_ARM_TIMEOUT_MS` = max(30 000, 3 × max observed `firstStdoutAtMs`), rounded to the nearest 5 s. Record the samples in the report.
-- Interrupt grace stays 5 000 ms unless any graceful exit exceeded 1 000 ms; then double the slowest observed and justify.
-- Process group: D2 stands if S1 (legacy) shows a surviving child **or** S1g shows the group kill is required. Record the Windows termination path from S4 (expected: `taskkill /T /PID` equivalent or Bun's own tree kill — whatever S4 proves; nothing is inferred).
-
-## Implementation steps
-
-1. `git fetch origin archon/thread-e5318172` and cherry-pick the commit(s) that add the runner, the package script, and the round-1 report. Do **not** bring `plans/260919-1924-…` or `prd.*`/`progress.txt`.
-2. Run the "Tests before" reproduction.
-3. Apply the runner refactor (steps 1–6 above); type-check the providers package.
-4. Run S0×5, S1g, S2, S2b, S2c, S3, S3b on macOS native. Repeat on native Linux if a host is available (Docker with `--sandbox workspace` is not evidence and is no longer needed once argv parity drops the flag — retry Docker Linux once; if it runs, record it as *container*, not native).
-5. Check `grok --version` against the latest stable; if newer, install side-by-side (`GROK_SPIKE_BIN_PATH`) and repeat S2/S2b/S2c.
-6. Create the Windows workflow; ask the repository owner to add `XAI_API_KEY` as a secret and trigger it once; download the artifact. If the secret or an xAI credential cannot be provided, record that verbatim as the reason gate 5 stays open.
-7. Write the round-2 report and update the plan's Validation Log with: build tested, `M`, arm timeout, grace, group decision, resumed-turn policy (S3b), Windows verdict, floor.
-8. Post the sanitized gate table as an issue #186 comment (same format as round 1).
-
-## Todo
-
-- [ ] Cherry-pick runner + script + round-1 report
-- [ ] Reproduce S0/S1/S3 unchanged
-- [ ] Runner: argv parity, `detached-group`, `interruptAt`, S1g, S0×5, gate table
-- [ ] macOS native run of all scenarios
-- [ ] Newer-build check and rerun if applicable
-- [ ] Windows `workflow_dispatch` job + one triggered run (or recorded blocker)
-- [ ] Round-2 report + Validation Log values + issue comment
-
-## Regression gate
-
-```bash
-cd packages/providers && bun run type-check && bun test src/grok/provider.test.ts src/grok/event-parser.test.ts
-cd ../.. && bun run lint --max-warnings 0 && bun run format:check
-```
-
-The spike file is excluded from the package `test` script; the gate proves it compiles and did not disturb the existing Grok suites.
-
-## Exit criteria (stop-or-decide)
-
-Phase 2 may start only when one of these is true and recorded in `plan.md` → `## Validation Log`:
-
-1. Gates 1–8 all PASS (Windows included), or
-2. Gates 1–4, 6–8 PASS and the operator has recorded a Windows decision from the validation interview: *(a)* block until native evidence exists, *(b)* ship POSIX-only with a documented runtime posture for win32 (Phase 2 then adds the explicit win32 branch the decision names), or *(c)* scope Windows out of Story 2.6.
-
-If S2b **and** S2c both fail resume, stop: options are a newer Grok CLI (step 5) or a product revision of the promise ("Stop is honoured from the first model output"). Bring that fork to the operator; do not pick `M = first text` silently.
-
-## Risk assessment
-
-- **xAI credential in CI** — an API key secret is the only way to run S4 headlessly. Mitigation: the job is `workflow_dispatch` only and uploads a sanitized report; the runner never prints tokens or prompts.
-- **Auto-update drift** — Grok CLI self-updates; record the exact build string in every report and pin `GROK_SPIKE_BIN_PATH` where possible.
-- **Session dir side effects** — the runner deletes only the UUIDs it created via `grok sessions delete`, from the same temp cwd.
-
-## Security considerations
-
-Spike prompts are nonce tokens, not user data. Reports omit credentials, prompt/model text, home paths, and session contents. The Windows job must not echo `XAI_API_KEY`.
-
-## Next steps
-
-Phase 2 copies the recorded values into its "Entry gate" block before touching production code.
+- Immutable round-two report with a PASS/BLOCKED gate table.
+- Completed validation log in `plan.md`.
+- A concise issue #186 comment linking the sanitized report and stating the verdict.
+- If PASS, the exact `M`, resumed-turn policy, tree primitives, grace, and timing ceiling copied into Phase 2 before production edits.
