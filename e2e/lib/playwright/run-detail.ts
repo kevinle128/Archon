@@ -134,6 +134,10 @@ export async function getRunDetail(
   nodeExecutions: {
     node_id: string;
     status?: string;
+    error?: string | null;
+    retry_epoch?: number;
+    started_at?: string | null;
+    ended_at?: string | null;
     occurrence_id?: string;
     attempt_id?: string;
     loop_ancestry?: { node_id: string; iteration: number }[];
@@ -162,6 +166,10 @@ export async function getRunDetail(
     nodeExecutions?: {
       node_id: string;
       status?: string;
+      error?: string | null;
+      retry_epoch?: number;
+      started_at?: string | null;
+      ended_at?: string | null;
       occurrence_id?: string;
       attempt_id?: string;
       loop_ancestry?: { node_id: string; iteration: number }[];

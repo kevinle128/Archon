@@ -590,6 +590,21 @@ export const interruptWorkflowNodeResponseSchema = z
 export type InterruptWorkflowNodeResponse = z.infer<typeof interruptWorkflowNodeResponseSchema>;
 
 /**
+ * Keepalive success receipt (Story 2.12). Bodyless re-arm of the idle-await
+ * inactivity timer. Public shape is always `{ success: true }` whether the
+ * handle rearms (live idle) or is a no-op (other live states) — callers never
+ * branch on the private rearm outcome.
+ */
+export const keepaliveWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+  })
+  .strict()
+  .openapi('KeepaliveWorkflowNodeResponse');
+
+export type KeepaliveWorkflowNodeResponse = z.infer<typeof keepaliveWorkflowNodeResponseSchema>;
+
+/**
  * Shared steering-route error shape — consumers classify by `error.code`,
  * never by prose.
  */

@@ -509,6 +509,7 @@ import {
   sendWorkflowNodeBodySchema,
   sendWorkflowNodeResponseSchema,
   interruptWorkflowNodeResponseSchema,
+  keepaliveWorkflowNodeResponseSchema,
   steeringErrorSchema,
   readWorkflowNodeQueueParamsSchema,
   readWorkflowNodeQueueResponseSchema,
@@ -1663,6 +1664,38 @@ const interruptWorkflowNodeRoute = createRoute({
     200: {
       content: { 'application/json': { schema: interruptWorkflowNodeResponseSchema } },
       description: 'Interrupt settled — the classified sub-state',
+    },
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
+const keepaliveWorkflowNodeRoute = createRoute({
+  method: 'post',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive',
+  tags: ['Workflows'],
+  summary: 'Re-arm the idle-await inactivity timer for a running workflow node',
+  description:
+    'Bodyless authenticated keepalive for an in-process steering handle. ' +
+    'Re-arms the idle-await inactivity timer only when the handle is live and ' +
+    'idle-after-interrupt with a pending waiter; other live handle states are a ' +
+    'successful no-op. Never resolves idle-await, never writes a durable row, and ' +
+    'never sends operator prose. Terminal outcomes map to the steering error ' +
+    'shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.',
+  request: {
+    params: z.object({
+      runId: z.string().min(1),
+      nodeId: z.string().min(1),
+    }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: keepaliveWorkflowNodeResponseSchema } },
+      description: 'Keepalive accepted — timer re-armed or live no-op',
     },
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
@@ -5549,6 +5582,90 @@ export function registerApiRoutes(
       } catch (error) {
         getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_interrupt_failed');
         return steeringError(c, 500, 'internal_error', 'Failed to interrupt node');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive - Re-arm idle timer
+  //
+  // Bodyless like interrupt: param validation cannot fail on a matched route, so
+  // the in-handler auth check still runs before any gated rejection. Guard ladder
+  // mirrors interrupt (auth → 404 → 409 terminal/closed → 422 missing/parked →
+  // final run re-read → synchronous handle.keepalive()). Live idle rearms; other
+  // live states are a successful no-op. Never resolves idle-await and never
+  // writes a durable row.
+  registerOpenApiRoute(
+    keepaliveWorkflowNodeRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+
+        const events = await workflowEventDb.listWorkflowEvents(runId);
+        const pendingInteractions =
+          await workflowPendingInteractionDb.listPendingInteractions(runId);
+        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
+          state => state.nodeId === nodeId
+        );
+        const handle = getSteeringRegistry().get(runId, nodeId);
+
+        if (nodeState === undefined && handle === undefined) {
+          return steeringError(c, 404, 'not_found', 'Workflow node not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle?.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle === undefined) {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+        if (handle.snapshot().phase === 'parked') {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        // Final async gate: a concurrent terminal transition wins. keepalive() is
+        // synchronous after this point — no await may sit between this read and
+        // the call so a terminal race cannot re-arm a finishing node.
+        const latestRun = await workflowDb.getWorkflowRun(runId);
+        if (latestRun === null) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        // Private outcome (rearmed | not_idle) is intentionally not exposed —
+        // both map to the same public success receipt.
+        handle.keepalive();
+        return c.json({ success: true as const }, 200);
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_keepalive_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to keepalive node');
       }
     },
     steeringValidationErrorHook

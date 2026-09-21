@@ -734,6 +734,7 @@ describe('LegacyNodeRoom dispatcher', () => {
     events?: readonly WorkflowEventResponse[];
     runStatus?: WorkflowRunStatus;
     nodeTerminal?: boolean;
+    idleAwaitExpired?: boolean;
     nodeExecutionKey?: string | null;
     writtenOperatorMessageIds?: ReadonlySet<string> | null;
     scopeKey?: string;
@@ -762,6 +763,7 @@ describe('LegacyNodeRoom dispatcher', () => {
           onSubmitAsk: async (): Promise<void> => undefined,
           nodeState: undefined,
           nodeTerminal: args.nodeTerminal,
+          idleAwaitExpired: args.idleAwaitExpired,
           nodeExecutionKey: args.nodeExecutionKey,
           writtenOperatorMessageIds: args.writtenOperatorMessageIds,
           scopeKey: args.scopeKey,
@@ -1295,6 +1297,58 @@ describe('LegacyNodeRoom dispatcher', () => {
       const start = field ?? host;
       const props = findPropsWithKey(start, 'nodeTerminal');
       expect(props).not.toBeNull();
+      expect(props?.nodeTerminal).toBe(true);
+      expect(props?.nodeExecutionKey).toBe('occ-command-1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('T4.16 pass-through pins idleAwaitExpired on the dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const { loadMessages } = createLoadMessages();
+      await act(async () => {
+        renderRoom({
+          row: COMMAND_ROW,
+          loadMessages,
+          definitionNodes: [{ id: 'command', command: 'review' }],
+          runStatus: 'running',
+          nodeTerminal: true,
+          idleAwaitExpired: true,
+          nodeExecutionKey: 'occ-command-1',
+        });
+      });
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const field = host.querySelector('textarea');
+      const start = field ?? host;
+      const props = findPropsWithKey(start, 'idleAwaitExpired');
+      expect(props).not.toBeNull();
+      expect(props?.idleAwaitExpired).toBe(true);
       expect(props?.nodeTerminal).toBe(true);
       expect(props?.nodeExecutionKey).toBe('occ-command-1');
     } finally {

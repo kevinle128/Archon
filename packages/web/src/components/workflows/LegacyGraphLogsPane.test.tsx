@@ -3001,4 +3001,108 @@ describe('LegacyGraphLogsPane', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('T4.16 idleAwaitExpired reaches selected room including group.body', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    const expired = 'interrupted by operator, no redirect received';
+    try {
+      const events: WorkflowEventResponse[] = [
+        {
+          id: 'start-body',
+          workflow_run_id: 'run-1',
+          event_type: 'node_started',
+          step_index: null,
+          step_name: 'group.body',
+          data: { occurrence_id: 'occ-body' },
+          created_at: CREATED_AT,
+          event_order: 1,
+        },
+        {
+          id: 'fail-body',
+          workflow_run_id: 'run-1',
+          event_type: 'node_failed',
+          step_index: null,
+          step_name: 'group.body',
+          data: { occurrence_id: 'occ-body', error: expired },
+          created_at: CREATED_AT,
+          event_order: 2,
+        },
+        {
+          id: 'fail-group',
+          workflow_run_id: 'run-1',
+          event_type: 'node_failed',
+          step_index: null,
+          step_name: 'group',
+          data: { occurrence_id: 'occ-group', error: `Loop group failed: body: ${expired}` },
+          created_at: CREATED_AT,
+          event_order: 3,
+        },
+      ];
+      const nodeExecutions: NodeExecution[] = [
+        {
+          node_id: 'group',
+          status: 'failed',
+          occurrence_id: 'occ-group',
+          error: `Loop group failed: body: ${expired}`,
+        },
+        {
+          node_id: 'group.body',
+          status: 'failed',
+          occurrence_id: 'occ-body',
+          error: expired,
+        },
+      ];
+
+      await act(async () => {
+        renderLogs({
+          runId: 'run-1',
+          nodeStates: [
+            { nodeId: 'group', name: 'Group', status: 'failed', retryEpoch: 0 },
+            { nodeId: 'group.body', name: 'Body', status: 'failed', retryEpoch: 0 },
+          ],
+          events,
+          definitionNodes: [GROUP_NODE],
+          definitionPending: false,
+          runStatus: 'failed',
+          approval: null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          onSelectNode: (): void => undefined,
+          nodeExecutions,
+          initialSelectedNodeId: 'group.body',
+          initialSelectedLogRowId: 'start-body',
+        });
+      });
+      await flush();
+
+      const bodyRoom = host.querySelector('[data-testid="legacy-node-room"]');
+      expect(bodyRoom).not.toBeNull();
+      if (bodyRoom === null) throw new Error('missing body room');
+      const bodyProps = findPropsWithKey(bodyRoom, 'idleAwaitExpired');
+      expect(bodyProps).not.toBeNull();
+      expect(bodyProps?.idleAwaitExpired).toBe(true);
+      expect(bodyProps?.nodeTerminal).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -22,7 +22,7 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 - **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now' }`.
   `message_id` is the correlation key for terminal reconciliation (CAP-11 / AD-11) and, post-G1, for `delivered`.
 - **interrupt** — `{}` (no body); the target is the live turn on the registry handle.
-- **keepalive** — `{}` (no body); it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
+- **keepalive** — no request body; it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
 - **withdraw** — `{}` (no body); `message_id` is the path parameter. Removes that message from the registry queue if it is still present.
 - **queue read** — bodyless GET: no request body and no query parameters; `runId`/`nodeId` are the only path parameters.
 
@@ -34,7 +34,13 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 - **withdraw** — `{ success: true, message_id: string }`; idempotent — success whether the message was still queued (now removed) or had already drained (nothing to remove).
 - **interrupt** — `{ success: true, sub_state: 'idle-after-interrupt' | 'generating' }`.
   `idle-after-interrupt` when the interrupt landed mid-turn; **`generating`** when the turn already ended naturally before the interrupt landed (interrupt spent, AD-2) and a queued message auto-drained into turn N+1. If the turn ended naturally with an **empty** queue the node has completed — the route then returns 409 `node_finished` (below), not a success shape.
-- **keepalive** — `{ success: true }`.
+- **keepalive** — `{ success: true }` on every successful call against a live handle:
+  - live idle → re-arms the inactivity timer (private; not exposed on the wire);
+  - live generating / between-turn / queue-only → 200 no-op (timer not armed or already settled);
+  - parked handle or missing in-process handle → **422** `not_steerable_here` (checked before keepalive, because keepalive itself returns not_idle for parked);
+  - terminal run/node or closed handle → **409** `node_finished`;
+  - unknown run/node → **404**; unauthenticated → **401**.
+    Bodyless POST; writes no durable row; same steering actor grant as send/interrupt.
 - **queue read** — `{ success: true, queued: [{ message_id: string (uuid), message: string }] }`.
   `queued` contains only the handle's current pending items, in server receipt order — drained or withdrawn ids and accepted-id memory never appear on the wire. No `operator_user_id`, `received_at`, handle phase, or durable version is exposed. Live AND parked handles return 200 with their retained rows; a closed handle is 409; a known non-terminal node with no in-process handle is 422.
   Every queue-read outcome — 200 and each error status — carries `Cache-Control: no-store` so a live queue snapshot is never served from a shared cache.

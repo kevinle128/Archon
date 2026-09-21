@@ -1,5 +1,5 @@
 # generated: 2026-09-16 15:38:51 +0700
-# last_updated: "2026-09-20 09:36:08 +0000"
+# last_updated: "2026-09-20 20:40:00 +0000"
 # project: Archon
 # project_key: NOKEY
 # tracking_system: file-system
@@ -45,7 +45,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: "2026-09-16 15:38:51 +0700"
-last_updated: "2026-09-20 09:36:08 +0000"
+last_updated: "2026-09-20 20:40:00 +0000"
 project: Archon
 feature: agent-node-room
 project_key: NOKEY
@@ -76,6 +76,6 @@ development_status:
   2-9-see-the-same-live-queue-across-tabs-and-operators: done
   2-10-see-queued-guidance-while-viewing-a-finished-iteration: backlog
   2-11-recover-messages-that-were-never-sent-when-the-node-ends: done
-  2-12-fail-an-abandoned-redirect-safely-after-30-minutes: backlog
+  2-12-fail-an-abandoned-redirect-safely-after-30-minutes: done
   2-13-preserve-message-order-and-attribution-under-concurrent-operators: done
   epic-2-retrospective: optional

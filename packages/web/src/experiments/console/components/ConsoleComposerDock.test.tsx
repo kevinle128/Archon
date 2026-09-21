@@ -7,12 +7,14 @@ import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 import { SteeringRequestError, type SteeringSubState } from '@/lib/steering-dock';
 import type {
   InterruptNode,
+  KeepaliveNode,
   ReadNodeGuidanceQueue,
   SendNodeGuidance,
   WithdrawNodeGuidance,
 } from './ConsoleComposerDock';
 import type {
   InterruptWorkflowNodeResponse,
+  KeepaliveWorkflowNodeResponse,
   ReadWorkflowNodeQueueResponse,
   SendWorkflowNodeBody,
   SendWorkflowNodeResponse,
@@ -101,6 +103,8 @@ describe('ConsoleComposerDock', () => {
   let nextInterrupt: InterruptNode;
   const withdrawCalls: WithdrawCall[] = [];
   let nextWithdraw: WithdrawNodeGuidance;
+  const keepaliveCalls: { runId: string; nodeId: string }[] = [];
+  let nextKeepalive: KeepaliveNode;
   const readCalls: { runId: string; nodeId: string; signal?: AbortSignal }[] = [];
   let nextRead: ReadNodeGuidanceQueue;
 
@@ -129,6 +133,11 @@ describe('ConsoleComposerDock', () => {
     nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
       withdrawCalls.push({ runId, nodeId, messageId });
       return { success: true, message_id: messageId };
+    };
+    keepaliveCalls.length = 0;
+    nextKeepalive = async (runId, nodeId): Promise<KeepaliveWorkflowNodeResponse> => {
+      keepaliveCalls.push({ runId, nodeId });
+      return { success: true };
     };
     readCalls.length = 0;
     // Default: a never-settling read so existing send/withdraw tests stay
@@ -171,6 +180,7 @@ describe('ConsoleComposerDock', () => {
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
       readQueue: ReadNodeGuidanceQueue;
+      keepalive: KeepaliveNode;
       pollIntervalMs: number;
       storage: Storage;
       nodeLabel: string;
@@ -178,6 +188,7 @@ describe('ConsoleComposerDock', () => {
       writtenOperatorMessageIds: ReadonlySet<string> | null;
       nodeTerminal: boolean;
       nodeExecutionKey: string | null;
+      idleAwaitExpired: boolean;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -198,12 +209,14 @@ describe('ConsoleComposerDock', () => {
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
           readQueue: overrides.readQueue ?? nextRead,
+          keepalive: overrides.keepalive ?? nextKeepalive,
           pollIntervalMs: overrides.pollIntervalMs ?? 60_000,
           storage: overrides.storage,
           focusLastRow: overrides.focusLastRow,
           writtenOperatorMessageIds: overrides.writtenOperatorMessageIds,
           nodeTerminal: overrides.nodeTerminal,
           nodeExecutionKey: overrides.nodeExecutionKey,
+          idleAwaitExpired: overrides.idleAwaitExpired,
         })
       );
     });
@@ -2482,5 +2495,190 @@ describe('ConsoleComposerDock', () => {
     expect(queued).toBeNull();
     expect(JSON.parse(storage.getItem(key) ?? '{}').pendingRetry).toBeNull();
     expect(field().value).toBe('attempt-a');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Story 2.12 (#192) — idle disclosure, keepalive, expiry copy (T4.8–T4.15).
+  // ---------------------------------------------------------------------------
+
+  const IDLE_DISCLOSURE =
+    'no redirect ends this node after 30 min of inactivity · typing keeps it open';
+  const EXPIRED_ALERT = 'node failed · interrupted with no redirect · none of this was sent';
+  const STOP_DISCLOSURE =
+    'stopped after the last completed tool call · files already written stay written';
+
+  test('T4.8 idle disclosure follows Stop text; other states omit it', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    const text = host.textContent ?? '';
+    expect(text).toContain(STOP_DISCLOSURE);
+    expect(text).toContain(IDLE_DISCLOSURE);
+    expect(text.indexOf(STOP_DISCLOSURE)).toBeLessThan(text.indexOf(IDLE_DISCLOSURE));
+
+    await renderDock({ subState: 'generating' });
+    expect(host.textContent ?? '').not.toContain(IDLE_DISCLOSURE);
+
+    await renderDock();
+    expect(host.textContent ?? '').not.toContain(IDLE_DISCLOSURE);
+
+    await renderDock({
+      rowStatus: 'completed',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      nodeExecutionKey: 'exec-1',
+    });
+    expect(host.textContent ?? '').not.toContain(IDLE_DISCLOSURE);
+  });
+
+  test('T4.9 focus plus rapid typing produces one immediate keepalive', async () => {
+    await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
+    expect(keepaliveCalls).toHaveLength(0);
+    await act(async () => {
+      field().focus();
+    });
+    await flush();
+    expect(keepaliveCalls).toEqual([{ runId: 'run-1', nodeId: 'grp.body' }]);
+    await setDraft('r');
+    await pressKey({ key: 'r', keyCode: 82 });
+    await pressKey({ key: 'e', keyCode: 69 });
+    await pressKey({ key: 'd', keyCode: 68 });
+    expect(keepaliveCalls).toHaveLength(1);
+    expect(field().value).toBe('r');
+  });
+
+  test('T4.10 Send now excludes keepalive; intent is send_now', async () => {
+    await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
+    await setDraft('redirect the agent');
+    await act(async () => {
+      field().focus();
+    });
+    await flush();
+    const baseline = keepaliveCalls.length;
+    await clickSendNow();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body.intent).toBe('send_now');
+    expect(keepaliveCalls).toHaveLength(baseline);
+
+    await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-2' });
+    await setDraft('keyboard send');
+    await act(async () => {
+      field().focus();
+    });
+    await flush();
+    const afterFocus = keepaliveCalls.length;
+    await pressKey({ key: 'Enter', metaKey: true, keyCode: 13 });
+    expect(calls.at(-1)?.body.intent).toBe('send_now');
+    expect(keepaliveCalls).toHaveLength(afterFocus);
+  });
+
+  test('T4.11 non-idle focus/typing sends no keepalive', async () => {
+    await renderDock({ subState: 'generating', nodeExecutionKey: 'exec-1' });
+    await act(async () => {
+      field().focus();
+    });
+    await pressKey({ key: 'a', keyCode: 65 });
+    expect(keepaliveCalls).toHaveLength(0);
+
+    await renderDock({
+      rowStatus: 'completed',
+      nodeTerminal: true,
+      writtenOperatorMessageIds: new Set(),
+      nodeExecutionKey: 'exec-1',
+    });
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(keepaliveCalls).toHaveLength(0);
+  });
+
+  test('T4.12 rejected keepalive stays eligible without refusal UI', async () => {
+    let rejectNext = true;
+    nextKeepalive = async (runId, nodeId): Promise<KeepaliveWorkflowNodeResponse> => {
+      keepaliveCalls.push({ runId, nodeId });
+      if (rejectNext) {
+        rejectNext = false;
+        throw new SteeringRequestError(0, null, 'network down');
+      }
+      return { success: true };
+    };
+    await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
+    await act(async () => {
+      field().focus();
+    });
+    await flush();
+    expect(keepaliveCalls).toHaveLength(1);
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent ?? '').not.toContain("couldn't");
+    await pressKey({ key: 'x', keyCode: 88 });
+    expect(keepaliveCalls).toHaveLength(1);
+  });
+
+  test('T4.13 leaving idle or changing attempt key cleans up; new idle sends immediately', async () => {
+    await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
+    await act(async () => {
+      field().focus();
+    });
+    await flush();
+    expect(keepaliveCalls).toHaveLength(1);
+
+    await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-2' });
+    await act(async () => {
+      field().blur();
+      field().focus();
+    });
+    await flush();
+    expect(keepaliveCalls).toHaveLength(2);
+  });
+
+  test('T4.14 cause-specific terminal box uses exact expiry copy', async () => {
+    const ctrl = controllableRead();
+    nextRead = ctrl.read;
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-b', message: 'beta' }]));
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      idleAwaitExpired: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(neverSentList()?.getAttribute('aria-label')).toBe('Never sent, 1');
+    expect(neverSentItems()[0]?.textContent).toBe('beta');
+    expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(host.textContent).toContain(EXPIRED_ALERT);
+    expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
+
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeExecutionKey: 'exec-1',
+      nodeTerminal: true,
+      idleAwaitExpired: false,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(host.textContent).toContain(NEVER_SENT_ALERT);
+    expect(host.textContent).not.toContain(EXPIRED_ALERT);
+  });
+
+  test('T4.15 expired empty terminal renders no dock shell', async () => {
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      nodeExecutionKey: 'exec-1',
+      pollIntervalMs: 60_000,
+    });
+    await renderDock({
+      nodeExecutionKey: 'exec-1',
+      rowStatus: 'failed',
+      nodeTerminal: true,
+      idleAwaitExpired: true,
+      writtenOperatorMessageIds: new Set(),
+      pollIntervalMs: 60_000,
+    });
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(neverSentList()).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(host.textContent ?? '').toBe('');
   });
 });

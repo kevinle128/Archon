@@ -28,9 +28,82 @@
  * ('generating' | 'idle-after-interrupt') exists only on live interruptible
  * handles; queue-only providers never expose one.
  *
+ * Idle-await inactivity (#192 / Story 2.12): while a live interruptible handle
+ * sits in `idle-after-interrupt`, one process-local timer bounds how long the
+ * executor may wait for a redirect. Expiry resolves the SAME idle waiter as
+ * `{ kind: 'expired' }` — it is NOT the stream idle-timeout path
+ * (`withIdleTimeout` / `nodeIdleTimedOut` / `STEP_IDLE_TIMEOUT_MS`), which
+ * *completes* a node. Keepalive re-arms the timer without waking the waiter.
+ * Duration is a fixed product rule (30 minutes); no config key, YAML field, or
+ * DB state. Timer + handle are process-local and do not survive restart.
+ *
  * Exported only via the ./steering-registry subpath - never through the
  * workflows package root.
  */
+
+/** Fixed product rule: 30 minutes of genuine composer inactivity ends idle-await. */
+export const STEERING_IDLE_AWAIT_INACTIVITY_MS = 30 * 60_000;
+
+/**
+ * Schedules one idle-expiry callback and returns an idempotent cancel.
+ * Production wraps `setTimeout` + guarded `unref`; tests inject a manual
+ * scheduler so no real clocks or ms sleeps are required.
+ */
+export type ScheduleIdleExpiry = (callback: () => void, delayMs: number) => () => void;
+
+export interface SteeringRegistryOptions {
+  readonly idleAwaitInactivityMs?: number;
+  readonly scheduleIdleExpiry?: ScheduleIdleExpiry;
+}
+
+/**
+ * Production idle-expiry scheduler. Conditionally `unref`s the timeout so a
+ * parked idle waiter cannot keep a CLI process alive by itself.
+ *
+ * @internal Exported for direct unit coverage of unref/cancel behavior.
+ */
+export function scheduleIdleExpiryWithTimeout(callback: () => void, delayMs: number): () => void {
+  const timer = setTimeout(callback, delayMs);
+  const handle = timer as unknown as { unref?: () => void };
+  if (typeof handle.unref === 'function') {
+    handle.unref();
+  }
+  let cancelled = false;
+  return (): void => {
+    if (cancelled) return;
+    cancelled = true;
+    clearTimeout(timer);
+  };
+}
+
+/**
+ * Resolve the idle-await duration for a registry. Production always uses
+ * {@link STEERING_IDLE_AWAIT_INACTIVITY_MS}. The E2E override is honored ONLY
+ * when `ARCHON_E2E_FAKE_PROVIDER === '1'` exactly AND
+ * `ARCHON_E2E_STEERING_IDLE_AWAIT_MS` parses to an integer in
+ * `[1, STEERING_IDLE_AWAIT_INACTIVITY_MS]`; every other shape falls back.
+ */
+export function resolveIdleAwaitInactivityMs(
+  environment: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env
+): number {
+  if (environment.ARCHON_E2E_FAKE_PROVIDER !== '1') {
+    return STEERING_IDLE_AWAIT_INACTIVITY_MS;
+  }
+  const raw = environment.ARCHON_E2E_STEERING_IDLE_AWAIT_MS;
+  if (typeof raw !== 'string' || raw === '') {
+    return STEERING_IDLE_AWAIT_INACTIVITY_MS;
+  }
+  // Strict decimal integer only — reject fractions, signs, scientific notation,
+  // whitespace padding, and overflow forms that Number() would coerce.
+  if (!/^\d+$/.test(raw)) {
+    return STEERING_IDLE_AWAIT_INACTIVITY_MS;
+  }
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > STEERING_IDLE_AWAIT_INACTIVITY_MS) {
+    return STEERING_IDLE_AWAIT_INACTIVITY_MS;
+  }
+  return parsed;
+}
 
 export interface QueuedOperatorMessage {
   readonly messageId: string;
@@ -89,14 +162,15 @@ export type InterruptSettlement =
   | 'not_steerable_here';
 
 /**
- * What an idle executor wakes to (#183). `send_now` carries the full drained
- * batch in accepted order; `terminated` covers both discard and the
- * cancel-status poll — the executor re-reads run status and lands on the
- * existing Cancel path.
+ * What an idle executor wakes to (#183 / #192). `send_now` carries the full
+ * drained batch; `terminated` is teardown (Cancel/park/discard/close);
+ * `expired` is the inactivity timer — distinct from stream idle-timeout
+ * completion. Exactly one of these settles the single idle waiter.
  */
 export type SteeringIdleWake =
   | { readonly kind: 'send_now'; readonly messages: readonly QueuedOperatorMessage[] }
-  | { readonly kind: 'terminated' };
+  | { readonly kind: 'terminated' }
+  | { readonly kind: 'expired' };
 
 export interface SteeringHandleSnapshot {
   readonly phase: SteeringHandlePhase;
@@ -130,13 +204,26 @@ export class NodeSteeringHandle {
   private pending: QueuedOperatorMessage[] = [];
   private readonly accepted = new Map<string, AcceptedEntry>();
   private readonly interruptible: boolean;
+  private readonly idleAwaitInactivityMs: number;
+  private readonly scheduleIdleExpiry: ScheduleIdleExpiry;
   private subState: SteeringSubState | undefined;
   private turnSeq = 0;
   private currentTurn: ActiveTurn | undefined;
   private idleWaiter: { resolve: (wake: SteeringIdleWake) => void } | undefined;
+  /** Cancel fn for the active idle-expiry job; cleared on fire/cancel. */
+  private cancelIdleExpiryFn: (() => void) | undefined;
+  /** Monotonic generation — stale/cancelled callbacks compare against this. */
+  private idleExpiryGeneration = 0;
 
-  constructor(options?: { interruptible?: boolean }) {
+  constructor(options?: {
+    interruptible?: boolean;
+    idleAwaitInactivityMs?: number;
+    scheduleIdleExpiry?: ScheduleIdleExpiry;
+  }) {
     this.interruptible = options?.interruptible ?? false;
+    this.idleAwaitInactivityMs =
+      options?.idleAwaitInactivityMs ?? STEERING_IDLE_AWAIT_INACTIVITY_MS;
+    this.scheduleIdleExpiry = options?.scheduleIdleExpiry ?? scheduleIdleExpiryWithTimeout;
   }
 
   isInterruptible(): boolean {
@@ -259,10 +346,10 @@ export class NodeSteeringHandle {
   /**
    * Move a classified-interrupted turn into `idle-after-interrupt`: resolves
    * that token's pending interrupt as `idle-after-interrupt`, releases the
-   * turn slot, and returns ONE waiter resolved by the first of `send_now`
-   * (with the drained batch), discard, or terminal cleanup. Fails fast on a
-   * stale/already-settled token — idle entry is a classification outcome,
-   * not a fallback.
+   * turn slot, arms the inactivity timer, and returns ONE waiter resolved by
+   * the first of `send_now` (with the drained batch), inactivity expiry,
+   * discard, or terminal cleanup. Fails fast on a stale/already-settled token
+   * — idle entry is a classification outcome, not a fallback.
    */
   enterIdle(token: number): Promise<SteeringIdleWake> {
     const turn = this.currentTurn;
@@ -276,9 +363,43 @@ export class NodeSteeringHandle {
     this.currentTurn = undefined;
     turn.pendingInterrupt?.resolve('idle-after-interrupt');
     this.subState = 'idle-after-interrupt';
-    return new Promise<SteeringIdleWake>(resolve => {
+    // Install the waiter first, then arm — a zero-delay test scheduler must
+    // still observe a pending waiter when its callback runs.
+    const promise = new Promise<SteeringIdleWake>(resolve => {
       this.idleWaiter = { resolve };
     });
+    this.armIdleExpiry();
+    return promise;
+  }
+
+  /**
+   * Re-arm the inactivity timer without waking the idle waiter. Returns
+   * `rearmed` only for a live interruptible handle in `idle-after-interrupt`
+   * with a still-pending waiter; every other state is a no-op `not_idle`.
+   */
+  keepalive(): 'rearmed' | 'not_idle' {
+    if (
+      !this.interruptible ||
+      this.phase !== 'live' ||
+      this.subState !== 'idle-after-interrupt' ||
+      this.idleWaiter === undefined
+    ) {
+      return 'not_idle';
+    }
+    this.armIdleExpiry();
+    return 'rearmed';
+  }
+
+  /**
+   * Drive the same expiry transition the production timer uses, cancelling
+   * any scheduled job first. Executor tests use this instead of mutating a
+   * singleton duration or sleeping on real clocks.
+   *
+   * @internal
+   */
+  expireIdleForTests(): void {
+    this.cancelScheduledIdleExpiry();
+    this.onIdleExpiry(this.idleExpiryGeneration);
   }
 
   /**
@@ -312,11 +433,13 @@ export class NodeSteeringHandle {
       this.idleWaiter !== undefined
     ) {
       // First-wins release: drain the whole pending batch in accepted order,
-      // flip the handle back to generating, and resolve the idle waiter in
-      // the same synchronous tick — no second drain is possible after this.
+      // flip the handle back to generating, cancel the inactivity timer, and
+      // resolve the idle waiter in the same synchronous tick — no second
+      // drain is possible after this.
       const batch = this.pending;
       this.pending = [];
       this.subState = 'generating';
+      this.invalidateIdleExpiry();
       const waiter = this.idleWaiter;
       this.idleWaiter = undefined;
       waiter.resolve({ kind: 'send_now', messages: batch });
@@ -426,6 +549,8 @@ export class NodeSteeringHandle {
    * Shared terminal settlement — every phase transition out of `live`
    * resolves the active turn's pending interrupt AND the idle waiter exactly
    * once, so no caller can strand a route request or an executor waiter.
+   * Cancels the inactivity timer before resolving so a late callback cannot
+   * produce a second terminal outcome.
    */
   private seal(outcome: InterruptSettlement, nextPhase: SteeringHandlePhase = 'closed'): void {
     const turn = this.currentTurn;
@@ -434,11 +559,46 @@ export class NodeSteeringHandle {
       turn.pendingInterrupt?.resolve(outcome);
     }
     this.currentTurn = undefined;
+    this.invalidateIdleExpiry();
     const waiter = this.idleWaiter;
     this.idleWaiter = undefined;
     waiter?.resolve({ kind: 'terminated' });
     this.phase = nextPhase;
     this.subState = undefined;
+  }
+
+  private armIdleExpiry(): void {
+    this.invalidateIdleExpiry();
+    const generation = this.idleExpiryGeneration;
+    this.cancelIdleExpiryFn = this.scheduleIdleExpiry(() => {
+      this.onIdleExpiry(generation);
+    }, this.idleAwaitInactivityMs);
+  }
+
+  private invalidateIdleExpiry(): void {
+    this.idleExpiryGeneration += 1;
+    this.cancelScheduledIdleExpiry();
+  }
+
+  private cancelScheduledIdleExpiry(): void {
+    const cancel = this.cancelIdleExpiryFn;
+    this.cancelIdleExpiryFn = undefined;
+    cancel?.();
+  }
+
+  /**
+   * Inactivity expiry: take-and-clear the idle waiter as `{ kind: 'expired' }`
+   * without changing phase, sub-state, queue, accepted-id memory, or turn
+   * state. The handle stays live/idle so ordinary failure teardown and
+   * queue-intent acceptance can still run until the executor seals it.
+   */
+  private onIdleExpiry(generation: number): void {
+    if (generation !== this.idleExpiryGeneration) return;
+    this.cancelIdleExpiryFn = undefined;
+    const waiter = this.idleWaiter;
+    if (waiter === undefined) return;
+    this.idleWaiter = undefined;
+    waiter.resolve({ kind: 'expired' });
   }
 
   private ensurePendingInterrupt(turn: ActiveTurn): PendingInterrupt {
@@ -458,6 +618,14 @@ export class NodeSteeringHandle {
 
 export class SteeringRegistry {
   private readonly runs = new Map<string, Map<string, NodeSteeringHandle>>();
+  private readonly idleAwaitInactivityMs: number;
+  private readonly scheduleIdleExpiry: ScheduleIdleExpiry;
+
+  constructor(options?: SteeringRegistryOptions) {
+    this.idleAwaitInactivityMs =
+      options?.idleAwaitInactivityMs ?? STEERING_IDLE_AWAIT_INACTIVITY_MS;
+    this.scheduleIdleExpiry = options?.scheduleIdleExpiry ?? scheduleIdleExpiryWithTimeout;
+  }
 
   /**
    * Returns the live handle for (runId, nodeId): creates one when absent,
@@ -488,7 +656,11 @@ export class SteeringRegistry {
       existing.resume();
       return existing;
     }
-    const handle = new NodeSteeringHandle({ interruptible });
+    const handle = new NodeSteeringHandle({
+      interruptible,
+      idleAwaitInactivityMs: this.idleAwaitInactivityMs,
+      scheduleIdleExpiry: this.scheduleIdleExpiry,
+    });
     let nodes = this.runs.get(runId);
     if (nodes === undefined) {
       nodes = new Map<string, NodeSteeringHandle>();
@@ -548,18 +720,22 @@ let instance: SteeringRegistry | null = null;
 
 /**
  * Process-wide registry used by the executor and the server send route.
+ * Duration is resolved once from the process environment at first access.
  */
 export function getSteeringRegistry(): SteeringRegistry {
   if (instance === null) {
-    instance = new SteeringRegistry();
+    instance = new SteeringRegistry({
+      idleAwaitInactivityMs: resolveIdleAwaitInactivityMs(process.env),
+    });
   }
   return instance;
 }
 
 /**
  * Isolated registry construction for tests - never shares state with the
- * production singleton.
+ * production singleton. Optional duration/scheduler options forward to every
+ * handle the registry creates.
  */
-export function createSteeringRegistry(): SteeringRegistry {
-  return new SteeringRegistry();
+export function createSteeringRegistry(options?: SteeringRegistryOptions): SteeringRegistry {
+  return new SteeringRegistry(options);
 }
