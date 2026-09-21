@@ -38,9 +38,9 @@ export async function loadCatalog(): Promise<Catalog & { sha256: string }> {
 }
 export async function resolveBase(repo: string, base?: string): Promise<string> {
   if (base) return git(repo, ['rev-parse', '--verify', base + '^{commit}']);
-  // Local dev is the repository's documented integration branch.
+  // Local develop is this repository's documented integration branch.
   // Fall back only when that ref is absent, never when a merge-base is invalid.
-  for (const ref of ['refs/heads/dev', 'refs/remotes/origin/dev']) {
+  for (const ref of ['refs/heads/develop', 'refs/remotes/origin/develop']) {
     try { await git(repo, ['rev-parse', '--verify', ref]); }
     catch { continue; }
     return git(repo, ['merge-base', 'HEAD', ref]);
