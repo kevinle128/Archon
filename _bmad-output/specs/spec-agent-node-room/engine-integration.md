@@ -1,99 +1,184 @@
 # Engine integration
 
-Everything between the browser and the provider seam. The provider matrix answers _can the agent hear us_; this answers _can anything in Archon reach the agent to speak, and what does the engine do after_. Four findings, each verified against source, each deciding work the capabilities cannot be built without.
+This document defines the boundary between durable steering state, the workflow executor, and provider adapters.
 
-The frame is the one the spine fixes: steering acts on the **live agent**, never on the node lifecycle. The node stays `running` throughout — there is no durable marker, no run pause, no stop-and-resume. What follows is how the executor reaches the live session, interrupts it without failing the node, and runs more than one turn on it.
+The node remains active while Stop ends one agent turn.
 
-## 1. Interrupt is a provider primitive on the live handle — and the abort plumbing already exists
+Durable guidance survives process loss, while a live SDK handle never pretends to be serializable.
 
-Interrupting the agent's current generation is not a database signal; it is a direct call on the node's **live session handle**, held in the in-process registry (§3). claude exposes it natively (`query.interrupt()`); a provider without a keep-alive interrupt gets a **stream-abort on a per-turn signal** (§2), which ends the turn while the provider's thread/session survives for a follow-up run (codex re-runs it — `codex.resumeThread(sessionId)`, `providers/src/codex/provider.ts:1006`).
+## 1. Two coordinated planes
 
-The abort machinery already exists in the executor. Today it serves **Cancel**, through the one-shot `nodeAbortController` (`:2209`). Steering does **not** reuse that controller (§2 explains why it can't) — it adds a per-turn signal beside it, so Cancel's path stays byte-for-byte unchanged and the only real difference is what the executor does after an interrupt (§2).
+The steering design has a durable control plane and a volatile execution plane.
 
-The old design routed the stop through the database cancel-check (`dag-executor.ts:2304-2334`, every `CANCEL_CHECK_INTERVAL_MS` = 10s, `:682`). That is gone. A database poll was the mechanism for reaching a run in another process; the clean model is in-process only (§3), so the interrupt is a direct in-memory call with no 10-second floor and no silent-long-tool-call blind spot. The poll remains what it always was — Cancel's path — untouched.
+The durable control plane owns:
 
-## 2. The node keeps running — a per-turn signal, and the turn loop, are the delta
+- the author's composer draft;
+- the node-scoped guidance queue;
+- server-assigned FIFO order;
+- auto-send settings;
+- delivery intent and delivery state;
+- message identity and attribution;
+- restart recovery evidence.
 
-**The node-level abort controller is one-shot, and it is Cancel's — steering cannot use it.** The executor creates `nodeAbortController` once per node (`:2209`) and passes its signal to `sendQuery` (`:2223`). Three sites read that signal, and all three are Cancel's:
+The volatile execution plane owns:
 
-> `dag-executor.ts:3124` — `if (nodeAbortController.signal.aborted && !nodeIdleTimedOut)` → `node_failed` + `recordFailedStatus('Cancelled by user')`. Does **not** throw, so it never reaches the catch-block classifier at `:3387`.
-> `:3032` — the re-ask loop continues only `while (… && !nodeAbortController.signal.aborted)`.
-> `:2298` / `:2325` — the idle-timeout callback and the chunk-driven cancel-poll are what abort it.
+- the active provider process or SDK stream;
+- the provider session handle;
+- the active turn identifier;
+- the fresh per-turn interrupt controller;
+- the live idle-after-interrupt timer.
 
-An `AbortController` fires **once**. If steering aborted `nodeAbortController` to end turn N, turn N+1's `sendQuery` — which receives that same signal (`:2223`/`:2290`) — would abort on arrival, and the re-ask loop (`:3032`) would refuse to continue. So steering **cannot** reuse it.
+The durable store is authoritative for content and recovery.
 
-**Steering interrupts through a fresh per-turn signal.** `sendQuery` receives the combination `AbortSignal.any([nodeAbortController.signal, perTurnSignal])`: **Cancel** (node-level) or a **steering interrupt** (per-turn) both end the current turn, but each new turn gets a **fresh** per-turn signal while `nodeAbortController` persists across turns — which is exactly what makes multi-turn possible. The registry's interrupt reads the active turn's handle and aborts its per-turn signal **synchronously** (no `await` between read and abort), so on the single-threaded loop it can never fire a torn-down controller.
+The live registry is authoritative only for operations that require the active provider turn.
 
-**`operatorInterrupt` is a per-turn flag, resolved by placement in the existing flow.** The execution order is `stream (:2290) → validation → canReask (:3032) → :3124 Cancel check → completion`. Because a steering abort touches only the per-turn signal, **`:3124` is never tripped by steering** (Cancel-only, byte-for-byte). The flag is set when steering fires the per-turn abort, and three edits at three existing points close the gaps a bare flag would leave:
+## 2. Stop uses the existing provider request contract
 
-- **(1) `canReask` (`:3032`) must also stop on `operatorInterrupt`.** Today it guards only on `!nodeAbortController.signal.aborted`, which a per-turn abort does not set — so without this guard the structured-output re-ask would fire on the interrupted partial and re-run the wrong work (the adversarial "re-ask vs steering own the same slot" hole). The `:3030` comment already names the intent — _"Don't reask after an idle-timeout/abort — those are genuine failures, not validation misses"_ — so `&& !operatorInterrupt` extends a guard the design already reasons about; it is one token at a point built for exactly this distinction.
-- **(2) Validation is skipped on an interrupted turn** — no validation-miss events for a turn the operator deliberately cut.
-- **(3) The `operatorInterrupt` branch sits immediately after the `:3124` Cancel check**, so a co-firing `/workflow cancel` wins by position — no ordering rule to invent.
-- **The flag is per-turn**: reset when the loop starts turn N+1, so a stale flag can never abort or mis-route a later turn.
-- **The end cause is a five-case rule the executor resolves, not "did the turn emit a `result`" alone.** The executor consumes a **provider-normalized** `msg.type === 'result'` (`:2533`), but a stream-abort is **not** uniformly result-free: DeepSeek emits a terminal `result` marked `stopReason:'aborted'` / `errorSubtype:'deepseek_aborted'` (`providers/src/community/deepseek/acp-client.ts:105`), and OMP **throws** `Query aborted` (`providers/src/community/omp/provider.ts:317,450`), caught at `:3332` as `dag_node_failed`. When `operatorInterrupt` fired the executor resolves: **(1)** `result`, no abort marker → **natural** end, spent, complete/auto-drain; **(2)** `result` with an abort marker → **interrupted** end → idle-await; **(3)** a thrown abort caught at `:3332` → **interrupted** end → idle-await, not `node_failed`; **(4)** a throw with the flag unset → genuine `node_failed`; **(5)** node Cancel (`:3124`) dominates by position. The executor **classifies** the abort-marked `result` and the abort throw; the adapter **never suppresses** them (Fail-Fast — they stay visible to other consumers). Applies on both `executeNodeInternal` and `executeLoopNode`.
+AgentRequestOptions.interruptSignal is the common Stop contract.
 
-**Turn-end has two causes, and the loop distinguishes them:**
+The implementation does not add cancel() to IAgentProvider.
 
-- **Natural end** — the agent finished the turn on its own. The queue **auto-drains**: a queued message → run turn N+1; queue empty → **node completes** (validate `output_format`, write `node_completed`, advance the DAG — the existing terminal path). Auto-delivery at the natural boundary is `Queue`'s contract. (A `Queue`d message is already on the **in-process registry queue** — it was dispatched to the send route at `Queue`-press, not at this boundary — so the executor simply finds it here and runs turn N+1; there is no client dispatch racing this completion check. The client draft box holds only text still being composed; delete of a queued message goes through the idempotent withdraw route. The two-queue split is typing, client draft, vs queued, server registry.)
-- **Interrupted end** — `operatorInterrupt` set. The turn produced a **partial** result: no schema-valid `output_format`, maybe a half-written tool call. The executor must **not** validate it, **not** write `node_completed`, **not** advance the DAG. It **always** enters **idle-await**, _whatever the queue holds_ — it never auto-fires. The **only** exits are the operator's **`Send now`** (the queued messages are already on the registry from `Queue`-press; `Send now` dispatches the newly typed one, and the executor flushes the registry — the queued messages then this one, in receipt/written order → turn N+1) and the idle-await timeout (below). This is what preserves the ratified `Send now` moment (`control-states.md`): after Stop, the operator adds the final correction before anything is sent.
+The existing node-level abortSignal remains separate from Stop.
 
-**A steered node runs multiple turns on one live session.** Continuing across turns reuses a seam that already exists:
+Each provider adapter observes interruptSignal and maps it to a verified native interrupt or safe stream-abort.
 
-> `dag-executor.ts:2290` — the structured-output re-ask already re-invokes `sendQuery` with `attemptResumeId` on the **same** session when a turn's output fails validation.
+Claude maps it to the SDK query interrupt.
 
-The precedent is close but **imperfect, and the difference is the new code**: re-ask re-enters on a _validation miss_ from a state the executor treats as recoverable; steering re-enters on an _interrupt_ (or a queued Send at natural turn-end) from a state the executor today treats as **terminal** (`:3124`). The `operatorInterrupt` branch and the queue check are the delta; the session-resume carriage is reused as-is.
+Codex aborts the active turn stream and continues through the existing thread or session resume path.
 
-**The idle-await bound — fail after 30 minutes (owner-ratified), and how Cancel reaches it.** Idle-await arms a **fresh 30-minute timer** on entry — reusing neither the streaming `withIdleTimeout` wrapper (`:2298`; no stream to wrap) nor its `nodeIdleTimedOut` outcome, which _completes_ the node (`:3118`: `completed via idle timeout`, and the `!nodeIdleTimedOut` guard at `:3124` keeps it out of the fail branch). Reusing that path would _complete-with-partial-output_ — the garbage AD-4 forbids. So on expiry the timer takes an **explicit fail** branch: `interrupted by operator, no redirect received`; rerunning it with `workflow retry-node <run-id> <node-id>` re-runs the node with a **fresh session** (the interrupted context is gone — there is no durable session for a steer). Cancel is the subtle part: `/workflow cancel` is a DB status normally read by the chunk-driven cancel-poll (`:2312`) — which is **dormant** in idle-await (no stream). So idle-await runs its **own timer-driven poll** of `getWorkflowRunStatus` at `CANCEL_CHECK_INTERVAL_MS` (`:682`), reusing `shouldContinueStreamingForStatus` (`:700-702`) and taking the existing Cancel ending when the run is no longer streamable. **Idle-await resolves exactly once** — the first of `Send now`, the cancel-poll, or the 30-minute timer wins; the other two are torn down. (Cancel's _code_ is untouched — idle-await adds a poll that _reaches_ it. Rejected bounds: **wait-forever** — fragile in-process, §3; **complete-with-partial** — the do-nothing bug.)
+DeepSeek maps it to a provider-native turn abort that keeps the session available and retains its abort marker for executor classification.
 
-Note the deliberately-dropped invariant: `shouldContinueStreamingForStatus` (`:700-702`) returns true for both `running` and `paused` so a concurrent Ask gate does not kill a sibling mid-stream. Steering never relies on this, because steering never changes the run status — the node simply stays `running` and its turn loop runs again.
+OMP, Grok, Qoder CLI, Pi, GitHub Copilot, and OpenCode each implement their verified adapter-specific path.
 
-```mermaid
-flowchart TD
-  INT["operator interrupts: set operatorInterrupt, abort the PER-TURN signal"] --> SITE{"which signal fired?"}
-  SITE -->|"node-level nodeAbortController (Cancel / idle) -> :3124"| F["node_failed (existing path, untouched)"]
-  SITE -->|"per-turn signal (operatorInterrupt)"| IDLE["idle-after-interrupt: node still running, partial turn NOT validated"]
-  IDLE -->|"operator presses Send now"| NEXT["turn N+1 on same session (attemptResumeId :2290): flush queued + typed, in order"]
-  IDLE -->|"30-min idle-await timer expires, nothing sent"| FAIL["node FAILS: interrupted, no redirect"]
-  IDLE -->|"/workflow cancel via idle-await status poll"| F
-  NEXT --> ENDT{"turn ends"}
-  ENDT -->|"interrupted again"| IDLE
-  ENDT -->|"natural, a Queue message waiting"| NEXT
-  ENDT -->|"natural, queue empty"| DONE["node completes (validate, node_completed, advance DAG)"]
-  F:::bad
-  FAIL:::bad
-  classDef bad stroke-dasharray: 4 3
-```
+A provider must not swallow an abort marker or abort exception that the executor needs to classify.
 
-## 3. Where the executor runs decides whether a run is steerable at all
+## 3. A fresh signal identifies one turn
 
-| How the run started | Where the executor runs                                                                                                           |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Web dispatch        | **In the API server process** — `packages/server/src/routes/api.ts:3200-3228` dynamically imports `executeWorkflow` and awaits it |
-| CLI `--detach`      | **A detached child in its own process group** — `packages/cli/src/commands/workflow.ts:696-722`                                   |
+Every provider turn receives a fresh turn-level signal combined with the node-level signal.
 
-Under the old durable design the stop travelled through the database, so it reached a detached run. The clean model has **no durable steering state** — the interrupt, the inbound queue, and the live session handle all live in an **in-process registry** keyed `(runId, nodeId)`, valid only while the node runs _in this process_. So the process boundary now binds **all** of steering, not only mid-turn delivery:
+The active registry handle points to that turn and signal only while the turn exists.
 
-- A run whose executor is **in this process** (web dispatch) is fully steerable.
-- A run whose executor is a **detached child** has no reachable live handle → Send and Interrupt return a clear "not steerable here" (the UI states it). Cancel and normal `/workflow resume` still work on it.
+Stop captures the intended active turn identity before firing the signal.
 
-This is the accepted v1 boundary. A server restart drops the registry with the live sessions; any in-flight steer is lost and the process-local handle, timer, and continuation are dropped, leaving a durable non-terminal run; Archon never autonomously fails or resumes it from staleness — recovery is explicit abandon/cancel, then CLI `archon workflow retry-node` when desired (the web Retry action is not shown for a still-`running` node) — matching aion's process-local `active_turn_id` loss on crash, without inventing autonomous recovery.
+If that turn ended naturally before Stop arrives, the interrupt is spent and must not target the next turn.
 
-If steering a session the caller did not spawn is ever wanted, one lead exists: grok's leader socket (`~/.grok/leader.sock`, `grok agent leader`, `--leader` — "multiple clients share one backend"). It is the only channel found that reaches a session another process owns. Unexplored, grok-only, deferred.
+The executor keeps a per-turn operatorInterrupt marker so it can distinguish operator Stop from provider failure.
 
-## 4. An operator row needs a speaker
+The marker is reset before the next turn starts.
 
-`workflow_node_messages` rows carry `kind: text | tool | status` and no speaker field (`packages/workflows/src/schemas/node-message.ts:39-43`). The place to put one is `metadata` — but `nodeTranscriptMetadataSchema` is `.strict()` (`packages/workflows/src/schemas/node-execution.ts:29-43`), so it is **not** free JSON.
+The executor skips structured-output validation and re-ask behavior for an interrupted partial turn.
 
-**Decision: an operator message is an ordinary `text` row carrying three additive `metadata` fields — `origin = 'operator'`, `operator_user_id` (the sender, from `resolveAuthContext`, for CAP-11 attribution on a multi-user install), and `message_id` (the caller-stamped id, so the client can reconcile which `sent` messages became rows).** No new table, no widened `kind` enum — the same lesson aion recorded (reuse existing enum values rather than widen a CHECK constraint). The cost is honest and small: three optional fields on a strict schema, plus a regenerated `api.generated` for the web. **No database migration** — the column is already JSON. The **executor is the sole writer** (HITL/AD-3, which assigns `seq`), placing the row by `seq` between the turn it interrupted and the turn it caused. The row is a **receipt for the record** — the delivery vehicle is the live session, not this row — and its `message_id` is what lets the client mark any unmatched `sent` message "Never sent" rather than lose it silently. That reconciliation runs **only on the node's terminal event** (`node_completed`/`node_failed`, HITL/AD-7's refetch trigger, which sequences after the executor's last write), never on a live refetch — otherwise a Cancel mid-flight could read rows before the final insert commits and mis-mark a _delivered_ message "Never sent", duplicating the correction on resend.
+Node-level termination continues to take precedence through the existing execution order.
 
-**This reaches outside the spec.** `AgentHistoryItem` in `spec-readable-agent-transcript` has kinds `assistant | tool | lifecycle`; an operator row is none of them, and that spec's AD-1 puts every row's meaning in the shared core. CAP-11 therefore depends on a new item kind and a row treatment in **both** shells over there — including that its `deriveOutcome` (`agent-history.ts:120`) reads the tool card, so the `interrupted` glyph must be folded into the card's outcome there, and that an operator `text` row must not reach a live transcript until that reader recognizes `origin='operator'` (else it renders as agent text). Recorded here as a dependency; that spec is not edited from this one.
+## 4. Turn-end classification
 
-## What this adds to the build
+The executor classifies each turn through provider-normalized evidence.
 
-Ordered by what blocks what:
+The required cases are:
 
-1. **The per-turn signal and the `operatorInterrupt` flag.** Give each turn a fresh per-turn abort signal, hand `sendQuery` the `AbortSignal.any` of it and the one-shot node-level `nodeAbortController` (`:2209`/`:2223`), and set `operatorInterrupt` when steering fires the per-turn abort. `:3124` (and the `:3387` classifier) stay untouched — Cancel-only; place the `operatorInterrupt` branch after the `:3124` check (Cancel dominates by position), add `operatorInterrupt` to the `canReask` guard (`:3032`), skip validation on an interrupted turn, and reset the flag at turn N+1. The node-level controller and its three read sites are unchanged.
-2. **The multi-turn loop.** On an interrupted turn-end, do not validate/complete the partial turn; enter idle-await; drain on the operator's `Send now` → run turn N+1 on the same session (`attemptResumeId`, `:2290`), or fail on the fresh **30-minute** idle-await timer (never the existing idle timeout, which completes). A natural turn-end auto-drains the queue. This is the one genuinely new engine behaviour. The idle-await timer is an **inactivity** timer (SC 2.2.1, owner-chosen): a debounced authorized composing-keepalive (Send/Interrupt route family, AD-11) **re-arms** it without resolving idle-await, so a node fails only after 30 minutes of true operator inactivity.
-3. **The in-process registry.** `(runId, nodeId) → live session handle + inbound queue`, populated while the node runs in-process, torn down when it ends. Send/Interrupt routes resolve the handle here; no handle → "not steerable here".
-4. **The operator row.** Add `origin`, `operator_user_id`, `message_id` to the transcript metadata schema, regen `api.generated`, write the `text` row and the `interrupted` status row through the store at delivery; the client reconciles `sent` ids against `message_id` on any terminal (mark unmatched "Never sent"); open the matching `AgentHistoryItem` change against `spec-readable-agent-transcript`.
-5. **The provider seam** — what the matrix describes. Sending is an ordinary prompt; `sendQuery`'s input becomes a stream only for providers that soft-inject mid-turn. Never the hard half.
+1. A result without an abort marker is a natural end.
+2. A result with a verified abort marker and an active operator interrupt is an interrupted end.
+3. A verified abort exception with an active operator interrupt is an interrupted end.
+4. An exception without an active operator interrupt is a provider or execution failure.
+5. Node-level termination takes the existing terminal path.
+
+An interrupted end writes the interrupted transcript evidence, does not validate the partial output, does not complete the node, and does not advance the DAG.
+
+The node enters idle-after-interrupt and waits for Send now.
+
+A natural end claims the next durable queued item when guidance is pending.
+
+If auto-send is disabled, the normal Queue contract determines the next-turn batch.
+
+If auto-send is enabled, the executor claims one FIFO item after each natural reply.
+
+An interrupted turn never auto-sends.
+
+## 5. Multi-turn continuation
+
+A redirected node continues through the provider's existing session or thread resume seam.
+
+The next operator prompt becomes the next turn on that session.
+
+Queued guidance is claimed in durable server FIFO order.
+
+The executor writes an operator transcript row when the provider delivery boundary is reached.
+
+The row contains the caller-stamped message id and acting operator identity.
+
+The transcript row is the audit receipt.
+
+The queue record remains the delivery-control record.
+
+## 6. Durable queue state
+
+Queue acknowledgement is returned only after database commit.
+
+Withdrawal is idempotent while an item remains claimable.
+
+The durable state machine distinguishes at least draft, queued, awaiting-send-now, dispatching, sent, delivered, delivery-unknown, withdrawn, and failed outcomes.
+
+A provider acknowledgement advances a message to delivered only when it carries the stamped message id or another explicitly verified provider identifier.
+
+Text and timestamps are never delivery evidence.
+
+If a process disappears after an item is claimed but before delivery can be proven, the item becomes delivery-unknown.
+
+Archon never resends a delivery-unknown item automatically because the prior provider process may already have completed an external side effect.
+
+## 7. Server restart recovery
+
+Server startup reloads durable draft, queue, delivery, and auto-send data.
+
+It does not claim that the prior provider process or active turn survived.
+
+It does not autonomously complete, fail, cancel, or resume ambiguous non-terminal work.
+
+The Node Room presents the restored data as read-only recovery state.
+
+The operator invokes the existing Resume feature.
+
+After Resume establishes a new live executor, the executor reuses a provider session only where the provider contract proves that continuation is safe.
+
+Durable queued guidance remains ordered and is not silently discarded.
+
+## 8. Idle-after-interrupt
+
+The existing 30-minute inactivity decision applies only while the process actively owns a live idle-after-interrupt handle.
+
+Composer activity re-arms that live timer.
+
+Send now resolves idle-after-interrupt and starts the next provider turn.
+
+A server restart removes the live timer and moves the UI to recovery-required state instead of letting a new process infer that the old timer expired.
+
+## 9. Operator rows and additional transcript sources
+
+The executor remains the sole appender of ordered node transcript rows.
+
+Delivered operator guidance uses the existing text-row storage with additive metadata for origin, operator identity, and message id.
+
+Successful Codex file-change events are normalized and persisted before the presentation layer.
+
+Thinking, triggering prompts, and advisor notifications use explicit persisted discriminators and privacy rules.
+
+RunStream, Chat, Node Room, and backend formatting consume the same semantic presentation contract.
+
+## 10. Build order
+
+1. Add the additive durable steering records and narrow steering-store contract.
+2. Add typed draft, queue, auto-send, Stop, and recovery API schemas.
+3. Move queue authority from the live registry to the durable store.
+4. Implement the fresh per-turn interruptSignal path and end-cause classification.
+5. Implement restart restoration through the existing Resume workflow.
+6. Complete provider conformance for all approved providers.
+7. Add cross-surface presentation and transcript-source persistence.
+8. Verify SQLite and PostgreSQL upgrades, restart E2E, provider conformance, accessibility, and cross-surface parity.
+
+## 11. Explicit exclusions
+
+This design does not change the historical workflow Cancel feature.
+
+This design does not add individual-tool cancellation.
+
+This design does not change CLI --detach or add detached-specific Agent Node Room behavior.

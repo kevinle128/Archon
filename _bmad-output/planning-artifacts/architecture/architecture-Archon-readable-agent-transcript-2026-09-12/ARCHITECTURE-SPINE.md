@@ -4,15 +4,17 @@ type: architecture-spine
 purpose: build-substrate
 altitude: feature
 paradigm: 'functional core, imperative shell'
-scope: 'The frontend projection layer that turns stored node-message rows into a readable transcript, and the two React shells that render it. Frontend only; no schema, migration, or backend change.'
-status: final
+scope: 'The semantic presentation contract across Node Room, RunStream, Chat, and backend formatting, including persistence for new transcript sources and Git impact views.'
+status: approved
 created: '2026-09-12'
-updated: '2026-09-12'
+updated: '2026-09-21'
 binds:
   - 'SPEC-readable-agent-transcript CAP-1..CAP-7'
+  - 'spec-agent-node-room CAP-14..CAP-21'
   - 'architecture-Archon-workflow-run-view-hitl-2026-09-05 HITL AD-3'
   - 'architecture-Archon-workflow-run-view-hitl-2026-09-05 HITL AD-4'
 sources:
+  - ../../../specs/spec-agent-node-room/SPEC.md
   - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/SPEC.md
   - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/tool-presentation-contract.md
   - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/todo-fold-contract.md
@@ -29,9 +31,9 @@ companions:
 
 **Functional core, imperative shell.**
 
-The core is pure TypeScript in `packages/web/src/lib/`: no React, no DOM, no fetch, no provider names. It reads stored rows and returns render-neutral data. (`lib/` is React-free apart from one pre-existing file that is a hook by name, `use-container-split-mode.ts`; nothing this feature adds joins it.) The shells are the two React surfaces — Legacy `components/workflows/` and Console `experiments/console/`. They own JSX, scroll, focus, and the interaction state a DOM needs; they own no interpretation.
+The Web core is pure TypeScript in `packages/web/src/lib/`: no React, no DOM, no fetch, and no provider names. It reads typed rows and returns render-neutral data. Legacy, Console, RunStream, and Chat own their markup and interaction state but do not reinterpret provider payloads. Backend formatting follows the same semantic fixture contract without importing Web code across the package boundary.
 
-Every capability in this feature is a function of data already in the database, so the core is total and deterministic and the shells are replaceable. That is what makes the feature retroactive, and it is why Legacy can be deleted later without touching a line of the core.
+Existing stored rows gain readable presentation retroactively. Successful Codex file changes, thinking, triggering prompts, and advisor notifications require explicit normalized persistence before they enter the same deterministic presentation path.
 
 ## Inherited Invariants
 
@@ -39,7 +41,7 @@ From `architecture-Archon-workflow-run-view-hitl-2026-09-05` (HITL spine, featur
 
 | Inherited                             | From parent | Binds here                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| HITL AD-3 — per-node transcript table | HITL spine  | `remote_agent_workflow_node_messages` ordered by `seq` is the only source the rooms read. Track A adds no source and no column, which is exactly what makes it apply to runs already stored.                                                                                                                             |
+| HITL AD-3 — per-node transcript table | HITL spine  | `remote_agent_workflow_node_messages` ordered by `seq` remains the canonical ordered transcript source. New providers and transcript sources normalize into that store before presentation. Existing rows remain readable without rewriting them.                                                                          |
 | HITL AD-4 — Console isolation         | HITL spine  | Console must not import `@/components`, `@/contexts`, `@/hooks`, `@/routes`, `@/stores`, `@tanstack/react-query`, or `@/lib/api` **functions**. Type-only `api.generated.d.ts` **is** allowed — a different module path, outside the ban — which is the carve-out AD-6 relies on. Each surface owns its own React shell. |
 
 **Correction to HITL AD-4, carried by AD-2 below.** The parent also calls `lib/run-graph` "the one sanctioned console isolation exception". That clause is stale: the enforced rule is the prohibition list, and `@/lib/` outside `@/lib/api` was never restricted. The parent's prohibition list stands unchanged; only its exception-counting sentence is wrong, and it should be amended upstream.
@@ -76,11 +78,11 @@ graph TD
   CON -.->|forbidden| JSDIFF
 ```
 
-### AD-1 — One core, two markup shells
+### AD-1 — One semantic core, multiple markup shells
 
-- **Binds:** CAP-1 … CAP-7, both surfaces.
-- **Prevents:** the render fork becoming a logic fork — a renderer learning a provider name, re-deriving a chip label, re-parsing a payload, or the two surfaces drifting into different readings of the same row.
-- **Rule:** every decision about _what a row means_ is made in `lib/` and reaches the shells as data. A shell may choose markup, class names, and layout; it may not inspect `input`, `output`, or a tool name. `family`, `label`, `headline`, `headlineKind`, `badges`, `body`, and the text channels AD-10 adds are consumed as given. Neither shell imports from the other.
+- **Binds:** readable-transcript CAP-1 through CAP-7 and Agent Node Room CAP-14 through CAP-21 across Node Room, RunStream, Chat, and backend formatting.
+- **Prevents:** any presentation surface learning provider-specific meaning or drifting into a different reading of the same row.
+- **Rule:** every decision about what a row means is made by the semantic presentation contract. Web surfaces consume the shared Web projection. Backend formatting implements the same contract against the same fixtures without creating a forbidden backend-to-Web dependency. A shell may choose markup, class names, and layout; it may not reparse provider input or output.
 
   **`label` is the tool name as the provider sent it** — `read_file`, `Edit`, `Grep` — not the normalised form. Normalisation (case-folding, stripping `_` and `-`) is a _matching_ device for the resolver and never a display transform; a chip reading `readfile` would contradict every example in the UX run. Four statements across three documents disagreed when this AD was written — `tool-presentation-contract.md:31`/`:160` and `EXPERIENCE.md:90` said "normalised" against `DESIGN.md:377` and `EXPERIENCE.md:79`/`:208`. **All three documents were corrected to "as sent" on 2026-09-12** (`tool-presentation-contract.md:34`/`:165` via `bmad-spec`, `EXPERIENCE.md:90` via `bmad-ux`). The rule below is now what every source says; it is recorded here because it was a decision, not because the sources still fight.
 
@@ -99,7 +101,7 @@ graph TD
 ### AD-4 — One module owns the diff; no shell imports `diff` `[ADOPTED]`
 
 - **Binds:** CAP-5 on both surfaces.
-- **Prevents:** two shells each calling `structuredPatch` with different options — `context` defaults to 4 and is silently divergent — and rendering different diffs for the same edit; the same edit being diffed twice; and a later adopter such as the chat card growing a third differ.
+- **Prevents:** two shells each calling `structuredPatch` with different options — `context` defaults to 4 and is silently divergent — and rendering different diffs for the same edit; the same edit being diffed twice; and the Chat card growing a third differ.
 - **Rule:** `diff` is declared as a dependency of `@archon/web`, and `packages/web/src/lib/diff-hunks.ts` is the **only** caller of `structuredPatch` in the tree, with its options fixed inside it. It exports one function returning `GitDiffHunk[] | null` and carries a bounded memo keyed on the two input strings — legitimate caching, because it is a pure function of them.
 
   **Bounds are mandatory and deterministic.** jsdiff ships _no_ default timeout and _no_ default edit-length limit, and an unbounded synchronous Myers diff hangs the thread rather than failing, so a caller that names no bound has no degrade path at all. `diff-hunks.ts` refuses inputs above a byte ceiling before calling `structuredPatch`, and passes an explicit `maxEditLength`; both answers are `null`, and the row degrades to path-plus-preview, the same fallback Codex already takes. The bound is `maxEditLength`, never a wall-clock `timeout`: an edit-length bound is a function of the inputs, so the same pair yields the same result on every machine and in every test run, while a time budget would render a diff on a fast machine and a preview on a slow one. The two numbers are starting values, not measured ones — revisit them against the production corpus once real edit sizes are known.
@@ -138,11 +140,11 @@ graph TD
 - **Prevents:** one builder adding `useMemo` and another not, leaving two surfaces with different re-render behaviour; and the "cheap" claim being read as covering the diff, which is the one part of the core whose cost scales with content size rather than row count.
 - **Rule:** the presenter is attached inside `buildAgentHistory()`, which is unmemoized at all three call sites today and re-runs on every render. At CAP-1's stated scale — forty rows — the resolver costs microseconds, so no memoization is added for it. The diff is exempt and is bounded by the memo inside `lib/diff-hunks.ts` (AD-4) rather than at a call site, so a node of large edits does not re-diff on every render. Revisit the resolver when a node's row count reaches the low hundreds while live-streaming; the fix then is `useMemo` at the call sites, not caching inside the core.
 
-### AD-9 — No runtime switch; revert is the rollback
+### AD-9 — Presentation changes need no runtime switch
 
 - **Binds:** the operational envelope of this feature.
 - **Prevents:** a kill switch that would require keeping the JSON rendering alive in both shells — preserving the exact defect being deleted, in the surface scheduled for deletion.
-- **Rule:** Track A ships no feature flag, no environment variable, and no config key. It adds no migration, no server route, and no deployment step; it reaches users in the web bundle. The rollback is reverting the change, so it lands as one focused, revertible unit rather than mixed into unrelated work. The only operational delta is bundle size: one dependency, `diff`, tree-shaken to `structuredPatch` — measured at ~10.0 KB minified, ~3.8 KB gzipped. One copy in the browser bundle; the root's `diff` 8.0.3 is build-time only and does not collide.
+- **Rule:** Presentation behavior ships without a feature flag. New persisted transcript sources and Git evidence use their owning additive backend contracts, while the presentation layer continues to degrade safely when an older row lacks the new metadata.
 
 ### AD-10 — Everything a row displays is produced by the core, including its text channels
 
@@ -156,17 +158,17 @@ graph TD
 - **Prevents:** the full path being destroyed before it reaches the DOM, so assistive technology and copy-paste get the truncated form. The builder has in-module precedent for doing exactly this — the resolver already truncates at Tier 4 (80 characters) and Tier 3 (first line) — so the prohibition has to be explicit.
 - **Rule:** `headline` leaves the core complete and un-elided; `headlineKind` says _how_ a shell must shorten it visually, and the shell does so with CSS or a presentational transform that leaves the full string in the accessible name and the DOM text. Tier 3's first-line rule and Tier 4's 80-character cap are _content selection_, not elision — they choose which text is the headline, and what they choose then travels whole.
 
-### AD-12 — The shells own seven behaviours, written twice, and they are enumerated
+### AD-12 — The Node Room shells own enumerated DOM behaviors
 
 - **Binds:** both shells; the State Patterns, Interaction Primitives, and Accessibility Floor sections of `EXPERIENCE.md`.
 - **Prevents:** the honest gap in "one core, two shells" — a handful of behaviours genuinely cannot live in the core because they are DOM and interaction state, so they _are_ written twice, and nothing otherwise obliges the two copies to agree. Console already ships stick-to-bottom (`ConsoleNodeRoom.tsx:550-572`) and Legacy does not, so the two surfaces are divergent on this list **today**.
-- **Rule:** exactly these seven are shell-owned, and both shells implement all seven identically. Anything not on this list belongs to the core.
+- **Rule:** these Node Room behaviors are shell-owned, and both Node Room shells implement them identically. Anything semantic belongs to the shared presentation contract.
   1. A row renders collapsed when the outcome is `succeeded`, open when `failed`, and **collapsed for `running`, `interrupted` and `unknown`** — the three the UX spine leaves unstated; only `failed` earns an automatic open. The `<details>` element is **uncontrolled**, seeded once per row from the outcome at first render. A controlled `open={outcome === 'failed'}` is forbidden: under the 1000 ms poll it re-asserts itself and snaps shut a row the reader opened.
   2. A reader's manual open or close outranks every automatic rule and survives live re-renders, including on a row the transcript auto-opened (`:158`). A row that _becomes_ `failed` while the reader has not touched it opens then; one the reader has touched never moves again.
   3. One polite `role="status"` region announces node transitions and failures only — never one per row (`:181`).
   4. The transcript pins to the bottom only while the reader is already at the bottom, otherwise holds position; an append never moves focus (`:175`).
-  5. Every todo call collapses to a one-line row; the current checklist renders **only in the pinned todo strip** (#6), not inline in the transcript (CAP-3).
-  6. A **pinned todo strip** at the top of the transcript panel mirrors the current `TodoPhase[]`, stays visible while the transcript scrolls, and is absent when the node has no todos (CAP-3). It renders from the core-supplied `TodoPhase[]` — no new core mechanism.
+  5. Earlier todo mutations remain one-line `todo updated` rows, while the latest applicable todo row can expose the approved inline checklist.
+  6. A collapsible todo strip sits outside and below the transcript scroller, immediately above the queue and composer dock. It mirrors the current `TodoPhase[]`, remains visible while the transcript scrolls, and is absent when the node has no todos. Terminal completed or interrupted treatment is a presentation projection and never rewrites stored todo events.
   7. A **loop-iteration selector** navigates directly between occurrence groups (the per-group headers are its anchors) and is absent on a single-occurrence node (CAP-6). It renders from the core-supplied occurrence groups — no new core mechanism.
 
   Console's existing `showToolCalls` toggle (`ConsoleInspectPane.tsx:68`), which Legacy has no equivalent of, hides **tool rows only**. The todo checklist is node state, not a tool call, so it survives the toggle being off — otherwise turning it off would delete CAP-3 on one surface and not the other.
@@ -197,6 +199,36 @@ graph TD
 - **Prevents:** treating Story 1.7 `Jump to` as the occurrence-switching entry point for a finished iteration (that control is scroll-only and absent on modern occurrence rooms); reading "no steering request" as a ban on the authenticated node-scoped `GET …/queue` poll; and implying the finished-view band holds only this viewer's rows.
 - **Rule:** On a live loop node, the operator reaches a finished iteration through the **`Execution` selection controls** — the header select, a Logs row, or a graph occurrence. Story 1.7 `Jump to` remains scroll-only navigation within already-loaded groups and is not the Story 2.10 entry point. The finished-iteration dock is strictly read-only for **mutations**: no send, withdraw, or interrupt control is rendered or invoked. The existing authenticated node-scoped `GET /api/workflows/runs/:runId/nodes/:nodeId/queue` read **is** allowed and is the only new request the mode performs (1 s serial poll already owned by `startQueuePolling`). The read-only band mirrors the **node's shared pending queue** across operators and tabs (Story 2.9 semantics), not a per-viewer local list. Fail closed (dock stays hidden) whenever same-lineage liveness cannot be proven.
 - **Recorded:** 2026-09-20 — headless adoption of plan `issue-190-queued-guidance-finished-iteration` recommended resolution B1.
+
+### AD-17 — New transcript sources normalize before persistence
+
+- **Binds:** Agent Node Room CAP-14, CAP-19, CAP-20, and CAP-21.
+- **Prevents:** presentation shells parsing provider streams, successful Codex file changes disappearing before the read path, and new source types using incompatible ordering rules.
+- **Rule:** provider and executor boundaries normalize successful Codex `file_change` events, agent thinking, triggering prompts, and advisor notifications into typed persisted node-message rows before presentation. Each row receives the server sequence that defines transcript order. The projection layer reads those rows and never inspects a live provider stream.
+
+### AD-18 — All presentation surfaces share semantic fixtures
+
+- **Binds:** Agent Node Room CAP-16 and the readable-presentation contract.
+- **Prevents:** Node Room, RunStream, Chat, and backend formatting giving different names, outcomes, or summaries to the same tool event.
+- **Rule:** Legacy, Console, RunStream, and Chat consume the same Web semantic core. Backend formatting remains in its owning package and proves equivalent output through shared serializable fixtures rather than a dependency on Web code. Each surface can choose its markup, but it cannot reinterpret the event.
+
+### AD-19 — Sensitive context has an explicit display contract
+
+- **Binds:** Agent Node Room CAP-19, CAP-20, and CAP-21.
+- **Prevents:** accidental disclosure of hidden reasoning, misattribution of a prompt, and advisor messages arriving outside transcript order.
+- **Rule:** the persistence boundary stores only provider content that is explicitly exposed as displayable thinking. It stores the exact triggering prompt with its actor and source attribution. It stores advisor notifications as typed rows with advisor identity and server sequence. Logging never includes the content of thinking, prompts, or advisor notifications.
+
+### AD-20 — Git impact uses repository evidence
+
+- **Binds:** Agent Node Room CAP-17.
+- **Prevents:** file ownership being inferred from agent prose or a tool name, and run-level and node-level change views disagreeing.
+- **Rule:** the executor records the Git boundary evidence required to compare a node execution with its prior boundary. The owning server layer uses `@archon/git` functions to compute changed paths and attributes. The run-level Files Changed panel folds the node-level evidence. Missing or ambiguous evidence is shown as unknown and is never guessed.
+
+### AD-21 — Approved todo behavior is one projection
+
+- **Binds:** readable-transcript CAP-3 and Agent Node Room CAP-3.
+- **Prevents:** the transcript row, sticky strip, and terminal state presenting three conflicting todo states.
+- **Rule:** one deterministic fold produces the latest applicable todo state. Earlier mutations remain compact `todo updated` rows. The latest applicable row can expose the inline checklist. The sticky strip below the transcript uses the same projection, and terminal completed or interrupted treatment does not rewrite persisted events.
 
 ## Consistency Conventions
 
@@ -265,14 +297,21 @@ flowchart LR
 | CAP-5 inline diff         | `lib/diff-hunks.ts` → `lib/git-hunk-adapter.ts`                       | AD-4, AD-5, AD-6, AD-3                              |
 | CAP-6 occurrence grouping | `occurrence-groups.ts`                                                | AD-7, AD-10                                         |
 | CAP-7 raw payload         | both shells; payload carried on the item                              | AD-1, AD-3, AD-12                                   |
+| CAP-14 Codex ingestion    | provider normalization + node-message persistence                     | AD-17                                               |
+| CAP-15 auto-send display  | steering state projection in each Node Room shell                     | live-steering spine                                 |
+| CAP-16 surface parity     | Web semantic core + backend semantic fixtures                         | AD-1, AD-18                                         |
+| CAP-17 Git impact         | executor boundary evidence + `@archon/git` server projection          | AD-20                                               |
+| CAP-18 provider coverage  | provider normalization adapters                                       | AD-17, live-steering spine                          |
+| CAP-19 thinking           | typed node-message persistence + semantic presentation                | AD-17, AD-19                                        |
+| CAP-20 triggering prompt  | typed node-message persistence + semantic presentation                | AD-17, AD-19                                        |
+| CAP-21 advisor notices    | typed node-message persistence + semantic presentation                | AD-17, AD-19                                        |
 | Shared-module placement   | `packages/web/src/lib/`                                               | AD-2, HITL AD-4                                     |
 | Ship and roll back        | the web bundle                                                        | AD-9                                                |
 
-## Deferred
+## Deliberate Implementation Limits
 
 - **Memoizing the resolver at the call sites.** Not now; AD-8 carries the revisit condition.
 - **A transcript-scoped error boundary.** AD-3 makes the core unable to trigger one. If a shell later needs its own boundary for a different reason, that is a shell decision, written twice.
-- **Adopting the presenter in chat's `ToolCallCard.tsx`.** `ToolPresentationInput` is structural so it can, but that is a separate slice and a spec non-goal today.
 - **Deleting the Legacy shell.** Scheduled elsewhere (`App.tsx:93-95`). AD-1 is what makes it a deletion rather than a migration.
 - **Amending the parent spine's HITL AD-4 wording.** Belongs to the HITL spine's own Update, not to a local override here.
 - **Virtualising very long transcripts.** No evidence a node needs it; it would be a shell decision under AD-1, and the core would not change.

@@ -865,3 +865,792 @@ _Refs:_ CAP-12, `provider-steering-matrix.md`.
 
 _Gate:_ Independent OMP soft-inject conformance.
 _Refs:_ CAP-12, `provider-steering-matrix.md`.
+
+---
+
+## Approved Course Correction — 2026-09-21
+
+Epic 1, Epic 2, Stories 1.1 through 2.13, and G1 through G4 above are completed historical planning records.
+They remain unchanged and are cited below only for dependency and traceability.
+Every implementation outcome in the current approved scope is owned by a new story in Epic 3 through Epic 9.
+G1 through G4 retain historical provenance, while their current outcomes are owned by Stories 8.3, 8.5, and 8.7.
+
+The current scope has three explicit exclusions.
+It does not change the completed historical Cancel feature.
+It does not add individual-tool cancellation because Stop ends the whole current agent turn.
+It does not change CLI `archon workflow run --detach` or add detached behavior to Agent Node Room.
+
+## Epic 3: Complete the Approved Node Room Experience
+
+Operators get the complete approved Console and Legacy Node Room experience with equivalent behavior, correct todo presentation, and accessible transcript interaction.
+
+### Story 3.1: Match the approved Console and Legacy room anatomy
+
+As an operator,
+I want both Node Room shells to match the approved anatomy,
+So that I can use the same workflow in either surface without relearning its structure.
+
+**Acceptance Criteria:**
+
+**Given** the Console Node Room is open
+**When** the node panel renders
+**Then** the panel uses the approved 520-pixel width
+**And** the transcript, todo strip, queue band, composer dock, and room controls follow the approved order.
+
+**Given** the Legacy Node Room is open
+**When** the node panel renders
+**Then** the panel uses the approved 460-pixel width
+**And** it has behavior equivalent to Console while using Legacy tokens and markup.
+
+**Given** the two shells
+**When** shared semantic data changes
+**Then** each shell renders the same meaning without importing the other shell's components.
+
+_Refs:_ Agent Node Room CAP-1, CAP-2, `EXPERIENCE.md`, `DESIGN.md`.
+_Depends on:_ completed historical Stories 1.1 through 1.7 for traceability.
+
+### Story 3.2: Present todo state exactly as approved
+
+As an operator,
+I want todo progress in the approved locations and forms,
+So that I can understand current work without losing the event history.
+
+**Acceptance Criteria:**
+
+**Given** a node has todo events
+**When** its transcript renders
+**Then** a collapsible todo strip appears below the transcript scroller and above the queue and composer dock
+**And** it remains visible while the transcript scrolls.
+
+**Given** several todo mutations exist
+**When** the rows render
+**Then** earlier mutations remain compact `todo updated` rows
+**And** the latest applicable row can expose the same folded inline checklist as the strip.
+
+**Given** the node becomes completed or interrupted
+**When** the todo presentation updates
+**Then** the terminal treatment is derived only for presentation
+**And** no persisted todo event is rewritten.
+
+_Refs:_ Agent Node Room CAP-3, `todo-fold-contract.md`, readable-transcript AD-12 and AD-21.
+_Depends on:_ Story 3.1 and completed historical Story 1.5 for traceability.
+
+### Story 3.3: Complete transcript interaction and accessibility behavior
+
+As a keyboard or assistive-technology user,
+I want the complete transcript interaction contract on both shells,
+So that live updates do not take control or hide meaning from me.
+
+**Acceptance Criteria:**
+
+**Given** tool rows with different outcomes
+**When** they first render
+**Then** succeeded rows are collapsed, failed rows are expanded, and running, interrupted, and unknown rows are collapsed
+**And** a reader's manual disclosure choice survives live rerenders.
+
+**Given** new transcript rows arrive
+**When** the reader is already at the bottom
+**Then** the scroller remains pinned to the bottom
+**And** otherwise the reader's position and focus remain unchanged.
+
+**Given** either Node Room shell
+**When** keyboard, focus, live-region, reduced-motion, and colour-independent status checks run
+**Then** the shell meets the accessibility requirements in `EXPERIENCE.md`
+**And** Console passes at 520 pixels while Legacy passes at 460 pixels.
+
+_Refs:_ Agent Node Room CAP-4, CAP-6, CAP-7, `EXPERIENCE.md`, `test-plan.md`.
+_Depends on:_ Stories 3.1 and 3.2.
+
+## Epic 4: Apply Readable Tool Presentation Everywhere
+
+Operators receive the same readable tool meaning in Node Room, RunStream, Chat, and backend-formatted output, including successful Codex file changes.
+
+### Story 4.1: Persist successful Codex file-change rows
+
+As an operator using Codex,
+I want successful file changes to appear in the durable transcript,
+So that Codex edits are visible through the same file presentation as other providers.
+
+**Acceptance Criteria:**
+
+**Given** Codex emits a successful `file_change` event
+**When** the provider and executor process it
+**Then** they normalize and persist a typed node-message row
+**And** the row retains path, outcome, ordering, and bounded diff or preview evidence.
+
+**Given** the persisted Codex file row
+**When** the shared presenter reads it
+**Then** it resolves to the file family
+**And** it renders a diff when both sides exist or a path and preview otherwise.
+
+**Given** a successful Codex event is tested
+**When** acceptance evidence is collected
+**Then** the test starts at the provider event and ends at the persisted rendered row
+**And** a synthetic no-input row is not accepted as ingestion evidence.
+
+_Refs:_ Agent Node Room CAP-5, CAP-14, readable-transcript AD-17.
+_Depends on:_ Story 3.1 and completed historical Story 1.4 for traceability.
+
+### Story 4.2: Use readable tool presentation in RunStream
+
+As an operator reading RunStream,
+I want tool events presented with the shared readable contract,
+So that RunStream and Node Room describe the same event in the same way.
+
+**Acceptance Criteria:**
+
+**Given** a persisted tool event appears in RunStream
+**When** it renders
+**Then** it uses the shared family, headline, outcome, ordered badges, body facts, and safe fallback
+**And** it does not render raw JSON by default.
+
+**Given** the cross-surface fixture set
+**When** Node Room and RunStream render the same event
+**Then** their semantic outputs match
+**And** only their shell markup can differ.
+
+_Refs:_ Agent Node Room CAP-16, readable-transcript AD-1 and AD-18.
+_Depends on:_ Story 4.1.
+
+### Story 4.3: Use readable tool presentation in Chat
+
+As an operator reading Chat,
+I want tool calls to use the same readable meaning as Node Room,
+So that switching surfaces does not change what an event means.
+
+**Acceptance Criteria:**
+
+**Given** a tool call appears in Chat
+**When** its card renders
+**Then** it consumes the shared Web semantic presentation
+**And** it preserves the Chat shell without reinterpreting provider payloads.
+
+**Given** the cross-surface fixture set
+**When** Chat and Node Room render the same event
+**Then** their family, headline, outcome, badge order, and fallback match.
+
+_Refs:_ Agent Node Room CAP-16, readable-transcript AD-1 and AD-18.
+_Depends on:_ Story 4.2.
+
+### Story 4.4: Align backend tool formatting
+
+As an operator receiving backend-formatted output,
+I want it to carry the same readable tool meaning as the Web surfaces,
+So that platform adapters do not report a conflicting interpretation.
+
+**Acceptance Criteria:**
+
+**Given** a tool event is formatted outside the Web package
+**When** backend formatting runs
+**Then** it produces the same semantic family, headline, outcome, and facts as the shared fixture
+**And** it keeps a compact transport-appropriate text form.
+
+**Given** package-boundary checks
+**When** the formatter is built
+**Then** backend code does not import Web code
+**And** fixture parity proves agreement across the boundary.
+
+_Refs:_ Agent Node Room CAP-16, readable-transcript AD-18.
+_Depends on:_ Story 4.3.
+
+## Epic 5: Show Files Changed and Git Attribution
+
+Operators can inspect run-level changed files and trace deterministic repository changes to node executions.
+
+### Story 5.1: Show a run-level Files Changed panel
+
+As an operator,
+I want one Files Changed panel for the workflow run,
+So that I can review repository impact without inspecting every tool row.
+
+**Acceptance Criteria:**
+
+**Given** a run has repository changes
+**When** the Files Changed panel opens
+**Then** it lists each changed path once in deterministic repository order
+**And** it shows the known node executions associated with that path.
+
+**Given** the run contains edits from several providers
+**When** the panel computes its content
+**Then** it uses repository evidence instead of provider prose or tool names
+**And** equivalent changes do not create duplicate paths.
+
+**Given** no changed paths exist
+**When** the panel opens
+**Then** it presents the approved empty state without inventing activity.
+
+_Refs:_ Agent Node Room CAP-17, readable-transcript AD-20.
+_Depends on:_ Story 4.4.
+
+### Story 5.2: Attribute Git changes to node executions
+
+As an operator,
+I want each Git change attributed to the node execution that produced it,
+So that I can audit repository effects beyond individual tool-call diffs.
+
+**Acceptance Criteria:**
+
+**Given** a node execution starts and ends in a Git repository
+**When** the executor records its boundaries
+**Then** it retains the deterministic repository evidence needed for attribution
+**And** the server computes the comparison through `@archon/git` functions.
+
+**Given** one path changed across multiple node executions
+**When** attribution renders
+**Then** every proven execution is shown in stable order
+**And** the run-level panel folds the same evidence.
+
+**Given** evidence is missing or ambiguous
+**When** attribution renders
+**Then** it shows `unknown`
+**And** it never guesses from agent text.
+
+_Refs:_ Agent Node Room CAP-17, readable-transcript AD-20.
+_Depends on:_ Story 5.1.
+
+## Epic 6: Expose Additional Agent Context
+
+Operators can read displayable thinking, the triggering prompt, and advisor notifications under explicit privacy, attribution, persistence, and ordering rules.
+
+### Story 6.1: Persist and present agent thinking
+
+As an operator,
+I want displayable agent thinking shown under a clear privacy contract,
+So that I can understand the agent's progress without exposing hidden reasoning.
+
+**Acceptance Criteria:**
+
+**Given** a provider emits content explicitly classified as displayable thinking
+**When** Archon ingests it
+**Then** Archon persists a typed node-message row in server sequence order
+**And** the transcript renders it with the `thinking` role treatment.
+
+**Given** provider content is hidden reasoning or lacks display permission
+**When** Archon processes it
+**Then** the content is not persisted or presented as thinking.
+
+**Given** displayable thinking exists
+**When** application logs are inspected
+**Then** the thinking content is absent from logs.
+
+_Refs:_ Agent Node Room CAP-19, readable-transcript AD-17 and AD-19.
+_Depends on:_ Story 4.4.
+
+### Story 6.2: Persist and present the triggering prompt
+
+As an operator,
+I want to see the prompt that triggered the agent turn with its attribution,
+So that I can understand why the agent acted.
+
+**Acceptance Criteria:**
+
+**Given** an agent turn starts
+**When** its triggering prompt is accepted
+**Then** Archon persists the exact prompt with actor, source, turn, and node attribution
+**And** it assigns transcript order at the server boundary.
+
+**Given** the transcript renders the prompt
+**When** an operator reads it
+**Then** the prompt text is preserved without editorial changes
+**And** the actor and source appear on the label line.
+
+**Given** application logs are inspected
+**When** the prompt has been persisted
+**Then** its content is not copied into logs.
+
+_Refs:_ Agent Node Room CAP-20, readable-transcript AD-17 and AD-19.
+_Depends on:_ Story 6.1.
+
+### Story 6.3: Persist and present advisor notifications
+
+As an operator,
+I want advisor notifications in the ordered transcript,
+So that I can see external guidance in the context where it affected the agent.
+
+**Acceptance Criteria:**
+
+**Given** an advisor emits a notification for a node
+**When** Archon accepts it
+**Then** Archon persists a typed row with advisor identity and server sequence
+**And** it associates the row with the correct run, node, and turn context.
+
+**Given** advisor and agent events arrive near each other
+**When** the transcript renders
+**Then** it follows server sequence order
+**And** the advisor notification does not float over later content.
+
+**Given** application logs are inspected
+**When** an advisor notification has been persisted
+**Then** its content is absent from logs.
+
+_Refs:_ Agent Node Room CAP-21, readable-transcript AD-17 and AD-19.
+_Depends on:_ Story 6.2.
+
+## Epic 7: Make Drafts and Guidance Durable
+
+Operators keep author drafts, shared node guidance, delivery state, and auto-send settings across reloads and server restarts without Archon guessing the fate of a lost process.
+
+### Story 7.1: Add durable steering storage
+
+As an operator,
+I want steering control data stored durably,
+So that a server process is not the only owner of my drafts and guidance.
+
+**Acceptance Criteria:**
+
+**Given** SQLite or PostgreSQL is active
+**When** the steering schema is applied
+**Then** additive records store author drafts, node queue entries, FIFO position, delivery intent, delivery state, timestamps, failure evidence, and auto-send settings
+**And** both dialects remain in schema parity.
+
+**Given** the server needs steering data
+**When** it uses the steering-store contract
+**Then** storage policy remains separate from the volatile live-turn registry
+**And** strict typed interfaces expose only the required operations.
+
+**Given** fresh-install, historical-upgrade, and reapply checks
+**When** the schema is validated
+**Then** each check passes without destructive migration behavior.
+
+_Refs:_ Agent Node Room CAP-8, live-steering AD-1 through AD-4.
+_Depends on:_ Story 3.3.
+
+### Story 7.2: Save and restore composer drafts
+
+As an operator,
+I want my composer draft saved on the server,
+So that reload, tab close, or server restart does not discard my words.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated operator edits a node composer
+**When** draft persistence settles
+**Then** the server stores the draft for that operator, run, and node
+**And** another operator cannot read or overwrite it.
+
+**Given** the author reloads, reopens the node, or reconnects after restart
+**When** the composer loads
+**Then** the latest committed draft is restored
+**And** the interface says `saved for you` or equivalent server-persistence copy.
+
+**Given** the author clears or sends the draft
+**When** the durable operation commits
+**Then** later reads do not restore the cleared text.
+
+_Refs:_ Agent Node Room CAP-8, live-steering AD-5, `steering-api-contract.md`.
+_Depends on:_ Story 7.1.
+
+### Story 7.3: Preserve the shared queue and FIFO order
+
+As operators sharing a node,
+I want one durable queue with deterministic order and authorship,
+So that guidance remains trustworthy under concurrency.
+
+**Acceptance Criteria:**
+
+**Given** permitted operators queue messages concurrently
+**When** the server accepts them
+**Then** it assigns one transactional FIFO order
+**And** every entry retains its author and caller-stamped `message_id`.
+
+**Given** the same `message_id` is submitted again
+**When** the request is processed
+**Then** the existing receipt is returned
+**And** no duplicate entry is inserted.
+
+**Given** a queued entry is withdrawn
+**When** the durable delete commits
+**Then** it is removed before dispatch
+**And** withdrawal of a dispatched, delivered, or unknown identifier is an idempotent no-op.
+
+**Given** a queue request succeeds
+**When** the client receives acknowledgement
+**Then** the durable write has already committed
+**And** another permitted observer reads the same order.
+
+_Refs:_ Agent Node Room CAP-8, live-steering AD-6, `steering-api-contract.md`.
+_Depends on:_ Story 7.2 and completed historical Story 2.13 for traceability.
+
+### Story 7.4: Recover guidance after server restart
+
+As an operator,
+I want durable steering data restored after a server restart,
+So that I can continue through the existing Resume workflow without data loss or unsafe guesses.
+
+**Acceptance Criteria:**
+
+**Given** a non-terminal node has a draft, queue, delivery state, or auto-send setting
+**When** the server restarts with the same database
+**Then** those durable values are restored
+**And** the lost provider process is not represented as still live.
+
+**Given** no live turn handle exists after restart
+**When** the Node Room loads
+**Then** it is read-only and says `restored after server restart · Resume the workflow to continue`
+**And** it uses the existing Resume action rather than a new resume mechanism.
+
+**Given** a dispatch may have crossed the lost process boundary
+**When** recovery classifies it
+**Then** the entry remains explicitly ambiguous
+**And** Archon does not resend it automatically.
+
+**Given** the server starts
+**When** durable recovery runs
+**Then** it does not automatically resume the workflow or mark the old turn completed, failed, cancelled, or abandoned.
+
+_Refs:_ Agent Node Room CAP-14, live-steering AD-7, `control-states.md`.
+_Depends on:_ Story 7.3 and the existing Resume capability.
+
+### Story 7.5: Support durable auto-send mode
+
+As an operator,
+I want a durable auto-send mode for queued guidance,
+So that one correction can follow each natural reply without manual dispatch.
+
+**Acceptance Criteria:**
+
+**Given** the operator changes auto-send
+**When** the server commits the setting
+**Then** the setting survives reload and server restart
+**And** permitted observers see the current node setting.
+
+**Given** auto-send is enabled and the agent finishes a natural reply
+**When** an eligible queue entry exists
+**Then** exactly one FIFO entry is claimed and dispatched
+**And** no later entry overtakes it.
+
+**Given** Stop ends a turn
+**When** the interrupted outcome settles
+**Then** auto-send does not dispatch an entry.
+
+**Given** automatic dispatch fails before delivery is proven
+**When** failure is recorded
+**Then** the entry returns to the front of the queue with failure evidence.
+
+_Refs:_ Agent Node Room CAP-15, live-steering AD-8.
+_Depends on:_ Story 7.4.
+
+## Epic 8: Stop and Redirect Turns Across Core Providers
+
+Operators can stop only the current turn, redirect the same provider session, and see only actions and delivery states that each verified core adapter supports.
+
+### Story 8.1: Implement the provider-neutral Stop contract
+
+As an operator,
+I want Stop to end only the current agent turn,
+So that I can redirect the agent without ending the node or losing completed work.
+
+**Acceptance Criteria:**
+
+**Given** any agent turn starts
+**When** the executor invokes the provider
+**Then** it supplies a fresh per-turn signal through `AgentRequestOptions.interruptSignal`
+**And** the node-level `abortSignal` remains separate.
+
+**Given** the agent is thinking or executing a tool
+**When** Stop is accepted
+**Then** the current turn ends
+**And** the node, workflow run, and provider session remain available.
+
+**Given** a tool was active when Stop settled
+**When** the transcript is written
+**Then** the tool outcome is `interrupted`, not `failed`
+**And** completed writes and side effects remain in place with no rollback.
+
+**Given** the provider contract is reviewed
+**When** Stop support is added
+**Then** `IAgentProvider` does not gain a `cancel()` method
+**And** adapters map the existing interrupt signal to their native mechanism.
+
+_Refs:_ Agent Node Room CAP-9, live-steering AD-9 and AD-10.
+_Depends on:_ Story 7.3.
+
+### Story 8.2: Expose Stop through the API and both Node Room shells
+
+As an operator,
+I want Stop available through the authenticated API and both approved Node Room shells,
+So that turn control is consistent across the product.
+
+**Acceptance Criteria:**
+
+**Given** a live current turn exists
+**When** an authorized user invokes the typed Stop route
+**Then** the route interrupts that turn through the volatile live handle
+**And** returns the current typed control state.
+
+**Given** the active turn already ended
+**When** the same Stop request is repeated
+**Then** the operation is idempotent
+**And** no node-level abort is triggered.
+
+**Given** Console or Legacy displays a generating turn
+**When** Stop is pressed
+**Then** the shell shows the `Stopping…` transient without native disabling the focused control
+**And** the final disclosure says that files already written stay written.
+
+**Given** the server restarted and no live handle exists
+**When** Stop is requested
+**Then** the API returns typed 409 `recovery_required`
+**And** it does not classify the run as detached.
+
+_Refs:_ Agent Node Room CAP-9, `steering-api-contract.md`, `EXPERIENCE.md`.
+_Depends on:_ Stories 7.4 and 8.1.
+
+### Story 8.3: Complete Claude Stop, soft injection, and delivery acknowledgement
+
+As a Claude operator,
+I want Stop, mid-turn guidance, and truthful delivery acknowledgement,
+So that I can redirect Claude with the full approved interaction.
+
+**Acceptance Criteria:**
+
+**Given** Claude is generating or using a tool
+**When** Stop aborts `interruptSignal`
+**Then** the adapter invokes the supported Claude interrupt path
+**And** the same session remains usable for the next turn.
+
+**Given** a queued Claude message has per-item `Send now`
+**When** the operator invokes it during generation
+**Then** the adapter soft-injects the message without invoking Stop
+**And** the durable entry retains FIFO position and author identity.
+
+**Given** Archon stamps a Claude message with `message_id`
+**When** the supported SDK path echoes that identifier
+**Then** only the matching entry advances to `delivered`
+**And** missing or mismatched identifiers do not advance another entry.
+
+_Refs:_ Agent Node Room CAP-12, CAP-13, historical G1 and G2 for traceability.
+_Depends on:_ Story 8.2 and completed historical Story 2.3 for traceability.
+
+### Story 8.4: Complete Codex Stop and session continuation
+
+As a Codex operator,
+I want Stop to abort the current Codex turn and keep the thread usable,
+So that my next correction continues in the same context.
+
+**Acceptance Criteria:**
+
+**Given** Codex is streaming a turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter aborts the turn stream through the supported Codex mechanism
+**And** it classifies the terminal provider shape as interrupted.
+
+**Given** the interrupted turn has settled
+**When** queued guidance starts the next turn
+**Then** the adapter continues on the existing thread or session
+**And** it does not create a replacement conversation silently.
+
+**Given** Codex had an active tool
+**When** Stop settles
+**Then** the persisted tool row becomes `interrupted`
+**And** completed file changes remain visible through Story 4.1.
+
+_Refs:_ Agent Node Room CAP-9, CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Stories 4.1 and 8.2 and completed historical Story 2.4 for traceability.
+
+### Story 8.5: Complete Grok Stop and soft injection
+
+As a Grok operator,
+I want Stop and verified mid-turn guidance,
+So that I can redirect Grok without misleading controls.
+
+**Acceptance Criteria:**
+
+**Given** Grok has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter uses the supported Grok stream-abort path
+**And** the session can continue with the next turn.
+
+**Given** the Grok adapter has a verified soft-injection transport
+**When** per-item `Send now` is invoked
+**Then** the message arrives through that transport without invoking Stop
+**And** the durable delivery state records only proven progress.
+
+**Given** Grok conformance tests fail
+**When** capabilities are projected
+**Then** the unproven action is not advertised
+**And** the story remains incomplete until the adapter behavior passes.
+
+_Refs:_ Agent Node Room CAP-12, CAP-18, historical G3 for traceability.
+_Depends on:_ Story 8.3 and completed historical Story 2.6 for traceability.
+
+### Story 8.6: Complete DeepSeek Stop and continuation
+
+As a DeepSeek operator,
+I want an aborted provider result classified as Stop rather than failure,
+So that I can continue the same session after redirecting the turn.
+
+**Acceptance Criteria:**
+
+**Given** DeepSeek has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter uses its supported cancel-and-continue path
+**And** the provider session remains reusable.
+
+**Given** DeepSeek returns its provider-specific aborted result
+**When** the executor classifies the end cause
+**Then** it records an interrupted turn rather than a natural completion or node failure.
+
+**Given** queued guidance follows the interrupt
+**When** the next turn starts
+**Then** it uses the same continuation contract
+**And** preserves durable FIFO order.
+
+_Refs:_ Agent Node Room CAP-9, CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 8.4 and completed historical Story 2.7 for traceability.
+
+### Story 8.7: Complete OMP Stop and soft injection
+
+As an OMP operator,
+I want Stop and verified mid-turn guidance,
+So that an OMP abort is not mistaken for a failed node and supported redirects can arrive immediately.
+
+**Acceptance Criteria:**
+
+**Given** OMP has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter aborts the stream through its supported mechanism
+**And** the executor classifies the OMP abort throw as interrupted rather than failed.
+
+**Given** the OMP adapter has a verified protocol path for soft injection
+**When** per-item `Send now` is invoked
+**Then** the message is injected without invoking Stop
+**And** durable order and authorship remain unchanged.
+
+**Given** the next OMP turn starts after Stop
+**When** guidance is delivered
+**Then** the existing session contract is reused
+**And** no completed side effect is rolled back.
+
+_Refs:_ Agent Node Room CAP-12, CAP-18, historical G4 for traceability.
+_Depends on:_ Story 8.5 and completed historical Story 2.5 for traceability.
+
+### Story 8.8: Present truthful provider capabilities
+
+As an operator,
+I want the Node Room to show only actions and delivery states proven for the active provider,
+So that every visible control tells the truth.
+
+**Acceptance Criteria:**
+
+**Given** provider conformance fixtures run
+**When** Stop, soft injection, continuation, or delivery acknowledgement is proven
+**Then** the provider capability source records the supported behavior
+**And** an unproven behavior remains false.
+
+**Given** the Node Room renders controls
+**When** it receives provider capabilities
+**Then** it shows per-item `Send now` only for verified soft injection
+**And** it does not branch on provider names.
+
+**Given** an operator message is dispatched
+**When** provider evidence changes its delivery state
+**Then** the UI advances only to the last state that the adapter proves.
+
+_Refs:_ Agent Node Room CAP-12, CAP-13, CAP-18, live-steering AD-11.
+_Depends on:_ Stories 8.3 through 8.7.
+
+## Epic 9: Extend Steering to Remaining Providers
+
+Operators can Stop and redirect Qoder CLI, Pi, GitHub Copilot, and OpenCode through the same provider-neutral contract and truthful capability model.
+
+### Story 9.1: Support Stop and redirect for Qoder CLI
+
+As a Qoder CLI operator,
+I want to stop the current turn and continue with redirected guidance,
+So that Qoder CLI behaves consistently with the Node Room contract.
+
+**Acceptance Criteria:**
+
+**Given** Qoder CLI has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends the current Qoder CLI turn through its supported native process or stream mechanism
+**And** it does not end the workflow node.
+
+**Given** the interrupted turn has settled
+**When** guidance starts the next turn
+**Then** the adapter uses its supported continuation contract
+**And** preserves durable FIFO order and authorship.
+
+**Given** Qoder CLI conformance fixtures run
+**When** capabilities are published
+**Then** every true capability is backed by deterministic adapter evidence.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 8.8.
+
+### Story 9.2: Support Stop and redirect for Pi
+
+As a Pi operator,
+I want to stop the current turn and continue with redirected guidance,
+So that Pi participates in the same governed steering flow.
+
+**Acceptance Criteria:**
+
+**Given** Pi has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends the current Pi turn through its supported native mechanism
+**And** records an interrupted active tool when applicable.
+
+**Given** durable guidance is ready after Stop
+**When** the next turn starts
+**Then** Pi uses its supported session continuation contract
+**And** the workflow node remains running.
+
+**Given** Pi conformance fixtures run
+**When** capabilities are published
+**Then** the UI receives only behaviors the adapter proves.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 9.1.
+
+### Story 9.3: Support Stop and redirect for GitHub Copilot
+
+As a GitHub Copilot operator,
+I want to stop the current turn and continue with redirected guidance,
+So that Copilot follows the same auditable turn-control contract.
+
+**Acceptance Criteria:**
+
+**Given** GitHub Copilot has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends only the current turn through its supported native mechanism
+**And** completed side effects remain in place.
+
+**Given** redirected guidance is dispatched
+**When** the follow-up turn starts
+**Then** the adapter uses its supported continuation contract
+**And** operator transcript rows retain message and author correlation.
+
+**Given** GitHub Copilot conformance fixtures run
+**When** capabilities are published
+**Then** the UI does not expose unsupported soft injection or acknowledgement states.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 9.2.
+
+### Story 9.4: Support Stop and redirect for OpenCode
+
+As an OpenCode operator,
+I want to stop the current turn and continue with redirected guidance,
+So that all registered providers in the approved scope share the same governed behavior.
+
+**Acceptance Criteria:**
+
+**Given** OpenCode has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends only the current OpenCode turn through its supported native mechanism
+**And** the node-level abort signal remains untouched.
+
+**Given** guidance follows the interrupted turn
+**When** OpenCode starts the next turn
+**Then** it uses its supported continuation contract
+**And** the provider session remains consistent with its adapter guarantees.
+
+**Given** the complete nine-provider conformance suite runs
+**When** OpenCode and the other adapters report capabilities
+**Then** every current provider passes Stop and redirect acceptance
+**And** the Node Room renders capability-driven controls without provider-branded forks.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`, `steering-test-plan.md`.
+_Depends on:_ Story 9.3.

@@ -1,107 +1,121 @@
 # Steering test plan
 
-Coverage that decides whether the write half (CAP-8…13) is met.
-The read half is covered by `test-plan.md` (CAP-1…7); this companion covers everything steering changes — engine turn loop, provider interrupt, routes, registry, timer, reconciliation, and the dock on both shells.
-`bun run validate` is the pre-PR gate; do not run root `bun test`.
+This plan verifies Agent Node Room CAP-8 through CAP-13, CAP-15, and CAP-18.
+It owns acceptance evidence for Stories 7.1 through 7.5, Stories 8.1 through 8.8, and Stories 9.1 through 9.4.
+The readable transcript plan owns CAP-1 through CAP-7, CAP-14, CAP-16, CAP-17, and CAP-19 through CAP-21.
 
-## Fixtures and rule
+Run focused tests first.
+Run affected package tests next.
+Run `bun run check:schema-upgrades` against PostgreSQL for the additive steering schema.
+Run `bun run validate` before delivery.
+Never run `bun test` directly from the repository root.
 
-Build provider fixtures from the SDK type declarations and the measured payloads in `findings.md`, as the read plan does.
-**Every applicable table below carries at least one Claude fixture and one non-Claude (omp or codex) fixture** — the providers disagree on interrupt mechanism and on soft-inject transport, so a single-provider table would pass while the other renders or behaves wrong.
-Timer unit tests use an injected manual scheduler and `expireIdleForTests()` — never fake global clocks and never a real 30-minute wait. One real-timer E2E (`e2e/ui/agent-idle-await-expiry.spec.ts`, worker option `idleAwaitMs: 8_000`) proves the production path end-to-end.
-Process-boundary tests exercise both in-process (web dispatch) and detached (no live handle).
+## Fixture rules
 
-## Engine — the per-node turn loop
+Provider tests use deterministic fixtures built from the installed SDK types and measured provider payloads.
+The normal test suite does not require live network access.
+Timer tests use an injected scheduler and do not wait for production timeouts.
+Restart E2E tests use a real server process, retain the same database across restart, and stop every process they start.
 
-- a steering interrupt aborts a **fresh per-turn** signal (`AbortSignal.any` with the node-level one), never the one-shot `nodeAbortController`; the `:3124` Cancel check is not tripped and the node stays `running`
-- `operatorInterrupt` placement: `canReask` (`:3032`) also stops on it; validation is skipped on the interrupted turn; the branch sits after the `:3124` Cancel check so a co-firing Cancel wins by position; the flag resets at turn N+1 (a stale flag never mis-routes a later turn)
-- the **end-cause five-case rule** (`:2533`, not result-presence alone): (1) `result` with no abort marker → **natural**, spent (no idle-await, no partial validated); (2) `result` with an abort marker (DeepSeek `deepseek_aborted`) + `operatorInterrupt` → **interrupted** → idle-await; (3) a thrown abort (OMP `Query aborted`) caught at `:3332` + `operatorInterrupt` → **interrupted** → idle-await, never `dag_node_failed`; (4) a throw with the flag unset → real `node_failed`; (5) Cancel dominates. Assert the adapter does not suppress the abort `result`
-- natural end auto-drains (queued message → turn N+1; empty queue → node completes); interrupted end enters idle-await and drains only on `Send now`
-- multi-turn on one session: turn N+1 runs via `attemptResumeId` (`:2290`) with the flushed queue in written order
-- the executor writes a single `interrupted` status row at idle-await entry, on every provider
-- the sub-state projection emits **exactly two** values (`generating` | `idle-after-interrupt`); `interrupting` never appears in the projected field
-- **every engine turn-loop assertion above also runs against `executeLoopNode`** (AI loop nodes are steerable in v1): registry key, per-turn signal, the end-cause rule, sub-state projection, idle-await; plus the loop-only case — `Send now` continues the **interrupted iteration** on the same session before the normal loop-completion check
+## Durable steering store — Stories 7.1 through 7.4
 
-## Engine — idle-await lifecycle (manual scheduler + one real E2E timer)
+- SQLite and PostgreSQL persist author-scoped drafts, node-scoped queue entries, FIFO position, delivery intent, delivery state, timestamps, failure evidence, and durable auto-send settings.
+- concurrent queue writes receive one transactionally assigned server order with no duplicate position.
+- a repeated caller-stamped `message_id` returns the existing receipt and does not add a second queue entry.
+- withdrawal of a queued entry removes it, and withdrawal of a dispatched, delivered, or unknown identifier is an idempotent no-op.
+- a queue acknowledgement is returned only after the durable transaction commits.
+- a failed transaction leaves the queue, transcript, and delivery state unchanged.
+- a draft is private to its author, while the node queue is shared by permitted users and retains the author on each record.
+- fresh-install, upgrade, and reapply tests pass for both database dialects, and the schema parity test reports no unlisted difference.
 
-- 30-minute inactivity expiry takes the explicit fail branch (`interrupted by operator, no redirect received`), never the completing idle timeout
-- the timer re-arms on composer keepalive activity (keystroke / focus / keepalive route — **not** `Send now`, which resolves idle-await) and fails only after 30 minutes of genuine inactivity
-- the idle-await cancel-poll lets `/workflow cancel` reach the node while no stream exists
-- idle-await resolves exactly once — the first of `Send now`, cancel-poll, or timer wins; the other two tear down
-- rerunning a 30-minute-failed node via `workflow retry-node` re-runs it with a fresh session
-- Story 2.12 focused coverage: registry T1.x (`steering-registry.test.ts`), executor T2.x (`dag-executor.test.ts`), route/client T3.x (`api.workflow-runs.test.ts` + `api.keepalive.test.ts`), dock T4.x (`steering-dock` / Composer / Console), E2E E1–E8 (`agent-idle-await-expiry.spec.ts`)
-- **Restart limitation:** the idle timer and registry handle are process-local. A server restart drops them and leaves a durable non-terminal run; Archon does not autonomously fail or resume it. Recovery = explicit abandon/cancel, then CLI `archon workflow retry-node` (web Retry is not shown while the projected node is still `running`).
+## Restart recovery — Story 7.4
 
-## Providers — interrupt conformance
+- a saved draft, queue order, delivery state, and auto-send setting remain after the server process restarts.
+- the restarted server reports `recovery_required` when no live turn handle exists for a durable non-terminal node.
+- the UI is read-only in recovery state and says `restored after server restart · Resume the workflow to continue`.
+- the server does not mark the lost turn completed, failed, cancelled, or abandoned.
+- the server does not resend an entry whose dispatch result is ambiguous.
+- the existing Resume action starts continuation and reconnects the restored durable state to a new live turn.
+- no automatic resume occurs during server startup.
 
-One fixture per in-use provider; each proves the turn ends and the session survives for a follow-up run.
+## Durable auto-send — Story 7.5
 
-- claude — native `interrupt()` (in the pinned SDK); the abort yields no terminal `result`
-- codex — stream-abort → `resumeThread` re-runs the resumed thread; fixture pins its abort terminal shape (result vs throw vs clean end)
-- omp — stream-abort: its abort **throws** `Query aborted` (`provider.ts:317,450`) → fixture asserts the executor routes the throw (with `operatorInterrupt` set) to idle-await, not `dag_node_failed` (its RPC soft-inject is G2, not tested here)
-- grok — stream-abort (`interject` unreachable; hooks are G3); fixture pins its abort terminal shape
-- deepseek — cancel-and-continue, partial retained: its abort emits a terminal `result` (`stopReason:'aborted'` / `errorSubtype:'deepseek_aborted'`, `acp-client.ts:105`) → fixture asserts the executor classifies it as an **interrupted** end, not natural completion
+- enabling auto-send persists the setting and is visible to another permitted observer.
+- after a natural agent reply, exactly one eligible FIFO entry is claimed and dispatched.
+- Stop does not trigger auto-send.
+- a failed automatic dispatch returns the entry to the front of the queue with failure evidence.
+- a restart preserves the setting and queue without dispatching until the user uses the existing Resume action.
 
-## Registry and routes
+## Provider-neutral turn control — Stories 8.1 and 8.2
 
-Per `steering-api-contract.md`.
+- each turn receives a fresh `AbortController`, and its signal reaches the provider through `AgentRequestOptions.interruptSignal`.
+- the node-level `abortSignal` remains separate and is not aborted by Stop.
+- Stop ends the current turn while the node, workflow run, and provider session remain available.
+- a thinking turn and a turn executing a tool both stop through the same action.
+- the active tool becomes `interrupted`, completed side effects remain in place, and no rollback runs.
+- the next turn uses the same provider session or thread when that provider supports continuation.
+- repeated Stop requests for the same ended turn are idempotent.
+- the provider interface does not gain a `cancel()` method.
 
-- register `(runId, nodeId) → handle + queue` on node start; tear down on any terminal; a node with no handle is not steerable
-- send / interrupt / keepalive match the typed schemas; identity resolves via `resolveAuthContext`
-- **actor grant (any authenticated user):** starter → allow, other authenticated member → allow, admin → allow, unauthenticated → 401, identity-less run (`user_id` NULL) → allow — asserted on send AND interrupt AND keepalive
-- **interrupt-response race:** a mid-turn interrupt → `sub_state:'idle-after-interrupt'`; a turn that ended naturally with a queued message → `sub_state:'generating'` (auto-drained turn N+1); a natural end with an empty queue → 409 `node_finished`
-- 409 `node_finished` (draft stays in the browser); 422 `not_steerable_here` for a detached run (Cancel and `/workflow resume` still work)
-- Send during an interrupt in flight waits in the queue for `Send now` — no 409, nothing lost
-- invalid run/node id → 404; unauthenticated → 401/403; malformed payload → 400; duplicate `message_id` → idempotent receipt replay; repeated interrupt while idle → idempotent no-op; node goes terminal mid-request → 409
-- **withdraw route** (`DELETE …/queue/:messageId`): removes a still-queued message from the registry queue; withdraw of an already-drained or unknown `message_id` → idempotent success no-op; unknown run/node → 404
-- every rejected request leaves the node, queue, and transcript unchanged (assert all three)
+## Provider conformance — Stories 8.3 through 8.7 and 9.1 through 9.4
 
-## Operator row and reconciliation
+Each provider fixture proves that Stop reaches its native interrupt or stream-abort path, ends only the current turn, records an interrupted active tool when applicable, and permits a follow-up turn on the existing session contract.
 
-- the executor is the sole writer; the row is a `text` row with `metadata` `{ origin='operator', operator_user_id, message_id }`; no new table, no widened `kind`; placed by `seq` between the turn it redirected and the turn it caused
-- the message stays `sent` on every provider (v1 floor); nothing advances past `sent`
-- terminal reconciliation runs **only** on actual node-terminal evidence (persisted `node_completed`/`node_failed`, or exact-scope purged-Ask projection): each observed ledger id matches a written `message_id`; an unmatched id returns as `NEVER SENT`; assert it never runs on a live refetch or on run-level terminal status alone (a Cancel mid-flight must not mis-mark a delivered message)
-- **Story 2.11 focused coverage** — core: `packages/web/src/lib/steering-dock.test.ts` (T1.1–T1.22 ledger/reconcile/finished mode); docks: `ComposerDock.test.tsx` + `ConsoleComposerDock.test.tsx` (T2.1–T2.18); server projection: `packages/server/src/routes/workflow-execution-history.test.ts` (T3.1–T3.4 exact-scope purged Ask + nested owners, answered resume guard, fail-closed ambiguity); parents: `execution-room-model.test.ts`, `WorkflowExecution.test.tsx`, `RunDetailPage.test.tsx` (T3.5–T3.14 raw-history helpers + 3 s catch-up); panes: `NodeTranscriptPane.test.tsx` + `ConsoleNodeRoom.test.tsx` (T3.15–T3.26 node-terminal pass-through + node-wide drain); E2E: `e2e/ui/agent-never-sent.spec.ts` (E4.1–E4.5, E4.7–E4.8 Cancel/observer/idle-queue/draft/finished-iteration/focus/visual on both shells), natural-drain negative in `agent-queue-guidance.spec.ts` (E4.6), finished-iteration observer in `agent-finished-iteration.spec.ts`
-- display-name projection (AD-12 / Story 2.8): the served operator row carries `operator_display_name` from the read-time join; a non-null sender always gets a trimmed name or the 8-char short id (server-owned fallback); `null` is reserved for identity-less rows; the web does not fetch users
+- Claude proves Stop, soft injection, and delivery acknowledgement correlated by `message_id`.
+- Codex proves turn-stream abort and continuation on the existing thread or session.
+- Grok proves Stop and soft injection.
+- DeepSeek proves Stop and continuation after its provider-specific aborted result.
+- OMP proves Stop, its thrown abort classification, and soft injection.
+- Qoder CLI proves Stop and redirect behavior through its adapter contract.
+- Pi proves Stop and redirect behavior through its adapter contract.
+- GitHub Copilot proves Stop and redirect behavior through its adapter contract.
+- OpenCode proves Stop and redirect behavior through its adapter contract.
 
-## Concurrent operators
+The conformance table fails when a provider advertises a capability that its adapter fixture does not prove.
 
-- **Global order is `accept()` order** at `NodeSteeringHandle.accept()` — not browser click order, request-creation order, response-completion order, or any timestamp sort. The node queue is shared and deliberately visible to every permitted reader.
-- **Within-sender order** holds only when one dock/request stream waits for its prior send response before sending the next. Two tabs for the same identity are separate streams; the server promises only receipt order across them.
-- **No cross-user leakage** means no sender substitution on a written or displayed row (`operator_user_id` / display name stay bound to the originating request). It does **not** mean private per-user queues.
-- **Queue GET intentionally omits attribution** — public items are exactly `{ message_id, message }`. Attribution lives on the handle snapshot and on transcript operator rows (`origin`, `operator_user_id`, `message_id`).
-- **Characterization map (Story 2.13 / #193):**
-  - mixed-sender registry FIFO, idempotent cross-sender duplicate-id replay, and idle `send_now` wake-batch order — `packages/workflows/src/steering-registry.test.ts`
-  - deterministic overlapping Hono-route streams (hold A at identity resolution, let B finish, release A) — `overlapping identity streams preserve accept order and request attribution` in `packages/server/src/routes/api.workflow-runs.test.ts`
-  - strengthened direct natural-drain, idle `send_now`, and loop-drain mixed-sender paths — `packages/workflows/src/dag-executor.test.ts`
-  - full-chain two-operator journeys on both shells — `[V:steer.concurrent-operators-console]` and `[V:steer.concurrent-operators-legacy]` in `e2e/ui/agent-queue-convergence.spec.ts` (observed pre-drain queue order is the oracle for transcript + DOM; sibling node isolation in the same journey)
+## Redirect and delivery — Stories 8.3, 8.5, 8.7, and 8.8
 
-## Steering UI — end-to-end, both shells
+- Claude, Grok, and OMP show per-item `Send now` only when their verified capability reports soft injection.
+- queue-only providers do not render per-item `Send now`.
+- a successful soft injection retains FIFO order and the original author identity.
+- providers with delivery acknowledgement advance a correlated entry through the verified delivery states.
+- providers without delivery acknowledgement stop at the last state their adapter can prove.
+- an acknowledgement with the wrong or missing `message_id` cannot advance another entry.
+- the UI reads capability data and does not branch on provider names.
 
-Extend the node-room E2E on **Legacy and Console**.
+## Typed routes and authorization
 
-- **Story 2.10 finished iteration** — `steer.finished-iteration-legacy` and
-  `steer.finished-iteration-console` in
-  `e2e/ui/agent-finished-iteration.spec.ts` run the existing
-  `e2e-queue-guidance-loop` fixture through a real first completed iteration and
-  second live iteration. They select the completed row through `Execution`, prove
-  the exact read-only disclosure, ordered shared queue band, one successful
-  node-scoped queue GET and zero send/withdraw/interrupt mutations, then use
-  keyboard Go to restore the live textarea, stored draft, and queue order. They
-  record 460px/1440px overflow, button-height, full-width-band, and `33vh`-cap
-  measurements with screenshots. The #188 operator-row assertion remains in its
-  owning closure gate until that issue lands; it is not claimed by this journey.
+The route contract is defined in `steering-api-contract.md`.
 
-- dock states across `generating` (`Stop` / `Queue`), the `interrupting` transient (`Stopping…` `aria-disabled`, never native disabled), `idle-after-interrupt` (`Send now`, `WILL SEND`), `generating again`, finished (`NEVER SENT` read-only), and the detached-run disclosure (state 8)
-- **the queue dispatches at `Queue`-press:** pressing `Queue` fires the send route (`intent:'queue'`) and the message is server-side at once; a later `x` fires the **withdraw route** for that `message_id`; a withdraw after the message has drained is a success no-op
-- interrupt → `Send now` → the agent continues on the same session against the redirected work
-- the interrupted tool call renders `⚠ interrupted`, not `✕ failed`, on a non-Claude provider (proves the reader fold)
-- accessibility: colour-free status glyph, per-transition polite live-region announcement, assertive delivery-failure `role="alert"`, focus transfer on dock change (never `<body>`), `Enter` inserts a newline and never sends, `prefers-reduced-motion`, `aria-describedby` on the ask-blocked Send
-- visual checks at **460px** (Legacy) and the Console panel width
+- authenticated draft read, write, and clear operations enforce author ownership.
+- queue read, queue write, withdrawal, per-item Send now, auto-send, and Stop enforce the existing run authorization rules.
+- malformed input returns 400, missing resources return 404, terminal nodes return typed 409 `node_finished`, and lost live execution returns typed 409 `recovery_required`.
+- a missing live handle is never classified as detached execution.
+- every rejected request leaves durable steering rows, transcript rows, and live execution unchanged.
+- generated OpenAPI types match every request and response schema used by both Web clients.
 
-- **Story 2.11 never-sent E2E** — `e2e/ui/agent-never-sent.spec.ts` covers Cancel two-milestone waits (`cancelled` without box → `node_failed` + failed execution → ordered `Never sent, n`), cross-tab observation ledger, idle-after-interrupt `intent:'queue'` without Send now, half-typed draft fold-in, finished-iteration observer recovery, single `role="alert"` + transcript focus handoff, and 460px/1440px visual evidence under `plans/260920-1136-issue-191-recover-never-sent-messages/reports/evidence/`
+## Transcript receipts and ordering
 
-## Boundary checks
+- the executor is the only writer of delivered operator transcript rows.
+- each operator row retains `origin='operator'`, `operator_user_id`, and `message_id`.
+- the server sequence places the operator row between the turn it redirected and the turn it caused.
+- durable queue state is the delivery control plane, and the transcript row is the audit receipt after delivery.
+- ambiguous dispatch remains explicit and is never converted to delivered without evidence.
 
-- `@archon/web` imports nothing from `@archon/workflows`; wire types come from `api.generated`
-- Console imports nothing from `@/components/`; the dock JSX is written twice, thin
+## Both Node Room shells
+
+- Legacy at 460 pixels and Console at 520 pixels show the same draft, queue, delivery, auto-send, recovery, Stop, and redirect behavior.
+- queued content says that it is saved on the server.
+- draft content says that it is saved on the server for the author.
+- Stop copy says that it ends the current turn and that files already written remain written.
+- the stopping transient prevents duplicate activation without removing the focused control from the accessibility tree.
+- focus moves to the correct dock or transcript target after a state change and never falls to `<body>`.
+- `Enter` inserts a newline and does not send.
+- delivery failures use one assertive alert, while ordinary state changes use the polite status region.
+- reduced-motion behavior and colour-independent statuses remain intact.
+
+## Acceptance exclusions
+
+This plan does not test changes to the completed historical Cancel feature.
+This plan does not define individual-tool cancellation because Stop ends the current turn.
+This plan does not define Agent Node Room behavior for CLI `--detach`.

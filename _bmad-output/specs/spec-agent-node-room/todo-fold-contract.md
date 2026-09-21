@@ -81,4 +81,8 @@ Malformed calls are atomic no-ops: a Claude snapshot is accepted whole or reject
 An empty heading reads as "this phase has no work", which is a different claim from "this phase is gone".
 `projectTodoState` returns only non-empty phases, and an all-empty fold returns `[]`, which renders nothing.
 
-The renderer pins the folded state once in a collapsible `Todo` strip at the **top** of the node room's transcript panel. **Every** todo call in the selected slice folds into that state — the strip is not anchored at the last call — while every todo row stays a one-line "todo updated" summary, so a near-identical checklist is never repeated down the transcript.
+The renderer pins the folded state once in a collapsible `Todo` strip below the transcript scroller and immediately above the queue and composer dock.
+Every todo call in the selected slice folds into that state.
+Earlier todo mutations stay one-line `todo updated` rows.
+The latest applicable todo row can expose the approved inline checklist, and it uses the same folded projection as the strip.
+When the node reaches a terminal state, the renderer derives the approved completed or interrupted treatment without rewriting persisted todo events.

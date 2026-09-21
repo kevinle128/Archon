@@ -2,14 +2,14 @@
 name: Archon
 description: The node room on both web surfaces — the readable agent transcript that is read, and the steering dock it is written from. shadcn/Radix on Tailwind v4, dark-only; this DESIGN.md specifies both deltas over two inherited token sets and forks neither palette.
 status: final
-updated: 2026-09-19
+updated: 2026-09-21
 sources:
-  - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/SPEC.md
-  - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/tool-presentation-contract.md
-  - ../../../specs/spec-agent-node-room/sources/spec-readable-agent-transcript/todo-fold-contract.md
-  - ../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/SPEC.md
-  - ../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/control-states.md
-  - ../../../specs/spec-agent-node-room/sources/spec-live-agent-steering/engine-integration.md
+  - ../../../specs/spec-agent-node-room/SPEC.md
+  - ../../../specs/spec-agent-node-room/tool-presentation-contract.md
+  - ../../../specs/spec-agent-node-room/todo-fold-contract.md
+  - ../../../specs/spec-agent-node-room/control-states.md
+  - ../../../specs/spec-agent-node-room/engine-integration.md
+  - ../../../specs/spec-agent-node-room/provider-steering-matrix.md
   - ../../../specs/spec-workflow-run-view-hitl/ux-mockup/README.md
   - ../../../project-context.md
   - ../../../../packages/web/src/index.css
@@ -421,7 +421,7 @@ Legend and all nine families are rendered in `mockups/key-transcript-states.html
 | generic      | `{colors.text-secondary-legacy}` / `{colors.text-secondary-console}` | No hue. An unknown tool must not borrow a family's meaning.                                                                                                                                               |
 
 **`code` sharing amber is a user decision, taken after the mock review.** The review first settled a six-treatment mapping that gave `code` its own green `--node-script`; reconciling the imports then showed that token is declared **only** in `console/theme.css:88`, whose own comment scopes it to the console "until the production palette needs them", and that `index.css` has no such token — so the mapping was not, as recorded, all-inherited. Presented with promoting the token or folding `code` into amber, the user chose amber.
-Giving `code` its own hue would mean promoting a production token and updating the brand guide with it — out of scope for a track that changes no backend and adds no token, for a family that is 3.6% of the corpus.
+The approved mapping keeps `code` on the existing amber token and introduces no palette change.
 If Console ever replaces Legacy, `--node-script` is present by definition and splitting `code` back out is a one-line change.
 
 **Status** — glyph colour reinforces the character, never replaces it.
@@ -534,7 +534,9 @@ The expanded body indents `{spacing.body-indent}` — chevron plus gap plus glyp
 Inside, the body bar is a flex line with the Raw button pushed to the far right by `margin-left: auto`.
 Grep results flow `path:line` inline, not in a fixed line-number column; the fixed `3ch` column is for diff line numbers only.
 
-**The transcript must not depend on a panel width.** No shipped component pins one; the only number in the room contract is `#node-panel { width: 460px }` (`../../../specs/spec-workflow-run-view-hitl/ux-mockup/styles.css:1111`), which its Console and Legacy mockups share, and the 520px in this run's Console mock is the mock's own choice with no source behind it. Treat 460px as the width to verify against, because it is the narrower of the two and the only one the contract states.
+**The transcript must remain responsive inside each approved panel width.**
+Console uses 520px and Legacy uses 460px.
+Both widths are acceptance targets, and the transcript adapts by elision and badge priority rather than by wrapping a tool row.
 The transcript adapts by elision and badge priority, never by wrapping a row.
 See `mockups/key-console-node-room.html` and `mockups/key-legacy-node-room.html` for the transcript at each width.
 
@@ -634,10 +636,14 @@ The control row puts the **Stop control** at the left edge and the **Send contro
 It is written in, so it is set the way it will be read.
 
 **Send control** (`{components.send-control}`) — bordered on both shells: transparent fill, `border-bright`, text-primary, the fixed focus ring.
-The label is the state: `Queue` while the agent generates, `Send now` while the agent is idle-after-interrupt. Nothing else about the control changes between the two — **same box, same position, and a width held to the wider of the two labels** — because a control that moves or resizes as well as renames is two controls, and the operator's pointer is already travelling toward the first one.
+The label follows state and verified provider capability.
+It reads `Queue` when the message must wait and `Send now` when the provider can deliver it now, including verified soft injection during generation.
+Nothing else about the control changes between the two — **same box, same position, and a width held to the wider of the two labels** — because a control that moves or resizes as well as renames is two controls, and the operator's pointer is already travelling toward the first one.
 An earlier draft inherited Legacy's shipped filled ask-card `Button` instead, so that the operator would meet a button they already knew. It was reversed on measurement: `--primary-foreground` on `--primary` is **3.06:1**, and an 11.5px label needs 4.5:1. Bordered measures **14.08:1 / 16.72:1**. Primacy is carried by the right-edge position, which is enough in a row that holds two controls.
 
-**Stop control** (`{components.stop-control}`) — bordered on both shells, transparent fill, `border-bright`, text-primary, the fixed focus ring. It interrupts the **agent** and leaves the node `running` — the whole-node teardown is the separate **Cancel** button, not this control. Never filled, and never in the error colour: an interrupt leaves the agent able to continue, and painting it red would report a failure that did not happen.
+**Stop control** (`{components.stop-control}`) — bordered on both shells, transparent fill, `border-bright`, text-primary, the fixed focus ring.
+It ends the agent's current turn and leaves the node, run, provider session, and completed writes in place.
+Never fill it or use the error colour because an interrupted turn is not a failed turn.
 Reads `Stop`, then — if the sub-second `Stopping…` transient is shown — `Stopping…` while the interrupt is in flight.
 **`Stopping…` is `aria-disabled`, never the `disabled` attribute, and dims no further than text-secondary.** Both halves of that are one decision. The native attribute blurs the element that carries it, so a keyboard operator who presses `Stop` is returned to `<body>` — and then to the _top_ of the document, with the whole transcript between them and the dock, however brief the interrupt is. Keeping it focusable also means the SC 1.4.3 inactive-component exemption is no longer being leaned on, which is why the dim floor is `--text-secondary` (**5.33:1 / 7.90:1**) rather than tertiary (**2.31:1 / 3.88:1**). The requirement was always "it may not disappear"; secondary does not make it disappear.
 
@@ -652,15 +658,48 @@ It is a slot in the dock's anatomy rather than a caption on another component, b
 
 **Draft item** (`{components.draft-item}`) — one line per waiting message, `{typography.badge}` text-secondary, end-elided, radius `{rounded.sm}`.
 Per-item controls are text buttons at the row's right edge, at the 24×24 SC 2.5.8 floor grown on padding — not the dock's 32px, which an 11px row cannot carry without becoming a card.
+The `Send now` control appears only when the provider has verified soft injection.
+
+**Auto-send control** — a compact durable toggle in the queue header.
+Its label is `Auto-send` and its state is available as text and control state, not colour alone.
+It does not change the queue geometry when enabled.
+
+**Restart recovery band** — the same full-width elevated band as the queue, in read-only form.
+It retains the draft and queue content and shows `restored after server restart · Resume the workflow to continue`.
+It adds no new Resume control because the existing workflow Resume action owns continuation.
 
 **Finished-iteration dock (Story 2.10 / AD-16, issue #190 decision B2 — adopted 2026-09-20).** When the operator is viewing a completed iteration of a still-live loop node through the `Execution` selection controls, the composer dock swaps to a read-only mode rather than disappearing:
 
 1. **One flex/control row** at the dock's top (same `{spacing.dock-pad}` / `{spacing.dock-gap}` rhythm as the live dock): a flexible disclosure cell on the left carrying the complete copy `reading a finished iteration · the agent is working in iteration N` in `{typography.body-bar}` text-secondary, and a native `Go to iteration N` button on the right.
 2. **At the authoritative 460px room width** the complete disclosure **may wrap** inside its flexible cell so every word stays visible; the Go button remains fully visible, at least `{spacing.control-min-h}` **32px** high, and never compresses under the text. There is **no horizontal overflow** of the row or the dock.
 3. **Queue band below the control row** — the same full-width `surface-elevated` band anatomy as the live draft/queue band (1px top rule, `QUEUED · n` / `sent` labels, internal scroll past `33vh`). Rendered only when the shared pending queue has `sent.length > 0` (never an empty shell). Read-only: no textarea, no send hint, no Queue/Send control, no per-message delete, no bound mutation handler.
-4. DOM order is disclosure → Go → optional detached/alert line → band. Focus never lands on `<body>`.
+4. DOM order is disclosure → Go → optional alert line → band. Focus never lands on `<body>`.
 
 This is deliberately a thin parallel treatment in each shell's own dock renderer (no cross-surface abstraction). Elision of the disclosure string is **not** authorized; wrapping inside the flex cell is the approved narrow-width answer.
+
+## Cross-Surface Components
+
+**RunStream tool row** — uses the same status glyph, family chip, full headline, ordered badges, and disclosure body as the Node Room.
+It follows the RunStream container width and does not introduce another semantic resolver.
+
+**Chat tool card** — uses the same presentation data inside the existing Chat card shell.
+The card can change spacing and border treatment, but not family, outcome, headline, badge order, or fallback meaning.
+
+**Backend tool text** — uses the same serializable semantic fixture as the Web surfaces.
+It renders a compact text form and does not copy Web code across package boundaries.
+
+**Files Changed panel** — a run-level list of changed paths in repository order with node-attribution chips.
+Each path is the primary line.
+Known node executions appear as secondary chips, and unknown attribution appears as the word `unknown`.
+
+**Thinking row** — a distinct prose row with the `thinking` role label and secondary text.
+Only content marked displayable by the provider contract enters this row.
+
+**Triggering prompt row** — a prose row with the `prompt` label, actor, and source on the label line.
+The prompt text is preserved exactly.
+
+**Advisor notification row** — an elevated notification row with the advisor identity on the label line and the notification in normal prose.
+It remains in transcript sequence and does not float over later content.
 
 ## Do's and Don'ts
 

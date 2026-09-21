@@ -112,6 +112,9 @@ body { background: oklch(0.1 0.005 260); color: var(--text-primary); font-family
 .occ::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .asst { font-family: var(--font-sans); font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); margin: 6px 2px 8px; }
 .asst .role { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin-bottom: 2px; }
+.todo-strip { border-top:1px solid var(--border); background:var(--surface-elevated); padding:7px 10px; font-family:var(--font-mono); color:var(--text-secondary); }
+.todo-strip summary { cursor:pointer; color:var(--text-primary); display:flex; gap:8px; }
+.todo-strip summary .count { margin-left:auto; color:var(--text-secondary); }
 </style>
 </head>
 <body>
@@ -177,6 +180,7 @@ assertion `left == right` failed
           <div class="asst"><span class="role">assistant</span>Done. <code style="font-family:var(--font-mono);font-size:11px">backoff()</code> now caps at 30s; all 11 auto_retry cases pass. Committed as <code style="font-family:var(--font-mono);font-size:11px">fix(worker): cap retry backoff at 30s</code>.</div>
 
         </div>
+        <details class="todo-strip"><summary><span>Todo · completed</span><span class="count">6/6</span></summary><div>☑ Research · 2/2 &nbsp; ☑ Implement · 4/4</div></details>
         <div class="room-controls"><span class="occ-nav"><label for="occ-jump">Jump to</label><select id="occ-jump" class="exec-select"><option selected disabled>2 occurrences</option><option>Run 1 · failed</option><option>Run 2 · retry</option></select></span></div>
       </aside>
     </div>

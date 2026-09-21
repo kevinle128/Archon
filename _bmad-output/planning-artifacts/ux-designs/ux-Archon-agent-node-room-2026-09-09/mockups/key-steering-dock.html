@@ -8,18 +8,14 @@
 /*
  * KEY SCREEN — the composer dock across the AGENT's sub-states inside a node that stays
  * `running`, plus the operator row in the transcript. Steering never stops the node:
- * `Stop` interrupts the AGENT's current turn (a provider primitive / stream-abort, in-process
- * and sub-second), the node stays `running` throughout, and `interrupting` is a brief UI-local
- * transient — NOT a node-lifecycle state and NOT a status poll. Stopping the whole node is the
- * separate Cancel button, out of scope here. An interrupted turn never completes the node; a
- * node that is interrupted and then left with nothing sent FAILS after a 30-minute idle-await
- * timeout (owner-ratified).
+ * `Stop` ends the AGENT's current turn through the provider interrupt signal, the node stays
+ * `running`, the provider session remains reusable, and completed writes stay written.
  * Governing spine sections:
  *   DESIGN.md          Components → Composer dock · Send control · Stop control · Draft box · Operator text
  *   EXPERIENCE.md      Component Patterns (dock rows) · State Patterns (dock rows) · Accessibility Floor → The dock · Key Flows → Flow 4
  *   control-states.md  the agent sub-states (generating | interrupting | idle-after-interrupt) + the 30-min fail
  * Tokens mirror packages/web/src/experiments/console/theme.css — hue 265, Geist / Geist Mono.
- * Console shown; Legacy differs only in :root and in the send control, which is filled there.
+ * Console shown; Legacy differs only through its existing surface tokens.
  */
 :root {
   --surface: oklch(0.175 0.007 265); --surface-inset: oklch(0.13 0.006 265); --surface-elevated: oklch(0.205 0.009 265);
@@ -68,7 +64,9 @@ h2 { font-size: 10px; letter-spacing:.09em; text-transform: uppercase; color: va
 .draft { background: var(--surface-inset); border:1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
 .draft .dh { font-size:10px; letter-spacing:.07em; text-transform: uppercase; color: var(--text-secondary); margin-bottom:5px; }
 .draft .di { font-family: var(--font-mono); font-size:11px; color: var(--text-secondary); padding: 4px 8px; border-radius:4px; background: var(--surface-inset); margin-bottom:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.draft .tabonly { font-size:10px; color: var(--text-secondary); margin-top:4px; } /* was text-tertiary: 2.71:1 on Legacy. It is a load-bearing fact, so it takes the same tier every other fact in this run took. */
+.draft .scope { font-size:10px; color: var(--text-secondary); margin-top:4px; }
+.item-action { float:right; border:0; background:transparent; color:var(--text-primary); font:inherit; padding:0 0 0 8px; }
+.autosend { margin-left:8px; border:1px solid var(--border); border-radius:999px; padding:1px 6px; letter-spacing:0; text-transform:none; }
 .field { background: var(--surface-inset); border:1px solid var(--border); border-radius:6px; min-height:56px; padding:7px 9px; font-family: var(--font-sans); font-size:12.5px; line-height:1.5; color: var(--text-primary); }
 .field.ph { color: var(--text-secondary); }
 .ctl { display:flex; align-items:center; }
@@ -98,7 +96,7 @@ td.v { color: var(--text-secondary); line-height:1.5; }
 <body>
 
 <h1>Steering dock — the agent's states inside a running node</h1>
-<p class="sub">Console shown at a 300px crop of the node panel. Legacy differs in <span class="mono">:root</span> and in one place only: its send control is the filled shadcn <span class="mono">Button</span> the ask card already uses, where Console's is bordered. Anatomy, order and wording are identical on both. The dock is a <strong>sibling</strong> of the transcript's scroller, never a child of it — so it cannot cover the last row, which on a running node is the row being watched. The node pill stays <span class="mono">running</span> across every state below except the terminal fail: steering acts on the <em>agent</em>, never the node lifecycle.</p>
+<p class="sub">Console is shown at a 300px crop of its approved 520px node panel. Legacy uses a 460px node panel and its existing surface tokens. Anatomy, order and wording are identical on both. The dock is a <strong>sibling</strong> of the transcript's scroller, never a child of it — so it cannot cover the last row, which on a running node is the row being watched. The node pill stays <span class="mono">running</span> across every active-turn state: steering acts on the <em>agent turn</em>, never the node lifecycle.</p>
 
 <h2>Agent sub-states — the node stays running throughout</h2>
 <div class="row4">
@@ -113,10 +111,10 @@ td.v { color: var(--text-secondary); line-height:1.5; }
       </div>
       <div class="dock">
         <div class="draft">
-          <div class="dh">Queued · 2</div>
-          <div class="di">wrong suite — use -p archon-workflows</div>
+          <div class="dh">Queued · 2 <span class="autosend">Auto-send on</span></div>
+          <div class="di">wrong suite — use -p archon-workflows <button class="item-action">Send now</button></div>
           <div class="di">and skip the doctests</div>
-          <div class="tabonly">this tab only</div>
+          <div class="scope">saved to server · shared with this node</div>
         </div>
         <div class="field ph">Message the agent…</div>
         <div class="ctl"><button class="btn">Stop</button><button class="btn send">Queue</button></div>
@@ -138,13 +136,13 @@ td.v { color: var(--text-secondary); line-height:1.5; }
           <div class="dh">Queued · 2</div>
           <div class="di">wrong suite — use -p archon-workflows</div>
           <div class="di">and skip the doctests</div>
-          <div class="tabonly">this tab only</div>
+          <div class="scope">saved to server · shared with this node</div>
         </div>
         <div class="field ph">Message the agent…</div>
         <div class="ctl"><button class="btn" aria-disabled="true">Stopping…</button><button class="btn send">Queue</button></div>
       </div>
     </div>
-    <div class="note"><strong>A brief UI-local transient, not a node state.</strong> The interrupt is a provider primitive / stream-abort in-process — <strong>sub-second</strong>, not a status poll — so whether to show this at all is Kevin's call; if shown it must be brief and must not fake being done. No progress bar — nothing is being tracked. Send still reads <span class="mono">Queue</span>, because the node is still running. Announced once, politely: <span class="mono">agent interrupting</span>.</div>
+    <div class="note"><strong>A brief UI-local transient, not a node state.</strong> It starts when Stop is accepted and ends when the provider interrupt settles. It must not fake completion. No progress bar is shown. Send still reads <span class="mono">Queue</span> because the node is still running. The transition is announced once, politely: <span class="mono">agent interrupting</span>.</div>
   </div>
 
   <div class="col">
@@ -160,7 +158,7 @@ td.v { color: var(--text-secondary); line-height:1.5; }
           <div class="dh">Will send · 2</div>
           <div class="di">wrong suite — use -p archon-workflows</div>
           <div class="di">and skip the doctests</div>
-          <div class="tabonly">this tab only</div>
+          <div class="scope">saved to server · shared with this node</div>
         </div>
         <div class="disclose">stopped after the last completed tool call · files already written stay written</div>
         <div class="field ph">Message the agent…</div>
@@ -240,7 +238,27 @@ td.v { color: var(--text-secondary); line-height:1.5; }
         <div class="disclose">interrupted by operator, no redirect received &middot; failed after 30-minute idle timeout</div>
       </div>
     </div>
-    <div class="note">The owner-ratified bound. While idle-after-interrupt the dock waits (<span class="mono">Send now</span>). If nothing is sent, the <strong>engine</strong> — the in-process owner, which can tell idle-after-interrupt from a crash — fails the node after 30 minutes: never a wait-forever, never a quiet finish on partial output. The in-memory queue dies with the run; anything still <span class="mono">sent</span> but unmatched returns read-only as <span class="mono">Never sent</span>. Resuming re-runs the node with a fresh session — the interrupted context is gone.</div>
+    <div class="note">While the live process owns idle-after-interrupt, its explicit inactivity rule can finish the node. Durable queue content remains stored and becomes read-only as <span class="mono">Never sent</span>. A server restart is different: Archon preserves the data, makes no terminal-state guess, and waits for the existing Resume action.</div>
+  </div>
+
+  <div class="col">
+    <div class="cap">restart recovery · durable state restored</div>
+    <div class="panel">
+      <div class="p-head"><span class="nm">implement</span><span class="pill run">recovery required</span></div>
+      <div class="p-body">
+        <div class="tr"><span class="g warn">⚠</span><span class="ch shell">shell</span><span class="hl">cargo test --workspace</span><span class="bd">delivery unknown</span></div>
+      </div>
+      <div class="dock">
+        <div class="draft">
+          <div class="dh">Queued · 2 <span class="autosend">Auto-send on</span></div>
+          <div class="di">wrong suite — use -p archon-workflows</div>
+          <div class="di">and skip the doctests</div>
+          <div class="scope">saved to server · shared with this node</div>
+        </div>
+        <div class="disclose">restored after server restart · Resume the workflow to continue</div>
+      </div>
+    </div>
+    <div class="note">Read-only until the user invokes the existing Resume action. Archon does not automatically resume and does not resend an ambiguous dispatch.</div>
   </div>
 
 </div>
@@ -260,13 +278,13 @@ td.v { color: var(--text-secondary); line-height:1.5; }
 
   <div class="tr"><span class="g run">◐</span><span class="ch shell">shell</span><span class="hl">cargo test -p archon-workflows --lib</span><span class="bd">3s</span></div>
 </div>
-<p class="sub" style="margin-top:10px">Three things separate the operator from the model, and none is a hue: the <span class="mono">operator</span> label with the <strong>sender's name</strong> (the <span class="mono">operator_user_id</span>, so a multi-user install attributes each message), and full-strength text against the model's secondary saying it again. The badge reads <span class="mono">sent</span> here and stays that way — only Claude echoes back the id we stamp, so on every other provider <span class="mono">delivered</span> is never claimed.</p>
+<p class="sub" style="margin-top:10px">Three things separate the operator from the model, and none is a hue: the <span class="mono">operator</span> label with the <strong>sender's name</strong>, the durable message id, and full-strength text against the model's secondary. The badge advances only when the provider returns evidence correlated to that message id.</p>
 
 <h2>What the dock refuses to do</h2>
 <table>
   <tr><th>Refused</th><th>Why</th></tr>
-  <tr><td class="k">a send that stops the node</td><td class="v">A send is never a node-stop — stopping the whole node is the separate <span class="mono">Cancel</span> button. <span class="mono">Stop</span> interrupts the agent's current turn (every provider can be interrupted), which is a distinct act; a send control that silently stopped the agent would lie about what it does.</td></tr>
-  <tr><td class="k">per-item send while generating</td><td class="v">There is nothing an individual message could do but wait. Same lie, one row down.</td></tr>
+  <tr><td class="k">a send that stops the turn</td><td class="v">Queue and <span class="mono">Send now</span> use their declared delivery path. A send control that silently invoked Stop would lie about what it does.</td></tr>
+  <tr><td class="k">Send now without capability</td><td class="v">Per-item <span class="mono">Send now</span> appears only for providers with verified soft injection.</td></tr>
   <tr><td class="k">optimistic flip to idle before the interrupt lands</td><td class="v">The interrupt is sub-second but not zero. The interface must not fake being done before the agent acknowledges — a flip that runs ahead of the ack is wrong for exactly as long as it leads.</td></tr>
   <tr><td class="k">a delivered badge without an echo</td><td class="v">Correlation is by id alone. Text and timestamps mis-attribute silently when messages merge into one turn.</td></tr>
   <tr><td class="k">an empty draft box</td><td class="v">A panel that is always there stops being a signal.</td></tr>

@@ -39,7 +39,9 @@ Table-driven over the resolver tiers.
 - hostile and oversized outputs stay within the contract ceilings: nested `file_matches` and web-result arrays report their hidden tail, grep path/text values and generic field keys are independently bounded and sanitized, over-cap text ends in an ellipsis without exceeding its ceiling, and assembled web markdown cannot exceed the text ceiling
 - inherited enumerable properties are never emitted and count toward the finite key-scan budget, so a hostile prototype cannot force an unbounded scan
 
-CAP-5 scope is presentation over persisted rows — the resolved product gate: current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and no fixture row is a Codex row. A no-input fake-provider row exercises the same fallback as **generic defensive coverage only**; tests, reports, and docs label it that way and never read it as Codex behavior.
+Codex ingestion coverage starts with a successful provider `file_change` event and ends with a persisted file row rendered through the shared presentation contract.
+The test asserts the changed path, outcome, ordering, and available diff evidence.
+A no-input synthetic row remains generic defensive coverage and is not accepted as Codex-ingestion evidence.
 
 ## Generic-fallback corpus audit — CAP-2 / Story 1.3 (the < 2% bound)
 
@@ -101,6 +103,39 @@ Extending `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`, on **both** surfac
 - status is rendered as a glyph character, not colour alone. This is the accessibility guarantee and it is easy to regress in a restyle, so it gets its own assertion rather than riding along in a snapshot
 - the Raw toggle is present and closed by default, and reveals the original payload when opened
 - an `interrupted` status row folds into the **preceding** tool call so it shows `⚠ interrupted`, not `✕ failed` — asserted on a non-Claude fixture; this is the cross-provider reader fold the write half depends on, tested here in the read half where the fold lives
+
+## Todo behavior — CAP-3
+
+- both Node Room shells place the collapsible todo strip below the transcript scroller and above the queue and composer dock
+- earlier mutations remain compact `todo updated` rows, while the latest applicable row can expose the inline checklist
+- the strip and inline checklist use the same folded state
+- terminal completed and interrupted treatments are projections and leave persisted todo events unchanged
+
+## Cross-surface semantic parity — CAP-14 through CAP-16
+
+- one serializable fixture set covers Node Room, RunStream, Chat, and backend formatting
+- every surface derives the same family, headline, outcome, badges, and safe degraded form for the same event
+- successful Codex file changes appear in every applicable presentation surface after persistence
+- package-boundary checks prove that backend formatting does not import Web code and Web does not import `@archon/workflows`
+
+## Git impact — CAP-17
+
+- a run-level Files Changed fixture folds deterministic node-level Git evidence without duplicate paths
+- node attribution uses repository boundary evidence from `@archon/git` and never agent prose
+- missing or ambiguous evidence displays an unknown attribution instead of a guessed owner
+
+## Additional context — CAP-19 through CAP-21
+
+- displayable thinking is persisted, ordered, and rendered without logging its content
+- the triggering prompt retains actor and source attribution
+- advisor notifications retain advisor identity and server sequence
+- privacy filters reject hidden provider reasoning that is not explicitly displayable
+
+## Visual and accessibility coverage
+
+- Console is checked at the approved 520-pixel panel width and Legacy is checked at 460 pixels
+- keyboard, focus, reduced-motion, colour-independent outcome, and live-region behavior are checked on both Node Room shells
+- transcript pinning follows the reader only while the reader is already at the bottom
 
 ## Boundary checks
 

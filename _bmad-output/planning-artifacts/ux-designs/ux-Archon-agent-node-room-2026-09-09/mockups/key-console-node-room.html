@@ -117,6 +117,9 @@ body { background: oklch(0.11 0.005 265); color: var(--text-primary); font-famil
 .occ::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 .asst { font-family: var(--font-sans); font-size: 12.5px; line-height: 1.55; color: var(--text-secondary); margin: 6px 2px 8px; }
 .asst .role { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin-bottom: 2px; }
+.todo-strip { border-top:1px solid var(--border); background:var(--surface-elevated); padding:7px 10px; font-family:var(--font-mono); color:var(--text-secondary); }
+.todo-strip summary { cursor:pointer; color:var(--text-primary); display:flex; gap:8px; }
+.todo-strip summary .count { margin-left:auto; color:var(--text-secondary); }
 </style>
 </head>
 <body>
@@ -190,6 +193,7 @@ assertion `left == right` failed
           <details class="tcall"><summary><span class="chev">▶</span><span class="gl gl-run">◐</span><span class="fam fam-shell" title="shell · run_terminal_command" aria-label="shell · run_terminal_command">run_terminal_command</span><span class="hl">CARGO_BUILD_JOBS=1 cargo test -p gigo-harness-worker --test auto_retry</span><span class="bd"><span class="run">running</span> · 1m 48s</span></summary></details>
 
         </div>
+        <details class="todo-strip"><summary><span>Todo · Run full auto_retry suite</span><span class="count">4/6</span></summary><div class="chk"><div class="ph">Implement</div><div><span class="done">☑</span> Fix off-by-one in backoff()</div><div><span class="cur">◐</span> Run full auto_retry suite</div><div><span class="td">☐</span> Auto-commit after implement</div></div></details>
         <div class="room-controls"><span class="occ-nav"><label for="occ-jump">Jump to</label><select id="occ-jump" class="exec-select"><option selected disabled>2 occurrences</option><option>Run 1</option><option>Run 2 · retry</option></select></span></div>
       </aside>
     </main>

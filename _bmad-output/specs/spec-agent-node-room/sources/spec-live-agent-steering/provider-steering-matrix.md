@@ -1,5 +1,9 @@
 # Provider steering matrix
 
+> **Historical source only.**
+> This document records the pre-merge live-steering design and is not an implementation contract.
+> The canonical current contract is `../../provider-steering-matrix.md`.
+
 How each of the five providers in use takes an operator's message into a **running session**, and how it lets us interrupt that session — both **without stopping the node**. Two operations, read on three axes:
 
 - **Interrupt the agent's generation (CAP-2)** — universal. Every provider can be interrupted: claude has a native keep-alive `interrupt()`, and every other provider gets a **stream-abort on the executor's `AbortController`** that ends the turn while the session/thread survives for a follow-up run. No provider is disqualified from interrupt.

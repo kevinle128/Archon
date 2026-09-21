@@ -79,3 +79,48 @@ development_status:
   2-12-fail-an-abandoned-redirect-safely-after-30-minutes: done
   2-13-preserve-message-order-and-attribution-under-concurrent-operators: done
   epic-2-retrospective: optional
+
+  # 2026-09-21 approved course correction.
+  # G1-G4 remain historical labels; their current outcomes are owned by Epic 8.
+  epic-3: backlog
+  3-1-match-the-approved-console-and-legacy-room-anatomy: backlog
+  3-2-present-todo-state-exactly-as-approved: backlog
+  3-3-complete-transcript-interaction-and-accessibility-behavior: backlog
+
+  epic-4: backlog
+  4-1-persist-successful-codex-file-change-rows: backlog
+  4-2-use-readable-tool-presentation-in-runstream: backlog
+  4-3-use-readable-tool-presentation-in-chat: backlog
+  4-4-align-backend-tool-formatting: backlog
+
+  epic-5: backlog
+  5-1-show-a-run-level-files-changed-panel: backlog
+  5-2-attribute-git-changes-to-node-executions: backlog
+
+  epic-6: backlog
+  6-1-persist-and-present-agent-thinking: backlog
+  6-2-persist-and-present-the-triggering-prompt: backlog
+  6-3-persist-and-present-advisor-notifications: backlog
+
+  epic-7: backlog
+  7-1-add-durable-steering-storage: backlog
+  7-2-save-and-restore-composer-drafts: backlog
+  7-3-preserve-the-shared-queue-and-fifo-order: backlog
+  7-4-recover-guidance-after-server-restart: backlog
+  7-5-support-durable-auto-send-mode: backlog
+
+  epic-8: backlog
+  8-1-implement-the-provider-neutral-stop-contract: backlog
+  8-2-expose-stop-through-the-api-and-both-node-room-shells: backlog
+  8-3-complete-claude-stop-soft-injection-and-delivery-acknowledgement: backlog
+  8-4-complete-codex-stop-and-session-continuation: backlog
+  8-5-complete-grok-stop-and-soft-injection: backlog
+  8-6-complete-deepseek-stop-and-continuation: backlog
+  8-7-complete-omp-stop-and-soft-injection: backlog
+  8-8-present-truthful-provider-capabilities: backlog
+
+  epic-9: backlog
+  9-1-support-stop-and-redirect-for-qoder-cli: backlog
+  9-2-support-stop-and-redirect-for-pi: backlog
+  9-3-support-stop-and-redirect-for-github-copilot: backlog
+  9-4-support-stop-and-redirect-for-opencode: backlog

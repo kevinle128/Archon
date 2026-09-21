@@ -1,7 +1,10 @@
 # Steering API contract
 
-The typed wire contract for the steering surface — the Send, Interrupt, keepalive, Withdraw, and queue-read routes the composer dock calls.
-It closes the readiness gap where the routes were named (`engine-integration.md` §3, steering AD-11) but had no request, response, or error schema, which forced implementation to invent a public API during coding and blocked generated web types. The GET queue route is the read half added by Story 2.9 (#189): it lets every mounted dock hydrate and converge on the one authoritative registry queue without mutating anything.
+The typed wire contract for durable drafts, queued guidance, auto-send, Stop, keepalive, withdrawal, and queue reads.
+
+The durable steering store is authoritative for draft and queue data.
+
+The live registry is authoritative only for the active provider turn handle and its per-turn interrupt signal.
 
 All routes register through `registerOpenApiRoute(createRoute({...}), handler)` so the OpenAPI spec, runtime validation, and `api.generated.d.ts` stay aligned.
 Identity resolves through `resolveAuthContext`. Steering carries its own actor grant (owner-ratified 2026-09-15, AD-11): any **authenticated** identity may call these routes, attributed by `operator_user_id`; unauthenticated → 401; a run with no `user_id` (solo / identity-less install) → allowed. This broadens HITL/AD-7 for the steering routes only — the retry / cancel / approve rules are unchanged.
@@ -9,43 +12,51 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 
 ## Routes
 
-| Method + path                                                      | Purpose                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /api/workflows/runs/:runId/nodes/:nodeId/send`               | **Dispatch** the operator's message onto the live node's registry queue — called at `Queue`-press (`intent: 'queue'`) and on `Send now` (`intent: 'send_now'`), not at the drain moment. The pre-`Queue` draft (text still being composed) is the per-tab client draft; a queued message is server-side. |
-| `POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt`          | End the agent's current turn; the session stays alive.                                                                                                                                                                                                                                                   |
-| `POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive`          | Re-arm the idle-await inactivity timer without delivering a message.                                                                                                                                                                                                                                     |
-| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId` | **Withdraw** a queued message from the registry queue before it drains — this is the delete of a queued item. Idempotent.                                                                                                                                                                                |
-| `GET /api/workflows/runs/:runId/nodes/:nodeId/queue`               | **Read** the node's still-pending queue snapshot — called at dock mount and on the ~1s reconcile poll so every tab/operator converges on the same ordered queue. Mutation-free; `Cache-Control: no-store` on every outcome.                                                                              |
+| Method + path                                                      | Purpose                                                                                                                                            |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/workflows/runs/:runId/nodes/:nodeId/draft`               | Read the acting operator's server-side draft and auto-send setting.                                                                                |
+| `PUT /api/workflows/runs/:runId/nodes/:nodeId/draft`               | Upsert the acting operator's draft after debounced composer changes.                                                                               |
+| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft`            | Clear the acting operator's saved draft idempotently.                                                                                              |
+| `PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send`           | Persist the acting operator's auto-send setting for this node.                                                                                     |
+| `POST /api/workflows/runs/:runId/nodes/:nodeId/send`               | Persist a queued message or request immediate delivery of a persisted item.                                                                        |
+| `POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt`          | End the active agent turn through `interruptSignal`; the node and provider session remain available.                                               |
+| `POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive`          | Re-arm the live idle-after-interrupt inactivity timer without delivering a message.                                                                |
+| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId` | Withdraw a durable queued message before it is claimed.                                                                                            |
+| `GET /api/workflows/runs/:runId/nodes/:nodeId/queue`               | Read the durable node queue in server FIFO order, including delivery state and whether live execution requires the existing Resume action.          |
 
 ## Request schemas
 
-- **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now' }`.
-  `message_id` is the correlation key for terminal reconciliation (CAP-11 / AD-11) and, post-G1, for `delivered`.
+- **draft write** — `{ message: string }`; an empty string is represented by the idempotent DELETE route rather than a second clear shape.
+- **auto-send write** — `{ enabled: boolean }`.
+- **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now', queued_message_id?: string }`.
+  `message_id` is the durable identity and delivery-correlation key. `queued_message_id` selects an existing durable item for per-item Send now and must belong to the same node.
 - **interrupt** — `{}` (no body); the target is the live turn on the registry handle.
 - **keepalive** — no request body; it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
-- **withdraw** — `{}` (no body); `message_id` is the path parameter. Removes that message from the registry queue if it is still present.
+- **withdraw** — `{}` (no body); `message_id` is the path parameter. Removes that message from the durable queue if it is still claimable.
 - **queue read** — bodyless GET: no request body and no query parameters; `runId`/`nodeId` are the only path parameters.
 
 ## Response schemas
 
-- **send** — `{ success: true, message_id: string, state: 'queued' | 'awaiting_send_now' }`.
-  `queued` when accepted onto the registry queue at `Queue`-press, to drain at the next natural boundary (turn N+1); `awaiting_send_now` when accepted into an `idle-after-interrupt` node's registry queue to await `Send now`.
-  Delivery itself — the drain into turn N+1 — is the executor's, reported via the node sub-state stream, not the send response.
+- **draft read/write** — `{ success: true, draft: { message: string, updated_at: string } | null, auto_send: boolean }`.
+- **draft clear** — `{ success: true }`.
+- **auto-send write** — `{ success: true, enabled: boolean }`.
+- **send** — `{ success: true, message_id: string, state: 'queued' | 'awaiting_send_now' | 'dispatching' | 'sent' | 'delivered' | 'delivery_unknown' }`.
+  A queue response is returned only after the durable write commits. Immediate delivery reports only evidence known at response time and never infers `delivered` from prose.
 - **withdraw** — `{ success: true, message_id: string }`; idempotent — success whether the message was still queued (now removed) or had already drained (nothing to remove).
 - **interrupt** — `{ success: true, sub_state: 'idle-after-interrupt' | 'generating' }`.
   `idle-after-interrupt` when the interrupt landed mid-turn; **`generating`** when the turn already ended naturally before the interrupt landed (interrupt spent, AD-2) and a queued message auto-drained into turn N+1. If the turn ended naturally with an **empty** queue the node has completed — the route then returns 409 `node_finished` (below), not a success shape.
 - **keepalive** — `{ success: true }` on every successful call against a live handle:
   - live idle → re-arms the inactivity timer (private; not exposed on the wire);
   - live generating / between-turn / queue-only → 200 no-op (timer not armed or already settled);
-  - parked handle or missing in-process handle → **422** `not_steerable_here` (checked before keepalive, because keepalive itself returns not_idle for parked);
+  - durable recovery state without a live handle → **409** `recovery_required`;
   - terminal run/node or closed handle → **409** `node_finished`;
   - unknown run/node → **404**; unauthenticated → **401**.
     Bodyless POST; writes no durable row; same steering actor grant as send/interrupt.
-- **queue read** — `{ success: true, queued: [{ message_id: string (uuid), message: string }] }`.
-  `queued` contains only the handle's current pending items, in server receipt order — drained or withdrawn ids and accepted-id memory never appear on the wire. No `operator_user_id`, `received_at`, handle phase, or durable version is exposed. Live AND parked handles return 200 with their retained rows; a closed handle is 409; a known non-terminal node with no in-process handle is 422.
+- **queue read** — `{ success: true, execution_state: 'live' | 'recovery_required' | 'finished', queued: [{ message_id: string, message: string, state: 'queued' | 'awaiting_send_now' | 'dispatching' | 'sent' | 'delivered' | 'delivery_unknown' }] }`.
+  `queued` contains durable node items in server FIFO order. A restart returns the same rows with `execution_state: 'recovery_required'` until the existing Resume flow establishes a live executor. Author attribution remains on transcript receipts and authorized server records rather than being inferred by the browser.
   Every queue-read outcome — 200 and each error status — carries `Cache-Control: no-store` so a live queue snapshot is never served from a shared cache.
 
-Every message stays `sent` in the UI at the v1 floor; no response reports `delivered` (that is G1, claude-only, post-SDK-bump).
+`delivered` is current scope where a provider returns verified acknowledgement for the stamped message id.
 
 ## Error schema and status codes
 
@@ -57,25 +68,27 @@ One error shape across all routes: `{ success: false, error: { code: string, mes
 | Unknown `runId` / `nodeId`                    | 404       | `not_found`                     |
 | Malformed or schema-invalid payload           | 400       | `invalid_request`               |
 | Node no longer running                        | 409       | `node_finished`                 |
-| No live handle in this process (detached run) | **422**   | `not_steerable_here`            |
+| Durable node requires existing Resume action  | 409       | `recovery_required`             |
+| Message outcome became ambiguous after loss   | 409       | `delivery_unknown`              |
 
-**Decision — detached-run status code.**
-409 is already the terminal-state conflict (`node_finished`), where the draft stays in the browser and re-running is `workflow retry-node`.
-The detached case is different: the run exists and is **non-terminal**, but its live session is in another process, so it is unreachable from here — a capability limit, not a terminal conflict.
-Reusing 409 for both would conflate two conditions a machine consumer must tell apart.
-**This contract uses 422 `not_steerable_here`.** (Alternative considered: 409 with a discriminated `error.code`; rejected because the two conditions have different client behavior — `node_finished` keeps the draft as a finished-node read-only box, `not_steerable_here` keeps the dock but discloses steering is unavailable, EXPERIENCE.md state 8.)
+The API never infers process origin from a missing live handle.
+
+After server restart it returns the typed `recovery_required` state while continuing to serve durable draft and queue reads.
+
+The user invokes the existing Resume action to re-establish execution.
 
 ## Idempotency and races
 
-- **Duplicate `message_id`** — the send is idempotent: it replays the original receipt (same `state`), never a second queue entry.
+- **Duplicate `message_id`** — the send is idempotent through the durable unique identity and replays the current receipt instead of inserting another queue entry.
 - **Repeated interrupt while already `idle-after-interrupt`** — an idempotent no-op returning the current `sub_state`; no second interrupt fires.
-- **Withdraw of an already-drained or unknown `message_id`** — an idempotent success no-op; there is no message-level 404 (404 is only an unknown `runId`/`nodeId`).
-- **Withdraw from a parked retained queue** — DELETE may remove an already-accepted item from a parked retained queue because it manages the queue, not the live provider session; new sends remain refused while parked, and a closed handle still returns `node_finished`.
-- **Send while an interrupt is in flight** — the message lands in the registry queue and waits for `Send now`; the queue absorbs the race with no 409 (AD-11).
+- **Withdraw of an already-delivered, withdrawn, or unknown `message_id`** — an idempotent success no-op; there is no message-level 404.
+- **Withdraw during recovery-required state** — DELETE may remove a still-queued item because it manages durable guidance rather than the missing provider process.
+- **Send while an interrupt is in flight** — the message lands durably in the queue and waits for `Send now`.
 - **Node goes terminal mid-request** — the route returns 409 `node_finished`; the teardown queue check is the last gate (AD-11).
 - **Every rejected request leaves the node, queue, and transcript unchanged** — a refusal is never a partial mutation.
-- **Read racing a send/withdraw** — a queue read reflects the registry at the snapshot tick: it may include a message whose send response is still in flight, or omit one whose withdraw landed first. The initiating client never loses its own mutation — the dock tags each read with its local mutation generation and discards any snapshot captured before its own successful send/withdraw (`queueGeneration` in `steering-dock.ts`).
-- **Reads never mutate or log contents** — the queue read performs no run, event, message, or pending-interaction write; the hot path is one run lookup plus one in-memory handle snapshot. Operator message text is never logged.
+- **Read racing a send/withdraw** — a queue read reflects the last committed durable order. The initiating client never replaces a newer mutation response with an older snapshot.
+- **Process loss during dispatch** — a claimed message whose provider acknowledgement cannot be proven becomes `delivery_unknown` and is never automatically resent.
+- **Reads never mutate or log contents** — draft and queue reads perform no workflow or transcript mutation, and operator message text is never logged.
 
 ## Transcript operator row (read model)
 
@@ -96,5 +109,5 @@ Response-only derived field on the text variant of the node-message read API:
 ## Boundary notes
 
 - `@archon/web` consumes these types through `api.generated.d.ts` / `lib/api.ts`; it never imports server or workflow packages.
-- The keepalive route carries no message and writes no row; it only touches the in-process idle-await timer.
-- No route is a delivery vehicle for the record — the executor writes the operator row (AD-6); these routes drive the live session and the registry queue.
+- The keepalive route carries no message and writes no transcript row; it only touches the live idle-await timer.
+- Draft and queue routes own durable steering state, while the executor remains the sole writer of delivered operator transcript rows.

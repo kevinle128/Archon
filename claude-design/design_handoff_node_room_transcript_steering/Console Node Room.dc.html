@@ -256,8 +256,8 @@ assertion `left == right` failed
                   <button type="button" onClick="{{ onToggleDraft }}" aria-expanded="{{ draftOpen }}" style="display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;background:transparent;border:none;font:inherit;color:inherit;cursor:pointer;text-align:left" style-hover="background:var(--surface-hover)" style-focus="outline:2px solid var(--accent-bright);outline-offset:-2px">
                     <span style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-secondary)">{{ draftHeaderWord }}</span>
                     <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-secondary)">{{ draftCount }}</span>
-                    <sc-if value="{{ showTabOnly }}" hint-placeholder-val="{{ true }}">
-                      <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">this tab only</span>
+                    <sc-if value="{{ showSavedServer }}" hint-placeholder-val="{{ true }}">
+                      <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">saved to server · Auto-send on</span>
                     </sc-if>
                     <span style="flex:0 0 9px;font-size:9px;color:var(--text-tertiary);{{ draftMarginStyle }}{{ draftChevStyle }}">▾</span>
                   </button>
@@ -323,9 +323,9 @@ const STATES = {
     headerMeta: 'started 04:52 · running… · run 2 of 2 · omp · claude-opus-5',
     agentRunning: true,
     draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
-    draftHeader: 'Queued · 2', tabOnly: true,
+    draftHeader: 'Queued · 2', savedServer: true,
     field: true, controls: true, stop: true, stopLabel: 'Stop', send: 'Queue',
-    note: 'Composer is mounted and enabled while the agent works. Queue holds the message — no row changes, no tool call is interrupted, nothing is lost. Stop interrupts the agent\u2019s current turn; it does not stop the node. Stopping the whole node stays the separate Cancel button in the run header.'
+    note: 'Composer is mounted and enabled while the agent works. Draft and queue content are saved on the server. Queue holds the message without interrupting the current turn. Stop ends only the current turn and leaves the node, session, and completed writes in place.'
   },
   interrupting: {
     label: '2 · interrupting',
@@ -335,7 +335,7 @@ const STATES = {
     headerMeta: 'started 04:52 · running… · run 2 of 2 · omp · claude-opus-5',
     agentRunning: true,
     draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
-    draftHeader: 'Queued · 2', tabOnly: true,
+    draftHeader: 'Queued · 2', savedServer: true,
     field: true, controls: true, stop: true, stopLabel: 'Stopping…', stopBusy: true, send: 'Queue',
     note: 'A brief UI-local transient, not a node state. The interrupt is a provider primitive or stream-abort in-process — sub-second, not a status poll. Send still reads Queue because the node is still running. Stopping… is aria-disabled, never the disabled attribute, and dims no further than text-secondary.'
   },
@@ -347,7 +347,7 @@ const STATES = {
     headerMeta: 'started 04:52 · running… · waiting on operator · omp · claude-opus-5',
     interruptedRow: true,
     draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
-    draftHeader: 'Will send · 2', tabOnly: true,
+    draftHeader: 'Will send · 2', savedServer: true,
     disclosure: 'stopped after the last completed tool call · files already written stay written',
     field: true, controls: true, stop: false, send: 'Send now',
     note: 'The node never left running — only the agent\u2019s current generation was interrupted, and the rest of the run is unaffected. The stop control is gone. The draft header flips to Will send: that one word is the whole signal the control below has changed meaning. The 30-minute idle-await timer is an inactivity timer — typing in the composer re-arms it.'
@@ -372,7 +372,7 @@ const STATES = {
     interruptedRow: true, operator: true, tail: true, tailGlyph: '✓', tailGlyphColor: 'var(--success)', tailBadge: '41 passed',
     draft: ['and skip the doctests', 'check the fixture path too'],
     draftHeader: 'Never sent · 2',
-    disclosure: 'node finished · these never left this tab',
+    disclosure: 'node finished · none of this was sent',
     field: false, controls: false,
     note: 'No field, no Stop, no send — there is nothing left to steer, and a control that cannot act is not drawn. What survives is read-only: the operator\u2019s own words are never discarded without saying so, and the half-typed line folds in as the last item. Reconciliation runs on the node\u2019s terminal event; any sent id with no matching row is restored here.'
   },
@@ -399,22 +399,23 @@ const STATES = {
     draftHeader: 'Never sent · 2',
     disclosure: 'interrupted by operator, no redirect received · failed after 30-minute idle timeout',
     field: false, controls: false,
-    note: 'The owner-ratified bound. While idle-after-interrupt the dock waits on Send now; if nothing is sent, the engine fails the node after 30 minutes of genuine operator inactivity — never a wait-forever, never a quiet finish on partial output. The in-memory queue dies with the registry, so anything still sent but unmatched returns read-only as Never sent. Resuming re-runs the node with a fresh session.'
+    note: 'The live process can apply its explicit inactivity rule. Durable queue content remains stored. A server restart instead restores the draft, queue, delivery state, and auto-send setting, then waits for the existing Resume action.'
   },
-  detached: {
-    label: '8 · detached run',
-    selected: 'running · 14m 07s · detached', selectedColor: 'var(--running)',
-    selectedLine: '19 tool calls · not steerable from this process',
-    pill: 'Running', pillColor: 'var(--running)', pillBorder: 'oklch(0.72 0.155 245 / .4)',
-    headerMeta: 'started 04:52 · running… · detached · omp · claude-opus-5',
-    agentRunning: true,
-    disclosure: 'not steerable here · this run was started detached, so its live session is not in this process',
+  recovery: {
+    label: '8 · restart recovery',
+    selected: 'recovery required', selectedColor: 'var(--warning)',
+    selectedLine: 'durable steering restored · live process unavailable',
+    pill: 'Recovery required', pillColor: 'var(--warning)', pillBorder: 'oklch(0.8 0.14 85 / .4)',
+    headerMeta: 'restored after server restart · omp · claude-opus-5',
+    draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
+    draftHeader: 'Queued · 2', savedServer: true,
+    disclosure: 'restored after server restart · Resume the workflow to continue',
     field: false, controls: false,
-    note: 'Added in this port — the state the spec requires but no earlier mockup drew. All of steering binds to the in-process live handle, so a CLI --detach run has nothing to bind to. Cancel and normal resume still work; only the dock\u2019s controls are absent, and the dock says why rather than offering a field that would 409.'
+    note: 'Read-only until the user invokes the existing Resume action. Archon does not automatically resume and does not resend an ambiguous dispatch.'
   }
 };
 
-const ORDER = ['generating','interrupting','idle','again','finishedUndelivered','finishedClean','failed','detached'];
+const ORDER = ['generating','interrupting','idle','again','finishedUndelivered','finishedClean','failed','recovery'];
 
 // A loop node runs the same node id many times. Each iteration is its own execution,
 // listed as `implement ×N` in the log stream and selectable from the header's
@@ -592,7 +593,7 @@ class Component extends DCLogic {
         : 'color:' + s.pillColor + ';border-color:' + s.pillBorder,
       showDock: viewingStale ? false : s.dock !== false,
       stateNote: canSendNow
-        ? s.note + ' \u2014 and because this provider\u2019s open stream takes a message mid-turn (CAP-5 soft-inject, claude streaming input), each queued item carries its own Send now: the same ordinary prompt, handed to the running turn, with no interrupt, no interrupted tool call and no turn-start event. Per-item send is offered ONLY here. On a queue-only provider the control is absent rather than disabled \u2014 there an individual message could do nothing but wait, and the only per-item action is delete. This path is spike-gated: the v1 floor is interrupt + Queue.'
+        ? s.note + ' \u2014 This provider has verified soft injection, so each queued item carries its own Send now. The message enters the active turn without invoking Stop. Queue-only providers omit this control.'
         : viewingStale
         ? 'A loop node runs the same node id many times, and each iteration is its own execution — listed as implement ×N in the log stream and selectable from the header. The select defaults to the running iteration; picking a finished one reads its transcript back. Steering is not offered there: a steer carries the node id and retry epoch it was written against, so a message composed against a finished iteration would be rejected on arrival. The dock reduces to one line and a way back to the live iteration.'
         : s.note,
@@ -618,7 +619,7 @@ class Component extends DCLogic {
       draftOpen: this.state.draftOpen,
       onToggleDraft: () => this.setState(st => ({ draftOpen: !st.draftOpen })),
       draftChevStyle: 'transition:transform .12s;transform:rotate(' + (this.state.draftOpen ? '180' : '0') + 'deg)',
-      draftMarginStyle: s.tabOnly === true ? '' : 'margin-left:auto;',
+      draftMarginStyle: s.savedServer === true ? '' : 'margin-left:auto;',
       draftHeaderWord: (s.draftHeader ?? ' · ').split(' · ')[0],
       draftCount: (s.draftHeader ?? ' · ').split(' · ')[1] ?? '',
       draftItems: (s.draft ?? []).map((t, i) => ({
@@ -637,7 +638,7 @@ class Component extends DCLogic {
         sendNow: () => {},
         remove: () => {}
       })),
-      showTabOnly: s.tabOnly === true,
+      showSavedServer: s.savedServer === true,
       disclosure: s.disclosure ?? false,
       showField: s.field === true,
       showControls: s.controls === true,

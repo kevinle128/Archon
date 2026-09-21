@@ -6,7 +6,7 @@ One pure, React-free, provider-agnostic module produces a `ToolPresentation`; bo
 ## Module
 
 `packages/web/src/lib/tool-presentation.ts`.
-Input is structural rather than tied to `AgentHistoryItem`, so the chat card can adopt it later without a rewrite.
+Input is structural rather than tied to `AgentHistoryItem`, so Node Room, RunStream, and Chat can use the same semantic contract.
 
 The module exposes two API layers. The **summary layer** resolves the collapsed row; the **body layer** resolves the expanded body lazily, only while a row is open with Raw closed, so polling never pays for output normalization.
 
@@ -212,7 +212,9 @@ chev glyph chip    headline (flex, min-width:0)        badges (right)
 ```
 
 **Status glyph `✓ ✕ ◐ ⚠ –`**, mapped from the existing `AgentHistoryItem.outcome` via `deriveOutcome()`, reused unchanged.
-Five characters for the five values that type carries (`agent-history.ts:36`). `⚠` is `interrupted` — a tool that was **stopped**, not one that failed, so it takes its own character rather than a recoloured `✕`. Only Claude produces it, from the `PostToolUseFailure` hook when `is_interrupt` is true (`claude/provider.ts:952-959`); Codex cannot, its union being `success`/`error`/`unknown` (`codex/provider.ts:644-650`).
+Five characters represent the five values carried by the type (`agent-history.ts:36`).
+`⚠` is `interrupted` — a tool whose turn was stopped, not one that failed, so it uses its own character rather than a recoloured `✕`.
+Every provider adapter must normalize a stopped active tool to this provider-neutral outcome.
 Colour is applied _in addition to_ the glyph, never instead of it.
 
 **Chip** is the tool name **as the provider sent it** — `read_file`, `Edit`, `Grep`, `eval` — when that name is a single token of at most 24 characters, else the family name.
@@ -276,7 +278,9 @@ Qualification is structural, not per-provider, and the scope is presentation ove
 A nonempty diff adds collapsed badges `+n` (`kind: 'diff'`, `tone: 'success'`) when `added > 0` and `−m` (`tone: 'danger'`) when `deleted > 0`, and body facts `N hunk`/`N hunks` followed by `replace_all: true|false` only when the input carries `replace_all` as an own boolean. An identical pair adds no badges and reports `no changes`. A refused or non-qualifying pair adds no badges or facts and preserves the path-plus-preview fallback. Diff badges never reach the body bar. On a failed row the diff still describes the attempted edit and the normalized failure output stays available to the body — successful provider prose remains behind Raw.
 
 Claude's `Edit` always qualifies because `FileEditInput` declares `old_string`/`new_string` required.
-Current Codex `file_change` events never reach this contract at all: `codex/provider.ts:709` emits them as `system` chunks and `dag-executor.ts` debug-logs them (`dag.system_message_unhandled`) instead of appending them to the node transcript, so no Codex file row is persisted. Making successful Codex file changes visible is separately tracked work, and a no-input row in tests is generic defensive coverage of this fallback — never a stand-in for Codex.
+Successful Codex `file_change` events must be normalized and persisted as typed node-message rows before they reach this contract.
+The persisted row must carry the changed path and the before/after content or equivalent bounded diff evidence that the file body requires.
+The presentation layer does not read the live Codex stream and does not treat a no-input synthetic row as evidence for Codex ingestion.
 
 ## Occurrence grouping
 
