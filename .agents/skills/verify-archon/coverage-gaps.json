@@ -32,6 +32,22 @@
       "reason": "No qualified journey for these semantics; broad run paths must not imply coverage."
     },
     {
+      "id": "ui.steering-and-queue",
+      "description": "Queued guidance, interrupt/redirect, never-sent recovery, and finished-iteration dock",
+      "impact_paths": [
+        "packages/web/src/components/workflows/ComposerDock.tsx",
+        "packages/web/src/experiments/console/components/ConsoleComposerDock.tsx",
+        "packages/web/src/lib/steering-dock.ts",
+        "packages/workflows/src/steering-registry.ts",
+        "e2e/ui/agent-queue-guidance.spec.ts",
+        "e2e/ui/agent-interrupt-redirect.spec.ts",
+        "e2e/ui/agent-never-sent.spec.ts",
+        "e2e/ui/agent-finished-iteration.spec.ts",
+        "e2e/ui/agent-queue-convergence.spec.ts"
+      ],
+      "reason": "Dedicated product e2e exists; no qualified verify-archon scenario. Rooms, tools, Ask, and transcript-display proof must not imply steering coverage."
+    },
+    {
       "id": "workflow.other-semantics",
       "description": "Workflow features outside deterministic execution and simple approval/retry",
       "impact_paths": [],
