@@ -21,6 +21,7 @@ mock.module('./connection', () => ({
 import {
   findOrCreateUserByPlatformIdentity,
   getUserById,
+  getUserDisplayNamesByIds,
   updateUserDisplayName,
   linkGithubIdentity,
   updateUserGithubProfile,
@@ -69,6 +70,67 @@ describe('users', () => {
       mockQuery.mockResolvedValueOnce(createQueryResult([]));
       const result = await getUserById('user-missing');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('getUserDisplayNamesByIds', () => {
+    test('returns [] without querying on empty input', async () => {
+      const result = await getUserDisplayNamesByIds([]);
+      expect(result).toEqual([]);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    test('queries one chunk with exact SQL and params', async () => {
+      const rows = [
+        { id: 'user-a', display_name: 'Alice' },
+        { id: 'user-b', display_name: null },
+      ];
+      mockQuery.mockResolvedValueOnce(createQueryResult(rows));
+
+      const result = await getUserDisplayNamesByIds(['user-a', 'user-b']);
+
+      expect(result).toEqual(rows);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT id, display_name FROM remote_agent_users WHERE id IN ($1, $2)',
+        ['user-a', 'user-b']
+      );
+    });
+
+    test('deduplicates ids to one placeholder', async () => {
+      mockQuery.mockResolvedValueOnce(createQueryResult([{ id: 'user-a', display_name: 'Alice' }]));
+
+      const result = await getUserDisplayNamesByIds(['user-a', 'user-a', 'user-a']);
+
+      expect(result).toEqual([{ id: 'user-a', display_name: 'Alice' }]);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      expect(mockQuery).toHaveBeenCalledWith(
+        'SELECT id, display_name FROM remote_agent_users WHERE id IN ($1)',
+        ['user-a']
+      );
+    });
+
+    test('splits 501 distinct ids into two bounded queries', async () => {
+      const ids = Array.from({ length: 501 }, (_, index) => `user-${String(index + 1)}`);
+      const firstChunk = ids.slice(0, 500).map(id => ({ id, display_name: id }));
+      const secondChunk = ids.slice(500).map(id => ({ id, display_name: id }));
+      mockQuery.mockResolvedValueOnce(createQueryResult(firstChunk));
+      mockQuery.mockResolvedValueOnce(createQueryResult(secondChunk));
+
+      const result = await getUserDisplayNamesByIds(ids);
+
+      expect(result).toEqual([...firstChunk, ...secondChunk]);
+      expect(mockQuery).toHaveBeenCalledTimes(2);
+      const [firstSql, firstParams] = mockQuery.mock.calls[0] as [string, string[]];
+      const [secondSql, secondParams] = mockQuery.mock.calls[1] as [string, string[]];
+      expect(firstParams).toHaveLength(500);
+      expect(secondParams).toEqual(['user-501']);
+      expect(firstSql).toBe(
+        `SELECT id, display_name FROM remote_agent_users WHERE id IN (${firstParams
+          .map((_, index) => `$${index + 1}`)
+          .join(', ')})`
+      );
+      expect(secondSql).toBe('SELECT id, display_name FROM remote_agent_users WHERE id IN ($1)');
     });
   });
 

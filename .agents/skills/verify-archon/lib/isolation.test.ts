@@ -2,8 +2,32 @@ import { expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { evidenceDirectory, git, loadCatalog, readJson, snapshot, TOOLING_REPO } from './io';
+import { evidenceDirectory, git, loadCatalog, readJson, resolveBase, snapshot, TOOLING_REPO } from './io';
 import { prove } from './runner';
+
+async function commitFile(repo: string, path: string, contents: string, message: string): Promise<string> {
+  await writeFile(join(repo, path), contents);
+  await git(repo, ['add', path]);
+  await git(repo, ['-c', 'user.name=Verifier Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-qm', message]);
+  return git(repo, ['rev-parse', 'HEAD']);
+}
+
+test('default base is the merge-base with local develop', async (): Promise<void> => {
+  const repo = await mkdtemp(join(tmpdir(), 'archon-verifier-develop-base-'));
+  try {
+    await git(repo, ['init', '-q']);
+    await git(repo, ['checkout', '-q', '-b', 'develop']);
+    await commitFile(repo, 'source.ts', 'export {};\n', 'test: develop root');
+    const integration = await commitFile(repo, 'source.ts', 'export const develop = true;\n', 'test: develop tip');
+    await git(repo, ['checkout', '-q', '-b', 'feature']);
+    await commitFile(repo, 'source.ts', 'export const feature = true;\n', 'test: feature tip');
+    expect(await resolveBase(repo)).toBe(integration);
+    const current = await snapshot(repo);
+    expect(current.base_sha).toBe(integration);
+    expect(current.head_sha).not.toBe(integration);
+    expect(current.changed_paths).toEqual(['source.ts']);
+  } finally { await rm(repo, { recursive: true, force: true }); }
+}, 15_000);
 
 test('retained proof artifacts preserve clean source and failed preflights get fresh receipts', async (): Promise<void> => {
   const repo = await mkdtemp(join(tmpdir(), 'archon-verifier-isolation-'));

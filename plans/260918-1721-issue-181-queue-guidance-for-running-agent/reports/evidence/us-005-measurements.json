@@ -15,7 +15,7 @@
     "receiptText": 7.9,
     "sentBadge": 7.9,
     "hint": 7.9,
-    "queueLabel": 18.79,
+    "queueLabel": 7.9,
     "focusRing": {
       "color": "oklch(0.64 0.295 330)",
       "ratio": 5.14
@@ -23,14 +23,14 @@
     "band": {
       "maxHeight": "237.6px",
       "overflowY": "auto",
-      "clientHeight": 57,
-      "scrollHeight": 57,
+      "clientHeight": 62,
+      "scrollHeight": 62,
       "viewportHeight": 720
     }
   },
   "console-viewports": {
     "narrow460": 460,
-    "wide1440": 696
+    "wide1440": 1160
   },
   "blocked-legacy": {
     "reasonText": "answer the agent's question first",
@@ -48,7 +48,7 @@
     "receiptText": 5.33,
     "sentBadge": 5.33,
     "hint": 5.33,
-    "queueLabel": 16.45,
+    "queueLabel": 5.33,
     "focusRing": {
       "color": "oklch(0.72 0.18 250)",
       "ratio": 7.99
@@ -56,8 +56,8 @@
     "band": {
       "maxHeight": "237.6px",
       "overflowY": "auto",
-      "clientHeight": 57,
-      "scrollHeight": 57,
+      "clientHeight": 62,
+      "scrollHeight": 62,
       "viewportHeight": 720
     }
   },

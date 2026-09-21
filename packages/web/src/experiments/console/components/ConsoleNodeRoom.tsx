@@ -13,14 +13,20 @@ import {
   type UIEvent,
 } from 'react';
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
-import { buildExecutionHeader, type ExecutionHeaderModel } from '@/lib/execution-room-model';
+import {
+  buildExecutionHeader,
+  type ExecutionHeaderModel,
+  type FinishedIterationView,
+} from '@/lib/execution-room-model';
 import {
   beginNodeMessageRefresh,
   createNodeMessageState,
   drainNodeMessages,
   nodeMessageScopeKey,
+  type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -100,6 +106,16 @@ export interface ConsoleNodeRoomProps {
   headerModel?: ExecutionHeaderModel | null;
   headerOptions?: readonly ConsoleExecutionHeaderOption[];
   onSelectRow?: (rowId: string) => void;
+  /** Proven finished-iteration descriptor from the parent pane. */
+  finishedIteration?: FinishedIterationView | null;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** True when latest terminal execution failed for idle-await expiry. Default false. */
+  idleAwaitExpired?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   showToolCalls?: boolean;
   showSystem?: boolean;
   closeLabel?: 'Close' | 'Back';
@@ -478,6 +494,11 @@ export function ConsoleNodeRoom({
   headerModel,
   headerOptions,
   onSelectRow,
+  finishedIteration = null,
+  nodeTerminal = false,
+  idleAwaitExpired = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds: _externalWrittenIds = null,
   showToolCalls = true,
   showSystem = true,
   closeLabel = 'Close',
@@ -500,11 +521,14 @@ export function ConsoleNodeRoom({
   const [pageState, setPageState] = useState<NodeMessageState>(() =>
     createNodeMessageState(resolvedScopeKey)
   );
+  /** Node-wide written operator ids from the terminal reconcile drain. null until complete. */
+  const [reconcileWrittenIds, setReconcileWrittenIds] = useState<ReadonlySet<string> | null>(null);
   const [follow, setFollow] = useState(() =>
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [navTarget, setNavTarget] = useState<string | null>(null);
+  const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
   const pageStateRef = useRef(pageState);
@@ -513,6 +537,8 @@ export function ConsoleNodeRoom({
   const navigatedHeadingRef = useRef<HTMLElement | null>(null);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
+  /** Intended live row id set on Go; cleared before focusing after commit. */
+  const pendingGoTargetRef = useRef<{ fromRowId: string; toRowId: string } | null>(null);
   pageStateRef.current = pageState;
   loadMessagesRef.current = loadMessages;
 
@@ -520,6 +546,42 @@ export function ConsoleNodeRoom({
   const rowId = row?.id ?? null;
   const rowStatus = row?.status ?? 'completed';
 
+  // After Go commits a new selection, clear the pending target then hand focus
+  // to the live composer/blocked field, the new finished Go button, or the
+  // transcript scroller when the dock disappears. Unrelated remounts never
+  // set pendingGoTargetRef, so they never steal focus.
+  useEffect(() => {
+    const pending = pendingGoTargetRef.current;
+    if (pending === null) return;
+    // Still on the pre-Go row — wait for the parent selection to commit.
+    if (rowId === pending.fromRowId) return;
+
+    // Selection changed: consume before focusing so a later refetch cannot re-fire.
+    pendingGoTargetRef.current = null;
+
+    if (rowId === null) {
+      scrollRef.current?.focus();
+      return;
+    }
+    if (finishedIteration !== null) {
+      // Target is finished (loop advanced, or raced past the intended live row).
+      setAutoFocusTarget('go');
+      return;
+    }
+    if (rowStatus === 'running' || rowStatus === 'awaiting') {
+      setAutoFocusTarget('field');
+      return;
+    }
+    // Dock gone (terminal) — focus the transcript scroller.
+    scrollRef.current?.focus();
+  }, [rowId, rowStatus, finishedIteration]);
+
+  const handleSelectLiveRow = (liveRowId: string): void => {
+    if (rowId !== null) {
+      pendingGoTargetRef.current = { fromRowId: rowId, toRowId: liveRowId };
+    }
+    onSelectRow?.(liveRowId);
+  };
   useEffect(() => {
     if (prevScopeRef.current !== resolvedScopeKey) {
       prevScopeRef.current = resolvedScopeKey;
@@ -588,6 +650,54 @@ export function ConsoleNodeRoom({
     rowId,
     run.id,
   ]);
+
+  // Separate node-wide reconcile drain — never feeds pageState/transcript.
+  useEffect(() => {
+    if (!nodeTerminal || nodeKey === null || !agentActive) {
+      setReconcileWrittenIds(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const runId = run.id;
+    const executionRowId = nodeExecutionKey ?? `run:${runId}|node:${nodeKey}`;
+    const selection: NodeMessageSelection = { kind: 'node', rowId: executionRowId };
+
+    const runReconcileDrain = async (): Promise<void> => {
+      if (cancelled || controller.signal.aborted) return;
+      const next = await drainNodeMessages({
+        runId,
+        nodeId: nodeKey,
+        selection,
+        loader: loadMessagesRef.current,
+        signal: controller.signal,
+        state: createNodeMessageState(nodeMessageScopeKey(runId, nodeKey, selection)),
+        onState: (): void => {
+          // Intentionally ignore intermediate pages — never touch transcript state.
+        },
+      });
+      if (cancelled || controller.signal.aborted) return;
+      if (next.complete && next.error === null) {
+        setReconcileWrittenIds(collectWrittenOperatorMessageIds(next.rows));
+        return;
+      }
+      timer = setTimeout(() => {
+        void runReconcileDrain();
+      }, 1000);
+    };
+
+    setReconcileWrittenIds(null);
+    void runReconcileDrain();
+
+    return (): void => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
+      setReconcileWrittenIds(null);
+    };
+  }, [agentActive, nodeExecutionKey, nodeKey, nodeTerminal, run.id]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -825,6 +935,15 @@ export function ConsoleNodeRoom({
     pageState.error === null &&
     (pageState.loading || !pageState.complete);
 
+  // The steering dock's focus fallback: the last rendered transcript row,
+  // or the transcript scroller itself when no row exists yet — never body.
+  const focusLastRow = (): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+    (lastRow ?? el).focus({ preventScroll: true });
+  };
+
   let body: ReactNode;
   if (nodeId === null || resolution === null || row === null) {
     body = <RoomPlaceholder>Select a node</RoomPlaceholder>;
@@ -1021,13 +1140,25 @@ export function ConsoleNodeRoom({
           {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock
-              key={`steering:${resolvedScopeKey}`}
+              key={`steering:run:${run.id}|node:${row.nodeId}`}
               runId={run.id}
               nodeId={row.nodeId}
               nodeLabel={agentDisplayName || row.nodeId}
               rowStatus={rowStatus}
               live={isLive}
               hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
+              subState={selectedNodeState?.steeringSubState}
+              finishedIteration={finishedIteration}
+              onSelectLiveRow={onSelectRow === undefined ? undefined : handleSelectLiveRow}
+              autoFocusTarget={autoFocusTarget}
+              onAutoFocusApplied={(): void => {
+                setAutoFocusTarget(null);
+              }}
+              focusLastRow={focusLastRow}
+              nodeTerminal={nodeTerminal}
+              idleAwaitExpired={idleAwaitExpired}
+              nodeExecutionKey={nodeExecutionKey}
+              writtenOperatorMessageIds={reconcileWrittenIds}
             />
           ) : null}
         </RoomRegion>

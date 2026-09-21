@@ -904,6 +904,26 @@ async function wheelOver(locator: Locator, page: Page, deltaY: number): Promise<
   await page.mouse.wheel(0, deltaY);
 }
 
+/**
+ * Home/End must target the transcript scroller. After wheel/mouse moves,
+ * `page.keyboard.press` can hit a stale page focus and leave the scroller
+ * unmoved (CI saw 500–1000px remaining after a 10s poll).
+ */
+async function pressScrollerEdge(scroller: Locator, key: 'Home' | 'End'): Promise<void> {
+  const remaining =
+    key === 'Home'
+      ? async (): Promise<number> => scroller.evaluate(el => el.scrollTop)
+      : async (): Promise<number> =>
+          scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight);
+  await scroller.press(key);
+  try {
+    await expect.poll(remaining, { timeout: 3_000 }).toBeLessThanOrEqual(2);
+  } catch {
+    await scroller.press(key);
+    await expect.poll(remaining).toBeLessThanOrEqual(2);
+  }
+}
+
 test('[P1] [V:transcript-display.legacy-scroll-desktop] Legacy long-history room keeps the document fixed', async ({
   page,
   archon,
@@ -950,11 +970,7 @@ test('[P1] [V:transcript-display.legacy-scroll-desktop] Legacy long-history room
   }
 
   // Keyboard scrolling still works on the transcript scroller.
-  await scroller.evaluate(el => (el as HTMLElement).focus());
-  await page.keyboard.press('End');
-  await expect
-    .poll(async () => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight))
-    .toBeLessThanOrEqual(2);
+  await pressScrollerEdge(scroller, 'End');
   await expectDocumentContained(page, 'keyboard transcript scroll');
 
   // Applicable controls survive: header close and the resize handle.
@@ -995,13 +1011,8 @@ test('[P1] [V:transcript-display.legacy-scroll-narrow] Legacy narrow room keeps 
     await expectDocumentContained(page, 'narrow transcript tail wheel');
 
     // Keyboard scrolling still works on the transcript scroller at narrow width.
-    await scroller.evaluate(el => (el as HTMLElement).focus());
-    await page.keyboard.press('Home');
-    await expect.poll(async () => scroller.evaluate(el => el.scrollTop)).toBeLessThanOrEqual(2);
-    await page.keyboard.press('End');
-    await expect
-      .poll(async () => scroller.evaluate(el => el.scrollHeight - el.scrollTop - el.clientHeight))
-      .toBeLessThanOrEqual(2);
+    await pressScrollerEdge(scroller, 'Home');
+    await pressScrollerEdge(scroller, 'End');
     await expectDocumentContained(page, 'narrow keyboard transcript scroll');
 
     await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeVisible();

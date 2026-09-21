@@ -490,9 +490,9 @@ describe('bundled-defaults', () => {
 
       const loop = workflow.nodes.find(node => node.id === 'ralph-loop-run');
       expect(loop?.depends_on).toEqual(['ralph-native-preflight']);
-      expect(loop?.provider).toBe('devin');
-      expect(loop?.model).toBe('swe-2-max');
-      expect(loop?.effort).toBeUndefined();
+      expect(loop?.provider).toBe('omp');
+      expect(loop?.model).toBe('xai-oauth/grok-4.5');
+      expect(loop?.effort).toBe('high');
       expect(loop?.output_format?.properties?.terminal?.type).toBe('boolean');
       expect(loop?.output_format?.required).toContain('terminal');
       expect(loop?.loop?.command).toBe('archon-ralph-project-aware-iteration');
@@ -594,8 +594,8 @@ describe('bundled-defaults', () => {
 
       const loop = workflow.nodes.find(node => node.id === 'ralph-loop-run');
       expect(loop?.depends_on).toEqual(['ralph-native-preflight']);
-      expect(loop?.provider).toBe('devin');
-      expect(loop?.model).toBe('swe-2-max');
+      expect(loop?.provider).toBe('omp');
+      expect(loop?.model).toBe('xai-oauth/grok-4.5');
       expect(loop?.loop?.command).toBe('archon-ralph-project-aware-iteration');
       expect(loop?.loop?.until_field).toBe('terminal');
 

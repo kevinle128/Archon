@@ -104,7 +104,12 @@ import { formatToolCall } from './utils/tool-formatter';
 import { createLogger, captureWorkflowCompleted } from '@archon/paths';
 import type { WorkflowErrorClass, WorkflowNodeType } from '@archon/paths';
 import { getWorkflowEventEmitter, type LoopProgress } from './event-emitter';
-import { getSteeringRegistry, type NodeSteeringHandle } from './steering-registry';
+import {
+  getSteeringRegistry,
+  type NodeSteeringHandle,
+  type QueuedOperatorMessage,
+  type SteeringIdleWake,
+} from './steering-registry';
 import { evaluateCondition } from './condition-evaluator';
 import {
   declaredFieldsFromSchema,
@@ -153,7 +158,11 @@ import {
   safeSendMessage,
   type SendMessageContext,
 } from './executor-shared';
-import { appendNodeTranscript, appendToolResultTranscript } from './node-transcript';
+import {
+  appendNodeTranscript,
+  appendOperatorTranscript,
+  appendToolResultTranscript,
+} from './node-transcript';
 import { createAskHumanTool } from './ask-human';
 import {
   executionScopeEventFields,
@@ -400,6 +409,175 @@ function findRunningTool(
   return Array.from(runningTools.entries())
     .reverse()
     .find(([, tool]) => tool.toolName === toolName);
+}
+
+/**
+ * Settle every still-open tool lifecycle exactly once. Called on a terminal
+ * result ('unknown' — the historical close-out) and on an interrupted turn
+ * end ('interrupted', #183). Entries the provider already emitted a
+ * tool_result for are gone from the map, so each lifecycle settles once.
+ */
+function settleRunningToolsOutcome(
+  deps: WorkflowDeps,
+  runningTools: Map<string, RunningTool>,
+  outcome: 'unknown' | 'interrupted',
+  workflowRunId: string,
+  stepName: string,
+  nodeId: string,
+  onStoreError: (err: Error) => void
+): void {
+  for (const [toolCallId, prevTool] of runningTools) {
+    getWorkflowEventEmitter().emit({
+      type: 'tool_completed',
+      runId: workflowRunId,
+      toolName: prevTool.toolName,
+      stepName: nodeId,
+      durationMs: Date.now() - prevTool.startedAt,
+      toolCallId,
+      toolOutcome: outcome,
+    });
+    deps.store
+      .createWorkflowEvent({
+        workflow_run_id: workflowRunId,
+        event_type: 'tool_completed',
+        step_name: stepName,
+        data: {
+          tool_name: prevTool.toolName,
+          duration_ms: Date.now() - prevTool.startedAt,
+          tool_call_id: toolCallId,
+          tool_outcome: outcome,
+        },
+      })
+      .catch(onStoreError);
+    runningTools.delete(toolCallId);
+  }
+}
+
+/**
+ * The ONLY provider terminal reasons that classify a result as an operator
+ * interrupt (#183): the Claude SDK's two abort markers. No prefix or prose
+ * matching — a result without an abort marker is a natural end even when a
+ * Stop raced it (five-case classification, case 1).
+ */
+const INTERRUPT_TERMINAL_REASONS: ReadonlySet<string> = new Set([
+  'aborted_streaming',
+  'aborted_tools',
+]);
+
+function isInterruptTerminalReason(reason: string | undefined): boolean {
+  return reason !== undefined && INTERRUPT_TERMINAL_REASONS.has(reason);
+}
+
+/**
+ * Provider-neutral interrupt marker on a terminal result chunk (#187 / #183).
+ *
+ * Exact provider-normalized result fields are transport contracts, not prose
+ * inference: Claude's terminalReason allowlist OR the complete DeepSeek abort
+ * triple (`stopReason:'aborted'` + `isError:true` + `errorSubtype:'deepseek_aborted'`).
+ * No provider-id branching, no prefix matching, no error-message parsing, and
+ * no synthetic `terminalReason:'cancelled'`. Callers still gate on the live
+ * turn token + `wasOperatorInterrupted(token)`.
+ */
+function isInterruptMarkedResult(result: {
+  terminalReason?: string;
+  stopReason?: string;
+  isError?: boolean;
+  errorSubtype?: string;
+}): boolean {
+  if (isInterruptTerminalReason(result.terminalReason)) return true;
+  return (
+    result.stopReason === 'aborted' &&
+    result.isError === true &&
+    result.errorSubtype === 'deepseek_aborted'
+  );
+}
+
+/**
+ * Abort-like throw recognition (#183 five-case classification, case 3). A
+ * throw only classifies as interrupted when the turn ALSO carries the
+ * operator-interrupt flag with this token's interrupt signal aborted — this
+ * helper decides only whether the error SHAPE is a provider abort, never
+ * whether the operator asked for one. The third entry is the Claude SDK's
+ * trailing throw after an abort-marked result (US-001 spike).
+ */
+function isAbortLikeStreamError(err: Error): boolean {
+  if (err.name === 'AbortError') return true;
+  const message = err.message;
+  const knownClaudeInterruptTeardown =
+    message.startsWith('Claude Code returned an error result:') &&
+    message.includes('[ede_diagnostic]') &&
+    message.includes('result_type=user');
+  return (
+    message === 'Query interrupted' || message === 'Query aborted' || knownClaudeInterruptTeardown
+  );
+}
+
+/** Owner-ratified idle-await expiry error (#192 / Story 2.12). Fixed product copy. */
+export const IDLE_AWAIT_EXPIRED_ERROR = 'interrupted by operator, no redirect received';
+
+/**
+ * Idle-await first-wins race (#183 / #192): the executor parks on the handle's
+ * idle waiter while a side-channel polls run status on the streaming cadence.
+ * First of send_now / expiry / discard / a non-streamable run status wins; the
+ * loser is torn down synchronously — no trailing timer or unresolved waiter
+ * survives.
+ */
+async function raceIdleWake(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  waiter: Promise<SteeringIdleWake>
+): Promise<SteeringIdleWake> {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const poll = new Promise<SteeringIdleWake>(resolve => {
+    const tick = (): void => {
+      if (stopped) return;
+      deps.store
+        .getWorkflowRunStatus(workflowRunId)
+        .then(status => {
+          if (stopped) return;
+          if (!shouldContinueStreamingForStatus(status)) {
+            resolve({ kind: 'terminated' });
+            return;
+          }
+          timer = setTimeout(tick, CANCEL_CHECK_INTERVAL_MS);
+        })
+        .catch(() => {
+          if (!stopped) {
+            timer = setTimeout(tick, CANCEL_CHECK_INTERVAL_MS);
+          }
+        });
+    };
+    // First check is immediate — a run that reached a terminal state before
+    // (or exactly at) idle entry must not wait a full cancel interval.
+    tick();
+  });
+  // Poll never rejects by construction — observed anyway for safety.
+  void poll.catch(() => undefined);
+  const wake = await Promise.race([waiter, poll]);
+  stopped = true;
+  if (timer !== undefined) clearTimeout(timer);
+  return wake;
+}
+
+/**
+ * Per-pass interrupt classification state (#183). `token` is the registry's
+ * monotonic turn token for THIS provider pass only; `controller` is the
+ * fresh per-pass interrupt controller handed to the provider as
+ * `interruptSignal`; `interrupted` is the five-case classification output —
+ * true when the pass ended BECAUSE the operator interrupted it.
+ */
+interface PassTurn {
+  token: number | undefined;
+  controller: AbortController | undefined;
+  interrupted: boolean;
+}
+
+/** Pending operator-row receipt for a guidance turn's first stream pass. */
+interface PendingOperatorReceipt {
+  readonly scope: TranscriptExecutionScope;
+  readonly messages: readonly QueuedOperatorMessage[];
+  recorded: boolean;
 }
 
 /**
@@ -2267,7 +2445,9 @@ async function executeNodeInternal(
   const runStreamPass = async (
     attemptPrompt: string,
     attemptResumeId: string | undefined,
-    passReaskAttempt: number
+    passReaskAttempt: number,
+    passTurn: PassTurn | undefined,
+    operatorReceipt?: PendingOperatorReceipt
   ): Promise<void> => {
     nodeOutputText = '';
     structuredOutput = undefined;
@@ -2286,7 +2466,27 @@ async function executeNodeInternal(
       delete passOptions.resumeInteractions;
       executionScope = newTranscriptAttempt(executionScope);
     }
+    // Fresh interrupt controller per provider pass (#183) — never reused across
+    // re-asks or guidance turns. beginTurn registers immediately before
+    // sendQuery so interrupt() can only ever abort a live query of this token.
+    if (interruptibleHandle !== undefined && passTurn !== undefined) {
+      const controller = new AbortController();
+      passTurn.controller = controller;
+      passTurn.token = interruptibleHandle.beginTurn(controller);
+      passOptions.interruptSignal = controller.signal;
+    }
     try {
+      let sawStreamChunk = false;
+      const recordOperatorReceiptIfNeeded = async (): Promise<void> => {
+        if (operatorReceipt === undefined || operatorReceipt.recorded) return;
+        await appendOperatorTranscript(deps.store, {
+          workflow_run_id: workflowRun.id,
+          node_id: stepName,
+          scope: operatorReceipt.scope,
+          messages: operatorReceipt.messages,
+        });
+        operatorReceipt.recorded = true;
+      };
       for await (const msg of withIdleTimeout(
         aiClient.sendQuery(attemptPrompt, cwd, attemptResumeId, passOptions),
         effectiveIdleTimeout,
@@ -2299,6 +2499,12 @@ async function executeNodeInternal(
           nodeAbortController.abort();
         }
       )) {
+        if (!sawStreamChunk) {
+          sawStreamChunk = true;
+          // Delivery seam: first successful stream yield records operator rows
+          // before any caused-turn chunk enters the transcript (#188).
+          await recordOperatorReceiptIfNeeded();
+        }
         const tickNow = Date.now();
         const nodeKey = `${workflowRun.id}:${node.id}`;
 
@@ -2532,37 +2738,34 @@ async function executeNodeInternal(
             await platform.sendStructuredEvent(conversationId, msg);
           }
         } else if (msg.type === 'result') {
-          // A terminal result closes every outstanding lifecycle.
-          for (const [toolCallId, prevTool] of runningTools) {
-            getWorkflowEventEmitter().emit({
-              type: 'tool_completed',
-              runId: workflowRun.id,
-              toolName: prevTool.toolName,
-              stepName: node.id,
-              durationMs: Date.now() - prevTool.startedAt,
-              toolCallId,
-              toolOutcome: 'unknown',
-            });
-            deps.store
-              .createWorkflowEvent({
-                workflow_run_id: workflowRun.id,
-                event_type: 'tool_completed',
-                step_name: stepName,
-                data: {
-                  tool_name: prevTool.toolName,
-                  duration_ms: Date.now() - prevTool.startedAt,
-                  tool_call_id: toolCallId,
-                  tool_outcome: 'unknown',
-                },
-              })
-              .catch((err: Error) => {
-                getLog().error(
-                  { err, workflowRunId: workflowRun.id, eventType: 'tool_completed' },
-                  'workflow_event_persist_failed'
-                );
-              });
-            runningTools.delete(toolCallId);
-          }
+          // Five-case classification (#183): a result carrying one of the
+          // provider's abort markers on a turn whose operator-interrupt flag
+          // is set is an INTERRUPTED end, not an error. A natural result keeps
+          // flowing even when Stop raced it — the flag is only a gate on
+          // abort-marked ends, never a reclassification of clean ones.
+          const interruptMarked =
+            passTurn?.token !== undefined &&
+            interruptibleHandle !== undefined &&
+            interruptibleHandle.wasOperatorInterrupted(passTurn.token) &&
+            isInterruptMarkedResult(msg);
+          // A terminal result closes every outstanding lifecycle — 'interrupted'
+          // for the abort-marked end (a still-open tool was cut off mid-call),
+          // 'unknown' otherwise. Entries the provider already resolved are out
+          // of the map, so no duplicate tool_result rows are written.
+          settleRunningToolsOutcome(
+            deps,
+            runningTools,
+            interruptMarked ? 'interrupted' : 'unknown',
+            workflowRun.id,
+            stepName,
+            node.id,
+            (err: Error) => {
+              getLog().error(
+                { err, workflowRunId: workflowRun.id, eventType: 'tool_completed' },
+                'workflow_event_persist_failed'
+              );
+            }
+          );
           if (msg.sessionId) newSessionId = msg.sessionId;
           if (msg.resumed !== undefined) nodeResumed = msg.resumed;
           if (msg.tokens !== undefined) {
@@ -2622,6 +2825,16 @@ async function executeNodeInternal(
           } else {
             passTerminalError = false;
             passErrorSubtype = null;
+          }
+          if (interruptMarked) {
+            // Interrupted end (#183): all captures above already folded
+            // session/usage/cost/model; now skip the error-result guard, the
+            // background-task wait, and any further stream consumption — the
+            // executor classifies and idles the turn.
+            if (passTurn !== undefined) {
+              passTurn.interrupted = true;
+            }
+            break;
           }
           // Fail the node if the SDK reports a cost cap exceeded error
           if (msg.isError && msg.errorSubtype === 'error_max_budget_usd') {
@@ -2909,13 +3122,19 @@ async function executeNodeInternal(
         }
         // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
       }
+      // Normal empty completion: stream opened and closed without yielding.
+      if (!sawStreamChunk) {
+        await recordOperatorReceiptIfNeeded();
+      }
 
       // Stream ended with background tasks still live: the SDK subprocess died or
       // the idle timeout fired mid-wait. The tasks' artifacts may be missing —
       // record the incompleteness (surfaced on the node_completed event) and warn
       // loudly instead of silently completing (#2083). Cancellation is exempt:
       // the node returns 'failed — Cancelled by user' and the warning would be noise.
-      if (!backgroundTasks.shouldBreakOnResult()) {
+      // An interrupted turn is exempt too (#183): the operator deliberately
+      // stopped it, so neither the follow-up wait nor the generic warning runs.
+      if (!backgroundTasks.shouldBreakOnResult() && !(passTurn?.interrupted ?? false)) {
         backgroundTasksIncomplete = backgroundTasks.ids();
         const cancelled = nodeAbortController.signal.aborted && !nodeIdleTimedOut;
         getLog().warn(
@@ -2936,7 +3155,45 @@ async function executeNodeInternal(
           );
         }
       }
+    } catch (passStreamError) {
+      const err = passStreamError as Error;
+      // Five-case classification, case 3 (#183): an abort-like throw on a turn
+      // the operator interrupted — flag set AND this token's interrupt signal
+      // aborted — is an interrupted end, not a node failure. Settle any still-
+      // open tool lifecycles 'interrupted' and swallow; every other throw is a
+      // genuine failure and propagates to the outer catch unchanged.
+      if (
+        passTurn?.token !== undefined &&
+        interruptibleHandle !== undefined &&
+        interruptibleHandle.wasOperatorInterrupted(passTurn.token) &&
+        (passTurn.controller?.signal.aborted ?? false) &&
+        isAbortLikeStreamError(err)
+      ) {
+        passTurn.interrupted = true;
+        settleRunningToolsOutcome(
+          deps,
+          runningTools,
+          'interrupted',
+          workflowRun.id,
+          stepName,
+          node.id,
+          (storeErr: Error) => {
+            getLog().error(
+              { err: storeErr, workflowRunId: workflowRun.id, eventType: 'tool_completed' },
+              'workflow_event_persist_failed'
+            );
+          }
+        );
+      } else {
+        throw err;
+      }
     } finally {
+      // The stream pump is done with this token's controller either way —
+      // clear it so a late interrupt() waits on classification instead of
+      // aborting a dead query (#183). Classification still owns settlement.
+      if (passTurn?.token !== undefined) {
+        interruptibleHandle?.endTurnStream(passTurn.token);
+      }
       // Never mask the original node result/exception. The recorder itself must
       // not throw; the try/catch is belt-and-suspenders for a misbehaving deps mock.
       if (passUsageBreakdown !== undefined) {
@@ -2998,13 +3255,65 @@ async function executeNodeInternal(
   // and capability resolution, and only when the provider can resume a provider
   // session — a turn that cannot be resumed cannot accept follow-up guidance,
   // so unsupported providers never expose a route target.
+  const providerInterruptible = getProviderCapabilities(provider).interrupt !== false;
   const steeringHandle: NodeSteeringHandle | undefined = aiClient.getCapabilities().sessionResume
-    ? getSteeringRegistry().register(workflowRun.id, stepName)
+    ? getSteeringRegistry().register(workflowRun.id, stepName, {
+        interruptible: providerInterruptible,
+      })
     : undefined;
+  // The interrupt-capable face of the handle (#183): only when the resolved
+  // provider capability supports per-turn interrupt. Queue-only providers
+  // keep #181 behaviour verbatim — no token, no interruptSignal.
+  const interruptibleHandle = providerInterruptible ? steeringHandle : undefined;
   // Set only while the handle is parked for a live AskHuman pause — the one
   // outcome that intentionally leaves a resumable route target behind for the
   // resumed execution to inherit.
   let steeringPauseCommitted = false;
+
+  // Single cancel finalizer — shared by the mid-stream abort check and the
+  // idle-await terminated wake (#183), so every entry lands on the identical
+  // 'Cancelled by user' path. Cancel is not a natural boundary (#181): the
+  // handle seals before the first awaited terminal write and queued guidance
+  // is never drained here.
+  const finishCancelled = async (): Promise<NodeExecutionResult> => {
+    steeringHandle?.close();
+    const duration = Date.now() - nodeStartTime;
+    getLog().info({ nodeId: node.id, durationMs: duration }, 'dag_node_cancelled_during_streaming');
+
+    deps.store
+      .createWorkflowEvent({
+        workflow_run_id: workflowRun.id,
+        event_type: 'node_failed',
+        step_name: stepName,
+        data: withLifecycleScopeData(workflowRun, undefined, executionScope, {
+          error: 'Cancelled by user',
+          duration_ms: duration,
+          ...iterationData,
+        }),
+      })
+      .catch((err: Error) => {
+        getLog().error(
+          { err, workflowRunId: workflowRun.id, eventType: 'node_failed' },
+          'workflow_event_persist_failed'
+        );
+      });
+
+    emitter.emit({
+      type: 'node_failed',
+      runId: workflowRun.id,
+      nodeId: node.id,
+      nodeName: node.command ?? node.id,
+      error: 'Cancelled by user',
+    });
+
+    await recordFailedStatus('Cancelled by user');
+
+    // Clean up throttle entries
+    lastNodeCancelCheck.delete(`${workflowRun.id}:${node.id}`);
+    lastNodeActivityUpdate.delete(`${workflowRun.id}:${node.id}`);
+
+    return { state: 'failed', output: nodeOutputText, error: 'Cancelled by user' };
+  };
 
   try {
     // Outer provider-turn loop (#181). Turn 1 runs the node's own prompt and
@@ -3015,6 +3324,7 @@ async function executeNodeInternal(
     let turnPrompt = finalPrompt;
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
+    let turnGuidanceMessages: readonly QueuedOperatorMessage[] = [];
     // Token capture folds across every provider turn; re-ask passes inside a
     // turn keep their existing last-pass-wins semantics.
     let accumulatedTokens: TokenUsage | undefined;
@@ -3027,6 +3337,8 @@ async function executeNodeInternal(
         delete nodeOptionsWithAbort.resumeInteractions;
         nodeOptionsWithAbort.forkSession = false;
         executionScope = newTranscriptAttempt(executionScope);
+        // Prompt bytes stay the drained join; retain messages for the stream seam.
+        turnPrompt = turnGuidanceMessages.map(item => item.message).join('\n\n');
       }
       // A turn must positively emit its own session id — an id from an older
       // turn is never reused for the guidance resume. The `as` resets keep
@@ -3042,6 +3354,15 @@ async function executeNodeInternal(
       // exhaustion (or a non-best-effort failure) throws → failed node.
       let reaskAttempt = 0;
       let reaskPrompt = turnPrompt;
+      // Operator receipt only on guidance pass zero — re-asks must not duplicate.
+      const pendingOperatorReceipt: PendingOperatorReceipt | undefined = turnIsGuidance
+        ? { scope: executionScope, messages: turnGuidanceMessages, recorded: false }
+        : undefined;
+      // Per-turn interrupt classification (#183): `turnInterrupted` carries the
+      // five-case verdict out of the re-ask loop; `lastPassToken` is the final
+      // pass's registry token — settled exactly once at the boundary below.
+      let turnInterrupted = false;
+      let lastPassToken: number | undefined;
       // Set up the next reask attempt (increment, augment the prompt, notify).
       const scheduleReask = async (errors: string[]): Promise<void> => {
         reaskAttempt++;
@@ -3051,11 +3372,19 @@ async function executeNodeInternal(
       while (true) {
         // Fresh session per reask attempt (resume only the original session on the
         // first pass) so a prior invalid turn isn't carried forward.
+        const passTurn: PassTurn = {
+          token: undefined,
+          controller: undefined,
+          interrupted: false,
+        };
         await runStreamPass(
           reaskPrompt,
           reaskAttempt === 0 ? turnResumeId : undefined,
-          reaskAttempt
+          reaskAttempt,
+          passTurn,
+          reaskAttempt === 0 ? pendingOperatorReceipt : undefined
         );
+        lastPassToken = passTurn.token;
         if (nodeCostUsd !== undefined) {
           accumulatedCostUsd = (accumulatedCostUsd ?? 0) + nodeCostUsd;
         }
@@ -3064,6 +3393,14 @@ async function executeNodeInternal(
         // attempts, not just the last pass. runStreamPass clears it next iteration.
         nodeCostUsd = accumulatedCostUsd;
 
+        // Interrupted end (#183): skip structured-output validation and re-ask
+        // entirely — the operator stopped this turn deliberately; the executor
+        // idles it below.
+        if (passTurn.interrupted) {
+          turnInterrupted = true;
+          break;
+        }
+
         // When output_format is set and the provider returned structured_output, use
         // it instead of the concatenated assistant text. Each provider normalizes its
         // own structured output onto the result chunk — no provider branching here.
@@ -3071,8 +3408,17 @@ async function executeNodeInternal(
 
         // Don't reask after an idle-timeout/abort — those are genuine failures, not
         // validation misses; they fall through to a cause-specific throw below.
+        // The operator-interrupt flag joins too (#183): a Stop that raced a
+        // natural unmarked result keeps validation honest but must never start
+        // another provider pass claiming this turn's slot.
         const canReask =
-          reaskAttempt < maxReasks && !nodeIdleTimedOut && !nodeAbortController.signal.aborted;
+          reaskAttempt < maxReasks &&
+          !nodeIdleTimedOut &&
+          !nodeAbortController.signal.aborted &&
+          !(
+            passTurn.token !== undefined &&
+            interruptibleHandle?.wasOperatorInterrupted(passTurn.token) === true
+          );
 
         if (structuredOutput !== undefined) {
           // Validate against the declared schema for EVERY provider — SDK-enforced
@@ -3119,6 +3465,11 @@ async function executeNodeInternal(
             'dag.structured_output_invalid'
           );
           if (canReask) {
+            // Settle this pass before its re-ask successor begins (#183) —
+            // 'generating' resolves any Stop that raced the natural end.
+            if (passTurn.token !== undefined) {
+              interruptibleHandle?.settleTurn(passTurn.token, 'generating');
+            }
             await scheduleReask(validation.errors);
             continue;
           }
@@ -3133,6 +3484,9 @@ async function executeNodeInternal(
           'dag.structured_output_missing'
         );
         if (canReask) {
+          if (passTurn.token !== undefined) {
+            interruptibleHandle?.settleTurn(passTurn.token, 'generating');
+          }
           await scheduleReask(['no JSON object was found in the response']);
           continue;
         }
@@ -3187,48 +3541,60 @@ async function executeNodeInternal(
 
       // If cancelled during streaming (not idle timeout), return as failed with cancel reason
       if (nodeAbortController.signal.aborted && !nodeIdleTimedOut) {
-        // Cancel is not a natural boundary (#181) — seal the handle before the
-        // first awaited terminal write; queued guidance is never drained here.
-        steeringHandle?.close();
-        const duration = Date.now() - nodeStartTime;
+        return await finishCancelled();
+      }
+
+      // Interrupted turn end (#183): the provider produced an abort-marked end
+      // on the operator's interrupt signal. The turn idles on the SAME session
+      // id — queued prose waits for an explicit send_now; discard or a
+      // terminal run-status wake lands on the existing Cancel path. Position:
+      // after the cancel check so node Cancel still wins a co-fire.
+      if (turnInterrupted && interruptibleHandle !== undefined && lastPassToken !== undefined) {
+        // The redirect resumes the session that was interrupted: this turn's
+        // own emitted id when a result carried one, else the id the turn was
+        // resuming (a throw can interrupt before any result arrives). A
+        // fresh first turn with neither fails fast rather than dropping the
+        // queued guidance into an unresumable session.
+        const interruptedSessionId = newSessionId ?? turnResumeId;
+        if (interruptedSessionId === undefined) {
+          // Missing interrupted session id is an explicit failure (#183) —
+          // never resume a fresh session and never lose the queued guidance.
+          steeringHandle?.close();
+          throw new Error(
+            `Node '${node.id}' was interrupted but the provider turn returned no session id to resume — failing instead of losing resumability.`
+          );
+        }
         getLog().info(
-          { nodeId: node.id, durationMs: duration },
-          'dag_node_cancelled_during_streaming'
+          { nodeId: node.id, workflowRunId: workflowRun.id },
+          'dag.node_turn_interrupted'
         );
-
-        deps.store
-          .createWorkflowEvent({
-            workflow_run_id: workflowRun.id,
-            event_type: 'node_failed',
-            step_name: stepName,
-            data: withLifecycleScopeData(workflowRun, undefined, executionScope, {
-              error: 'Cancelled by user',
-              duration_ms: duration,
-              ...iterationData,
-            }),
-          })
-          .catch((err: Error) => {
-            getLog().error(
-              { err, workflowRunId: workflowRun.id, eventType: 'node_failed' },
-              'workflow_event_persist_failed'
-            );
-          });
-
-        emitter.emit({
-          type: 'node_failed',
-          runId: workflowRun.id,
-          nodeId: node.id,
-          nodeName: node.command ?? node.id,
-          error: 'Cancelled by user',
-        });
-
-        await recordFailedStatus('Cancelled by user');
-
-        // Clean up throttle entries
-        lastNodeCancelCheck.delete(`${workflowRun.id}:${node.id}`);
-        lastNodeActivityUpdate.delete(`${workflowRun.id}:${node.id}`);
-
-        return { state: 'failed', output: nodeOutputText, error: 'Cancelled by user' };
+        // ONE 'interrupted' status row — awaited so the committed transcript
+        // outcome precedes the interrupt request's resolution (the UI reads it
+        // before rendering the idle dock).
+        await recordNodeStatus('interrupted');
+        const idleWaiter = interruptibleHandle.enterIdle(lastPassToken);
+        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
+        if (wake.kind === 'send_now') {
+          // Same-session redirect: carry drained objects; join at the guidance head.
+          turnGuidanceMessages = wake.messages;
+          turnResumeId = interruptedSessionId;
+          turnIsGuidance = true;
+          continue turns;
+        }
+        if (wake.kind === 'expired') {
+          // Explicit fail — throw into the generic catch (sole prompt finalizer).
+          // Do NOT abort nodeAbortController: that path would misclassify as Cancel.
+          const duration = Date.now() - nodeStartTime;
+          getLog().warn(
+            { runId: workflowRun.id, nodeId: node.id, durationMs: duration },
+            'dag.node_idle_await_expired'
+          );
+          throw new Error(IDLE_AWAIT_EXPIRED_ERROR);
+        }
+        // Discard / terminal-status wake — land on the existing Cancel path so
+        // the run ends exactly as a mid-stream cancel would.
+        nodeAbortController.abort();
+        return await finishCancelled();
       }
 
       if (streamingMode === 'batch' && batchMessages.length > 0) {
@@ -3345,7 +3711,12 @@ async function executeNodeInternal(
             );
           }
           const drained = steeringHandle.drain();
-          turnPrompt = drained.map(item => item.message).join('\n\n');
+          // Settle the just-ended turn before its guidance successor begins
+          // (#183) — 'generating' resolves a Stop that raced this boundary.
+          if (lastPassToken !== undefined) {
+            interruptibleHandle?.settleTurn(lastPassToken, 'generating');
+          }
+          turnGuidanceMessages = drained;
           turnResumeId = newSessionId;
           turnIsGuidance = true;
           continue turns;
@@ -5669,9 +6040,16 @@ async function executeLoopNodeInner(
   // Steering handle (#181): register only when the provider can resume a
   // session — without `sessionResume` queued operator guidance could never
   // ride a natural boundary, so the node exposes no handle at all.
+  const providerInterruptible = getProviderCapabilities(workflowProvider).interrupt !== false;
   steering.steeringHandle = aiClient.getCapabilities().sessionResume
-    ? getSteeringRegistry().register(workflowRun.id, stepName)
+    ? getSteeringRegistry().register(workflowRun.id, stepName, {
+        interruptible: providerInterruptible,
+      })
     : undefined;
+  // The interrupt-capable face of the handle (#183): only when the resolved
+  // provider capability supports per-turn interrupt. Queue-only providers
+  // keep #181 behaviour verbatim — no token, no interruptSignal.
+  const interruptibleHandle = providerInterruptible ? steering.steeringHandle : undefined;
 
   let lastIterationOutput = '';
   let lastIterationStructuredOutput: unknown;
@@ -5834,6 +6212,7 @@ async function executeLoopNodeInner(
     // returned and sends the drained operator messages verbatim — never a loop
     // iteration of its own.
     let turnGuidancePrompt: string | undefined;
+    let turnGuidanceMessages: readonly QueuedOperatorMessage[] = [];
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
     // Completion verdict of the FINAL turn — re-evaluated after every settled
@@ -5852,13 +6231,28 @@ async function executeLoopNodeInner(
       // re-ask path does per attempt. No extra lifecycle events are emitted.
       if (turnIsGuidance) {
         iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
+        turnGuidancePrompt = turnGuidanceMessages.map(item => item.message).join('\n\n');
       }
+      // Operator receipt only on guidance attempt zero — re-asks must not duplicate.
+      const pendingOperatorReceipt: PendingOperatorReceipt | undefined = turnIsGuidance
+        ? {
+            scope: iterationExecutionScope,
+            messages: turnGuidanceMessages,
+            recorded: false,
+          }
+        : undefined;
       let fullOutput = ''; // raw, for signal detection
       let cleanOutput = ''; // stripped, for platform display
       // A queued follow-up may resume only the session id positively returned
       // by this turn. `currentSessionId` also threads ordinary loop iterations,
       // so it cannot prove that the latest turn itself returned an id.
       let settledTurnSessionId: string | undefined;
+      // Per-turn interrupt classification (#183): the last attempt's registry
+      // token and its interrupt controller, plus the five-case verdict read by
+      // the idle block after the attempts loop.
+      let turnToken: number | undefined;
+      let turnInterruptController: AbortController | undefined;
+      let turnInterrupted = false;
       let iterationIdleTimedOut = false;
       let iterationAbortController = new AbortController();
       // Mid-stream cancel-check throttle (see the check inside the stream loop).
@@ -5940,6 +6334,15 @@ async function executeLoopNodeInner(
         let passTerminalError = false;
         let passErrorSubtype: string | null = null;
         const passReaskAttempt = reaskAttempt;
+        // Per-attempt turn slot reset (#183): the registry token is reassigned
+        // by beginTurn below; the controller is fresh per pass. Tool lifecycle
+        // state lives here (not inside try) so the catch's interrupt
+        // classification can settle still-open entries 'interrupted'.
+        turnToken = undefined;
+        turnInterruptController = undefined;
+        const runningTools = new Map<string, RunningTool>();
+        let anonymousToolSequence = 0;
+        let lastAnonymousToolCallId: string | undefined;
 
         try {
           // Build prompt — substituteWorkflowVariables throws if $BASE_BRANCH referenced but empty
@@ -6002,6 +6405,15 @@ async function executeLoopNodeInner(
             },
           };
 
+          // Fresh interrupt controller per provider pass (#183) — never reused
+          // across attempts or turns. beginTurn registers immediately before
+          // sendQuery so interrupt() can only ever abort a live query.
+          if (interruptibleHandle !== undefined) {
+            turnInterruptController = new AbortController();
+            turnToken = interruptibleHandle.beginTurn(turnInterruptController);
+            iterationOptions.interruptSignal = turnInterruptController.signal;
+          }
+
           // Reask attempts start a FRESH session (mirrors runStreamPass in
           // executeNodeInternal) so an invalid turn is not carried forward as context.
           // turnResumeId is the iteration's threaded session on turn 1 and the
@@ -6012,11 +6424,26 @@ async function executeLoopNodeInner(
             reaskAttempt === 0 ? turnResumeId : undefined,
             iterationOptions
           );
-          const runningTools = new Map<string, RunningTool>();
-          let anonymousToolSequence = 0;
-          let lastAnonymousToolCallId: string | undefined;
 
           const effectiveIdleTimeout = node.idle_timeout ?? STEP_IDLE_TIMEOUT_MS;
+
+          let sawStreamChunk = false;
+          const recordOperatorReceiptIfNeeded = async (): Promise<void> => {
+            if (
+              reaskAttempt !== 0 ||
+              pendingOperatorReceipt === undefined ||
+              pendingOperatorReceipt.recorded
+            ) {
+              return;
+            }
+            await appendOperatorTranscript(deps.store, {
+              workflow_run_id: workflowRun.id,
+              node_id: stepName,
+              scope: pendingOperatorReceipt.scope,
+              messages: pendingOperatorReceipt.messages,
+            });
+            pendingOperatorReceipt.recorded = true;
+          };
 
           for await (const msg of withIdleTimeout(generator, effectiveIdleTimeout, () => {
             iterationIdleTimedOut = true;
@@ -6026,6 +6453,10 @@ async function executeLoopNodeInner(
             );
             iterationAbortController.abort();
           })) {
+            if (!sawStreamChunk) {
+              sawStreamChunk = true;
+              await recordOperatorReceiptIfNeeded();
+            }
             // Mid-stream cancel/pause check (every CANCEL_CHECK_INTERVAL_MS) —
             // lifted from the AI-node stream loop in executeNodeInternal. Same
             // posture: `paused` is tolerated (a sibling approval or AskHuman node may pause
@@ -6083,34 +6514,29 @@ async function executeLoopNodeInner(
               }
               await logAssistant(logDir, workflowRun.id, msg.content);
             } else if (msg.type === 'result') {
-              // A terminal result closes every outstanding lifecycle.
-              for (const [toolCallId, prevTool] of runningTools) {
-                getWorkflowEventEmitter().emit({
-                  type: 'tool_completed',
-                  runId: workflowRun.id,
-                  toolName: prevTool.toolName,
-                  stepName: node.id,
-                  durationMs: Date.now() - prevTool.startedAt,
-                  toolCallId,
-                  toolOutcome: 'unknown',
-                });
-                deps.store
-                  .createWorkflowEvent({
-                    workflow_run_id: workflowRun.id,
-                    event_type: 'tool_completed',
-                    step_name: stepName,
-                    data: {
-                      tool_name: prevTool.toolName,
-                      duration_ms: Date.now() - prevTool.startedAt,
-                      tool_call_id: toolCallId,
-                      tool_outcome: 'unknown',
-                    },
-                  })
-                  .catch((err: Error) => {
-                    logEventStoreError(err, i);
-                  });
-                runningTools.delete(toolCallId);
-              }
+              // Five-case classification (#183): abort-marked result + this
+              // turn's operator-interrupt flag = interrupted end. A natural
+              // result keeps flowing even when Stop raced it.
+              const interruptMarked =
+                turnToken !== undefined &&
+                interruptibleHandle !== undefined &&
+                interruptibleHandle.wasOperatorInterrupted(turnToken) &&
+                isInterruptMarkedResult(msg);
+              // A terminal result closes every outstanding lifecycle —
+              // 'interrupted' on the abort-marked end, 'unknown' otherwise.
+              // Provider-resolved entries are out of the map, so no duplicate
+              // tool_result rows are written.
+              settleRunningToolsOutcome(
+                deps,
+                runningTools,
+                interruptMarked ? 'interrupted' : 'unknown',
+                workflowRun.id,
+                stepName,
+                node.id,
+                (err: Error) => {
+                  logEventStoreError(err, i);
+                }
+              );
               // Session threading follows attempt 0 ONLY (#2563). A reask deliberately
               // runs in a throwaway session so an invalid turn is not carried forward as
               // context — which makes that session the wrong thing to thread the NEXT
@@ -6190,6 +6616,14 @@ async function executeLoopNodeInner(
               } else {
                 passTerminalError = false;
                 passErrorSubtype = null;
+              }
+              if (interruptMarked) {
+                // Interrupted end (#183): captures above already folded
+                // session/usage/cost/model; now skip the error-result guard,
+                // the background-task wait, and any further stream
+                // consumption — the executor classifies and idles the turn.
+                turnInterrupted = true;
+                break;
               }
               // Fail the iteration loudly on SDK error results. Previously we broke
               // silently, producing empty output and continuing to the next iteration —
@@ -6402,6 +6836,9 @@ async function executeLoopNodeInner(
             }
             // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
           }
+          if (!sawStreamChunk) {
+            await recordOperatorReceiptIfNeeded();
+          }
           foldIterationUsage();
 
           // Stream ended with background tasks still live (idle timeout mid-wait or
@@ -6411,7 +6848,9 @@ async function executeLoopNodeInner(
           // user-facing warning (the mid-stream check above returns the node as
           // failed with its own message just below), but still recorded in the
           // union — the audit trail should not depend on why the stream ended.
-          if (!backgroundTasks.shouldBreakOnResult()) {
+          // An interrupted turn is exempt too (#183): the operator deliberately
+          // stopped it, so neither the wait nor the generic warning runs.
+          if (!backgroundTasks.shouldBreakOnResult() && !turnInterrupted) {
             const danglingTaskIds = backgroundTasks.ids();
             for (const id of danglingTaskIds) loopBackgroundTasksIncomplete.add(id);
             const cancelled = iterationAbortController.signal.aborted && !iterationIdleTimedOut;
@@ -6456,6 +6895,32 @@ async function executeLoopNodeInner(
           }
         } catch (error) {
           foldIterationUsage();
+          const thrownError = error as Error;
+          // Five-case classification, case 3 (#183): an abort-like throw on a
+          // turn the operator interrupted — flag set AND this token's interrupt
+          // signal aborted — is an interrupted end, not an iteration failure.
+          // Settle still-open tools 'interrupted' and break to the idle block.
+          if (
+            turnToken !== undefined &&
+            interruptibleHandle !== undefined &&
+            interruptibleHandle.wasOperatorInterrupted(turnToken) &&
+            (turnInterruptController?.signal.aborted ?? false) &&
+            isAbortLikeStreamError(thrownError)
+          ) {
+            turnInterrupted = true;
+            settleRunningToolsOutcome(
+              deps,
+              runningTools,
+              'interrupted',
+              workflowRun.id,
+              stepName,
+              node.id,
+              (err: Error) => {
+                logEventStoreError(err, i);
+              }
+            );
+            break attempts;
+          }
           if (error instanceof AskHumanAwaitingError) {
             // Park before the pause write (#181) — a send racing the transition
             // is refused ('not_live') instead of being queued into a handle whose
@@ -6502,6 +6967,12 @@ async function executeLoopNodeInner(
             data: { iteration: i },
           });
         } finally {
+          // The stream pump is done with this token's controller either way —
+          // clear it so a late interrupt() waits on classification instead of
+          // aborting a dead query (#183). Classification still owns settlement.
+          if (turnToken !== undefined) {
+            interruptibleHandle?.endTurnStream(turnToken);
+          }
           // Record before reask decisions / failure returns escape this attempt.
           // Never masks the original iteration outcome.
           if (passUsageBreakdown !== undefined) {
@@ -6531,6 +7002,11 @@ async function executeLoopNodeInner(
             }
           }
         }
+
+        // Interrupted end (#183): break to the idle block — the empty-output
+        // guard, the idle-timeout notice, and structured validation/re-ask all
+        // skip a turn the operator deliberately stopped.
+        if (turnInterrupted) break attempts;
 
         // Notify on idle timeout
         if (iterationIdleTimedOut) {
@@ -6577,10 +7053,17 @@ async function executeLoopNodeInner(
 
         // An idle timeout or a user abort is a genuine failure, not a validation
         // miss — never spend a reask on it (mirrors executeNodeInternal's canReask).
+        // The operator-interrupt flag joins too (#183): a Stop that raced a
+        // natural unmarked result keeps validation honest but must never start
+        // another provider pass claiming this turn's slot.
         const canReask =
           reaskAttempt < maxReasks &&
           !iterationIdleTimedOut &&
-          !iterationAbortController.signal.aborted;
+          !iterationAbortController.signal.aborted &&
+          !(
+            turnToken !== undefined &&
+            interruptibleHandle?.wasOperatorInterrupted(turnToken) === true
+          );
 
         if (attemptStructured !== undefined) {
           // Validate against the declared schema for EVERY provider — an SDK-enforced
@@ -6626,6 +7109,11 @@ async function executeLoopNodeInner(
             'loop_node.structured_output_invalid'
           );
           if (canReask) {
+            // Settle this pass before its re-ask successor begins (#183) —
+            // 'generating' resolves any Stop that raced the natural end.
+            if (turnToken !== undefined) {
+              interruptibleHandle?.settleTurn(turnToken, 'generating');
+            }
             reaskAttempt++;
             iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
             reaskErrors = validation.errors;
@@ -6657,6 +7145,9 @@ async function executeLoopNodeInner(
           'loop_node.structured_output_missing'
         );
         if (canReask) {
+          if (turnToken !== undefined) {
+            interruptibleHandle?.settleTurn(turnToken, 'generating');
+          }
           reaskAttempt++;
           iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
           reaskErrors = ['no JSON object was found in the response'];
@@ -6678,6 +7169,95 @@ async function executeLoopNodeInner(
           },
           missingStructuredOutputError
         );
+      }
+
+      // Interrupted turn end (#183): the provider produced an abort-marked end
+      // on the operator's interrupt signal. The turn idles on the SAME session
+      // id — completion channels, the batch flush, and the steering boundary
+      // all skip until the operator redirects (send_now) or the run ends
+      // (discard / terminal status → the existing cancel path).
+      if (turnInterrupted && interruptibleHandle !== undefined && turnToken !== undefined) {
+        // The redirect resumes the loop's conversation thread: attempt 0's
+        // session id when this turn emitted one, else the inherited thread a
+        // re-ask pass was anchored to. A re-ask's own throwaway session is
+        // deliberately NOT a redirect target (same #2563 threading rule as
+        // the natural boundary).
+        const interruptedSessionId = settledTurnSessionId ?? currentSessionId;
+        if (interruptedSessionId === undefined) {
+          // Missing interrupted session id is an explicit failure (#183) —
+          // never resume a fresh session and never lose the queued guidance.
+          steering.steeringHandle?.close();
+          const resumabilityError = `Loop node '${node.id}' was interrupted but the provider turn returned no session id to resume — failing instead of losing resumability.`;
+          return await failLoopIteration(
+            resumabilityError,
+            {
+              costUsd: loopTotalCostUsd,
+              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+              loopIterations: i,
+              data: { iteration: i },
+            },
+            resumabilityError
+          );
+        }
+        getLog().info(
+          { nodeId: node.id, workflowRunId: workflowRun.id, iteration: i },
+          'loop_node.turn_interrupted'
+        );
+        // ONE 'interrupted' status row — awaited so the committed transcript
+        // outcome precedes the interrupt request's resolution.
+        await recordLoopStatus(iterationExecutionScope, 'interrupted', String(i));
+        const idleWaiter = interruptibleHandle.enterIdle(turnToken);
+        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
+        if (wake.kind === 'send_now') {
+          // Same-session redirect: carry drained objects; join at the guidance head.
+          turnGuidanceMessages = wake.messages;
+          turnResumeId = interruptedSessionId;
+          turnIsGuidance = true;
+          continue turns;
+        }
+        if (wake.kind === 'expired') {
+          const duration = Date.now() - iterationStart;
+          getLog().warn(
+            {
+              runId: workflowRun.id,
+              nodeId: node.id,
+              iteration: i,
+              durationMs: duration,
+            },
+            'loop_node.idle_await_expired'
+          );
+          // Pass the exact error as both iteration and node error so the outer
+          // loop does not wrap it with "Loop iteration N failed: …".
+          return await failLoopIteration(
+            IDLE_AWAIT_EXPIRED_ERROR,
+            {
+              costUsd: loopTotalCostUsd,
+              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+              loopIterations: i,
+              data: { iteration: i },
+            },
+            IDLE_AWAIT_EXPIRED_ERROR
+          );
+        }
+        // Discard / terminal-status wake — land on the existing cancel path so
+        // the run ends exactly as a mid-stream stop would. Close the handle
+        // synchronously BEFORE the status re-read / platform message so a
+        // losing inactivity timer cannot fire during those awaits (#192).
+        steering.steeringHandle?.close();
+        const effectiveStatus =
+          (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ?? 'cancelled';
+        await safeSendMessage(
+          platform,
+          conversationId,
+          `Loop node '${node.id}' stopped during iteration ${String(i)} (${effectiveStatus})`,
+          msgContext
+        );
+        return await failLoopIteration(`Workflow ${effectiveStatus}`, {
+          costUsd: loopTotalCostUsd,
+          ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+          loopIterations: i,
+          data: { status: effectiveStatus, iteration: i },
+        });
       }
 
       // The iteration's accepted payload, serialized. With `output_format` this — not
@@ -6906,11 +7486,22 @@ async function executeLoopNodeInner(
             );
           }
           const drained = steering.steeringHandle.drain();
-          turnGuidancePrompt = drained.map(item => item.message).join('\n\n');
+          // Settle the just-ended turn before its guidance successor begins
+          // (#183) — 'generating' resolves a Stop that raced this boundary.
+          if (turnToken !== undefined) {
+            interruptibleHandle?.settleTurn(turnToken, 'generating');
+          }
+          turnGuidanceMessages = drained;
           turnResumeId = settledTurnSessionId;
           turnIsGuidance = true;
           continue turns;
         }
+      }
+      // Settle the final attempt's token before the next provider pass — a
+      // non-terminal boundary projects 'generating'; a terminal seal already
+      // resolved 'node_finished', making this call a no-op there (#183).
+      if (turnToken !== undefined) {
+        interruptibleHandle?.settleTurn(turnToken, 'generating');
       }
       break turns;
     }

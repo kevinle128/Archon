@@ -3,7 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-import type { APIRequestContext, Locator, Page, Request, TestInfo } from '@playwright/test';
+import type {
+  APIRequestContext,
+  Locator,
+  Page,
+  Request,
+  Response,
+  TestInfo,
+} from '@playwright/test';
 import { format } from 'prettier';
 
 import {
@@ -14,6 +21,7 @@ import {
 import {
   createIdentityContext,
   getRunDetail,
+  listNodeMessages,
   openLegacyRunDetail,
   openRunDetail,
 } from '../lib/playwright/run-detail';
@@ -895,6 +903,297 @@ for (const surface of ['console', 'legacy'] as const) {
       await pageA.close().catch(() => undefined);
       await pageB.close().catch(() => undefined);
       await starterCtx.close().catch(() => undefined);
+    }
+  });
+
+  test(`[P1] [V:steer.concurrent-operators-${surface}] overlapping operators keep queue, transcript, and attribution aligned on ${surface}`, async ({
+    browser,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 3);
+
+    const tag = randomUUID().replace(/-/g, '').slice(0, 12);
+    const textA1 = `A1-${tag}`;
+    const textA2 = `A2-${tag}`;
+    const textB1 = `B1-${tag}`;
+    const textB2 = `B2-${tag}`;
+    const textX1 = `X1-${tag}`;
+    const nodeA = QUEUE_GUIDANCE_PAIR_NODE_A;
+    const nodeB = QUEUE_GUIDANCE_PAIR_NODE_B;
+
+    const starterCtx = await createIdentityContext(browser, archon.baseURL, 'starter');
+    const teammateCtx = await createIdentityContext(browser, archon.baseURL, 'teammate');
+    const starterPage = await starterCtx.newPage();
+    const teammatePage = await teammateCtx.newPage();
+
+    const measurements: Record<string, unknown> = {
+      surface,
+      tag,
+      nodeA,
+      nodeB,
+      viewport: NARROW,
+    };
+
+    try {
+      await starterPage.setViewportSize(NARROW);
+      await teammatePage.setViewportSize(NARROW);
+
+      const run = await archon.startWorkflowViaWeb(
+        E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME,
+        `e2e concurrent operators ${tag}`
+      );
+      measurements.runId = run.runId;
+
+      await waitForNodeStarted(starterPage, run.runId, nodeA);
+      await waitForNodeStarted(starterPage, run.runId, nodeB);
+
+      const starterRoomA = await openGuidanceRoom(starterPage, surface, run.runId, nodeA);
+      const teammateRoomA = await openGuidanceRoom(teammatePage, surface, run.runId, nodeA);
+
+      const starterDetail = await getRunDetail(starterPage, run.runId);
+      const teammateDetail = await getRunDetail(teammatePage, run.runId);
+      expect(starterDetail.viewer_is_starter, 'starter view reports starter').toBe(true);
+      expect(teammateDetail.viewer_is_starter, 'teammate view reports non-starter').toBe(false);
+      measurements.identities = {
+        starter: starterDetail.viewer_is_starter,
+        teammate: teammateDetail.viewer_is_starter,
+      };
+
+      const starterField = guidanceField(starterRoomA);
+      const teammateField = guidanceField(teammateRoomA);
+      await expect(starterField).toBeVisible({ timeout: T.medium });
+      await expect(teammateField).toBeVisible({ timeout: T.medium });
+
+      const parseSendId = async (response: Response): Promise<string> => {
+        expect(response.status()).toBe(200);
+        const body = (await response.json()) as { message_id?: string };
+        expect(body.message_id, 'send response carries accepted message_id').toMatch(
+          /^[0-9a-f-]{36}$/
+        );
+        return body.message_id as string;
+      };
+
+      // Round 1 — pre-fill, register listeners, press both Queue shortcuts together.
+      await starterField.fill(textA1);
+      await teammateField.fill(textB1);
+      const round1Starter = starterPage.waitForResponse(
+        res =>
+          res.request().method() === 'POST' &&
+          new URL(res.url()).pathname === sendPathname(run.runId, nodeA)
+      );
+      const round1Teammate = teammatePage.waitForResponse(
+        res =>
+          res.request().method() === 'POST' &&
+          new URL(res.url()).pathname === sendPathname(run.runId, nodeA)
+      );
+      await Promise.all([starterField.press('Meta+Enter'), teammateField.press('Meta+Enter')]);
+      const [idA1, idB1] = await Promise.all([
+        round1Starter.then(parseSendId),
+        round1Teammate.then(parseSendId),
+      ]);
+      expect(idA1).not.toBe(idB1);
+
+      // Round 2 — only after both round-1 responses.
+      await starterField.fill(textA2);
+      await teammateField.fill(textB2);
+      const round2Starter = starterPage.waitForResponse(
+        res =>
+          res.request().method() === 'POST' &&
+          new URL(res.url()).pathname === sendPathname(run.runId, nodeA)
+      );
+      const round2Teammate = teammatePage.waitForResponse(
+        res =>
+          res.request().method() === 'POST' &&
+          new URL(res.url()).pathname === sendPathname(run.runId, nodeA)
+      );
+      await Promise.all([starterField.press('Meta+Enter'), teammateField.press('Meta+Enter')]);
+      const [idA2, idB2] = await Promise.all([
+        round2Starter.then(parseSendId),
+        round2Teammate.then(parseSendId),
+      ]);
+      expect(new Set([idA1, idA2, idB1, idB2]).size).toBe(4);
+
+      // Cross-node control: one teammate message on steer-b with explicit UUID.
+      const idX1 = randomUUID();
+      const x1Res = await teammatePage.request.post(sendPathname(run.runId, nodeB), {
+        data: {
+          message: textX1,
+          message_id: idX1,
+          intent: 'queue',
+        },
+      });
+      expect(x1Res.status(), 'steer-b X1 send').toBe(200);
+      const x1Body = (await x1Res.json()) as { message_id?: string };
+      expect(x1Body.message_id).toBe(idX1);
+
+      // Immediate server queue snapshots — order oracle for the rest of the journey.
+      const queueA = await readQueue(starterPage.request, run.runId, nodeA);
+      const queueB = await readQueue(teammatePage.request, run.runId, nodeB);
+      const queueOrder = queueA.queued.map(row => row.message_id);
+      expect(queueOrder, 'steer-a has exactly the four A/B ids').toHaveLength(4);
+      expect(new Set(queueOrder).size, 'steer-a has no duplicate ids').toBe(4);
+      expect([...queueOrder].sort()).toEqual([idA1, idA2, idB1, idB2].sort());
+      expect(queueOrder.indexOf(idA1)).toBeLessThan(queueOrder.indexOf(idA2));
+      expect(queueOrder.indexOf(idB1)).toBeLessThan(queueOrder.indexOf(idB2));
+
+      const queueBIds = queueB.queued.map(row => row.message_id);
+      expect(queueBIds, 'steer-b contains exactly [X1]').toEqual([idX1]);
+
+      // Before drain: both steer-a rooms converge on queueOrder + four-row state.
+      await expectQueueIds(starterRoomA, queueOrder);
+      await expectQueueIds(teammateRoomA, queueOrder);
+      for (const room of [starterRoomA, teammateRoomA]) {
+        await expect(room.getByText(/queued · 4/i)).toBeVisible();
+        const items = queueList(room).getByRole('listitem');
+        await expect(items).toHaveCount(4);
+        const ids = await rowIds(room);
+        expect(new Set(ids).size).toBe(4);
+        await expect(room.getByText(textX1)).toHaveCount(0);
+        await expect(room.getByText(textX1, { exact: false })).toHaveCount(0);
+      }
+      // No cross-node text in either room's queue bodies.
+      const starterServerTexts = queueA.queued.map(row => row.message);
+      expect(starterServerTexts.some(text => text.includes('X1-'))).toBe(false);
+
+      measurements.preDrain = {
+        queueOrder,
+        idA1,
+        idA2,
+        idB1,
+        idB2,
+        idX1,
+        starterRoomIds: await rowIds(starterRoomA),
+        teammateRoomIds: await rowIds(teammateRoomA),
+        serverB: queueBIds,
+      };
+
+      await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
+
+      const messagesA = await listNodeMessages(starterPage, run.runId, nodeA);
+      const messagesB = await listNodeMessages(teammatePage, run.runId, nodeB);
+
+      const operatorA = messagesA.filter(
+        message => message.kind === 'text' && message.metadata?.origin === 'operator'
+      );
+      const operatorB = messagesB.filter(
+        message => message.kind === 'text' && message.metadata?.origin === 'operator'
+      );
+
+      expect(
+        operatorA.map(row => row.metadata?.message_id),
+        'steer-a transcript ids equal queueOrder'
+      ).toEqual(queueOrder);
+      for (let i = 1; i < operatorA.length; i += 1) {
+        expect(operatorA[i - 1]!.seq).toBeLessThan(operatorA[i]!.seq);
+      }
+
+      const byId = new Map(operatorA.map(row => [row.metadata?.message_id, row]));
+      const rowA1 = byId.get(idA1);
+      const rowA2 = byId.get(idA2);
+      const rowB1 = byId.get(idB1);
+      const rowB2 = byId.get(idB2);
+      expect(rowA1 && rowA2 && rowB1 && rowB2).toBeTruthy();
+
+      expect(rowA1!.payload.text).toBe(textA1);
+      expect(rowA2!.payload.text).toBe(textA2);
+      expect(rowB1!.payload.text).toBe(textB1);
+      expect(rowB2!.payload.text).toBe(textB2);
+
+      expect(rowA1!.operator_display_name).toBe('e2e-starter');
+      expect(rowA2!.operator_display_name).toBe('e2e-starter');
+      expect(rowB1!.operator_display_name).toBe('e2e-hitl-teammate');
+      expect(rowB2!.operator_display_name).toBe('e2e-hitl-teammate');
+
+      const starterUserId = rowA1!.metadata?.operator_user_id;
+      const teammateUserId = rowB1!.metadata?.operator_user_id;
+      expect(typeof starterUserId).toBe('string');
+      expect(starterUserId && starterUserId.length > 0).toBe(true);
+      expect(typeof teammateUserId).toBe('string');
+      expect(teammateUserId && teammateUserId.length > 0).toBe(true);
+      expect(starterUserId).not.toBe(teammateUserId);
+      expect(rowA2!.metadata?.operator_user_id).toBe(starterUserId);
+      expect(rowB2!.metadata?.operator_user_id).toBe(teammateUserId);
+
+      // No cross-sender attribution.
+      expect(rowA1!.metadata?.operator_user_id).not.toBe(teammateUserId);
+      expect(rowB1!.metadata?.operator_user_id).not.toBe(starterUserId);
+
+      expect(operatorB, 'steer-b has only X1').toHaveLength(1);
+      expect(operatorB[0]!.metadata?.message_id).toBe(idX1);
+      expect(operatorB[0]!.payload.text).toBe(textX1);
+      expect(operatorB[0]!.operator_display_name).toBe('e2e-hitl-teammate');
+      expect(operatorB[0]!.metadata?.operator_user_id).toBe(teammateUserId);
+
+      // No A/B id or text under the wrong node.
+      const bIds = new Set(operatorB.map(row => row.metadata?.message_id));
+      const bTexts = new Set(
+        operatorB
+          .map(row => (typeof row.payload.text === 'string' ? row.payload.text : null))
+          .filter((text): text is string => text !== null)
+      );
+      for (const id of [idA1, idA2, idB1, idB2]) {
+        expect(bIds.has(id)).toBe(false);
+      }
+      for (const text of [textA1, textA2, textB1, textB2]) {
+        expect(bTexts.has(text)).toBe(false);
+      }
+      expect(
+        operatorA.some(row => row.metadata?.message_id === idX1 || row.payload.text === textX1)
+      ).toBe(false);
+
+      // Reopen completed steer-a in both contexts; DOM follows queueOrder.
+      const textById = new Map<string, string>([
+        [idA1, textA1],
+        [idA2, textA2],
+        [idB1, textB1],
+        [idB2, textB2],
+      ]);
+      const nameById = new Map<string, string>([
+        [idA1, 'e2e-starter'],
+        [idA2, 'e2e-starter'],
+        [idB1, 'e2e-hitl-teammate'],
+        [idB2, 'e2e-hitl-teammate'],
+      ]);
+
+      const freshStarterRoom = await openGuidanceRoom(starterPage, surface, run.runId, nodeA);
+      const freshTeammateRoom = await openGuidanceRoom(teammatePage, surface, run.runId, nodeA);
+
+      for (const room of [freshStarterRoom, freshTeammateRoom]) {
+        const operatorDom = room.locator('[data-operator-row]');
+        await expect(operatorDom).toHaveCount(4);
+        for (let index = 0; index < queueOrder.length; index += 1) {
+          const messageId = queueOrder[index]!;
+          const expectedName = nameById.get(messageId)!;
+          const expectedBody = textById.get(messageId)!;
+          await expect(operatorDom.nth(index).locator('[data-operator-label]')).toHaveText(
+            `operator · ${expectedName}`
+          );
+          await expect(operatorDom.nth(index).locator('[data-operator-delivery]')).toHaveText(
+            'sent'
+          );
+          await expect(operatorDom.nth(index).locator('[data-operator-body]')).toHaveText(
+            expectedBody
+          );
+        }
+      }
+
+      measurements.postDrain = {
+        transcriptIds: operatorA.map(row => row.metadata?.message_id),
+        starterUserId,
+        teammateUserId,
+        steerBIds: operatorB.map(row => row.metadata?.message_id),
+      };
+
+      await writeMeasurements(`concurrent-operators-${surface}.json`, measurements);
+      await testInfo.attach(`concurrent-operators-${surface}.json`, {
+        body: Buffer.from(`${JSON.stringify(measurements, null, 2)}\n`),
+        contentType: 'application/json',
+      });
+    } finally {
+      await starterPage.close().catch(() => undefined);
+      await teammatePage.close().catch(() => undefined);
+      await starterCtx.close().catch(() => undefined);
+      await teammateCtx.close().catch(() => undefined);
     }
   });
 }

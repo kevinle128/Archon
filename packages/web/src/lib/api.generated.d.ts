@@ -2641,6 +2641,198 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/interrupt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Interrupt the current provider turn of a running workflow node
+         * @description Stops the live provider turn of an interrupt-capable in-process agent node without cancelling the run. The request awaits the engine classification and returns the ACTUAL settled sub-state: `idle-after-interrupt` (the turn stopped and the node awaits Send now on the same provider session) or `generating` (the turn already ended naturally or queued guidance drained it before Stop took effect). Terminal outcomes map to the steering error shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Interrupt settled — the classified sub-state */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InterruptWorkflowNodeResponse"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run or node */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Node no longer running */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description No live steering session in this process */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-arm the idle-await inactivity timer for a running workflow node
+         * @description Bodyless authenticated keepalive for an in-process steering handle. Re-arms the idle-await inactivity timer only when the handle is live and idle-after-interrupt with a pending waiter; other live handle states are a successful no-op. Never resolves idle-await, never writes a durable row, and never sends operator prose. Terminal outcomes map to the steering error shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Keepalive accepted — timer re-armed or live no-op */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KeepaliveWorkflowNodeResponse"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run or node */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Node no longer running */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description No live steering session in this process */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}": {
         parameters: {
             query?: never;
@@ -5501,6 +5693,16 @@ export interface components {
             /** @enum {string} */
             intent: "queue" | "send_now";
         };
+        InterruptWorkflowNodeResponse: {
+            /** @enum {boolean} */
+            success: true;
+            /** @enum {string} */
+            sub_state: "idle-after-interrupt" | "generating";
+        };
+        KeepaliveWorkflowNodeResponse: {
+            /** @enum {boolean} */
+            success: true;
+        };
         WithdrawWorkflowNodeResponse: {
             /** @enum {boolean} */
             success: true;
@@ -5569,6 +5771,9 @@ export interface components {
                 };
                 stream_id?: string;
                 message_id?: string;
+                /** @enum {string} */
+                origin?: "operator";
+                operator_user_id?: string | null;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5590,6 +5795,7 @@ export interface components {
             id: string;
             seq: number;
             created_at: string;
+            operator_display_name?: string | null;
         } | {
             metadata?: {
                 execution?: {
@@ -5606,6 +5812,9 @@ export interface components {
                 };
                 stream_id?: string;
                 message_id?: string;
+                /** @enum {string} */
+                origin?: "operator";
+                operator_user_id?: string | null;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5646,6 +5855,9 @@ export interface components {
                 };
                 stream_id?: string;
                 message_id?: string;
+                /** @enum {string} */
+                origin?: "operator";
+                operator_user_id?: string | null;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5745,6 +5957,8 @@ export interface components {
                 /** @enum {string} */
                 type: "disabled";
             };
+            /** @enum {string} */
+            steeringSubState?: "generating" | "idle-after-interrupt";
         };
         PendingInteraction: {
             id: string;

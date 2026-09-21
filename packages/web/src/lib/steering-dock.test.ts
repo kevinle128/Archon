@@ -3,39 +3,72 @@ import { describe, expect, test } from 'bun:test';
 import {
   applyQueueSnapshot,
   beginGuidanceSubmission,
+  beginInterrupt,
+  beginSendNow,
   beginWithdraw,
   canSubmitGuidance,
+  collectWrittenOperatorMessageIds,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  finishedIterationDisclosure,
   focusTargetAfterSnapshot,
+  goToIterationLabel,
   isQueueShortcut,
   loadSteeringDraft,
+  neverSentBandHeader,
+  neverSentListLabel,
   nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
   queuedCountPhrase,
+  reconcileNeverSent,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
+  resolveInterruptError,
+  resolveInterruptOutcome,
+  resolveSendNowFailure,
+  resolveSendNowSuccess,
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   saveSteeringDraft,
+  sendNowButtonAccessibleName,
   startQueuePolling,
+  steeringAgentMode,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
+  syncProjectedSubState,
+  STEERING_AGENT_GENERATING,
+  STEERING_AGENT_IDLE,
+  STEERING_AGENT_INTERRUPTING,
   STEERING_ASK_BLOCKED_REASON,
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_INTERRUPT_DISCLOSURE,
+  STEERING_INTERRUPT_FAILED_MESSAGE,
+  STEERING_NEVER_SENT_DISCLOSURE,
+  STEERING_IDLE_AWAIT_DISCLOSURE,
+  STEERING_KEEPALIVE_COALESCE_MS,
+  STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE,
+  IDLE_AWAIT_EXPIRED_ERROR,
+  createKeepaliveCoalescer,
+  isKeepaliveActivityKey,
+  neverSentDisclosure,
   STEERING_SEND_FAILED_MESSAGE,
   STEERING_SEND_HINT,
-  SteeringSendError,
+  SteeringRequestError,
   toSteeringRefusal,
-  toSteeringSendError,
+  toSteeringRequestError,
+  willSendBandHeader,
+  willSendCountPhrase,
+  willSendListLabel,
   type LocalSentReceipt,
+  type NeverSentEntry,
   type QueuedGuidanceRow,
   type SteeringDockState,
 } from './steering-dock';
+import type { NodeMessageRow } from './node-message-pages';
 
 function memoryStorage(): Storage {
   const map = new Map<string, string>();
@@ -61,6 +94,9 @@ function modeFor(
     live?: boolean;
     hasPendingAsk?: boolean;
     refusal?: { code: string | null; message: string } | null;
+    finishedIteration?: { liveRowId: string; liveIteration: number } | null;
+    neverSent?: readonly NeverSentEntry[] | null;
+    nodeTerminal?: boolean;
   }
 ): string {
   return steeringDockMode({
@@ -68,6 +104,9 @@ function modeFor(
     live: overrides?.live ?? true,
     hasPendingAsk: overrides?.hasPendingAsk ?? false,
     refusal: overrides?.refusal ?? null,
+    finishedIteration: overrides?.finishedIteration,
+    neverSent: overrides?.neverSent,
+    nodeTerminal: overrides?.nodeTerminal,
   });
 }
 
@@ -119,6 +158,29 @@ describe('steeringDockMode visibility table', () => {
     );
     expect(modeFor('running', { refusal: { code: null, message: 'offline' } })).toBe('composer');
   });
+
+  test('a valid finished-iteration descriptor on a completed row selects finished-iteration before terminal hide', () => {
+    expect(
+      modeFor('completed', {
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished-iteration');
+  });
+
+  test('non-live still hides even with a finished-iteration descriptor', () => {
+    expect(
+      modeFor('completed', {
+        live: false,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('hidden');
+  });
+
+  test('absent finished-iteration descriptor leaves the visibility table unchanged', () => {
+    expect(modeFor('completed')).toBe('hidden');
+    expect(modeFor('running')).toBe('composer');
+    expect(modeFor('awaiting')).toBe('blocked');
+  });
 });
 
 describe('steeringBlockedReason', () => {
@@ -136,6 +198,60 @@ describe('steeringBlockedReason', () => {
   });
 });
 
+describe('steeringAgentMode derivation', () => {
+  test('absent projected sub-state means queue-only, not detached', () => {
+    expect(steeringAgentMode({ subState: null, interruptInFlight: false })).toBe('queue-only');
+  });
+
+  test('projected generating and idle map through', () => {
+    expect(steeringAgentMode({ subState: 'generating', interruptInFlight: false })).toBe(
+      'generating'
+    );
+    expect(steeringAgentMode({ subState: 'idle-after-interrupt', interruptInFlight: false })).toBe(
+      'idle'
+    );
+  });
+
+  test('the local interrupting transient overrides any projection', () => {
+    expect(steeringAgentMode({ subState: 'generating', interruptInFlight: true })).toBe(
+      'interrupting'
+    );
+    expect(steeringAgentMode({ subState: 'idle-after-interrupt', interruptInFlight: true })).toBe(
+      'interrupting'
+    );
+  });
+});
+
+describe('syncProjectedSubState', () => {
+  test('a defined projection supersedes the local interrupting transient', () => {
+    const interrupting = beginInterrupt(createSteeringDockState('generating'));
+    const synced = syncProjectedSubState(interrupting, 'idle-after-interrupt');
+    expect(synced.interruptInFlight).toBe(false);
+    expect(synced.subState).toBe('idle-after-interrupt');
+    expect(synced.notice).toBe(STEERING_AGENT_IDLE);
+  });
+
+  test('an absent projection keeps the transient and writes no notice', () => {
+    const interrupting = beginInterrupt(createSteeringDockState('generating'));
+    const synced = syncProjectedSubState(interrupting, undefined);
+    expect(synced.interruptInFlight).toBe(true);
+    expect(synced.subState).toBeNull();
+    expect(synced.notice).toBe(STEERING_AGENT_INTERRUPTING);
+  });
+
+  test('an unchanged projection returns the same state', () => {
+    const state = createSteeringDockState('generating');
+    expect(syncProjectedSubState(state, 'generating')).toBe(state);
+  });
+
+  test('a generating projection announces agent generating', () => {
+    const idle = createSteeringDockState('idle-after-interrupt');
+    const synced = syncProjectedSubState(idle, 'generating');
+    expect(synced.subState).toBe('generating');
+    expect(synced.notice).toBe(STEERING_AGENT_GENERATING);
+  });
+});
+
 describe('canSubmitGuidance', () => {
   test.each([
     ['   ', false],
@@ -144,14 +260,25 @@ describe('canSubmitGuidance', () => {
     ['x', true],
     ['  keep the padding  ', true],
   ])('draft %j submittable=%s', (draft, expected) => {
-    expect(canSubmitGuidance({ mode: 'composer', inFlight: false, draft })).toBe(expected);
+    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft })).toBe(expected);
   });
 
-  test('in-flight or non-composer modes refuse', () => {
-    expect(canSubmitGuidance({ mode: 'composer', inFlight: true, draft: 'x' })).toBe(false);
+  test('in-flight send or non-composer modes refuse', () => {
+    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: true, draft: 'x' })).toBe(false);
     for (const mode of ['hidden', 'blocked', 'detached'] as const) {
-      expect(canSubmitGuidance({ mode, inFlight: false, draft: 'x' })).toBe(false);
+      expect(canSubmitGuidance({ mode, sendInFlight: false, draft: 'x' })).toBe(false);
     }
+  });
+
+  test('Send now needs a non-blank newly typed draft even with queued receipts', () => {
+    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft: '' })).toBe(false);
+    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft: '  ' })).toBe(false);
+  });
+
+  test('finished-iteration mode refuses submit', () => {
+    expect(canSubmitGuidance({ mode: 'finished-iteration', sendInFlight: false, draft: 'x' })).toBe(
+      false
+    );
   });
 });
 
@@ -183,10 +310,10 @@ describe('submission state transitions', () => {
   let counter = 0;
   const newId = (): string => `id-${(++counter).toString()}`;
 
-  test('begin stamps one uuid and marks the request in flight', () => {
+  test('begin stamps one uuid and marks the send in flight', () => {
     const begun = beginGuidanceSubmission(createSteeringDockState(), 'hello', newId);
     expect(begun.messageId).toBe('id-1');
-    expect(begun.state.inFlight).toBe(true);
+    expect(begun.state.sendInFlight).toBe(true);
     expect(begun.state.pendingRetry).toEqual({ messageId: 'id-1', message: 'hello' });
   });
 
@@ -206,11 +333,24 @@ describe('submission state transitions', () => {
 
   test('success appends the receipt with its message text and clears retry state', () => {
     const begun = beginGuidanceSubmission(createSteeringDockState(), 'first', newId);
-    const next = resolveGuidanceSuccess(begun.state, { message_id: begun.messageId });
+    const next = resolveGuidanceSuccess(begun.state, {
+      message_id: begun.messageId,
+      state: 'queued',
+    });
     expect(next.sent).toEqual([{ messageId: begun.messageId, message: 'first', state: 'queued' }]);
-    expect(next.inFlight).toBe(false);
+    expect(next.sendInFlight).toBe(false);
     expect(next.pendingRetry).toBeNull();
     expect(next.refusal).toBeNull();
+    expect(next.notice).toBe('1 message queued');
+  });
+
+  test('the wire receipt state is kept verbatim', () => {
+    const begun = beginGuidanceSubmission(createSteeringDockState(), 'first', newId);
+    const next = resolveGuidanceSuccess(begun.state, {
+      message_id: begun.messageId,
+      state: 'awaiting_send_now',
+    });
+    expect(next.sent[0]?.state).toBe('awaiting_send_now');
   });
 
   test('two successful sends keep acceptance order', () => {
@@ -220,6 +360,7 @@ describe('submission state transitions', () => {
     const second = beginGuidanceSubmission(state, 'beta', newId);
     state = resolveGuidanceSuccess(second.state, { message_id: second.messageId });
     expect(state.sent.map(entry => entry.message)).toEqual(['alpha', 'beta']);
+    expect(state.notice).toBe('2 messages queued');
   });
 
   test('a replayed 200 dedupes by message_id', () => {
@@ -235,7 +376,7 @@ describe('submission state transitions', () => {
   test('failure preserves the pending retry and sets the refusal', () => {
     const begun = beginGuidanceSubmission(createSteeringDockState(), 'kept', newId);
     const failed = resolveGuidanceFailure(begun.state, { code: 'node_finished', message: 'done' });
-    expect(failed.inFlight).toBe(false);
+    expect(failed.sendInFlight).toBe(false);
     expect(failed.pendingRetry).toEqual({ messageId: begun.messageId, message: 'kept' });
     expect(failed.refusal).toEqual({ code: 'node_finished', message: 'done' });
   });
@@ -273,7 +414,7 @@ describe('withdraw transitions', () => {
     const begun = beginWithdraw(state, 'a');
     expect(begun.withdrawingMessageId).toBe('a');
     expect(begun.sent).toBe(state.sent);
-    expect(begun.inFlight).toBe(state.inFlight);
+    expect(begun.sendInFlight).toBe(state.sendInFlight);
     expect(begun.pendingRetry).toBe(state.pendingRetry);
     expect(begun.refusal).toBe(state.refusal);
   });
@@ -355,6 +496,182 @@ describe('withdraw transitions', () => {
   });
 });
 
+describe('interrupt transitions', () => {
+  test('begin sets the local transient and one polite announcement', () => {
+    const next = beginInterrupt(createSteeringDockState('generating'));
+    expect(next.interruptInFlight).toBe(true);
+    expect(next.notice).toBe('agent interrupting');
+    expect(next.sendInFlight).toBe(false);
+  });
+
+  test('200 idle clears the transient and announces Send now delivers', () => {
+    const interrupting = beginInterrupt(createSteeringDockState('generating'));
+    const next = resolveInterruptOutcome(interrupting, 'idle-after-interrupt');
+    expect(next.interruptInFlight).toBe(false);
+    expect(next.subState).toBe('idle-after-interrupt');
+    expect(next.notice).toBe('agent idle · Send now delivers');
+  });
+
+  test('200 generating is a spent interrupt — composite race announcement', () => {
+    let state = createSteeringDockState('generating');
+    const send = beginGuidanceSubmission(state, 'held', () => 'm-1');
+    state = resolveGuidanceSuccess(send.state, { message_id: send.messageId });
+    const second = beginGuidanceSubmission(state, 'held too', () => 'm-2');
+    state = resolveGuidanceSuccess(second.state, { message_id: second.messageId });
+    const interrupting = beginInterrupt(state);
+    const next = resolveInterruptOutcome(interrupting, 'generating');
+    expect(next.subState).toBe('generating');
+    expect(next.interruptInFlight).toBe(false);
+    expect(next.notice).toBe('turn ended before stop · 2 sent · agent generating');
+    expect(next.sent).toHaveLength(2);
+  });
+
+  test('a refusal clears the transient and keeps draft/receipts for the alert', () => {
+    let state = createSteeringDockState('generating');
+    const send = beginGuidanceSubmission(state, 'held', () => 'm-1');
+    state = resolveGuidanceSuccess(send.state, { message_id: send.messageId });
+    const interrupting = beginInterrupt(state);
+    const next = resolveInterruptError(interrupting, {
+      code: 'not_steerable_here',
+      message: 'No live steering session',
+    });
+    expect(next.interruptInFlight).toBe(false);
+    expect(next.subState).toBe('generating');
+    expect(next.sent).toHaveLength(1);
+    expect(next.refusal).toEqual({
+      code: 'not_steerable_here',
+      message: 'No live steering session',
+    });
+  });
+
+  test('409 node_finished flows through the same refusal path', () => {
+    const interrupting = beginInterrupt(createSteeringDockState('generating'));
+    const next = resolveInterruptError(interrupting, {
+      code: 'node_finished',
+      message: 'Workflow node is finished',
+    });
+    expect(next.refusal?.code).toBe('node_finished');
+    expect(next.interruptInFlight).toBe(false);
+  });
+});
+
+describe('send now batch transitions', () => {
+  let counter = 0;
+  const newId = (): string => `sn-${(++counter).toString()}`;
+
+  function idleWithReceipts(messages: string[]): SteeringDockState {
+    let state = createSteeringDockState('idle-after-interrupt');
+    for (const message of messages) {
+      const begun = beginGuidanceSubmission(state, message, newId);
+      state = resolveGuidanceSuccess(begun.state, { message_id: begun.messageId });
+    }
+    return state;
+  }
+
+  test('begin snapshots the band plus new draft into inFlightBatch and clears it optimistically', () => {
+    const state = idleWithReceipts(['first', 'second']);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    expect(begun.state.sent).toEqual([]);
+    expect(begun.state.inFlightBatch?.map(entry => entry.message)).toEqual([
+      'first',
+      'second',
+      'redirect now',
+    ]);
+    expect(begun.state.sendInFlight).toBe(true);
+    expect(begun.state.pendingRetry).toEqual({
+      messageId: begun.messageId,
+      message: 'redirect now',
+    });
+  });
+
+  test('an ambiguous Queue retry keeps its id and queued receipt instead of faking Send-now success', () => {
+    const queued = beginGuidanceSubmission(
+      createSteeringDockState('idle-after-interrupt'),
+      'redirect now',
+      newId
+    );
+    const queueFailed = resolveGuidanceFailure(queued.state, { code: null, message: 'lost' });
+    const sendNow = beginSendNow(queueFailed, 'redirect now', newId);
+    const resolved = resolveSendNowSuccess(sendNow.state, {
+      message_id: sendNow.messageId,
+      state: 'queued',
+    });
+
+    expect(sendNow.messageId).toBe(queued.messageId);
+    expect(resolved.subState).toBe('idle-after-interrupt');
+    expect(resolved.sent.map(entry => entry.message)).toEqual(['redirect now']);
+    expect(resolved.pendingRetry).toBeNull();
+    expect(resolved.notice).toBe('1 message will send');
+  });
+
+  test('success discards the batch, derives generating, announces once', () => {
+    const state = idleWithReceipts(['first']);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    const next = resolveSendNowSuccess(begun.state, {
+      message_id: begun.messageId,
+      state: 'awaiting_send_now',
+    });
+    expect(next.sent).toEqual([]);
+    expect(next.inFlightBatch).toBeNull();
+    expect(next.pendingRetry).toBeNull();
+    expect(next.subState).toBe('generating');
+    expect(next.notice).toBe('agent generating');
+  });
+
+  test('a replayed success after settlement never drains twice', () => {
+    const state = idleWithReceipts(['first']);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    const receipt = { message_id: begun.messageId, state: 'awaiting_send_now' as const };
+    const settled = resolveSendNowSuccess(begun.state, receipt);
+    const replay = resolveSendNowSuccess(settled, receipt);
+    expect(replay).toBe(settled);
+  });
+
+  test('failure restores old then new items and retains the stable retry id', () => {
+    const state = idleWithReceipts(['first', 'second']);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    const failed = resolveSendNowFailure(begun.state, {
+      code: null,
+      message: STEERING_SEND_FAILED_MESSAGE,
+    });
+    expect(failed.sent.map(entry => entry.message)).toEqual(['first', 'second', 'redirect now']);
+    expect(failed.inFlightBatch).toBeNull();
+    expect(failed.sendInFlight).toBe(false);
+    expect(failed.subState).toBe('idle-after-interrupt');
+    expect(failed.refusal?.message).toBe("couldn't send · back in the queue");
+
+    const retried = beginSendNow(failed, 'redirect now', newId);
+    expect(retried.messageId).toBe(begun.messageId);
+    expect(retried.state.inFlightBatch?.map(entry => entry.message)).toEqual([
+      'first',
+      'second',
+      'redirect now',
+    ]);
+  });
+
+  test('editing a failed Send-now draft replaces its restored display row and id', () => {
+    const begun = beginSendNow(idleWithReceipts(['first']), 'redirect now', newId);
+    const failed = resolveSendNowFailure(begun.state, { code: null, message: 'lost' });
+    const edited = beginSendNow(failed, 'redirect edited', newId);
+
+    expect(edited.messageId).not.toBe(begun.messageId);
+    expect(edited.state.inFlightBatch?.map(entry => entry.message)).toEqual([
+      'first',
+      'redirect edited',
+    ]);
+  });
+
+  test('a terminal projection supersedes an idle send-now state', () => {
+    const state = idleWithReceipts(['first']);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    const failed = resolveSendNowFailure(begun.state, { code: null, message: 'lost' });
+    const synced = syncProjectedSubState(failed, 'generating');
+    expect(synced.subState).toBe('generating');
+    expect(synced.notice).toBe('agent generating');
+    expect(synced.sent).toHaveLength(2);
+  });
+});
+
 describe('sessionStorage draft persistence', () => {
   test('round trips draft plus pending retry scoped by run and node', () => {
     const storage = memoryStorage();
@@ -393,13 +710,16 @@ describe('sessionStorage draft persistence', () => {
 });
 
 describe('wording', () => {
-  test('band header is lowercase `queued · n`', () => {
+  test('band headers are lowercase `queued · n` / `will send · n`', () => {
     expect(queueBandHeader(1)).toBe('queued · 1');
     expect(queueBandHeader(3)).toBe('queued · 3');
+    expect(willSendBandHeader(1)).toBe('will send · 1');
+    expect(willSendBandHeader(3)).toBe('will send · 3');
   });
 
-  test('list label is `Queued messages, n`', () => {
+  test('list labels are `Queued messages, n` and `Will send, n`', () => {
     expect(queueListLabel(2)).toBe('Queued messages, 2');
+    expect(willSendListLabel(2)).toBe('Will send, 2');
   });
 
   test('accessible name starts with Queue and carries shortcut + count', () => {
@@ -408,9 +728,23 @@ describe('wording', () => {
     expect(queueButtonAccessibleName(4)).toBe('Queue · Cmd/Ctrl+Enter to send · 4 messages queued');
   });
 
+  test('Send now accessible name starts with Send now and carries shortcut + count', () => {
+    expect(sendNowButtonAccessibleName(0)).toBe(
+      'Send now · Cmd/Ctrl+Enter to send · 0 messages will send'
+    );
+    expect(sendNowButtonAccessibleName(1)).toBe(
+      'Send now · Cmd/Ctrl+Enter to send · 1 message will send'
+    );
+    expect(sendNowButtonAccessibleName(2)).toBe(
+      'Send now · Cmd/Ctrl+Enter to send · 2 messages will send'
+    );
+  });
+
   test('singular/plural announcement wording', () => {
     expect(queuedCountPhrase(1)).toBe('1 message queued');
     expect(queuedCountPhrase(2)).toBe('2 messages queued');
+    expect(willSendCountPhrase(1)).toBe('1 message will send');
+    expect(willSendCountPhrase(2)).toBe('2 messages will send');
   });
 
   test('static copy constants', () => {
@@ -419,18 +753,36 @@ describe('wording', () => {
       'not steerable here · this run was started detached, so its live session is not in this process'
     );
     expect(STEERING_SEND_FAILED_MESSAGE).toBe("couldn't send · back in the queue");
+    expect(STEERING_INTERRUPT_FAILED_MESSAGE).toBe("couldn't interrupt · try again");
+    expect(STEERING_INTERRUPT_DISCLOSURE).toBe(
+      'stopped after the last completed tool call · files already written stay written'
+    );
+    expect(STEERING_AGENT_INTERRUPTING).toBe('agent interrupting');
+    expect(STEERING_AGENT_IDLE).toBe('agent idle · Send now delivers');
+    expect(STEERING_AGENT_GENERATING).toBe('agent generating');
+  });
+
+  test('finished-iteration disclosure and Go label match the ratified copy', () => {
+    expect(finishedIterationDisclosure(2)).toBe(
+      'reading a finished iteration · the agent is working in iteration 2'
+    );
+    expect(goToIterationLabel(2)).toBe('Go to iteration 2');
+    expect(finishedIterationDisclosure(11)).toBe(
+      'reading a finished iteration · the agent is working in iteration 11'
+    );
+    expect(goToIterationLabel(11)).toBe('Go to iteration 11');
   });
 });
 
-describe('toSteeringSendError', () => {
+describe('toSteeringRequestError', () => {
   test('parses the nested body out of a fetchJSON-style error message', () => {
     const body = JSON.stringify({
       success: false,
       error: { code: 'not_steerable_here', message: 'No live steering session' },
     });
     const error = Object.assign(new Error(`API error 422 (/api/x): ${body}`), { status: 422 });
-    const normalized = toSteeringSendError(error);
-    expect(normalized).toBeInstanceOf(SteeringSendError);
+    const normalized = toSteeringRequestError(error);
+    expect(normalized).toBeInstanceOf(SteeringRequestError);
     expect(normalized.status).toBe(422);
     expect(normalized.code).toBe('not_steerable_here');
     expect(normalized.message).toBe('No live steering session');
@@ -445,41 +797,53 @@ describe('toSteeringSendError', () => {
       status: 409,
       bodySnippet: body,
     });
-    const normalized = toSteeringSendError(error);
+    const normalized = toSteeringRequestError(error);
     expect(normalized.code).toBe('node_finished');
     expect(normalized.message).toBe('Workflow node is finished');
   });
 
   test('unparseable body keeps status with a generic message', () => {
     const error = Object.assign(new Error('API error 500 (/api/x): <html>'), { status: 500 });
-    const normalized = toSteeringSendError(error);
+    const normalized = toSteeringRequestError(error);
     expect(normalized.status).toBe(500);
     expect(normalized.code).toBeNull();
     expect(normalized.message).toBe('Request failed (500)');
   });
 
   test('transport-level failure reports the ambiguous copy', () => {
-    const normalized = toSteeringSendError(new TypeError('fetch failed'));
+    const normalized = toSteeringRequestError(new TypeError('fetch failed'));
     expect(normalized.status).toBe(0);
     expect(normalized.code).toBeNull();
     expect(normalized.message).toBe(STEERING_SEND_FAILED_MESSAGE);
   });
 
-  test('an existing SteeringSendError passes through', () => {
-    const error = new SteeringSendError(422, 'not_steerable_here', 'detached');
-    expect(toSteeringSendError(error)).toBe(error);
+  test('interrupt callers pass their own ambiguous copy', () => {
+    const normalized = toSteeringRequestError(
+      new TypeError('fetch failed'),
+      STEERING_INTERRUPT_FAILED_MESSAGE
+    );
+    expect(normalized.message).toBe("couldn't interrupt · try again");
+  });
+
+  test('an existing SteeringRequestError passes through', () => {
+    const error = new SteeringRequestError(422, 'not_steerable_here', 'detached');
+    expect(toSteeringRequestError(error)).toBe(error);
   });
 });
 
 describe('toSteeringRefusal', () => {
   test('maps typed errors to a code/message refusal', () => {
-    expect(toSteeringRefusal(new SteeringSendError(409, 'node_finished', 'done'))).toEqual({
+    expect(toSteeringRefusal(new SteeringRequestError(409, 'node_finished', 'done'))).toEqual({
       code: 'node_finished',
       message: 'done',
     });
     expect(toSteeringRefusal(new Error('offline'))).toEqual({
       code: null,
       message: STEERING_SEND_FAILED_MESSAGE,
+    });
+    expect(toSteeringRefusal(new Error('offline'), STEERING_INTERRUPT_FAILED_MESSAGE)).toEqual({
+      code: null,
+      message: "couldn't interrupt · try again",
     });
   });
 });
@@ -568,7 +932,8 @@ describe('applyQueueSnapshot', () => {
 
   test('returns the identical state object when the snapshot is identical', () => {
     const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
-      inFlight: true,
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+      sendInFlight: true,
       pendingRetry: { messageId: 'p', message: 'wip' },
       refusal: { code: 'stale', message: 'old' },
       withdrawingMessageId: 'a',
@@ -604,9 +969,13 @@ describe('applyQueueSnapshot', () => {
     expect(next.sent).toEqual([receipt('a', 'alpha')]);
   });
 
-  test('preserves in-flight send, pending retry, refusal, and the active withdraw id', () => {
+  test('preserves in-flight send, interrupt/Send-now fields, pending retry, refusal, and the active withdraw id', () => {
     const state = stateWith([receipt('a', 'alpha')], {
-      inFlight: true,
+      sendInFlight: true,
+      interruptInFlight: true,
+      inFlightBatch: [receipt('x', 'batch')],
+      subState: 'idle-after-interrupt',
+      notice: 'agent interrupting',
       pendingRetry: { messageId: 'p', message: 'wip' },
       refusal: { code: 'node_finished', message: 'done' },
       withdrawingMessageId: 'a',
@@ -614,7 +983,11 @@ describe('applyQueueSnapshot', () => {
     });
     const next = applyQueueSnapshot(state, { queued: [{ message_id: 'b', message: 'beta' }] }, 5);
     expect(next.sent).toEqual([receipt('b', 'beta')]);
-    expect(next.inFlight).toBe(true);
+    expect(next.sendInFlight).toBe(true);
+    expect(next.interruptInFlight).toBe(true);
+    expect(next.inFlightBatch).toEqual([receipt('x', 'batch')]);
+    expect(next.subState).toBe('idle-after-interrupt');
+    expect(next.notice).toBe('agent interrupting');
     expect(next.pendingRetry).toEqual({ messageId: 'p', message: 'wip' });
     expect(next.refusal).toEqual({ code: 'node_finished', message: 'done' });
     expect(next.withdrawingMessageId).toBe('a');
@@ -642,7 +1015,7 @@ describe('applyQueueSnapshot', () => {
 
   test('a snapshot containing the in-flight send id dedupes with its later resolution', () => {
     const state = stateWith([receipt('a', 'alpha')], {
-      inFlight: true,
+      sendInFlight: true,
       pendingRetry: { messageId: 'p', message: 'pending' },
     });
     // The server already accepted the send; its row arrives via the snapshot
@@ -825,10 +1198,10 @@ describe('startQueuePolling', () => {
     });
     try {
       for (const error of [
-        new SteeringSendError(422, 'not_steerable_here', 'detached'),
+        new SteeringRequestError(422, 'not_steerable_here', 'detached'),
         new Error('offline'),
-        new SteeringSendError(500, 'internal_error', 'oops'),
-        new SteeringSendError(503, 'internal_error', 'busy'),
+        new SteeringRequestError(500, 'internal_error', 'oops'),
+        new SteeringRequestError(503, 'internal_error', 'busy'),
       ]) {
         const attempt = reads.length;
         reads[attempt - 1].reject(error);
@@ -851,7 +1224,7 @@ describe('startQueuePolling', () => {
     const stop = startQueuePolling({
       read: () => {
         calls++;
-        throw new SteeringSendError(422, 'not_steerable_here', 'detached');
+        throw new SteeringRequestError(422, 'not_steerable_here', 'detached');
       },
       currentGeneration: () => 0,
       onSnapshot: snapshot => {
@@ -879,10 +1252,99 @@ describe('startQueuePolling', () => {
       const { reads, stop } = pollHarness(clock, gen => {
         snapshots.push(gen);
       });
-      reads[0].reject(new SteeringSendError(status, 'code', 'msg'));
+      reads[0].reject(new SteeringRequestError(status, 'code', 'msg'));
       await flush();
       expect(snapshots).toHaveLength(0);
       expect(clock.pending.size).toBe(0);
+      stop();
+    }
+  });
+
+  test('onError receives the normalized error once per failed read before retry/stop', async () => {
+    const clock = fakeClock();
+    const errors: SteeringRequestError[] = [];
+    const reads: Deferred<{ queued: readonly QueuedGuidanceRow[] }>[] = [];
+    const stop = startQueuePolling({
+      read: () => {
+        const d = deferred<{ queued: readonly QueuedGuidanceRow[] }>();
+        reads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      onError: error => {
+        errors.push(error);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      reads[0].reject(new SteeringRequestError(422, 'not_steerable_here', 'detached'));
+      await flush();
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.status).toBe(422);
+      expect(errors[0]?.code).toBe('not_steerable_here');
+      expect(clock.pending.size).toBe(1);
+
+      clock.runNext();
+      reads[1].reject(new SteeringRequestError(409, 'node_finished', 'done'));
+      await flush();
+      expect(errors).toHaveLength(2);
+      expect(errors[1]?.status).toBe(409);
+      expect(clock.pending.size).toBe(0);
+    } finally {
+      stop();
+    }
+  });
+
+  test('omitted onError keeps retry/stop behavior identical', async () => {
+    const clock = fakeClock();
+    const snapshots: unknown[] = [];
+    const { reads, stop } = pollHarness(clock, gen => {
+      snapshots.push(gen);
+    });
+    try {
+      reads[0].reject(new SteeringRequestError(422, 'not_steerable_here', 'detached'));
+      await flush();
+      expect(snapshots).toHaveLength(0);
+      expect(clock.pending.size).toBe(1);
+      clock.runNext();
+      reads[1].resolve({ queued: [{ message_id: 'a', message: 'alpha' }] });
+      await flush();
+      expect(snapshots).toEqual([0]);
+    } finally {
+      stop();
+    }
+  });
+
+  test('onError fires for a synchronous throw and still retries 422', () => {
+    const clock = fakeClock();
+    const errors: SteeringRequestError[] = [];
+    let calls = 0;
+    const stop = startQueuePolling({
+      read: () => {
+        calls++;
+        throw new SteeringRequestError(422, 'not_steerable_here', 'detached');
+      },
+      currentGeneration: () => 0,
+      onSnapshot: () => undefined,
+      onError: error => {
+        errors.push(error);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      expect(calls).toBe(1);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.status).toBe(422);
+      expect(clock.pending.size).toBe(1);
+      clock.runNext();
+      expect(calls).toBe(2);
+      expect(errors).toHaveLength(2);
+    } finally {
       stop();
     }
   });
@@ -961,9 +1423,721 @@ describe('startQueuePolling', () => {
       clearTimer: clock2.clearTimer,
     });
     stop2();
-    reads2[0].reject(new SteeringSendError(500, 'internal_error', 'oops'));
+    reads2[0].reject(new SteeringRequestError(500, 'internal_error', 'oops'));
     await flush();
     expect(clock2.pending.size).toBe(0);
     expect(reads2).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 2.11 (#191) Phase 1 — observed ledger, reconciliation, finished mode.
+// ---------------------------------------------------------------------------
+
+describe('observed ledger and never-sent reconciliation (T1.1–T1.22)', () => {
+  const CREATED_AT = '2026-09-12T00:00:00.000Z';
+
+  function operatorText(id: string, seq: number, body: string, messageId?: string): NodeMessageRow {
+    return {
+      id,
+      seq,
+      kind: 'text',
+      payload: { text: body },
+      created_at: CREATED_AT,
+      metadata: {
+        origin: 'operator',
+        ...(messageId === undefined ? {} : { message_id: messageId }),
+      },
+    };
+  }
+
+  function assistantText(id: string, seq: number, body: string): NodeMessageRow {
+    return {
+      id,
+      seq,
+      kind: 'text',
+      payload: { text: body },
+      created_at: CREATED_AT,
+      metadata: { message_id: 'assistant-should-ignore' },
+    };
+  }
+
+  function toolRow(id: string, seq: number): NodeMessageRow {
+    return {
+      id,
+      seq,
+      kind: 'tool',
+      payload: { name: 'bash', id: 'tool-1' },
+      created_at: CREATED_AT,
+      metadata: { origin: 'operator', message_id: 'tool-should-ignore' },
+    };
+  }
+
+  test('T1.1 constructor initializes terminal state', () => {
+    const state = createSteeringDockState();
+    expect(state.observedLedger).toEqual([]);
+    expect(state.neverSent).toBeNull();
+  });
+
+  test('T1.2 local guidance successes are observed once', () => {
+    let counter = 0;
+    const newId = (): string => `g-${(++counter).toString()}`;
+    let state = createSteeringDockState();
+    const first = beginGuidanceSubmission(state, 'alpha', newId);
+    state = resolveGuidanceSuccess(first.state, { message_id: first.messageId });
+    const second = beginGuidanceSubmission(state, 'beta', newId);
+    state = resolveGuidanceSuccess(second.state, { message_id: second.messageId });
+    expect(state.observedLedger.map(entry => entry.messageId)).toEqual([
+      first.messageId,
+      second.messageId,
+    ]);
+    const replay = resolveGuidanceSuccess(
+      { ...state, pendingRetry: { messageId: first.messageId, message: 'alpha' } },
+      { message_id: first.messageId }
+    );
+    expect(replay.observedLedger).toHaveLength(2);
+    expect(replay.observedLedger.map(entry => entry.messageId)).toEqual([
+      first.messageId,
+      second.messageId,
+    ]);
+  });
+
+  test('T1.3 Send-now success observes its new receipt', () => {
+    let counter = 0;
+    const newId = (): string => `sn-${(++counter).toString()}`;
+    let state = createSteeringDockState('idle-after-interrupt');
+    const queued = beginGuidanceSubmission(state, 'first', newId);
+    state = resolveGuidanceSuccess(queued.state, { message_id: queued.messageId });
+    const priorIds = state.observedLedger.map(entry => entry.messageId);
+    const begun = beginSendNow(state, 'redirect now', newId);
+    const next = resolveSendNowSuccess(begun.state, {
+      message_id: begun.messageId,
+      state: 'awaiting_send_now',
+    });
+    expect(next.sent).toEqual([]);
+    expect(next.observedLedger.map(entry => entry.messageId)).toEqual([
+      ...priorIds,
+      begun.messageId,
+    ]);
+  });
+
+  test('T1.4 valid shared snapshot extends observation history', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'a', message: 'alpha' },
+          { message_id: 'b', message: 'beta-remote' },
+        ],
+      },
+      0
+    );
+    expect(next.sent).toEqual([receipt('a', 'alpha'), receipt('b', 'beta-remote')]);
+    expect(next.observedLedger).toEqual([receipt('a', 'alpha'), receipt('b', 'beta-remote')]);
+  });
+
+  test('T1.5 later omission does not erase history', () => {
+    let state = applyQueueSnapshot(
+      createSteeringDockState(),
+      { queued: [{ message_id: 'a', message: 'alpha' }] },
+      0
+    );
+    expect(state.observedLedger).toEqual([receipt('a', 'alpha')]);
+    state = applyQueueSnapshot(state, { queued: [] }, 0);
+    expect(state.sent).toEqual([]);
+    expect(state.observedLedger).toEqual([receipt('a', 'alpha')]);
+  });
+
+  test('T1.6 stale generation is inert', () => {
+    const state = stateWith([receipt('a', 'alpha')], {
+      observedLedger: [receipt('a', 'alpha')],
+      queueGeneration: 3,
+    });
+    const next = applyQueueSnapshot(
+      state,
+      {
+        queued: [
+          { message_id: 'b', message: 'beta' },
+          { message_id: 'a', message: 'alpha' },
+        ],
+      },
+      2
+    );
+    expect(next).toBe(state);
+    expect(next.observedLedger).toBe(state.observedLedger);
+    expect(next.sent).toEqual([receipt('a', 'alpha')]);
+  });
+
+  test('T1.7 own confirmed withdraw removes history', () => {
+    const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+    });
+    const resolved = resolveWithdrawSuccess(beginWithdraw(state, 'a'), 'a');
+    expect(resolved.sent).toEqual([receipt('b', 'beta')]);
+    expect(resolved.observedLedger).toEqual([receipt('b', 'beta')]);
+    // Unknown id while idle is a no-op (no active withdraw).
+    expect(resolveWithdrawSuccess(state, 'missing')).toBe(state);
+  });
+
+  test('T1.8 failure/interrupt transitions preserve history', () => {
+    const ledger = [receipt('a', 'alpha')];
+    const base = stateWith(ledger, {
+      observedLedger: ledger,
+      pendingRetry: { messageId: 'p', message: 'pending' },
+    });
+    const failed = resolveGuidanceFailure(base, { code: null, message: 'lost' });
+    expect(failed.observedLedger).toBe(base.observedLedger);
+    const sendFailed = resolveSendNowFailure(
+      { ...base, inFlightBatch: ledger, sendInFlight: true },
+      { code: null, message: 'lost' }
+    );
+    expect(sendFailed.observedLedger).toBe(base.observedLedger);
+    const withdrawFailed = resolveWithdrawFailure(beginWithdraw(base, 'a'), 'a', {
+      code: 'x',
+      message: 'nope',
+    });
+    expect(withdrawFailed.observedLedger).toBe(base.observedLedger);
+    const interrupting = beginInterrupt(base);
+    expect(interrupting.observedLedger).toBe(base.observedLedger);
+    const interrupted = resolveInterruptOutcome(interrupting, 'idle-after-interrupt');
+    expect(interrupted.observedLedger).toBe(base.observedLedger);
+    const interruptErr = resolveInterruptError(interrupting, {
+      code: null,
+      message: 'nope',
+    });
+    expect(interruptErr.observedLedger).toBe(base.observedLedger);
+  });
+
+  test('T1.9 reconcile restores unmatched observed ids', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'textA'), receipt('b', 'textB')],
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(['a']),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([{ messageId: 'b', message: 'textB' }]);
+  });
+
+  test('T1.10 reconcile handles a vanished shared snapshot', () => {
+    let state = applyQueueSnapshot(
+      createSteeringDockState(),
+      { queued: [{ message_id: 'a', message: 'shared A' }] },
+      0
+    );
+    state = applyQueueSnapshot(state, { queued: [] }, 0);
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([{ messageId: 'a', message: 'shared A' }]);
+  });
+
+  test('T1.11 written ids remove all delivered candidates', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(['a', 'b']),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([]);
+    expect(next.neverSent).not.toBeNull();
+  });
+
+  test('T1.12 unmatched pending submission is restored', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'alpha')],
+      pendingRetry: { messageId: 'R', message: 'pending text' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '',
+    });
+    expect(next.neverSent).toEqual([
+      { messageId: 'a', message: 'alpha' },
+      { messageId: 'R', message: 'pending text' },
+    ]);
+  });
+
+  test('T1.13 written/observed pending is not duplicated', () => {
+    const written = reconcileNeverSent(
+      stateWith([], {
+        observedLedger: [],
+        pendingRetry: { messageId: 'R', message: 'pending' },
+      }),
+      { writtenMessageIds: new Set(['R']), draft: '' }
+    );
+    expect(written.neverSent).toEqual([]);
+
+    const observed = reconcileNeverSent(
+      stateWith([], {
+        observedLedger: [receipt('R', 'pending')],
+        pendingRetry: { messageId: 'R', message: 'pending' },
+      }),
+      { writtenMessageIds: new Set(), draft: '' }
+    );
+    expect(observed.neverSent).toEqual([{ messageId: 'R', message: 'pending' }]);
+  });
+
+  test('T1.14 a different raw draft follows pending', () => {
+    const state = stateWith([], {
+      pendingRetry: { messageId: 'R', message: 'old' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '  new text  ',
+    });
+    expect(next.neverSent).toEqual([
+      { messageId: 'R', message: 'old' },
+      { messageId: null, message: '  new text  ' },
+    ]);
+    const whitespaceOnly = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: '   \n\t  ',
+    });
+    expect(whitespaceOnly.neverSent).toEqual([{ messageId: 'R', message: 'old' }]);
+  });
+
+  test('T1.15 unchanged pending/draft is one item', () => {
+    const state = stateWith([], {
+      pendingRetry: { messageId: 'R', message: 'same text' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: 'same text',
+    });
+    expect(next.neverSent).toEqual([{ messageId: 'R', message: 'same text' }]);
+  });
+
+  test('T1.16 in-flight edit loses nothing', () => {
+    const state = stateWith([], {
+      observedLedger: [receipt('a', 'alpha'), receipt('b', 'beta')],
+      pendingRetry: { messageId: 'R', message: 'pending' },
+    });
+    const next = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(['a']),
+      draft: 'edited draft',
+    });
+    expect(next.neverSent).toEqual([
+      { messageId: 'b', message: 'beta' },
+      { messageId: 'R', message: 'pending' },
+      { messageId: null, message: 'edited draft' },
+    ]);
+  });
+
+  test('T1.17 reconciliation is idempotent/pure', () => {
+    const sent = [receipt('keep', 'visible')];
+    const pendingRetry = { messageId: 'R', message: 'pending' };
+    const refusal = { code: 'stale', message: 'old' };
+    const notice = '1 message queued';
+    const state = stateWith(sent, {
+      observedLedger: [receipt('a', 'alpha')],
+      pendingRetry,
+      refusal,
+      notice,
+      sendInFlight: true,
+      interruptInFlight: true,
+      withdrawingMessageId: 'keep',
+      queueGeneration: 4,
+      subState: 'generating',
+    });
+    const first = reconcileNeverSent(state, {
+      writtenMessageIds: new Set(),
+      draft: 'draft',
+    });
+    const second = reconcileNeverSent(first, {
+      writtenMessageIds: new Set(),
+      draft: 'draft',
+    });
+    expect(second).toBe(first);
+    expect(first.sent).toBe(sent);
+    expect(first.pendingRetry).toBe(pendingRetry);
+    expect(first.refusal).toBe(refusal);
+    expect(first.notice).toBe(notice);
+    expect(first.sendInFlight).toBe(true);
+    expect(first.interruptInFlight).toBe(true);
+    expect(first.withdrawingMessageId).toBe('keep');
+    expect(first.queueGeneration).toBe(4);
+    expect(first.subState).toBe('generating');
+    expect(first.observedLedger).toBe(state.observedLedger);
+  });
+
+  test('T1.18 finished mode requires explicit node terminal', () => {
+    const neverSent: NeverSentEntry[] = [{ messageId: 'a', message: 'alpha' }];
+    expect(
+      modeFor('completed', {
+        nodeTerminal: true,
+        neverSent,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished');
+    expect(modeFor('running', { neverSent, nodeTerminal: false })).toBe('composer');
+    expect(modeFor('completed', { neverSent, nodeTerminal: false })).toBe('hidden');
+    // Cancel flips the run non-live before/after nodeTerminal; finished still
+    // wins when both neverSent and nodeTerminal are present (E4.1 Cancel path).
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
+    expect(modeFor('completed', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
+    // live:false alone still hides — no finished without neverSent+nodeTerminal.
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: false })).toBe('hidden');
+  });
+
+  test('T1.19 empty/unreconciled result preserves old table', () => {
+    expect(modeFor('running', { neverSent: null, nodeTerminal: true })).toBe('composer');
+    expect(modeFor('running', { neverSent: [], nodeTerminal: true })).toBe('composer');
+    expect(modeFor('awaiting', { neverSent: [], nodeTerminal: true })).toBe('blocked');
+    expect(modeFor('completed', { neverSent: null, nodeTerminal: true })).toBe('hidden');
+    expect(
+      modeFor('completed', {
+        neverSent: [],
+        nodeTerminal: true,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished-iteration');
+    expect(
+      modeFor('running', {
+        neverSent: null,
+        nodeTerminal: true,
+        refusal: { code: 'not_steerable_here', message: 'detached' },
+      })
+    ).toBe('detached');
+  });
+
+  test('T1.20 copy and accessible labels are exact', () => {
+    expect(neverSentBandHeader(1)).toBe('never sent · 1');
+    expect(neverSentBandHeader(3)).toBe('never sent · 3');
+    expect(neverSentListLabel(2)).toBe('Never sent, 2');
+    expect(STEERING_NEVER_SENT_DISCLOSURE).toBe('node finished · none of this was sent');
+  });
+
+  test('T1.21 queue-observer mode does not decide terminality', () => {
+    const neverSent: NeverSentEntry[] = [{ messageId: 'a', message: 'alpha' }];
+    expect(modeFor('running', { neverSent })).toBe('composer');
+    expect(modeFor('awaiting', { neverSent })).toBe('blocked');
+    expect(
+      modeFor('completed', {
+        neverSent,
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+      })
+    ).toBe('finished-iteration');
+    expect(modeFor('running', { neverSent, nodeTerminal: true })).toBe('finished');
+  });
+
+  test('T1.22 written-id extractor is strict', () => {
+    const rows: NodeMessageRow[] = [
+      operatorText('op-1', 1, 'keep me', 'msg-1'),
+      operatorText('op-2', 2, 'no id'),
+      operatorText('op-3', 3, 'blank id', ''),
+      assistantText('as-1', 4, 'assistant'),
+      toolRow('tool-1', 5),
+      {
+        id: 'status-1',
+        seq: 6,
+        kind: 'status',
+        payload: { state: 'running' },
+        created_at: CREATED_AT,
+        metadata: { origin: 'operator', message_id: 'status-should-ignore' },
+      },
+    ];
+    expect([...collectWrittenOperatorMessageIds(rows)]).toEqual(['msg-1']);
+  });
+});
+
+describe('Story 2.12 idle-await disclosure and keepalive coalescer (T4.1–T4.6)', () => {
+  test('T4.1 exact copies match authority byte-for-byte; normal terminal copy unchanged', () => {
+    expect(STEERING_IDLE_AWAIT_DISCLOSURE).toBe(
+      'no redirect ends this node after 30 min of inactivity · typing keeps it open'
+    );
+    expect(STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE).toBe(
+      'node failed · interrupted with no redirect · none of this was sent'
+    );
+    expect(IDLE_AWAIT_EXPIRED_ERROR).toBe('interrupted by operator, no redirect received');
+    expect(STEERING_KEEPALIVE_COALESCE_MS).toBe(30_000);
+    expect(STEERING_NEVER_SENT_DISCLOSURE).toBe('node finished · none of this was sent');
+    expect(neverSentDisclosure(false)).toBe(STEERING_NEVER_SENT_DISCLOSURE);
+    expect(neverSentDisclosure(true)).toBe(STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE);
+  });
+
+  interface KeepaliveClock {
+    nowMs: number;
+    setTimer: typeof setTimeout;
+    clearTimer: typeof clearTimeout;
+    pending: Map<number, { fn: () => void; dueAt: number }>;
+    advanceTo: (targetMs: number) => void;
+  }
+
+  function keepaliveClock(startMs = 0): KeepaliveClock {
+    let nextHandle = 0;
+    const pending = new Map<number, { fn: () => void; dueAt: number }>();
+    const clock: KeepaliveClock = {
+      nowMs: startMs,
+      pending,
+      setTimer: ((handler: TimerHandler, timeout?: number): number => {
+        const handle = ++nextHandle;
+        const fn: () => void =
+          typeof handler === 'function' ? (handler as () => void) : (): void => undefined;
+        pending.set(handle, { fn, dueAt: clock.nowMs + (timeout ?? 0) });
+        return handle;
+      }) as typeof setTimeout,
+      clearTimer: ((handle: unknown): void => {
+        pending.delete(handle as number);
+      }) as typeof clearTimeout,
+      advanceTo(targetMs: number): void {
+        while (pending.size > 0) {
+          let nextHandleId: number | undefined;
+          let nextDue = Number.POSITIVE_INFINITY;
+          for (const [handle, entry] of pending) {
+            if (
+              entry.dueAt < nextDue ||
+              (entry.dueAt === nextDue && (nextHandleId === undefined || handle < nextHandleId))
+            ) {
+              nextDue = entry.dueAt;
+              nextHandleId = handle;
+            }
+          }
+          if (nextHandleId === undefined || nextDue > targetMs) {
+            clock.nowMs = targetMs;
+            return;
+          }
+          const entry = pending.get(nextHandleId);
+          if (entry === undefined) continue;
+          pending.delete(nextHandleId);
+          clock.nowMs = entry.dueAt;
+          entry.fn();
+        }
+        clock.nowMs = targetMs;
+      },
+    };
+    return clock;
+  }
+
+  test('T4.2 first touch sends immediately; interior touches schedule one trailing at boundary', () => {
+    const clock = keepaliveClock();
+    const calls: number[] = [];
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      windowMs: STEERING_KEEPALIVE_COALESCE_MS,
+    });
+    try {
+      coalescer.touch();
+      expect(calls).toEqual([0]);
+
+      clock.advanceTo(1);
+      coalescer.touch();
+      clock.advanceTo(29_999);
+      coalescer.touch();
+      expect(calls).toEqual([0]);
+      expect(clock.pending.size).toBe(1);
+
+      clock.advanceTo(30_000);
+      expect(calls).toEqual([0, 30_000]);
+      expect(clock.pending.size).toBe(0);
+    } finally {
+      coalescer.dispose();
+    }
+  });
+
+  test('T4.3 continuous activity stays one call per window and represents the last keystroke within 30s', () => {
+    const clock = keepaliveClock();
+    const calls: number[] = [];
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      coalescer.touch();
+      for (const t of [5_000, 15_000, 25_000, 29_000]) {
+        clock.advanceTo(t);
+        coalescer.touch();
+      }
+      clock.advanceTo(30_000);
+      expect(calls).toEqual([0, 30_000]);
+
+      for (const t of [35_000, 45_000, 55_000]) {
+        clock.advanceTo(t);
+        coalescer.touch();
+      }
+      clock.advanceTo(60_000);
+      expect(calls).toEqual([0, 30_000, 60_000]);
+
+      // Gap past a full window → immediate send; final activity represented within 30s.
+      clock.advanceTo(95_000);
+      coalescer.touch();
+      expect(calls).toEqual([0, 30_000, 60_000, 95_000]);
+      clock.advanceTo(100_000);
+      coalescer.touch();
+      clock.advanceTo(125_000);
+      expect(calls).toEqual([0, 30_000, 60_000, 95_000, 125_000]);
+    } finally {
+      coalescer.dispose();
+    }
+  });
+
+  test('T4.4 dispose cancels pending work and makes late/in-flight completion inert', async () => {
+    const clock = keepaliveClock();
+    let resolveSend!: (value: unknown) => void;
+    const inFlight = new Promise<unknown>(resolve => {
+      resolveSend = resolve;
+    });
+    const calls: number[] = [];
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+        return inFlight;
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+
+    coalescer.touch();
+    expect(calls).toEqual([0]);
+    clock.advanceTo(10_000);
+    coalescer.touch();
+    expect(clock.pending.size).toBe(1);
+
+    coalescer.dispose();
+    expect(clock.pending.size).toBe(0);
+
+    clock.advanceTo(30_000);
+    expect(calls).toEqual([0]);
+
+    resolveSend({ success: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual([0]);
+
+    // Replacement coalescer is independent; first touch sends immediately.
+    const replacementCalls: number[] = [];
+    const replacement = createKeepaliveCoalescer({
+      send: () => {
+        replacementCalls.push(clock.nowMs);
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      replacement.touch();
+      expect(replacementCalls).toEqual([30_000]);
+      expect(calls).toEqual([0]);
+    } finally {
+      replacement.dispose();
+    }
+  });
+
+  test('T4.5 rejected send is handled; later activity remains bounded without a storm', async () => {
+    const clock = keepaliveClock();
+    const calls: number[] = [];
+    let shouldReject = true;
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+        if (shouldReject) {
+          return Promise.reject(new Error('network down'));
+        }
+        return Promise.resolve({ success: true });
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      coalescer.touch();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(calls).toEqual([0]);
+
+      clock.advanceTo(5_000);
+      coalescer.touch();
+      clock.advanceTo(12_000);
+      coalescer.touch();
+      expect(calls).toEqual([0]);
+      expect(clock.pending.size).toBe(1);
+
+      shouldReject = false;
+      clock.advanceTo(30_000);
+      await Promise.resolve();
+      expect(calls).toEqual([0, 30_000]);
+      expect(clock.pending.size).toBe(0);
+    } finally {
+      coalescer.dispose();
+    }
+  });
+
+  test('T4.6 submit shortcut is excluded; plain, navigation, and composing keys count', () => {
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: true,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 13,
+      })
+    ).toBe(false);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: false,
+        ctrlKey: true,
+        isComposing: false,
+        keyCode: 13,
+      })
+    ).toBe(false);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'a',
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 65,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'ArrowLeft',
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 37,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 13,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: true,
+        ctrlKey: false,
+        isComposing: true,
+        keyCode: 13,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: true,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 229,
+      })
+    ).toBe(true);
   });
 });

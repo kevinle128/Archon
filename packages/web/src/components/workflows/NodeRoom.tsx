@@ -249,20 +249,57 @@ function AssistantHistory({
   item: Extract<AgentHistoryItem, { kind: 'assistant' }>;
 }): React.ReactElement {
   return (
-    <div
-      className="chat-markdown max-w-none text-sm text-text-primary"
-      style={{ overflowWrap: 'anywhere' }}
-    >
-      <div className="mb-1 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
-        ASSISTANT
+    <div style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        assistant
       </div>
-      <ReactMarkdown
-        remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={REHYPE_PLUGINS}
-        components={MARKDOWN_COMPONENTS}
+      <div
+        className="chat-markdown max-w-none font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary"
+        style={{ margin: '0 2px 6px' }}
+      >
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+          components={MARKDOWN_COMPONENTS}
+        >
+          {item.text}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function OperatorHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'operator' }>;
+}): React.ReactElement {
+  const label =
+    item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
+  return (
+    <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="flex w-full items-center text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        <span data-operator-label="">{label}</span>
+        <span
+          data-operator-delivery=""
+          className="ml-auto shrink-0 text-[11px] normal-case tracking-normal text-text-secondary"
+        >
+          sent
+        </span>
+      </div>
+      <div
+        data-operator-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
+        style={{ margin: '0 2px 6px' }}
       >
         {item.text}
-      </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -1040,25 +1077,43 @@ export function NodeRoom({
   const headingPrefix = headingIdPrefix ?? generatedHeadingPrefix;
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
+  // Only the actual last rendered history item is programmatically focusable
+  // (the steering dock's Stop-removal focus target); it never joins Tab order.
+  const lastItemId = items.length === 0 ? null : items[items.length - 1].id;
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
+    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  const lastRowRing = (item: AgentHistoryItem): string | undefined =>
+    item.id === lastItemId
+      ? 'focus-visible:outline-2 focus-visible:outline-accent-bright'
+      : undefined;
+
   const renderItem = (item: AgentHistoryItem): React.ReactElement => {
     if (item.kind === 'assistant') {
       return (
-        <div key={item.id} className="my-1.5">
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
           <AssistantHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'operator') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <OperatorHistory item={item} />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
       );
     }
     if (item.kind === 'tool') {
       return (
-        <div key={item.id}>
+        <div key={item.id} className={lastRowRing(item)} {...lastRowMarker(item)}>
           <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
       );
     }
     return (
-      <div key={item.id} className="my-1.5">
+      <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
         <LifecycleHistory item={item} />
         {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
       </div>

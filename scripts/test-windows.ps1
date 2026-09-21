@@ -49,6 +49,7 @@ function Invoke-WindowsChecks {
   $syncDirectory = Join-Path $source $SyncDirectoryRelativePath
   $syncManifest = Get-Content -LiteralPath (Join-Path $syncDirectory 'manifest.json') -Raw |
     ConvertFrom-Json
+  $bundleFile = Join-Path $syncDirectory 'repository.bundle'
   $patchFile = Join-Path $syncDirectory 'worktree.patch'
 
   $bunCommand = Get-Command bun.exe -ErrorAction SilentlyContinue
@@ -102,41 +103,31 @@ function Invoke-WindowsChecks {
       Assert-LastExitCode 'Git safe-directory setup'
     }
   }
-  if (-not (Test-Path -LiteralPath (Join-Path $destination '.git'))) {
-    if (Test-Path -LiteralPath $destination) {
+  if (Test-Path -LiteralPath $destination) {
+    if (-not (Test-Path -LiteralPath (Join-Path $destination '.git'))) {
       throw "$destination exists but is not the managed Git checkout. Move it before this script runs."
     }
-    & $git clone --no-hardlinks $source $destination
-    Assert-LastExitCode 'Git clone'
+    Remove-Item -LiteralPath $destination -Recurse -Force
   }
 
   $sourceHead = $syncManifest.head
-  & $git -C $destination remote set-url origin $source
-  Assert-LastExitCode 'Guest origin update'
-  & $git -C $destination fetch --no-tags origin $sourceHead
-  Assert-LastExitCode 'Guest checkout fetch'
-
-  # This reset is limited to the checkout that this script owns.
-  & $git -C $destination reset --hard $sourceHead
-  Assert-LastExitCode 'Guest checkout reset'
-
-  $destinationRoot = [IO.Path]::GetFullPath($destination + [IO.Path]::DirectorySeparatorChar)
-  $guestUntrackedFiles = @(
-    & $git -C $destination -c core.quotepath=false ls-files --others --exclude-standard
-  )
-  Assert-LastExitCode 'Managed untracked-file lookup'
-  foreach ($relativePath in $guestUntrackedFiles) {
-    $candidate = [IO.Path]::GetFullPath((Join-Path $destination $relativePath))
-    if (-not $candidate.StartsWith($destinationRoot, [StringComparison]::OrdinalIgnoreCase)) {
-      throw "Refusing to remove an invalid managed path: $relativePath"
-    }
-    Remove-Item -LiteralPath $candidate -Recurse -Force -ErrorAction SilentlyContinue
-  }
+  & $git clone --no-checkout $bundleFile $destination
+  Assert-LastExitCode 'Git clone'
+  & $git -C $destination config core.protectNTFS false
+  Assert-LastExitCode 'Git index compatibility setup'
+  & $git -C $destination read-tree --reset $sourceHead
+  Assert-LastExitCode 'Guest index reset'
 
   if ((Get-Item -LiteralPath $patchFile).Length -gt 0) {
-    & $git -C $destination apply --whitespace=nowarn $patchFile
+    & $git -C $destination apply --cached --whitespace=nowarn $patchFile
     Assert-LastExitCode 'Host patch apply'
   }
+  & $git -C $destination checkout-index --all --force
+  Assert-LastExitCode 'Guest checkout materialization'
+  & $git -C $destination reset --mixed --no-refresh $sourceHead
+  Assert-LastExitCode 'Guest patch unstage'
+  & $git -C $destination config core.protectNTFS true
+  Assert-LastExitCode 'Git NTFS protection restore'
 
   $untrackedFiles = @($syncManifest.untracked)
   foreach ($relativePath in $untrackedFiles) {

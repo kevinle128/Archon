@@ -1,52 +1,89 @@
 /**
- * Story 2.1/2.9 queue composer dock for the Console node room: guarded send
- * into the run's process-local steering queue while the selected agent node
- * is generating. Story 2.9 hydrates and reconciles the shared registry queue
- * via a serial abortable poll; local POST/DELETE responses still update
- * immediately. Sent receipts are in-memory; the unsent draft and ambiguous
- * retry id persist in sessionStorage scoped by run + namespaced node id.
+ * Steering composer dock for the Console node room: guarded send into the
+ * run's process-local steering queue, plus the Story 2.3 turn model —
+ * `Stop` interrupts the agent's current generation, `Send now` delivers a
+ * typed message on the same session once the agent is idle-after-interrupt.
+ * Story 2.9 hydrates and reconciles the shared registry queue via a serial
+ * abortable poll; local POST/DELETE responses still update immediately.
+ * Mirrors the Legacy ComposerDock semantics through console-owned seams.
+ * Sent receipts are in-memory; the unsent draft and ambiguous retry id
+ * persist in sessionStorage scoped by run + node id. Story 2.10 adds a
+ * read-only finished-iteration branch (GET poll only).
  *
- * Mirrors Legacy `ComposerDock` through the Console-owned API layer
- * (`../skills/runs`) — never imports `@/lib/api`.
+ * The console-wide `.console-root :focus-visible` ring (--accent-ring at 0.3
+ * alpha) composites to ~2:1 on the dock surfaces — under the 3:1 non-text
+ * floor — so the dock's focusables declare the explicit accent-bright ring
+ * used by ConsoleTodoStrip and other high-contrast console controls.
  */
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   applyQueueSnapshot,
   beginGuidanceSubmission,
+  beginInterrupt,
+  beginSendNow,
   beginWithdraw,
   canSubmitGuidance,
+  createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  finishedIterationDisclosure,
   focusTargetAfterSnapshot,
+  goToIterationLabel,
+  isKeepaliveActivityKey,
   isQueueShortcut,
   loadSteeringDraft,
+  neverSentBandHeader,
+  neverSentDisclosure,
+  neverSentListLabel,
   nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
   queueListLabel,
   queuedCountPhrase,
+  reconcileNeverSent,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
+  resolveInterruptError,
+  resolveInterruptOutcome,
+  resolveSendNowFailure,
+  resolveSendNowSuccess,
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   saveSteeringDraft,
+  sendNowButtonAccessibleName,
   startQueuePolling,
+  steeringAgentMode,
   steeringBlockedReason,
   steeringDockMode,
   steeringDraftStorageKey,
+  syncProjectedSubState,
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_IDLE_AWAIT_DISCLOSURE,
+  STEERING_INTERRUPT_DISCLOSURE,
+  STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   toSteeringRefusal,
+  willSendBandHeader,
+  willSendListLabel,
+  toSteeringRequestError,
+  type KeepaliveCoalescer,
   type RemovalFocusTarget,
+  type SteeringDockMode,
   type SteeringDockState,
+  type SteeringSubState,
 } from '@/lib/steering-dock';
+import type { FinishedIterationView } from '@/lib/execution-room-model';
 
 import {
+  interruptNode,
+  keepaliveNode,
   readNodeGuidanceQueue,
   sendNodeGuidance,
   withdrawNodeGuidance,
+  type InterruptWorkflowNodeResponse,
+  type KeepaliveWorkflowNodeResponse,
   type ReadWorkflowNodeQueueResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
@@ -59,6 +96,16 @@ export type SendNodeGuidance = (
   nodeId: string,
   body: SendWorkflowNodeBody
 ) => Promise<SendWorkflowNodeResponse>;
+
+export type InterruptNode = (
+  runId: string,
+  nodeId: string
+) => Promise<InterruptWorkflowNodeResponse>;
+
+export type KeepaliveNode = (
+  runId: string,
+  nodeId: string
+) => Promise<KeepaliveWorkflowNodeResponse>;
 
 export type WithdrawNodeGuidance = (
   runId: string,
@@ -83,13 +130,69 @@ export interface ConsoleComposerDockProps {
   live: boolean;
   /** This node's pending ask blocks send; sibling asks must not reach here. */
   hasPendingAsk: boolean;
+  /**
+   * Projected agent sub-state from the run payload. Absent means a live
+   * queue-only handle — never a detached verdict on its own.
+   */
+  subState?: SteeringSubState;
+  /**
+   * Proven same-lineage live iteration. Non-null selects finished-iteration
+   * mode; omitted/null keeps today's visibility table.
+   */
+  finishedIteration?: FinishedIterationView | null;
+  /**
+   * Existing execution-selection callback. Required for an enabled Go control;
+   * without it the finished dock must not render.
+   */
+  onSelectLiveRow?: (liveRowId: string) => void;
+  /**
+   * Parent-owned consume-once autofocus after a Go-driven dock remount.
+   * Cleared via onAutoFocusApplied once focus is moved.
+   */
+  autoFocusTarget?: 'field' | 'go' | null;
+  onAutoFocusApplied?: () => void;
   send?: SendNodeGuidance;
+  interrupt?: InterruptNode;
   withdraw?: WithdrawNodeGuidance;
   /** Queue snapshot reader; defaults to the Console API helper. */
   readQueue?: ReadNodeGuidanceQueue;
   /** Poll cadence in ms; production default 1000, narrow test seam only. */
   pollIntervalMs?: number;
   storage?: Storage;
+  /**
+   * Focuses the last rendered transcript row (scroller fallback) when the
+   * Stop control or the whole dock leaves the DOM — focus must never land
+   * on `<body>`.
+   */
+  focusLastRow?: () => void;
+  /**
+   * Node-wide operator message ids already written to the transcript.
+   * Non-null arms terminal reconciliation; default null leaves it inert.
+   * Phase 3 supplies the real set from the node-wide drain.
+   */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
+  /**
+   * True only when the parent has actual node-terminal evidence. Run-level
+   * terminal status is not sufficient. Default false.
+   */
+  nodeTerminal?: boolean;
+  /**
+   * Logical node-execution attempt key from the event fold. Replacing one
+   * non-null key with another resets attempt-scoped observation state while
+   * preserving the raw draft. Default null.
+   */
+  nodeExecutionKey?: string | null;
+  /**
+   * Bodyless idle-await keepalive. Defaults to the Console API helper.
+   * Injectable for tests.
+   */
+  keepalive?: KeepaliveNode;
+  /**
+   * True when the selected node's latest terminal execution failed for the
+   * idle-await expiry cause. Drives the Story 2.12 never-sent alert copy.
+   * Default false.
+   */
+  idleAwaitExpired?: boolean;
 }
 
 const FIELD_CLASSES = [
@@ -98,9 +201,23 @@ const FIELD_CLASSES = [
   'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
 ].join(' ');
 
+const CONTROL_BASE_CLASSES = [
+  'min-h-[32px] flex-none rounded-md border bg-transparent px-3 font-mono text-[11px]',
+  'transition-colors motion-reduce:transition-none',
+  'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+].join(' ');
+const CONTROL_ENABLED_CLASSES = 'border-border-bright text-text-primary hover:bg-surface-inset';
+const CONTROL_DISABLED_CLASSES = 'border-border text-text-secondary';
+
 const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
+
+/** Modes where the dock's focusable controls are in the DOM. */
+function controlsMounted(mode: SteeringDockMode): boolean {
+  // finished-iteration mounts Go; finished is read-only with no focusables.
+  return mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
+}
 
 export function ConsoleComposerDock({
   runId,
@@ -109,11 +226,23 @@ export function ConsoleComposerDock({
   rowStatus,
   live,
   hasPendingAsk,
+  subState,
+  finishedIteration = null,
+  onSelectLiveRow,
+  autoFocusTarget = null,
+  onAutoFocusApplied,
   send = sendNodeGuidance,
+  interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
   readQueue = readNodeGuidanceQueue,
+  keepalive = keepaliveNode,
   pollIntervalMs = 1000,
   storage,
+  focusLastRow,
+  writtenOperatorMessageIds = null,
+  nodeTerminal = false,
+  nodeExecutionKey = null,
+  idleAwaitExpired = false,
 }: ConsoleComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
   const storageKey = steeringDraftStorageKey(runId, nodeId);
@@ -121,46 +250,163 @@ export function ConsoleComposerDock({
   const reasonId = useId();
   const bandHeaderId = useId();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const wellRef = useRef<HTMLDivElement>(null);
+  const goButtonRef = useRef<HTMLButtonElement>(null);
+  const neverSentAlertRef = useRef<HTMLParagraphElement>(null);
   const deleteButtonsRef = useRef<Map<string, HTMLButtonElement>>(new Map());
   const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
   const detachedAlertRef = useRef<HTMLParagraphElement>(null);
-  const dockRef = useRef<SteeringDockState>(createSteeringDockState());
+  const dockRef = useRef<SteeringDockState>(createSteeringDockState(subState));
+  /** Per-attempt observation eligibility — set on composer/blocked/finished-iteration. */
+  const queueWasObservableRef = useRef(false);
+  /** Bumped on run/node scope change or execution-key/attempt reset. */
+  const attemptGenerationRef = useRef(0);
+  const prevScopeRef = useRef(storageKey);
+  const prevExecutionKeyRef = useRef<string | null>(nodeExecutionKey);
+  const prevNodeTerminalRef = useRef(nodeTerminal);
+  const coalescerRef = useRef<KeepaliveCoalescer | null>(null);
+  const keepaliveRef = useRef(keepalive);
+  keepaliveRef.current = keepalive;
 
+  /** Skip one ordinary persist after an explicit pendingRetry:null write. */
+  const suppressPersistRef = useRef(false);
+  const draftRef = useRef('');
   const [dock, setDock] = useState<SteeringDockState>(() => ({
-    ...createSteeringDockState(),
+    ...createSteeringDockState(subState),
     pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
   }));
   const [draft, setDraft] = useState<string>(() => loadSteeringDraft(store, storageKey).draft);
+  /** Finished-iteration poll 422: show detached alert without leaving the mode. */
+  const [readDetached, setReadDetached] = useState(false);
+  /** Finished-iteration other 4xx notify copy (poll stopped). */
+  const [readNotify, setReadNotify] = useState<string | null>(null);
   dockRef.current = dock;
+  draftRef.current = draft;
 
-  // Receipts live for the mounted execution only; a scope change resets them
-  // while the persisted draft for the new scope hydrates from storage.
-  const prevScopeRef = useRef(storageKey);
-  useEffect(() => {
-    if (prevScopeRef.current === storageKey) return;
-    prevScopeRef.current = storageKey;
-    const saved = loadSteeringDraft(store, storageKey);
-    setDraft(saved.draft);
-    setDock({ ...createSteeringDockState(), pendingRetry: saved.pendingRetry });
-  }, [storageKey, store]);
+  // A host without a selection callback must never show an enabled Go control.
+  const usableFinishedIteration =
+    finishedIteration !== null && finishedIteration !== undefined && onSelectLiveRow !== undefined
+      ? finishedIteration
+      : null;
+
+  const mode = steeringDockMode({
+    rowStatus,
+    live,
+    hasPendingAsk,
+    refusal: dock.refusal,
+    finishedIteration: usableFinishedIteration,
+    neverSent: dock.neverSent,
+    nodeTerminal,
+  });
+
+  // Attempt reset + observation marking run in layout before passive async
+  // continuations so a generation bump invalidates in-flight work first.
+  // Reset is declared before observation so a new-attempt render cannot set
+  // queueWasObservable only to have a later effect clear it.
+  useLayoutEffect(() => {
+    const scopeChanged = prevScopeRef.current !== storageKey;
+    if (scopeChanged) {
+      prevScopeRef.current = storageKey;
+      attemptGenerationRef.current += 1;
+      queueWasObservableRef.current = false;
+      prevExecutionKeyRef.current = nodeExecutionKey;
+      prevNodeTerminalRef.current = nodeTerminal;
+      pendingFocusRef.current = null;
+      const saved = loadSteeringDraft(store, storageKey);
+      setDraft(saved.draft);
+      setDock({ ...createSteeringDockState(subState), pendingRetry: saved.pendingRetry });
+      setReadDetached(false);
+      setReadNotify(null);
+    } else {
+      const prevKey = prevExecutionKeyRef.current;
+      const nextKey = nodeExecutionKey;
+      const keyReplaced =
+        typeof prevKey === 'string' && typeof nextKey === 'string' && prevKey !== nextKey;
+      const terminalFailSafe =
+        prevKey === null && nextKey === null && prevNodeTerminalRef.current && !nodeTerminal;
+
+      if (keyReplaced || terminalFailSafe) {
+        attemptGenerationRef.current += 1;
+        queueWasObservableRef.current = false;
+        pendingFocusRef.current = null;
+        suppressPersistRef.current = true;
+        const keptDraft = draftRef.current;
+        saveSteeringDraft(store, storageKey, { draft: keptDraft, pendingRetry: null });
+        setDock({ ...createSteeringDockState(subState), pendingRetry: null });
+        setReadDetached(false);
+        setReadNotify(null);
+      }
+
+      prevExecutionKeyRef.current = nodeExecutionKey;
+      prevNodeTerminalRef.current = nodeTerminal;
+    }
+
+    if (mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration') {
+      queueWasObservableRef.current = true;
+    }
+  }, [storageKey, store, subState, nodeExecutionKey, nodeTerminal, mode]);
 
   useEffect(() => {
+    if (suppressPersistRef.current) {
+      suppressPersistRef.current = false;
+      return;
+    }
     saveSteeringDraft(store, storageKey, { draft, pendingRetry: dock.pendingRetry });
   }, [store, storageKey, draft, dock.pendingRetry]);
 
-  const mode = steeringDockMode({ rowStatus, live, hasPendingAsk, refusal: dock.refusal });
-  const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
-  // Shared-queue reads only while the composer/blocked surfaces are mounted.
+  // The projected sub-state is authoritative; the local interrupting
+  // transient yields to it when a defined projection arrives.
+  useEffect(() => {
+    setDock(current => syncProjectedSubState(current, subState));
+  }, [subState]);
+
+  // One-shot terminal reconciliation — only when the attempt could observe
+  // the queue and no own withdraw is in flight.
+  useEffect(() => {
+    if (writtenOperatorMessageIds === null || writtenOperatorMessageIds === undefined) return;
+    if (!nodeTerminal) return;
+    if (dock.neverSent !== null) return;
+    if (dock.withdrawingMessageId !== null) return;
+    if (!queueWasObservableRef.current) return;
+    const written = writtenOperatorMessageIds;
+    const draftAtReconcile = draftRef.current;
+    setDock(current => {
+      if (current.neverSent !== null) return current;
+      if (current.withdrawingMessageId !== null) return current;
+      return reconcileNeverSent(current, {
+        writtenMessageIds: written,
+        draft: draftAtReconcile,
+      });
+    });
+  }, [
+    writtenOperatorMessageIds,
+    nodeTerminal,
+    dock.neverSent,
+    dock.withdrawingMessageId,
+    dock.observedLedger,
+    dock.pendingRetry,
+  ]);
+
+  // Shared-queue reads while composer/blocked/finished-iteration are mounted.
   // Hidden historical/terminal rooms and send-triggered detached disclosures
   // never poll — Story 2.9 gives queue reads no capability-state transition.
-  const pollingEnabled = mode === 'composer' || mode === 'blocked';
+  // finished-iteration polls GET only (no mutation handlers bound).
+  // finished mode never polls.
+  const pollingEnabled = mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
 
   useEffect(() => {
     if (!pollingEnabled) return;
+    const finishedMode = mode === 'finished-iteration';
+    const attemptGen = attemptGenerationRef.current;
     return startQueuePolling({
       read: signal => readQueue(runId, nodeId, { signal }),
       currentGeneration: () => dockRef.current.queueGeneration,
       onSnapshot: (snapshot, generationAtRequest): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        if (finishedMode) {
+          setReadDetached(false);
+          setReadNotify(null);
+        }
         let focusedId: string | null = null;
         for (const [messageId, button] of deleteButtonsRef.current) {
           if (button === document.activeElement) {
@@ -174,6 +420,7 @@ export function ConsoleComposerDock({
           if (next === current) return current;
           const nextIds = next.sent.map(receipt => receipt.messageId);
           if (
+            !finishedMode &&
             focusedId !== null &&
             previousIds.includes(focusedId) &&
             !nextIds.includes(focusedId) &&
@@ -184,9 +431,70 @@ export function ConsoleComposerDock({
           return next;
         });
       },
+      onError: finishedMode
+        ? (error): void => {
+            if (attemptGenerationRef.current !== attemptGen) return;
+            const normalized = toSteeringRequestError(error);
+            if (normalized.status === 422 && normalized.code === 'not_steerable_here') {
+              setReadDetached(true);
+              setReadNotify(null);
+              setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
+              return;
+            }
+            if (normalized.status === 409) {
+              setReadDetached(false);
+              setReadNotify(null);
+              setDock(current => (current.sent.length === 0 ? current : { ...current, sent: [] }));
+              return;
+            }
+            // network (0) / 5xx: silent retry; last snapshot retained
+            if (normalized.status === 0 || normalized.status >= 500) return;
+            // other 4xx: notify + stop (poller already stops non-retryable)
+            setReadDetached(false);
+            setReadNotify(normalized.message);
+          }
+        : undefined,
       intervalMs: pollIntervalMs,
     });
-  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled]);
+    // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
+  }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
+
+  // When the dock's controls leave the DOM — terminal state hides the dock,
+  // a 422 swaps it for the detached disclosure — focus must move to the
+  // transcript rather than fall to <body>.
+  const focusLastRowRef = useRef(focusLastRow);
+  useEffect(() => {
+    focusLastRowRef.current = focusLastRow;
+  });
+  // Track whether focus ever sat inside the dock so an unmount moves it to
+  // the transcript only when the dock actually held it — a StrictMode mount
+  // replay must never steal focus it never owned.
+  const focusInsideRef = useRef(false);
+  const controlsMountedRef = useRef(controlsMounted(mode));
+  useEffect(() => {
+    const wasMounted = controlsMountedRef.current;
+    controlsMountedRef.current = controlsMounted(mode);
+    if (!wasMounted || controlsMountedRef.current) return;
+    const active = document.activeElement;
+    if (
+      focusInsideRef.current ||
+      active === null ||
+      active === document.body ||
+      !document.contains(active)
+    ) {
+      focusLastRowRef.current?.();
+    }
+  });
+  useEffect(
+    () => (): void => {
+      if (!controlsMountedRef.current) return;
+      const active = document.activeElement;
+      const inside =
+        focusInsideRef.current || (active !== null && (wellRef.current?.contains(active) ?? false));
+      if (inside) focusLastRowRef.current?.();
+    },
+    []
+  );
 
   // A stored 422 replaces the dock with the detached disclosure — move focus
   // to it instead of returning keyboard users to <body>. Send- and
@@ -194,6 +502,33 @@ export function ConsoleComposerDock({
   useEffect(() => {
     if (mode === 'detached') detachedAlertRef.current?.focus();
   }, [mode]);
+
+  // Cancel can hide the dock (live→false) before neverSent is ready, then
+  // re-enter finished. The composer→hidden handoff may miss; ensure finished
+  // never leaves keyboard focus on <body>.
+  useEffect(() => {
+    if (mode !== 'finished') return;
+    const active = document.activeElement;
+    if (
+      active === null ||
+      active === document.body ||
+      !document.contains(active) ||
+      focusInsideRef.current
+    ) {
+      focusLastRowRef.current?.();
+    }
+  }, [mode]);
+
+  // Parent-owned consume-once autofocus after Go-driven selection remount.
+  useEffect(() => {
+    if (autoFocusTarget === null || autoFocusTarget === undefined) return;
+    if (autoFocusTarget === 'field') {
+      fieldRef.current?.focus();
+    } else if (autoFocusTarget === 'go') {
+      goButtonRef.current?.focus();
+    }
+    onAutoFocusApplied?.();
+  }, [autoFocusTarget, onAutoFocusApplied]);
 
   // After a successful withdraw removes its row, move focus to the target
   // captured at activation time (next row → previous row → field). The same
@@ -210,9 +545,63 @@ export function ConsoleComposerDock({
     (button ?? fieldRef.current)?.focus();
   }, [dock.sent, dock.withdrawingMessageId]);
 
+  const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
+  const agentMode = steeringAgentMode(dock);
+  const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
+
+  // One coalescer per idle attempt. Leaving idle / attempt-key change / unmount
+  // disposes it so a late result cannot affect a new attempt.
+  useEffect(() => {
+    coalescerRef.current?.dispose();
+    coalescerRef.current = null;
+    if (agentMode !== 'idle') return;
+    const attemptGen = attemptGenerationRef.current;
+    const attemptKey = nodeExecutionKey;
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        if (steeringAgentMode(dockRef.current) !== 'idle') return;
+        if (nodeExecutionKey !== attemptKey) return;
+        return keepaliveRef.current(runId, nodeId);
+      },
+    });
+    coalescerRef.current = coalescer;
+    return (): void => {
+      coalescer.dispose();
+      if (coalescerRef.current === coalescer) {
+        coalescerRef.current = null;
+      }
+    };
+  }, [agentMode, nodeExecutionKey, runId, nodeId]);
+
   const submit = (): void => {
-    if (!canSubmitGuidance({ mode, inFlight: dock.inFlight, draft })) return;
+    if (!canSubmit) return;
     const submittedDraft = draft;
+    const attemptGen = attemptGenerationRef.current;
+    if (agentMode === 'idle') {
+      // Send now cancels pending trailing keepalive and never issues one of its own.
+      coalescerRef.current?.dispose();
+      coalescerRef.current = null;
+      const begun = beginSendNow(dock, draft);
+      setDock(begun.state);
+      void send(runId, nodeId, {
+        message: draft,
+        message_id: begun.messageId,
+        intent: 'send_now',
+      }).then(
+        (receipt): void => {
+          if (attemptGenerationRef.current !== attemptGen) return;
+          setDock(current => resolveSendNowSuccess(current, receipt));
+          setDraft(current => (current === submittedDraft ? '' : current));
+          fieldRef.current?.focus();
+        },
+        (error: unknown): void => {
+          if (attemptGenerationRef.current !== attemptGen) return;
+          setDock(current => resolveSendNowFailure(current, toSteeringRefusal(error)));
+        }
+      );
+      return;
+    }
     const begun = beginGuidanceSubmission(dock, draft);
     setDock(begun.state);
     void send(runId, nodeId, {
@@ -221,6 +610,7 @@ export function ConsoleComposerDock({
       intent: 'queue',
     }).then(
       (receipt): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveGuidanceSuccess(current, receipt));
         // The field stays editable while the POST is in flight. Clear only the
         // text that was accepted; preserve anything the operator typed next.
@@ -228,7 +618,32 @@ export function ConsoleComposerDock({
         fieldRef.current?.focus();
       },
       (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveGuidanceFailure(current, toSteeringRefusal(error)));
+      }
+    );
+  };
+
+  const stop = (): void => {
+    if (dock.interruptInFlight || dock.subState !== 'generating') return;
+    const attemptGen = attemptGenerationRef.current;
+    setDock(current => beginInterrupt(current));
+    void interrupt(runId, nodeId).then(
+      (response): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        setDock(current => resolveInterruptOutcome(current, response.sub_state));
+        if (response.sub_state === 'idle-after-interrupt') {
+          focusLastRowRef.current?.();
+        }
+      },
+      (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        setDock(current =>
+          resolveInterruptError(
+            current,
+            toSteeringRefusal(error, STEERING_INTERRUPT_FAILED_MESSAGE)
+          )
+        );
       }
     );
   };
@@ -237,6 +652,7 @@ export function ConsoleComposerDock({
     // One active withdraw per dock — a second click while one is in flight
     // issues no request.
     if (dock.withdrawingMessageId !== null) return;
+    const attemptGen = attemptGenerationRef.current;
     pendingFocusRef.current = nextFocusAfterRemoval(
       dock.sent.map(receipt => receipt.messageId),
       messageId
@@ -244,9 +660,11 @@ export function ConsoleComposerDock({
     setDock(current => beginWithdraw(current, messageId));
     void withdraw(runId, nodeId, messageId).then(
       (): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveWithdrawSuccess(current, messageId));
       },
       (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
         pendingFocusRef.current = null;
         setDock(current => resolveWithdrawFailure(current, messageId, toSteeringRefusal(error)));
       }
@@ -270,13 +688,126 @@ export function ConsoleComposerDock({
     );
   }
 
+  if (mode === 'finished' && dock.neverSent !== null && dock.neverSent.length > 0) {
+    const entries = dock.neverSent;
+    return (
+      <section
+        aria-labelledby={bandHeaderId}
+        className="flex-none border-t border-border bg-surface-elevated"
+      >
+        <h3
+          id={bandHeaderId}
+          className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+        >
+          {neverSentBandHeader(entries.length)}
+        </h3>
+        <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+          <ul aria-label={neverSentListLabel(entries.length)}>
+            {entries.map((entry, index) => (
+              <li
+                key={entry.messageId ?? `draft-${String(index)}`}
+                {...(entry.messageId !== null ? { 'data-message-id': entry.messageId } : {})}
+                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+              >
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {entry.message}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p
+          ref={neverSentAlertRef}
+          role="alert"
+          className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+        >
+          {neverSentDisclosure(idleAwaitExpired)}
+        </p>
+      </section>
+    );
+  }
+
+  if (mode === 'finished-iteration' && usableFinishedIteration !== null) {
+    const liveIteration = usableFinishedIteration.liveIteration;
+    const liveRowId = usableFinishedIteration.liveRowId;
+    return (
+      <>
+        <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
+          <div className="flex min-w-0 items-start gap-3">
+            <p className="min-w-0 flex-1 font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+              {finishedIterationDisclosure(liveIteration)}
+            </p>
+            <button
+              type="button"
+              ref={goButtonRef}
+              onClick={(): void => {
+                onSelectLiveRow?.(liveRowId);
+              }}
+              className={[
+                'min-h-[32px] flex-none shrink-0 rounded-md border border-border bg-transparent',
+                'px-3 font-mono text-[11px] text-text-primary hover:bg-surface-inset',
+                'transition-colors motion-reduce:transition-none',
+                'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+              ].join(' ')}
+            >
+              {goToIterationLabel(liveIteration)}
+            </button>
+          </div>
+          {readDetached ? (
+            <p
+              role="alert"
+              className="mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+            >
+              {STEERING_DETACHED_DISCLOSURE}
+            </p>
+          ) : null}
+          {readNotify !== null ? (
+            <p role="alert" className={REFUSAL_CLASSES}>
+              {readNotify}
+            </p>
+          ) : null}
+        </div>
+        {dock.sent.length === 0 ? null : (
+          <section
+            aria-labelledby={bandHeaderId}
+            className="flex-none border-t border-border bg-surface-elevated"
+          >
+            <h3
+              id={bandHeaderId}
+              className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+            >
+              {queueBandHeader(dock.sent.length)}
+            </h3>
+            <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+              <ul aria-label={queueListLabel(dock.sent.length)}>
+                {dock.sent.map(receipt => (
+                  <li
+                    key={receipt.messageId}
+                    data-message-id={receipt.messageId}
+                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                  >
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {receipt.message}
+                    </span>
+                    <span className="flex-none">sent</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </section>
+        )}
+      </>
+    );
+  }
+
   const blocked = mode === 'blocked';
+  const idle = agentMode === 'idle';
   const statusText =
     blocked && blockedReason !== null
       ? blockedReason
-      : dock.sent.length > 0
-        ? queuedCountPhrase(dock.sent.length)
-        : '';
+      : (dock.notice ?? (dock.sent.length > 0 ? queuedCountPhrase(dock.sent.length) : ''));
+  const showStop = agentMode === 'generating' || agentMode === 'interrupting';
+  const stopping = agentMode === 'interrupting';
 
   return (
     <>
@@ -289,10 +820,14 @@ export function ConsoleComposerDock({
             id={bandHeaderId}
             className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
           >
-            {queueBandHeader(dock.sent.length)}
+            {idle ? willSendBandHeader(dock.sent.length) : queueBandHeader(dock.sent.length)}
           </h3>
           <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
-            <ul aria-label={queueListLabel(dock.sent.length)}>
+            <ul
+              aria-label={
+                idle ? willSendListLabel(dock.sent.length) : queueListLabel(dock.sent.length)
+              }
+            >
               {dock.sent.map(receipt => (
                 <li
                   key={receipt.messageId}
@@ -331,7 +866,32 @@ export function ConsoleComposerDock({
           </div>
         </section>
       )}
-      <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
+      <div
+        ref={wellRef}
+        onFocusCapture={(): void => {
+          focusInsideRef.current = true;
+        }}
+        onBlurCapture={(event): void => {
+          if (
+            event.relatedTarget instanceof Node &&
+            event.currentTarget.contains(event.relatedTarget)
+          ) {
+            return;
+          }
+          focusInsideRef.current = false;
+        }}
+        className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]"
+      >
+        {idle ? (
+          <>
+            <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+              {STEERING_INTERRUPT_DISCLOSURE}
+            </p>
+            <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">
+              {STEERING_IDLE_AWAIT_DISCLOSURE}
+            </p>
+          </>
+        ) : null}
         <label htmlFor={fieldId} className="sr-only">
           message to {nodeLabel}
         </label>
@@ -343,18 +903,26 @@ export function ConsoleComposerDock({
           onChange={(event): void => {
             setDraft(event.target.value);
           }}
+          onFocus={(): void => {
+            if (agentMode === 'idle') {
+              coalescerRef.current?.touch();
+            }
+          }}
           onKeyDown={(event): void => {
-            if (
-              isQueueShortcut({
-                key: event.key,
-                metaKey: event.metaKey,
-                ctrlKey: event.ctrlKey,
-                isComposing: event.nativeEvent.isComposing,
-                keyCode: event.keyCode,
-              })
-            ) {
+            const shortcut = {
+              key: event.key,
+              metaKey: event.metaKey,
+              ctrlKey: event.ctrlKey,
+              isComposing: event.nativeEvent.isComposing,
+              keyCode: event.keyCode,
+            };
+            if (isQueueShortcut(shortcut)) {
               event.preventDefault();
               submit();
+              return;
+            }
+            if (agentMode === 'idle' && isKeepaliveActivityKey(shortcut)) {
+              coalescerRef.current?.touch();
             }
           }}
           className={FIELD_CLASSES}
@@ -370,25 +938,40 @@ export function ConsoleComposerDock({
           </p>
         ) : null}
         <div className="mt-[6px] flex items-center gap-3">
+          {showStop ? (
+            <button
+              type="button"
+              aria-disabled={stopping ? true : undefined}
+              onClick={stop}
+              className={[
+                CONTROL_BASE_CLASSES,
+                stopping ? CONTROL_DISABLED_CLASSES : CONTROL_ENABLED_CLASSES,
+              ].join(' ')}
+            >
+              {stopping ? 'Stopping…' : 'Stop'}
+            </button>
+          ) : null}
           <p className="min-w-0 flex-1 font-mono text-[10.5px] leading-[1.45] text-text-secondary">
             {STEERING_SEND_HINT}
           </p>
           <button
             type="button"
-            aria-label={queueButtonAccessibleName(dock.sent.length)}
+            aria-label={
+              idle
+                ? sendNowButtonAccessibleName(dock.sent.length)
+                : queueButtonAccessibleName(dock.sent.length)
+            }
             aria-keyshortcuts="Meta+Enter Control+Enter"
-            aria-disabled={blocked ? true : undefined}
+            aria-disabled={canSubmit ? undefined : true}
             aria-describedby={blocked ? reasonId : undefined}
             onClick={submit}
             className={[
-              'min-h-[32px] min-w-[84px] flex-none rounded-md border border-border bg-transparent',
-              'px-3 font-mono text-[11px]',
-              blocked ? 'text-text-secondary' : 'text-text-primary hover:bg-surface-inset',
-              'transition-colors motion-reduce:transition-none',
-              'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+              CONTROL_BASE_CLASSES,
+              'min-w-[84px]',
+              canSubmit ? CONTROL_ENABLED_CLASSES : CONTROL_DISABLED_CLASSES,
             ].join(' ')}
           >
-            Queue
+            {idle ? 'Send now' : 'Queue'}
           </button>
         </div>
         <div role="status" className="sr-only">

@@ -1,0 +1,101 @@
+{
+  "feature": "Issue 193: preserve message order and attribution under concurrent operators",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Registry mixed-sender characterization",
+      "description": "As an Archon maintainer, I want the steering-registry tests to characterize mixed-sender FIFO, idempotent replay, and idle send_now behavior, so that the registry's actual concurrency contract is pinned before any route- or executor-level proof.",
+      "acceptanceCriteria": [
+        "The existing msg() helper in packages/workflows/src/steering-registry.test.ts accepts an optional operatorUserId defaulting to 'user-1', leaving all current tests unchanged.",
+        "A new test named 'mixed senders keep order and attribution through drain' accepts a1, b1, a2, b2 on one handle with alternating op-a/op-b senders; asserts snapshot ids and senders in exact call order; asserts each sender's filtered subsequence is stable; drains once asserting the same objects/order; and asserts a second drain is empty.",
+        "The existing 'duplicate id with different prose keeps the original' test is strengthened so the original is from op-a and the replay from op-b, and the stored row still contains op-a plus the original prose (an id cannot reattribute a message).",
+        "The existing idle send_now test assigns queued messages to op-a and the releasing message to op-b, asserting the wake batch retains both senders in accepted order.",
+        "(cd packages/workflows && bun test src/steering-registry.test.ts src/node-transcript.test.ts) passes.",
+        "No timers, real database, server, or filesystem fixture is added; no redundant cross-run, withdraw, anonymous-sender, or same-identity/tab matrix is introduced; no production code is changed unless a focused assertion fails (then the fix is minimal and in a separate commit)."
+      ],
+      "technicalNotes": "Phase 1 (phase-01-registry-order-and-isolation.md). Modify ONLY packages/workflows/src/steering-registry.test.ts. Re-read steering-registry.ts: NodeSteeringHandle.accept() at ~line 290 pushes to this.pending (306) with first-wins send_now batch release (314-318); drain() at 359-363 returns and clears pending. node-transcript.test.ts already proves appendOperatorTranscript input order + per-row operator_user_id/message_id \u2014 do not duplicate. Conditional production owner only after a proven red: steering-registry.ts.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: packages/workflows/src/steering-registry.test.ts. Tests-only; no production change."
+    },
+    {
+      "id": "US-002",
+      "title": "Deterministic route concurrency test",
+      "description": "As an Archon maintainer, I want one Hono-route test that holds operator A at the identity-resolution seam while operator B completes, so that the accept()-order chosen by the server is proven to drive both the handle snapshot and the public queue read with per-request attribution.",
+      "acceptanceCriteria": [
+        "In the existing queued-guidance describe of packages/server/src/routes/api.workflow-runs.test.ts, a test named 'overlapping identity streams preserve accept order and request attribution' is added.",
+        "A temporary identity mock keyed by header value blocks operator A inside findOrCreateUserByPlatformIdentity via a test-owned aEntered/releaseA promise pair; the default identity mock is restored in finally even if an assertion fails.",
+        "The test starts A1 and waits until A is held; sends B1 and awaits its 200; sends/awaits B2 from the same stream; releases A and awaits A1; then sends/awaits A2 \u2014 proving B's requests reached synchronous accept() while A had not.",
+        "The handle is asserted to contain [B1, B2, A1, A2] with senders [op-b, op-b, op-a, op-a], original text, no duplicate ids, and sender-filtered subsequences [B1, B2] and [A1, A2].",
+        "A GET of the queue returns the same id/text order with objects containing exactly message_id and message \u2014 no attribution fields.",
+        "Every send response is the existing 200 receipt shape.",
+        "(cd packages/server && bun test src/routes/api.workflow-runs.test.ts -t 'overlapping identity streams') passes, and the full api.workflow-runs.test.ts file passes.",
+        "No timers, microtask counts, or call-indexed getWorkflowRun gates are used; no registry prototype spying or test-only runtime imports; no route contract change; no copies of already-covered actor/anonymous/malformed/duplicate/terminal/scoping tests."
+      ],
+      "technicalNotes": "Phase 2 (phase-02-route-concurrency-integration.md). Modify packages/server/src/routes/api.workflow-runs.test.ts only; conditional owner after proven failure is packages/server/src/routes/api.ts (POST nodes/:nodeId/send handler ~line 5343, handle.accept at 5426, identity via userDb.findOrCreateUserByPlatformIdentity; GET queue at 5650). Reuse postNodeSend, sendPayload, liveSetup; use valid distinct UUID message ids. Default mockFindOrCreateUserByPlatformIdentity returns the header value as the canonical test user id. This test owns deterministic server overlap \u2014 the E2E journey uses the queue snapshot as oracle instead.",
+      "dependsOn": ["US-001"],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: packages/server/src/routes/api.workflow-runs.test.ts. Tests-only; no production change."
+    },
+    {
+      "id": "US-003",
+      "title": "Executor mixed-sender transcript chain",
+      "description": "As an Archon maintainer, I want the existing direct, idle send_now, and loop executor delivery tests strengthened for mixed senders, so that every production drain path demonstrates the same receipt-order and per-message identity metadata.",
+      "acceptanceCriteria": [
+        "The existing 'drains queued guidance as one follow-up turn' test in packages/workflows/src/dag-executor.test.ts enqueues a1/op-a, b1/op-b, a2/op-a, b2/op-b in that receipt order; asserts resumed prompt order a1\\n\\nb1\\n\\na2\\n\\nb2; asserts operator rows ordered by seq carry the four matching ids/senders; asserts each sender's subsequence is stable; and asserts all four rows use the caused turn's attempt and precede its assistant row.",
+        "steeringMessage, enqueue, and sendNow helpers accept an optional operator id preserving the current default; the existing old-plus-new redirect (send_now) test assigns queued messages to op-a and the releasing message to op-b and asserts the three transcript senders in batch order alongside the current id/order/attempt assertions.",
+        "The existing loop-guidance delivery test enqueues one op-a and one op-b message and asserts prompt, ids, senders, seq, caused attempt, and identical loop ancestry for both.",
+        "(cd packages/workflows && bun test src/dag-executor.test.ts) passes and (cd packages/server && bun test src/routes/api.workflow-runs.test.ts) remains green (existing display-name A/B/A read-model coverage stays green).",
+        "No concurrent sibling-node tests are added here (registry key isolation is unit-tested; cross-node behavior is US-004); no new polling, timers, mock modules, or production abstractions; no executor change unless a path fails while others pass \u2014 then fix only the divergent drain/writer wiring in a separate commit."
+      ],
+      "technicalNotes": "Phase 3 (phase-03-executor-transcript-chain.md). Modify packages/workflows/src/dag-executor.test.ts only. Reusable coverage: appendOperatorTranscript already writes one row per input item in array order with verbatim operator_user_id/message_id (node-transcript.test.ts); the #181 queued-guidance test already verifies a direct mixed op-a/op-b batch; api.workflow-runs.test.ts already has the A/B/A display-name read-model test \u2014 do not duplicate either. Conditional production owner after proven failure: packages/workflows/src/dag-executor.ts.",
+      "dependsOn": ["US-001", "US-002"],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/workflows/src/dag-executor.test.ts. Tests-only; no production change."
+    },
+    {
+      "id": "US-004",
+      "title": "E2E two-operator journey on Legacy and Console",
+      "description": "As an Archon maintainer, I want one Playwright scenario per shell where two identity contexts launch overlapping dock sends to a live node, so that the real server/registry/executor/DB/read-model/rendering chain proves queue order, transcript order, attribution, and sibling-node isolation end to end.",
+      "acceptanceCriteria": [
+        "One parameterized test per existing surface loop is added to e2e/ui/agent-queue-convergence.spec.ts named '[P1] [V:steer.concurrent-operators-${surface}] overlapping operators keep queue, transcript, and attribution aligned on ${surface}'.",
+        "Starter and teammate contexts/pages use the existing 460x900 narrow viewport; the pair workflow starts and steer-a and steer-b emit node_started; steer-a opens in both identities' rooms with starter/non-starter verified via the existing run-detail seam.",
+        "Round 1 pre-fills distinct A1/B1 texts, registers both response listeners, and presses both docks' Queue shortcuts inside one Promise.all; round 2 repeats concurrently for A2/B2 only after both round-1 responses \u2014 preserving A1<A2 and B1<B2 while allowing either global interleaving.",
+        "One distinct teammate message X1 is sent to steer-b via the teammate request context with an explicit UUID as the cross-node control.",
+        "Both server queues are snapshotted immediately: steer-a contains exactly the four A/B ids with no duplicates, A1 before A2, B1 before B2 \u2014 saved as queueOrder without prescribing which sender won a round; steer-b contains exactly [X1].",
+        "Before drain, both steer-a rooms converge on queueOrder showing the four-row queue state (queued \u00b7 4, no duplicates, no cross-node text).",
+        "After the real workflow completes, steer-a transcript operator-row ids exactly equal queueOrder with increasing seq; A rows show display name e2e-starter with one stable non-null user id and starter texts; B rows show e2e-hitl-teammate with a different stable non-null user id and teammate texts; steer-b contains only X1 with the same teammate user id/name; no A/B id or text appears under the wrong node or sender.",
+        "Reopened completed steer-a room in both contexts shows DOM operator rows, operator \u00b7 <name> labels, bodies, and sent badges following queueOrder exactly.",
+        "(cd e2e && npm run typecheck), (cd e2e && npx playwright test agent-queue-convergence --grep 'steer.concurrent-operators'), and the full agent-queue-convergence spec pass; neighboring convergence assertions (queue-band geometry, labels, Console-at-1440 page viewport) remain green.",
+        "No fixture, product file, or visual-design change; no arbitrary sleeps (queue snapshot is the order oracle; if drain beats the snapshot, reduce pre-send setup work first and only adjust the bounded 45s fixture delay with measured CI evidence)."
+      ],
+      "technicalNotes": "Phase 4 (phase-04-e2e-two-operator-journey.md). Extend e2e/ui/agent-queue-convergence.spec.ts \u2014 do not create a separate spec. It already owns starter/teammate browser contexts, Console and Legacy room navigation, the two-node e2e-queue-guidance-pair fixture, and queue GET/DOM-id/node-start/viewport/queue-visual helpers. Import listNodeMessages from e2e/lib/playwright/run-detail.ts. The fake provider's resumed turn completes without a new scenario block. Deterministic overlap is owned by US-002's route test; this journey proves the persisted chain against whichever order the registry chose. If a timing failure appears, run the new scenarios twice and remove the race source rather than widening timeouts.",
+      "dependsOn": ["US-001", "US-002", "US-003"],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: e2e/ui/agent-queue-convergence.spec.ts. Tests-only; no production/fixture change."
+    },
+    {
+      "id": "US-005",
+      "title": "Closeout: evidence report, test plan, tracker, gates",
+      "description": "As an Archon maintainer, I want the Story 2.13 evidence recorded, the steering test plan mapped to the final tests, the tracker moved to done, and all repository gates green, so that issue #193 can close with reproducible proof.",
+      "acceptanceCriteria": [
+        "In _bmad-output/specs/spec-agent-node-room/steering-test-plan.md the single generic concurrent-operators bullet is replaced by a concise mapping to the mixed-sender registry characterization, the deterministic overlapping Hono-route test, the strengthened direct/idle/loop executor tests, and the two [V:steer.concurrent-operators-*] scenarios.",
+        "The test plan states semantics precisely: global order is accept() order; within-sender order assumes one dock/request stream waits for its prior send response; the shared node queue means 'no cross-user leakage' is no sender substitution, not private visibility; queue GET intentionally omits attribution.",
+        "plans/260920-0444-issue-193-concurrent-operator-order-attribution/reports/characterization-evidence.md is created with commands, pass/fail summaries, scenario ids, and any production defect fixed (without duplicating implementation details that live in code/tests).",
+        "Only the 2-13-preserve-message-order-and-attribution-under-concurrent-operators entry in _bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml changes to done, and only after every focused and full gate passes.",
+        "Narrow gates pass: (cd packages/workflows && bun test src/steering-registry.test.ts src/node-transcript.test.ts); (cd packages/server && bun test src/routes/api.workflow-runs.test.ts); (cd packages/workflows && bun test src/dag-executor.test.ts); (cd e2e && npm run typecheck); (cd e2e && npx playwright test agent-queue-convergence --grep 'steer.concurrent-operators').",
+        "Neighbor + repo gates pass: (cd e2e && npx playwright test agent-queue-convergence agent-queue-guidance) and bun run validate. bun.lock and e2e/package-lock.json are unchanged (any lock change is a setup error).",
+        "No evergreen product docs are changed; no migration, rollout, config, generated output, or background process is introduced."
+      ],
+      "technicalNotes": "Phase 5 (phase-05-closeout-and-spec-sync.md). Validation order: bun install --frozen-lockfile and (cd e2e && npm ci && npx playwright install chromium) only if deps missing; narrow gates first, then neighboring E2E + bun run validate. bun run validate does NOT run the standalone Playwright project \u2014 both command sets are required; never substitute root bun test for the root gate. Final review checklist: observed queue order = persisted/displayed order; no lock/lane/timestamp-sort/widened wire contract; queue response stays two fields; transcript metadata stays origin/operator_user_id/message_id plus existing execution scope. PR against develop uses .github/pull_request_template.md with focused command results in Validation and 'Closes #193'.",
+      "dependsOn": ["US-001", "US-002", "US-003", "US-004"],
+      "priority": 5,
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: reports/characterization-evidence.md, steering-test-plan.md, sprint-status.yaml (2-13 only). Gates green after separate chore(unblock) commits for prettier, focus-ring probes, visual pins. No #193 production defect."
+    }
+  ]
+}

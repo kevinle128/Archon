@@ -1,0 +1,46 @@
+{
+  "surface": "console",
+  "tag": "23eb0879c93a",
+  "nodeA": "steer-a",
+  "nodeB": "steer-b",
+  "viewport": { "width": 460, "height": 900 },
+  "runId": "2533eac57c9c0c97d951d93e613a92f8",
+  "identities": { "starter": true, "teammate": false },
+  "preDrain": {
+    "queueOrder": [
+      "10716017-8da5-44ea-8abf-62eed69ff1ba",
+      "bf361eae-5335-41b3-9755-bc6a4b216497",
+      "c2bf8d9f-2036-40c8-8a4d-85580f045a03",
+      "9d2d8f37-fb0a-4135-ae0c-92feeeec766b"
+    ],
+    "idA1": "bf361eae-5335-41b3-9755-bc6a4b216497",
+    "idA2": "9d2d8f37-fb0a-4135-ae0c-92feeeec766b",
+    "idB1": "10716017-8da5-44ea-8abf-62eed69ff1ba",
+    "idB2": "c2bf8d9f-2036-40c8-8a4d-85580f045a03",
+    "idX1": "33d62d7a-a2f1-407b-b073-c5137b35acd4",
+    "starterRoomIds": [
+      "10716017-8da5-44ea-8abf-62eed69ff1ba",
+      "bf361eae-5335-41b3-9755-bc6a4b216497",
+      "c2bf8d9f-2036-40c8-8a4d-85580f045a03",
+      "9d2d8f37-fb0a-4135-ae0c-92feeeec766b"
+    ],
+    "teammateRoomIds": [
+      "10716017-8da5-44ea-8abf-62eed69ff1ba",
+      "bf361eae-5335-41b3-9755-bc6a4b216497",
+      "c2bf8d9f-2036-40c8-8a4d-85580f045a03",
+      "9d2d8f37-fb0a-4135-ae0c-92feeeec766b"
+    ],
+    "serverB": ["33d62d7a-a2f1-407b-b073-c5137b35acd4"]
+  },
+  "postDrain": {
+    "transcriptIds": [
+      "10716017-8da5-44ea-8abf-62eed69ff1ba",
+      "bf361eae-5335-41b3-9755-bc6a4b216497",
+      "c2bf8d9f-2036-40c8-8a4d-85580f045a03",
+      "9d2d8f37-fb0a-4135-ae0c-92feeeec766b"
+    ],
+    "starterUserId": "29b340fb-929e-4101-835b-3618caf0ae03",
+    "teammateUserId": "22e45da98310658c9e54565f21b4923b",
+    "steerBIds": ["33d62d7a-a2f1-407b-b073-c5137b35acd4"]
+  }
+}

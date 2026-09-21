@@ -1,0 +1,101 @@
+## Codebase Patterns
+
+
+### isInterruptMarkedResult (provider-neutral)
+- **Where**: `packages/workflows/src/dag-executor.ts` (beside INTERRUPT_TERMINAL_REASONS)
+- **Pattern**: Claude terminalReason allowlist OR exact DeepSeek triple (`stopReason==='aborted' && isError===true && errorSubtype==='deepseek_aborted'`). No provider-id branching. Call sites still require live token + wasOperatorInterrupted.
+- **Block gate**: product `DEEPSEEK_CAPABILITIES.interrupt` stays false until spike Proceed; conformance fixture opts the fake provider into `'native'` only for tests (instance caps preferred over registry when declared).
+
+### DeepSeek dual-signal cancel (requestCancel + flushCancel)
+- **Where**: `packages/providers/src/community/deepseek/acp-client.ts` (`driveDeepseekAcpTurn`)
+- **Pattern**: Shared turn state outside listeners. `requestCancel(cause)` records FIRST cause (`node-cancel` | `operator-interrupt` | `cleanup`) and releases a local deferred once. `flushCancel()` is a no-op until `clientCtx` + `activeSessionId` exist, then sends/memoizes one `session/cancel`. Pre-session cancels stay pending. `promptSettledNaturally` freezes outcome so a late Stop during `session/close` cannot convert a natural result or send stale cancel.
+- **Example**: Match Devin's `CANCEL_DRAIN_GRACE_MS = 500` via `Promise.race([prompt, localCancellation.then(waitMs)])`.
+
+### Pinned-runtime spikes stay out of CI
+- **Where**: `packages/providers/src/community/deepseek/interrupt-resume-spike.ts`, `package.json` `spike:interrupt:deepseek`
+- **Pattern**: Require `DEEPSEEK_LIVE_TEST=1` + credentials; disposable temp cwd always removed; version-check pins; emit sanitized JSON only (equality booleans, no prompts/secrets/session ids); write evidence under `plans/reports/`.
+
+---
+
+## 2026-09-19T20:11:59Z — US-001: DeepSeek ACP interrupt seam + pinned-runtime spike
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/community/deepseek/acp-client.ts` — interruptSignal + cause-aware exactly-once cancel + 500ms drain grace + natural-result freeze
+- `packages/providers/src/community/deepseek/provider.ts` — forward `requestOptions.interruptSignal`
+- `packages/providers/src/community/deepseek/acp-client.test.ts` — interrupt/race/preabort/config/drain/listener tests
+- `packages/providers/src/community/deepseek/provider.test.ts` — interruptSignal forwarded alongside abortSignal
+- `packages/providers/src/community/deepseek/interrupt-resume-spike.ts` — new live diagnostic
+- `packages/providers/package.json` — `spike:interrupt:deepseek`
+- `plans/reports/deepseek-interrupt-resume-spike.md` — Block (missing-env), tool mapping deferred
+
+**Acceptance criteria verified**:
+- [x] interruptSignal on DeepseekAcpTurnInput; provider forwards alongside abortSignal
+- [x] Live interrupt during prompt → one cancel, one close, exact abort triple + session id (unit)
+- [x] requestCancel first-cause + flushCancel once; Stop+Cancel race no duplicate
+- [x] Already-aborted signal skips prompt, cancel once, abort result carries session id; both aborted → node Cancel first
+- [x] Interrupt during set_config_option cancels once, skips prompt, closes, abort result
+- [x] Natural prompt winning Stop during close stays natural, no cancel, structured output survives
+- [x] Both listeners removed on success/setup failure/early return; early return still cancels
+- [x] CANCEL_DRAIN_GRACE_MS=500 fake-timers hung-prompt test
+- [x] abortedResult unchanged; no terminalReason; capability interrupt still false
+- [x] Spike script + package script + report (Block missing-env; tool mapping incomplete/unnecessary pending live)
+- [x] Regression gate: 71 pass, type-check clean
+
+**Learnings**:
+- Devin ACP cancel pattern ports cleanly; split requestCancel/flushCancel is required so pre-session cancels are not lost.
+- Bun has `jest.useFakeTimers` / `advanceTimersByTime` but not `advanceTimersByTimeAsync` — advance then flush microtasks.
+- Live spike Blocked on missing credentials in this environment; US-002 must honor Block (no capability flip) unless an operator re-runs to Proceed.
+
+---
+## 2026-09-19T20:18:18Z — US-002: Executor interrupt predicate, capability flip, and DeepSeek conformance fixture
+
+**Status**: PASSED (capability flip deferred — Phase 1 Block)
+**Files changed**:
+- `packages/workflows/src/dag-executor.ts` — `isInterruptMarkedResult`; both direct/loop call sites; instance interrupt preferred with registry fallback
+- `packages/workflows/src/dag-executor.test.ts` — `registerDeepseekProvider` bootstrap; invokeDag deepseek assistant; nested `deepseek conformance` (4 tests)
+
+**Acceptance criteria verified**:
+- [x] Phase 1 gate honored: spike report exists with Block (missing-env) → leave interrupt false; notes record why
+- [x] Shared `isInterruptMarkedResult` = terminalReason allowlist OR exact DeepSeek triple
+- [x] Both direct + loop call sites use shared predicate; Cancel dominance unchanged
+- [x] Test harness: registerDeepseek + DEEPSEEK_CAPABILITIES + abortedResult helper + nested describe
+- [x] Conformance 1 direct full contract (idle, queue+Send now order, session id, one interrupted tool, no re-ask)
+- [x] Conformance 2 flagless → SDK deepseek_aborted node_failed
+- [x] Conformance 3 near-miss → normal failure not idle
+- [x] Conformance 4 AI loop idle + same-session redirect without consuming iteration
+- [x] Capability flip SKIPPED (Block) — DEEPSEEK_CAPABILITIES.interrupt remains false
+- [x] config/registry/types native updates SKIPPED (Block)
+- [x] Story 2.3 interrupt matrix green (24 pass); no provider-list assertion breakage
+- [x] Regression gate: providers 72, deepseek conformance 4, interrupt 24, type-check clean
+
+**Learnings**:
+- Under Block, product interrupt stays false so production DeepSeek remains queue-only; conformance fakes opt into `'native'` via instance caps so the predicate is proven without advertising native until Proceed.
+- Prefer instance `getCapabilities().interrupt` when declared, else registry — keeps Claude mocks (field omitted) and pi queue-only behaviour intact.
+
+---
+
+## Blocker Ledger
+
+BLOCKER US-003 | gate=plans/reports/deepseek-interrupt-resume-spike.md must record Proceed + DEEPSEEK_CAPABILITIES.interrupt='native' + matrix **native** + issue #187 evidence link + sprint 2-7 done | cause=spike outcome is Block (failureCategory=missing-env). Re-checked this iteration: DEEPSEEK_API_KEY/BASE_URL/LIVE_MODEL unset; no .env DEEPSEEK_*; remote_agent_user_provider_keys count=0; no DEEPSEEK codebase env vars. Phase 3 AC5/checklist require live Proceed before capability flip, docs claiming verified stop/resume, matrix native cell, and sprint done. Cannot obtain credentials in-agent. | action=no code change; leave DEEPSEEK_CAPABILITIES.interrupt=false; leave sprint 2-7 backlog; do not fake Proceed or matrix native. Operator must re-run: cd packages/providers && DEEPSEEK_LIVE_TEST=1 DEEPSEEK_API_KEY=… DEEPSEEK_BASE_URL=… DEEPSEEK_LIVE_MODEL=… bun run spike:interrupt:deepseek — then re-enter US-003. | 2026-09-19T20:20:20Z
+
+---
+
+## 2026-09-19T20:20:20Z — US-003: Capability matrix regeneration, provider docs, and sprint closeout
+
+**Status**: BLOCKED (hard — missing live spike credentials)
+**Files changed**: none (no safe partial closeout under Block)
+
+**Acceptance criteria status**:
+- [ ] generate:capability-matrix DeepSeek interrupt ❌→**native** — blocked; product interrupt still false per Phase 1/2 Block gate
+- [ ] ai-assistants.md five verified facts — blocked; would document unverified live resume
+- [x] Docs do not promise warm process / 31ms / retained text / cost / soft inject — N/A (no docs edit)
+- [ ] spike report Proceed + tool-status + link on #187 — report remains Block/missing-env; toolMappingDecision incomplete
+- [ ] Nine-perspective acceptance review — cannot pass product/verification perspectives without pinned-runtime Proceed
+- [ ] sprint-status 2-7 backlog→done — intentionally not flipped
+- [ ] Full validation gate with native matrix — not run as ship gate under Block
+
+**Learnings**:
+- US-003 has no honor-Block closeout path: every ship criterion is gated on Proceed + capability native.
+- Partial docs/matrix without flip would diverge generated docs from runtime capabilities and violate D5/D6.
+---

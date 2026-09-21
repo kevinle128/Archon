@@ -39,7 +39,7 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "8d47bda46cc5cd15b850200c21523750b918735b805f497cc7734d283137296f"
+      "sha256": "b1064cd1b4b467378de39d43d61a37bf9de9082c8507b730f75d783af73f74a2"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
@@ -47,11 +47,11 @@
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
-      "sha256": "998d8a000a0d614cb67608d241fc293aa8486446288871dcc4d019be1c68e0db"
+      "sha256": "0bcd8eff504aa4607e945728e980a9cf2cd2d5c09ee9ac6b062041475ee93810"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md",
-      "sha256": "7105432dc8c08ab9b0f5c56bb96f2d6039a5261667255ca3e8486f100b48253a"
+      "sha256": "5820f590a7a8ecdb9d3a0160be24b46e7b31e6e03fe3107e2b6890d608dab60e"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",

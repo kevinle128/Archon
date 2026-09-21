@@ -209,6 +209,7 @@ export class DeepseekProvider implements IAgentProvider {
         mcpServers,
         outputSchema,
         abortSignal: requestOptions?.abortSignal,
+        interruptSignal: requestOptions?.interruptSignal,
         nodeBin,
         dshEntrypoint,
         profile: config.profile ?? DEFAULT_DEEPSEEK_PROFILE,

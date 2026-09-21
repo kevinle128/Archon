@@ -48,6 +48,7 @@ import {
   askCardId,
   rememberRoomScroll,
   resetRoomVisit,
+  resolveRunDetailRefetchIntervalMs,
   roomOpenerId,
   type RoomVisitState,
 } from '@/lib/execution-room-model';
@@ -438,10 +439,12 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
       return mapWorkflowRunDetail(data);
     },
     refetchInterval: (query): number | false => {
-      const status = query.state.data?.workflowState.status;
-      if (status && isTerminal(status)) return false;
-      return 3000;
+      const data = query.state.data;
+      return resolveRunDetailRefetchIntervalMs(data?.workflowState.status, data?.nodeExecutions);
     },
+    // Catch-up must keep polling even if the tab briefly blurs while a cancelled
+    // run still waits on node_failed / purged-Ask projection.
+    refetchIntervalInBackground: true,
     staleTime: 0,
   });
 

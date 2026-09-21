@@ -1,0 +1,152 @@
+{
+  "feature": "Issue 191: recover messages that were never sent when the node ends (Story 2.11 \u2014 observed-receipt ledger, node-terminal reconciliation, read-only NEVER SENT box in Legacy and Console docks)",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Shared core: observed ledger, reconciliation, finished mode",
+      "description": "As a node-room dock, I want framework-free state that remembers every receipt this mounted attempt observed (queue snapshots + local successes), a pure one-shot reconciliation against written operator ids, and a 'finished' mode gated on an explicit node-terminal input, so that both shells can deterministically recover unsent guidance without guessing.",
+      "acceptanceCriteria": [
+        "packages/web/src/lib/steering-dock.test.ts is extended FIRST with failing tests T1.1\u2013T1.22 from phase-01, then packages/web/src/lib/steering-dock.ts implements until all pass",
+        "SteeringDockState gains readonly observedLedger (ordered by first observation, deduplicated by messageId) and neverSent (null until reconciled); constructor initializes them to [] and null",
+        "resolveGuidanceSuccess and resolveSendNowSuccess append local receipts; every generation-valid applyQueueSnapshot appends all snapshot rows before replacing visible sent; stale-generation snapshots change neither; a later empty snapshot keeps prior ids in the ledger (cross-tab regression)",
+        "Only this tab's confirmed withdraw removes an id from ledger and visible state; failures, interrupts, and queue omission never remove history",
+        "reconcileNeverSent(state, { writtenMessageIds, draft }) appends in exact order: observed-unwritten rows, then pendingRetry only if its id is neither observed nor written, then current raw nonblank draft (messageId: null) only when it differs from pendingRetry.message; dedupes ids, preserves raw text/whitespace, sets neverSent to [] when nothing qualifies, is idempotent/pure and mutates no other state field",
+        "steeringDockMode returns 'finished' only when neverSent is non-empty AND an explicit nodeTerminal input is true; live:false or a terminal-looking selected row with nodeTerminal:false never selects finished; null/empty neverSent preserves the existing composer/blocked/hidden/detached/finished-iteration table",
+        "collectWrittenOperatorMessageIds collects only text rows with metadata.origin === 'operator' and a valid metadata.message_id, ignoring assistant/tool/malformed rows",
+        "Exact copy exists as constants/helpers: lowercase source heading 'never sent \u00b7 n', list aria-label 'Never sent, n', disclosure 'node finished \u00b7 none of this was sent'",
+        "No persistence, fetches, timers, server types, lifecycle mutation, new module, or generalized collection abstraction is added",
+        "`bun test packages/web/src/lib/steering-dock.test.ts` passes (new + existing tests), `bun --filter @archon/web type-check` is clean, and `bun x eslint packages/web/src/lib/steering-dock.ts packages/web/src/lib/steering-dock.test.ts --max-warnings 0` reports zero errors/warnings"
+      ],
+      "technicalNotes": "Implement phase-01-shared-core-ledger-and-reconciliation.md exactly. Files: packages/web/src/lib/steering-dock.ts and its .test.ts only. Anchors: SteeringDockState ~line 32, steeringDockMode ~112, resolveGuidanceSuccess ~286, resolveSendNowSuccess ~382, applyQueueSnapshot ~581. Add a small local append-if-new helper keyed by messageId \u2014 no new module. NeverSentEntry.messageId is string | null; only a raw unsent draft lacks an id. Build narrow NodeMessageRow fixtures using the real type. Do NOT create an E2E skeleton (test.fixme is skipped, not red).",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: packages/web/src/lib/steering-dock.ts, packages/web/src/lib/steering-dock.test.ts, ComposerDock.tsx + ConsoleComposerDock.tsx (SteeringDockMode widen for type-check)."
+    },
+    {
+      "id": "US-002",
+      "title": "Read-only NEVER SENT box in both docks",
+      "description": "As an operator using either the Legacy or Console node room, I want a read-only finished box listing exactly the receipts that were never written, rendered once with a single assertive alert and safe focus handoff, and I want attempt-scoped state reset when a new logical execution begins, so that recovery is truthful and the next attempt starts clean.",
+      "acceptanceCriteria": [
+        "ComposerDock.test.tsx and ConsoleComposerDock.test.tsx are extended FIRST with equivalent failing tests T2.1\u2013T2.18 from phase-02, then ComposerDock.tsx and ConsoleComposerDock.tsx implement until all pass in both files",
+        "Both docks accept optional props writtenOperatorMessageIds?: ReadonlySet<string> | null (default null), nodeTerminal?: boolean (default false), nodeExecutionKey?: string | null (default null) \u2014 Phase 3 supplies the real values",
+        "Reconcile effect invokes reconcileNeverSent only when: writtenOperatorMessageIds non-null, neverSent still null, nodeTerminal true, withdrawingMessageId null, and this run/node attempt previously rendered composer, blocked, or finished-iteration (per-attempt queueWasObservable ref; always-detached rooms are ineligible, observer-then-detached retains history)",
+        "While an own withdraw is in flight, terminal evidence does not reconcile; withdraw success omits the id, failure restores it after the transient clears (T2.17)",
+        "Finished branch renders in each dock locally (shared shape, no cross-boundary component): existing queue-band surface with top rule, lowercase source heading styled uppercase, <ul aria-label=\"Never sent, n\"> with single-line/elided items and data-message-id only on identified entries, then exactly one <p role=\"alert\">node finished \u00b7 none of this was sent</p>; no textarea, status region, badge, delete, Stop, Queue, or Send-now control; alert DOM node identity stable across rerenders",
+        "Control-presence helper counts finished-iteration as mounted (Go button focusable) and finished as not mounted, so field\u2192finished and Go\u2192finished transitions use the existing focus handoff to the last transcript row/scroller \u2014 never body or the box",
+        "Replacing one non-null nodeExecutionKey with another for the same run/node resets attempt state even on terminal\u2192terminal renders and regardless of neverSent value; terminal true\u2192false remains a fail-safe only when no key is available; reset keeps raw draft but writes { draft, pendingRetry: null } to the existing run/node session-storage record (explicit null write not overwritten by a stale-UUID effect in the same render); observed history, neverSent, and queueWasObservable clear",
+        "A same-key Ask resume and occurrence-only selection do NOT reset; run/node change clears history and hydrates that scope's saved draft",
+        "A local attempt generation increments at the prop boundary (synchronously or in layout effect); every queue-read, Queue, Send-now, withdraw, and interrupt continuation captures it and performs no state/draft/focus/storage work after it changes; execution key is in polling-effect dependencies so cleanup aborts the old poller; dock is not remounted by execution key",
+        "Once reconciled, later queue polling/rerenders cannot reorder or mutate the finished list (T2.16)",
+        "`NODE_ENV=development bun test packages/web/src/components/workflows/ComposerDock.test.tsx` and `NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx` pass including existing refusal/interrupt/blocked/detached/iteration/keyboard/storage tests; `bun test packages/web/src/experiments/console/console-isolation.test.ts` passes; `bun --filter @archon/web type-check` clean; focused eslint on the four files at --max-warnings 0 is clean"
+      ],
+      "technicalNotes": "Implement phase-02-never-sent-box-both-docks.md exactly. Console must import shared lib code only \u2014 never Legacy workflow components (console-isolation.test.ts guards). Order effects so run/node and execution-key reset runs before observation marking (or declare reset effect first) so a new-attempt render cannot set queueWasObservable then have it cleared. Reuse existing fetch/storage test harnesses and existing tokens/class patterns; do not add test-only production props. Visual bar for later phases: 460 px dock both shells + Console at 1440 px host, band \u226433vh, 0.07em tracking, contrast \u22654.5:1, no horizontal overflow.",
+      "dependsOn": ["US-001"],
+      "priority": 2,
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: ComposerDock.tsx/.test.tsx, ConsoleComposerDock.tsx/.test.tsx. T2.1\u2013T2.18 + existing dock tests green; console-isolation, web type-check, focused eslint clean."
+    },
+    {
+      "id": "US-003",
+      "title": "Server projection: scoped purged/answered Ask closure",
+      "description": "As the run-detail API consumer, I want the existing execution-history read projection to close exactly the executions a transactionally purged parked Ask or a proven resumed Ask supersedes \u2014 including uniquely proven loop owners \u2014 so terminal evidence exists for parked-Ask cancellation without any lifecycle writes, while ambiguous data stays open.",
+      "acceptanceCriteria": [
+        "packages/server/src/routes/workflow-execution-history.test.ts is extended FIRST with failing tests T3.1\u2013T3.4 from phase-03, then workflow-execution-history.ts implements until all pass",
+        "For kind:'ask', status:'purged' interactions with a complete execution_scope (node id + occurrence_id + attempt_id): project only the matching open execution as failed with ended_at from a parseable non-null resolved_at (normalize Date to ISO) and duration only from retained valid ordered endpoints; allow the existing one-unambiguous-same-node/same-occurrence adoption for re-ask scope rollover with stale start timing cleared",
+        "For a purged scope with loop_ancestry: use ordered ancestry prefixes plus raw start kind/iteration to fail every uniquely matched open pre-resolution loop-owner execution (the owning loop iteration and, when present, the normal loop's outer node_started container); never close a sibling or infer ownership from node id alone; zero or multiple candidates for an owner leave it open",
+        "For kind:'ask', status:'answered' with a valid resolved_at: require the matching persisted interaction_resolved event (same node and tool_use_id, kind:'ask', resumed:true) plus a later corresponding lifecycle start before retiring a matching open pre-resolution segment; prompt scopes match occurrence/attempt + later node_started; loop scopes apply the same ancestry-prefix ownership rules per owner each requiring its own later start; resumed:false, no later start, or ambiguous candidates change nothing; all resumed/later executions are kept",
+        "Missing scope/resolution time, permission kind, sibling node, unmatched scope, multiple candidates, and pending interactions never terminalize an execution (fail closed)",
+        "The projection stays read-only: tests assert input events/interactions are unchanged and no lifecycle row is fabricated; no route, schema, executor, registry, database write, generated-type, query, or wire-field changes",
+        "File-local indexes by event kind, node, scope, ancestry prefix, iteration, and tool id are built once and shared between purge and answer handling \u2014 no cross-module abstraction or public field, no nested whole-list scans",
+        "`bun test packages/server/src/routes/workflow-execution-history.test.ts` passes, `bun --filter @archon/server type-check` is clean, and focused eslint on both files at --max-warnings 0 is clean"
+      ],
+      "technicalNotes": "Implement phase-03 section A exactly, in projectWorkflowExecutionHistory (packages/server/src/routes/workflow-execution-history.ts ~line 142; existing execution_scope handling ~247). Handle purged/answered Ask rows after lifecycle pairing, before returning history. Use real PendingInteraction and WorkflowEventRow shapes in tests. This is a read-model fix, NOT autonomous lifecycle mutation \u2014 consume committed state only. A legacy parked Ask without complete scope stays visibly unsettled intentionally (bounded 3 s catch-up preferred over a fabricated terminal).",
+      "dependsOn": ["US-002"],
+      "priority": 3,
+      "passes": true,
+      "notes": "Implemented in iteration 3. Files: packages/server/src/routes/workflow-execution-history.ts, packages/server/src/routes/workflow-execution-history.test.ts. T3.1\u2013T3.4 green; server type-check and focused eslint clean."
+    },
+    {
+      "id": "US-004",
+      "title": "Raw-history helpers + terminal catch-up in both parents",
+      "description": "As the run-detail views, I want shared raw-history helpers that detect unsettled/terminal node executions and a stable logical execution key, plus a 3 s read-only catch-up while a terminal run still has unsettled raw executions, so both Legacy and Console reliably observe the real node terminal event without mutating lifecycle.",
+      "acceptanceCriteria": [
+        "packages/web/src/lib/execution-room-model.test.ts is extended FIRST with failing tests T3.5\u2013T3.9, WorkflowExecution.test.tsx and RunDetailPage.test.tsx with T3.10\u2013T3.14, then implementation makes all pass",
+        "hasUnsettledNodeExecutions(executions): undefined/empty/all-terminal \u2192 false; running/awaiting/pending/unknown-future statuses \u2192 true; one shared terminal predicate where only completed/failed/skipped are terminal",
+        "hasTerminalNodeEvidence(executions, nodeId): missing node or any nonterminal execution \u2192 false; \u22651 execution all terminal \u2192 true; sibling node history cannot mark the selected node terminal",
+        "latestNodeExecutionKey(events, nodeId): sorts by event_order then timestamp then persisted id (not array order); a normal exact-node node_started adopts nonempty data.occurrence_id or event-id fallback; an exact-node interaction_resolved with data.kind === 'ask' && data.resumed === true arms one continuation so the next same-node node_started retains the prior key (or adopts identity when no earlier key); an exact-node terminal or node_retry_requested clears an unused marker; loop-iteration starts, sibling events, and client time are ignored",
+        "WorkflowExecution keeps the existing live 3 s refetchInterval and ALSO refetches every 3 s when the run is terminal with any raw unsettled execution; stops when all settle; unmount clears the timer",
+        "RunDetailPage preserves SSE and the existing 30 s live heartbeat and adds a DISTINCT 3 s invalidation interval only for terminal + raw unsettled; never stacked with the live heartbeat; cleared on settlement/unmount",
+        "Both parents make no periodic terminal request when raw history is settled or empty (T3.14); no timeout inference, backoff policy, background service, inferred failure, or run/status mutation is added \u2014 tests use fake timers and never expect a status write",
+        "Settled projected nodeStates are never used as terminal proof \u2014 only raw nodeExecutions/events",
+        "Verification: `bun test packages/web/src/lib/execution-room-model.test.ts`, `NODE_ENV=development bun test packages/web/src/components/workflows/WorkflowExecution.test.tsx`, `NODE_ENV=development bun test packages/web/src/experiments/console/routes/RunDetailPage.test.tsx` all pass; `bun --filter @archon/web type-check` clean; focused eslint on the six files at --max-warnings 0 clean"
+      ],
+      "technicalNotes": "Implement phase-03 sections B and C exactly. Files: packages/web/src/lib/execution-room-model.ts (+test), packages/web/src/components/workflows/WorkflowExecution.tsx (+test; existing refetchInterval ~line 440, nodeExecutions passed ~1023), packages/web/src/experiments/console/routes/RunDetailPage.tsx (+test; 30 s heartbeat setInterval ~line 242, invalidate() from '../store/cache', detail.rawEvents/nodeExecutions ~266\u2013287). Accept the API's optional array shape; use generated NodeExecution/WorkflowEvent shapes or structural readonly subsets \u2014 do not duplicate an enum in a public type.",
+      "dependsOn": ["US-003"],
+      "priority": 4,
+      "passes": true,
+      "notes": "Implemented in iteration 4. Files: packages/web/src/lib/execution-room-model.ts/.test.ts, WorkflowExecution.tsx/.test.tsx, RunDetailPage.tsx/.test.tsx. T3.5\u2013T3.14 green; web type-check and focused eslint clean."
+    },
+    {
+      "id": "US-005",
+      "title": "Node-terminal derivation, pass-through, dock rekey",
+      "description": "As the node-room wrappers, I want to derive the selected node's terminal signal and logical execution key from raw event-backed history and pass both through to pane and dock under a stable run/node dock key, so terminality is exact-node, occurrence selection never discards observed history, and missing legacy data defaults safe.",
+      "acceptanceCriteria": [
+        "Wrapper tests are extended FIRST with failing tests T3.15\u2013T3.17 (LegacyGraphLogsPane.test.tsx, LegacyNodeRoom.test.tsx, ConsoleInspectPane.test.tsx, ConsoleNodeRoom.test.tsx, plus RunDetailPage.test.tsx pass-through), then wrappers implement until all pass",
+        "LegacyGraphLogsPane derives nodeTerminal via hasTerminalNodeEvidence on raw nodeExecutions and nodeExecutionKey via latestNodeExecutionKey on raw events for the selected node, passing both through LegacyNodeRoom to NodeTranscriptPane and ComposerDock; sibling history is ignored",
+        "RunDetailPage passes raw executions into ConsoleInspectPane, which derives the same two values from rawEvents and passes them through ConsoleNodeRoom to ConsoleComposerDock; settled nodeStates are never used as terminal proof; Console stays isolated from Legacy imports",
+        "New pass-through props default to false/null in leaf tests/callers \u2014 no broadened terminality or invented execution identity for missing legacy data",
+        "In both panes the dock's React key changes from occurrence-scoped to a stable run/node key while pageState, todo, scroll, and displayed transcript keys stay occurrence-scoped; a completed-iteration selection with a live later occurrence stays nonterminal and preserves the ledger across the occurrence switch and a later empty queue snapshot (T3.17)",
+        "Prop pass-through is pinned in wrapper tests rather than incidental DOM status labels",
+        "Verification: `NODE_ENV=development bun test` on LegacyGraphLogsPane, LegacyNodeRoom, ConsoleInspectPane, ConsoleNodeRoom, and RunDetailPage test files all pass; `bun test packages/web/src/experiments/console/console-isolation.test.ts` passes; `bun --filter @archon/web type-check` clean; focused eslint on all touched files at --max-warnings 0 clean"
+      ],
+      "technicalNotes": "Implement phase-03 section D exactly (steps 6\u20139). Files: packages/web/src/components/workflows/LegacyGraphLogsPane.tsx, LegacyNodeRoom.tsx, NodeTranscriptPane.tsx (rekey only \u2014 drain is US-006), packages/web/src/experiments/console/routes/RunDetailPage.tsx, components/ConsoleInspectPane.tsx, ConsoleNodeRoom.tsx (rekey only). Uses helpers from US-004. The nodeTerminal signal stays false for an already-completed selected iteration while a later occurrence runs; for a parked Ask the US-003 server projection supplies the failed execution.",
+      "dependsOn": ["US-004"],
+      "passes": true,
+      "notes": "Implemented in iteration 5. Files: LegacyGraphLogsPane.tsx/.test.tsx, LegacyNodeRoom.tsx/.test.tsx, NodeTranscriptPane.tsx, RunDetailPage.tsx/.test.tsx, ConsoleInspectPane.tsx/.test.tsx, ConsoleNodeRoom.tsx/.test.tsx. T3.15\u2013T3.17 green; console-isolation, web type-check, focused eslint clean."
+    },
+    {
+      "id": "US-006",
+      "title": "Node-wide reconciliation drain in both panes",
+      "description": "As the transcript panes, I want a separate node-wide message drain that starts only after real node-terminal evidence and publishes written operator ids to the dock only on complete success, with bounded 1 s retry and full reset/abort semantics, so reconciliation input is always truthful and stale work can never corrupt a new attempt.",
+      "acceptanceCriteria": [
+        "NodeTranscriptPane.test.tsx and ConsoleNodeRoom.test.tsx are extended FIRST with the same failing cases T3.18\u2013T3.26, then both panes implement until all pass",
+        "nodeTerminal:false \u2014 including run cancelled or a completed selected row \u2014 never starts or publishes reconciliation (T3.18)",
+        "At false\u2192true the pane calls drainNodeMessages with a kind:'node' selection whose rowId scopes to run/node/execution key; loader options omit occurrenceId and attemptId even when a finished occurrence is selected; displayed occurrence transcript rows/state/polling/scroll/Retry are unchanged (T3.19)",
+        "collectWrittenOperatorMessageIds(rows) is published to the dock only after complete:true and error:null; a complete result lacking an observed id yields the finished box, a node-wide operator row with that id yields none, and assistant/tool/malformed metadata ids never count as delivery (T3.20\u2013T3.22)",
+        "On error or non-aborted incomplete result the pane publishes nothing and schedules another node-wide drain after 1 s while mounted/terminal, cleared on cleanup \u2014 read-only recovery, not lifecycle inference (T3.23)",
+        "Run/node change, nodeExecutionKey change, nodeTerminal true\u2192false, or unmount aborts the controller, clears retry timer and written-id state, and ignores late promise completion; an already-terminal changed execution starts its new drain without requiring an observed false\u2192true edge; occurrence-only selection and same-key Ask resume do NOT reset (T3.24, T3.25)",
+        "A receipt observed in the read-only finished-iteration band is compared against node-wide rows and restored after the overall node evidence (T3.26)",
+        "The drain's intermediate state never feeds transcript rendering; reconciliation state/ref is separate from displayed pageState; drain uses the existing sequential 100-row paginated loader to a captured high-water mark \u2014 no new route or unpaginated read",
+        "The dock receives the terminal signal, execution key, and written-id set; dock+drain use run/node identity while displayed transcript keeps occurrence-scoped identity",
+        "Verification: `NODE_ENV=development bun test packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` and `NODE_ENV=development bun test packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` pass; `bun test packages/web/src/experiments/console/console-isolation.test.ts` passes; `bun --filter @archon/web test` suite is green; `bun --filter @archon/web type-check` clean; focused eslint at --max-warnings 0 clean"
+      ],
+      "technicalNotes": "Implement phase-03 section E exactly (steps 10\u201313). Files: packages/web/src/components/workflows/NodeTranscriptPane.tsx (drainNodeMessages already imported ~line 20, used ~239 for the displayed transcript \u2014 the reconciliation drain is a SEPARATE call/state) and packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx. Build test rows with the real message shape: kind:'text', metadata.origin:'operator', metadata.message_id; make queue snapshots configurable so tests exercise the real dock's observed ledger. Full Phase 3 verification list is in the phase file (~line 276) \u2014 run it all for this closing story.",
+      "dependsOn": ["US-005"],
+      "priority": 6,
+      "passes": true,
+      "notes": "Implemented in iteration 6. Files: NodeTranscriptPane.tsx/.test.tsx, ConsoleNodeRoom.tsx/.test.tsx, LegacyNodeRoom.test.tsx (T3.17 drain-owned). T3.18\u2013T3.26 green; web type-check, focused eslint, @archon/web test green."
+    },
+    {
+      "id": "US-007",
+      "title": "Real-executor E2E, evidence, authority sync, tracker closeout",
+      "description": "As the release gate, I want real-executor Playwright proof of the user outcome on both shells, visual/accessibility evidence, corrected current-authority docs, and the Story 2.11 tracker flipped only after every repository gate passes.",
+      "acceptanceCriteria": [
+        "e2e/ui/agent-never-sent.spec.ts is created with executable E4.1\u2013E4.5, E4.7, E4.8 cases run for surface of ['console','legacy'] using the repo's `[P1] [V:...]` title convention; e2e/ui/agent-queue-guidance.spec.ts gains the E4.6 natural-drain negative; e2e/ui/agent-finished-iteration.spec.ts gains the finished-iteration observer case \u2014 no test.fixme placeholders",
+        "Cancel tests observe two milestones: at run cancelled with raw execution still running the UI must NOT show NEVER SENT; only after expect.poll on getRunDetail shows persisted event_type === 'node_failed' for the selected step_name AND the selected raw execution is failed does the box assert \u2014 dag_node_failed log labels and fixed sleeps are never accepted",
+        "E4.1 queued messages survive Cancel: two exact queued messages with captured request ids \u2192 abandon \u2192 wait real node event \u2192 ordered `Never sent, 2` with exact ids/text, one alert, no controls, no matching operator rows. E4.2 observer tab recovers a creator-tab receipt by id after creator closes (observation-based ledger). E4.3 idle-after-interrupt guidance added via authenticated starterFetch intent:'queue' shows under WILL SEND then restores after abandon + node event (no UI Send now click). E4.4 half-typed raw draft `  still typing  ` folds in last as an id-less item preserving whitespace. E4.5 finished-iteration observer: queue A while iteration 2 live, select completed iteration 1, confirm read-only band shows A, focus Go, cancel, wait overall node failure event, assert one Never-sent result for A, focus reaches transcript target not body, comparison request omits occurrence filters",
+        "E4.6 natural delivery: both tracked ids exist as operator rows and no Never-sent list/disclosure appears after node/run completion (AC5)",
+        "E4.7 focus + single announcement: field focused before terminal \u2192 focus lands on last transcript row/scroller (never body or the box) and exactly one alert persists across an unrelated rerender/refetch",
+        "E4.8 visual/responsive evidence: finished box captured at 460 px in both shells and Console in a 1440 px host; measurements prove \u226433vh bound, no horizontal overflow or focusable controls, computed uppercase + 0.07em tracking, item elision, and secondary-text/elevated-background contrast \u2265 4.5:1; captures land under plans/260920-1136-issue-191-recover-never-sent-messages/reports/evidence/",
+        "Authority sync AFTER behavior is green and verified against the implementation: AD-11 in ARCHITECTURE-SPINE.md amended (scoped-purge closure incl. uniquely matched loop owners, resumed-Ask event guard + later-start retirement, fail-closed ambiguity, folded logical execution key, observation ledger, 3 s mounted catch-up, node-wide drain, finished-iteration eligibility, fail-safe absence); walkthrough.html terminal-reconciliation entry matches AD-11; steering-test-plan.md links all focused coverage + the new spec; mockups/key-steering-dock.html changes ONLY 'these never left this tab' \u2192 'none of this was sent'; .memlog.md, reconcile-spec.md, and reviews/ are untouched",
+        "reports/acceptance-report-260920-issue-191.md maps AC1\u2013AC6 to passing test ids and evidence paths",
+        "Verification order honored: Phase 1\u20133 focused tests + type/lint gates \u2192 `bun run build:web` \u2192 `cd e2e && npm run typecheck` \u2192 `npx playwright test -c playwright.config.ts ui/agent-never-sent.spec.ts ui/agent-queue-guidance.spec.ts ui/agent-finished-iteration.spec.ts` \u2192 `cd .. && bun run validate` exits zero; ONLY then sprint-status.yaml sets 2-11-recover-messages-that-were-never-sent-when-the-node-ends: done with updated last_updated (no unrelated story/epic changes) and plan/phase statuses update; any failed gate leaves tracker and plan pending"
+      ],
+      "technicalNotes": "Implement phase-04-e2e-evidence-authority-sync-closeout.md exactly. Reuse confirmed infrastructure: e2e/lib/playwright/archon-runtime.ts (startWorkflowViaWeb, starterFetch, waitForRunStatus, getRunDetail, listNodeMessages, Console/Legacy navigation), fixtures e2e-queue-guidance.yaml (interruptible turn delayMs: 30000) and e2e-queue-guidance-loop.yaml (two loop occurrences, 25 s live iteration), abandon via POST /api/workflows/runs/{runId}/abandon. Keep request-id tracking and room/visual helpers local to the spec \u2014 no two-caller abstraction. No new fixture unless confirmed ones provably cannot hold a transition (record evidence if so). On E2E failure retain trace/screenshot output; never weaken the terminal-event assertion or widen timeouts without a measured healthy baseline; never reintroduce !live reconciliation.",
+      "dependsOn": ["US-006"],
+      "priority": 7,
+      "passes": true,
+      "notes": "Implemented in iteration 7. Files: agent-never-sent.spec.ts (E4.1\u2013E4.5,E4.7\u2013E4.8), agent-queue-guidance E4.6, agent-finished-iteration E4.5 extension, run-detail status field, steeringDockMode finished-over-live + finished focus handoff, AD-11/walkthrough/test-plan/mockup, evidence + acceptance report, tracker done. bun run validate green."
+    }
+  ]
+}

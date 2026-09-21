@@ -1,0 +1,52 @@
+{
+  "dock-console": {
+    "roomWidth460": 460,
+    "stopTarget": {
+      "width": 84.890625,
+      "height": 32
+    },
+    "stoppingContrast": 7.9,
+    "sendWidth": 84,
+    "sendHeight": 32,
+    "band": {
+      "maxHeight": "297px",
+      "overflowY": "auto",
+      "clientHeight": 36,
+      "scrollHeight": 36,
+      "viewportHeight": 900
+    },
+    "focusRing": {
+      "color": "oklch(0.64 0.295 330)",
+      "ratio": 5.14
+    },
+    "activeElementAfterIdle": "textarea"
+  },
+  "viewport-console": {
+    "wide1440": 696
+  },
+  "dock-legacy": {
+    "roomWidth460": 460,
+    "stopTarget": {
+      "width": 85.421875,
+      "height": 32
+    },
+    "stoppingContrast": 5.33,
+    "sendWidth": 84,
+    "sendHeight": 32,
+    "band": {
+      "maxHeight": "297px",
+      "overflowY": "auto",
+      "clientHeight": 36,
+      "scrollHeight": 36,
+      "viewportHeight": 900
+    },
+    "focusRing": {
+      "color": "oklch(0.72 0.18 250)",
+      "ratio": 7.99
+    },
+    "activeElementAfterIdle": "textarea"
+  },
+  "viewport-legacy": {
+    "wide1440": 863.40625
+  }
+}

@@ -53,7 +53,7 @@ bun "$VERIFY_HELPER" prove --selection "$ATTEMPT/selection.json" --repo "$TARGET
 ```
 
 Obtain `BASE_SHA` independently from the change request or integration branch.
-The default is the merge base with local `dev`, then `origin/dev` if local `dev` is absent.
+The default is the merge base with local `develop`, then `origin/develop` if local `develop` is absent.
 A one-commit repository can use its initial commit.
 Otherwise a missing base is an error.
 Never trust the proposal to supply the expected base.

@@ -67,4 +67,5 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   nativeTools: true,
   containerExec: true, // spawns the CLI in-container via spawnClaudeCodeProcess
   askHuman: true,
+  interrupt: 'native', // Query.interrupt() over streaming input
 };

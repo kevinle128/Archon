@@ -76,7 +76,7 @@ Under the old durable design the stop travelled through the database, so it reac
 - A run whose executor is **in this process** (web dispatch) is fully steerable.
 - A run whose executor is a **detached child** has no reachable live handle → Send and Interrupt return a clear "not steerable here" (the UI states it). Cancel and normal `/workflow resume` still work on it.
 
-This is the accepted v1 boundary. A server restart drops the registry with the live sessions; any in-flight steer is lost and the run resumes normally — matching aion, which keeps `active_turn_id` in memory and treats a crash mid-turn the same way.
+This is the accepted v1 boundary. A server restart drops the registry with the live sessions; any in-flight steer is lost and the process-local handle, timer, and continuation are dropped, leaving a durable non-terminal run; Archon never autonomously fails or resumes it from staleness — recovery is explicit abandon/cancel, then CLI `archon workflow retry-node` when desired (the web Retry action is not shown for a still-`running` node) — matching aion's process-local `active_turn_id` loss on crash, without inventing autonomous recovery.
 
 If steering a session the caller did not spawn is ever wanted, one lead exists: grok's leader socket (`~/.grok/leader.sock`, `grok agent leader`, `--leader` — "multiple clients share one backend"). It is the only channel found that reaches a session another process owns. Unexplored, grok-only, deferred.
 

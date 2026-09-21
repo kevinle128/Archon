@@ -34,7 +34,9 @@ import {
   type HookCallback,
   type HookCallbackMatcher,
   type SDKAssistantMessageError,
+  type SDKControlInterruptResponse,
   type SDKResultMessage,
+  type SDKUserMessage,
   type ModelUsage,
 } from '@anthropic-ai/claude-agent-sdk';
 import {
@@ -86,6 +88,58 @@ function closeQuery(queryToClose: ClosableQuery | undefined, reason: string): vo
     queryToClose.close();
   } catch (e) {
     getLog().warn({ err: e as Error, reason }, 'claude.query_close_failed');
+  }
+}
+
+/**
+ * One user message on the interrupt-capable streaming input. The iterable
+ * stays open after yielding until `holdOpen` settles — the SDK keeps the
+ * query's control channel (interrupt, setPermissionMode, …) alive only while
+ * input is streaming, so the provider resolves the gate in every result,
+ * error, Cancel, and finally path.
+ */
+async function* singleTurnInput(
+  text: string,
+  holdOpen: Promise<void>
+): AsyncGenerator<SDKUserMessage, void, undefined> {
+  yield {
+    type: 'user',
+    message: { role: 'user', content: text },
+    parent_tool_use_id: null,
+  };
+  await holdOpen;
+}
+
+/**
+ * Races every stream read against the interrupt-failure promise so a rejected
+ * native `interrupt()` reaches the consumer mid-stream instead of hanging or
+ * surfacing as an unhandled rejection.
+ */
+async function* raceInterruptFailure<T>(
+  events: AsyncGenerator<T>,
+  failure: Promise<never>
+): AsyncGenerator<T> {
+  const iterator = events[Symbol.asyncIterator]();
+  // In the failure path the inner iterator is parked at a pending read —
+  // awaiting its return() would deadlock behind that read, so it is skipped.
+  let readFailed = false;
+  try {
+    for (;;) {
+      const next = iterator.next();
+      // A next() abandoned by a lost race may still reject later — keep it observed.
+      next.catch(() => undefined);
+      let result: IteratorResult<T>;
+      try {
+        result = await Promise.race([next, failure]);
+      } catch (err) {
+        readFailed = true;
+        throw err;
+      }
+      if (result.done) return;
+      yield result.value;
+    }
+  } finally {
+    if (!readFailed) await iterator.return?.(undefined);
   }
 }
 
@@ -1373,6 +1427,9 @@ async function* streamClaudeMessages(
         ...(resultMsg.total_cost_usd !== undefined ? { cost: resultMsg.total_cost_usd } : {}),
         ...(resultMsg.stop_reason != null ? { stopReason: resultMsg.stop_reason } : {}),
         ...(resultMsg.num_turns !== undefined ? { numTurns: resultMsg.num_turns } : {}),
+        ...(resultMsg.terminal_reason !== undefined
+          ? { terminalReason: resultMsg.terminal_reason }
+          : {}),
         ...(usageBreakdown ? { usageBreakdown } : {}),
         ...(resolvedModelId ? { resolvedModel: { id: resolvedModelId } } : {}),
       };
@@ -1595,16 +1652,10 @@ export class ClaudeProvider implements IAgentProvider {
     // can forward cancellation without accumulating per-retry listeners.
     let currentController: AbortController | undefined;
     let currentQuery: ClosableQuery | undefined;
+    let currentInterrupt: (() => Promise<SDKControlInterruptResponse | undefined>) | undefined;
     // Usage from usage-bearing attempts that the outer retry consumes — carried
     // into the eventual terminal result (success or final typed error).
     let accumulatedUsage: UsageBreakdown | undefined;
-    const onAbort = (): void => {
-      currentController?.abort();
-      closeQuery(currentQuery, 'request_abort');
-    };
-    if (requestOptions?.abortSignal) {
-      requestOptions.abortSignal.addEventListener('abort', onAbort, { once: true });
-    }
 
     const resumeInteractions = requestOptions?.resumeInteractions;
     const hasAskResume = (resumeInteractions?.length ?? 0) > 0;
@@ -1619,129 +1670,270 @@ export class ClaudeProvider implements IAgentProvider {
       hasAskResume && resumeInteractions ? buildClaudeAskResumePrompt(resumeInteractions) : prompt;
     const maxSubprocessRetries = hasAskResume ? 0 : MAX_SUBPROCESS_RETRIES;
 
-    for (let attempt = 0; attempt <= maxSubprocessRetries; attempt++) {
-      if (requestOptions?.abortSignal?.aborted) {
-        throw new Error('Query aborted');
-      }
+    const onAbort = (): void => {
+      currentController?.abort();
+      closeQuery(currentQuery, 'request_abort');
+    };
+    if (requestOptions?.abortSignal) {
+      requestOptions.abortSignal.addEventListener('abort', onAbort, { once: true });
+    }
 
-      const stderrLines: string[] = [];
-      const toolResultQueue: ToolResultEntry[] = [];
-      const controller = new AbortController();
-      currentController = controller;
-      const askBridge: ClaudeAskBridge = {};
-
-      // 1. Build SDK options (env and cliPath pre-computed above)
-      const options = buildBaseClaudeOptions(
-        cwd,
-        requestOptions,
-        assistantDefaults,
-        controller,
-        stderrLines,
-        toolResultQueue,
-        env,
-        resolvedCliPath,
-        [...settingSources]
-      );
-
-      // 2. Apply nodeConfig translation (re-applied per attempt since options are fresh)
-      if (requestOptions?.nodeConfig) {
-        await applyNodeConfig(options, requestOptions.nodeConfig, cwd, skillSearch);
-      }
-
-      // 2b. Register in-process native tools (e.g. manage_run) as an archon MCP
-      //     server, mirroring the file-based mcp branch. Merge so a nodeConfig
-      //     mcp config and native tools can coexist.
-      if (requestOptions?.nativeTools && requestOptions.nativeTools.length > 0) {
-        const server = buildArchonMcpServer(
-          requestOptions.nativeTools,
-          createClaudeAskRuntime(askBridge, controller)
-        );
-        options.mcpServers = { ...(options.mcpServers ?? {}), [ARCHON_TOOL_SERVER]: server };
-        options.allowedTools = [...(options.allowedTools ?? []), `mcp__${ARCHON_TOOL_SERVER}__*`];
-        composeAskHumanPreToolUseHook(options, askBridge);
-        getLog().info(
-          { count: requestOptions.nativeTools.length },
-          'claude.native_tools_registered'
-        );
-      }
-
-      // 3. Set session resume
-      if (hasAskResume) {
-        options.forkSession = false;
-        options.stderr = (data: string): void => {
-          const output = data.trim();
-          if (!output) return;
-          stderrLines.push(output);
-        };
-      }
-      if (resumeSessionId) {
-        options.resume = resumeSessionId;
-        getLog().debug(
-          { sessionId: resumeSessionId, forkSession: requestOptions?.forkSession },
-          'resuming_session'
-        );
-      } else {
-        getLog().debug({ cwd, attempt }, 'starting_new_session');
-      }
-
-      try {
-        // 4. Run query with first-event timeout protection
-        const rawEvents = query({ prompt: queryPrompt, options });
-        currentQuery = rawEvents;
-        const timeoutMs = getFirstEventTimeoutMs();
-        const diagnostics = buildFirstEventHangDiagnostics(
-          options.env as Record<string, string>,
-          options.model
-        );
-        const events = withFirstMessageTimeout(
-          captureFirstSessionId(rawEvents, askBridge),
-          controller,
-          timeoutMs,
-          diagnostics
-        );
-
-        // 5. Stream normalized events
-        // Claude resumes-or-errors: an invalid resume id throws (and is
-        // retried/surfaced), so reaching the result stream means the prior
-        // session was restored. Hence `true` whenever a resume was requested.
-        // Fold any usage retained from prior retry attempts into the terminal
-        // result so spent tokens remain queryable after recovery.
-        for await (const chunk of withResumedOutcome(
-          streamClaudeMessages(events, toolResultQueue, hasAskResume),
-          resumedOutcome(resumeSessionId, true)
-        )) {
-          const sanitized =
-            hasAskResume && chunk.type === 'result' && chunk.isError
-              ? { ...chunk, errors: [ASK_RESUME_FAILED_MESSAGE] }
-              : chunk;
-          if (sanitized.type === 'result' && accumulatedUsage) {
-            const usageBreakdown = mergeUsageBreakdowns(accumulatedUsage, sanitized.usageBreakdown);
-            yield {
-              ...sanitized,
-              ...(usageBreakdown ? { usageBreakdown } : {}),
-            };
-          } else {
-            yield sanitized;
-          }
-        }
-        if (askBridge.controlError) {
-          throw askBridge.controlError;
-        }
+    // Turn-scoped interrupt (operator "Stop"): aborting `interruptSignal` calls
+    // the SDK's native interrupt() exactly once on the live query — never the
+    // SDK abort controller or query close, which stay Cancel's teardown path.
+    const interruptSignal = requestOptions?.interruptSignal;
+    let interruptInvoked = false;
+    // Set when the signal aborts while no query is bound yet (per-attempt
+    // setup) — flushed as soon as `currentInterrupt` is assigned so an abort
+    // in that window is not silently dropped.
+    let interruptRequested = false;
+    let interruptAttempt: Promise<void> | undefined;
+    let failInterruptStream: ((error: Error) => void) | undefined;
+    const interruptFailed = new Promise<never>((_, reject) => {
+      failInterruptStream = reject;
+    });
+    // Observed via Promise.race / interruptAttempt — the no-op catch marks it
+    // handled while the stream pump is still deciding which promise settles.
+    interruptFailed.catch(() => undefined);
+    const onInterrupt = (): void => {
+      if (interruptInvoked) return;
+      const invoke = currentInterrupt;
+      if (!invoke) {
+        interruptRequested = true;
         return;
-      } catch (error) {
-        if (askBridge.controlError) {
-          throw askBridge.controlError;
+      }
+      interruptInvoked = true;
+      const attempt = (async (): Promise<void> => {
+        try {
+          const ack = await invoke();
+          getLog().info({ stillQueued: ack?.still_queued?.length ?? 0 }, 'claude.interrupt_ack');
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          failInterruptStream?.(err);
+          throw err;
         }
-        const err = error as Error;
+      })();
+      interruptAttempt = attempt;
+      void attempt.catch(() => undefined);
+    };
+    if (interruptSignal) {
+      interruptSignal.addEventListener('abort', onInterrupt);
+    }
+
+    try {
+      for (let attempt = 0; attempt <= maxSubprocessRetries; attempt++) {
+        if (requestOptions?.abortSignal?.aborted) {
+          throw new Error('Query aborted');
+        }
+        // A spent interrupt signal must never (re)start an SDK query — checked
+        // before every retry attempt.
+        if (interruptSignal?.aborted) {
+          throw new Error('Query interrupted');
+        }
+
+        const stderrLines: string[] = [];
+        const toolResultQueue: ToolResultEntry[] = [];
+        const controller = new AbortController();
+        currentController = controller;
+        const askBridge: ClaudeAskBridge = {};
+        // Provider-owned gate that keeps the one-message streaming input open
+        // for the whole query lifetime; resolved in this attempt's finally.
+        let releaseInput: (() => void) | undefined;
+
+        // 1. Build SDK options (env and cliPath pre-computed above)
+        const options = buildBaseClaudeOptions(
+          cwd,
+          requestOptions,
+          assistantDefaults,
+          controller,
+          stderrLines,
+          toolResultQueue,
+          env,
+          resolvedCliPath,
+          [...settingSources]
+        );
+
+        // 2. Apply nodeConfig translation (re-applied per attempt since options are fresh)
+        if (requestOptions?.nodeConfig) {
+          await applyNodeConfig(options, requestOptions.nodeConfig, cwd, skillSearch);
+        }
+
+        // 2b. Register in-process native tools (e.g. manage_run) as an archon MCP
+        //     server, mirroring the file-based mcp branch. Merge so a nodeConfig
+        //     mcp config and native tools can coexist.
+        if (requestOptions?.nativeTools && requestOptions.nativeTools.length > 0) {
+          const server = buildArchonMcpServer(
+            requestOptions.nativeTools,
+            createClaudeAskRuntime(askBridge, controller)
+          );
+          options.mcpServers = { ...(options.mcpServers ?? {}), [ARCHON_TOOL_SERVER]: server };
+          options.allowedTools = [...(options.allowedTools ?? []), `mcp__${ARCHON_TOOL_SERVER}__*`];
+          composeAskHumanPreToolUseHook(options, askBridge);
+          getLog().info(
+            { count: requestOptions.nativeTools.length },
+            'claude.native_tools_registered'
+          );
+        }
+
+        // 3. Set session resume
         if (hasAskResume) {
+          options.forkSession = false;
+          options.stderr = (data: string): void => {
+            const output = data.trim();
+            if (!output) return;
+            stderrLines.push(output);
+          };
+        }
+        if (resumeSessionId) {
+          options.resume = resumeSessionId;
+          getLog().debug(
+            { sessionId: resumeSessionId, forkSession: requestOptions?.forkSession },
+            'resuming_session'
+          );
+        } else {
+          getLog().debug({ cwd, attempt }, 'starting_new_session');
+        }
+
+        try {
+          // 4. Run query with first-event timeout protection. Interrupt-capable
+          // calls send the prompt on a one-message streaming input held open by
+          // a provider-owned deferred — control methods (interrupt) require it.
+          let promptInput: string | AsyncIterable<SDKUserMessage> = queryPrompt;
+          if (interruptSignal) {
+            const holdOpen = new Promise<void>(resolve => {
+              releaseInput = resolve;
+            });
+            promptInput = singleTurnInput(queryPrompt, holdOpen);
+          }
+          const rawEvents = query({ prompt: promptInput, options });
+          currentQuery = rawEvents;
+          if (interruptSignal) {
+            if (typeof rawEvents.interrupt !== 'function') {
+              throw new Error(
+                'Claude SDK query does not support interrupt() — streaming input required'
+              );
+            }
+            currentInterrupt = rawEvents.interrupt.bind(rawEvents);
+            // The signal may have aborted during per-attempt setup, before the
+            // query existed — deliver the pending interrupt to the live query.
+            if (interruptRequested) onInterrupt();
+          }
+          const timeoutMs = getFirstEventTimeoutMs();
+          const diagnostics = buildFirstEventHangDiagnostics(
+            options.env as Record<string, string>,
+            options.model
+          );
+          const events = withFirstMessageTimeout(
+            captureFirstSessionId(rawEvents, askBridge),
+            controller,
+            timeoutMs,
+            diagnostics
+          );
+          const interruptibleEvents = interruptSignal
+            ? raceInterruptFailure(events, interruptFailed)
+            : events;
+
+          // 5. Stream normalized events
+          // Claude resumes-or-errors: an invalid resume id throws (and is
+          // retried/surfaced), so reaching the result stream means the prior
+          // session was restored. Hence `true` whenever a resume was requested.
+          // Fold any usage retained from prior retry attempts into the terminal
+          // result so spent tokens remain queryable after recovery.
+          for await (const chunk of withResumedOutcome(
+            streamClaudeMessages(interruptibleEvents, toolResultQueue, hasAskResume),
+            resumedOutcome(resumeSessionId, true)
+          )) {
+            const sanitized =
+              hasAskResume && chunk.type === 'result' && chunk.isError
+                ? { ...chunk, errors: [ASK_RESUME_FAILED_MESSAGE] }
+                : chunk;
+            // A terminal result while input is still streaming: signal input
+            // EOF so the subprocess exits — the SDK otherwise keeps the query
+            // open awaiting the next streamed message and the stream never ends.
+            if (sanitized.type === 'result') releaseInput?.();
+            if (sanitized.type === 'result' && accumulatedUsage) {
+              const usageBreakdown = mergeUsageBreakdowns(
+                accumulatedUsage,
+                sanitized.usageBreakdown
+              );
+              yield {
+                ...sanitized,
+                ...(usageBreakdown ? { usageBreakdown } : {}),
+              };
+            } else {
+              yield sanitized;
+            }
+          }
+          // A native interrupt() that rejected after the stream already ended
+          // still surfaces to the consumer rather than being swallowed.
+          if (interruptAttempt) await interruptAttempt;
+          if (askBridge.controlError) {
+            throw askBridge.controlError;
+          }
+          return;
+        } catch (error) {
+          if (askBridge.controlError) {
+            throw askBridge.controlError;
+          }
+          const err = error as Error;
+          if (hasAskResume) {
+            if (err instanceof ClaudeApiResultError) {
+              accumulatedUsage = mergeUsageBreakdowns(accumulatedUsage, err.usageBreakdown);
+              if (accumulatedUsage) {
+                yield {
+                  type: 'result',
+                  isError: true,
+                  errorSubtype: err.sdkErrorCode,
+                  errors: [ASK_RESUME_FAILED_MESSAGE],
+                  usageBreakdown: accumulatedUsage,
+                  ...(err.tokens ? { tokens: err.tokens } : {}),
+                  ...(err.cost !== undefined ? { cost: err.cost } : {}),
+                  ...(err.sessionId ? { sessionId: err.sessionId } : {}),
+                };
+                return;
+              }
+            }
+            const errorClass = classifySubprocessError(err.message, stderrLines.join('\n'));
+            getLog().error({ errorClass }, 'claude.ask_resume_failed');
+            throw new Error(ASK_RESUME_FAILED_MESSAGE);
+          }
           if (err instanceof ClaudeApiResultError) {
             accumulatedUsage = mergeUsageBreakdowns(accumulatedUsage, err.usageBreakdown);
-            if (accumulatedUsage) {
+          }
+          const { enrichedError, errorClass, shouldRetry } = classifyAndEnrichError(
+            err,
+            stderrLines,
+            controller
+          );
+
+          getLog().error(
+            {
+              err,
+              stderrContext: stderrLines.join('\n'),
+              errorClass,
+              attempt,
+              maxRetries: MAX_SUBPROCESS_RETRIES,
+            },
+            'query_error'
+          );
+
+          // An operator-interrupted attempt is never retried — the raw error is
+          // rethrown so the executor classifies the turn end (abort-like →
+          // interrupted; unrelated → genuine failure).
+          if (interruptSignal?.aborted) {
+            throw err;
+          }
+
+          if (!shouldRetry || attempt >= MAX_SUBPROCESS_RETRIES) {
+            // Usage-bearing typed API failures yield a terminal isError result so
+            // the executor can persist usage and then fail the node. Plain throws
+            // (no usage, or non-API failures) keep existing classification paths.
+            if (err instanceof ClaudeApiResultError && accumulatedUsage) {
               yield {
                 type: 'result',
                 isError: true,
                 errorSubtype: err.sdkErrorCode,
-                errors: [ASK_RESUME_FAILED_MESSAGE],
+                errors: [err.message],
                 usageBreakdown: accumulatedUsage,
                 ...(err.tokens ? { tokens: err.tokens } : {}),
                 ...(err.cost !== undefined ? { cost: err.cost } : {}),
@@ -1749,61 +1941,25 @@ export class ClaudeProvider implements IAgentProvider {
               };
               return;
             }
+            throw enrichedError;
           }
-          const errorClass = classifySubprocessError(err.message, stderrLines.join('\n'));
-          getLog().error({ errorClass }, 'claude.ask_resume_failed');
-          throw new Error(ASK_RESUME_FAILED_MESSAGE);
-        }
-        if (err instanceof ClaudeApiResultError) {
-          accumulatedUsage = mergeUsageBreakdowns(accumulatedUsage, err.usageBreakdown);
-        }
-        const { enrichedError, errorClass, shouldRetry } = classifyAndEnrichError(
-          err,
-          stderrLines,
-          controller
-        );
 
-        getLog().error(
-          {
-            err,
-            stderrContext: stderrLines.join('\n'),
-            errorClass,
-            attempt,
-            maxRetries: MAX_SUBPROCESS_RETRIES,
-          },
-          'query_error'
-        );
-
-        if (!shouldRetry || attempt >= MAX_SUBPROCESS_RETRIES) {
-          // Usage-bearing typed API failures yield a terminal isError result so
-          // the executor can persist usage and then fail the node. Plain throws
-          // (no usage, or non-API failures) keep existing classification paths.
-          if (err instanceof ClaudeApiResultError && accumulatedUsage) {
-            yield {
-              type: 'result',
-              isError: true,
-              errorSubtype: err.sdkErrorCode,
-              errors: [err.message],
-              usageBreakdown: accumulatedUsage,
-              ...(err.tokens ? { tokens: err.tokens } : {}),
-              ...(err.cost !== undefined ? { cost: err.cost } : {}),
-              ...(err.sessionId ? { sessionId: err.sessionId } : {}),
-            };
-            return;
-          }
-          throw enrichedError;
+          const delayMs = this.retryBaseDelayMs * Math.pow(2, attempt);
+          getLog().info({ attempt, delayMs, errorClass }, 'retrying_subprocess');
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+          lastError = enrichedError;
+        } finally {
+          releaseInput?.();
+          currentQuery = undefined;
+          currentInterrupt = undefined;
         }
-
-        const delayMs = this.retryBaseDelayMs * Math.pow(2, attempt);
-        getLog().info({ attempt, delayMs, errorClass }, 'retrying_subprocess');
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-        lastError = enrichedError;
-      } finally {
-        currentQuery = undefined;
       }
-    }
 
-    throw lastError ?? new Error('Claude Code query failed after retries');
+      throw lastError ?? new Error('Claude Code query failed after retries');
+    } finally {
+      requestOptions?.abortSignal?.removeEventListener('abort', onAbort);
+      interruptSignal?.removeEventListener('abort', onInterrupt);
+    }
   }
 
   getType(): string {

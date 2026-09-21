@@ -100,6 +100,7 @@ import { resolveWorkflowName } from '@archon/workflows/router';
 import { isValidCommandName, isValidWorkflowName } from '@archon/workflows/command-validation';
 import { projectLatestEffectiveNodeStates } from '@archon/workflows/retry-state';
 import { getSteeringRegistry } from '@archon/workflows/steering-registry';
+import type { SteeringSubState } from '@archon/workflows/steering-registry';
 import { projectWorkflowExecutionHistory } from './workflow-execution-history';
 import { BUNDLED_WORKFLOWS, BUNDLED_COMMANDS, isBinaryBuild } from '@archon/workflows/defaults';
 import {
@@ -163,6 +164,7 @@ interface ApiWorkflowNodeState {
   modelReasoningEffort?: string;
   effort?: string;
   thinking?: ThinkingConfig;
+  steeringSubState?: SteeringSubState;
 }
 
 function isThinkingConfig(value: unknown): value is ThinkingConfig {
@@ -265,6 +267,32 @@ function settleApiWorkflowNodeStatesForRunStatus(
     };
   });
 
+  return changed ? nextNodeStates : nodeStates;
+}
+
+/**
+ * Join the live in-process steering sub-state onto still-running node states
+ * (#183) by the exact (runId, nodeId) key — the registry key IS the namespaced
+ * node id used by loop-group bodies and transcript routes. Runs AFTER
+ * terminal-settling persisted states so a stale live handle can never project
+ * onto a terminal node. `snapshot().subState` is already gated: only live
+ * interrupt-capable handles project one, so queue-only providers, parked
+ * asks, discarded runs, and absent handles all yield `undefined` and the
+ * field stays absent. Never persisted, never synthesized from transcript rows.
+ */
+function joinSteeringSubStates(
+  runId: string,
+  nodeStates: ApiWorkflowNodeState[]
+): ApiWorkflowNodeState[] {
+  const registry = getSteeringRegistry();
+  let changed = false;
+  const nextNodeStates = nodeStates.map(nodeState => {
+    if (nodeState.status !== 'running') return nodeState;
+    const subState = registry.get(runId, nodeState.nodeId)?.snapshot().subState;
+    if (subState === undefined) return nodeState;
+    changed = true;
+    return { ...nodeState, steeringSubState: subState };
+  });
   return changed ? nextNodeStates : nodeStates;
 }
 
@@ -480,6 +508,8 @@ import {
   reviewFeedbackResponseSchema,
   sendWorkflowNodeBodySchema,
   sendWorkflowNodeResponseSchema,
+  interruptWorkflowNodeResponseSchema,
+  keepaliveWorkflowNodeResponseSchema,
   steeringErrorSchema,
   readWorkflowNodeQueueParamsSchema,
   readWorkflowNodeQueueResponseSchema,
@@ -1608,6 +1638,71 @@ const sendWorkflowNodeRoute = createRoute({
     404: steeringJsonError('Unknown run or node'),
     409: steeringJsonError('Node no longer running'),
     422: steeringJsonError('No live steering session in this process'),
+  },
+});
+
+const interruptWorkflowNodeRoute = createRoute({
+  method: 'post',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/interrupt',
+  tags: ['Workflows'],
+  summary: 'Interrupt the current provider turn of a running workflow node',
+  description:
+    'Stops the live provider turn of an interrupt-capable in-process agent node ' +
+    'without cancelling the run. The request awaits the engine classification ' +
+    'and returns the ACTUAL settled sub-state: `idle-after-interrupt` (the turn ' +
+    'stopped and the node awaits Send now on the same provider session) or ' +
+    '`generating` (the turn already ended naturally or queued guidance drained ' +
+    'it before Stop took effect). Terminal outcomes map to the steering error ' +
+    'shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.',
+  request: {
+    params: z.object({
+      runId: z.string().min(1),
+      nodeId: z.string().min(1),
+    }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: interruptWorkflowNodeResponseSchema } },
+      description: 'Interrupt settled — the classified sub-state',
+    },
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
+const keepaliveWorkflowNodeRoute = createRoute({
+  method: 'post',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive',
+  tags: ['Workflows'],
+  summary: 'Re-arm the idle-await inactivity timer for a running workflow node',
+  description:
+    'Bodyless authenticated keepalive for an in-process steering handle. ' +
+    'Re-arms the idle-await inactivity timer only when the handle is live and ' +
+    'idle-after-interrupt with a pending waiter; other live handle states are a ' +
+    'successful no-op. Never resolves idle-await, never writes a durable row, and ' +
+    'never sends operator prose. Terminal outcomes map to the steering error ' +
+    'shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.',
+  request: {
+    params: z.object({
+      runId: z.string().min(1),
+      nodeId: z.string().min(1),
+    }),
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: keepaliveWorkflowNodeResponseSchema } },
+      description: 'Keepalive accepted — timer re-armed or live no-op',
+    },
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run or node'),
+    409: steeringJsonError('Node no longer running'),
+    422: steeringJsonError('No live steering session in this process'),
+    500: steeringJsonError('Server error'),
   },
 });
 
@@ -5357,12 +5452,19 @@ export function registerApiRoutes(
           return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
         }
 
-        const result = handle.enqueue({
-          messageId: body.message_id,
-          message: body.message,
-          operatorUserId: requester?.userId ?? null,
-          receivedAt: new Date().toISOString(),
-        });
+        // The registry owns the atomic mutation: receipt acceptance, the idle
+        // check, and the send_now release happen in ONE synchronous step — the
+        // route never performs "read sub-state, then send now" as two
+        // operations, and no await sits between the final gate and accept.
+        const result = handle.accept(
+          {
+            messageId: body.message_id,
+            message: body.message,
+            operatorUserId: requester?.userId ?? null,
+            receivedAt: new Date().toISOString(),
+          },
+          body.intent
+        );
         if (!result.ok) {
           return result.reason === 'closed'
             ? steeringError(c, 409, 'node_finished', 'Workflow node is finished')
@@ -5373,19 +5475,197 @@ export function registerApiRoutes(
                 'No live steering session for this node in this process'
               );
         }
-        // `intent: 'send_now'` queues identically for now — awaiting_send_now is
-        // only synthesized once an idle-after-interrupt state exists.
+        // The receipt is immutable and idempotent: `queued` while generating/
+        // interrupting, `awaiting_send_now` while idle — including the very
+        // message whose send_now released the batch.
         return c.json(
           {
             success: true as const,
             message_id: result.receipt.messageId,
-            state: 'queued' as const,
+            state: result.receipt.state,
           },
           200
         );
       } catch (error) {
         getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_send_failed');
         return steeringError(c, 500, 'internal_error', 'Failed to queue guidance');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt - Stop the live turn
+  //
+  // No body → no send-route-style middleware needed: param validation cannot
+  // fail on a matched route, so the in-handler auth check still runs before any
+  // rejection a gated caller could hit. Sequencing mirrors send: persisted
+  // lifecycle outranks a stale handle, the final run-status re-read is the last
+  // await, then handle.interrupt() runs SYNCHRONOUSLY (no-torn-controller
+  // boundary — a caller disconnect after this point does not undo the abort)
+  // and the response maps the engine's classified settlement, never a guess.
+  registerOpenApiRoute(
+    interruptWorkflowNodeRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+
+        const events = await workflowEventDb.listWorkflowEvents(runId);
+        const pendingInteractions =
+          await workflowPendingInteractionDb.listPendingInteractions(runId);
+        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
+          state => state.nodeId === nodeId
+        );
+        const handle = getSteeringRegistry().get(runId, nodeId);
+
+        if (nodeState === undefined && handle === undefined) {
+          return steeringError(c, 404, 'not_found', 'Workflow node not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle?.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle === undefined) {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        // Final async gate: a concurrent terminal transition wins. Everything
+        // below is synchronous until the settlement await — interrupt() aborts
+        // the stored turn controller at call time, so no await may sit between
+        // this read and the call.
+        const latestRun = await workflowDb.getWorkflowRun(runId);
+        if (latestRun === null) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        const settlement = await handle.interrupt();
+        switch (settlement) {
+          case 'idle-after-interrupt':
+            return c.json(
+              { success: true as const, sub_state: 'idle-after-interrupt' as const },
+              200
+            );
+          case 'generating':
+            return c.json({ success: true as const, sub_state: 'generating' as const }, 200);
+          case 'node_finished':
+            return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+          case 'not_steerable_here':
+            return steeringError(
+              c,
+              422,
+              'not_steerable_here',
+              'No live steering session for this node in this process'
+            );
+        }
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_interrupt_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to interrupt node');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive - Re-arm idle timer
+  //
+  // Bodyless like interrupt: param validation cannot fail on a matched route, so
+  // the in-handler auth check still runs before any gated rejection. Guard ladder
+  // mirrors interrupt (auth → 404 → 409 terminal/closed → 422 missing/parked →
+  // final run re-read → synchronous handle.keepalive()). Live idle rearms; other
+  // live states are a successful no-op. Never resolves idle-await and never
+  // writes a durable row.
+  registerOpenApiRoute(
+    keepaliveWorkflowNodeRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+
+        const events = await workflowEventDb.listWorkflowEvents(runId);
+        const pendingInteractions =
+          await workflowPendingInteractionDb.listPendingInteractions(runId);
+        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
+          state => state.nodeId === nodeId
+        );
+        const handle = getSteeringRegistry().get(runId, nodeId);
+
+        if (nodeState === undefined && handle === undefined) {
+          return steeringError(c, 404, 'not_found', 'Workflow node not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle?.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        }
+        if (handle === undefined) {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+        if (handle.snapshot().phase === 'parked') {
+          return steeringError(
+            c,
+            422,
+            'not_steerable_here',
+            'No live steering session for this node in this process'
+          );
+        }
+
+        // Final async gate: a concurrent terminal transition wins. keepalive() is
+        // synchronous after this point — no await may sit between this read and
+        // the call so a terminal race cannot re-arm a finishing node.
+        const latestRun = await workflowDb.getWorkflowRun(runId);
+        if (latestRun === null) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+
+        // Private outcome (rearmed | not_idle) is intentionally not exposed —
+        // both map to the same public success receipt.
+        handle.keepalive();
+        return c.json({ success: true as const }, 200);
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_keepalive_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to keepalive node');
       }
     },
     steeringValidationErrorHook
@@ -5667,9 +5947,86 @@ export function registerApiRoutes(
     return metadata !== undefined && metadata !== null ? { metadata } : {};
   }
 
+  function isOperatorTextRow(row: NodeMessage): boolean {
+    return row.kind === 'text' && row.metadata?.origin === 'operator';
+  }
+
+  function operatorSenderId(row: NodeMessage): string | null {
+    const senderId = row.metadata?.operator_user_id;
+    return typeof senderId === 'string' ? senderId : null;
+  }
+
+  function resolveOperatorDisplayName(
+    senderId: string | null,
+    nameById: ReadonlyMap<string, string | null>
+  ): string | null {
+    if (senderId === null) {
+      return null;
+    }
+    const storedName = nameById.get(senderId);
+    if (typeof storedName === 'string') {
+      const trimmed = storedName.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    return senderId.slice(0, 8);
+  }
+
+  async function buildOperatorDisplayNameById(
+    rows: readonly NodeMessage[],
+    context: { runId: string; nodeId: string }
+  ): Promise<ReadonlyMap<string, string | null>> {
+    const senderIds: string[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (!isOperatorTextRow(row)) {
+        continue;
+      }
+      const senderId = operatorSenderId(row);
+      if (senderId === null || seen.has(senderId)) {
+        continue;
+      }
+      seen.add(senderId);
+      senderIds.push(senderId);
+    }
+
+    if (senderIds.length === 0) {
+      return new Map();
+    }
+
+    try {
+      const users = await userDb.getUserDisplayNamesByIds(senderIds);
+      const map = new Map<string, string | null>();
+      for (const senderId of senderIds) {
+        map.set(senderId, null);
+      }
+      for (const user of users) {
+        map.set(user.id, user.display_name);
+      }
+      return map;
+    } catch (error) {
+      getLog().warn(
+        {
+          runId: context.runId,
+          nodeId: context.nodeId,
+          distinctSenderCount: senderIds.length,
+          errorType: error instanceof Error ? error.name : typeof error,
+        },
+        'workflow_node_operator_names_lookup_failed'
+      );
+      const map = new Map<string, string | null>();
+      for (const senderId of senderIds) {
+        map.set(senderId, null);
+      }
+      return map;
+    }
+  }
+
   function toWorkflowNodeMessageResponse(
     row: NodeMessage,
-    truncateOutput: boolean
+    truncateOutput: boolean,
+    operatorDisplayNameById: ReadonlyMap<string, string | null> = new Map()
   ): z.infer<typeof workflowNodeMessageResponseSchema> {
     const createdAt = toISOString(row.created_at);
     if (row.kind === 'tool') {
@@ -5703,7 +6060,7 @@ export function registerApiRoutes(
       };
     }
     if (row.kind === 'text') {
-      return {
+      const base = {
         id: row.id,
         seq: row.seq,
         kind: row.kind,
@@ -5711,6 +6068,16 @@ export function registerApiRoutes(
         created_at: createdAt,
         ...nodeMessageMetadata(row.metadata),
       };
+      if (row.metadata?.origin === 'operator') {
+        return {
+          ...base,
+          operator_display_name: resolveOperatorDisplayName(
+            operatorSenderId(row),
+            operatorDisplayNameById
+          ),
+        };
+      }
+      return base;
     }
     return {
       id: row.id,
@@ -5737,8 +6104,14 @@ export function registerApiRoutes(
       if (!run) return apiError(c, 404, 'Workflow run not found');
       if (!cursorMode) {
         const rows = await workflowNodeMessageDb.listNodeMessages(runId, nodeId);
+        const operatorDisplayNameById = await buildOperatorDisplayNameById(rows, {
+          runId,
+          nodeId,
+        });
         return c.json({
-          messages: rows.map(row => toWorkflowNodeMessageResponse(row, false)),
+          messages: rows.map(row =>
+            toWorkflowNodeMessageResponse(row, false, operatorDisplayNameById)
+          ),
         });
       }
       const limit = query.limit ?? 100;
@@ -5756,8 +6129,14 @@ export function registerApiRoutes(
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
       const last = page[page.length - 1];
+      const operatorDisplayNameById = await buildOperatorDisplayNameById(page, {
+        runId,
+        nodeId,
+      });
       return c.json({
-        messages: page.map(row => toWorkflowNodeMessageResponse(row, true)),
+        messages: page.map(row =>
+          toWorkflowNodeMessageResponse(row, true, operatorDisplayNameById)
+        ),
         ...(last !== undefined ? { nextCursor: String(last.seq) } : {}),
         hasMore,
         highWatermark,
@@ -5784,7 +6163,11 @@ export function registerApiRoutes(
       if (!run) return apiError(c, 404, 'Workflow run not found');
       const row = await workflowNodeMessageDb.getNodeMessage(runId, nodeId, messageId);
       if (!row) return apiError(c, 404, 'Workflow node message not found');
-      return c.json(toWorkflowNodeMessageResponse(row, false));
+      const operatorDisplayNameById = await buildOperatorDisplayNameById([row], {
+        runId,
+        nodeId,
+      });
+      return c.json(toWorkflowNodeMessageResponse(row, false, operatorDisplayNameById));
     } catch (error) {
       getLog().error(
         {
@@ -5865,9 +6248,12 @@ export function registerApiRoutes(
           conversation_platform_id: conversationPlatformId ?? null,
         },
         events,
-        nodeStates: settleApiWorkflowNodeStatesForRunStatus(
-          run.status,
-          projectApiWorkflowNodeStates(events, pendingInteractions)
+        nodeStates: joinSteeringSubStates(
+          runId,
+          settleApiWorkflowNodeStatesForRunStatus(
+            run.status,
+            projectApiWorkflowNodeStates(events, pendingInteractions)
+          )
         ),
         pending_interactions: pendingInteractions.map(row => ({
           ...row,

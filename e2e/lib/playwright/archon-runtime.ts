@@ -422,7 +422,15 @@ interface OwnedProcess {
   command: string;
 }
 
-export async function createArchonRuntime(workerIndex: number): Promise<ArchonRuntime> {
+export interface CreateArchonRuntimeOptions {
+  /** Extra env vars merged into the server spawn only (after isolatedEnv). */
+  serverEnv?: Record<string, string>;
+}
+
+export async function createArchonRuntime(
+  workerIndex: number,
+  options?: CreateArchonRuntimeOptions
+): Promise<ArchonRuntime> {
   if (!existsSync(WEB_DIST_INDEX)) {
     throw new Error(
       `Web UI bundle missing at ${WEB_DIST_INDEX}. Build it once with \`bun run build:web\` from the repo root before running e2e.`
@@ -454,7 +462,7 @@ export async function createArchonRuntime(workerIndex: number): Promise<ArchonRu
   };
   let initialized = false;
   try {
-    const runtime = await startArchonRuntime(port, base, owned, stop);
+    const runtime = await startArchonRuntime(port, base, owned, stop, options?.serverEnv);
     initialized = true;
     return runtime;
   } finally {
@@ -466,7 +474,8 @@ async function startArchonRuntime(
   port: number,
   base: string,
   owned: OwnedProcess[],
-  stop: () => Promise<void>
+  stop: () => Promise<void>,
+  serverEnv?: Record<string, string>
 ): Promise<ArchonRuntime> {
   const home = join(base, 'home');
   const workdir = join(base, 'workdir');
@@ -551,7 +560,7 @@ async function startArchonRuntime(
 
   const server: ChildProcess = spawn('bun', [SERVER_ENTRY], {
     cwd: home,
-    env: isolatedEnv(home, port),
+    env: { ...isolatedEnv(home, port), ...(serverEnv ?? {}) },
     stdio: 'pipe',
   });
   let serverLog = '';

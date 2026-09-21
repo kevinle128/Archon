@@ -1,0 +1,98 @@
+## Codebase Patterns
+
+### Grok diagnostic uses production argv builders
+- **Where**: `packages/providers/src/grok/interrupt-resume-spike.ts`, `provider.ts` (`buildGrokArgs`, exported `buildSpawnCommand`)
+- **Pattern**: Spike-only flags (`--no-auto-update`, `--session-id`) are appended after `buildGrokArgs()`; never maintain a parallel flag implementation. No barrel export of the spike.
+- **Example**: `const { args } = buildGrokArgs(...); args.push('--no-auto-update'); if (sessionId) args.push('--session-id', sessionId);`
+
+### Stop request vs termination trigger are separate
+- **Where**: `runGrokTurn` in `interrupt-resume-spike.ts`
+- **Pattern**: `requestStopImmediately` stamps operator Stop time; `terminateOn` defers the tree signal to a typed boundary (`spawn` | `first-stdout-event` | `first-event:<type>` | `pid-file`). Settlement budget is request→exit, not signal→exit alone.
+- **Example**: Stop at listener registration + `terminateOn: { kind: 'first-stdout-event' }` for M sampling.
+
+### Descendant liveness uses exact fingerprints, not names
+- **Where**: `collectDescendantFingerprints` / `isFingerprintAlive`
+- **Pattern**: Record `pid` + start-time before kill; re-check identity after parent exit; brief settle wait before declaring survival; never `pkill` by name.
+- **Example**: macOS non-tool Stop at M reaps cleanly after ~150–500 ms settle; mid-tool slow_tool.sh child can still survive group SIGTERM (B7/B9 BLOCKED).
+
+### Marker retention is boolean-only in reports
+- **Where**: continuation checks in spike
+- **Pattern**: Plant unique in-memory markers; assert presence on resume/fork continuations; reports emit booleans only — never marker values or model text.
+
+---
+
+## 2026-09-20 — US-001: Round-2 runtime evidence gate (spike)
+
+**Status**: PASSED (evidence overall BLOCKED — Phase 2 must not start)
+**Files changed**:
+- `packages/providers/src/grok/interrupt-resume-spike.ts` — full round-2 diagnostic (B0–B9, W1, LAT)
+- `packages/providers/src/grok/provider.ts` — export `buildSpawnCommand` only
+- `packages/providers/package.json` — `spike:interrupt:grok` (via cherry-pick 2fb341bd)
+- `plans/reports/spike-260920-0243-grok-interrupt-resume.md` — immutable round-one (cherry-pick)
+- `plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md` — round-two sanitized report
+- `plans/260920-0449-issue-186-grok-interrupt-redirect/plan.md` — validation log filled from report
+
+**Acceptance criteria verified**:
+- [x] Cherry-pick 2fb341bd only (spike runner + script + round-one report)
+- [x] Invocations via buildGrokArgs/buildSpawnCommand; no sandbox workspace; auto-update disabled deliberately
+- [x] Typed triggers; Stop request separated from termination; legacy + owned-tree modes
+- [x] Turn-specific marker retention (fresh/resumed/fork/repeated); booleans only in report
+- [x] Timings, ids, fingerprints, escalation recorded
+- [x] B0–B9 run on native macOS; Linux/Windows recorded BLOCKED pending operator hosts
+- [x] ≥10 new + 10 resumed + 10 forked samples at M; all request→settlement <1000 ms on macOS
+- [x] Round-2 report with M, policy, primitives, timing, PASS/BLOCKED table
+- [x] plan.md validation log filled only from final report
+- [x] Issue #186 comment with sanitized link + verdict
+- [x] No secrets/prompts/markers/model text/home paths in artifacts; disposable repo cleaned
+- [x] providers type-check + grok provider/event-parser tests; eslint on touched TS; format clean on touched files
+- [x] GROK_CAPABILITIES.interrupt remains false; no executor/capability/UI production behavior change
+
+**Learnings**:
+- `first-event:<type>` must match the *current* event type, not the first-ever event (otherwise thought/text never fire after available_commands).
+- Owned-tree group SIGTERM reaps non-tool hook children after a short settle; mid-tool `slow_tool.sh` children still survive (B7/B9).
+- pid-file-deferred Stop cannot meet the 1000 ms request→settlement budget when tool start itself is multi-second.
+- Native Linux/Windows evidence cannot be fabricated from this macOS agent host.
+
+BLOCKER US-002 | gate=Phase-1 decision rules (B0–B9 macOS+Linux + W1 Windows) | cause=B7/B9 mid-tool descendant survival + settlement>1s on macOS; HOST-LINUX and W1 unavailable | action=record BLOCKED; keep capability false; operator re-run on Linux/Windows required before Phase 2 | 2026-09-20
+
+---
+
+## 2026-09-20T07:19:30Z — US-002: Grok provider stream-abort seam
+
+**Status**: BLOCKED (ENTRY GATE — no production edit)
+**Files changed**: none (entry gate forbids provider/parser production work)
+
+**Acceptance criteria verified**:
+- [x] ENTRY GATE honored: no production edit; blocker recorded in prd.json notes
+- [ ] Remaining US-002 ACs not attempted — gated on PASS round-2 validation log
+
+**Evidence re-checked this iteration**:
+- Report: `plans/reports/spike-260920-0702-grok-interrupt-resume-round-2.md` overall **BLOCKED**
+- plan.md validation log: POSIX tree B7/B9 BLOCKED; HOST-LINUX BLOCKED; W1 BLOCKED; Supported hosts BLOCKED
+- M candidate on macOS non-tool path: `first-stdout-event` (~300 ms LAT PASS) — insufficient alone because descendant/host gates failed
+- Cannot unblock in-agent: no native Linux/Windows host; mid-tool child survival is CLI tree behavior, not a missing unit-test fix
+
+**Learnings**:
+- US-001 `passes: true` means the diagnostic/report work finished honestly, not that Phase-1 release gates are green
+- US-002 first AC is a hard stop: missing/failed host|prompt|fork|descendant|latency evidence ⇒ zero production edits
+- Hard blocker needs operator hosts + mid-tool reap proof; spinning Phase 2 offline would violate the plan
+
+BLOCKER US-002 | gate=ENTRY GATE / plan.md validation log from PASS round-2 | cause=B7/B9 descendantsAlive + settlement>1s mid-tool; HOST-LINUX/W1 unavailable; report overall BLOCKED | action=no production change; notes updated; terminal hard-block pending operator evidence | 2026-09-20
+
+---
+
+## 2026-09-20 — independent review repair: Phase 1 diagnostic
+
+**Status**: REPAIRED; release evidence remains BLOCKED
+**Files changed**:
+- `packages/providers/src/grok/interrupt-resume-spike.ts` — uses the production Bun spawn path, records exact descendant fingerprints, timestamps mid-tool Stop at the PID boundary, treats zombies as exited, and exercises the natural-end/late-Stop race.
+- `plans/reports/spike-260920-1433-grok-interrupt-resume-audit-rerun.md` — sanitized current-Bun B7/B9 rerun.
+- `plan.md` — supersedes invalid Node-spawn matrix claims.
+
+**Fresh evidence**:
+- [x] B7 and B9 use Bun-owned-tree mode on native macOS and settle in 120 ms and 94 ms without SIGKILL.
+- [x] B8 proves a Stop after a terminal `end` is accepted without a stale kill or relabel.
+- [ ] B7/B9 still leave exact descendants alive after the detached-group signal; the successful timing does not waive the tree-reap gate.
+- [ ] The complete current-Bun macOS matrix and required native Linux/Windows runs remain outstanding.
+
+BLOCKER US-002 | gate=Phase-1 decision rules / Phase-2 entry gate | cause=corrected current-Bun B7/B9 prove descendant survival despite 120/94 ms settlement; full current-Bun matrix and native Linux/Windows remain absent | action=keep capability false and production seams unedited; requires a proven tree primitive and operator native-host evidence | 2026-09-20

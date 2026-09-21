@@ -8,13 +8,21 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  hasTerminalNodeEvidence,
+  hasIdleAwaitExpiredEvidence,
+  hasUnsettledNodeExecutions,
+  latestNodeExecutionKey,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
   resetRoomVisit,
+  resolveFinishedIterationView,
+  resolveRunDetailRefetchIntervalMs,
   roomOpenerId,
   runtimeForSelection,
+  type ExecutionLoopAncestryEntry,
   type ExecutionRow,
+  type ExecutionRowSelection,
 } from './execution-room-model';
 
 const RUN_STARTED_AT = '2026-09-08T00:00:00.000Z';
@@ -91,6 +99,400 @@ describe('chooseExecutionForNode', () => {
 
   test('returns null for an unknown node', () => {
     expect(chooseExecutionForNode(rows, 'other', 'awaiting')).toBeNull();
+  });
+});
+
+describe('resolveFinishedIterationView', () => {
+  function occurrenceRow(args: {
+    id: string;
+    status: string;
+    order: number;
+    iteration: number;
+    occurrenceId?: string;
+    nodeId?: string;
+    retryEpoch?: number;
+    routeActivationSeq?: number;
+    loopAncestry?: readonly ExecutionLoopAncestryEntry[];
+    unknownScope?: boolean;
+  }): ExecutionRow {
+    const loopAncestry =
+      args.loopAncestry ??
+      ([{ nodeId: args.nodeId ?? NODE_ID, iteration: args.iteration }] as const);
+    const selection: ExecutionRowSelection = {
+      kind: 'occurrence',
+      occurrenceId: args.occurrenceId ?? args.id,
+      iteration: args.iteration,
+      ...(args.retryEpoch !== undefined ? { retryEpoch: args.retryEpoch } : {}),
+      ...(args.routeActivationSeq !== undefined
+        ? { routeActivationSeq: args.routeActivationSeq }
+        : {}),
+      loopAncestry,
+    };
+    return row({
+      id: args.id,
+      status: args.status,
+      order: args.order,
+      nodeId: args.nodeId ?? NODE_ID,
+      selection,
+      unknownScope: args.unknownScope ?? false,
+    });
+  }
+
+  function resolve(
+    rows: readonly ExecutionRow[],
+    selected: ExecutionRow,
+    overrides?: { nodeStatus?: string; live?: boolean }
+  ) {
+    return resolveFinishedIterationView({
+      rows,
+      selected,
+      nodeStatus: overrides?.nodeStatus ?? 'running',
+      live: overrides?.live ?? true,
+    });
+  }
+
+  test('completed ×1 + live ×2 in the same top-level lineage resolves ×2', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'occ-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('a loop_group body row with the same parent ancestry resolves its later row', () => {
+    const ancestry1 = [
+      { nodeId: 'outer', iteration: 1 },
+      { nodeId: 'body', iteration: 1 },
+    ] as const;
+    const ancestry2 = [
+      { nodeId: 'outer', iteration: 1 },
+      { nodeId: 'body', iteration: 2 },
+    ] as const;
+    const finished = occurrenceRow({
+      id: 'body-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      nodeId: 'body',
+      loopAncestry: ancestry1,
+    });
+    const live = occurrenceRow({
+      id: 'body-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      nodeId: 'body',
+      loopAncestry: ancestry2,
+    });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'body-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('selected live row returns null', () => {
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([live], live)).toBeNull();
+  });
+
+  test('non-live run returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished, { live: false })).toBeNull();
+  });
+
+  test('terminal node status returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const later = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, later], finished, { nodeStatus: 'completed' })).toBeNull();
+  });
+
+  test('no later live candidate returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    expect(resolve([finished], finished)).toBeNull();
+  });
+
+  test('only-terminal candidates return null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const later = occurrenceRow({ id: 'occ-2', status: 'completed', order: 1, iteration: 2 });
+    expect(resolve([finished, later], finished)).toBeNull();
+  });
+
+  test('node selection returns null', () => {
+    const selected = row({
+      id: 'node-1',
+      status: 'completed',
+      order: 0,
+      selection: { kind: 'node' },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([selected, live], selected)).toBeNull();
+  });
+
+  test('event-fallback loop_iteration returns null', () => {
+    const selected = row({
+      id: 'loop-1',
+      status: 'completed',
+      order: 0,
+      selection: { kind: 'loop_iteration', iteration: 1 },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([selected, live], selected)).toBeNull();
+  });
+
+  test('route-only selection returns null', () => {
+    const selected = row({
+      id: 'route-1',
+      status: 'completed',
+      order: 0,
+      selection: { kind: 'route_iteration', executionSeq: 1 },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([selected, live], selected)).toBeNull();
+  });
+
+  test('outer occurrence with different final loop node returns null', () => {
+    const finished = occurrenceRow({
+      id: 'outer-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      nodeId: 'outer',
+      loopAncestry: [{ nodeId: 'outer', iteration: 1 }],
+    });
+    const live = occurrenceRow({
+      id: 'inner-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      nodeId: 'outer',
+      loopAncestry: [{ nodeId: 'inner', iteration: 2 }],
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('different retry epoch returns null', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      retryEpoch: 0,
+    });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      retryEpoch: 1,
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('undefined and retry epoch 0 compare as the same initial retry', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      retryEpoch: 0,
+    });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'occ-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('route activation absence does not equal a numeric value', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      routeActivationSeq: 1,
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('matching route activation allows resolution', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      routeActivationSeq: 3,
+    });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      routeActivationSeq: 3,
+    });
+    expect(resolve([finished, live], finished)).toEqual({
+      liveRowId: 'occ-2',
+      liveIteration: 2,
+    });
+  });
+
+  test('selected or candidate unknown scope returns null', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      unknownScope: true,
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toBeNull();
+
+    const knownFinished = occurrenceRow({
+      id: 'occ-1b',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+    });
+    const unknownLive = occurrenceRow({
+      id: 'occ-2b',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      unknownScope: true,
+    });
+    expect(resolve([knownFinished, unknownLive], knownFinished)).toBeNull();
+  });
+
+  test('empty ancestry returns null', () => {
+    const finished = row({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      unknownScope: false,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        loopAncestry: [],
+      },
+    });
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('malformed selected final iteration returns null', () => {
+    const finished = occurrenceRow({
+      id: 'occ-1',
+      status: 'completed',
+      order: 0,
+      iteration: 9,
+      loopAncestry: [{ nodeId: NODE_ID, iteration: 1 }],
+    });
+    // Force disagreement: displayed iteration 9 vs ancestry final 1
+    const live = occurrenceRow({ id: 'occ-2', status: 'running', order: 1, iteration: 2 });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('malformed candidate final iteration returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const live = occurrenceRow({
+      id: 'occ-2',
+      status: 'running',
+      order: 1,
+      iteration: 9,
+      loopAncestry: [{ nodeId: NODE_ID, iteration: 2 }],
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('earlier candidate returns null', () => {
+    const finished = occurrenceRow({ id: 'occ-2', status: 'completed', order: 1, iteration: 2 });
+    const earlier = occurrenceRow({ id: 'occ-1', status: 'running', order: 0, iteration: 1 });
+    expect(resolve([earlier, finished], finished)).toBeNull();
+  });
+
+  test('different nested ancestry prefix returns null', () => {
+    const finished = occurrenceRow({
+      id: 'body-1',
+      status: 'completed',
+      order: 0,
+      iteration: 1,
+      nodeId: 'body',
+      loopAncestry: [
+        { nodeId: 'outer', iteration: 1 },
+        { nodeId: 'body', iteration: 1 },
+      ],
+    });
+    const live = occurrenceRow({
+      id: 'body-2',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      nodeId: 'body',
+      loopAncestry: [
+        { nodeId: 'outer', iteration: 2 },
+        { nodeId: 'body', iteration: 2 },
+      ],
+    });
+    expect(resolve([finished, live], finished)).toBeNull();
+  });
+
+  test('awaiting is preferred to running, then latest order', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const runningEarly = occurrenceRow({
+      id: 'occ-run-early',
+      status: 'running',
+      order: 3,
+      iteration: 4,
+    });
+    const runningLate = occurrenceRow({
+      id: 'occ-run-late',
+      status: 'running',
+      order: 4,
+      iteration: 5,
+    });
+    const awaitingEarly = occurrenceRow({
+      id: 'occ-await-early',
+      status: 'awaiting',
+      order: 1,
+      iteration: 2,
+    });
+    const awaitingLate = occurrenceRow({
+      id: 'occ-await-late',
+      status: 'awaiting',
+      order: 2,
+      iteration: 3,
+    });
+    expect(
+      resolve([finished, awaitingEarly, awaitingLate, runningEarly, runningLate], finished)
+    ).toEqual({
+      liveRowId: 'occ-await-late',
+      liveIteration: 3,
+    });
+    expect(resolve([finished, runningEarly, runningLate], finished)).toEqual({
+      liveRowId: 'occ-run-late',
+      liveIteration: 5,
+    });
+  });
+
+  test('never falls back to a terminal row when a live candidate exists only mismatched', () => {
+    const finished = occurrenceRow({ id: 'occ-1', status: 'completed', order: 0, iteration: 1 });
+    const terminalLater = occurrenceRow({
+      id: 'occ-done',
+      status: 'completed',
+      order: 2,
+      iteration: 3,
+    });
+    const mismatchedLive = occurrenceRow({
+      id: 'occ-retry',
+      status: 'running',
+      order: 1,
+      iteration: 2,
+      retryEpoch: 1,
+    });
+    expect(resolve([finished, mismatchedLive, terminalLater], finished)).toBeNull();
   });
 });
 
@@ -504,5 +906,582 @@ describe('room visit transitions', () => {
     expect(next.scrollTopByScope).toEqual({});
     expect(next.appliedDeepLinkNode).toBeNull();
     expect(previous.runId).toBe('run-1');
+  });
+});
+
+type NodeExecution = components['schemas']['NodeExecution'];
+
+function nodeExecution(
+  overrides: Partial<NodeExecution> & Pick<NodeExecution, 'node_id' | 'status'>
+): NodeExecution {
+  return { ...overrides };
+}
+
+function orderedEvent(overrides: {
+  id: string;
+  event_type: string;
+  step_name?: string | null;
+  created_at?: string;
+  event_order?: number | null;
+  data?: Record<string, unknown>;
+}): WorkflowEvent {
+  return {
+    id: overrides.id,
+    workflow_run_id: 'run-1',
+    event_type: overrides.event_type,
+    step_index: null,
+    step_name: overrides.step_name === undefined ? NODE_ID : overrides.step_name,
+    data: overrides.data ?? {},
+    created_at: overrides.created_at ?? RUN_STARTED_AT,
+    event_order: overrides.event_order,
+  };
+}
+
+describe('hasUnsettledNodeExecutions (T3.5)', () => {
+  test('undefined, empty, and all-terminal history are settled', () => {
+    expect(hasUnsettledNodeExecutions(undefined)).toBe(false);
+    expect(hasUnsettledNodeExecutions(null)).toBe(false);
+    expect(hasUnsettledNodeExecutions([])).toBe(false);
+    expect(
+      hasUnsettledNodeExecutions([
+        nodeExecution({ node_id: 'a', status: 'completed' }),
+        nodeExecution({ node_id: 'b', status: 'failed' }),
+        nodeExecution({ node_id: 'c', status: 'skipped' }),
+      ])
+    ).toBe(false);
+  });
+
+  test('running, awaiting, pending, and unknown future statuses are unsettled', () => {
+    expect(hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'running' })])).toBe(
+      true
+    );
+    expect(hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'awaiting' })])).toBe(
+      true
+    );
+    expect(hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'pending' })])).toBe(
+      true
+    );
+    expect(
+      hasUnsettledNodeExecutions([nodeExecution({ node_id: 'a', status: 'future-unknown-status' })])
+    ).toBe(true);
+    expect(
+      hasUnsettledNodeExecutions([
+        nodeExecution({ node_id: 'a', status: 'completed' }),
+        nodeExecution({ node_id: 'b', status: 'running' }),
+      ])
+    ).toBe(true);
+  });
+});
+
+describe('hasTerminalNodeEvidence (T3.6–T3.8)', () => {
+  test('missing node or any nonterminal execution is false', () => {
+    expect(hasTerminalNodeEvidence(undefined, NODE_ID)).toBe(false);
+    expect(hasTerminalNodeEvidence([], NODE_ID)).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: 'other', status: 'completed' })], NODE_ID)
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'running' })], NODE_ID)
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'awaiting' })], NODE_ID)
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'pending' })], NODE_ID)
+    ).toBe(false);
+  });
+
+  test('one or more executions all terminal is true', () => {
+    expect(
+      hasTerminalNodeEvidence([nodeExecution({ node_id: NODE_ID, status: 'completed' })], NODE_ID)
+    ).toBe(true);
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: NODE_ID, status: 'failed' }),
+          nodeExecution({ node_id: NODE_ID, status: 'skipped' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('older completed iteration does not mask a live occurrence', () => {
+    const mixed = [
+      nodeExecution({ node_id: NODE_ID, status: 'completed', occurrence_id: 'occ-1' }),
+      nodeExecution({ node_id: NODE_ID, status: 'running', occurrence_id: 'occ-2' }),
+    ];
+    expect(hasTerminalNodeEvidence(mixed, NODE_ID)).toBe(false);
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: NODE_ID, status: 'completed', occurrence_id: 'occ-1' }),
+          nodeExecution({ node_id: NODE_ID, status: 'failed', occurrence_id: 'occ-2' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('sibling terminal history cannot mark the selected node terminal', () => {
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: 'sibling', status: 'completed' }),
+          nodeExecution({ node_id: 'sibling', status: 'failed' }),
+          nodeExecution({ node_id: NODE_ID, status: 'running' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasTerminalNodeEvidence(
+        [
+          nodeExecution({ node_id: 'sibling', status: 'completed' }),
+          nodeExecution({ node_id: NODE_ID, status: 'completed' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+});
+
+describe('hasIdleAwaitExpiredEvidence (T4.7)', () => {
+  const EXPIRED = 'interrupted by operator, no redirect received';
+
+  test('exact latest expiry is true; wrong node/error/status, unsettled, and no row are false', () => {
+    expect(hasIdleAwaitExpiredEvidence(undefined, NODE_ID)).toBe(false);
+    expect(hasIdleAwaitExpiredEvidence([], NODE_ID)).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: 'other', status: 'failed', error: EXPIRED })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: NODE_ID, status: 'failed', error: 'other failure' })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: NODE_ID, status: 'completed', error: EXPIRED })],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({ node_id: NODE_ID, status: 'failed', error: EXPIRED }),
+          nodeExecution({ node_id: NODE_ID, status: 'running' }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [nodeExecution({ node_id: NODE_ID, status: 'failed', error: EXPIRED })],
+        NODE_ID
+      )
+    ).toBe(true);
+  });
+
+  test('expiry epoch 0 followed by completed epoch 1 is false', () => {
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: EXPIRED,
+            retry_epoch: 0,
+            started_at: '2026-09-08T00:00:01.000Z',
+          }),
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'completed',
+            retry_epoch: 1,
+            started_at: '2026-09-08T00:10:00.000Z',
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(false);
+  });
+
+  test('timestamp and array position break ties; grp.body vs grp do not cross', () => {
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: 'older',
+            retry_epoch: 0,
+            started_at: '2026-09-08T00:00:01.000Z',
+          }),
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: EXPIRED,
+            retry_epoch: 0,
+            started_at: '2026-09-08T00:00:05.000Z',
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+
+    // Same epoch + same effective timestamp → later array position wins.
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: 'first',
+            retry_epoch: 1,
+            started_at: '2026-09-08T00:00:09.000Z',
+          }),
+          nodeExecution({
+            node_id: NODE_ID,
+            status: 'failed',
+            error: EXPIRED,
+            retry_epoch: 1,
+            started_at: '2026-09-08T00:00:09.000Z',
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe(true);
+
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: 'grp',
+            status: 'failed',
+            error: 'Loop group failed: body: ' + EXPIRED,
+          }),
+          nodeExecution({
+            node_id: 'grp.body',
+            status: 'failed',
+            error: EXPIRED,
+          }),
+        ],
+        'grp.body'
+      )
+    ).toBe(true);
+    expect(
+      hasIdleAwaitExpiredEvidence(
+        [
+          nodeExecution({
+            node_id: 'grp',
+            status: 'failed',
+            error: 'Loop group failed: body: ' + EXPIRED,
+          }),
+          nodeExecution({
+            node_id: 'grp.body',
+            status: 'failed',
+            error: EXPIRED,
+          }),
+        ],
+        'grp'
+      )
+    ).toBe(false);
+  });
+});
+
+describe('latestNodeExecutionKey (T3.9)', () => {
+  test('sorts by event_order then timestamp then id, not array order', () => {
+    const events = [
+      orderedEvent({
+        id: 'late-array-first',
+        event_type: 'node_started',
+        event_order: 3,
+        data: { occurrence_id: 'occ-3' },
+      }),
+      orderedEvent({
+        id: 'early',
+        event_type: 'node_started',
+        event_order: 1,
+        data: { occurrence_id: 'occ-1' },
+      }),
+      orderedEvent({
+        id: 'mid',
+        event_type: 'node_started',
+        event_order: 2,
+        data: { occurrence_id: 'occ-2' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(events, NODE_ID)).toBe('occ-3');
+  });
+
+  test('falls back to timestamp and id when event_order ties or is missing', () => {
+    const byTime = [
+      orderedEvent({
+        id: 'b',
+        event_type: 'node_started',
+        created_at: '2026-09-08T00:00:02.000Z',
+        data: { occurrence_id: 'occ-b' },
+      }),
+      orderedEvent({
+        id: 'a',
+        event_type: 'node_started',
+        created_at: '2026-09-08T00:00:01.000Z',
+        data: { occurrence_id: 'occ-a' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(byTime, NODE_ID)).toBe('occ-b');
+
+    const byId = [
+      orderedEvent({
+        id: 'z-start',
+        event_type: 'node_started',
+        created_at: RUN_STARTED_AT,
+        event_order: 1,
+        data: { occurrence_id: 'occ-z' },
+      }),
+      orderedEvent({
+        id: 'a-start',
+        event_type: 'node_started',
+        created_at: RUN_STARTED_AT,
+        event_order: 1,
+        data: { occurrence_id: 'occ-a' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(byId, NODE_ID)).toBe('occ-z');
+  });
+
+  test('normal starts adopt nonempty occurrence_id or event-id fallback', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-1');
+    expect(
+      latestNodeExecutionKey(
+        [orderedEvent({ id: 'start-fallback', event_type: 'node_started', event_order: 1 })],
+        NODE_ID
+      )
+    ).toBe('start-fallback');
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-empty',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: '' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('start-empty');
+  });
+
+  test('resumed Ask keeps the prior key across the next same-node start', () => {
+    const events = [
+      orderedEvent({
+        id: 'start-1',
+        event_type: 'node_started',
+        event_order: 1,
+        data: { occurrence_id: 'occ-outer-1' },
+      }),
+      orderedEvent({
+        id: 'ask-resume',
+        event_type: 'interaction_resolved',
+        event_order: 2,
+        data: { kind: 'ask', resumed: true, tool_use_id: 'tool-1' },
+      }),
+      orderedEvent({
+        id: 'start-2',
+        event_type: 'node_started',
+        event_order: 3,
+        data: { occurrence_id: 'occ-outer-2' },
+      }),
+    ];
+    expect(latestNodeExecutionKey(events, NODE_ID)).toBe('occ-outer-1');
+  });
+
+  test('resumed Ask with no earlier key adopts the next start identity', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'ask-first',
+            event_type: 'interaction_resolved',
+            event_order: 1,
+            data: { kind: 'ask', resumed: true },
+          }),
+          orderedEvent({
+            id: 'start-after',
+            event_type: 'node_started',
+            event_order: 2,
+            data: { occurrence_id: 'occ-after' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-after');
+  });
+
+  test('retry or generic resume after terminal adopts a new key', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({ id: 'fail-1', event_type: 'node_failed', event_order: 2 }),
+          orderedEvent({ id: 'retry-1', event_type: 'node_retry_requested', event_order: 3 }),
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 4,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-2');
+
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-a',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-a' },
+          }),
+          orderedEvent({ id: 'done-a', event_type: 'node_completed', event_order: 2 }),
+          orderedEvent({
+            id: 'start-b',
+            event_type: 'node_started',
+            event_order: 3,
+            data: { occurrence_id: 'occ-b' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-b');
+  });
+
+  test('terminal or retry clears an unused Ask continuation marker', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({
+            id: 'ask-resume',
+            event_type: 'interaction_resolved',
+            event_order: 2,
+            data: { kind: 'ask', resumed: true },
+          }),
+          orderedEvent({ id: 'fail-1', event_type: 'node_failed', event_order: 3 }),
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 4,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-2');
+  });
+
+  test('ignores loop-iteration starts, siblings, and non-ask resolutions', () => {
+    expect(
+      latestNodeExecutionKey(
+        [
+          orderedEvent({
+            id: 'start-1',
+            event_type: 'node_started',
+            event_order: 1,
+            data: { occurrence_id: 'occ-1' },
+          }),
+          orderedEvent({
+            id: 'loop-iter',
+            event_type: 'loop_iteration_started',
+            event_order: 2,
+            data: { occurrence_id: 'occ-loop' },
+          }),
+          orderedEvent({
+            id: 'sibling-start',
+            event_type: 'node_started',
+            step_name: 'sibling',
+            event_order: 3,
+            data: { occurrence_id: 'occ-sib' },
+          }),
+          orderedEvent({
+            id: 'perm-resolved',
+            event_type: 'interaction_resolved',
+            event_order: 4,
+            data: { kind: 'permission', resumed: true },
+          }),
+          orderedEvent({
+            id: 'ask-not-resumed',
+            event_type: 'interaction_resolved',
+            event_order: 5,
+            data: { kind: 'ask', resumed: false },
+          }),
+          orderedEvent({
+            id: 'start-2',
+            event_type: 'node_started',
+            event_order: 6,
+            data: { occurrence_id: 'occ-2' },
+          }),
+        ],
+        NODE_ID
+      )
+    ).toBe('occ-2');
+  });
+});
+
+describe('resolveRunDetailRefetchIntervalMs (T3.10–T3.14 core)', () => {
+  test('live and non-terminal statuses always keep the 3 s cadence', () => {
+    expect(resolveRunDetailRefetchIntervalMs('running', undefined)).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs('paused', [])).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs('pending', undefined)).toBe(3000);
+    expect(resolveRunDetailRefetchIntervalMs(undefined, undefined)).toBe(3000);
+  });
+
+  test('terminal + unsettled keeps 3 s; settled/empty/missing stops', () => {
+    expect(
+      resolveRunDetailRefetchIntervalMs('cancelled', [
+        nodeExecution({ node_id: 'a', status: 'running' }),
+      ])
+    ).toBe(3000);
+    expect(
+      resolveRunDetailRefetchIntervalMs('failed', [
+        nodeExecution({ node_id: 'a', status: 'awaiting' }),
+      ])
+    ).toBe(3000);
+    expect(
+      resolveRunDetailRefetchIntervalMs('completed', [
+        nodeExecution({ node_id: 'a', status: 'failed' }),
+      ])
+    ).toBe(false);
+    expect(resolveRunDetailRefetchIntervalMs('cancelled', [])).toBe(false);
+    expect(resolveRunDetailRefetchIntervalMs('cancelled', undefined)).toBe(false);
   });
 });

@@ -1,0 +1,109 @@
+## Codebase Patterns
+
+
+### OMP session flush vs mid-text SIGTERM
+- **Where**: `plans/reports/omp-interrupt-resume-spike.md`, spike conformance leg
+- **Pattern**: Brand-new OMP session interrupted mid-first-assistant-message emits `session` id but does not flush the session file — `--resume` fails. Seed one short completed turn before the long interruptible generation; prove context via seeded token boolean challenge. Capability flip still requires all advertised platforms or an owner-scoped decision.
+- **Example**: `thisPlatformPass: true` + `capabilityFlipAllowed: false` when only darwin is characterized
+
+### OMP stream-abort termination ownership
+- **Where**: `packages/providers/src/community/omp/provider.ts`, `event-parser.ts`
+- **Pattern**: Single terminate path with first-writer-wins cause (`interrupt|interrupt-unresumable|cancel|transport|protocol|cleanup`); pending Stop waits ≤500ms for session header then SIGTERM; parser `beginOperatorInterrupt` snapshots open tools; graceful interrupt yields drained assistant + one `terminalReason: stream_aborted` result (no throw); SIGKILL → unmarked `omp_interrupt_force_killed`.
+- **Example**: `setTerminationGraceMsForTest(20)` for force-kill unit tests without a second real 5s wait
+
+### OMP interrupt spike hygiene
+- **Where**: `packages/providers/src/community/omp/interrupt-resume-spike.ts`, mirrors `packages/providers/src/claude/interrupt-resume-spike.ts`
+- **Pattern**: Diagnostic spikes are not package-exported; script entry via `packages/providers/package.json` only. Spawn via `resolveOmpBinaryPath` + unique `mkdtemp` git cwd. Track owned PIDs only; reap in `finally`; never `pkill`. stdout is one sanitized JSON document (event types, timings, hashed ids) — no prompts, model text, credentials, or raw session ids.
+- **Example**: `bun run spike:interrupt:omp` from `packages/providers`
+
+### OMP SIGTERM mid-turn facts (darwin / 18.1.21)
+- **Where**: `plans/reports/omp-interrupt-resume-spike.md`
+- **Pattern**: `session` is first. Assistant Stop triggers on first `text_delta`; tool Stop on `tool_execution_start`. SIGTERM exits in ~100–140 ms with code 143; SIGKILL not required. No `agent_end` / usage `message_end` after signal — provider must synthesize interrupted result and drain buffered text. Open tools may get only `tool_execution_update` (no end). linux/win32 still uncharacterized.
+- **Example**: raw leg exit 0 with `interruptCapability: false`
+
+---
+
+## 2026-09-20 — US-001: Baseline + OMP interrupt spike harness and raw characterization
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/community/omp/interrupt-resume-spike.ts` — new diagnostic spike (raw characterization + inert conformance scaffold)
+- `packages/providers/package.json` — added `spike:interrupt:omp` script
+- `plans/reports/omp-interrupt-resume-spike.md` — sanitized interim findings
+
+**Acceptance criteria verified**:
+- [x] `bun install --frozen-lockfile` + focused OMP baseline tests + type-check green
+- [x] Spike file exists, not exported; package script mirrors Claude spike
+- [x] Uses `resolveOmpBinaryPath`, mkdtemp git repo, existing login; owned PID tracking; no broad pkill
+- [x] Two cases: assistant text delta + active tool with PID file marker
+- [x] Raw characterization records version/OS/arch/event order/timings/SIGKILL/descendants
+- [x] Sanitized output only
+- [x] Conformance leg scaffolded (inert until US-002 seam)
+- [x] Findings in `plans/reports/omp-interrupt-resume-spike.md`
+- [x] No production provider/parser/executor edits; `interrupt` remains `false`
+
+**Learnings**:
+- Session header latency ~480–500 ms on this host; still first event.
+- Thinking/message_update noise precedes first text_delta — trigger must be the nested `assistantMessageEvent.type === 'text_delta'`, not bare `message_update`.
+- Post-SIGTERM OMP may keep emitting `message_update` briefly; do not require natural `agent_end` for graceful interrupt classification.
+- linux + win32 remain uncharacterized; US-003 must not flip capability on macOS-only evidence without owner scope decision.
+
+---
+
+## 2026-09-20 — US-002: Provider/parser stream-abort seam (TDD)
+
+**Status**: PASSED
+**Files changed**:
+- `packages/providers/src/types.ts` — export `STREAM_ABORTED_TERMINAL_REASON`; broaden terminalReason/interruptSignal/capability docs
+- `packages/providers/src/index.ts` — re-export marker
+- `packages/providers/src/community/omp/event-parser.ts` — session/turn/natural-end queries, interrupt mode, drain/buildInterrupted/force-kill/session-unavailable builders
+- `packages/providers/src/community/omp/provider.ts` — first-cause terminate, pending-header deferral, interrupt result path; `interrupt` capability still false
+- `packages/providers/src/community/omp/event-parser.test.ts` / `provider.test.ts` — phase-01 interrupt cases + controllable process harness
+- `packages/providers/src/registry.test.ts` — assert no stream-abort advertiser yet
+
+**Acceptance criteria verified**:
+- [x] Tests before/with production seam; `makeRunningProcess` extended + controllable process; shortened grace for force-kill
+- [x] Provider/parser cases 1–14 covered (registry still expects zero stream-abort until US-003)
+- [x] Single termination path with cause tracking; cancel wins when aborted
+- [x] 500ms pending-header deferral; turn-before-header / timeout → unmarked session_unavailable
+- [x] Parser narrow interrupt methods; tool interrupted mapping; normal parse unchanged without interrupt mode
+- [x] Interrupted result field boundary + resumed semantics
+- [x] SIGKILL → omp_interrupt_force_killed unmarked
+- [x] Drain → marked result → enrich → return (no throw)
+- [x] STREAM_ABORTED exported; docs broadened
+- [x] No argv/env/spawn/happy-path/hidden-session/5s fallback changes
+- [x] OMP interrupt capability still false
+- [x] Focused package gates green
+
+**Learnings**:
+- `beginOperatorInterrupt` must run after active tools are observed; Stop on session-only snapshots an empty tool set, so later errored ends stay `error` not `interrupted`.
+- Header-wait tests need `waitFor(..., 1500)` because the signal fires at t=500ms.
+- Controllable FakeProcess with manual exit is required for late tool ends after SIGTERM.
+
+---
+
+## 2026-09-20 — US-003: Real-binary conformance gate, sanitized report, capability flip
+
+**Status**: BLOCKED (darwin fresh assistant resume fails; platform coverage incomplete)
+**Files changed**:
+- `packages/providers/src/community/omp/interrupt-resume-spike.ts` — full OmpProvider conformance leg (teeing spawner, interruptSignal, first-turn same-id resume + boolean challenge, gate evaluation, silent logs)
+- `plans/reports/omp-interrupt-resume-spike.md` — sanitized version/platform-keyed gate evidence
+
+**Acceptance criteria verified**:
+- [x] `bun run spike:interrupt:omp` runs conformance through OmpProvider for assistant + active-tool
+- [x] darwin raw evidence: both cases see session first, SIGTERM without SIGKILL, and no owned descendants; provider return is 17–24 ms
+- [ ] darwin assistant same-id resume + context — **FAIL** (the fresh interrupted session is not resumable); active-tool conformance passes
+- [x] Report written sanitized (hashed ids only)
+- [ ] Platform coverage = all resolver platforms OR owner-scoped decision — **FAIL** (linux/win32 missing; no owner decision)
+- [ ] Capability flip to `'stream-abort'` — **not done** (gate forbids)
+- [x] On fail: capability stays false; BLOCKED recorded (not worked around)
+- [x] Focused suite green without flip: provider/event-parser/session-usage/registry tests + type-check
+
+**Learnings**:
+- Brand-new mid-first-assistant-message SIGTERM emits a session id but it cannot be resumed. The spike now exercises this first-turn path directly; seeding an earlier completed turn would hide the failure and cannot justify advertising redirect.
+- `setLogLevel('silent')` required so spike stdout is exactly one JSON document (pino otherwise leaks raw session ids).
+- thisPlatformPass can be true while capabilityFlipAllowed stays false — do not conflate them.
+
+BLOCKER US-003 | gate=cd packages/providers && bun run spike:interrupt:omp | cause=darwin/arm64 omp/18.1.21 fresh assistant interrupt emitted stream_aborted but `--resume` did not report the same id or reach agent_end; linux+win32 also uncharacterized | action=leave interrupt:false; require a separately reviewed OMP/session-persistence remedy plus successful assistant+tool conformance on every advertised platform | 2026-09-20
+
+---

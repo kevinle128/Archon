@@ -5,7 +5,7 @@
  */
 import type { WorkflowRunStatus } from '@/lib/types';
 import type { components } from '@/lib/api.generated';
-import { toSteeringSendError } from '@/lib/steering-dock';
+import { STEERING_INTERRUPT_FAILED_MESSAGE, toSteeringRequestError } from '@/lib/steering-dock';
 
 export type WorkflowDefinition = components['schemas']['WorkflowDefinition'];
 type GeneratedDagNode = components['schemas']['DagNode'];
@@ -754,7 +754,7 @@ export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowN
 /**
  * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send:
  * operator guidance for a live in-process agent node, drained at the next
- * natural provider-turn boundary. Refusals surface as SteeringSendError
+ * natural provider-turn boundary. Refusals surface as SteeringRequestError
  * carrying the nested {code,message} so callers can distinguish a canonical
  * 422 `not_steerable_here` from other failures. No auto-retry and no message
  * logging — the caller owns `message_id` reuse for ambiguous failures.
@@ -777,7 +777,59 @@ export async function sendNodeGuidance(
       body: JSON.stringify(body),
     });
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
+  }
+}
+
+export type InterruptWorkflowNodeResponse = components['schemas']['InterruptWorkflowNodeResponse'];
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt — Story 2.3 turn
+ * interrupt: stops the live provider turn of an interrupt-capable node
+ * without cancelling the run. The awaited response is the ACTUAL settled
+ * sub-state — `idle-after-interrupt` or `generating` — and terminal
+ * refusals surface as SteeringRequestError (409 `node_finished`, 422
+ * `not_steerable_here`). No request body, no auto-retry.
+ */
+export async function interruptNode(
+  runId: string,
+  nodeId: string
+): Promise<InterruptWorkflowNodeResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/interrupt';
+  try {
+    return await fetchJSON<InterruptWorkflowNodeResponse>(url, { method: 'POST' });
+  } catch (error) {
+    throw toSteeringRequestError(error, STEERING_INTERRUPT_FAILED_MESSAGE);
+  }
+}
+
+export type KeepaliveWorkflowNodeResponse = components['schemas']['KeepaliveWorkflowNodeResponse'];
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive — Story 2.12 bodyless
+ * idle-await re-arm. No request body and no synthetic JSON content type; no
+ * auto-retry. Failures normalize through SteeringRequestError so callers keep
+ * the same refusal surface as interrupt/send.
+ */
+export async function keepaliveNode(
+  runId: string,
+  nodeId: string
+): Promise<KeepaliveWorkflowNodeResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/keepalive';
+  try {
+    return await fetchJSON<KeepaliveWorkflowNodeResponse>(url, { method: 'POST' });
+  } catch (error) {
+    throw toSteeringRequestError(error);
   }
 }
 
@@ -785,7 +837,7 @@ export async function sendNodeGuidance(
  * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
  * a still-queued guidance message. Bodyless: no request body and
  * no synthetic JSON content type, no auto-retry. Refusals normalize through
- * the same SteeringSendError surface as the send helper so callers keep
+ * the same SteeringRequestError surface as the send helper so callers keep
  * using `toSteeringRefusal`.
  */
 export async function withdrawNodeGuidance(
@@ -803,7 +855,7 @@ export async function withdrawNodeGuidance(
   try {
     return await fetchJSON<WithdrawWorkflowNodeResponse>(url, { method: 'DELETE' });
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
   }
 }
 
@@ -812,7 +864,7 @@ export async function withdrawNodeGuidance(
  * still-pending queue snapshot so a mounted dock converges on the shared
  * registry queue. Bodyless GET with `cache: 'no-store'`, optional
  * AbortSignal, no auto-retry — failures normalize through the same
- * SteeringSendError surface as the send/withdraw helpers.
+ * SteeringRequestError surface as the send/withdraw helpers.
  */
 export async function readNodeGuidanceQueue(
   runId: string,
@@ -832,7 +884,7 @@ export async function readNodeGuidanceQueue(
       ...(options?.signal === undefined ? {} : { signal: options.signal }),
     });
   } catch (error) {
-    throw toSteeringSendError(error);
+    throw toSteeringRequestError(error);
   }
 }
 

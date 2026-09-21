@@ -8,6 +8,7 @@ import { foldNodeRuns, toRunEvent } from '../primitives/event';
 import type { Message } from '../primitives/message';
 import type { Run } from '../primitives/run';
 import type {
+  NodeExecution,
   PendingInteraction,
   WorkflowEvent,
   WorkflowNodeMessage,
@@ -49,6 +50,7 @@ function workflowEvent(overrides: {
   step_name: string;
   created_at?: string;
   data?: Record<string, unknown>;
+  event_order?: number;
 }): WorkflowEvent {
   return {
     id: overrides.id,
@@ -58,6 +60,7 @@ function workflowEvent(overrides: {
     step_name: overrides.step_name,
     data: overrides.data ?? {},
     created_at: overrides.created_at ?? CREATED_AT,
+    ...(overrides.event_order === undefined ? {} : { event_order: overrides.event_order }),
   };
 }
 
@@ -838,5 +841,635 @@ describe('ConsoleInspectPane', () => {
     );
     expect(host.querySelector('[aria-label="plan room"]')).toBe(roomBefore);
     fetchSpy.mockRestore();
+  });
+
+  test('same-lineage finished occurrence shows finished-iteration dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return new Response(JSON.stringify({ success: true, queued: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (method === 'GET' && pathname.includes('/messages')) {
+        return new Response(JSON.stringify({ messages: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const executions: NodeExecution[] = [
+        {
+          node_id: 'loop',
+          status: 'completed',
+          occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          attempt_id: '11111111-1111-4111-8111-111111111111',
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+        },
+        {
+          node_id: 'loop',
+          status: 'running',
+          occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          attempt_id: '22222222-2222-4222-8222-222222222222',
+          loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+        },
+      ];
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const loopStates = [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })];
+      const loopEntries = buildConsoleLogEntries({
+        rows: buildLogRows(loopStates, [], executions, CREATED_AT),
+        rawEvents: [],
+        nodeRuns: [],
+        runStartedAt: CREATED_AT,
+      });
+      const selected: string[] = [];
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-loop', status: 'running' }),
+          nodeStates: loopStates,
+          events: [],
+          rawEvents: [],
+          logEntries: loopEntries,
+          selectedNodeId: 'loop',
+          selectedLogRowId: finishedId,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [{ id: 'loop', prompt: 'iterate' }],
+          onSelectNode: (nodeId: string, rowId?: string): void => {
+            if (rowId !== undefined) selected.push(rowId);
+            void nodeId;
+          },
+        });
+      });
+      await flush();
+      await flushUntil('finished dock', () =>
+        (host.textContent ?? '').includes('reading a finished iteration')
+      );
+      expect(host.textContent).toContain(
+        'reading a finished iteration · the agent is working in iteration 2'
+      );
+      const go = [...host.querySelectorAll('button')].find(
+        b => (b.textContent ?? '').trim() === 'Go to iteration 2'
+      );
+      expect(go).not.toBeUndefined();
+      await act(async () => {
+        if (go === undefined) throw new Error('missing Go button');
+        go.click();
+      });
+      await flush();
+      expect(selected).toEqual([
+        'exec:loop:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:22222222-2222-4222-8222-222222222222:1',
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('retry-epoch mismatch fail-closes the finished dock', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const executions: NodeExecution[] = [
+        {
+          node_id: 'loop',
+          status: 'completed',
+          occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          attempt_id: '11111111-1111-4111-8111-111111111111',
+          retry_epoch: 0,
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+        },
+        {
+          node_id: 'loop',
+          status: 'running',
+          occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          attempt_id: '22222222-2222-4222-8222-222222222222',
+          retry_epoch: 1,
+          loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+        },
+      ];
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const loopStates = [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })];
+      const loopEntries = buildConsoleLogEntries({
+        rows: buildLogRows(loopStates, [], executions, CREATED_AT),
+        rawEvents: [],
+        nodeRuns: [],
+        runStartedAt: CREATED_AT,
+      });
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-loop', status: 'running' }),
+          nodeStates: loopStates,
+          events: [],
+          rawEvents: [],
+          logEntries: loopEntries,
+          selectedNodeId: 'loop',
+          selectedLogRowId: finishedId,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [{ id: 'loop', prompt: 'iterate' }],
+        });
+      });
+      await flush();
+      expect(host.textContent ?? '').not.toContain('reading a finished iteration');
+      expect(
+        [...host.querySelectorAll('button')].some(b =>
+          (b.textContent ?? '').includes('Go to iteration')
+        )
+      ).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  function findPropsWithKey(start: Element, key: string): Record<string, unknown> | null {
+    const fiberKey = Object.keys(start).find(candidate => candidate.startsWith('__reactFiber$'));
+    if (fiberKey === undefined) return null;
+    interface Fiber {
+      memoizedProps?: unknown;
+      child?: Fiber | null;
+      sibling?: Fiber | null;
+      return?: Fiber | null;
+    }
+    const startFiber = (start as unknown as Record<string, Fiber>)[fiberKey];
+    const stack: Fiber[] = [startFiber];
+    const seen = new Set<Fiber>();
+    while (stack.length > 0) {
+      const fiber = stack.pop();
+      if (fiber === undefined || seen.has(fiber)) continue;
+      seen.add(fiber);
+      const props = fiber.memoizedProps;
+      if (
+        props !== null &&
+        typeof props === 'object' &&
+        !Array.isArray(props) &&
+        key in (props as Record<string, unknown>)
+      ) {
+        return props as Record<string, unknown>;
+      }
+      if (fiber.child) stack.push(fiber.child);
+      if (fiber.sibling) stack.push(fiber.sibling);
+    }
+    let up: Fiber | null | undefined = startFiber.return;
+    while (up !== null && up !== undefined) {
+      const props = up.memoizedProps;
+      if (
+        props !== null &&
+        typeof props === 'object' &&
+        !Array.isArray(props) &&
+        key in (props as Record<string, unknown>)
+      ) {
+        return props as Record<string, unknown>;
+      }
+      up = up.return;
+    }
+    return null;
+  }
+
+  test('T3.16 Console wrapper passes exact node terminal inputs; nodeStates never prove terminal', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const alphaEvents: WorkflowEvent[] = [
+        workflowEvent({
+          id: 'start-a',
+          event_type: 'node_started',
+          step_name: 'alpha',
+          data: { occurrence_id: 'occ-a' },
+          event_order: 1,
+        }),
+        workflowEvent({
+          id: 'done-a',
+          event_type: 'node_completed',
+          step_name: 'alpha',
+          data: { occurrence_id: 'occ-a' },
+          event_order: 2,
+        }),
+        workflowEvent({
+          id: 'start-b',
+          event_type: 'node_started',
+          step_name: 'beta',
+          data: { occurrence_id: 'occ-b' },
+          event_order: 3,
+        }),
+      ];
+
+      const nodeStates = [
+        nodeState({ nodeId: 'alpha', name: 'Alpha', status: 'completed' }),
+        nodeState({ nodeId: 'beta', name: 'Beta', status: 'running' }),
+      ];
+      // Settled nodeStates say alpha completed, but raw executions keep alpha running —
+      // terminal proof must ignore nodeStates.
+      const unsettledExecutions: NodeExecution[] = [
+        { node_id: 'alpha', status: 'running', occurrence_id: 'occ-a' },
+        { node_id: 'beta', status: 'running', occurrence_id: 'occ-b' },
+      ];
+      const logEntries = buildConsoleLogEntries({
+        rows: buildLogRows(nodeStates, alphaEvents, unsettledExecutions, CREATED_AT),
+        rawEvents: alphaEvents,
+        nodeRuns: foldNodeRuns(alphaEvents.map(toRunEvent)),
+        runStartedAt: CREATED_AT,
+      });
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-term', status: 'running' }),
+          nodeStates,
+          events: alphaEvents.map(toRunEvent),
+          rawEvents: alphaEvents,
+          nodeExecutions: unsettledExecutions,
+          logEntries,
+          selectedNodeId: 'alpha',
+          selectedLogRowId: logEntries.find(e => e.row.nodeId === 'alpha')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            { id: 'alpha', prompt: 'A' },
+            { id: 'beta', prompt: 'B' },
+          ],
+        });
+      });
+      await flush();
+
+      const room = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(room).not.toBeNull();
+      if (room === null) throw new Error('missing room');
+      const openProps = findPropsWithKey(room, 'nodeTerminal');
+      expect(openProps?.nodeTerminal).toBe(false);
+      expect(openProps?.nodeExecutionKey).toBe('occ-a');
+
+      const settledExecutions: NodeExecution[] = [
+        { node_id: 'alpha', status: 'completed', occurrence_id: 'occ-a' },
+        { node_id: 'beta', status: 'running', occurrence_id: 'occ-b' },
+      ];
+      const settledEntries = buildConsoleLogEntries({
+        rows: buildLogRows(nodeStates, alphaEvents, settledExecutions, CREATED_AT),
+        rawEvents: alphaEvents,
+        nodeRuns: foldNodeRuns(alphaEvents.map(toRunEvent)),
+        runStartedAt: CREATED_AT,
+      });
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-term', status: 'running' }),
+          nodeStates,
+          events: alphaEvents.map(toRunEvent),
+          rawEvents: alphaEvents,
+          nodeExecutions: settledExecutions,
+          logEntries: settledEntries,
+          selectedNodeId: 'alpha',
+          selectedLogRowId: settledEntries.find(e => e.row.nodeId === 'alpha')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            { id: 'alpha', prompt: 'A' },
+            { id: 'beta', prompt: 'B' },
+          ],
+        });
+      });
+      await flush();
+
+      const settledRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(settledRoom).not.toBeNull();
+      if (settledRoom === null) throw new Error('missing settled room');
+      const settledProps = findPropsWithKey(settledRoom, 'nodeTerminal');
+      expect(settledProps?.nodeTerminal).toBe(true);
+      expect(settledProps?.nodeExecutionKey).toBe('occ-a');
+
+      // Sibling beta remains nonterminal even with terminal alpha history.
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-term', status: 'running' }),
+          nodeStates,
+          events: alphaEvents.map(toRunEvent),
+          rawEvents: alphaEvents,
+          nodeExecutions: settledExecutions,
+          logEntries: settledEntries,
+          selectedNodeId: 'beta',
+          selectedLogRowId: settledEntries.find(e => e.row.nodeId === 'beta')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            { id: 'alpha', prompt: 'A' },
+            { id: 'beta', prompt: 'B' },
+          ],
+        });
+      });
+      await flush();
+      const betaRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(betaRoom).not.toBeNull();
+      if (betaRoom === null) throw new Error('missing beta room');
+      const betaProps = findPropsWithKey(betaRoom, 'nodeTerminal');
+      expect(betaProps?.nodeTerminal).toBe(false);
+      expect(betaProps?.nodeExecutionKey).toBe('occ-b');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('T3.17 completed occurrence selection stays nonterminal with stable execution key', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    try {
+      const finishedId =
+        'exec:loop:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa:11111111-1111-4111-8111-111111111111:0';
+      const liveId =
+        'exec:loop:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb:22222222-2222-4222-8222-222222222222:1';
+      const events: WorkflowEvent[] = [
+        workflowEvent({
+          id: 'start-1',
+          event_type: 'node_started',
+          step_name: 'loop',
+          data: { occurrence_id: 'logical-key-1' },
+          event_order: 1,
+        }),
+        workflowEvent({
+          id: 'start-2',
+          event_type: 'node_started',
+          step_name: 'loop',
+          data: { occurrence_id: 'logical-key-1' },
+          event_order: 2,
+        }),
+      ];
+
+      const executions: NodeExecution[] = [
+        {
+          node_id: 'loop',
+          status: 'completed',
+          occurrence_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          attempt_id: '11111111-1111-4111-8111-111111111111',
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+        },
+        {
+          node_id: 'loop',
+          status: 'running',
+          occurrence_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+          attempt_id: '22222222-2222-4222-8222-222222222222',
+          loop_ancestry: [{ node_id: 'loop', iteration: 2 }],
+        },
+      ];
+      const loopStates = [nodeState({ nodeId: 'loop', name: 'Loop', status: 'running' })];
+      const loopEntries = buildConsoleLogEntries({
+        rows: buildLogRows(loopStates, events, executions, CREATED_AT),
+        rawEvents: events,
+        nodeRuns: foldNodeRuns(events.map(toRunEvent)),
+        runStartedAt: CREATED_AT,
+      });
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-loop', status: 'running' }),
+          nodeStates: loopStates,
+          events: events.map(toRunEvent),
+          rawEvents: events,
+          nodeExecutions: executions,
+          logEntries: loopEntries,
+          selectedNodeId: 'loop',
+          selectedLogRowId: finishedId,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [{ id: 'loop', prompt: 'iterate' }],
+        });
+      });
+      await flush();
+
+      const room = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(room).not.toBeNull();
+      if (room === null) throw new Error('missing room');
+      const finishedProps = findPropsWithKey(room, 'nodeTerminal');
+      expect(finishedProps?.nodeTerminal).toBe(false);
+      expect(finishedProps?.nodeExecutionKey).toBe('logical-key-1');
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-loop', status: 'running' }),
+          nodeStates: loopStates,
+          events: events.map(toRunEvent),
+          rawEvents: events,
+          nodeExecutions: executions,
+          logEntries: loopEntries,
+          selectedNodeId: 'loop',
+          selectedLogRowId: liveId,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [{ id: 'loop', prompt: 'iterate' }],
+        });
+      });
+      await flush();
+
+      const liveRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(liveRoom).not.toBeNull();
+      if (liveRoom === null) throw new Error('missing live room');
+      const liveProps = findPropsWithKey(liveRoom, 'nodeTerminal');
+      expect(liveProps?.nodeTerminal).toBe(false);
+      expect(liveProps?.nodeExecutionKey).toBe('logical-key-1');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('T4.16 idleAwaitExpired reaches selected room including grp.body', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    const expired = 'interrupted by operator, no redirect received';
+    try {
+      const events: WorkflowEvent[] = [
+        workflowEvent({
+          id: 'start-body',
+          event_type: 'node_started',
+          step_name: 'grp.body',
+          data: { occurrence_id: 'occ-body' },
+          event_order: 1,
+        }),
+        workflowEvent({
+          id: 'fail-body',
+          event_type: 'node_failed',
+          step_name: 'grp.body',
+          data: { occurrence_id: 'occ-body', error: expired },
+          event_order: 2,
+        }),
+        workflowEvent({
+          id: 'fail-grp',
+          event_type: 'node_failed',
+          step_name: 'grp',
+          data: { occurrence_id: 'occ-grp', error: `Loop group failed: body: ${expired}` },
+          event_order: 3,
+        }),
+      ];
+      const nodeStates = [
+        nodeState({ nodeId: 'grp', name: 'Group', status: 'failed' }),
+        nodeState({ nodeId: 'grp.body', name: 'Body', status: 'failed' }),
+      ];
+      const nodeExecutions: NodeExecution[] = [
+        {
+          node_id: 'grp',
+          status: 'failed',
+          occurrence_id: 'occ-grp',
+          error: `Loop group failed: body: ${expired}`,
+        },
+        {
+          node_id: 'grp.body',
+          status: 'failed',
+          occurrence_id: 'occ-body',
+          error: expired,
+        },
+      ];
+      const logEntries = buildConsoleLogEntries({
+        rows: buildLogRows(nodeStates, events, nodeExecutions, CREATED_AT),
+        rawEvents: events,
+        nodeRuns: foldNodeRuns(events.map(toRunEvent)),
+        runStartedAt: CREATED_AT,
+      });
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-expire', status: 'failed' }),
+          nodeStates,
+          events: events.map(toRunEvent),
+          rawEvents: events,
+          nodeExecutions,
+          logEntries,
+          selectedNodeId: 'grp.body',
+          selectedLogRowId: logEntries.find(e => e.row.nodeId === 'grp.body')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            {
+              id: 'grp',
+              loop_group: {
+                max_iterations: 1,
+                fresh_context: false,
+                nodes: [{ id: 'body', prompt: 'Work' }],
+              },
+            },
+          ],
+        });
+      });
+      await flush();
+
+      const bodyRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(bodyRoom).not.toBeNull();
+      if (bodyRoom === null) throw new Error('missing body room');
+      const bodyProps = findPropsWithKey(bodyRoom, 'idleAwaitExpired');
+      expect(bodyProps).not.toBeNull();
+      expect(bodyProps?.idleAwaitExpired).toBe(true);
+      expect(bodyProps?.nodeTerminal).toBe(true);
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-expire', status: 'failed' }),
+          nodeStates,
+          events: events.map(toRunEvent),
+          rawEvents: events,
+          nodeExecutions,
+          logEntries,
+          selectedNodeId: 'grp',
+          selectedLogRowId: logEntries.find(e => e.row.nodeId === 'grp')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            {
+              id: 'grp',
+              loop_group: {
+                max_iterations: 1,
+                fresh_context: false,
+                nodes: [{ id: 'body', prompt: 'Work' }],
+              },
+            },
+          ],
+        });
+      });
+      await flush();
+
+      const groupRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(groupRoom).not.toBeNull();
+      if (groupRoom === null) throw new Error('missing group room');
+      const groupProps = findPropsWithKey(groupRoom, 'idleAwaitExpired');
+      expect(groupProps?.idleAwaitExpired).toBe(false);
+      expect(groupProps?.nodeTerminal).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

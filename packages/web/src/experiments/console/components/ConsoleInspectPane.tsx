@@ -6,6 +6,10 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 
 import {
   buildExecutionHeader,
+  hasTerminalNodeEvidence,
+  hasIdleAwaitExpiredEvidence,
+  latestNodeExecutionKey,
+  resolveFinishedIterationView,
   type ExecutionHeaderModel,
   type ExecutionRow,
 } from '@/lib/execution-room-model';
@@ -22,6 +26,7 @@ import {
 } from '../primitives/console-resizable';
 import type {
   AskAnswerBody,
+  NodeExecution,
   PendingInteraction,
   WorkflowEvent,
   WorkflowNodeMessage,
@@ -60,6 +65,7 @@ export interface ConsoleInspectPaneProps {
   events: RunEvent[];
   rawEvents: WorkflowEvent[];
   nodeStates: WorkflowNodeState[];
+  nodeExecutions?: readonly NodeExecution[];
   approval: unknown;
   logEntries: ConsoleLogEntry[];
   usage: UsageReport | null;
@@ -174,6 +180,7 @@ export function ConsoleInspectPane({
   events,
   rawEvents,
   nodeStates,
+  nodeExecutions,
   approval,
   logEntries,
   usage,
@@ -227,6 +234,26 @@ export function ConsoleInspectPane({
   const roomOpen = selectedNodeId !== null;
   const ratio = clampRoomRatio(roomRatio);
   const sizes = roomPanelSizes(ratio);
+  const selectedNodeState =
+    selectedRow === null
+      ? undefined
+      : nodeStates.find(state => state.nodeId === selectedRow.nodeId);
+  // Descriptor only when the host can act on Go via the existing selection path.
+  const finishedIteration =
+    selectedRow === null
+      ? null
+      : resolveFinishedIterationView({
+          rows: logEntries.map(entry => entry.row),
+          selected: selectedRow,
+          nodeStatus: selectedNodeState?.status ?? selectedRow.status,
+          live: isInspectRunLive(run.status),
+        });
+  const nodeTerminal =
+    selectedNodeId === null ? false : hasTerminalNodeEvidence(nodeExecutions, selectedNodeId);
+  const idleAwaitExpired =
+    selectedNodeId === null ? false : hasIdleAwaitExpiredEvidence(nodeExecutions, selectedNodeId);
+  const nodeExecutionKey =
+    selectedNodeId === null ? null : latestNodeExecutionKey(rawEvents, selectedNodeId);
   const headerModel: ExecutionHeaderModel | null =
     selectedRow === null
       ? null
@@ -340,6 +367,10 @@ export function ConsoleInspectPane({
           onSelectRow={(rowId: string): void => {
             onSelectNode(selectedNodeId, rowId);
           }}
+          finishedIteration={finishedIteration}
+          nodeTerminal={nodeTerminal}
+          idleAwaitExpired={idleAwaitExpired}
+          nodeExecutionKey={nodeExecutionKey}
           showToolCalls={showToolCalls}
           showSystem={showSystem}
           closeLabel={mode === 'single' ? 'Back' : 'Close'}

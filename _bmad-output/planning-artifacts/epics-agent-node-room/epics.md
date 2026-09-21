@@ -709,14 +709,15 @@ So that I retain context without sending to the wrong place.
 
 **Acceptance Criteria:**
 
-**Given** a live loop node and a finished iteration selected through Story 1.7
+**Given** a live loop node and a finished iteration selected through the `Execution` selection controls (header select, Logs row, or graph occurrence) — Story 1.7 `Jump to` stays scroll-only
 **When** the dock area renders
-**Then** it shows a collapsed disclosure, a `Go to iteration N` control, and a read-only band with the live node queue.
+**Then** it shows a collapsed disclosure, a `Go to iteration N` control, and a read-only band with the live node's shared pending queue.
 
 **Given** the read-only finished-iteration band
 **When** I inspect it
-**Then** it provides no composer, `Send now`, or delete action
-**And** the client sends no steering request for that finished iteration.
+**Then** it provides no composer, `Send now`, withdraw/delete, or interrupt action
+**And** the client issues no send, withdraw, or interrupt mutation for that finished iteration
+**And** the existing authenticated node-scoped `GET …/queue` poll remains allowed so the band can mirror the shared pending queue.
 
 **Given** I return to the live iteration
 **When** the dock renders

@@ -1,18 +1,16 @@
-import type {
-  AskAnswerBody,
-  DagNode,
-  PendingInteraction,
-  WorkflowEventResponse,
-  WorkflowNodeStateResponse,
+import {
+  getWorkflowNodeMessages,
+  type AskAnswerBody,
+  type DagNode,
+  type PendingInteraction,
+  type WorkflowEventResponse,
+  type WorkflowNodeStateResponse,
 } from '@/lib/api';
-import { getWorkflowNodeMessages } from '@/lib/api';
+import { type ExecutionHeaderModel, type FinishedIterationView } from '@/lib/execution-room-model';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
-import type { ExecutionHeaderModel } from '@/lib/execution-room-model';
-
 import type { AskActionStateByRequest } from './ask-answer-controller';
-import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
 import { nodeStatusLabel } from './awaiting-chrome';
 import type { LogRow } from './build-log-rows';
 import { ChildWorkflowRoom } from './ChildWorkflowRoom';
@@ -21,10 +19,10 @@ import { LoopGroupRoom } from './LoopGroupRoom';
 import { NodeRoomHeader, type ExecutionHeaderOption } from './NodeRoomHeader';
 import { NodeTranscriptPane } from './NodeTranscriptPane';
 import { RoomPlaceholder, RoomRegion } from './NodeRoom';
+import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
+import { resolveRoomKind, type NodeBodyKind } from './resolve-room-kind';
 import { RouteControllerRoom } from './RouteControllerRoom';
 import { StdoutRoom } from './StdoutRoom';
-import type { NodeBodyKind } from './resolve-room-kind';
-import { resolveRoomKind } from './resolve-room-kind';
 import {
   selectChildRun,
   selectGateChrome,
@@ -54,6 +52,16 @@ export interface LegacyNodeRoomProps {
   headerModel?: ExecutionHeaderModel;
   headerOptions?: readonly ExecutionHeaderOption[];
   onSelectRow?: (rowId: string) => void;
+  /** Proven finished-iteration descriptor; pass-through only. */
+  finishedIteration?: FinishedIterationView | null;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** True when latest terminal execution failed for idle-await expiry. Default false. */
+  idleAwaitExpired?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   onClose?: () => void;
   closeLabel?: 'Close' | 'Back';
   scopeKey?: string;
@@ -111,6 +119,11 @@ export function LegacyNodeRoom({
   headerModel,
   headerOptions,
   onSelectRow,
+  finishedIteration = null,
+  nodeTerminal = false,
+  idleAwaitExpired = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds = null,
   onClose,
   closeLabel = 'Close',
   scopeKey,
@@ -192,6 +205,12 @@ export function LegacyNodeRoom({
             onScrollTopChange={onScrollTopChange}
             askDrafts={askDrafts}
             onAskDraftChange={onAskDraftChange}
+            finishedIteration={finishedIteration}
+            nodeTerminal={nodeTerminal}
+            idleAwaitExpired={idleAwaitExpired}
+            nodeExecutionKey={nodeExecutionKey}
+            writtenOperatorMessageIds={writtenOperatorMessageIds}
+            onSelectLiveRow={onSelectRow}
           />
         );
         break;

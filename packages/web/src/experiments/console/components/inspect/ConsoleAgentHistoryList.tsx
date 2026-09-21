@@ -198,20 +198,57 @@ function AssistantHistory({
   item: Extract<AgentHistoryItem, { kind: 'assistant' }>;
 }): ReactElement {
   return (
-    <div
-      className="chat-markdown max-w-none text-sm text-text-primary"
-      style={{ overflowWrap: 'anywhere' }}
-    >
-      <div className="mb-1 text-[9.5px] uppercase tracking-[0.06em] text-text-tertiary">
-        ASSISTANT
+    <div style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        assistant
       </div>
-      <ReactMarkdown
-        remarkPlugins={REMARK_PLUGINS}
-        rehypePlugins={REHYPE_PLUGINS}
-        components={MARKDOWN_COMPONENTS}
+      <div
+        className="chat-markdown max-w-none font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary"
+        style={{ margin: '0 2px 6px' }}
+      >
+        <ReactMarkdown
+          remarkPlugins={REMARK_PLUGINS}
+          rehypePlugins={REHYPE_PLUGINS}
+          components={MARKDOWN_COMPONENTS}
+        >
+          {item.text}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+function OperatorHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'operator' }>;
+}): ReactElement {
+  const label =
+    item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
+  return (
+    <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="flex w-full items-center text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        <span data-operator-label="">{label}</span>
+        <span
+          data-operator-delivery=""
+          className="ml-auto shrink-0 text-[11px] normal-case tracking-normal text-text-secondary"
+        >
+          sent
+        </span>
+      </div>
+      <div
+        data-operator-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
+        style={{ margin: '0 2px 6px' }}
       >
         {item.text}
-      </ReactMarkdown>
+      </div>
     </div>
   );
 }
@@ -981,33 +1018,59 @@ export function ConsoleAgentHistoryList({
   const filters: ConsoleHistoryFilters = { showToolCalls, showSystem };
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
+  const afterById = new Map<string, ReactNode>();
+  for (const item of items) afterById.set(item.id, renderAfterItem?.(item));
+  // Only the actual last rendered history item is programmatically focusable
+  // (the steering dock's Stop-removal focus target); it never joins Tab order.
+  let lastItemId: string | null = null;
+  for (const item of items) {
+    const after = afterById.get(item.id);
+    if (historyItemRowVisible(item, filters) || (after !== undefined && after !== null)) {
+      lastItemId = item.id;
+    }
+  }
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
+    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  const lastRowRing = (item: AgentHistoryItem): string =>
+    item.id === lastItemId ? ' focus-visible:outline-2 focus-visible:outline-accent-bright!' : '';
+
   const renderItem = (item: AgentHistoryItem): ReactElement | null => {
-    const after = renderAfterItem?.(item);
+    const after = afterById.get(item.id);
+    const marker = lastRowMarker(item);
+    const ring = lastRowRing(item);
     if (!historyItemRowVisible(item, filters)) {
       return after === undefined || after === null ? null : (
-        <div key={item.id} className="my-1.5">
+        <div key={item.id} className={`my-1.5${ring}`} {...marker}>
           {after}
         </div>
       );
     }
     if (item.kind === 'assistant') {
       return (
-        <div key={item.id} className="my-1.5">
+        <div key={item.id} className={`my-1.5${ring}`} {...marker}>
           <AssistantHistory item={item} />
+          {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
+        </div>
+      );
+    }
+    if (item.kind === 'operator') {
+      return (
+        <div key={item.id} className={`my-1.5${ring}`} {...marker}>
+          <OperatorHistory item={item} />
           {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
         </div>
       );
     }
     if (item.kind === 'tool') {
       return (
-        <div key={item.id}>
+        <div key={item.id} className={ring === '' ? undefined : ring.trim()} {...marker}>
           <ToolHistory item={item} onLoadFullOutput={onLoadFullOutput} />
           {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
         </div>
       );
     }
     return (
-      <div key={item.id} className="my-1.5">
+      <div key={item.id} className={`my-1.5${ring}`} {...marker}>
         <LifecycleHistory item={item} />
         {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
       </div>

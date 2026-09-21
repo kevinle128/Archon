@@ -67,4 +67,53 @@ describe('node message metadata compatibility', () => {
       }).success
     ).toBe(false);
   });
+
+  test('accepts operator origin triple with non-null sender', () => {
+    expect(
+      nodeTranscriptMetadataSchema.parse({
+        origin: 'operator',
+        operator_user_id: 'user-operator-1',
+        message_id: 'msg-operator-1',
+      })
+    ).toEqual({
+      origin: 'operator',
+      operator_user_id: 'user-operator-1',
+      message_id: 'msg-operator-1',
+    });
+  });
+
+  test('accepts explicit null operator_user_id', () => {
+    expect(
+      nodeTranscriptMetadataSchema.parse({
+        origin: 'operator',
+        operator_user_id: null,
+        message_id: 'msg-operator-2',
+      })
+    ).toEqual({
+      origin: 'operator',
+      operator_user_id: null,
+      message_id: 'msg-operator-2',
+    });
+  });
+
+  test('rejects unsupported origin values', () => {
+    expect(
+      nodeTranscriptMetadataSchema.safeParse({
+        origin: 'assistant',
+        operator_user_id: 'user-1',
+        message_id: 'msg-1',
+      }).success
+    ).toBe(false);
+  });
+
+  test('still rejects unknown sibling keys under .strict()', () => {
+    expect(
+      nodeTranscriptMetadataSchema.safeParse({
+        origin: 'operator',
+        operator_user_id: 'user-1',
+        message_id: 'msg-1',
+        invented: true,
+      }).success
+    ).toBe(false);
+  });
 });

@@ -1,6 +1,7 @@
 /**
  * Query boundary for a selected node transcript: drain cursor pages, poll live
- * runs, abort on scope change, and restore container scroll.
+ * runs, abort on scope change, and restore container scroll. Owns the
+ * consume-once focus handoff across keyed ComposerDock remounts for Story 2.10.
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
@@ -22,6 +23,8 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
+import { collectWrittenOperatorMessageIds } from '@/lib/steering-dock';
+import type { FinishedIterationView } from '@/lib/execution-room-model';
 import { groupByOccurrence } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -57,7 +60,7 @@ export function transcriptRefetchInterval(status: WorkflowRunStatus): 1000 | fal
   }
 }
 
-function isLiveRunStatus(status: WorkflowRunStatus): boolean {
+export function isLiveRunStatus(status: WorkflowRunStatus): boolean {
   return transcriptRefetchInterval(status) === 1000;
 }
 
@@ -96,6 +99,18 @@ export interface NodeTranscriptPaneProps {
   loadMessage?: typeof getWorkflowNodeMessage;
   askDrafts?: AskDraftByRequest;
   onAskDraftChange?: (requestId: string, draft: AskDraft) => void;
+  /** Proven finished-iteration descriptor from the parent pane. */
+  finishedIteration?: FinishedIterationView | null;
+  /** Existing execution-selection callback used by the Go control. */
+  onSelectLiveRow?: (liveRowId: string) => void;
+  /** Actual node-terminal evidence from raw executions. Default false. */
+  nodeTerminal?: boolean;
+  /** True when latest terminal execution failed for idle-await expiry. Default false. */
+  idleAwaitExpired?: boolean;
+  /** Logical execution key from ordered events. Default null. */
+  nodeExecutionKey?: string | null;
+  /** Node-wide written operator ids for terminal reconciliation. Default null. */
+  writtenOperatorMessageIds?: ReadonlySet<string> | null;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -128,6 +143,12 @@ export function NodeTranscriptPane({
   loadMessage = getWorkflowNodeMessage,
   askDrafts,
   onAskDraftChange,
+  finishedIteration = null,
+  nodeTerminal = false,
+  idleAwaitExpired = false,
+  nodeExecutionKey = null,
+  writtenOperatorMessageIds: _externalWrittenIds = null,
+  onSelectLiveRow,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -137,12 +158,16 @@ export function NodeTranscriptPane({
   const [pageState, setPageState] = useState<NodeMessageState>(() =>
     createNodeMessageState(resolvedScopeKey)
   );
+  /** Node-wide written operator ids from the terminal reconcile drain. null until complete. */
+  const [reconcileWrittenIds, setReconcileWrittenIds] = useState<ReadonlySet<string> | null>(null);
   const [follow, setFollow] = useState(() =>
     createScrollFollow(row?.status ?? 'completed', initialScrollTop)
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [localAskDrafts, setLocalAskDrafts] = useState<AskDraftByRequest>({});
   const [navTarget, setNavTarget] = useState<string | null>(null);
+  /** Consume-once autofocus after a Go-driven selection change. */
+  const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
 
@@ -152,6 +177,8 @@ export function NodeTranscriptPane({
   const navigatedHeadingRef = useRef<HTMLElement | null>(null);
   const loadMessagesRef = useRef(loadMessages);
   const prevScopeRef = useRef(resolvedScopeKey);
+  /** Intended live row id set on Go; cleared before focusing after commit. */
+  const pendingGoTargetRef = useRef<{ fromRowId: string; toRowId: string } | null>(null);
   pageStateRef.current = pageState;
   loadMessagesRef.current = loadMessages;
 
@@ -160,6 +187,43 @@ export function NodeTranscriptPane({
   const rowStatus = row?.status ?? 'completed';
   const occurrenceId = row?.selection.kind === 'occurrence' ? row.selection.occurrenceId : null;
   const attemptId = row?.selection.kind === 'occurrence' ? (row.selection.attemptId ?? null) : null;
+
+  // After Go commits a new selection, clear the pending target then hand focus
+  // to the live composer/blocked field, the new finished Go button, or the
+  // transcript scroller when the dock disappears. Unrelated remounts never
+  // set pendingGoTargetRef, so they never steal focus.
+  useEffect(() => {
+    const pending = pendingGoTargetRef.current;
+    if (pending === null) return;
+    // Still on the pre-Go row — wait for the parent selection to commit.
+    if (rowId === pending.fromRowId) return;
+
+    // Selection changed: consume before focusing so a later refetch cannot re-fire.
+    pendingGoTargetRef.current = null;
+
+    if (rowId === null) {
+      scrollRef.current?.focus();
+      return;
+    }
+    if (finishedIteration !== null) {
+      // Target is finished (loop advanced, or raced past the intended live row).
+      setAutoFocusTarget('go');
+      return;
+    }
+    if (rowStatus === 'running' || rowStatus === 'awaiting') {
+      setAutoFocusTarget('field');
+      return;
+    }
+    // Dock gone (terminal) — focus the transcript scroller.
+    scrollRef.current?.focus();
+  }, [rowId, rowStatus, finishedIteration]);
+
+  const handleSelectLiveRow = (liveRowId: string): void => {
+    if (rowId !== null) {
+      pendingGoTargetRef.current = { fromRowId: rowId, toRowId: liveRowId };
+    }
+    onSelectLiveRow?.(liveRowId);
+  };
 
   useEffect(() => {
     if (prevScopeRef.current !== resolvedScopeKey) {
@@ -232,6 +296,57 @@ export function NodeTranscriptPane({
     runId,
     runStatus,
   ]);
+
+  // Separate node-wide reconcile drain — never feeds pageState/transcript.
+  // Starts only on real node-terminal evidence; publishes written ids only
+  // after a complete error-free drain. Retries transport/incomplete failures
+  // at 1s while mounted+terminal. Resets on run/node/key change or terminal drop.
+  useEffect(() => {
+    if (!nodeTerminal || nodeId === null) {
+      setReconcileWrittenIds(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const executionRowId = nodeExecutionKey ?? `run:${runId}|node:${nodeId}`;
+    const selection: NodeMessageSelection = { kind: 'node', rowId: executionRowId };
+
+    const runReconcileDrain = async (): Promise<void> => {
+      if (cancelled || controller.signal.aborted) return;
+      const next = await drainNodeMessages({
+        runId,
+        nodeId,
+        selection,
+        loader: loadMessagesRef.current,
+        signal: controller.signal,
+        state: createNodeMessageState(nodeMessageScopeKey(runId, nodeId, selection)),
+        onState: (): void => {
+          // Intentionally ignore intermediate pages — never touch transcript state.
+        },
+      });
+      if (cancelled || controller.signal.aborted) return;
+      if (next.complete && next.error === null) {
+        setReconcileWrittenIds(collectWrittenOperatorMessageIds(next.rows));
+        return;
+      }
+      // Incomplete or transport error: read-only retry while still terminal.
+      timer = setTimeout(() => {
+        void runReconcileDrain();
+      }, 1000);
+    };
+
+    setReconcileWrittenIds(null);
+    void runReconcileDrain();
+
+    return (): void => {
+      cancelled = true;
+      controller.abort();
+      if (timer !== undefined) clearTimeout(timer);
+      setReconcileWrittenIds(null);
+    };
+  }, [nodeExecutionKey, nodeId, nodeTerminal, runId]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -434,6 +549,15 @@ export function NodeTranscriptPane({
   const waitingForFirstPage =
     row !== null && pageState.rows.length === 0 && pageState.error === null && !pageState.complete;
 
+  // The steering dock's focus fallback: the last rendered transcript row,
+  // or the transcript scroller itself when no row exists yet — never body.
+  const focusLastRow = (): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const lastRow = el.querySelector<HTMLElement>('[data-last-row]');
+    (lastRow ?? el).focus({ preventScroll: true });
+  };
+
   const scroller = (
     <div
       ref={scrollRef}
@@ -525,13 +649,25 @@ export function NodeTranscriptPane({
       {scroller}
       {controls}
       <ComposerDock
-        key={`steering:${resolvedScopeKey}`}
+        key={`steering:run:${runId}|node:${row.nodeId}`}
         runId={runId}
         nodeId={row.nodeId}
         nodeLabel={agentDisplayName || row.nodeId}
         rowStatus={rowStatus}
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
+        subState={nodeState?.steeringSubState}
+        finishedIteration={finishedIteration}
+        onSelectLiveRow={onSelectLiveRow === undefined ? undefined : handleSelectLiveRow}
+        autoFocusTarget={autoFocusTarget}
+        onAutoFocusApplied={(): void => {
+          setAutoFocusTarget(null);
+        }}
+        focusLastRow={focusLastRow}
+        nodeTerminal={nodeTerminal}
+        idleAwaitExpired={idleAwaitExpired}
+        nodeExecutionKey={nodeExecutionKey}
+        writtenOperatorMessageIds={reconcileWrittenIds}
       />
     </RoomRegion>
   );

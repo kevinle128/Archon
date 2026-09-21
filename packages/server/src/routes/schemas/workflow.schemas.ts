@@ -172,6 +172,14 @@ export const workflowNodeStateSchema = z
     modelReasoningEffort: z.string().min(1).optional(),
     effort: effortLevelSchema.optional(),
     thinking: thinkingConfigSchema.optional(),
+    /**
+     * Live steering sub-state (#183), joined from the in-process registry
+     * AFTER terminal-settling persisted states — only on a still-running node
+     * whose handle is live, interrupt-capable, and projecting. Never persisted
+     * and never synthesized from transcript rows; `interrupting` is never
+     * projected (that badge is UI-local).
+     */
+    steeringSubState: z.enum(['generating', 'idle-after-interrupt']).optional(),
   })
   .openapi('WorkflowNodeState');
 
@@ -185,7 +193,10 @@ export const pendingInteractionResponseSchema = pendingInteractionSchema
 const nodeMessageWireShape = { created_at: z.string() };
 export const workflowNodeMessageTextResponseSchema = nodeMessageTextSchema
   .omit({ workflow_run_id: true, node_id: true })
-  .safeExtend(nodeMessageWireShape);
+  .safeExtend({
+    ...nodeMessageWireShape,
+    operator_display_name: z.string().nullable().optional(),
+  });
 export const workflowNodeMessageToolResponseSchema = nodeMessageToolSchema
   .omit({ workflow_run_id: true, node_id: true })
   .safeExtend(nodeMessageWireShape);
@@ -560,6 +571,38 @@ export const sendWorkflowNodeResponseSchema = z
   .openapi('SendWorkflowNodeResponse');
 
 export type SendWorkflowNodeResponse = z.infer<typeof sendWorkflowNodeResponseSchema>;
+
+/**
+ * Interrupt success receipt (#183). `sub_state` is the executor's ACTUAL
+ * classified outcome — `idle-after-interrupt` (the turn stopped and the node
+ * idles on the same provider session awaiting Send now) or `generating` (the
+ * turn already ended naturally or queued guidance drained it before Stop took
+ * effect). Never a timing-based guess.
+ */
+export const interruptWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+    sub_state: z.enum(['idle-after-interrupt', 'generating']),
+  })
+  .strict()
+  .openapi('InterruptWorkflowNodeResponse');
+
+export type InterruptWorkflowNodeResponse = z.infer<typeof interruptWorkflowNodeResponseSchema>;
+
+/**
+ * Keepalive success receipt (Story 2.12). Bodyless re-arm of the idle-await
+ * inactivity timer. Public shape is always `{ success: true }` whether the
+ * handle rearms (live idle) or is a no-op (other live states) — callers never
+ * branch on the private rearm outcome.
+ */
+export const keepaliveWorkflowNodeResponseSchema = z
+  .object({
+    success: z.literal(true),
+  })
+  .strict()
+  .openapi('KeepaliveWorkflowNodeResponse');
+
+export type KeepaliveWorkflowNodeResponse = z.infer<typeof keepaliveWorkflowNodeResponseSchema>;
 
 /**
  * Shared steering-route error shape — consumers classify by `error.code`,

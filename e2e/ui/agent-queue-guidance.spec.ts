@@ -9,6 +9,7 @@ import { test, expect } from '../lib/playwright/suite';
 import {
   E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME,
   E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+  E2E_STARTER_WEB_USER,
   HITL_ASK_NODE,
   QUEUE_GUIDANCE_LOOP_NODE,
   QUEUE_GUIDANCE_NODE,
@@ -54,11 +55,12 @@ const SCROLLER_TESTID: Record<Surface, string> = {
   console: 'console-node-room-scroll',
   legacy: 'node-transcript-scroll',
 };
-
 const ASK_BLOCKED_REASON = "answer the agent's question first";
 const DETACHED_DISCLOSURE =
   'not steerable here · this run was started detached, so its live session is not in this process';
 const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+const FIRST_CORRECTION = 'first correction';
+const SECOND_CORRECTION = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>second correction';
 const GUIDANCE_ECHO_TEXT = '[e2e-fake] resumed echo: first correction\n\nsecond correction';
 const LOOP_ECHO_TEXT = '[e2e-fake] resumed echo: finish now';
 const LOOP_DONE_TEXT = 'E2E_LOOP_DONE';
@@ -67,21 +69,32 @@ function sendPathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/send`;
 }
 
-/** Counts POSTs to the node's send route so no-send guards are provable. */
+/** Counts POSTs to the node's send route and retains caller message_ids. */
 function trackSendRequests(
   page: Page,
   runId: string,
   nodeId: string
-): { count: () => number; dispose: () => void } {
+): { count: () => number; messageIds: () => string[]; dispose: () => void } {
   const pathname = sendPathname(runId, nodeId);
   let seen = 0;
+  const messageIds: string[] = [];
   const listener = (request: Request): void => {
     if (request.method() !== 'POST') return;
-    if (new URL(request.url()).pathname === pathname) seen += 1;
+    if (new URL(request.url()).pathname !== pathname) return;
+    seen += 1;
+    try {
+      const body = request.postDataJSON() as { message_id?: unknown };
+      if (typeof body.message_id === 'string' && body.message_id.length > 0) {
+        messageIds.push(body.message_id);
+      }
+    } catch {
+      // Non-JSON bodies are still counted for no-send guards.
+    }
   };
   page.on('request', listener);
   return {
     count: () => seen,
+    messageIds: () => messageIds.slice(),
     dispose: () => page.off('request', listener),
   };
 }
@@ -240,6 +253,10 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
     const offenders: { tag: string; insideRoom: boolean }[] = [];
     document.querySelectorAll('body *').forEach(el => {
       const rect = el.getBoundingClientRect();
+      // Zero-area / hairline SVG geometry can report a sub-pixel overhang
+      // without contributing to page scroll — ignore those; they are not a
+      // room-driven overflow the operator can see.
+      if (rect.width < 1 || rect.height < 1) return;
       if (rect.right > width + 1 || rect.left < -1) {
         offenders.push({
           tag: `${el.tagName}.${typeof el.className === 'string' ? (el.className.split(' ')[0] ?? '') : ''}`,
@@ -253,6 +270,10 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
       roomInsideViewport: roomRect.left >= -1 && roomRect.right <= width + 1,
       roomScroll: roomEl.scrollWidth - roomEl.clientWidth,
       insideCount: offenders.filter(o => o.insideRoom).length,
+      insideSample: offenders
+        .filter(o => o.insideRoom)
+        .slice(0, 5)
+        .map(o => o.tag),
       outsideSample: offenders
         .filter(o => !o.insideRoom)
         .slice(0, 5)
@@ -267,7 +288,7 @@ async function expectNoRoomDrivenOverflow(room: Locator, context = ''): Promise<
   ).toBeLessThanOrEqual(1);
   expect(
     report.insideCount,
-    `no room element overflows the page ${context} (outside offenders: ${report.outsideSample.join(', ') || 'none'}; page overflow ${String(report.pageOverflow)}px)`
+    `no room element overflows the page ${context} (inside offenders: ${report.insideSample.join(', ') || 'none'}; outside offenders: ${report.outsideSample.join(', ') || 'none'}; page overflow ${String(report.pageOverflow)}px)`
   ).toBe(0);
 }
 
@@ -302,6 +323,7 @@ for (const surface of ['console', 'legacy'] as const) {
     archon,
   }, testInfo: TestInfo) => {
     test.setTimeout(T.xlong * 2);
+    await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });
     const run = await archon.startWorkflowViaWeb(
       E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
       'e2e queue guidance'
@@ -325,7 +347,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await field.press('Enter');
       await field.press('Shift+Enter');
       expect(await field.inputValue()).toBe('\n\n');
-      await field.fill('first correction');
+      await field.fill(FIRST_CORRECTION);
       await field.evaluate(el => {
         el.dispatchEvent(
           new KeyboardEvent('keydown', {
@@ -350,7 +372,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(room.getByText('queued · 1')).toBeVisible();
       const items = queueList(room).getByRole('listitem');
       await expect(items).toHaveCount(1);
-      await expect(items.first()).toContainText('first correction');
+      await expect(items.first()).toContainText(FIRST_CORRECTION);
       await expect(items.first()).toContainText('sent');
       await expect(room.locator('[role="status"]')).toContainText('1 message queued');
       expect(await field.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
@@ -358,28 +380,68 @@ for (const surface of ['console', 'legacy'] as const) {
       const second = page.waitForResponse(
         res => new URL(res.url()).pathname === sendPathname(run.runId, QUEUE_GUIDANCE_NODE)
       );
-      await field.fill('<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>second correction');
+      await field.fill(SECOND_CORRECTION);
       await queue.click();
       expect((await second).status()).toBe(200);
       await expect(room.getByText('queued · 2')).toBeVisible();
       await expect(items).toHaveCount(2);
-      await expect(items.nth(0)).toContainText('first correction');
+      await expect(items.nth(0)).toContainText(FIRST_CORRECTION);
       await expect(items.nth(1)).toContainText('second correction');
       await expect(items.nth(1)).toContainText('sent');
       expect(await field.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
       expect(sends.count()).toBe(2);
+      expect(sends.messageIds()).toHaveLength(2);
       await captureEvidence(room, `us-005-${surface}-queued-2.png`, testInfo);
     });
 
-    await test.step('run completes; the drained guidance arrives as the next prompt on the same session', async () => {
+    await test.step('run completes; operator rows precede the caused echo on the same session', async () => {
       await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
-      const texts = await transcriptTexts(page, run.runId, QUEUE_GUIDANCE_NODE);
-      const echo = texts.filter(text => text === GUIDANCE_ECHO_TEXT);
-      expect(echo).toHaveLength(1);
-      // No fabricated operator transcript row: the operator's words only ever
-      // appear inside the provider's echo chunk, never as their own row.
-      expect(texts.filter(text => text === 'first correction')).toHaveLength(0);
-      expect(texts.filter(text => text === 'second correction')).toHaveLength(0);
+      const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_NODE);
+      const operatorRows = messages.filter(
+        message => message.kind === 'text' && message.metadata?.origin === 'operator'
+      );
+      expect(operatorRows, 'exactly two drained operator rows').toHaveLength(2);
+      expect(operatorRows[0]!.seq).toBeLessThan(operatorRows[1]!.seq);
+      expect(operatorRows[0]!.payload.text).toBe(FIRST_CORRECTION);
+      expect(operatorRows[1]!.payload.text).toBe(SECOND_CORRECTION);
+
+      const callerIds = sends.messageIds();
+      expect(callerIds).toHaveLength(2);
+      expect(operatorRows[0]!.metadata?.message_id).toBe(callerIds[0]);
+      expect(operatorRows[1]!.metadata?.message_id).toBe(callerIds[1]);
+
+      const senderId = operatorRows[0]!.metadata?.operator_user_id;
+      expect(typeof senderId).toBe('string');
+      expect(senderId && senderId.length > 0).toBe(true);
+      expect(operatorRows[1]!.metadata?.operator_user_id).toBe(senderId);
+      expect(operatorRows[0]!.operator_display_name).toBe('e2e-starter');
+      expect(operatorRows[1]!.operator_display_name).toBe('e2e-starter');
+
+      const echoRow = messages.find(
+        message => message.kind === 'text' && message.payload.text === GUIDANCE_ECHO_TEXT
+      );
+      expect(echoRow, 'one resumed echo carries the drained batch').toBeTruthy();
+      expect(operatorRows[1]!.seq).toBeLessThan(echoRow!.seq);
+      const causedAttempt = echoRow!.metadata?.execution?.attempt_id;
+      expect(typeof causedAttempt).toBe('string');
+      expect(operatorRows[0]!.metadata?.execution?.attempt_id).toBe(causedAttempt);
+      expect(operatorRows[1]!.metadata?.execution?.attempt_id).toBe(causedAttempt);
+
+      const priorAttempt = messages
+        .filter(
+          message =>
+            message.kind === 'text' &&
+            message.metadata?.origin !== 'operator' &&
+            message.seq < operatorRows[0]!.seq &&
+            typeof message.metadata?.execution?.attempt_id === 'string'
+        )
+        .at(-1)?.metadata?.execution?.attempt_id;
+      if (priorAttempt !== undefined) {
+        expect(priorAttempt, 'operator rows use the caused attempt, not the prior turn').not.toBe(
+          causedAttempt
+        );
+      }
+
       const detail = await getRunDetail(page, run.runId);
       expect(detail.status).toBe('completed');
       expect(detail.nodeExecutions.filter(row => row.node_id === QUEUE_GUIDANCE_NODE)).toHaveLength(
@@ -390,11 +452,50 @@ for (const surface of ['console', 'legacy'] as const) {
           event => event.event_type === 'node_started' && event.step_name === QUEUE_GUIDANCE_NODE
         )
       ).toHaveLength(1);
+
       const freshRoom = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
+      const operatorDom = freshRoom.locator('[data-operator-row]');
+      await expect(operatorDom).toHaveCount(2);
+      await expect(operatorDom.nth(0).locator('[data-operator-label]')).toHaveText(
+        'operator · e2e-starter'
+      );
+      await expect(operatorDom.nth(1).locator('[data-operator-label]')).toHaveText(
+        'operator · e2e-starter'
+      );
+      await expect(operatorDom.nth(0).locator('[data-operator-delivery]')).toHaveText('sent');
+      await expect(operatorDom.nth(1).locator('[data-operator-delivery]')).toHaveText('sent');
+      await expect(operatorDom.nth(0).locator('[data-operator-body]')).toHaveText(FIRST_CORRECTION);
+      await expect(operatorDom.nth(1).locator('[data-operator-body]')).toHaveText(
+        SECOND_CORRECTION
+      );
+
+      const order = await freshRoom.evaluate(() => {
+        const ops = Array.from(document.querySelectorAll('[data-operator-row]'));
+        if (ops.length !== 2) return `ops=${ops.length}`;
+        const echoLeaf = Array.from(document.querySelectorAll('*')).find(
+          el =>
+            el.childElementCount === 0 &&
+            (el.textContent ?? '').includes('resumed echo: first correction')
+        );
+        if (echoLeaf === undefined) return 'missing-echo';
+        const following = Node.DOCUMENT_POSITION_FOLLOWING;
+        if ((ops[0]!.compareDocumentPosition(ops[1]!) & following) === 0) return 'ops-order';
+        if ((ops[1]!.compareDocumentPosition(echoLeaf) & following) === 0) {
+          return 'echo-before-ops';
+        }
+        return 'ok';
+      });
+      expect(order, 'operator rows precede the caused echo in DOM order').toBe('ok');
+
       await expect(freshRoom.getByText(/resumed echo: first correction/)).toBeVisible({
         timeout: T.medium,
       });
       await expect(freshRoom.getByText('delivered')).toHaveCount(0);
+
+      // E4.6 — natural delivery must never show the never-sent finished box.
+      await expect(freshRoom.getByRole('list', { name: /^Never sent/ })).toHaveCount(0);
+      await expect(freshRoom.getByText('node finished · none of this was sent')).toHaveCount(0);
+      await expect(freshRoom.getByText(/^never sent ·/i)).toHaveCount(0);
       await expect(guidanceField(freshRoom)).toHaveCount(0);
     });
   });
@@ -487,9 +588,17 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(reasonId, 'Queue exposes aria-describedby for the blocked reason').toBeTruthy();
     await expect(room.locator(`[id="${reasonId ?? ''}"]`)).toHaveText(ASK_BLOCKED_REASON);
     await expect(room.locator('[role="status"]')).toContainText(ASK_BLOCKED_REASON);
-    // aria-disabled keeps the control tabbable instead of removing it.
-    await queue.focus();
-    expect(await queue.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
+    // The run-detail refresh may replace the dock while this check is running;
+    // refocus the current button until the settled, aria-disabled control owns focus.
+    await expect
+      .poll(
+        async () => {
+          await queue.focus();
+          return queue.evaluate(el => el.ownerDocument.activeElement === el);
+        },
+        { timeout: T.medium, message: 'aria-disabled Queue remains focusable' }
+      )
+      .toBe(true);
 
     await field.fill('do not send me');
     // aria-disabled (not a native disabled) keeps the control focusable and
@@ -594,15 +703,26 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(hint.ratio, 'hint text ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
       expect(queueLabel.ratio, 'queue label ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
 
+      // Keyboard focus establishes :focus-visible so the accent-bright outline paints.
+      // resolveColorIn must host on a container — textarea cannot append probe children.
       await field.focus();
+      await field.press('End');
       const ring = await field.evaluate(el => {
         const style = el.ownerDocument.defaultView?.getComputedStyle(el);
-        return { outline: style?.outlineColor ?? '', width: style?.outlineWidth ?? '' };
+        return {
+          outline: style?.outlineColor ?? '',
+          width: style?.outlineWidth ?? '',
+          offset: style?.outlineOffset ?? '',
+          focusVisible: el.matches(':focus-visible'),
+        };
       });
-      const ringColor = await resolveColorIn(field, ring.outline);
+      expect(ring.focusVisible, 'keyboard focus carries :focus-visible').toBe(true);
+      expect(ring.width, 'focus ring has a visible width').toBe('2px');
+      const accent = await resolveColorIn(room, 'var(--accent-bright)');
+      const ringColor = await resolveColorIn(room, ring.outline);
       const dockBg = await effectiveBackground(field);
       const ringRatio = contrastRatio(ringColor.c, dockBg.c);
-      expect(ring.width, 'focus ring has a visible width').not.toBe('0px');
+      expect(ringColor.resolved, 'focus outline resolves to --accent-bright').toBe(accent.resolved);
       expect(ringRatio, 'focus indicator ≥ 3:1').toBeGreaterThanOrEqual(3.0);
 
       const bandScroll = queueList(room).locator('xpath=..');
@@ -637,6 +757,25 @@ for (const surface of ['console', 'legacy'] as const) {
     await test.step('460px and console 1440x900 captures with no horizontal overflow', async () => {
       await page.setViewportSize({ width: 460, height: 900 });
       await expect(items).toHaveCount(2);
+      // The Console shell runs first in a cold browser context. Wait for its
+      // web fonts and two paint frames so fallback-font widths cannot produce
+      // a one-frame false overflow that disappears once the real font loads.
+      await page.evaluate(async () => {
+        await document.fonts.ready;
+        await new Promise<void>(resolve => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+      });
+      // Wait for the room panel to reflow into the 460px viewport before the
+      // geometry assertion — a mid-resize snapshot can report a transient
+      // overhang that the final layout does not keep.
+      await expect
+        .poll(async () => (await room.boundingBox())?.width ?? Number.POSITIVE_INFINITY, {
+          timeout: T.medium,
+        })
+        .toBeLessThanOrEqual(460);
       await expectNoRoomDrivenOverflow(room, `${surface}@460`);
       await captureEvidence(room, `us-005-${surface}-460-queued-2.png`, testInfo);
       const narrowWidth = (await room.boundingBox())?.width ?? 0;

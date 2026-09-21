@@ -6,7 +6,9 @@ description: Reproduce, diagnose, fix, and prevent native Windows CI failures wi
 # Test Windows
 
 Use `scripts/test-windows.ts` as the single entry point for Windows checks.
-It syncs the current worktree into a managed Windows checkout, keeps normal Windows checkout line endings, uses the CI Bun version, and restores the VM power state.
+It points the read-only Parallels share `archon-src` at the current repository, syncs the current worktree into a managed Windows checkout, keeps normal Windows checkout line endings, uses the CI Bun version, and restores the VM power state.
+The runner creates or updates the share only while the VM is fully stopped.
+It does not edit or interrupt a VM that is running or suspended.
 
 ## Workflow
 
@@ -60,6 +62,7 @@ Do not copy failure logs into this skill.
 - Do not call `unref()` on a timer that is required to settle a pending promise.
 - Finalize SQLite statements before immediate test-directory cleanup.
 - Use native Windows command wrappers when a test must control or terminate a child process.
+- Apply worktree patches to the Git index before materializing files when the base commit contains a path that NTFS cannot represent.
 - Do not install a Unix signal handler in a Windows fixture when the test relies on native hard termination.
 - Await bounded cleanup retries when Windows still holds a finished fixture path.
 - For interactive subprocesses, use an atomic exit sidecar and an attached Windows waiter when Bun does not report the process exit.
@@ -76,9 +79,12 @@ Install Python for the current Windows user with this command when it is missing
 winget install --id Python.Python.3.13 --exact --scope user
 ```
 
-The host must expose this repository as a read-only Parallels share named `archon-src`.
-Add the share with this command when it is missing:
+The runner creates or updates a read-only Parallels share named `archon-src` when the VM is fully stopped.
+If the share is stale while the VM is running or suspended, save the guest work and shut down Windows before retrying.
+To configure it manually, use this command:
 
 ```bash
-prlctl set "Windows 11" --shf-host-add archon-src --path "$PWD" --mode ro
+prlctl set "${ARCHON_WINDOWS_VM:-Windows 11}" --shf-host-set archon-src --path "$PWD" --mode ro --enable
 ```
+
+Use `--shf-host-add` instead of `--shf-host-set` when the share does not exist yet.

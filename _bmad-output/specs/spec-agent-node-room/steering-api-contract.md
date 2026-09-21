@@ -22,7 +22,7 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 - **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now' }`.
   `message_id` is the correlation key for terminal reconciliation (CAP-11 / AD-11) and, post-G1, for `delivered`.
 - **interrupt** — `{}` (no body); the target is the live turn on the registry handle.
-- **keepalive** — `{}` (no body); it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
+- **keepalive** — no request body; it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
 - **withdraw** — `{}` (no body); `message_id` is the path parameter. Removes that message from the registry queue if it is still present.
 - **queue read** — bodyless GET: no request body and no query parameters; `runId`/`nodeId` are the only path parameters.
 
@@ -34,7 +34,13 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 - **withdraw** — `{ success: true, message_id: string }`; idempotent — success whether the message was still queued (now removed) or had already drained (nothing to remove).
 - **interrupt** — `{ success: true, sub_state: 'idle-after-interrupt' | 'generating' }`.
   `idle-after-interrupt` when the interrupt landed mid-turn; **`generating`** when the turn already ended naturally before the interrupt landed (interrupt spent, AD-2) and a queued message auto-drained into turn N+1. If the turn ended naturally with an **empty** queue the node has completed — the route then returns 409 `node_finished` (below), not a success shape.
-- **keepalive** — `{ success: true }`.
+- **keepalive** — `{ success: true }` on every successful call against a live handle:
+  - live idle → re-arms the inactivity timer (private; not exposed on the wire);
+  - live generating / between-turn / queue-only → 200 no-op (timer not armed or already settled);
+  - parked handle or missing in-process handle → **422** `not_steerable_here` (checked before keepalive, because keepalive itself returns not_idle for parked);
+  - terminal run/node or closed handle → **409** `node_finished`;
+  - unknown run/node → **404**; unauthenticated → **401**.
+    Bodyless POST; writes no durable row; same steering actor grant as send/interrupt.
 - **queue read** — `{ success: true, queued: [{ message_id: string (uuid), message: string }] }`.
   `queued` contains only the handle's current pending items, in server receipt order — drained or withdrawn ids and accepted-id memory never appear on the wire. No `operator_user_id`, `received_at`, handle phase, or durable version is exposed. Live AND parked handles return 200 with their retained rows; a closed handle is 409; a known non-terminal node with no in-process handle is 422.
   Every queue-read outcome — 200 and each error status — carries `Cache-Control: no-store` so a live queue snapshot is never served from a shared cache.
@@ -70,6 +76,22 @@ Reusing 409 for both would conflate two conditions a machine consumer must tell 
 - **Every rejected request leaves the node, queue, and transcript unchanged** — a refusal is never a partial mutation.
 - **Read racing a send/withdraw** — a queue read reflects the registry at the snapshot tick: it may include a message whose send response is still in flight, or omit one whose withdraw landed first. The initiating client never loses its own mutation — the dock tags each read with its local mutation generation and discards any snapshot captured before its own successful send/withdraw (`queueGeneration` in `steering-dock.ts`).
 - **Reads never mutate or log contents** — the queue read performs no run, event, message, or pending-interaction write; the hot path is one run lookup plus one in-memory handle snapshot. Operator message text is never logged.
+
+## Transcript operator row (read model)
+
+Stored operator receipt (written by the **executor**, never by a steering route — AD-6):
+
+- ordinary `text` row
+- strict metadata triple: `origin: 'operator'`, `operator_user_id: string | null`, `message_id`
+- no fourth persisted identity/name field
+
+Response-only derived field on the text variant of the node-message read API:
+
+- `operator_display_name: string | null` (optional on non-operator rows — omitted entirely)
+- non-null sender → trimmed current `users.display_name`, else first 8 characters of the id
+- `null` only when `operator_user_id` is null (identity-less)
+- lookup failure fails open to the short-id map; transcript list/detail still return 200
+- the web never fetches users for this field (compat short-id guard only)
 
 ## Boundary notes
 
