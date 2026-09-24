@@ -1331,4 +1331,145 @@ describe('ConsoleInspectPane', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('T4.16 idleAwaitExpired reaches selected room including grp.body', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
+        return new Response(
+          JSON.stringify(
+            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+          ),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch;
+
+    const expired = 'interrupted by operator, no redirect received';
+    try {
+      const events: WorkflowEvent[] = [
+        workflowEvent({
+          id: 'start-body',
+          event_type: 'node_started',
+          step_name: 'grp.body',
+          data: { occurrence_id: 'occ-body' },
+          event_order: 1,
+        }),
+        workflowEvent({
+          id: 'fail-body',
+          event_type: 'node_failed',
+          step_name: 'grp.body',
+          data: { occurrence_id: 'occ-body', error: expired },
+          event_order: 2,
+        }),
+        workflowEvent({
+          id: 'fail-grp',
+          event_type: 'node_failed',
+          step_name: 'grp',
+          data: { occurrence_id: 'occ-grp', error: `Loop group failed: body: ${expired}` },
+          event_order: 3,
+        }),
+      ];
+      const nodeStates = [
+        nodeState({ nodeId: 'grp', name: 'Group', status: 'failed' }),
+        nodeState({ nodeId: 'grp.body', name: 'Body', status: 'failed' }),
+      ];
+      const nodeExecutions: NodeExecution[] = [
+        {
+          node_id: 'grp',
+          status: 'failed',
+          occurrence_id: 'occ-grp',
+          error: `Loop group failed: body: ${expired}`,
+        },
+        {
+          node_id: 'grp.body',
+          status: 'failed',
+          occurrence_id: 'occ-body',
+          error: expired,
+        },
+      ];
+      const logEntries = buildConsoleLogEntries({
+        rows: buildLogRows(nodeStates, events, nodeExecutions, CREATED_AT),
+        rawEvents: events,
+        nodeRuns: foldNodeRuns(events.map(toRunEvent)),
+        runStartedAt: CREATED_AT,
+      });
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-expire', status: 'failed' }),
+          nodeStates,
+          events: events.map(toRunEvent),
+          rawEvents: events,
+          nodeExecutions,
+          logEntries,
+          selectedNodeId: 'grp.body',
+          selectedLogRowId: logEntries.find(e => e.row.nodeId === 'grp.body')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            {
+              id: 'grp',
+              loop_group: {
+                max_iterations: 1,
+                fresh_context: false,
+                nodes: [{ id: 'body', prompt: 'Work' }],
+              },
+            },
+          ],
+        });
+      });
+      await flush();
+
+      const bodyRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(bodyRoom).not.toBeNull();
+      if (bodyRoom === null) throw new Error('missing body room');
+      const bodyProps = findPropsWithKey(bodyRoom, 'idleAwaitExpired');
+      expect(bodyProps).not.toBeNull();
+      expect(bodyProps?.idleAwaitExpired).toBe(true);
+      expect(bodyProps?.nodeTerminal).toBe(true);
+
+      await act(async () => {
+        renderPane({
+          run: run({ id: 'run-expire', status: 'failed' }),
+          nodeStates,
+          events: events.map(toRunEvent),
+          rawEvents: events,
+          nodeExecutions,
+          logEntries,
+          selectedNodeId: 'grp',
+          selectedLogRowId: logEntries.find(e => e.row.nodeId === 'grp')?.row.id ?? null,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+          loadDefinition: async (): Promise<DagNode[]> => [
+            {
+              id: 'grp',
+              loop_group: {
+                max_iterations: 1,
+                fresh_context: false,
+                nodes: [{ id: 'body', prompt: 'Work' }],
+              },
+            },
+          ],
+        });
+      });
+      await flush();
+
+      const groupRoom = host.querySelector('[data-testid="console-inspect-room"]');
+      expect(groupRoom).not.toBeNull();
+      if (groupRoom === null) throw new Error('missing group room');
+      const groupProps = findPropsWithKey(groupRoom, 'idleAwaitExpired');
+      expect(groupProps?.idleAwaitExpired).toBe(false);
+      expect(groupProps?.nodeTerminal).toBe(true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -32,6 +32,17 @@
       "reason": "No qualified journey for these semantics; broad run paths must not imply coverage."
     },
     {
+      "id": "ui.steering-and-queue",
+      "description": "Interrupt/redirect, never-sent recovery, and finished-iteration dock behavior beyond the qualified queue journey",
+      "impact_paths": [
+        "e2e/ui/agent-interrupt-redirect.spec.ts",
+        "e2e/ui/agent-never-sent.spec.ts",
+        "e2e/ui/agent-finished-iteration.spec.ts",
+        "e2e/ui/agent-queue-convergence.spec.ts"
+      ],
+      "reason": "Dedicated product e2e exists, but these later steering states do not yet have qualified verify-archon scenarios. Queue proof must not imply coverage of them."
+    },
+    {
       "id": "workflow.other-semantics",
       "description": "Workflow features outside deterministic execution and simple approval/retry",
       "impact_paths": [],

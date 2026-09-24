@@ -39,7 +39,7 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "064cdec8843f7287774b9a1676c24369a54ce99f661b94578c2d7de5b601c52b"
+      "sha256": "b1064cd1b4b467378de39d43d61a37bf9de9082c8507b730f75d783af73f74a2"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
@@ -68,6 +68,18 @@
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/README.md",
       "sha256": "8d80940c3a90daa2ff060f1a8e186385d20d04b7a6d7ffa804e56f120dfa44c3"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "sha256": "207764b40c36a4ac605e84097fb21434bcdaf8634f933623c13609af169f0332"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "sha256": "01c56edf7f7d87cf284acc0b1dd872d47ccb79db0cb4c4355a030e085b294855"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/support.js",
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe"
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
@@ -124,11 +136,20 @@
       "expected": "The runtime graph fills the run view with status-marked node cards, connecting edges, and zoom and fit controls; no minimap is present. Compare structure and controls, not node count or labels."
     },
     {
+      "id": "queue-anatomy",
+      "states": [
+        "queue-waiting"
+      ],
+      "source": "claude-design/design_handoff_node_room_transcript_steering/README.md#queue-band--restructured",
+      "expected": "A full-width waiting queue band has an interactive expanded header with caret and count, one-based ordinals, a visible next-item inset marker, and sans-serif human message text. A waiting row does not show the transcript-delivery word sent. Ignore provider-specific per-item Send now controls."
+    },
+    {
       "id": "layout-and-focus",
       "states": [
         "row-closed",
         "raw-open",
-        "ask-pending"
+        "ask-pending",
+        "queue-waiting"
       ],
       "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md#accessibility-floor",
       "expected": "Required content fits the measured region; keyboard focus is visible; desktop and narrow states remain readable. Check only the selected room/card, not future mockup features."
@@ -143,7 +164,8 @@
     "raw-open",
     "ask-pending",
     "assistant-report",
-    "runtime-graph"
+    "runtime-graph",
+    "queue-waiting"
   ],
   "viewports": [
     {
@@ -163,7 +185,7 @@
   "accepted_differences": [
     "DESIGN.md wins over mockup-only 22 px targets and tertiary Raw text.",
     "Current semantic tokens apply separately on Console and Legacy.",
-    "Mockup-only Replay, view-as, steering dock, future tool family bodies and unrelated nodes are excluded.",
+    "Mockup-only Replay, view-as, Stop and idle-after-interrupt transitions, provider-specific per-item Send now, future tool family bodies and unrelated nodes are excluded.",
     "References are resized to the measured region width; browser and region dimensions are recorded separately.",
     "Transcript-display captures come from a separate prepared run; its seeded fixture text, node names, and graph shape differ from the HITL run and mockup data."
   ],

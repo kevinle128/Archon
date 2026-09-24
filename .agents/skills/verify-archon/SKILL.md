@@ -1,6 +1,7 @@
 ---
 name: verify-archon
 description: Prove Archon CLI workflows, solo HTTP API, and Console/Legacy run UI from an explicit selection; retain functional and visual evidence.
+disable-model-invocation: true
 ---
 
 # Verify Archon
@@ -53,7 +54,7 @@ bun "$VERIFY_HELPER" prove --selection "$ATTEMPT/selection.json" --repo "$TARGET
 ```
 
 Obtain `BASE_SHA` independently from the change request or integration branch.
-The default is the merge base with local `dev`, then `origin/dev` if local `dev` is absent.
+The default is the merge base with local `develop`, then `origin/develop` if local `develop` is absent.
 A one-commit repository can use its initial commit.
 Otherwise a missing base is an error.
 Never trust the proposal to supply the expected base.
@@ -96,8 +97,15 @@ The helper rechecks provenance, source cleanliness, attachments, and tooling aft
 
 Follow the complete [visual procedure](references/visual-verification.md).
 [visual-config.json](visual-config.json) pins the design source chain, content hashes, surfaces, states, viewports, region width, criteria, and accepted differences.
+Use this authority order for conflicts: current explicit user decision; user-approved normative mockup, design, or specification; other normative project documentation; agent-authored plan, report, or test; implementation and implementation screenshots.
+Only explicit supersession from the user or a higher-authority source can reverse an applicable mockup invariant.
+A scope cut can omit a capability, but it cannot redesign an in-scope element.
 The `ui.visual` runner identity includes that configuration's digest in the catalog.
 Every UI behavior includes this scenario, even when the proposal names only a functional behavior.
+
+The queue state compares both product surfaces with the approved Node Room mockups.
+It requires an interactive expanded header with a caret and count, one-based ordinals, a marked next item, sans-serif operator text, and no transcript-delivery `sent` label inside a waiting queue row.
+Stop, idle-after-interrupt, and provider-specific per-item controls are outside this queue-state check.
 Do not put ad hoc visual requirements into v1 proposal or selection fields.
 A new UI requirement needs a reviewed catalog/configuration update and fresh selection.
 

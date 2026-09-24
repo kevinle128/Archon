@@ -139,8 +139,13 @@ The process boundary now binds **all** of steering, not only mid-turn delivery:
 - A run whose executor is a **detached child** has no reachable live handle → Send and Interrupt return a clear "not steerable here" (the UI states it).
   Cancel and normal `/workflow resume` still work on it.
 
+<<<<<<< HEAD
 This is the accepted v1 boundary.
 A server restart drops the registry with the live sessions; any in-flight steer is lost and the run resumes normally — matching aion, which keeps `active_turn_id` in memory and treats a crash mid-turn the same way.
+=======
+This is the accepted v1 boundary. A server restart drops the registry with the live sessions; any in-flight steer is lost and the process-local handle, timer, and continuation are dropped, leaving a durable non-terminal run; Archon never autonomously fails or resumes it from staleness — recovery is explicit abandon/cancel, then CLI `archon workflow retry-node` when desired (the web Retry action is not shown for a still-`running` node) — matching aion's process-local `active_turn_id` loss on crash, without inventing autonomous recovery.
+
+> > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
 
 Each live handle also carries the current `retry_epoch` as a mutation fence.
 Every send, interrupt, keepalive, and withdraw mutation supplies the epoch selected by the client.

@@ -5529,6 +5529,31 @@ describe('ConsoleNodeRoom', () => {
       expect(props?.nodeExecutionKey).toBe('occ-review-1');
     });
 
+    test('T4.16 pass-through pins idleAwaitExpired on the dock', async () => {
+      const emptyLoad = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+      await act(async () => {
+        renderRoom({
+          nodeId: 'review',
+          selectedRow: row({ nodeId: 'review', label: 'Review', status: 'running' }),
+          definitionNodes: [{ id: 'review', prompt: 'Write' }],
+          nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'running' })],
+          isLive: true,
+          loadMessages: emptyLoad,
+          nodeTerminal: true,
+          idleAwaitExpired: true,
+          nodeExecutionKey: 'occ-review-1',
+        });
+      });
+      await flush();
+
+      const start = host.querySelector('textarea') ?? host;
+      const props = findPropsWithKey(start, 'idleAwaitExpired');
+      expect(props).not.toBeNull();
+      expect(props?.idleAwaitExpired).toBe(true);
+      expect(props?.nodeTerminal).toBe(true);
+      expect(props?.nodeExecutionKey).toBe('occ-review-1');
+    });
+
     test('T3.17 occurrence switch keeps observed receipt under stable run/node dock key', async () => {
       let queued: { message_id: string; message: string }[] = [
         { message_id: 'id-a', message: 'alpha receipt' },

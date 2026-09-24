@@ -2,7 +2,7 @@
   "dock-console": {
     "roomWidth460": 460,
     "stopTarget": {
-      "width": 84.6875,
+      "width": 84.890625,
       "height": 32
     },
     "stoppingContrast": 7.9,
@@ -11,8 +11,8 @@
     "band": {
       "maxHeight": "297px",
       "overflowY": "auto",
-      "clientHeight": 33,
-      "scrollHeight": 33,
+      "clientHeight": 36,
+      "scrollHeight": 36,
       "viewportHeight": 900
     },
     "focusRing": {
@@ -27,7 +27,7 @@
   "dock-legacy": {
     "roomWidth460": 460,
     "stopTarget": {
-      "width": 85.40625,
+      "width": 85.421875,
       "height": 32
     },
     "stoppingContrast": 5.33,
@@ -36,8 +36,8 @@
     "band": {
       "maxHeight": "297px",
       "overflowY": "auto",
-      "clientHeight": 33,
-      "scrollHeight": 33,
+      "clientHeight": 36,
+      "scrollHeight": 36,
       "viewportHeight": 900
     },
     "focusRing": {

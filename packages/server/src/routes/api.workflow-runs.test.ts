@@ -760,6 +760,7 @@ import type {
   SteeringIdleWake,
 } from '@archon/workflows/steering-registry';
 import { getAuth } from '../auth';
+import { keepaliveWorkflowNodeResponseSchema } from './schemas/workflow.schemas';
 
 // ---------------------------------------------------------------------------
 // Test fixtures
@@ -7613,6 +7614,368 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
     expect(required).not.toContain('steeringSubState');
     const sendRoute = paths['/api/workflows/runs/{runId}/nodes/{nodeId}/send'];
     expect(sendRoute?.post).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests: POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive (Story 2.12)
+// Bodyless re-arm of the idle-await inactivity timer. Guard ladder mirrors
+// interrupt; live idle rearms, other live states are a successful no-op.
+// ---------------------------------------------------------------------------
+
+function postNodeKeepalive(
+  app: OpenAPIHono,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/keepalive`, {
+    method: 'POST',
+    headers,
+  });
+}
+
+describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
+  beforeEach(resetSteeringMocks);
+
+  // T3.1 Idle success
+  test('T3.1 returns 200 and rearms once while the idle waiter stays pending', async () => {
+    const { handle, idleWait } = idleInterruptibleSetup();
+    let keepaliveCalls = 0;
+    const originalKeepalive = handle.keepalive.bind(handle);
+    Object.defineProperty(handle, 'keepalive', {
+      configurable: true,
+      value: (): 'rearmed' | 'not_idle' => {
+        keepaliveCalls += 1;
+        return originalKeepalive();
+      },
+    });
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app, { 'X-Archon-User': STEER_STARTER_ID });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(keepaliveCalls).toBe(1);
+    expect(handle.snapshot().phase).toBe('live');
+    expect(handle.snapshot().subState).toBe('idle-after-interrupt');
+    // Microtask drain — keepalive must not have resolved the waiter.
+    const stillPending = await Promise.race([
+      idleWait.then(() => 'woke' as const),
+      Promise.resolve().then(() => 'still-idle' as const),
+    ]);
+    expect(stillPending).toBe('still-idle');
+  });
+
+  // T3.2 Live no-op states
+  test('T3.2 generating, between-turn, and queue-only return 200 without mutating state', async () => {
+    const { app } = makeApp();
+
+    // Generating (mid-turn)
+    {
+      const { handle, aborts } = liveInterruptibleSetup('gen');
+      const before = handle.snapshot();
+      const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, 'gen');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+      expect(aborts()).toBe(0);
+      expect(handle.snapshot().phase).toBe(before.phase);
+      expect(handle.snapshot().subState).toBe(before.subState);
+      expect(handle.snapshot().queued).toEqual(before.queued);
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+      expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
+      getSteeringRegistry().clearForTests();
+      mockCreateWorkflowEvent.mockClear();
+      mockUpdateWorkflowRun.mockClear();
+    }
+
+    // Between-turn (live interruptible, no current turn, not idle)
+    {
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+      mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'between')]);
+      const handle = getSteeringRegistry().register(STEER_RUN_ID, 'between', {
+        interruptible: true,
+      });
+      const token = handle.beginTurn(new AbortController());
+      handle.settleTurn(token, 'generating');
+      const before = handle.snapshot();
+      const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, 'between');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+      expect(handle.snapshot().phase).toBe(before.phase);
+      expect(handle.snapshot().subState).toBe('generating');
+      expect(handle.snapshot().queued).toEqual(before.queued);
+      getSteeringRegistry().clearForTests();
+    }
+
+    // Queue-only (non-interruptible)
+    {
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+      mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'queueonly')]);
+      const handle = getSteeringRegistry().register(STEER_RUN_ID, 'queueonly');
+      const before = handle.snapshot();
+      const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, 'queueonly');
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+      expectNoSteeringMutation(handle, before);
+    }
+  });
+
+  // T3.3 Keepalive never resolves idle-await
+  test('T3.3 later send_now still resolves the original waiter after keepalives', async () => {
+    const { handle, idleWait } = idleInterruptibleSetup();
+    const { app } = makeApp();
+
+    expect((await postNodeKeepalive(app)).status).toBe(200);
+    expect((await postNodeKeepalive(app)).status).toBe(200);
+    expect(handle.snapshot().subState).toBe('idle-after-interrupt');
+
+    const res = await postNodeSend(app, sendPayload({ intent: 'send_now' }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID,
+      state: 'awaiting_send_now',
+    });
+
+    const wake = await idleWait;
+    expect(wake.kind).toBe('send_now');
+    if (wake.kind === 'send_now') {
+      expect(wake.messages.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID]);
+    }
+    expect(handle.snapshot().subState).toBe('generating');
+    expect(handle.snapshot().queued).toHaveLength(0);
+  });
+
+  // T3.4 Steering actor grant
+  test('T3.4 actor ladder matches send/interrupt: starter, member, admin, identity-less', async () => {
+    for (const actor of [STEER_STARTER_ID, 'member-other', 'user-admin-9', undefined]) {
+      idleInterruptibleSetup();
+      const { app } = makeApp();
+      const res = await postNodeKeepalive(app, actor ? { 'X-Archon-User': actor } : {});
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ success: true });
+      getSteeringRegistry().clearForTests();
+    }
+  });
+
+  // T3.5 Auth ordering
+  test('T3.5 returns nested 401 for a gated unauthenticated caller before run lookup', async () => {
+    getAuth();
+    const savedDb = process.env.DATABASE_URL;
+    const savedSecret = process.env.BETTER_AUTH_SECRET;
+    const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
+    process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
+    process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
+    process.env.ARCHON_WEB_AUTH_REQUIRED = 'false';
+    try {
+      const { app } = makeApp();
+      const res = await postNodeKeepalive(app);
+
+      expect(res.status).toBe(401);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: { code: 'unauthenticated', message: 'Authentication required' },
+      });
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    } finally {
+      if (savedDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedDb;
+      if (savedSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = savedSecret;
+      if (savedRequired === undefined) delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+      else process.env.ARCHON_WEB_AUTH_REQUIRED = savedRequired;
+    }
+  });
+
+  // T3.6 Not found
+  test('T3.6 returns nested 404 for unknown run and unknown node/no handle', async () => {
+    const { app } = makeApp();
+
+    mockGetWorkflowRun.mockResolvedValue(null);
+    await expectSteeringError(await postNodeKeepalive(app), 404, 'not_found');
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'other-node')]);
+    await expectSteeringError(await postNodeKeepalive(app), 404, 'not_found');
+    expect(getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID)).toBeUndefined();
+  });
+
+  // T3.7 Terminal
+  test('T3.7 returns 409 node_finished for terminal run, terminal node, and closed handle', async () => {
+    // Terminal run with stale live handle
+    {
+      const { handle } = liveInterruptibleSetup();
+      mockGetWorkflowRun.mockReset();
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
+      const before = handle.snapshot();
+      const { app } = makeApp();
+      await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
+      expectNoSteeringMutation(handle, before);
+      getSteeringRegistry().clearForTests();
+    }
+
+    // Terminal projected node
+    {
+      const { handle } = liveInterruptibleSetup();
+      mockListWorkflowEvents.mockResolvedValue([steerEvent('node_completed', STEER_NODE_ID)]);
+      const before = handle.snapshot();
+      const { app } = makeApp();
+      await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
+      expectNoSteeringMutation(handle, before);
+      getSteeringRegistry().clearForTests();
+    }
+
+    // Closed handle
+    {
+      const { handle } = liveInterruptibleSetup();
+      handle.close();
+      const before = handle.snapshot();
+      const { app } = makeApp();
+      await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
+      expectNoSteeringMutation(handle, before);
+    }
+  });
+
+  // T3.8 Not steerable here
+  test('T3.8 returns 422 not_steerable_here for missing handle and parked handle', async () => {
+    // Known non-terminal node without a handle
+    {
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+      mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+      const { app } = makeApp();
+      await expectSteeringError(await postNodeKeepalive(app), 422, 'not_steerable_here');
+      expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    }
+
+    // Parked AskHuman handle
+    {
+      const { handle } = liveInterruptibleSetup();
+      handle.park();
+      mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'paused' }));
+      mockListPendingInteractions.mockResolvedValue([
+        {
+          id: 'pi-steer-ask',
+          workflow_run_id: STEER_RUN_ID,
+          node_id: STEER_NODE_ID,
+          tool_use_id: 'toolu_steer_ask',
+          kind: 'ask',
+          status: 'pending',
+          envelope: {},
+          answer: null,
+          provider_session_id: 'sess-steer',
+          created_at: NOW,
+          resolved_at: null,
+          resolved_by: null,
+        },
+      ]);
+      const before = handle.snapshot();
+      const { app } = makeApp();
+      await expectSteeringError(await postNodeKeepalive(app), 422, 'not_steerable_here');
+      expectNoSteeringMutation(handle, before);
+    }
+  });
+
+  // T3.9 Final re-read
+  test('T3.9 returns 409 and never calls keepalive when run turns terminal between reads', async () => {
+    const { handle } = liveInterruptibleSetup();
+    let keepaliveCalls = 0;
+    const originalKeepalive = handle.keepalive.bind(handle);
+    Object.defineProperty(handle, 'keepalive', {
+      configurable: true,
+      value: (): 'rearmed' | 'not_idle' => {
+        keepaliveCalls += 1;
+        return originalKeepalive();
+      },
+    });
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun
+      .mockResolvedValueOnce(mockSteerableRun())
+      .mockResolvedValueOnce(mockSteerableRun({ status: 'cancelled' }));
+    const { app } = makeApp();
+    await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
+    expect(keepaliveCalls).toBe(0);
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+  });
+
+  // T3.10 Schema/OpenAPI
+  test('T3.10 strict success schema rejects extras and OpenAPI exposes bodyless POST', async () => {
+    expect(keepaliveWorkflowNodeResponseSchema.safeParse({ success: true }).success).toBe(true);
+    expect(
+      keepaliveWorkflowNodeResponseSchema.safeParse({ success: true, extra: true }).success
+    ).toBe(false);
+    expect(keepaliveWorkflowNodeResponseSchema.safeParse({ success: false }).success).toBe(false);
+
+    const { app } = makeApp();
+    const res = await app.request('/api/openapi.json');
+    expect(res.status).toBe(200);
+    const doc = (await res.json()) as Record<string, unknown>;
+
+    const resolveRef = (node: unknown): unknown => {
+      if (typeof node !== 'object' || node === null || !('$ref' in node)) return node;
+      const ref = (node as { $ref: string }).$ref;
+      if (!ref.startsWith('#/')) return node;
+      return ref
+        .slice(2)
+        .split('/')
+        .reduce<unknown>(
+          (acc, seg) =>
+            typeof acc === 'object' && acc !== null
+              ? (acc as Record<string, unknown>)[seg]
+              : undefined,
+          doc
+        );
+    };
+
+    const paths = doc.paths as Record<
+      string,
+      { post?: { requestBody?: unknown; responses?: Record<string, unknown> } }
+    >;
+    const keepaliveRoute = paths['/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive'];
+    expect(keepaliveRoute?.post).toBeDefined();
+    expect(keepaliveRoute?.post?.requestBody).toBeUndefined();
+
+    const okResponse = keepaliveRoute?.post?.responses?.['200'] as
+      | { content?: Record<string, { schema?: unknown }> }
+      | undefined;
+    const respSchema = resolveRef(okResponse?.content?.['application/json']?.schema);
+    expect(respSchema).toMatchObject({
+      type: 'object',
+      required: ['success'],
+    });
+    const props =
+      typeof respSchema === 'object' && respSchema !== null
+        ? (respSchema as { properties?: Record<string, unknown> }).properties
+        : undefined;
+    expect(props?.success).toMatchObject({ enum: [true] });
+    expect(props).not.toHaveProperty('sub_state');
+
+    const schemas = (doc.components as { schemas: Record<string, unknown> }).schemas;
+    expect(schemas['KeepaliveWorkflowNodeResponse']).toBeDefined();
+
+    for (const code of ['401', '403', '404', '409', '422', '500']) {
+      expect(keepaliveRoute?.post?.responses?.[code]).toBeDefined();
+    }
+  });
+
+  // T3.11 No persistence / content
+  test('T3.11 writes no durable row and does not log operator prose', async () => {
+    const { handle } = idleInterruptibleSetup();
+    const before = handle.snapshot();
+    const { app } = makeApp();
+    const res = await postNodeKeepalive(app);
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true });
+    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    expect(mockAddMessage).not.toHaveBeenCalled();
+    expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
+    // Snapshot may differ only by timer generation internals — queue/phase stay.
+    expect(handle.snapshot().phase).toBe(before.phase);
+    expect(handle.snapshot().queued).toEqual(before.queued);
+    expect(handle.snapshot().acceptedCount).toBe(before.acceptedCount);
   });
 });
 

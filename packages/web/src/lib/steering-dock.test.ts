@@ -48,6 +48,13 @@ import {
   STEERING_INTERRUPT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_NEVER_SENT_DISCLOSURE,
+  STEERING_IDLE_AWAIT_DISCLOSURE,
+  STEERING_KEEPALIVE_COALESCE_MS,
+  STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE,
+  IDLE_AWAIT_EXPIRED_ERROR,
+  createKeepaliveCoalescer,
+  isKeepaliveActivityKey,
+  neverSentDisclosure,
   STEERING_SEND_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   SteeringRequestError,
@@ -1834,5 +1841,303 @@ describe('observed ledger and never-sent reconciliation (T1.1–T1.22)', () => {
       },
     ];
     expect([...collectWrittenOperatorMessageIds(rows)]).toEqual(['msg-1']);
+  });
+});
+
+describe('Story 2.12 idle-await disclosure and keepalive coalescer (T4.1–T4.6)', () => {
+  test('T4.1 exact copies match authority byte-for-byte; normal terminal copy unchanged', () => {
+    expect(STEERING_IDLE_AWAIT_DISCLOSURE).toBe(
+      'no redirect ends this node after 30 min of inactivity · typing keeps it open'
+    );
+    expect(STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE).toBe(
+      'node failed · interrupted with no redirect · none of this was sent'
+    );
+    expect(IDLE_AWAIT_EXPIRED_ERROR).toBe('interrupted by operator, no redirect received');
+    expect(STEERING_KEEPALIVE_COALESCE_MS).toBe(30_000);
+    expect(STEERING_NEVER_SENT_DISCLOSURE).toBe('node finished · none of this was sent');
+    expect(neverSentDisclosure(false)).toBe(STEERING_NEVER_SENT_DISCLOSURE);
+    expect(neverSentDisclosure(true)).toBe(STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE);
+  });
+
+  interface KeepaliveClock {
+    nowMs: number;
+    setTimer: typeof setTimeout;
+    clearTimer: typeof clearTimeout;
+    pending: Map<number, { fn: () => void; dueAt: number }>;
+    advanceTo: (targetMs: number) => void;
+  }
+
+  function keepaliveClock(startMs = 0): KeepaliveClock {
+    let nextHandle = 0;
+    const pending = new Map<number, { fn: () => void; dueAt: number }>();
+    const clock: KeepaliveClock = {
+      nowMs: startMs,
+      pending,
+      setTimer: ((handler: TimerHandler, timeout?: number): number => {
+        const handle = ++nextHandle;
+        const fn: () => void =
+          typeof handler === 'function' ? (handler as () => void) : (): void => undefined;
+        pending.set(handle, { fn, dueAt: clock.nowMs + (timeout ?? 0) });
+        return handle;
+      }) as typeof setTimeout,
+      clearTimer: ((handle: unknown): void => {
+        pending.delete(handle as number);
+      }) as typeof clearTimeout,
+      advanceTo(targetMs: number): void {
+        while (pending.size > 0) {
+          let nextHandleId: number | undefined;
+          let nextDue = Number.POSITIVE_INFINITY;
+          for (const [handle, entry] of pending) {
+            if (
+              entry.dueAt < nextDue ||
+              (entry.dueAt === nextDue && (nextHandleId === undefined || handle < nextHandleId))
+            ) {
+              nextDue = entry.dueAt;
+              nextHandleId = handle;
+            }
+          }
+          if (nextHandleId === undefined || nextDue > targetMs) {
+            clock.nowMs = targetMs;
+            return;
+          }
+          const entry = pending.get(nextHandleId);
+          if (entry === undefined) continue;
+          pending.delete(nextHandleId);
+          clock.nowMs = entry.dueAt;
+          entry.fn();
+        }
+        clock.nowMs = targetMs;
+      },
+    };
+    return clock;
+  }
+
+  test('T4.2 first touch sends immediately; interior touches schedule one trailing at boundary', () => {
+    const clock = keepaliveClock();
+    const calls: number[] = [];
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+      windowMs: STEERING_KEEPALIVE_COALESCE_MS,
+    });
+    try {
+      coalescer.touch();
+      expect(calls).toEqual([0]);
+
+      clock.advanceTo(1);
+      coalescer.touch();
+      clock.advanceTo(29_999);
+      coalescer.touch();
+      expect(calls).toEqual([0]);
+      expect(clock.pending.size).toBe(1);
+
+      clock.advanceTo(30_000);
+      expect(calls).toEqual([0, 30_000]);
+      expect(clock.pending.size).toBe(0);
+    } finally {
+      coalescer.dispose();
+    }
+  });
+
+  test('T4.3 continuous activity stays one call per window and represents the last keystroke within 30s', () => {
+    const clock = keepaliveClock();
+    const calls: number[] = [];
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      coalescer.touch();
+      for (const t of [5_000, 15_000, 25_000, 29_000]) {
+        clock.advanceTo(t);
+        coalescer.touch();
+      }
+      clock.advanceTo(30_000);
+      expect(calls).toEqual([0, 30_000]);
+
+      for (const t of [35_000, 45_000, 55_000]) {
+        clock.advanceTo(t);
+        coalescer.touch();
+      }
+      clock.advanceTo(60_000);
+      expect(calls).toEqual([0, 30_000, 60_000]);
+
+      // Gap past a full window → immediate send; final activity represented within 30s.
+      clock.advanceTo(95_000);
+      coalescer.touch();
+      expect(calls).toEqual([0, 30_000, 60_000, 95_000]);
+      clock.advanceTo(100_000);
+      coalescer.touch();
+      clock.advanceTo(125_000);
+      expect(calls).toEqual([0, 30_000, 60_000, 95_000, 125_000]);
+    } finally {
+      coalescer.dispose();
+    }
+  });
+
+  test('T4.4 dispose cancels pending work and makes late/in-flight completion inert', async () => {
+    const clock = keepaliveClock();
+    let resolveSend!: (value: unknown) => void;
+    const inFlight = new Promise<unknown>(resolve => {
+      resolveSend = resolve;
+    });
+    const calls: number[] = [];
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+        return inFlight;
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+
+    coalescer.touch();
+    expect(calls).toEqual([0]);
+    clock.advanceTo(10_000);
+    coalescer.touch();
+    expect(clock.pending.size).toBe(1);
+
+    coalescer.dispose();
+    expect(clock.pending.size).toBe(0);
+
+    clock.advanceTo(30_000);
+    expect(calls).toEqual([0]);
+
+    resolveSend({ success: true });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(calls).toEqual([0]);
+
+    // Replacement coalescer is independent; first touch sends immediately.
+    const replacementCalls: number[] = [];
+    const replacement = createKeepaliveCoalescer({
+      send: () => {
+        replacementCalls.push(clock.nowMs);
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      replacement.touch();
+      expect(replacementCalls).toEqual([30_000]);
+      expect(calls).toEqual([0]);
+    } finally {
+      replacement.dispose();
+    }
+  });
+
+  test('T4.5 rejected send is handled; later activity remains bounded without a storm', async () => {
+    const clock = keepaliveClock();
+    const calls: number[] = [];
+    let shouldReject = true;
+    const coalescer = createKeepaliveCoalescer({
+      send: () => {
+        calls.push(clock.nowMs);
+        if (shouldReject) {
+          return Promise.reject(new Error('network down'));
+        }
+        return Promise.resolve({ success: true });
+      },
+      now: () => clock.nowMs,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      coalescer.touch();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(calls).toEqual([0]);
+
+      clock.advanceTo(5_000);
+      coalescer.touch();
+      clock.advanceTo(12_000);
+      coalescer.touch();
+      expect(calls).toEqual([0]);
+      expect(clock.pending.size).toBe(1);
+
+      shouldReject = false;
+      clock.advanceTo(30_000);
+      await Promise.resolve();
+      expect(calls).toEqual([0, 30_000]);
+      expect(clock.pending.size).toBe(0);
+    } finally {
+      coalescer.dispose();
+    }
+  });
+
+  test('T4.6 submit shortcut is excluded; plain, navigation, and composing keys count', () => {
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: true,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 13,
+      })
+    ).toBe(false);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: false,
+        ctrlKey: true,
+        isComposing: false,
+        keyCode: 13,
+      })
+    ).toBe(false);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'a',
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 65,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'ArrowLeft',
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 37,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: false,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 13,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: true,
+        ctrlKey: false,
+        isComposing: true,
+        keyCode: 13,
+      })
+    ).toBe(true);
+    expect(
+      isKeepaliveActivityKey({
+        key: 'Enter',
+        metaKey: true,
+        ctrlKey: false,
+        isComposing: false,
+        keyCode: 229,
+      })
+    ).toBe(true);
   });
 });

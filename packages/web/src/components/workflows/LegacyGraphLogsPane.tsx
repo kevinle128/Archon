@@ -24,6 +24,7 @@ import { readApprovalContext, type WebApprovalContext } from '@/lib/approval-con
 import {
   chooseExecutionForNode,
   hasTerminalNodeEvidence,
+  hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
   resolveFinishedIterationView,
   roomOpenerId,
@@ -282,6 +283,8 @@ export function LegacyGraphLogsPane({
         });
   const nodeTerminal =
     selectedNodeId === null ? false : hasTerminalNodeEvidence(nodeExecutions, selectedNodeId);
+  const idleAwaitExpired =
+    selectedNodeId === null ? false : hasIdleAwaitExpiredEvidence(nodeExecutions, selectedNodeId);
   const nodeExecutionKey =
     selectedNodeId === null ? null : latestNodeExecutionKey(events, selectedNodeId);
 
@@ -534,6 +537,7 @@ export function LegacyGraphLogsPane({
         onSelectRow={onSelectExecution}
         finishedIteration={finishedIteration}
         nodeTerminal={nodeTerminal}
+        idleAwaitExpired={idleAwaitExpired}
         nodeExecutionKey={nodeExecutionKey}
         onClose={onCloseRoom}
         closeLabel={mode === 'single' ? 'Back' : 'Close'}

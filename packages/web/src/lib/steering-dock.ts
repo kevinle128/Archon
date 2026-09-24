@@ -105,6 +105,29 @@ export const STEERING_AGENT_INTERRUPTING = 'agent interrupting';
 export const STEERING_AGENT_IDLE = 'agent idle · Send now delivers';
 export const STEERING_AGENT_GENERATING = 'agent generating';
 export const STEERING_NEVER_SENT_DISCLOSURE = 'node finished · none of this was sent';
+/** Idle-after-interrupt inactivity bound disclosure (Story 2.12). */
+export const STEERING_IDLE_AWAIT_DISCLOSURE =
+  'no redirect ends this node after 30 min of inactivity · typing keeps it open';
+/**
+ * Terminal never-sent alert when the node failed for idle-await expiry
+ * (Story 2.12). Other terminal causes keep STEERING_NEVER_SENT_DISCLOSURE.
+ */
+export const STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE =
+  'node failed · interrupted with no redirect · none of this was sent';
+/**
+ * Intentional package-boundary mirror of the engine's IDLE_AWAIT_EXPIRED_ERROR.
+ * Web must not import @archon/workflows; the E2E guards the duplicated string.
+ */
+export const IDLE_AWAIT_EXPIRED_ERROR = 'interrupted by operator, no redirect received';
+/** Leading-plus-trailing keepalive coalescer window (ms). */
+export const STEERING_KEEPALIVE_COALESCE_MS = 30_000;
+
+/** Select the never-sent alert copy for the exact idle-await expiry cause. */
+export function neverSentDisclosure(idleAwaitExpired: boolean): string {
+  return idleAwaitExpired
+    ? STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE
+    : STEERING_NEVER_SENT_DISCLOSURE;
+}
 
 /** Exact finished-iteration disclosure; N is the proven live iteration. */
 export function finishedIterationDisclosure(liveIteration: number): string {
@@ -216,6 +239,15 @@ export function isQueueShortcut(event: SteeringShortcutEvent): boolean {
     !event.isComposing &&
     event.keyCode !== 229
   );
+}
+
+/**
+ * True when a keydown should count as composer activity for keepalive.
+ * Only the exact Cmd/Ctrl+Enter submit shortcut is excluded — plain Enter,
+ * navigation, and IME composition all remain eligible.
+ */
+export function isKeepaliveActivityKey(event: SteeringShortcutEvent): boolean {
+  return !isQueueShortcut(event);
 }
 
 /** sessionStorage key for the unsent draft + ambiguous retry id. */
@@ -864,6 +896,111 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
       clearTimer(timer);
       timer = null;
     }
+  };
+}
+
+export interface KeepaliveCoalescerOptions {
+  /** Fire one keepalive; may return a promise. Rejection is swallowed. */
+  readonly send: () => unknown;
+  /** Injectable clock for deterministic tests. Defaults to Date.now. */
+  readonly now?: () => number;
+  readonly setTimer?: typeof setTimeout;
+  readonly clearTimer?: typeof clearTimeout;
+  /** Coalesce window; defaults to STEERING_KEEPALIVE_COALESCE_MS. */
+  readonly windowMs?: number;
+}
+
+export interface KeepaliveCoalescer {
+  /** Record eligible activity. Leading-plus-trailing within the window. */
+  touch(): void;
+  /** Cancel pending work and make late settles inert. */
+  dispose(): void;
+}
+
+/**
+ * Leading-plus-trailing keepalive coalescer. First eligible activity sends
+ * immediately and opens a window; further activity inside the window schedules
+ * exactly one trailing send at the boundary. Continuous activity never exceeds
+ * one call per window, so the final keystroke is represented ≤ windowMs later
+ * and never expires early from a leading-only throttle. dispose() cancels the
+ * pending timer and suppresses in-flight completion side effects.
+ */
+export function createKeepaliveCoalescer(options: KeepaliveCoalescerOptions): KeepaliveCoalescer {
+  const now = options.now ?? Date.now;
+  const setTimer = options.setTimer ?? setTimeout;
+  const clearTimer = options.clearTimer ?? clearTimeout;
+  const windowMs = options.windowMs ?? STEERING_KEEPALIVE_COALESCE_MS;
+
+  let disposed = false;
+  let windowStartMs: number | null = null;
+  let trailingDue = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let generation = 0;
+
+  const clearPendingTimer = (): void => {
+    if (timer === null) return;
+    clearTimer(timer);
+    timer = null;
+  };
+
+  const invokeSend = (): void => {
+    if (disposed) return;
+    trailingDue = false;
+    clearPendingTimer();
+    windowStartMs = now();
+    const myGeneration = ++generation;
+    let payload: unknown;
+    try {
+      payload = options.send();
+    } catch {
+      // Synchronous throw is a handled failure — window already opened.
+      return;
+    }
+    void Promise.resolve(payload).then(
+      () => {
+        void myGeneration;
+      },
+      () => {
+        // Rejection is intentional no-op: no UI mutation, no per-key retry.
+        void myGeneration;
+      }
+    );
+  };
+
+  const scheduleTrailing = (): void => {
+    if (disposed || windowStartMs === null) return;
+    clearPendingTimer();
+    const delay = Math.max(0, windowMs - (now() - windowStartMs));
+    timer = setTimer((): void => {
+      timer = null;
+      if (disposed || !trailingDue) return;
+      invokeSend();
+    }, delay);
+  };
+
+  return {
+    touch(): void {
+      if (disposed) return;
+      if (windowStartMs === null) {
+        invokeSend();
+        return;
+      }
+      if (now() - windowStartMs >= windowMs) {
+        invokeSend();
+        return;
+      }
+      trailingDue = true;
+      if (timer === null) {
+        scheduleTrailing();
+      }
+    },
+    dispose(): void {
+      disposed = true;
+      trailingDue = false;
+      windowStartMs = null;
+      generation += 1;
+      clearPendingTimer();
+    },
   };
 }
 

@@ -204,6 +204,27 @@ export async function interruptNode(
   }
 }
 
+export type KeepaliveWorkflowNodeResponse = components['schemas']['KeepaliveWorkflowNodeResponse'];
+
+/**
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive — Story 2.12 bodyless
+ * idle-await re-arm. No request body; no auto-retry. Failures normalize through
+ * SteeringRequestError so callers keep the same refusal surface as interrupt.
+ */
+export async function keepaliveNode(
+  runId: string,
+  nodeId: string
+): Promise<KeepaliveWorkflowNodeResponse> {
+  try {
+    return await requestJson<KeepaliveWorkflowNodeResponse>(
+      `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/keepalive`,
+      { method: 'POST' }
+    );
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
 /**
  * DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw
  * a still-queued guidance message. Bodyless: requestJson adds a

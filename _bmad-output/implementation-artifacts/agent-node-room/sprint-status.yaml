@@ -1,5 +1,9 @@
 # generated: 2026-09-16 15:38:51 +0700
+<<<<<<< HEAD
 # last_updated: "2026-09-20 23:25:56 +0700"
+=======
+# last_updated: "2026-09-20 20:40:00 +0000"
+>>>>>>> 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
 # project: Archon
 # project_key: NOKEY
 # tracking_system: file-system
@@ -47,7 +51,11 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: "2026-09-16 15:38:51 +0700"
+<<<<<<< HEAD
 last_updated: "2026-09-20 23:25:56 +0700"
+=======
+last_updated: "2026-09-20 20:40:00 +0000"
+>>>>>>> 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
 project: Archon
 feature: agent-node-room
 project_key: NOKEY

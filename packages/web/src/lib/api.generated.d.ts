@@ -2737,6 +2737,102 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/keepalive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Re-arm the idle-await inactivity timer for a running workflow node
+         * @description Bodyless authenticated keepalive for an in-process steering handle. Re-arms the idle-await inactivity timer only when the handle is live and idle-after-interrupt with a pending waiter; other live handle states are a successful no-op. Never resolves idle-await, never writes a durable row, and never sends operator prose. Terminal outcomes map to the steering error shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Keepalive accepted — timer re-armed or live no-op */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["KeepaliveWorkflowNodeResponse"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run or node */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Node no longer running */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description No live steering session in this process */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}": {
         parameters: {
             query?: never;
@@ -5603,6 +5699,10 @@ export interface components {
             /** @enum {string} */
             sub_state: "idle-after-interrupt" | "generating";
         };
+        KeepaliveWorkflowNodeResponse: {
+            /** @enum {boolean} */
+            success: true;
+        };
         WithdrawWorkflowNodeResponse: {
             /** @enum {boolean} */
             success: true;
@@ -5838,7 +5938,6 @@ export interface components {
             /** @enum {string} */
             status: "pending" | "running" | "completed" | "failed" | "skipped" | "awaiting";
             retryEpoch: number;
-            steeringSubState?: "generating" | "idle-after-interrupt";
             duration?: number;
             error?: string;
             reason?: string;
@@ -5858,6 +5957,8 @@ export interface components {
                 /** @enum {string} */
                 type: "disabled";
             };
+            /** @enum {string} */
+            steeringSubState?: "generating" | "idle-after-interrupt";
         };
         PendingInteraction: {
             id: string;

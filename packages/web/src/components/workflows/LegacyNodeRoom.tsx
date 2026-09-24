@@ -56,6 +56,8 @@ export interface LegacyNodeRoomProps {
   finishedIteration?: FinishedIterationView | null;
   /** Actual node-terminal evidence from raw executions. Default false. */
   nodeTerminal?: boolean;
+  /** True when latest terminal execution failed for idle-await expiry. Default false. */
+  idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
   /** Node-wide written operator ids for terminal reconciliation. Default null. */
@@ -119,6 +121,7 @@ export function LegacyNodeRoom({
   onSelectRow,
   finishedIteration = null,
   nodeTerminal = false,
+  idleAwaitExpired = false,
   nodeExecutionKey = null,
   writtenOperatorMessageIds = null,
   onClose,
@@ -204,6 +207,7 @@ export function LegacyNodeRoom({
             onAskDraftChange={onAskDraftChange}
             finishedIteration={finishedIteration}
             nodeTerminal={nodeTerminal}
+            idleAwaitExpired={idleAwaitExpired}
             nodeExecutionKey={nodeExecutionKey}
             writtenOperatorMessageIds={writtenOperatorMessageIds}
             onSelectLiveRow={onSelectRow}
