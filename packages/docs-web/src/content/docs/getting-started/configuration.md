@@ -40,10 +40,10 @@ assistants:
     settingSources:
       - project
   codex:
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     modelReasoningEffort: medium
   omp:
-    model: openai-codex/gpt-5.6-sol
+    model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
     enableExtensions: false
 

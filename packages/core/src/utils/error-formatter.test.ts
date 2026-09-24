@@ -284,7 +284,7 @@ describe('classifyAndFormatError', () => {
     });
 
     test('returns message as-is for different model names', () => {
-      const msg = '❌ Model "gpt-5.6-sol" not available for your account';
+      const msg = '❌ Model "gpt-6-sol" not available for your account';
       const result = classifyAndFormatError(new Error(msg));
       expect(result).toBe(msg);
     });

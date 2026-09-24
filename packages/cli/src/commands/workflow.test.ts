@@ -488,7 +488,7 @@ describe('workflowListCommand', () => {
           name: 'plan',
           description: 'Planning workflow',
           provider: 'codex',
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-sol',
           // #2556: `effort:` is the one spelling. The deprecated field is
           // translated into it at load, so it can never reach this surface.
           effort: 'xhigh',
@@ -509,7 +509,7 @@ describe('workflowListCommand', () => {
       name: 'plan',
       description: 'Planning workflow',
       provider: 'codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
       effort: 'xhigh',
       webSearchMode: 'live',
     });

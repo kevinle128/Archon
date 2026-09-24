@@ -1139,7 +1139,7 @@ describe('CodexProvider', () => {
       });
 
       for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-sol',
         assistantConfig: {
           modelReasoningEffort: 'medium',
           webSearchMode: 'live',
@@ -1151,7 +1151,7 @@ describe('CodexProvider', () => {
 
       expect(mockStartThread).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-sol',
           modelReasoningEffort: 'medium',
           webSearchMode: 'live',
           additionalDirectories: ['/other/repo'],
@@ -1986,7 +1986,7 @@ describe('CodexProvider', () => {
       await expect(consumeGenerator()).rejects.toThrow(
         'Model "gpt-5.3-codex" is not available for your account'
       );
-      await expect(consumeGenerator()).rejects.toThrow('model: gpt-5.6-sol');
+      await expect(consumeGenerator()).rejects.toThrow('model: gpt-6-sol');
     });
 
     test('uses generic dashboard guidance when fallback mapping is unknown', async () => {

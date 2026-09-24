@@ -66,7 +66,8 @@ Treating a missing `task` as a no-op under-reports wildly.
 
 **Auto-promotion runs after every successful mutating op.**
 Multiple `in_progress` collapse to the first, and if none is in progress the earliest `pending` is promoted.
-A row therefore changes tasks it never named. `view` is read-only — it never mutates, normalizes, or writes — and a rejected call leaves the prior state untouched, promotion included.
+A row therefore changes tasks it never named.
+`view` is read-only — it never mutates, normalizes, or writes — and a rejected call leaves the prior state untouched, promotion included.
 
 **`op` may be absent.**
 Infer it — `list` → `init`, `items` plus `phase` → `append` — rather than discarding the row, and accept the legacy batch shape `{ops:[…]}`.
@@ -81,4 +82,17 @@ Malformed calls are atomic no-ops: a Claude snapshot is accepted whole or reject
 An empty heading reads as "this phase has no work", which is a different claim from "this phase is gone".
 `projectTodoState` returns only non-empty phases, and an all-empty fold returns `[]`, which renders nothing.
 
-The renderer pins the folded state once in a collapsible `Todo` strip at the **top** of the node room's transcript panel. **Every** todo call in the selected slice folds into that state — the strip is not anchored at the last call — while every todo row stays a one-line "todo updated" summary, so a near-identical checklist is never repeated down the transcript.
+The renderer pins the folded state once in a collapsible `Todo` strip after the transcript and immediately above the queue or dock.
+The transcript remains the only scrolling region, so the strip stays visible while transcript rows scroll.
+Every todo call in the selected slice folds into that state; the strip is not anchored at the last call.
+Every todo row stays a one-line `todo updated` summary, so a near-identical checklist is never repeated down the transcript.
+
+The collapsed header shows the current item, the completed count, and one segmented meter cell per item.
+The current item is the in-progress item, then the first blocked item, then the last completed item when no active item exists.
+The expanded strip shows phase headings and item states.
+Its `Raw` control reveals the exact ordered provider todo inputs that produced the folded projection and starts closed.
+
+Terminal state adds a presentation projection after the provider fold.
+When the node completes, the terminal projection shows every unfinished item as completed.
+When the node fails after 30 minutes in idle-after-interrupt, the projection resets the current item to pending and leaves other provider-folded states unchanged.
+This projection does not mutate stored provider calls, the reusable fold result, or Raw.

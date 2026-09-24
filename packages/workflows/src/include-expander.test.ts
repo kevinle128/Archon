@@ -1717,9 +1717,9 @@ describe('expandWorkflowIncludes — where a workflow-level model: travels (#176
     const nodes = collapse({
       ...wf('w', [{ id: 'n', prompt: 'p' }]),
       provider: 'codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
     });
-    expect(nodes[0]).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' });
+    expect(nodes[0]).toMatchObject({ provider: 'codex', model: 'gpt-6-sol' });
   });
 
   test('travels to a node that redundantly re-declares the SAME provider', () => {
@@ -1727,16 +1727,16 @@ describe('expandWorkflowIncludes — where a workflow-level model: travels (#176
     const nodes = collapse({
       ...wf('w', [{ id: 'n', prompt: 'p', provider: 'codex' }]),
       provider: 'codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
     });
-    expect(nodes[0]).toMatchObject({ provider: 'codex', model: 'gpt-5.6-sol' });
+    expect(nodes[0]).toMatchObject({ provider: 'codex', model: 'gpt-6-sol' });
   });
 
   test('does NOT travel to a node that switches provider', () => {
     const nodes = collapse({
       ...wf('w', [{ id: 'n', prompt: 'p', provider: 'claude' }]),
       provider: 'codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
     });
     expect((nodes[0] as Record<string, unknown>).model).toBeUndefined();
   });

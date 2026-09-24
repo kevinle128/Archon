@@ -210,7 +210,7 @@ const NODE_AFFECTING_WORKFLOW_FIELDS: readonly (readonly [
  * The executor applies a workflow-level model as `node.model ?? (provider ===
  * workflowProvider ? workflowModel : <that provider's configured default>)`, so a node
  * switching provider never inherits the other provider's model string. Copying the model
- * onto such a node unconditionally would hand `gpt-5.6-sol` to Claude — a behaviour change
+ * onto such a node unconditionally would hand `gpt-6-sol` to Claude — a behaviour change
  * dressed up as a no-op.
  *
  * When the workflow declares no `provider:`, its effective provider is decided at RUN time

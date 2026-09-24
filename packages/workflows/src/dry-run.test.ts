@@ -895,7 +895,7 @@ describe('dryRunWorkflow — effective provider/model per node', () => {
     defaults: { loadDefaultCommands: false, loadDefaultWorkflows: false },
   };
   const aiProfile = buildAiProfile('claude', {
-    repoTiers: { large: { provider: 'codex', model: 'gpt-5.6-sol', effort: 'xhigh' } },
+    repoTiers: { large: { provider: 'codex', model: 'gpt-6-sol', effort: 'xhigh' } },
   });
 
   async function trace(nodes: unknown[]): Promise<Map<string, DryRunResolution | undefined>> {
@@ -933,7 +933,7 @@ describe('dryRunWorkflow — effective provider/model per node', () => {
     const byId = await trace([{ id: 'tiered', prompt: 'p', model: 'large' }]);
     expect(byId.get('tiered')).toMatchObject({
       provider: 'codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
       providerFrom: 'model ref',
       modelFrom: 'model ref',
       effort: 'xhigh',
@@ -1010,7 +1010,7 @@ describe('dryRunWorkflow — effective provider/model per node', () => {
 describe('resolveWorkflowModelScope — the origin names the value that won', () => {
   const assistantModels = { claude: 'claude-default', codex: 'codex-default' };
   const profile = buildAiProfile('claude', {
-    repoTiers: { large: { provider: 'codex', model: 'gpt-5.6-sol' } },
+    repoTiers: { large: { provider: 'codex', model: 'gpt-6-sol' } },
   });
 
   test('a preset outranks a declared provider, and the origin says so', () => {
@@ -1029,7 +1029,7 @@ describe('resolveWorkflowModelScope — the origin names the value that won', ()
 
   test('a declared provider with a literal model keeps the workflow origin', () => {
     const scope = resolveWorkflowModelScope(
-      { provider: 'codex', model: 'gpt-5.6-sol' },
+      { provider: 'codex', model: 'gpt-6-sol' },
       'claude',
       assistantModels,
       profile
