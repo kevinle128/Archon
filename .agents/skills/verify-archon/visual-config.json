@@ -70,6 +70,18 @@
       "sha256": "99396fa9788da3688635241d21668701198183dcec2659a62833895552947dbc"
     },
     {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "sha256": "7857c0ddbfdf3397f354f6fb374d6e9a4771e6f05815a7231393ed4319ac803f"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "sha256": "e7e638c23e5ff99083614469e4f109f3c979803087608206e0a616fe54142061"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/support.js",
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe"
+    },
+    {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
       "sha256": "6cbef294819fe38ac308d41c9c85dbbb4216626abb9babe0596ecd974d4b18cc"
     },
@@ -124,11 +136,20 @@
       "expected": "The runtime graph fills the run view with status-marked node cards, connecting edges, and zoom and fit controls; no minimap is present. Compare structure and controls, not node count or labels."
     },
     {
+      "id": "queue-anatomy",
+      "states": [
+        "queue-waiting"
+      ],
+      "source": "claude-design/design_handoff_node_room_transcript_steering/README.md#queue-band--restructured",
+      "expected": "A full-width waiting queue band has an interactive expanded header with caret and count, one-based ordinals, a visible next-item inset marker, and sans-serif human message text. A waiting row does not show the transcript-delivery word sent. Ignore provider-specific per-item Send now controls."
+    },
+    {
       "id": "layout-and-focus",
       "states": [
         "row-closed",
         "raw-open",
-        "ask-pending"
+        "ask-pending",
+        "queue-waiting"
       ],
       "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md#accessibility-floor",
       "expected": "Required content fits the measured region; keyboard focus is visible; desktop and narrow states remain readable. Check only the selected room/card, not future mockup features."
@@ -143,7 +164,8 @@
     "raw-open",
     "ask-pending",
     "assistant-report",
-    "runtime-graph"
+    "runtime-graph",
+    "queue-waiting"
   ],
   "viewports": [
     {
@@ -163,7 +185,7 @@
   "accepted_differences": [
     "DESIGN.md wins over mockup-only 22 px targets and tertiary Raw text.",
     "Current semantic tokens apply separately on Console and Legacy.",
-    "Mockup-only Replay, view-as, steering dock, future tool family bodies and unrelated nodes are excluded.",
+    "Mockup-only Replay, view-as, Stop and idle-after-interrupt transitions, provider-specific per-item Send now, future tool family bodies and unrelated nodes are excluded.",
     "References are resized to the measured region width; browser and region dimensions are recorded separately.",
     "Transcript-display captures come from a separate prepared run; its seeded fixture text, node names, and graph shape differ from the HITL run and mockup data."
   ],

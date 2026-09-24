@@ -12,6 +12,7 @@ export const browserCases: Record<string, string[]> = {
   'ui.tools': ['hitl.tool-row-console', 'hitl.tool-row-legacy', 'hitl.tool-row-console-sweep', 'hitl.tool-row-legacy-sweep', 'hitl.tool-row-contrast'],
   'ui.ask': ['hitl.console-ask-submit', 'hitl.web-ask-resume', 'hitl.ask-history', 'hitl.awaiting-focus', 'hitl.mobile-ask'],
   'ui.transcript-display': ['transcript-display.structured', 'transcript-display.legacy-scroll-desktop', 'transcript-display.legacy-scroll-narrow', 'transcript-display.graph'],
+  'ui.queue-guidance': ['steer.direct-console', 'steer.direct-legacy', 'steer.loop-console', 'steer.loop-legacy', 'steer.blocked-console', 'steer.blocked-legacy', 'steer.detached-console', 'steer.detached-legacy', 'steer.visual-console', 'steer.visual-legacy', 'steer.route-smoke'],
   'ui.visual': ['verify.visual-captures'],
 };
 const testResultSchema = z.object({

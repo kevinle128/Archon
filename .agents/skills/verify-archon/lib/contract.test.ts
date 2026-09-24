@@ -1,7 +1,15 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { z } from '@hono/zod-openapi';
-import { catalogSchema, snapshotSchema, normalizeProposal, guardResult, digest } from './contract';
+import {
+  catalogSchema,
+  featureSchema,
+  gapsSchema,
+  snapshotSchema,
+  normalizeProposal,
+  guardResult,
+  digest,
+} from './contract';
 import { protocolSchema } from './schema-validation';
 
 const vectorSchema = z.object({
@@ -16,6 +24,38 @@ const vectorSchema = z.object({
   result_cases: z.array(z.object({ id: z.string(), result: z.unknown(), current_context: z.unknown(), expected: z.object({ ok: z.boolean() }) })),
 });
 const vectors = vectorSchema.parse(JSON.parse(readFileSync(new URL('../conformance.json', import.meta.url), 'utf8')));
+const runUi = featureSchema.parse(
+  JSON.parse(readFileSync(new URL('../features/run-ui.json', import.meta.url), 'utf8'))
+);
+const gaps = gapsSchema.parse(
+  JSON.parse(readFileSync(new URL('../coverage-gaps.json', import.meta.url), 'utf8'))
+);
+const visual = z
+  .object({
+    states: z.array(z.string()),
+    criteria: z.array(z.object({ id: z.string(), states: z.array(z.string()) })),
+    accepted_differences: z.array(z.string()),
+  })
+  .parse(JSON.parse(readFileSync(new URL('../visual-config.json', import.meta.url), 'utf8')));
+
+test('live queue behavior retains functional and normative visual proof', (): void => {
+  const behavior = runUi.behaviors.find(item => item.id === 'ui.queue-guidance');
+  expect(behavior?.scenarios).toEqual(['ui.queue-guidance', 'ui.visual']);
+  expect(visual.states).toContain('queue-waiting');
+  expect(
+    visual.criteria.some(
+      criterion => criterion.id === 'queue-anatomy' && criterion.states.includes('queue-waiting')
+    )
+  ).toBe(true);
+  expect(visual.accepted_differences.some(item => /steering dock is excluded/i.test(item))).toBe(
+    false
+  );
+  expect(
+    gaps.gaps.some(gap =>
+      gap.impact_paths.includes('packages/web/src/components/workflows/ComposerDock.tsx')
+    )
+  ).toBe(false);
+});
 for (const item of vectors.schema_cases) {
   test(`canonical schema: ${item.id}`, (): void => {
     expect(protocolSchema(item.schema).safeParse(item.instance).success).toBe(true);
