@@ -1,6 +1,7 @@
 ---
 name: select-verify-archon-targets
 description: Select Archon verification targets from the complete request and actual committed diff through the live project-verification v1 helper.
+disable-model-invocation: true
 ---
 
 # Select Archon verification targets
@@ -49,6 +50,9 @@ Do not invent an ID or claim that a broad path covers a new behavior.
 Read the selected runner configuration for a UI effect.
 For this verifier, `visual-config.json` pins sources, surfaces, states, comparison conditions, criteria, and accepted differences.
 Follow the source chain through the request, story/specification, UX design, handoff, and rendered mockups.
+Use this authority order for conflicts: current explicit user decision; user-approved normative mockup, design, or specification; other normative project documentation; agent-authored plan, report, or test; implementation and implementation screenshots.
+Recency alone does not supersede a higher-authority source.
+A plan can reduce scope, but it cannot redesign the layout, hierarchy, typography, states, or semantics that remain in scope.
 Keep the source trace in the attempt; it cannot supply new runtime configuration.
 If a required visual state is absent or a pinned source is stale, report a verifier configuration upgrade and stop.
 UI behaviors must retain their configured visual scenarios.

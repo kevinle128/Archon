@@ -7,6 +7,7 @@
     "packages/web/src/lib/",
     "packages/web/src/index.css",
     "e2e/",
+    "claude-design/design_handoff_node_room_transcript_steering/",
     "_bmad-output/specs/spec-workflow-run-view-hitl/",
     "_bmad-output/specs/spec-agent-node-room/",
     "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/",
@@ -83,6 +84,26 @@
         "ui.transcript-display",
         "ui.visual"
       ]
+    },
+    {
+      "id": "ui.queue-guidance",
+      "description": "Queued guidance keeps its functional delivery contract and the approved waiting-queue anatomy on Console and Legacy.",
+      "priority": 1,
+      "impact_paths": [
+        "packages/web/src/components/workflows/ComposerDock.tsx",
+        "packages/web/src/experiments/console/components/ConsoleComposerDock.tsx",
+        "packages/web/src/lib/steering-dock.ts",
+        "packages/workflows/src/steering-registry.ts",
+        "e2e/ui/agent-queue-guidance.spec.ts",
+        "claude-design/design_handoff_node_room_transcript_steering/README.md",
+        "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+        "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+        "claude-design/design_handoff_node_room_transcript_steering/support.js"
+      ],
+      "scenarios": [
+        "ui.queue-guidance",
+        "ui.visual"
+      ]
     }
   ],
   "scenarios": [
@@ -150,10 +171,27 @@
       ]
     },
     {
+      "id": "ui.queue-guidance",
+      "runner": {
+        "kind": "browser",
+        "id": "ui.queue-guidance"
+      },
+      "prerequisites": [
+        "Bun and installed target dependencies",
+        "Built target Web UI, E2E dependencies, and Chrome"
+      ],
+      "proof_obligations": [
+        "Direct and loop guidance reaches the same provider session at a natural boundary",
+        "Blocked and detached states preserve their refusal behavior",
+        "Queue geometry, accessibility, and route checks execute on both product surfaces",
+        "Fresh browser evidence is retained"
+      ]
+    },
+    {
       "id": "ui.visual",
       "runner": {
         "kind": "browser",
-        "id": "visual-c75461bc79312c4b6ee3c8a37a66041cfab2ad348c352ee64506d714b41aa7aa"
+        "id": "visual-cd46640d2fe5fd3b0b80491e186a9bfb97770a53140eda59a4e1388e5c601141"
       },
       "prerequisites": [
         "Bun and installed target dependencies",
