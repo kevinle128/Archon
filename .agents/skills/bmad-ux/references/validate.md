@@ -2,9 +2,36 @@
 
 Critique an existing spine pair (`DESIGN.md` + `EXPERIENCE.md`) or any format of UX the user provides, without changing it. The synthesis pipeline below is also used at the Reviewer Gate during Create / Update Finalize.
 
+## Approved mockup preflight
+
+Run this preflight before the reviewer lens menu and even when the user selects no reviewers.
+Inspect both spines for a `mockupManifest` frontmatter entry.
+If neither spine names one, ask the user whether approved mockups exist.
+Never infer that no approved mockup exists.
+
+When approved Claude Design mockups exist:
+
+1. Require both spines to name the same manifest path, target slug, and `source_fingerprint` using the required frontmatter shape.
+2. Resolve `{target_slug}` from `mockupManifest.target` and run `python3 "{project-root}/.agents/skills/claude-design-feature-extractor/scripts/validate-mockup-manifest.py" validate --root "{project-root}" --expected-target "{target_slug}" "<manifest-path>"`.
+3. Compare `sources` in the manifest with the exact approved mockup source set recorded in `.memlog.md`.
+4. Verify that `comparison_sources` includes current-product or test sources and completed Epic sources.
+5. Treat a missing source, extra unapproved mockup source, stale mockup or comparison hash, invalid manifest, or target mismatch as a critical finding.
+6. Use the manifest as the immutable mockup side of the comparison.
+7. Never use DESIGN.md, EXPERIENCE.md, PRD, Architecture, Epic, Story, implementation, README, issue, or pull-request text to repair a mockup behavior value.
+8. Treat every feature that remains visible in an approved mockup as current scope.
+9. Verify that the manifest derives its change boundary by comparing the frozen mockup inventory with the current product or tests and completed Epics.
+10. Verify that every visible inventory item is classified exactly once as `CHANGE_FEATURE` or `UNCHANGED_CONTEXT`.
+11. Require complete behavior only for `CHANGE_FEATURE` rows.
+12. Require current-product or test evidence and completed-Epic evidence for every classification, and do not require `UNCHANGED_CONTEXT` rows to be re-specified as new change scope.
+13. Never ask the user to remember which controls changed.
+14. If a change-feature behavior field is `UNKNOWN`, or a change-feature action group is `UNCLEAR`, require one focused behavior answer through a fresh extractor context.
+
+Validation cannot return a passing verdict while this preflight has a critical finding.
+
 ## Orient
 
-Subagent-extract from `.memlog.md`, sources in frontmatter, `imports/`, `mockups/`, `wireframes/`, `DESIGN.md`, `EXPERIENCE.md`. Parent assembles from extracts.
+Subagent-extract from the validated mockup manifest, `.memlog.md`, sources in frontmatter, `imports/`, `mockups/`, `wireframes/`, `DESIGN.md`, and `EXPERIENCE.md`.
+Parent assembles from extracts without changing manifest behavior.
 
 ## Reviewer Gate
 
@@ -26,15 +53,17 @@ Rubric walker prompt:
 >
 > 4. **State coverage** (EXPERIENCE.md). Walk every IA surface. List states it should have (empty, cold-load, focus, error, offline, permission-denied — whichever apply). Verify each covered.
 >
-> 5. **Visual reference coverage.** List every file in `mockups/`, `wireframes/`, `imports/`. Spines link to each inline at the relevant section and name what it illustrates; spines-win-on-conflict stated once. List orphans and unspecific references.
+> 5. **Approved mockup coverage.** If approved mockups exist, verify the manifest passed its validator, its mockup sources exactly match the approved set in `.memlog.md`, its comparison sources cover the current product or tests and completed Epics, and every recorded hash is current. Verify that both spines record the same manifest path, target slug, and fingerprint. Walk every `CHANGE_FEATURE`. Verify DESIGN.md contains its visible presentation and EXPERIENCE.md contains its precondition, trigger, target identity, target cardinality, timing, effect on active work, collection mutation, expected result, and next state. Verify the `Mockup Feature Coverage` table contains exactly one row per change-feature ID with exact spine locations. Walk every `UNCHANGED_CONTEXT` row and verify the `Mockup Context Inventory` contains exactly one row with its location and implementation plus completed-Epic classification evidence. Do not require unchanged context to be re-specified as new work. Treat a missing or duplicate change mapping, missing context item, unproved change classification, missing field, changed meaning, future label, source mismatch, stale hash, `UNKNOWN`, or `UNCLEAR` as critical. Verify changed controls with the same action key remain separate when their behavior signatures differ.
+>
+> 6. **Visual reference coverage.** List every file in `mockups/`, `wireframes/`, `imports/`. Spines link to each inline at the relevant section, name what it illustrates, and identify it as exploratory or approved. List orphans, unspecific references, and approval status that is unclear.
 >
 > **Pass 2 — judgment.** Verdict per category (*strong / adequate / thin / broken*); findings only where they add information.
 >
-> 6. **Bloat & overspecification.** Pixel specs where tokens cover it; source restatement (personas, FRs, scope); prose where a table works; sections no downstream consumer would read; decorative narrative untied to a decision. DESIGN.md prose may carry editorial voice; EXPERIENCE.md prose should not.
+> 7. **Bloat & overspecification.** Pixel specs where tokens cover it; source restatement (personas, FRs, scope); prose where a table works; sections no downstream consumer would read; decorative narrative untied to a decision. DESIGN.md prose may carry editorial voice; EXPERIENCE.md prose should not.
 >
-> 7. **Inheritance discipline.** `sources` frontmatter resolves. UJ / requirement names verbatim from sources. Glossary identical across spines and sources. Component names identical across all sections in both files. EXPERIENCE.md token references resolve to DESIGN.md tokens by name.
+> 8. **Inheritance discipline.** `sources` frontmatter resolves. UJ / requirement names verbatim from sources. Glossary identical across spines and sources. Component names identical across all sections in both files. EXPERIENCE.md token references resolve to DESIGN.md tokens by name.
 >
-> 8. **Shape fit.** DESIGN.md sections in canonical order (Brand & Style → Colors → Typography → Layout & Spacing → Elevation & Depth → Shapes → Components → Do's and Don'ts; omittable but order-locked when present). EXPERIENCE.md required defaults present (Foundation, IA, Voice and Tone, Component Patterns, State Patterns, Interaction Primitives, Accessibility Floor, Key Flows). Dropped defaults defensible. Required-when-applicable present where triggered (Inspiration when sources / memlog show reference products or rejects; Responsive when multi-surface or breakpoints). Invented sections earn their place.
+> 9. **Shape fit.** DESIGN.md sections in canonical order (Brand & Style → Colors → Typography → Layout & Spacing → Elevation & Depth → Shapes → Components → Do's and Don'ts; omittable but order-locked when present). EXPERIENCE.md required defaults present (Foundation, IA, Voice and Tone, Component Patterns, State Patterns, Interaction Primitives, Accessibility Floor, Key Flows). Dropped defaults defensible. Required-when-applicable present where triggered (Inspiration when sources / memlog show reference products or rejects; Responsive when multi-surface or breakpoints). Invented sections earn their place.
 >
 > Severity = downstream impact, not fix difficulty.
 >
@@ -51,7 +80,7 @@ Rubric walker prompt:
 > ### Findings
 > - **[critical|high|medium|low]** [finding] (location). *Fix:* [suggestion].
 >
-> (repeat 2–8)
+> (repeat 2–9)
 >
 > ## Mechanical notes
 > [Name inconsistencies, broken cross-refs, frontmatter completeness, Mermaid syntax.]
@@ -90,6 +119,7 @@ Re-running overwrites the consolidated report; individual `review-*.md` files pe
 - Token completeness — {verdict}
 - Component coverage — {verdict}
 - State coverage — {verdict}
+- Approved mockup coverage — {verdict}
 - Visual reference coverage — {verdict}
 - Bloat & overspecification — {verdict}
 - Inheritance discipline — {verdict}

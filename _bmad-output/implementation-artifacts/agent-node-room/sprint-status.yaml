@@ -1,5 +1,5 @@
 # generated: 2026-09-16 15:38:51 +0700
-# last_updated: "2026-09-20 20:40:00 +0000"
+# last_updated: "2026-09-24 04:36:19 +0000"
 # project: Archon
 # project_key: NOKEY
 # tracking_system: file-system
@@ -45,7 +45,7 @@
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
 generated: "2026-09-16 15:38:51 +0700"
-last_updated: "2026-09-20 20:40:00 +0000"
+last_updated: "2026-09-24 04:36:19 +0000"
 project: Archon
 feature: agent-node-room
 project_key: NOKEY
@@ -124,3 +124,11 @@ development_status:
   9-2-support-stop-and-redirect-for-pi: backlog
   9-3-support-stop-and-redirect-for-github-copilot: backlog
   9-4-support-stop-and-redirect-for-opencode: backlog
+
+  # 2026-09-22 approved readiness correction.
+  # Epic 1 through Epic 9 remain complete historical planning records.
+  epic-10: in-progress
+  10-1-fix-room-geometry-and-execution-selection: ready-for-dev
+  10-2-deliver-one-selected-queued-message-without-stop: backlog
+  10-3-preserve-every-unmatched-message-at-terminal-boundaries: backlog
+  10-4-use-a-codex-supported-tool-status-presentation: backlog

@@ -25,7 +25,7 @@ Single-surface mobile, iOS + Android with parity. No UI system named — inherit
 
 Bottom tab bar (Today / Library / Settings). No drawer. Modal stacks one level deep, never two.
 
-→ Composition reference: `mockups/today-cold.html`, `mockups/composer.html`. Spine wins on conflict.
+→ Exploratory composition references: `mockups/today-cold.html`, `mockups/composer.html`.
 
 ## Voice and Tone
 

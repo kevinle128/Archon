@@ -2,7 +2,7 @@
 name: Archon
 description: The node room on both web surfaces — the readable agent transcript that is read, and the steering dock it is written from. shadcn/Radix on Tailwind v4, dark-only; this DESIGN.md specifies both deltas over two inherited token sets and forks neither palette.
 status: final
-updated: 2026-09-21
+updated: 2026-09-22
 sources:
   - ../../../specs/spec-agent-node-room/SPEC.md
   - ../../../specs/spec-agent-node-room/tool-presentation-contract.md
@@ -660,8 +660,9 @@ It is a slot in the dock's anatomy rather than a caption on another component, b
 Per-item controls are text buttons at the row's right edge, at the 24×24 SC 2.5.8 floor grown on padding — not the dock's 32px, which an 11px row cannot carry without becoming a card.
 The `Send now` control appears only when the provider has verified soft injection.
 
-**Auto-send control** — a compact durable toggle in the queue header.
-Its label is `Auto-send` and its state is available as text and control state, not colour alone.
+**Auto-send status** — a compact read-only indicator in the queue header.
+It reads `Auto-send on` when the effective projected state is enabled.
+It reports state only and performs no dispatch or setting mutation.
 It does not change the queue geometry when enabled.
 
 **Restart recovery band** — the same full-width elevated band as the queue, in read-only form.

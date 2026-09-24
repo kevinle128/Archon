@@ -213,8 +213,10 @@ chev glyph chip    headline (flex, min-width:0)        badges (right)
 
 **Status glyph `✓ ✕ ◐ ⚠ –`**, mapped from the existing `AgentHistoryItem.outcome` via `deriveOutcome()`, reused unchanged.
 Five characters represent the five values carried by the type (`agent-history.ts:36`).
-`⚠` is `interrupted` — a tool whose turn was stopped, not one that failed, so it uses its own character rather than a recoloured `✕`.
-Every provider adapter must normalize a stopped active tool to this provider-neutral outcome.
+`⚠` is `interrupted` — a tool whose provider status proves interruption, not failure, so it uses its own character rather than a recoloured `✕`.
+Each provider boundary supplies only outcomes that its exercised status contract can prove.
+Codex cannot supply `interrupted`, so a Codex tool row never renders `⚠` and uses only a Codex-supported status presentation.
+The shared presenter remains provider-neutral and contains no Codex branch.
 Colour is applied _in addition to_ the glyph, never instead of it.
 
 **Chip** is the tool name **as the provider sent it** — `read_file`, `Edit`, `Grep`, `eval` — when that name is a single token of at most 24 characters, else the family name.

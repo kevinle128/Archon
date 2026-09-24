@@ -52,17 +52,18 @@ Restart E2E tests use a real server process, retain the same database across res
 - the node-level `abortSignal` remains separate and is not aborted by Stop.
 - Stop ends the current turn while the node, workflow run, and provider session remain available.
 - a thinking turn and a turn executing a tool both stop through the same action.
-- the active tool becomes `interrupted`, completed side effects remain in place, and no rollback runs.
+- the executor classifies an accepted Stop as an operator-interrupted turn, completed side effects remain in place, and no rollback runs.
+- an active tool becomes `interrupted` only when the normalized provider status can prove that outcome.
 - the next turn uses the same provider session or thread when that provider supports continuation.
 - repeated Stop requests for the same ended turn are idempotent.
 - the provider interface does not gain a `cancel()` method.
 
 ## Provider conformance — Stories 8.3 through 8.7 and 9.1 through 9.4
 
-Each provider fixture proves that Stop reaches its native interrupt or stream-abort path, ends only the current turn, records an interrupted active tool when applicable, and permits a follow-up turn on the existing session contract.
+Each provider fixture proves that Stop reaches its native interrupt or stream-abort path, ends only the current turn, records an interrupted active tool only when its status contract supports that outcome, and permits a follow-up turn on the existing session contract.
 
 - Claude proves Stop, soft injection, and delivery acknowledgement correlated by `message_id`.
-- Codex proves turn-stream abort and continuation on the existing thread or session.
+- Codex proves turn-stream abort and continuation on the existing thread or session, and proves that its tool row never uses the interrupted warning glyph.
 - Grok proves Stop and soft injection.
 - DeepSeek proves Stop and continuation after its provider-specific aborted result.
 - OMP proves Stop, its thrown abort classification, and soft injection.
@@ -77,7 +78,8 @@ The conformance table fails when a provider advertises a capability that its ada
 
 - Claude, Grok, and OMP show per-item `Send now` only when their verified capability reports soft injection.
 - queue-only providers do not render per-item `Send now`.
-- a successful soft injection retains FIFO order and the original author identity.
+- a successful soft injection claims exactly the selected queued item, removes it from the queued collection, and retains its original author identity.
+- every non-selected queued item keeps its identity, content, relative order, and `queued` state unchanged.
 - providers with delivery acknowledgement advance a correlated entry through the verified delivery states.
 - providers without delivery acknowledgement stop at the last state their adapter can prove.
 - an acknowledgement with the wrong or missing `message_id` cannot advance another entry.

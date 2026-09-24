@@ -19,6 +19,7 @@ Every headless run ends with one of these payloads. Omit keys for artifacts not 
   "design": "{doc_workspace}/DESIGN.md",
   "experience": "{doc_workspace}/EXPERIENCE.md",
   "memlog": "{doc_workspace}/.memlog.md",
+  "mockup_manifest": "{planning_artifacts}/mockup-manifests/{target_slug}.json",
   "working_artifacts": ["{doc_workspace}/.working/color-themes-1.html"],
   "promoted_artifacts": {
     "mockups": ["{doc_workspace}/mockups/direction-calm-sage.html"],
@@ -33,6 +34,7 @@ Every headless run ends with one of these payloads. Omit keys for artifacts not 
 ```
 
 The `working_artifacts` and `promoted_artifacts` keys are optional and omitted entirely when empty. Headless Create runs default to not enabling creative tools — both keys are typically absent in headless output unless the caller enabled them.
+The `mockup_manifest` key is optional and appears only when approved mockups exist and the manifest passed validation.
 
 ## Update
 
@@ -43,6 +45,7 @@ The `working_artifacts` and `promoted_artifacts` keys are optional and omitted e
   "design": "{doc_workspace}/DESIGN.md",
   "experience": "{doc_workspace}/EXPERIENCE.md",
   "memlog": "{doc_workspace}/.memlog.md",
+  "mockup_manifest": "{planning_artifacts}/mockup-manifests/{target_slug}.json",
   "changes_summary": "1-3 sentences describing what changed and why",
   "conflicts_with_prior_decisions": [],
   "open_questions": [],

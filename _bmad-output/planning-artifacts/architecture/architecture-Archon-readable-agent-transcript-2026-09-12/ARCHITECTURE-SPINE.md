@@ -10,7 +10,7 @@ created: '2026-09-12'
 updated: '2026-09-21'
 binds:
   - 'SPEC-readable-agent-transcript CAP-1..CAP-7'
-  - 'spec-agent-node-room CAP-14..CAP-21'
+  - 'spec-agent-node-room CAP-1 through CAP-7, CAP-9 presentation, and CAP-16 through CAP-21'
   - 'architecture-Archon-workflow-run-view-hitl-2026-09-05 HITL AD-3'
   - 'architecture-Archon-workflow-run-view-hitl-2026-09-05 HITL AD-4'
 sources:
@@ -80,7 +80,7 @@ graph TD
 
 ### AD-1 — One semantic core, multiple markup shells
 
-- **Binds:** readable-transcript CAP-1 through CAP-7 and Agent Node Room CAP-14 through CAP-21 across Node Room, RunStream, Chat, and backend formatting.
+- **Binds:** readable-transcript CAP-1 through CAP-7 and Agent Node Room CAP-1 through CAP-7, CAP-9 presentation, and CAP-16 through CAP-21 across Node Room, RunStream, Chat, and backend formatting.
 - **Prevents:** any presentation surface learning provider-specific meaning or drifting into a different reading of the same row.
 - **Rule:** every decision about what a row means is made by the semantic presentation contract. Web surfaces consume the shared Web projection. Backend formatting implements the same contract against the same fixtures without creating a forbidden backend-to-Web dependency. A shell may choose markup, class names, and layout; it may not reparse provider input or output.
 
@@ -169,7 +169,11 @@ graph TD
   4. The transcript pins to the bottom only while the reader is already at the bottom, otherwise holds position; an append never moves focus (`:175`).
   5. Earlier todo mutations remain one-line `todo updated` rows, while the latest applicable todo row can expose the approved inline checklist.
   6. A collapsible todo strip sits outside and below the transcript scroller, immediately above the queue and composer dock. It mirrors the current `TodoPhase[]`, remains visible while the transcript scrolls, and is absent when the node has no todos. Terminal completed or interrupted treatment is a presentation projection and never rewrites stored todo events.
-  7. A **loop-iteration selector** navigates directly between occurrence groups (the per-group headers are its anchors) and is absent on a single-occurrence node (CAP-6). It renders from the core-supplied occurrence groups — no new core mechanism.
+  7. When a loop node has more than one execution, the `Execution` selector selects the live execution by default and exposes no more than eight executions.
+     Selection immediately projects the chosen execution.
+     A stale execution is read-only and cannot steer the live execution.
+     The selector is absent when only one execution exists.
+     It uses the existing execution-selection identity and does not add a second occurrence-navigation mechanism.
 
   Console's existing `showToolCalls` toggle (`ConsoleInspectPane.tsx:68`), which Legacy has no equivalent of, hides **tool rows only**. The todo checklist is node state, not a tool call, so it survives the toggle being off — otherwise turning it off would delete CAP-3 on one surface and not the other.
 
@@ -180,6 +184,12 @@ graph TD
 - **Binds:** CAP-1's colour-free status guarantee, both shells.
 - **Prevents:** the two shells resolving a self-contradiction in `EXPERIENCE.md:91` differently and forking the one channel that carries status without colour. That cell derived the glyph from `AgentHistoryItem.outcome` _and_ said `–` means "unknown or output missing" — but a result row with `outcome: success` and no output is reachable, and `deriveOutcome()` calls it `succeeded` (`✓`) while `deriveOutputState()` calls it `missing` (`–`). `bmad-ux` corrected that cell on 2026-09-12; this AD is what it was corrected to.
 - **Rule:** the glyph is a total function of `outcome` alone — `✓` succeeded, `✕` failed, `◐` running, `⚠` interrupted, `–` unknown. `–` means **unknown, and nothing else**. Output state never touches the glyph; `output missing` and `output unknown` are badges, which is what `EXPERIENCE.md:131` already does. The core emits the character, per AD-10.
+
+Provider boundaries normalize only tool outcomes that their exercised provider status can prove.
+Codex does not produce an `interrupted` tool status, so a Codex tool row never reaches the shared presenter with the interrupted outcome and never renders `⚠`.
+It uses only a Codex-supported status presentation.
+The presenter remains provider-neutral and contains no Codex branch.
+This exception changes no other provider's glyph mapping and does not change the executor's turn-level interrupted classification.
 
 ### AD-14 — The core emits the complete badge list, in order
 
@@ -202,7 +212,7 @@ graph TD
 
 ### AD-17 — New transcript sources normalize before persistence
 
-- **Binds:** Agent Node Room CAP-14, CAP-19, CAP-20, and CAP-21.
+- **Binds:** Agent Node Room CAP-5, CAP-19, CAP-20, and CAP-21.
 - **Prevents:** presentation shells parsing provider streams, successful Codex file changes disappearing before the read path, and new source types using incompatible ordering rules.
 - **Rule:** provider and executor boundaries normalize successful Codex `file_change` events, agent thinking, triggering prompts, and advisor notifications into typed persisted node-message rows before presentation. Each row receives the server sequence that defines transcript order. The projection layer reads those rows and never inspects a live provider stream.
 
@@ -294,11 +304,10 @@ flowchart LR
 | CAP-2 per-family body     | `tool-presentation.ts`                                                | AD-1, AD-3                                          |
 | CAP-3 todo as state       | `todo-state.ts` (`projectTodoState`), folded in `buildAgentHistory()` | AD-1, AD-7, AD-12                                   |
 | CAP-4 task dispatch       | `task-normalize.ts`                                                   | AD-1, AD-3                                          |
-| CAP-5 inline diff         | `lib/diff-hunks.ts` → `lib/git-hunk-adapter.ts`                       | AD-4, AD-5, AD-6, AD-3                              |
+| CAP-5 inline diff and Codex file-change ingestion | provider normalization + node-message persistence + `lib/diff-hunks.ts` | AD-4, AD-5, AD-6, AD-17 |
 | CAP-6 occurrence grouping | `occurrence-groups.ts`                                                | AD-7, AD-10                                         |
 | CAP-7 raw payload         | both shells; payload carried on the item                              | AD-1, AD-3, AD-12                                   |
-| CAP-14 Codex ingestion    | provider normalization + node-message persistence                     | AD-17                                               |
-| CAP-15 auto-send display  | steering state projection in each Node Room shell                     | live-steering spine                                 |
+| CAP-9 provider-supported status presentation | provider status normalization + shared outcome projection | AD-13 |
 | CAP-16 surface parity     | Web semantic core + backend semantic fixtures                         | AD-1, AD-18                                         |
 | CAP-17 Git impact         | executor boundary evidence + `@archon/git` server projection          | AD-20                                               |
 | CAP-18 provider coverage  | provider normalization adapters                                       | AD-17, live-steering spine                          |

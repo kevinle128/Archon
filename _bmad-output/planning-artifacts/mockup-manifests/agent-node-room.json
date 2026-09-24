@@ -1,0 +1,3560 @@
+{
+  "schema_version": 3,
+  "target": "agent-node-room",
+  "scope_policy": "ALL_VISIBLE_PRODUCT_FEATURES_ARE_CURRENT",
+  "comparison_policy": "MOCKUP_VS_CURRENT_PRODUCT_AND_COMPLETED_EPICS",
+  "change_boundary": {
+    "description": "The approved mockups change fixed room sizing, the execution-selector limit, the visible auto-send state, verified per-item active-turn injection, durable terminal and idle-timeout reconciliation, and the Codex status constraint. Todo placement and rendering, durable queue and restart recovery, and delivery acknowledgement are completed Epic 1-9 baseline context.",
+    "evidence": [
+      {
+        "kind": "implementation",
+        "source": "packages/web/src/lib/room-split-layout.ts#current-room-width-contract",
+        "detail": "The current product still uses percentage room widths, exposes execution lists without the approved eight-entry cap, and keeps the remaining steering gaps in the current implementation."
+      },
+      {
+        "kind": "epic",
+        "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#completed-epics-1-through-9",
+        "detail": "Epic 1 through Epic 9 are the completed comparison history used for classification."
+      }
+    ]
+  },
+  "sources": [
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "sha256": "7857c0ddbfdf3397f354f6fb374d6e9a4771e6f05815a7231393ed4319ac803f"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "sha256": "e7e638c23e5ff99083614469e4f109f3c979803087608206e0a616fe54142061"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "sha256": "72f2e4cdf9791fa5c636cbcf570d255596c910c06f204861d571eebde17e8f5f"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "sha256": "88bcb05e3d903156791db904d577d9d6e4bed5cf790eca879b3df717f964420a"
+    },
+    {
+      "path": "claude-design/design_handoff_node_room_transcript_steering/support.js",
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe"
+    }
+  ],
+  "source_fingerprint": "0dd094cda1c3ef6ad52bc6b53531f2cfb5512b4804813bf1a85e516e73623101",
+  "source_reviews": [
+    {
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_states": [
+        "prompt generating queue-only",
+        "prompt generating verified soft-inject",
+        "interrupting",
+        "idle after interrupt",
+        "generating again",
+        "finished with undelivered content",
+        "finished clean",
+        "failed after 30-minute idle",
+        "restart recovery",
+        "loop live iteration 3",
+        "loop stale iteration 1",
+        "loop stale iteration 2",
+        "todo collapsed",
+        "todo expanded",
+        "queue collapsed",
+        "queue expanded",
+        "tool row collapsed",
+        "tool row expanded"
+      ],
+      "interaction_code_reviewed": true
+    },
+    {
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_states": [
+        "460-pixel prompt generating queue-only",
+        "460-pixel prompt generating verified soft-inject",
+        "interrupting",
+        "idle after interrupt",
+        "generating again",
+        "finished with undelivered content",
+        "finished clean",
+        "failed after 30-minute idle",
+        "restart recovery",
+        "loop live iteration 3",
+        "loop stale iteration 1",
+        "loop stale iteration 2",
+        "todo collapsed",
+        "todo expanded",
+        "queue collapsed",
+        "queue expanded",
+        "tool row collapsed",
+        "tool row expanded"
+      ],
+      "interaction_code_reviewed": true
+    },
+    {
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_states": [
+        "all eight simultaneous state cards",
+        "operator record",
+        "sent delivered and never-sent message status",
+        "refused-behavior table",
+        "enabled state controls rendered",
+        "Stopping aria-disabled state rendered"
+      ],
+      "interaction_code_reviewed": true
+    },
+    {
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_states": [
+        "family chip palette",
+        "status glyph palette",
+        "collapsed rows",
+        "long-path hard case",
+        "Codex multiline script hard case",
+        "MCP hard case",
+        "unknown-tool hard case",
+        "every expanded family renderer",
+        "occurrence header candidates",
+        "raw closed",
+        "raw open",
+        "static collapsed and expanded disclosure examples",
+        "all visible Raw controls selected"
+      ],
+      "interaction_code_reviewed": true
+    }
+  ],
+  "comparison_sources": [
+    {
+      "kind": "epic",
+      "path": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md",
+      "sha256": "8715659c08702f1544373d99f6aec169a4be67fd9bfab45d747320ad7b5b1b43"
+    },
+    {
+      "kind": "epic",
+      "path": "_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md",
+      "sha256": "95e55c79331544bc980f7884acb2c2672929a53954b2add1bb4c0ce199769f29"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/server/src/routes/schemas/workflow.schemas.ts",
+      "sha256": "9898ad294331d4c3366a57ebebc5a6ba0a4883d23213edeb3e34a821ca13648f"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/components/workflows/ComposerDock.test.tsx",
+      "sha256": "b5c8ca49a79cbd14711acec6f866b98eb30b88120615090e3586c556598cea7f"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/components/workflows/ComposerDock.tsx",
+      "sha256": "341b9b52328c4679648ebfdb761153330635d557f7c8dc663d9d39298d78f353"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/components/workflows/NodeRoom.test.tsx",
+      "sha256": "502c28fc8408f21f57dd7556d470e3a82c2834fc0436e5e7dd4329d3de30d135"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/components/workflows/NodeRoom.tsx",
+      "sha256": "df730b46d0106fb3d2bc8f4d03513c828c421668c14d1248ac699ff32d4b5a8a"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/components/workflows/NodeTranscriptPane.tsx",
+      "sha256": "5439169bf32a9a2c31a5c546d2013ad0657ca9a602c30833aae9e1a0c2135938"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/components/workflows/WorkflowExecution.tsx",
+      "sha256": "30ea9f0ff5d5b415e4328ea92479635bc3d26bc3197b2a6bbd339c86de66cad9"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/experiments/console/components/ConsoleComposerDock.test.tsx",
+      "sha256": "0de513aea3e945bdbd3b04cb3067571bd4c39ba2d81089c666b82c37502117a5"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/experiments/console/components/ConsoleComposerDock.tsx",
+      "sha256": "1c552a3d8ad78ddaba022cdfb2251bd4bf0698228598e661505228df2359f26e"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx",
+      "sha256": "ebca17befc7b1073277dfcbda4c3492cfa86ea2a057cb111336e57c7dde21562"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx",
+      "sha256": "46b1c86bfc080e15433efae686ee6f5e41fb3da4fd88fecf2e2784cb4efbfb0a"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx",
+      "sha256": "20e1fd4a00d9827257ac34dce4ed1cc6f34afa75c605800152a4b2c871452ee9"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/experiments/console/routes/RunDetailPage.tsx",
+      "sha256": "d8f7bd91528bdff9e22fa740a3c9dec8112617a98b4b627ef3027d159e96a434"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/execution-room-model.test.ts",
+      "sha256": "b8a6719d9235df39fe2f3b970406c60d047a159b440f8b85559e4443f4e5b6a1"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/execution-room-model.ts",
+      "sha256": "36ef1fa731067bb915c1f2fcef79271e428de8358a9b92c5349967ff78e541b9"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/occurrence-groups.test.ts",
+      "sha256": "4c62119ceea48870db022caa85403d0109dbbe4e702c5838db93db522a097e20"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/occurrence-groups.ts",
+      "sha256": "42d1e0e7d78c5840647d81d2201e7c0367553336390abd4932851c53cfe1e2ca"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/room-split-layout.test.ts",
+      "sha256": "f4c15b6d5648c72ea004356715364cfbde3f2025b8917ec6bafa49774532c053"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/room-split-layout.ts",
+      "sha256": "089ad6a0aad07830ec68acd934520cb70d55652e7bb49f8f5d6cfa17c212f4d4"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/steering-dock.test.ts",
+      "sha256": "42c28bbf741cc43f989667f22a2325c85ac13f466ec2b6f436fb6695f59fd613"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/steering-dock.ts",
+      "sha256": "8fc0a4f7206889490bd3e720fc5bc41bc2a70db97bd772a550d12cd5f1de24bb"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/todo-state.test.ts",
+      "sha256": "d78584d527a189a4907f6fe4a758222415d2cd5592a10425439cdc1c2dae9661"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/todo-state.ts",
+      "sha256": "733d3e21ef6969352563a4c5e3934c524eb668c27b403a2557a10b836e2dc0e6"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/tool-presentation.test.ts",
+      "sha256": "a0d1f27b6cab2afe57d060c86bd479229f10e72743eba0e8ca3023d09b34779e"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/web/src/lib/tool-presentation.ts",
+      "sha256": "aebd1bc73ca4732620c65feaa515f99e6e6b84f23be04b110106ae94c8b91e4d"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/workflows/src/steering-registry.test.ts",
+      "sha256": "64df9c84818ce62158bde5c391a3bdea867c188a5e6f26c25009a5427cbe99cf"
+    },
+    {
+      "kind": "implementation",
+      "path": "packages/workflows/src/steering-registry.ts",
+      "sha256": "396f06243bff9ef0f0dc433494dfa503f1c70615f40c3b300f493eecf5b99605"
+    }
+  ],
+  "mockup_inventory": [
+    {
+      "id": "I001",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "node room shell",
+      "control_or_state": "Global product navigation rail",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=node-room-shell element=global-navigation",
+          "detail": "The rendered console shell shows the product navigation rail."
+        }
+      ]
+    },
+    {
+      "id": "I002",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "workflow run header",
+      "control_or_state": "Run identity, status, branch, elapsed time, and Cancel control",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=run-header",
+          "detail": "The header shows the run identity, status metadata, branch, elapsed time, and Cancel."
+        }
+      ]
+    },
+    {
+      "id": "I003",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "workflow run tabs",
+      "control_or_state": "Log, Graph, and Artifacts navigation tabs",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=run-tabs",
+          "detail": "The run surface shows Log, Graph, and Artifacts tabs."
+        }
+      ]
+    },
+    {
+      "id": "I004",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "workflow log toolbar",
+      "control_or_state": "Log search and event-level filters",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=log-toolbar",
+          "detail": "The log toolbar shows search and filter controls."
+        }
+      ]
+    },
+    {
+      "id": "I005",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "workflow node list",
+      "control_or_state": "Node status rows and selected-node treatment",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=node-list",
+          "detail": "The node list shows status glyphs and a selected node."
+        }
+      ]
+    },
+    {
+      "id": "I006",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "node room header",
+      "control_or_state": "Node title, provider status, elapsed time, and Close control",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=node-room-header",
+          "detail": "The room header identifies the node and provider state and includes Close."
+        }
+      ]
+    },
+    {
+      "id": "I007",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "node transcript",
+      "control_or_state": "Assistant prose, occurrence headers, and tool rows form one chronological transcript",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=transcript",
+          "detail": "The transcript interleaves assistant prose, occurrence metadata, and tool activity."
+        }
+      ]
+    },
+    {
+      "id": "I008",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "collapsed and expanded tool row",
+      "control_or_state": "Tool disclosure and Raw payload controls",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=tool-row-expanded control=disclosure-and-raw",
+          "detail": "Selecting the disclosure shows a detail body and a Raw control."
+        }
+      ]
+    },
+    {
+      "id": "I009",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "todo strip collapsed and expanded",
+      "control_or_state": "Latest TODO projection strip with progress meter and disclosure",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=todo-expanded control=todo-strip",
+          "detail": "The strip expands to the latest checklist and shows progress."
+        }
+      ]
+    },
+    {
+      "id": "I010",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "generating queue panel",
+      "control_or_state": "Durable queued-draft panel reports Saved on server and auto-send state",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating control=queued-drafts",
+          "detail": "The dock shows queued items, Saved on server, and the auto-send mode."
+        }
+      ]
+    },
+    {
+      "id": "I011",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "active node room",
+      "control_or_state": "Steering composer remains mounted while the agent works",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating element=composer",
+          "detail": "The composer is visible during active generation."
+        }
+      ]
+    },
+    {
+      "id": "I012",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "generating",
+      "control_or_state": "Queue control saves a draft without interrupting the active turn",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=queue",
+          "detail": "The mockup states that Queue holds the message and does not interrupt the active turn."
+        }
+      ]
+    },
+    {
+      "id": "I013",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "generating",
+      "control_or_state": "Stop control interrupts the current agent turn only",
+      "visible_evidence": [
+        {
+          "kind": "interaction_code",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#handler=stop",
+          "detail": "The Stop handler moves the room to idle-after-interrupt while preserving the node context and queued drafts."
+        }
+      ]
+    },
+    {
+      "id": "I014",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "queued item",
+      "control_or_state": "Per-item Delete control",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating control=queued-item-delete",
+          "detail": "Each queued item displays a Delete control."
+        }
+      ]
+    },
+    {
+      "id": "I015",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "verified soft-inject mode",
+      "control_or_state": "Per-item Send now control is available only when provider injection is verified",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating-soft-inject control=send-now",
+          "detail": "Soft-inject mode shows Send now on queued items; queue-only mode omits it."
+        }
+      ]
+    },
+    {
+      "id": "I016",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "verified soft-inject mode",
+      "control_or_state": "Per-item Send now enters the active turn without Stop",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=soft-inject",
+          "detail": "The annotation says Send now enters the active turn without invoking Stop."
+        }
+      ]
+    },
+    {
+      "id": "I017",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "interrupting",
+      "control_or_state": "Stopping is an aria-disabled transient while Queue remains available",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=interrupting control=stopping",
+          "detail": "Stopping is visible with aria-disabled while Queue remains enabled."
+        }
+      ]
+    },
+    {
+      "id": "I018",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "interrupting",
+      "control_or_state": "Interrupt is a sub-second UI-local/provider transition with no progress or optimistic idle",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=interrupting",
+          "detail": "The mockup specifies a brief provider transition with no progress UI and no optimistic idle state."
+        }
+      ]
+    },
+    {
+      "id": "I019",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "idle after interrupt",
+      "control_or_state": "Interrupted tool row uses warning status and preserves already-written files",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=idle-after-interrupt element=interrupted-tool",
+          "detail": "The interrupted row shows a warning glyph and explains that completed writes remain."
+        }
+      ]
+    },
+    {
+      "id": "I020",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "idle after interrupt",
+      "control_or_state": "Will send count replaces queued count and Stop is absent",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=idle-after-interrupt element=dock-header",
+          "detail": "The idle dock reads Will send 2 and has no Stop control."
+        }
+      ]
+    },
+    {
+      "id": "I021",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "idle after interrupt",
+      "control_or_state": "Main Send now restarts generation with the durable queued batch",
+      "visible_evidence": [
+        {
+          "kind": "interaction_code",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#handler=send-now-main",
+          "detail": "The main Send now handler changes the view to generating-again with queued messages represented as operator rows."
+        }
+      ]
+    },
+    {
+      "id": "I022",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "idle after interrupt",
+      "control_or_state": "Thirty-minute inactivity timer starts after interrupt and typing re-arms it",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout",
+          "detail": "The mockup specifies a 30-minute idle timeout and typing-based re-arm."
+        }
+      ]
+    },
+    {
+      "id": "I023",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "generating again",
+      "control_or_state": "Queued messages become full-strength operator rows attributed to Kevin",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating-again element=operator-rows",
+          "detail": "The transcript inserts operator · kevin rows between the interrupted and new tool activity."
+        }
+      ]
+    },
+    {
+      "id": "I024",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "generating again",
+      "control_or_state": "Steering controls reset from projected state and omit an empty draft",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=projected-controls",
+          "detail": "The mockup says controls project from current state rather than remember a mode, and empty drafts are omitted."
+        }
+      ]
+    },
+    {
+      "id": "I025",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "finished with undelivered content",
+      "control_or_state": "Terminal dock is read-only and marks unmatched durable messages Never sent",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=finished-undelivered element=terminal-dock",
+          "detail": "The completed room shows Never sent items without a composer or send controls."
+        }
+      ]
+    },
+    {
+      "id": "I026",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "finished with undelivered content",
+      "control_or_state": "Terminal reconciliation restores sent IDs that lack a matching provider row",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=terminal-reconciliation",
+          "detail": "The mockup specifies that sent IDs without a matching row return to Never sent."
+        }
+      ]
+    },
+    {
+      "id": "I027",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "finished clean",
+      "control_or_state": "Clean terminal room omits the steering dock",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=finished-clean element=node-room",
+          "detail": "The completed clean state shows the transcript with no steering dock."
+        }
+      ]
+    },
+    {
+      "id": "I028",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "failed after 30-minute idle",
+      "control_or_state": "Idle timeout fails the node and preserves durable queued content as Never sent",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=failed-idle element=failed-dock",
+          "detail": "The failed state explains the 30-minute timeout and retains Never sent content."
+        }
+      ]
+    },
+    {
+      "id": "I029",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "restart recovery",
+      "control_or_state": "Recovered durable content is read-only and requires explicit existing Resume",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=restart-recovery element=recovery-dock",
+          "detail": "The recovery state shows preserved content and directs the user to Resume."
+        }
+      ]
+    },
+    {
+      "id": "I030",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "restart recovery",
+      "control_or_state": "Recovery never auto-resumes or auto-resends",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=recovery",
+          "detail": "The mockup explicitly refuses automatic resume and resend after restart."
+        }
+      ]
+    },
+    {
+      "id": "I031",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "loop live iteration",
+      "control_or_state": "Each loop iteration is a separate execution and log row",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=loop-live element=iteration-log-rows",
+          "detail": "The workflow log shows a separate row for each loop iteration."
+        }
+      ]
+    },
+    {
+      "id": "I032",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "loop node room",
+      "control_or_state": "Iteration selector defaults to the live iteration and exposes at most eight entries",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=loop-live control=iteration-selector",
+          "detail": "Iteration 3 is selected as live and the selector is capped at eight visible entries."
+        }
+      ]
+    },
+    {
+      "id": "I033",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "stale loop iteration",
+      "control_or_state": "Stale iteration is read-only and omits steering controls",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=loop-stale element=node-room",
+          "detail": "A completed stale iteration shows no steering dock and identifies iteration 3 as live."
+        }
+      ]
+    },
+    {
+      "id": "I034",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "stale loop iteration",
+      "control_or_state": "Go to iteration 3 returns to the live iteration",
+      "visible_evidence": [
+        {
+          "kind": "interaction_code",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#handler=go-live-iteration",
+          "detail": "The Go to iteration 3 handler selects the live iteration."
+        }
+      ]
+    },
+    {
+      "id": "I035",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "node room layout",
+      "control_or_state": "Steering dock is a fixed sibling below the transcript scroller and does not cover the last row",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#state=generating layout=dock-sibling",
+          "detail": "The transcript ends above the dock with the last row fully visible."
+        }
+      ]
+    },
+    {
+      "id": "I036",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy run shell",
+      "control_or_state": "Two-panel run and 460-pixel node-room layout",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating layout=legacy-shell",
+          "detail": "The legacy surface uses the approved two-panel layout with a 460-pixel room."
+        }
+      ]
+    },
+    {
+      "id": "I037",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy run header",
+      "control_or_state": "Run identity, status, branch, elapsed time, and lifecycle action",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=run-header",
+          "detail": "The legacy header shows run metadata and Cancel while active."
+        }
+      ]
+    },
+    {
+      "id": "I038",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy run tabs",
+      "control_or_state": "Logs, Graph, Chat, and Files navigation tabs",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=run-tabs",
+          "detail": "The legacy shell displays Logs, Graph, Chat, and Files tabs."
+        }
+      ]
+    },
+    {
+      "id": "I039",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy workflow node list",
+      "control_or_state": "Node status rows, retry count, and selected-node treatment",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=node-list",
+          "detail": "The node list includes statuses, retry information, and selection styling."
+        }
+      ]
+    },
+    {
+      "id": "I040",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy node room header",
+      "control_or_state": "Node title, provider status, elapsed time, execution selector, and Close control",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=loop-live element=node-room-header",
+          "detail": "The header includes node identity, provider state, execution selection, and Close."
+        }
+      ]
+    },
+    {
+      "id": "I041",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy node transcript",
+      "control_or_state": "Assistant prose, occurrence headers, and tool rows form one chronological transcript",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=transcript",
+          "detail": "The legacy transcript interleaves prose and tool activity."
+        }
+      ]
+    },
+    {
+      "id": "I042",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "collapsed and expanded legacy tool row",
+      "control_or_state": "Tool disclosure and Raw payload controls",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=tool-row-expanded control=disclosure-and-raw",
+          "detail": "The expanded tool row shows its detail body and Raw control."
+        }
+      ]
+    },
+    {
+      "id": "I043",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy todo strip collapsed and expanded",
+      "control_or_state": "Latest TODO projection strip with progress meter and disclosure",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=todo-expanded control=todo-strip",
+          "detail": "The strip expands to show the latest checklist and progress."
+        }
+      ]
+    },
+    {
+      "id": "I044",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy generating queue panel",
+      "control_or_state": "Durable queued-draft panel reports Saved on server and auto-send state",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating control=queued-drafts",
+          "detail": "The dock shows queued drafts, Saved on server, and auto-send state."
+        }
+      ]
+    },
+    {
+      "id": "I045",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy active node room",
+      "control_or_state": "Steering composer remains mounted while the agent works",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=composer",
+          "detail": "The composer remains visible during active generation."
+        }
+      ]
+    },
+    {
+      "id": "I046",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy generating",
+      "control_or_state": "Queue control saves a draft without interrupting the active turn",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#behavior=queue",
+          "detail": "The mockup states that Queue does not interrupt current work."
+        }
+      ]
+    },
+    {
+      "id": "I047",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy generating",
+      "control_or_state": "Stop control interrupts the current agent turn only",
+      "visible_evidence": [
+        {
+          "kind": "interaction_code",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#handler=stop",
+          "detail": "Stop moves the mockup to idle-after-interrupt and keeps queued drafts."
+        }
+      ]
+    },
+    {
+      "id": "I048",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy queued item",
+      "control_or_state": "Per-item Delete control",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating control=queued-item-delete",
+          "detail": "Each queued item has a Delete control."
+        }
+      ]
+    },
+    {
+      "id": "I049",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy verified soft-inject mode",
+      "control_or_state": "Per-item Send now is available only when provider injection is verified",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating-soft-inject control=send-now",
+          "detail": "Send now appears in soft-inject mode and is absent in queue-only mode."
+        }
+      ]
+    },
+    {
+      "id": "I050",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy verified soft-inject mode",
+      "control_or_state": "Per-item Send now enters the active turn without Stop",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#behavior=soft-inject",
+          "detail": "The annotation says Send now enters active work without stopping it."
+        }
+      ]
+    },
+    {
+      "id": "I051",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy interrupting",
+      "control_or_state": "Stopping is aria-disabled while Queue remains available",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=interrupting control=stopping",
+          "detail": "Stopping is disabled and Queue remains available."
+        }
+      ]
+    },
+    {
+      "id": "I052",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy interrupting",
+      "control_or_state": "Interrupt is a sub-second transition with no progress or optimistic idle",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#behavior=interrupting",
+          "detail": "The mockup specifies a brief transition with no progress indicator or optimistic idle state."
+        }
+      ]
+    },
+    {
+      "id": "I053",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy idle after interrupt",
+      "control_or_state": "Interrupted tool row uses warning status and preserves completed writes",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=idle-after-interrupt element=interrupted-tool",
+          "detail": "The interrupted row shows a warning glyph and retained writes."
+        }
+      ]
+    },
+    {
+      "id": "I054",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy idle after interrupt",
+      "control_or_state": "Will send count and main Send now replace Stop",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=idle-after-interrupt element=dock",
+          "detail": "The idle dock shows Will send, a main Send now, and no Stop."
+        }
+      ]
+    },
+    {
+      "id": "I055",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy idle after interrupt",
+      "control_or_state": "Main Send now restarts generation with the queued batch",
+      "visible_evidence": [
+        {
+          "kind": "interaction_code",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#handler=send-now-main",
+          "detail": "The handler selects the generating-again state and renders operator rows."
+        }
+      ]
+    },
+    {
+      "id": "I056",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy idle after interrupt",
+      "control_or_state": "Thirty-minute inactivity timer starts after interrupt and typing re-arms it",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#behavior=idle-timeout",
+          "detail": "The mockup defines the 30-minute timer and typing re-arm."
+        }
+      ]
+    },
+    {
+      "id": "I057",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy generating again",
+      "control_or_state": "Queued messages become operator rows attributed to Kevin",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating-again element=operator-rows",
+          "detail": "The transcript shows operator · kevin rows before new tool work."
+        }
+      ]
+    },
+    {
+      "id": "I058",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy generating again",
+      "control_or_state": "Controls project from current state and omit empty drafts",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#behavior=projected-controls",
+          "detail": "The mockup says controls are projected and empty drafts are omitted."
+        }
+      ]
+    },
+    {
+      "id": "I059",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy finished with undelivered content",
+      "control_or_state": "Terminal dock is read-only and marks unmatched messages Never sent",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=finished-undelivered element=terminal-dock",
+          "detail": "The terminal dock shows Never sent content without editing or send controls."
+        }
+      ]
+    },
+    {
+      "id": "I060",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy finished clean",
+      "control_or_state": "Clean terminal room omits the steering dock",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=finished-clean element=node-room",
+          "detail": "The clean completed room has no dock."
+        }
+      ]
+    },
+    {
+      "id": "I061",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy failed after 30-minute idle",
+      "control_or_state": "Timeout fails the node and preserves durable content as Never sent",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=failed-idle element=failed-dock",
+          "detail": "The failed state retains Never sent content and names the timeout."
+        }
+      ]
+    },
+    {
+      "id": "I062",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy terminal states",
+      "control_or_state": "Run action changes from Cancel to Re-run after terminal completion or failure",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=finished-undelivered element=run-action",
+          "detail": "The terminal legacy header displays Re-run instead of Cancel."
+        }
+      ]
+    },
+    {
+      "id": "I063",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy restart recovery",
+      "control_or_state": "Run action changes to Resume and durable content stays read-only",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=restart-recovery element=run-action-and-dock",
+          "detail": "The recovery state exposes Resume in the header and preserved read-only content."
+        }
+      ]
+    },
+    {
+      "id": "I064",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy restart recovery",
+      "control_or_state": "Recovery never auto-resumes or auto-resends",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#behavior=recovery",
+          "detail": "The mockup refuses automatic resume and resend."
+        }
+      ]
+    },
+    {
+      "id": "I065",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy loop live iteration",
+      "control_or_state": "Each loop iteration is a separate execution and log row",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=loop-live element=iteration-log-rows",
+          "detail": "Separate log rows represent separate loop executions."
+        }
+      ]
+    },
+    {
+      "id": "I066",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy loop node room",
+      "control_or_state": "Execution selector defaults to live iteration and exposes at most eight entries",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=loop-live control=execution-selector",
+          "detail": "Iteration 3 is selected live and the selector is capped at eight entries."
+        }
+      ]
+    },
+    {
+      "id": "I067",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy stale loop iteration",
+      "control_or_state": "Stale iteration is read-only and omits steering controls",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=loop-stale element=node-room",
+          "detail": "The stale iteration shows no dock and points to the live execution."
+        }
+      ]
+    },
+    {
+      "id": "I068",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy stale loop iteration",
+      "control_or_state": "Go to iteration 3 returns to the live iteration",
+      "visible_evidence": [
+        {
+          "kind": "interaction_code",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#handler=go-live-iteration",
+          "detail": "The Go to iteration 3 handler selects the live execution."
+        }
+      ]
+    },
+    {
+      "id": "I069",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy node room layout",
+      "control_or_state": "Dock is a sibling below the transcript and does not cover the last row",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating layout=dock-sibling",
+          "detail": "The last transcript row remains visible above the dock."
+        }
+      ]
+    },
+    {
+      "id": "I070",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "all active steering states",
+      "control_or_state": "Steering dock is a sibling below the transcript rather than an overlay",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#layout=dock-placement",
+          "detail": "The state sheet places the dock after the transcript and states that it must not cover the last row."
+        }
+      ]
+    },
+    {
+      "id": "I071",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "generating",
+      "control_or_state": "Queue holds a draft while Stop targets only the active agent turn",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=generating",
+          "detail": "The state card assigns distinct Queue and Stop effects."
+        }
+      ]
+    },
+    {
+      "id": "I072",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "interrupting",
+      "control_or_state": "Stopping is a disabled brief state, Queue stays enabled, and no progress appears",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=interrupting",
+          "detail": "The card shows disabled Stopping, enabled Queue, and no progress element."
+        }
+      ]
+    },
+    {
+      "id": "I073",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "idle after interrupt",
+      "control_or_state": "Node remains running, current turn is interrupted, and durable drafts can be sent",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=idle-after-interrupt",
+          "detail": "The card distinguishes node state from agent-turn state and presents Send now."
+        }
+      ]
+    },
+    {
+      "id": "I074",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "generating again",
+      "control_or_state": "Sent drafts appear as attributed operator rows before resumed assistant work",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=generating-again",
+          "detail": "The card shows operator attribution and resumed activity."
+        }
+      ]
+    },
+    {
+      "id": "I075",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "generating again",
+      "control_or_state": "Controls derive from projected state and omit an empty draft",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=projection",
+          "detail": "The state sheet says not to remember a prior mode and not to render empty drafts."
+        }
+      ]
+    },
+    {
+      "id": "I076",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "finished with undelivered content",
+      "control_or_state": "Terminal undelivered content is read-only and labeled Never sent",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=finished-undelivered",
+          "detail": "The terminal card shows durable Never sent content with no composer."
+        }
+      ]
+    },
+    {
+      "id": "I077",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "finished clean",
+      "control_or_state": "Clean terminal state has no steering dock",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=finished-clean",
+          "detail": "The clean terminal card contains no dock."
+        }
+      ]
+    },
+    {
+      "id": "I078",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "failed after idle timeout",
+      "control_or_state": "Thirty-minute idle timeout fails active work but preserves durable queue items",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=failed-idle",
+          "detail": "The failure card defines the timeout and preserved Never sent items."
+        }
+      ]
+    },
+    {
+      "id": "I079",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "restart recovery",
+      "control_or_state": "Recovery exposes durable content read-only and requires explicit Resume",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=restart-recovery",
+          "detail": "The recovery card requires explicit Resume and refuses automatic resend."
+        }
+      ]
+    },
+    {
+      "id": "I080",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "operator record",
+      "control_or_state": "Operator message shows sender identity and full-strength sent text",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#element=operator-record",
+          "detail": "The record identifies operator · kevin and displays the message as transcript content."
+        }
+      ]
+    },
+    {
+      "id": "I081",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "message status examples",
+      "control_or_state": "Sent status exists before provider acknowledgement",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#status=sent",
+          "detail": "The state sheet defines Sent as provider submission before matched acknowledgement."
+        }
+      ]
+    },
+    {
+      "id": "I082",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "message status examples",
+      "control_or_state": "Delivered status requires provider acknowledgement matching the stamped message ID",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#status=delivered",
+          "detail": "The state sheet requires a matching provider echo before Delivered."
+        }
+      ]
+    },
+    {
+      "id": "I083",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "terminal reconciliation",
+      "control_or_state": "Sent without a matching provider row returns to Never sent",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-reconciliation",
+          "detail": "The state sheet restores unmatched sent messages to Never sent."
+        }
+      ]
+    },
+    {
+      "id": "I084",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "refused behaviors",
+      "control_or_state": "Send controls never silently invoke Stop",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#refused=send-stops",
+          "detail": "The refused-behavior table prohibits any Send action from stopping active work."
+        }
+      ]
+    },
+    {
+      "id": "I085",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "provider capability states",
+      "control_or_state": "Send now is hidden unless active-turn injection is verified",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=capability-gate",
+          "detail": "The state sheet gates Send now on verified provider capability."
+        }
+      ]
+    },
+    {
+      "id": "I086",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "refused behaviors",
+      "control_or_state": "UI never infers Delivered without matching provider evidence",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#refused=unverified-delivery",
+          "detail": "The refused-behavior table prohibits inferred delivery."
+        }
+      ]
+    },
+    {
+      "id": "I087",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "refused behaviors",
+      "control_or_state": "Enter does not submit steering messages",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#refused=enter-to-send",
+          "detail": "The refused-behavior table prohibits Enter-to-send."
+        }
+      ]
+    },
+    {
+      "id": "I088",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "refused behaviors",
+      "control_or_state": "Empty drafts are never rendered or sent",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#refused=empty-draft",
+          "detail": "The refused-behavior table prohibits empty-draft records and sends."
+        }
+      ]
+    },
+    {
+      "id": "I089",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "terminal cards",
+      "control_or_state": "Read-only state is communicated by the absence of editing and send controls",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#state=terminal-read-only",
+          "detail": "Terminal cards retain content but omit composer and send actions."
+        }
+      ]
+    },
+    {
+      "id": "I090",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "family chip palette",
+      "control_or_state": "Shell and code tools use the bash color token",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=family chip=shell-code",
+          "detail": "Shell and code chip examples share the bash token styling."
+        }
+      ]
+    },
+    {
+      "id": "I091",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "family chip palette",
+      "control_or_state": "File and web tools use the command color token",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=family chip=file-web",
+          "detail": "File and web chip examples share the command token styling."
+        }
+      ]
+    },
+    {
+      "id": "I092",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "family chip palette",
+      "control_or_state": "Search and glob tools use the prompt color token",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=family chip=search-glob",
+          "detail": "Search and glob examples share the prompt token styling."
+        }
+      ]
+    },
+    {
+      "id": "I093",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "family chip palette",
+      "control_or_state": "Todo and task tools use the approval color token",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=family chip=todo-task",
+          "detail": "Todo and task examples share the approval token styling."
+        }
+      ]
+    },
+    {
+      "id": "I094",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "family chip palette",
+      "control_or_state": "Generic tools use the secondary border token",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=family chip=generic",
+          "detail": "The generic example uses secondary text and border styling."
+        }
+      ]
+    },
+    {
+      "id": "I095",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "status glyph palette",
+      "control_or_state": "Succeeded uses check glyph",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=status state=succeeded",
+          "detail": "Succeeded is represented by a check character."
+        }
+      ]
+    },
+    {
+      "id": "I096",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "status glyph palette",
+      "control_or_state": "Failed uses cross glyph",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=status state=failed",
+          "detail": "Failed is represented by a cross character."
+        }
+      ]
+    },
+    {
+      "id": "I097",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "status glyph palette",
+      "control_or_state": "Running uses half-circle glyph",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=status state=running",
+          "detail": "Running is represented by a half-circle character."
+        }
+      ]
+    },
+    {
+      "id": "I098",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "status glyph palette",
+      "control_or_state": "Interrupted uses warning glyph distinct from failed",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=status state=interrupted",
+          "detail": "Interrupted is represented by a warning glyph and is visually distinct from failed."
+        }
+      ]
+    },
+    {
+      "id": "I099",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "status glyph palette",
+      "control_or_state": "Unknown uses dash glyph",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#palette=status state=unknown",
+          "detail": "Unknown is represented by a dash."
+        }
+      ]
+    },
+    {
+      "id": "I100",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "provider-specific status annotation",
+      "control_or_state": "Codex cannot produce the interrupted glyph",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted",
+          "detail": "The mockup states that Codex has no interrupted state signal."
+        }
+      ]
+    },
+    {
+      "id": "I101",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "collapsed tool row",
+      "control_or_state": "Collapsed anatomy contains chevron, status glyph, provider tool name, headline, and result",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#state=collapsed anatomy=tool-row",
+          "detail": "The collapsed examples show all five approved row regions."
+        }
+      ]
+    },
+    {
+      "id": "I102",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "collapsed tool row",
+      "control_or_state": "Provider-sent tool name is retained while color resolves only the family",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#behavior=provider-tool-name",
+          "detail": "The mockup says to retain the provider tool name and use family only for color."
+        }
+      ]
+    },
+    {
+      "id": "I103",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "long path hard case",
+      "control_or_state": "Long paths middle-elide while the filename remains visible",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#hard-case=long-path",
+          "detail": "The rendered path preserves the filename and elides the middle directories."
+        }
+      ]
+    },
+    {
+      "id": "I104",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "Codex multiline script hard case",
+      "control_or_state": "Script-as-tool-name falls back to shell chip, unwraps zsh wrapper, and truncates after first line",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#hard-case=codex-multiline-script",
+          "detail": "The mockup defines shell fallback, /bin/zsh -lc unwrapping, and first-line ellipsis."
+        }
+      ]
+    },
+    {
+      "id": "I105",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "MCP hard case",
+      "control_or_state": "MCP tool headline uses server · tool and generic detail body",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#hard-case=mcp",
+          "detail": "The MCP example renders server · tool with a generic body."
+        }
+      ]
+    },
+    {
+      "id": "I106",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "unknown tool hard case",
+      "control_or_state": "Unknown arguments summarize up to three scalars and compact objects and arrays",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#hard-case=unknown-tool",
+          "detail": "The mockup defines up to three key:value scalars, object {…}, and array [n] summaries."
+        }
+      ]
+    },
+    {
+      "id": "I107",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "unknown tool hard case",
+      "control_or_state": "Long unknown tool name falls back to family in the chip and remains complete in the body",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#hard-case=unknown-tool-name",
+          "detail": "The mockup defines chip fallback while preserving the full name in expanded content."
+        }
+      ]
+    },
+    {
+      "id": "I108",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded shell tool",
+      "control_or_state": "Shell expansion uses a terminal-style block and failed shell rows open by default",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=shell",
+          "detail": "The shell example shows terminal content, and the failed example is initially open."
+        }
+      ]
+    },
+    {
+      "id": "I109",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded file tool",
+      "control_or_state": "File expansion uses an inline diff",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=file",
+          "detail": "The file example renders a line-oriented inline diff."
+        }
+      ]
+    },
+    {
+      "id": "I110",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded web tool",
+      "control_or_state": "Web expansion shows URL, title, and Markdown body",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=web",
+          "detail": "The web example shows its URL, page title, and Markdown content."
+        }
+      ]
+    },
+    {
+      "id": "I111",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded search tool",
+      "control_or_state": "Search expansion shows path:line content matches",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=search",
+          "detail": "Search results are rendered as path:line matches with content."
+        }
+      ]
+    },
+    {
+      "id": "I112",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded glob tool",
+      "control_or_state": "Glob expansion shows a flat path list",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=glob",
+          "detail": "Glob output is a flat list of paths."
+        }
+      ]
+    },
+    {
+      "id": "I113",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded code tool",
+      "control_or_state": "Code expansion shows language-labelled highlighted source and output",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=code",
+          "detail": "The code example shows language metadata, source, and execution output."
+        }
+      ]
+    },
+    {
+      "id": "I114",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded OMP todo tool",
+      "control_or_state": "Latest todo call expands to checklist while earlier calls collapse to todo updated",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=omp-todo",
+          "detail": "The mockup defines last-call projection and one-line prior-call summaries."
+        }
+      ]
+    },
+    {
+      "id": "I115",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded todo tool",
+      "control_or_state": "Todo projection feeds the strip and terminal display does not rewrite persisted todo events",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#behavior=todo-projection",
+          "detail": "The mockup links latest todo projection to the strip and keeps persisted event history unchanged."
+        }
+      ]
+    },
+    {
+      "id": "I116",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded Claude TodoWrite",
+      "control_or_state": "Claude TodoWrite uses last-call-wins single-phase renderer without blocked or abandoned states",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=claude-todowrite",
+          "detail": "The mockup uses the shared todo renderer and excludes blocked and abandoned states."
+        }
+      ]
+    },
+    {
+      "id": "I117",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded OMP task batch",
+      "control_or_state": "Task batch expansion shows batch context and one card per subtask",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=omp-task",
+          "detail": "The OMP task example shows shared batch context and multiple subtask cards."
+        }
+      ]
+    },
+    {
+      "id": "I118",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded Claude Agent dispatch",
+      "control_or_state": "Claude Agent expansion shows one dispatch card with no batch context",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#expanded-family=claude-agent",
+          "detail": "The Claude Agent example shows exactly one dispatch card and no batch context."
+        }
+      ]
+    },
+    {
+      "id": "I119",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "multiple occurrences",
+      "control_or_state": "Occurrence grouping uses occurrence_id and never the word Attempt",
+      "visible_evidence": [
+        {
+          "kind": "annotation",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#behavior=occurrence-grouping",
+          "detail": "The mockup groups by occurrence_id and prohibits Attempt terminology."
+        }
+      ]
+    },
+    {
+      "id": "I120",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "occurrence header candidates",
+      "control_or_state": "Multiple occurrences show Run, Pass, or reason-only header candidates; single occurrences show no header",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#state=occurrence-header-candidates",
+          "detail": "The state sheet displays the three approved wording candidates and the single-occurrence omission rule."
+        }
+      ]
+    },
+    {
+      "id": "I121",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "raw payload closed and open",
+      "control_or_state": "Raw toggle keeps the complete same JSON one click away and closed by default",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#state=raw-open-and-closed control=raw",
+          "detail": "The examples show Raw closed by default and the complete JSON when opened."
+        }
+      ]
+    },
+    {
+      "id": "I122",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "all tool disclosures",
+      "control_or_state": "Each tool disclosure independently toggles its expanded body",
+      "visible_evidence": [
+        {
+          "kind": "rendered",
+          "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#state=collapsed-and-expanded-disclosure-examples",
+          "detail": "The static state sheet renders independent collapsed and expanded disclosure examples; all visible Raw controls were selected during review."
+        }
+      ]
+    }
+  ],
+  "features": [
+    {
+      "id": "M001",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "Console node room layout",
+      "control_or_state": "Fixed 520-pixel Console room with a non-overlay dock",
+      "inventory_ids": [
+        "I035"
+      ],
+      "action_key": null,
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/room-split-layout.ts#DEFAULT_RIGHT_PERCENT",
+          "detail": "The current Console room uses the shared percentage split and resizable width contract rather than a fixed 520-pixel room."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md#completed-responsive-split-layout",
+          "detail": "The completed HITL run-room Epic defines the existing responsive percentage panel baseline."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "a 520-pixel Console node room with the steering dock below the transcript",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: a 520-pixel Console node room with the steering dock below the transcript."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "a Console workflow node room is open",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: a Console workflow node room is open."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "the Console node room renders",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: the Console node room renders."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the open Console node room",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: the open Console node room."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one node room",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: one node room."
+            }
+          ]
+        },
+        "timing": {
+          "value": "with the initial node-room layout",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: with the initial node-room layout."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "none; layout does not change the running node",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: none; layout does not change the running node."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "none",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: none."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the transcript scrolls above a fixed sibling dock and its last row remains visible",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: the transcript scrolls above a fixed sibling dock and its last row remains visible."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "the room remains 520 pixels wide until the room closes",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#layout=node-room-width-520-and-sibling-dock",
+              "detail": "The approved mockup proves this behavior field: the room remains 520 pixels wide until the room closes."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M002",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "Legacy node room layout",
+      "control_or_state": "Fixed 460-pixel Legacy room",
+      "inventory_ids": [
+        "I036"
+      ],
+      "action_key": null,
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/room-split-layout.ts#DEFAULT_RIGHT_PERCENT",
+          "detail": "The current Legacy run room uses a resizable percentage split rather than the approved fixed 460-pixel room."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md#completed-responsive-split-layout",
+          "detail": "The completed HITL run-room Epic defines the existing responsive percentage panel baseline."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "a two-panel Legacy run view with a 460-pixel node room",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: a two-panel Legacy run view with a 460-pixel node room."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "a Legacy workflow node room is open",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: a Legacy workflow node room is open."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "the Legacy node room renders",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: the Legacy node room renders."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the open Legacy node room",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: the open Legacy node room."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one node room",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: one node room."
+            }
+          ]
+        },
+        "timing": {
+          "value": "with the initial node-room layout",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: with the initial node-room layout."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "none; layout does not change the running node",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: none; layout does not change the running node."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "none",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: none."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the right node-room panel is 460 pixels wide",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: the right node-room panel is 460 pixels wide."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "the room remains 460 pixels wide until the room closes",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#layout=node-room-width-460",
+              "detail": "The approved mockup proves this behavior field: the room remains 460 pixels wide until the room closes."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M005",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "loop node execution selector",
+      "control_or_state": "Selector defaults to live execution and exposes at most eight entries",
+      "inventory_ids": [
+        "I032",
+        "I066"
+      ],
+      "action_key": "select-node-execution",
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/WorkflowExecution.tsx#node-execution-options",
+          "detail": "The current Legacy room builds all matching execution options without an eight-entry limit."
+        },
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx#computed-options",
+          "detail": "The current Console room also exposes the complete matching execution list without the approved cap."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.7",
+          "detail": "Completed Story 1.7 defines execution navigation but does not limit the selector to eight entries."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "an execution selector containing no more than eight entries with the live iteration selected by default",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: an execution selector containing no more than eight entries with the live iteration selected by default."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "the loop node has more than one execution",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: the loop node has more than one execution."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "the user opens the selector and chooses an execution",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: the user opens the selector and chooses an execution."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the selected execution of the current loop node",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: the selected execution of the current loop node."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one of at most eight exposed executions",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: one of at most eight exposed executions."
+            }
+          ]
+        },
+        "timing": {
+          "value": "immediate room projection after selection",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: immediate room projection after selection."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "none; stale selections are read-only and do not steer the live execution",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: none; stale selections are read-only and do not steer the live execution."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "none",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: none."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the transcript shows the chosen execution and the live iteration is the initial selection",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: the transcript shows the chosen execution and the live iteration is the initial selection."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "the room displays the selected live or stale execution",
+          "evidence": [
+            {
+              "kind": "interaction_code",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#control=iteration-selector-max-8",
+              "detail": "The approved mockup proves this behavior field: the room displays the selected live or stale execution."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M007",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "legacy generating queue panel",
+      "control_or_state": "Projected Auto-send on status indicator",
+      "inventory_ids": [
+        "I044"
+      ],
+      "action_key": null,
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/ComposerDock.tsx#queued-draft-header",
+          "detail": "The current Legacy steering dock does not render the approved projected Auto-send on indicator."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-7.5",
+          "detail": "Completed Story 7.5 defines durable auto-send behavior, but it does not establish this approved visible status presentation."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "an Auto-send on status label in the queued-draft panel",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: an Auto-send on status label in the queued-draft panel."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "the queue panel is visible and the effective projected auto-send state is on",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: the queue panel is visible and the effective projected auto-send state is on."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "the queue panel renders its current projected state",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: the queue panel renders its current projected state."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the queue panel auto-send status label",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: the queue panel auto-send status label."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one indicator",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: one indicator."
+            }
+          ]
+        },
+        "timing": {
+          "value": "with the current queue-panel render",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: with the current queue-panel render."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "none; the indicator alone performs no dispatch",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: none; the indicator alone performs no dispatch."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "none",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: none."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the panel communicates that auto-send is on",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: the panel communicates that auto-send is on."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "the indicator continues to reflect projected state; the mockup exposes no auto-send control",
+          "evidence": [
+            {
+              "kind": "rendered",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html#state=generating element=auto-send-on-indicator",
+              "detail": "The approved mockup proves this behavior field: the indicator continues to reflect projected state; the mockup exposes no auto-send control."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M008",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "verified soft-inject mode",
+      "control_or_state": "Per-item Send now injects one queued message without Stop",
+      "inventory_ids": [
+        "I015",
+        "I016",
+        "I049",
+        "I050",
+        "I085"
+      ],
+      "action_key": "send-now-active-turn",
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/ComposerDock.test.tsx#queue-only-controls",
+          "detail": "The current dock tests do not prove a per-item active-turn Send now control that injects without Stop."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-8.3-and-8.8",
+          "detail": "Completed Stories 8.3 and 8.8 define the provider-capability baseline used to compare the missing verified per-item control."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "each queued item shows Send now only for a provider with verified active-turn injection",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: each queued item shows Send now only for a provider with verified active-turn injection."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "the agent is generating, one item is queued, and provider injection is verified",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: the agent is generating, one item is queued, and provider injection is verified."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "the user selects Send now on that queued item",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: the user selects Send now on that queued item."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the selected queued message and the current active provider turn",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: the selected queued message and the current active provider turn."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one queued message",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: one queued message."
+            }
+          ]
+        },
+        "timing": {
+          "value": "immediate active-turn injection",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: immediate active-turn injection."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "the active turn continues and Stop is not invoked",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: the active turn continues and Stop is not invoked."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "the selected message leaves the queued collection and receives a stamped message identity",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: the selected message leaves the queued collection and receives a stamped message identity."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the selected message enters the active turn without stopping it",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: the selected message enters the active turn without stopping it."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "generation continues and the item is represented as sent pending provider acknowledgement",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=verified-soft-inject-send-now",
+              "detail": "The approved mockup proves this behavior field: generation continues and the item is represented as sent pending provider acknowledgement."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M009",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "terminal state with undelivered content",
+      "control_or_state": "Unmatched durable messages become read-only Never sent records",
+      "inventory_ids": [
+        "I025",
+        "I059",
+        "I076"
+      ],
+      "action_key": null,
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/steering-dock.ts#terminal-reconciliation",
+          "detail": "The current Never sent projection reconciles process-local queue state and cannot prove the approved durable terminal record."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-2.11-and-7.3",
+          "detail": "Completed Stories 2.11 and 7.3 define Never sent reconciliation and durable queue ordering; the approved mockup combines them into a durable read-only record."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "a read-only terminal dock labels each unmatched durable message Never sent",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: a read-only terminal dock labels each unmatched durable message Never sent."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "the node reaches a terminal state with durable queued or unacknowledged content",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: the node reaches a terminal state with durable queued or unacknowledged content."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "terminal reconciliation runs",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: terminal reconciliation runs."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "durable steering messages without matching provider acknowledgement",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: durable steering messages without matching provider acknowledgement."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "every unmatched durable message",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: every unmatched durable message."
+            }
+          ]
+        },
+        "timing": {
+          "value": "on terminal completion or failure",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: on terminal completion or failure."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "none; the node is already terminal",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: none; the node is already terminal."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "unmatched sent identities are restored to the Never sent terminal collection",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: unmatched sent identities are restored to the Never sent terminal collection."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the user can read all undelivered content and cannot edit or send it",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: the user can read all undelivered content and cannot edit or send it."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "the terminal room remains read-only with Never sent records",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html#behavior=terminal-never-sent-reconciliation",
+              "detail": "The approved mockup proves this behavior field: the terminal room remains read-only with Never sent records."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M010",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "failed after idle timeout",
+      "control_or_state": "Thirty-minute interrupted-idle timeout fails the node and preserves durable queue content",
+      "inventory_ids": [
+        "I028",
+        "I061",
+        "I078"
+      ],
+      "action_key": null,
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/workflows/src/steering-registry.ts#STEERING_IDLE_AWAIT_INACTIVITY_MS",
+          "detail": "The current registry implements the 30-minute idle failure, but its process-local queue cannot preserve the approved durable content through that transition."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-2.12-and-7.3",
+          "detail": "Completed Stories 2.12 and 7.3 define the timeout and durable queue baselines; the current implementation does not yet join those contracts."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "a failed node explains the thirty-minute idle timeout and shows preserved Never sent content",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: a failed node explains the thirty-minute idle timeout and shows preserved Never sent content."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "the current turn was interrupted and the node remains idle with durable queued content",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: the current turn was interrupted and the node remains idle with durable queued content."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "thirty minutes pass without activity; typing re-arms the timer before expiry",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: thirty minutes pass without activity; typing re-arms the timer before expiry."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the interrupted node execution",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: the interrupted node execution."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one node execution",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: one node execution."
+            }
+          ]
+        },
+        "timing": {
+          "value": "after thirty minutes of re-armable inactivity",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: after thirty minutes of re-armable inactivity."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "the node execution fails",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: the node execution fails."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "durable queued content is retained and projected as Never sent",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: durable queued content is retained and projected as Never sent."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the node shows failed status and the preserved content remains readable",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: the node shows failed status and the preserved content remains readable."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "a failed terminal room with read-only Never sent records",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html#behavior=idle-timeout-preserves-durable-queue",
+              "detail": "The approved mockup proves this behavior field: a failed terminal room with read-only Never sent records."
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "M013",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "provider-specific status annotation",
+      "control_or_state": "Codex cannot produce the interrupted warning glyph",
+      "inventory_ids": [
+        "I100"
+      ],
+      "action_key": null,
+      "scope": "CURRENT",
+      "coverage_role": "CHANGE_FEATURE",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.ts#statusGlyph",
+          "detail": "The current shared tool presenter permits the interrupted warning status for every provider, including Codex."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-8.4",
+          "detail": "Completed Story 8.4 requires interrupted Codex tool rows, while the approved mockup explicitly removes that provider status."
+        }
+      ],
+      "status": "PROVEN",
+      "open_question": null,
+      "signature": {
+        "visible_presentation": {
+          "value": "Codex tool rows never use the interrupted warning glyph",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: Codex tool rows never use the interrupted warning glyph."
+            }
+          ]
+        },
+        "precondition": {
+          "value": "a Codex tool row is being presented",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: a Codex tool row is being presented."
+            }
+          ]
+        },
+        "trigger": {
+          "value": "the presenter resolves the tool status glyph",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: the presenter resolves the tool status glyph."
+            }
+          ]
+        },
+        "target_identity": {
+          "value": "the current Codex tool row status glyph",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: the current Codex tool row status glyph."
+            }
+          ]
+        },
+        "target_cardinality": {
+          "value": "one tool row",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: one tool row."
+            }
+          ]
+        },
+        "timing": {
+          "value": "during transcript rendering",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: during transcript rendering."
+            }
+          ]
+        },
+        "effect_on_active_work": {
+          "value": "none",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: none."
+            }
+          ]
+        },
+        "collection_mutation": {
+          "value": "none",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: none."
+            }
+          ]
+        },
+        "expected_result": {
+          "value": "the interrupted warning glyph is unavailable for Codex rows",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: the interrupted warning glyph is unavailable for Codex rows."
+            }
+          ]
+        },
+        "next_state": {
+          "value": "the row uses only a Codex-supported status presentation",
+          "evidence": [
+            {
+              "kind": "annotation",
+              "source": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html#provider=codex status=interrupted-unavailable",
+              "detail": "The approved mockup proves this behavior field: the row uses only a Codex-supported status presentation."
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "unchanged_context": [
+    {
+      "id": "C001",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "Console run shell and room header",
+      "control_or_state": "Existing run navigation, run metadata, filters, node list, and room header",
+      "inventory_ids": [
+        "I001",
+        "I002",
+        "I003",
+        "I004",
+        "I005",
+        "I006"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "These controls reproduce the existing Console workflow-run shell and do not change its contract.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/experiments/console/routes/RunDetailPage.tsx#run-detail-shell",
+          "detail": "The current Console route already renders the navigation, run header, tabs, log controls, node list, and selected node room."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md#completed-run-room",
+          "detail": "The completed HITL Epic already defines the workflow run shell and node-room entry points."
+        }
+      ]
+    },
+    {
+      "id": "C002",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "Console and Legacy transcripts",
+      "control_or_state": "Existing chronological transcript and tool disclosure controls",
+      "inventory_ids": [
+        "I007",
+        "I008",
+        "I041",
+        "I042"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The current product already interleaves assistant text and tool rows and supplies independent disclosure and Raw controls.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/NodeTranscriptPane.tsx#transcript-events",
+          "detail": "The current transcript pane already renders chronological assistant and tool events with disclosure and Raw payload controls."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Epic-1",
+          "detail": "Completed Epic 1 defines the readable chronological transcript and tool disclosure behavior."
+        }
+      ]
+    },
+    {
+      "id": "C003",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "active steering states",
+      "control_or_state": "Existing composer, Queue, Stop, Delete, and sibling dock behavior",
+      "inventory_ids": [
+        "I011",
+        "I012",
+        "I013",
+        "I014",
+        "I045",
+        "I046",
+        "I047",
+        "I048",
+        "I070",
+        "I071",
+        "I084"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The active steering controls and their non-interrupting Queue and turn-only Stop contracts already exist; the changed durable and soft-inject behavior is classified separately.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/ComposerDock.tsx#active-steering-controls",
+          "detail": "The current Legacy and Console docks already remain mounted during generation and expose Queue, Stop, and per-item Delete with the same action boundaries."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Epic-2",
+          "detail": "Completed Epic 2 defines live steering with Queue, turn-only Stop, deletion, and a non-overlay dock."
+        }
+      ]
+    },
+    {
+      "id": "C004",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "interrupting and idle-after-interrupt transition",
+      "control_or_state": "Existing brief Stopping state and interrupted tool outcome",
+      "inventory_ids": [
+        "I017",
+        "I018",
+        "I019",
+        "I051",
+        "I052",
+        "I053",
+        "I072"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The approved brief disabled Stopping state, enabled Queue, lack of progress UI, and warning presentation already match the completed steering baseline.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/steering-dock.ts#deriveSteeringDockState",
+          "detail": "The current steering projection already distinguishes generating, stopping, and idle-after-interrupt states while preserving Queue availability."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-2.3",
+          "detail": "Completed Story 2.3 defines the brief Stopping transition and interrupted outcome without optimistic idle."
+        }
+      ]
+    },
+    {
+      "id": "C005",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "idle send and resumed generation",
+      "control_or_state": "Existing main Send now, operator rows, projected controls, and sent status",
+      "inventory_ids": [
+        "I020",
+        "I021",
+        "I022",
+        "I023",
+        "I024",
+        "I054",
+        "I055",
+        "I056",
+        "I057",
+        "I058",
+        "I073",
+        "I074",
+        "I075",
+        "I080",
+        "I081"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The current baseline already sends the queued batch after interruption, renders attributed operator rows, projects controls from state, and distinguishes Sent before any new Delivered state.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/NodeTranscriptPane.tsx#operator-rows",
+          "detail": "The current room already renders operator rows and the dock already exposes the idle Send now transition and projected controls."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-2.3-2.8-2.9-and-2.10",
+          "detail": "The completed steering stories define resumed generation, attributed operator rows, projected controls, and Sent presentation."
+        }
+      ]
+    },
+    {
+      "id": "C006",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "terminal steering states",
+      "control_or_state": "Existing terminal reconciliation, clean omission, lifecycle actions, and read-only affordance",
+      "inventory_ids": [
+        "I026",
+        "I027",
+        "I060",
+        "I062",
+        "I077",
+        "I083",
+        "I089"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "These terminal rules already exist as the baseline; the new durable Never sent records and recovery behavior are classified as changes.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/steering-dock.ts#terminal-state",
+          "detail": "The current projection already omits the dock for clean terminal state, prevents editing in terminal cards, and reconciles in-process sent state."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-2.11-and-2.12",
+          "detail": "The completed terminal-state story defines clean omission, lifecycle actions, and read-only terminal behavior."
+        }
+      ]
+    },
+    {
+      "id": "C007",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "loop execution history",
+      "control_or_state": "Existing per-iteration rows, stale read-only state, and Go to live iteration",
+      "inventory_ids": [
+        "I031",
+        "I033",
+        "I034",
+        "I065",
+        "I067",
+        "I068"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The current product already models loop executions separately and keeps stale iterations read-only with navigation back to live.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/execution-room-model.ts#execution-selection",
+          "detail": "The current execution-room model distinguishes live and stale executions and supports returning to the live occurrence."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.7",
+          "detail": "The completed occurrence-navigation story defines separate executions and read-only stale history."
+        }
+      ]
+    },
+    {
+      "id": "C008",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "Legacy run shell and room header",
+      "control_or_state": "Existing Legacy run metadata, tabs, node list, selector, and Close control",
+      "inventory_ids": [
+        "I037",
+        "I038",
+        "I039",
+        "I040"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "These elements reproduce the current Legacy workflow execution shell.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/WorkflowExecution.tsx#workflow-run-shell",
+          "detail": "The current workflow execution view already renders the Legacy run header, tabs, node list, room header, execution selector, and Close control."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-workflow-run-view-hitl/epics.md#completed-run-room",
+          "detail": "The completed HITL Epic defines the same Legacy run-room context."
+        }
+      ]
+    },
+    {
+      "id": "C009",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "rendered_state": "Legacy node room layout",
+      "control_or_state": "Existing sibling dock below the transcript",
+      "inventory_ids": [
+        "I069"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The current room already keeps the dock as a sibling below the transcript so it does not overlay the last row; only fixed panel sizing changes.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/NodeTranscriptPane.tsx#room-column",
+          "detail": "The current node room already lays out the transcript and dock as vertical siblings."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-2.1",
+          "detail": "The completed steering layout story defines the dock as a non-overlay room sibling."
+        }
+      ]
+    },
+    {
+      "id": "C010",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "refused composer input behaviors",
+      "control_or_state": "Enter does not submit and empty drafts are omitted",
+      "inventory_ids": [
+        "I087",
+        "I088"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The current composer already requires the explicit action and rejects empty draft rendering or submission.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/ComposerDock.test.tsx#composer-input-guards",
+          "detail": "Current tests cover explicit submission behavior and omission of empty drafts."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-2.1-and-2.2",
+          "detail": "Completed Stories 2.1 and 2.2 define explicit non-empty steering actions and queue withdrawal."
+        }
+      ]
+    },
+    {
+      "id": "C011",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "tool family palette",
+      "control_or_state": "Existing semantic color tokens for tool families",
+      "inventory_ids": [
+        "I090",
+        "I091",
+        "I092",
+        "I093",
+        "I094"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The approved family chips retain the current semantic color mapping.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.ts#tool-family-presentation",
+          "detail": "The current presenter already maps shell/code, file/web, search/glob, todo/task, and generic families to these semantic tokens."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.1",
+          "detail": "The completed tool-family story defines the same semantic chip palette."
+        }
+      ]
+    },
+    {
+      "id": "C012",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "tool status palette",
+      "control_or_state": "Existing succeeded, failed, running, interrupted, and unknown glyphs",
+      "inventory_ids": [
+        "I095",
+        "I096",
+        "I097",
+        "I098",
+        "I099"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The general status glyph palette is unchanged; the Codex-specific exception is classified separately.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.ts#statusGlyph",
+          "detail": "The current presenter already maps the five general tool states to the approved glyphs."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.1",
+          "detail": "The completed status story defines the same general glyph palette."
+        }
+      ]
+    },
+    {
+      "id": "C013",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "collapsed tool rows",
+      "control_or_state": "Existing collapsed anatomy and provider-name retention",
+      "inventory_ids": [
+        "I101",
+        "I102"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Collapsed rows keep the current anatomy and preserve provider tool names while family controls color.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.ts#collapsed-tool-presentation",
+          "detail": "The current tool presenter already produces the same collapsed row anatomy and provider-name display."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.1",
+          "detail": "The completed collapsed-row story defines the same anatomy and naming rule."
+        }
+      ]
+    },
+    {
+      "id": "C014",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "tool presentation hard cases",
+      "control_or_state": "Existing long-path, Codex script, MCP, and unknown-tool fallbacks",
+      "inventory_ids": [
+        "I103",
+        "I104",
+        "I105",
+        "I106",
+        "I107"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The approved hard cases preserve the current deterministic presentation rules.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.test.ts#hard-cases",
+          "detail": "Current presenter tests cover middle elision, script unwrapping, MCP headings, and unknown argument and name fallbacks."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-1.1-and-1.3",
+          "detail": "The completed transcript stories define these hard-case presentation rules."
+        }
+      ]
+    },
+    {
+      "id": "C015",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded common tool families",
+      "control_or_state": "Existing shell, file, web, search, glob, and code bodies",
+      "inventory_ids": [
+        "I108",
+        "I109",
+        "I110",
+        "I111",
+        "I112",
+        "I113"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The expanded bodies use the existing family-specific renderers.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/experiments/console/components/inspect/ConsoleAgentHistoryList.tsx#tool-detail-renderers",
+          "detail": "The current Console transcript already supplies family-specific detail bodies for these common tools."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-1.3-and-1.4",
+          "detail": "The completed expanded-tool story defines the same terminal, diff, web, search, glob, and code bodies."
+        }
+      ]
+    },
+    {
+      "id": "C016",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded task tools",
+      "control_or_state": "Existing OMP task batch and Claude Agent dispatch bodies",
+      "inventory_ids": [
+        "I117",
+        "I118"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The approved task bodies retain the current distinction between batched OMP tasks and one Claude dispatch.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.ts#task-presentations",
+          "detail": "The current presenter already distinguishes OMP task batches from a single Claude Agent dispatch."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.6",
+          "detail": "The completed task-renderer story defines the same batch and single-dispatch bodies."
+        }
+      ]
+    },
+    {
+      "id": "C017",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "occurrence grouping and headers",
+      "control_or_state": "Existing occurrence_id grouping and approved header wording",
+      "inventory_ids": [
+        "I119",
+        "I120"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The approved mockup keeps the current occurrence grouping and header rules.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/occurrence-groups.ts#groupOccurrenceEvents",
+          "detail": "The current grouping uses occurrence identity and produces Run, Pass, or reason-only headers without Attempt wording."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.7",
+          "detail": "The completed occurrence story defines the same grouping and header behavior."
+        }
+      ]
+    },
+    {
+      "id": "C018",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "Raw payload control",
+      "control_or_state": "Existing closed-by-default complete JSON disclosure",
+      "inventory_ids": [
+        "I121"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "The Raw control retains the current one-click access to the complete payload.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/NodeTranscriptPane.tsx#raw-payload",
+          "detail": "The current transcript already keeps Raw closed by default and exposes the complete JSON payload on demand."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-1.2",
+          "detail": "The completed raw-payload story defines the same disclosure contract."
+        }
+      ]
+    },
+    {
+      "id": "C019",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "tool disclosure independence",
+      "control_or_state": "Existing independent open state for every tool row",
+      "inventory_ids": [
+        "I122"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Each disclosure already owns independent expanded state.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/NodeTranscriptPane.tsx#tool-disclosure-state",
+          "detail": "The current transcript stores and toggles disclosure state per tool row."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-1.1-and-1.2",
+          "detail": "The completed disclosure story defines independent expansion for tool rows."
+        }
+      ]
+    },
+    {
+      "id": "C020",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "todo projection strip in both node rooms",
+      "control_or_state": "Todo strip is a sibling below the transcript scroller",
+      "inventory_ids": [
+        "I009",
+        "I043"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Completed Story 3.2 already defines the approved below-scroller todo strip as current product scope.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/components/workflows/NodeTranscriptPane.tsx#TodoStrip",
+          "detail": "The current Legacy and Console room code owns the todo strip and transcript-scroller ordering; its present ordering is a conformance drift, not new mockup scope."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-3.2",
+          "detail": "Completed Story 3.2 defines the strip below the transcript scroller and above the steering dock."
+        }
+      ]
+    },
+    {
+      "id": "C021",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
+      "rendered_state": "expanded OMP and Claude todo tools",
+      "control_or_state": "Latest todo call uses the checklist renderer and earlier calls use a one-line update",
+      "inventory_ids": [
+        "I114",
+        "I115",
+        "I116"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Completed Story 3.2 already defines the shared latest-checklist and compact earlier-row contract.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/tool-presentation.ts#todo-family",
+          "detail": "The current presenter already emits the compact todo updated row and owns the todo-family rendering seam."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-3.2",
+          "detail": "Completed Story 3.2 defines earlier compact todo rows and the latest folded inline checklist."
+        }
+      ]
+    },
+    {
+      "id": "C022",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "generating queue panel",
+      "control_or_state": "Queued drafts are durable and shared by the server",
+      "inventory_ids": [
+        "I010"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Completed Epic 7 already defines durable server-owned drafts and shared queue state as current product scope.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/workflows/src/steering-registry.ts#SteeringRegistry",
+          "detail": "The current steering registry is the live-turn seam beside the durable steering-store contract defined by the completed baseline."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Stories-7.1-through-7.3",
+          "detail": "Completed Stories 7.1 through 7.3 define durable drafts, queue entries, FIFO order, and shared server reads."
+        }
+      ]
+    },
+    {
+      "id": "C023",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "rendered_state": "restart recovery",
+      "control_or_state": "Durable content recovers read-only and requires explicit Resume",
+      "inventory_ids": [
+        "I029",
+        "I030",
+        "I063",
+        "I064",
+        "I079"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Completed Story 7.4 already defines the approved read-only recovery and explicit Resume behavior.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/workflows/src/steering-registry.ts#process-local-live-turn-registry",
+          "detail": "The current process-local registry is the volatile live-turn boundary that recovery must not represent as still live after restart."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-7.4",
+          "detail": "Completed Story 7.4 defines restored durable values, read-only recovery copy, and the existing explicit Resume action."
+        }
+      ]
+    },
+    {
+      "id": "C024",
+      "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
+      "rendered_state": "message status examples",
+      "control_or_state": "Delivered requires matching provider acknowledgement",
+      "inventory_ids": [
+        "I082",
+        "I086"
+      ],
+      "scope": "CURRENT",
+      "coverage_role": "UNCHANGED_CONTEXT",
+      "reason": "Completed Story 8.3 already defines matching provider acknowledgement as the Delivered boundary.",
+      "classification_evidence": [
+        {
+          "kind": "implementation",
+          "source": "packages/web/src/lib/steering-dock.ts#message-id-reconciliation",
+          "detail": "The current steering projection correlates operator rows and receipts by message_id at the client presentation seam."
+        },
+        {
+          "kind": "epic",
+          "source": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md#Story-8.3",
+          "detail": "Completed Story 8.3 permits Delivered only after the supported provider path echoes the matching message_id."
+        }
+      ]
+    }
+  ],
+  "action_identity_groups": []
+}

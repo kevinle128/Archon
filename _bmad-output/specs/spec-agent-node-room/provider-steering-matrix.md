@@ -48,7 +48,13 @@ An adapter must not translate Stop into the node-level abort signal.
 
 A successful Stop leaves the provider session reusable where the provider supports continuation.
 
-The active tool becomes interrupted and completed side effects remain in place.
+The executor classifies a successful Stop as an operator-interrupted turn.
+
+An active tool uses the interrupted presentation only when the adapter can prove that normalized provider status.
+
+A Codex tool row never uses the interrupted warning glyph and uses only a Codex-supported status presentation.
+
+Completed side effects remain in place.
 
 ## Soft-injection rules
 

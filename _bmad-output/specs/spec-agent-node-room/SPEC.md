@@ -79,7 +79,14 @@ CAP-14 through CAP-21 define the approved current-scope expansion.
 
 - **CAP-6** — Tell attempts and loop iterations apart
   - **intent:** A reader can tell which attempt or loop iteration produced a given tool call.
-  - **success:** A node whose rows span more than one `occurrence_id` renders a header per group; a single-occurrence node renders none. Grouping keys on `occurrence_id`, never on `attempt_id`. A **loop-iteration selector** lets the reader navigate directly between occurrence groups — the per-group headers remain the anchors it targets — and is absent on a single-occurrence node. On a live loop node, selecting a **finished** iteration through the **`Execution` selection controls** (header select, Logs row, or graph occurrence — Story 1.7 `Jump to` stays scroll-only) renders a read-only dock — a collapsed disclosure, a `Go to iteration N` control, and a read-only band mirroring the node's shared still-pending queue across operators/tabs (which delivers on return to the live iteration); the composer is absent and no send, withdraw, or interrupt **mutation** is issued for a finished iteration (steering mutations target only the live iteration; the Send route stays node-scoped and iteration-agnostic). The existing authenticated node-scoped `GET …/queue` read **is** allowed so the band can stay current.
+  - **success:** A node whose rows span more than one `occurrence_id` renders a header per group; a single-occurrence node renders none.
+    Grouping keys on `occurrence_id`, never on `attempt_id`.
+    When a loop node has more than one execution, the `Execution` selector is present, selects the live execution by default, and exposes no more than eight executions.
+    Selecting an execution immediately projects that execution in the room.
+    A stale selection is read-only and cannot steer the live execution.
+    On a live loop node, selecting a finished iteration through the `Execution` selection controls renders the approved read-only dock and shared pending queue.
+    The composer is absent, and the client issues no send, withdraw, or interrupt mutation for the finished iteration.
+    The authenticated node-scoped queue read remains allowed.
 
 - **CAP-7** — Keep the raw payload reachable
   - **intent:** A developer debugging a provider can still read the exact bytes the provider sent.
@@ -89,11 +96,31 @@ CAP-14 through CAP-21 define the approved current-scope expansion.
 
 - **CAP-8** — Compose while the agent works
   - **intent:** An operator watching a running node can write a message without disturbing it.
-  - **success:** The composer is mounted and enabled while the node runs, and the send control reads `Queue`. Sending holds the message; the node is untouched, no tool call is interrupted and nothing is lost. The message is delivered as the next turn when the current turn ends naturally. The unsent composer draft is stored on the server for its author. A queued message is stored on the server for the node, is visible to every authorized viewer of that node, and survives tab closure and server restart.
+  - **success:** The composer is mounted and enabled while the node runs, and the send control reads `Queue`.
+    Sending holds the message; the node is untouched, no tool call is interrupted and nothing is lost.
+    The message is delivered as the next turn when the current turn ends naturally.
+    The unsent composer draft is stored on the server for its author.
+    A queued message is stored on the server for the node, is visible to every authorized viewer of that node, and survives tab closure and server restart.
+    When the node reaches terminal completion or failure, terminal reconciliation examines every durable queued or sent message.
+    Every message without matching provider acknowledgement becomes a read-only `Never sent` record.
+    The terminal room keeps all such content readable and exposes no edit or send control.
+    A terminal node with no durable content renders no dock.
 
 - **CAP-9** — Interrupt the agent's thinking; the node keeps running
   - **intent:** An operator can stop the agent's _current generation_ to redirect it, without stopping the node or abandoning the run.
-  - **success:** The `Stop` control in the node's composer dock ends the agent's **current turn** through `AgentRequestOptions.interruptSignal`, mapped by each provider to its native interrupt or safe stream-abort. The provider session stays reusable. The node and workflow run remain active, and the transcript shows the active tool as _interrupted_ rather than _failed_. Stop applies to the whole turn, not one selected tool. Nothing suggests that Stop undid work already written.
+  - **success:** The `Stop` control in the node's composer dock ends the agent's **current turn** through `AgentRequestOptions.interruptSignal`, mapped by each provider to its native interrupt or safe stream-abort.
+    The provider session stays reusable.
+    The node and workflow run remain active.
+    Stop applies to the whole turn, not one selected tool.
+    Nothing suggests that Stop undid completed side effects.
+    The executor records the turn end as operator-interrupted.
+    A provider tool row uses the interrupted presentation only when its normalized provider status can produce that outcome.
+    A Codex tool row never uses the interrupted warning glyph and uses only a Codex-supported status presentation.
+    This presentation exception does not change the turn-level Stop result, the active node state, or session reuse.
+    While the live server process owns an idle-after-interrupt handle, 30 minutes of inactivity fails that node execution.
+    Composer activity re-arms the timer.
+    On expiry, durable queued content remains stored and becomes read-only `Never sent` content in the failed terminal room.
+    A server restart does not apply or recreate the lost timer and instead uses the existing recovery-required behavior.
 
 - **CAP-10** — Redirect and continue on the same live session
   - **intent:** After interrupting, the operator sends what to do instead and the agent carries on from there — on the same session, in the same node.
@@ -105,7 +132,15 @@ CAP-14 through CAP-21 define the approved current-scope expansion.
 
 - **CAP-12** — Mid-turn delivery, as fast as each provider's transport allows
   - **intent:** The operator's message reaches a running agent without interrupting it, and sooner on a provider whose transport can take it mid-turn.
-  - **success:** Sending to a running agent is an ordinary prompt. `Queue` delivers at the next natural turn boundary on every provider. Where a verified provider transport accepts a message mid-turn, each queued item exposes `Send now` and the selected prompt arrives without interrupting the active turn, changing the active tool outcome, or emitting a steering-owned turn-start event. A queue-only provider omits the per-item action. Verification of Claude, Grok, and OMP soft injection is current implementation work.
+  - **success:** `Queue` delivers at the next natural turn boundary on every provider.
+    Where a verified provider transport accepts a message during generation, each queued item exposes per-item `Send now`.
+    Selecting that action atomically targets exactly the selected queued message and the current active provider turn.
+    The selected message receives its stamped message identity, leaves the queued collection, and enters the active turn immediately.
+    Stop is not invoked, generation continues, the active tool outcome does not change, and no steering-owned turn-start event is emitted.
+    The selected message becomes `sent` pending verified provider acknowledgement.
+    Every non-selected queued message keeps its identity, content, relative order, and `queued` state unchanged.
+    A queue-only provider omits per-item `Send now`.
+    Verification of each soft-injection transport is current implementation work.
 
 - **CAP-13** — The interface claims only what it knows
   - **intent:** An operator can tell whether a message merely left the browser or actually reached the agent.
@@ -119,7 +154,12 @@ CAP-14 through CAP-21 define the approved current-scope expansion.
 
 - **CAP-15 — Auto-send queued guidance one item per natural reply**
   - **intent:** An operator can let a sequence of queued instructions advance without pressing send after each natural reply.
-  - **success:** Auto-send is durable, processes one queued item at a time in server FIFO order after a natural agent reply, and leaves the queue intact when disabled. An interrupted turn never auto-sends and waits for `Send now`. A delivery failure returns the item to the queue with an accessible error.
+  - **success:** Auto-send is durable, processes one queued item at a time in server FIFO order after a natural agent reply, and leaves the queue intact when disabled.
+    An interrupted turn never auto-sends and waits for `Send now`.
+    A delivery failure returns the item to the queue with an accessible error.
+    When the queue panel is visible and the effective projected state is enabled, it shows one read-only `Auto-send on` status indicator.
+    The indicator tracks projected state and performs no dispatch.
+    The approved mockup exposes no auto-send control through this indicator.
 
 - **CAP-16 — Use the readable tool contract across every selected surface**
   - **intent:** A tool call has the same meaning in Node Room, RunStream, Chat, and backend-generated cards.
@@ -187,7 +227,10 @@ CAP-14 through CAP-21 define the approved current-scope expansion.
 
 CAP-11 (the operator row) writes into the read half. `AgentHistoryItem` has kinds `assistant | tool | lifecycle`, and an operator row is none of them; the read half's architecture puts every row's meaning in the shared core (`packages/web/src/lib`). So CAP-11 adds a **new item kind** and its two-shell treatment, and the CAP-1/CAP-2 transcript renderer must recognize it — an operator `text` row must not reach a live transcript until the reader recognizes `origin='operator'`, else it renders as agent text. Because the two halves are now one spec, this is an **internal** ordering dependency, not a cross-spec one: build the reader's recognition of `origin='operator'` before CAP-11 ships.
 
-**Second cross-half reader dependency — the interrupted status row.** CAP-9 makes `⚠ interrupted` universal: the executor writes a separate `interrupted` status row on **every** provider at delivery, not only through Claude's `PostToolUseFailure` hook. For that glyph to reach the row, the read half's `deriveOutcome` (`agent-history.ts:120`) must fold that status row into the **preceding** tool call's outcome — else `⚠` is unreachable on non-Claude providers even after the write lands. Like the operator row, this is an internal ordering dependency: the reader's fold ships before the write half emits cross-provider interrupted rows.
+**Second cross-half reader dependency — provider-supported interrupted status.** CAP-9 classifies an accepted Stop as an operator-interrupted turn on every provider, but a tool row becomes `interrupted` only when the normalized provider status can prove that outcome.
+Codex cannot produce an interrupted tool status, so its tool rows never render `⚠` and use only a Codex-supported status presentation.
+For a provider that can prove an interrupted tool outcome, the read half's `deriveOutcome` (`agent-history.ts:120`) folds the status row into the **preceding** tool call's outcome.
+Like the operator row, this is an internal ordering dependency: the reader's fold ships before a supported provider emits an interrupted status row.
 
 ## Non-goals
 

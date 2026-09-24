@@ -19,6 +19,14 @@ Inferences → `assumptions[]`. Gaps needing a human decision → `open_question
 
 Creative tools default off in headless. Caller can override; artifacts land in `.working/` and are not promoted unless the caller signals.
 
+Approved mockups must be explicit in the input with their exact source paths and target slug.
+Never infer approval from file presence.
+When approved Claude Design mockups exist, require a current validated manifest from an isolated extractor context.
+The extractor derives the change boundary by freezing the mockup inventory and then comparing it with the current product, relevant tests, and completed Epics.
+Do not ask the user to identify or remember which controls changed.
+If the manifest is missing, stale, incomplete, has a different mockup source set, or lacks current comparison sources, leave the spines non-final and return `status: "partial"` with the exact blocker in `open_questions[]`.
+Do not create or repair the manifest from planning or implementation sources in the headless UX context.
+
 ## Behavior
 
 Do not ask. Do not greet. Complete the intent from what's provided, what exists in `{doc_workspace}`, or what you can discover. If intent stays ambiguous after inference, halt with `status: "blocked"` and a one-sentence `reason`.
@@ -35,3 +43,4 @@ End with JSON matching `assets/headless-schemas.md`. `intent` reflects detected 
 **Update.** Apply the change. Log it via `uv run {project-root}/_bmad/scripts/memlog.py append --workspace {doc_workspace} --type change --text "<change + rationale>"`. Surface conflicts in `conflicts_with_prior_decisions[]`.
 
 **Validate.** Always write both `validation-report.html` and `validation-report.md` regardless of finding count. Always include `"offer_to_update": true`. Skip the browser-open step.
+Run the approved mockup preflight even when no reviewer lenses are selected.

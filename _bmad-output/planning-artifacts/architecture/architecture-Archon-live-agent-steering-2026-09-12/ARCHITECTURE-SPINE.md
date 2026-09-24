@@ -75,7 +75,11 @@ The node and workflow run remain active.
 
 The provider session remains reusable where the provider supports continuation.
 
-The active tool becomes interrupted rather than failed.
+The executor classifies the accepted Stop as an interrupted turn rather than a provider failure.
+
+An active tool uses the interrupted presentation only when the normalized provider status supports it.
+
+A Codex tool row never uses the interrupted warning glyph and uses only a Codex-supported status presentation.
 
 Completed writes and other completed side effects remain in place.
 
@@ -121,6 +125,16 @@ Confirmed delivery failure returns the item to the queue.
 
 Process loss after claim produces delivery-unknown and never triggers automatic resend.
 
+Per-item `Send now` is a distinct atomic claim by `queued_message_id`.
+
+It stamps and claims exactly the selected queued message, removes that item from the queued collection, and injects it into the current active provider turn.
+
+It does not invoke Stop, end the turn, change the active tool outcome, or emit a steering-owned turn-start event.
+
+The selected item becomes `sent` pending acknowledgement.
+
+Every non-selected queued message keeps its identity, content, relative order, and `queued` state unchanged.
+
 ## AD-5 — Restart restoration uses existing Resume
 
 Server startup restores drafts, settings, queue entries, and delivery state.
@@ -135,6 +149,14 @@ The user invokes the existing Resume feature.
 
 After Resume, the executor reuses the provider session only where the provider contract proves safe continuation.
 
+Terminal completion or failure runs durable reconciliation.
+
+Every durable queued or sent message without matching provider acknowledgement becomes a read-only `Never sent` record.
+
+The terminal room preserves all unmatched content and exposes no edit or send mutation.
+
+With no durable content, the terminal room renders no dock.
+
 ## AD-6 — Natural and interrupted ends drain differently
 
 A natural turn end validates normal output and can claim durable queued guidance.
@@ -148,6 +170,16 @@ An interrupted turn does not validate partial output, does not complete the node
 It enters idle-after-interrupt and waits for Send now regardless of queued content.
 
 An interrupted turn never auto-sends.
+
+While the live process owns an idle-after-interrupt handle, a re-armable 30-minute inactivity timer applies.
+
+Composer activity re-arms the timer.
+
+Expiry fails that node execution and preserves all durable queued content as read-only `Never sent` records.
+
+The failed terminal room states that the interruption received no redirect and that none of the preserved content was sent.
+
+A server restart removes the live timer and uses recovery-required state instead of inferring expiry.
 
 ## AD-7 — Delivery evidence is explicit
 
@@ -189,6 +221,10 @@ A delivery error stops the drain and returns the affected item to the queue.
 
 Stop always suspends auto-send until the operator uses Send now.
 
+When the queue panel is visible and the effective projected auto-send state is on, both Node Room shells show one read-only `Auto-send on` indicator.
+
+The indicator reflects projected state and performs no dispatch or setting mutation.
+
 ## AD-10 — Typed route errors describe state, not process origin
 
 Draft and queue reads remain available during recovery-required state.
@@ -228,6 +264,14 @@ Recovery-required state shows restored content and points to the existing Resume
 Finished and finished-iteration views remain read-only.
 
 No provider-branded dock variant is created when capability data can express the difference.
+
+Console uses a fixed 520-pixel Node Room width and Legacy uses a fixed 460-pixel Node Room width until the room closes.
+
+In both shells, the transcript scroller remains above the sibling todo strip, queue band, and composer dock, so the dock never overlays the last transcript row.
+
+When a loop node has more than one execution, the `Execution` selector starts on the live execution and exposes no more than eight executions.
+
+Selecting a stale execution projects it read-only and issues no steering mutation against the live execution.
 
 ## Data model
 

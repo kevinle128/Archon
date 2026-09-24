@@ -1654,3 +1654,167 @@ So that all registered providers in the approved scope share the same governed b
 
 _Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`, `steering-test-plan.md`.
 _Depends on:_ Story 9.3.
+
+---
+
+## Approved Course Correction — 2026-09-22
+
+Epic 1 through Epic 9 and all their Stories are complete historical planning records.
+They remain unchanged and can be cited only for evidence and dependency context.
+Epic 10 owns the current implementation work required to close approved mockup gaps M001, M002, M005, M007, M008, M009, M010, and M013.
+Every visible approved mockup feature remains current scope.
+Successful Codex file-change persistence maps to CAP-5 and CAP-16, not CAP-14.
+This traceability correction does not reopen or rewrite completed Story 4.1.
+
+## Epic 10: Complete the Approved Mockup Contract
+
+Operators receive every approved Node Room behavior that is not already covered by the completed Epics, with exact layout, queue, terminal, and provider-status behavior.
+
+### Story 10.1: Fix room geometry and execution selection
+
+As an operator,
+I want the approved Node Room dimensions and bounded execution selector,
+So that the live execution is clear and stale history cannot affect live work.
+
+**Acceptance Criteria:**
+
+**Given** the Console Node Room is open
+**When** the room renders
+**Then** its width is fixed at 520 pixels until close
+**And** the transcript scrolls above the sibling todo strip, queue band, and composer dock.
+
+**Given** the Legacy Node Room is open
+**When** the room renders
+**Then** its width is fixed at 460 pixels until close
+**And** it uses the same approved vertical order without overlaying the last transcript row.
+
+**Given** a loop node has more than one execution
+**When** the `Execution` selector first renders
+**Then** the live execution is selected
+**And** the selector exposes no more than eight executions.
+
+**Given** the operator selects one exposed execution
+**When** the selection changes
+**Then** the room immediately projects that execution
+**And** a stale execution is read-only and cannot send, withdraw, interrupt, or otherwise steer the live execution.
+
+**Given** a node has only one execution
+**When** the room renders
+**Then** the execution selector is absent.
+
+_Refs:_ Agent Node Room CAP-6, readable-transcript AD-12, live-steering AD-12, manifest M001, M002, and M005.
+_Depends on:_ Completed Epic 3 for historical shell and transcript behavior.
+
+### Story 10.2: Deliver one selected queued message without Stop
+
+As an operator,
+I want truthful auto-send state and exact per-item active-turn delivery,
+So that I know what will send and no other queued guidance changes by accident.
+
+**Acceptance Criteria:**
+
+**Given** the queue panel is visible and projected auto-send state is on
+**When** either Node Room shell renders the panel
+**Then** it shows one read-only `Auto-send on` indicator
+**And** the indicator performs no dispatch or setting mutation.
+
+**Given** the agent is generating and the active provider has verified soft injection
+**When** the queue renders
+**Then** each eligible queued item exposes per-item `Send now`.
+
+**Given** the operator selects per-item `Send now` on one queued message
+**When** the server accepts the action
+**Then** exactly that selected message receives its stamped message identity and leaves the queued collection
+**And** it enters the current active provider turn immediately.
+
+**Given** the selected message enters the active turn
+**When** delivery begins
+**Then** Stop is not invoked
+**And** generation continues
+**And** the active tool outcome does not change
+**And** no steering-owned turn-start event is emitted
+**And** the selected item is `sent` pending verified acknowledgement.
+
+**Given** other queued messages exist
+**When** one selected item is sent now
+**Then** every non-selected message keeps its identity, content, relative order, and `queued` state unchanged.
+
+**Given** the provider supports queue-at-boundary only
+**When** the queue renders
+**Then** per-item `Send now` is absent.
+
+_Refs:_ Agent Node Room CAP-12 and CAP-15, live-steering AD-4, AD-8, AD-9, and AD-12, manifest M007 and M008.
+_Depends on:_ Completed Epic 7 and Epic 8 for durable queue, provider capability, and delivery evidence.
+
+### Story 10.3: Preserve every unmatched message at terminal boundaries
+
+As an operator,
+I want unsent guidance preserved and labeled when a node ends,
+So that terminal or timeout transitions never hide or discard my instructions.
+
+**Acceptance Criteria:**
+
+**Given** a node reaches terminal completion or failure with durable queued or sent messages
+**When** terminal reconciliation runs
+**Then** every message without matching provider acknowledgement becomes a read-only `Never sent` record
+**And** all unmatched content remains readable.
+
+**Given** the terminal room contains `Never sent` records
+**When** it renders
+**Then** it exposes no edit, send, withdraw, or interrupt control.
+
+**Given** a terminal node has no durable draft, queue, or unmatched sent content
+**When** it renders
+**Then** it renders no steering dock.
+
+**Given** a live process owns an idle-after-interrupt handle with durable queued content
+**When** 30 minutes pass without activity
+**Then** the node execution fails
+**And** the durable queued content remains stored as read-only `Never sent` records.
+
+**Given** the operator types before timer expiry
+**When** composer activity is accepted
+**Then** the 30-minute timer is re-armed.
+
+**Given** the failed terminal room renders after timer expiry
+**When** the operator reads its status
+**Then** it explains that the interruption received no redirect
+**And** it states that none of the preserved content was sent.
+
+**Given** the server restarts while the prior node was idle after interruption
+**When** durable recovery loads
+**Then** no new process applies the lost timer
+**And** the existing recovery-required and Resume behavior remains unchanged.
+
+_Refs:_ Agent Node Room CAP-8 and CAP-9, live-steering AD-5 and AD-6, manifest M009 and M010.
+_Depends on:_ Completed Epic 7 for durable steering and restart recovery.
+
+### Story 10.4: Use a Codex-supported tool status presentation
+
+As a Codex operator,
+I want Stop and transcript status to match what Codex can prove,
+So that the room does not show an unsupported interrupted warning glyph.
+
+**Acceptance Criteria:**
+
+**Given** a Codex turn is stopped through the supported turn-abort path
+**When** the executor classifies the turn
+**Then** it records an operator-interrupted turn rather than a provider failure
+**And** the node, workflow run, reusable session, and completed side effects remain unchanged.
+
+**Given** a Codex tool row is presented
+**When** the provider status is normalized and the glyph is resolved
+**Then** the row never uses the interrupted warning glyph
+**And** it uses only a status presentation supported by Codex evidence.
+
+**Given** another provider proves an interrupted tool outcome
+**When** the same presenter renders that row
+**Then** the existing provider-neutral interrupted glyph remains available
+**And** no provider-specific branch exists in the presenter.
+
+**Given** provider and renderer tests run
+**When** Codex Stop evidence reaches the transcript
+**Then** they prove turn-level interruption and session continuation separately from tool-row glyph presentation.
+
+_Refs:_ Agent Node Room CAP-9 and CAP-18, readable-transcript AD-13, live-steering AD-1, manifest M013.
+_Depends on:_ Completed Story 8.4 for Codex Stop and session continuation evidence.

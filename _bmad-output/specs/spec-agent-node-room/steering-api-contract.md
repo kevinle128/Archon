@@ -80,6 +80,9 @@ The user invokes the existing Resume action to re-establish execution.
 ## Idempotency and races
 
 - **Duplicate `message_id`** — the send is idempotent through the durable unique identity and replays the current receipt instead of inserting another queue entry.
+- **Per-item `send_now` claim** — `queued_message_id` atomically claims exactly the selected queued message for the current active provider turn.
+  The selected item receives its stamped identity, leaves the queued collection, and becomes `sent` pending verified acknowledgement without invoking Stop.
+  Every non-selected queued item keeps its identity, content, relative order, and `queued` state unchanged.
 - **Repeated interrupt while already `idle-after-interrupt`** — an idempotent no-op returning the current `sub_state`; no second interrupt fires.
 - **Withdraw of an already-delivered, withdrawn, or unknown `message_id`** — an idempotent success no-op; there is no message-level 404.
 - **Withdraw during recovery-required state** — DELETE may remove a still-queued item because it manages durable guidance rather than the missing provider process.
