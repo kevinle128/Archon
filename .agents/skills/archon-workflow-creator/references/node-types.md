@@ -412,7 +412,7 @@ This is different from a normal `approval` node because the gate owns the annota
     capture_response: true
     rework:
       provider: codex
-      model: gpt-5.6-terra
+      model: gpt-6-terra
       effort: medium
       prompt: |
         Update the HTML document at $REVIEW_DOCUMENT to address these annotations:

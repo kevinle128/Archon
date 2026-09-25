@@ -16,49 +16,66 @@ Table-driven over the resolver tiers.
 
 - each Tier 1 alias resolves to the right family
 - `file_path` **and** `path` both resolve; `old_string` **and** `old_str` both resolve
-- **Claude glob** (`{pattern:'**/*.tsx', path:'packages/web'}`) headlines the **pattern** and sets scope to the path; **OMP glob** (`{path:'packages/web/src'}`) headlines the path with a null scope. Assert the Claude row does not headline `packages/web` — that is the exact regression this rule exists to stop
-- grep body arm follows `output_mode`: `content` → `matches`, `files_with_matches` → `paths`, `count` → `generic` (search family retained). Absent `output_mode` and any declared output mode, the **sent alias** decides: exact `Grep` → `paths` (the SDK `files_with_matches` default); lowercase `grep` and other search aliases → `matches` (content)
-- the five measured aliases resolve: `read_file` → file-read, `run_terminal_command` → shell, `search_replace` → **file-write** (not search), `search_tool` → search, `list_dir` → glob. The `search_replace` case is the substring-matching regression guard and must assert the family is `file`
+- **Claude glob** (`{pattern:'**/*.tsx', path:'packages/web'}`) headlines the **pattern** and sets scope to the path; **OMP glob** (`{path:'packages/web/src'}`) headlines the path with a null scope.
+  Assert the Claude row does not headline `packages/web` — that is the exact regression this rule exists to stop
+- grep body arm follows `output_mode`: `content` → `matches`, `files_with_matches` → `paths`, `count` → `generic` (search family retained).
+  When `output_mode` and any declared output mode are absent, the **sent alias** decides: exact `Grep` → `paths` (the SDK `files_with_matches` default); lowercase `grep` and other search aliases → `matches` (content)
+- the five measured aliases resolve: `read_file` → file-read, `run_terminal_command` → shell, `search_replace` → **file-write** (not search), `search_tool` → search, `list_dir` → glob.
+  The `search_replace` case is the substring-matching regression guard and must assert the family is `file`
 - `target_file` resolves as a path key, alongside `file_path` and `path`
-- `eval` with `{code, language}` resolves to family `code` with a `code` body; the headline is the source's first line and the language is a badge. Assert the source is **not** truncated to 80 characters — that truncation is what this family exists to avoid
-- a Codex name containing newlines headlines only its **first non-empty line**, with the remainder reachable in the body. Assert the headline contains no `\n`
-- a Codex name wrapped in `/bin/zsh -lc '…'` headlines the command **without** the prefix or the closing quote, and the same for `/bin/bash -lc '…'`. Assert the headline does not start with `/bin/`, and that the untouched name is still reachable for the terminal body
-- chip text is the name **as sent**: `read_file` stays `read_file`, `Edit` stays `Edit`. Assert the chip is never the case-folded separator-stripped form — `readfile` appearing anywhere is the regression this asserts against
+- `eval` with `{code, language}` resolves to family `code` with a `code` body; the headline is the source's first line and the language is a badge.
+  Assert the source is **not** truncated to 80 characters — that truncation is what this family exists to avoid
+- a Codex name containing newlines headlines only its **first non-empty line**, with the remainder reachable in the body.
+  Assert the headline contains no `\n`
+- a Codex name wrapped in `/bin/zsh -lc '…'` headlines the command **without** the prefix or the closing quote, and the same for `/bin/bash -lc '…'`.
+  Assert the headline does not start with `/bin/`, and that the untouched name is still reachable for the terminal body
+- chip text is the name **as sent**: `read_file` stays `read_file`, `Edit` stays `Edit`.
+  Assert the chip is never the case-folded separator-stripped form — `readfile` appearing anywhere is the regression this asserts against
 - Codex shape (`{name:'npm test'}`, no input) resolves to `shell` with headline `npm test`
 - an emoji-bearing name passes through unchanged
 - `mcp__server__tool` resolves to `generic` with label `server · tool`
 - an unknown tool with object input renders at most three `key: value` pairs, **asserting no field carries serialized object syntax or quoted JSON keys (`"`/`": "`/`: {`) while the required `{…}` and `[n]` markers still appear** — the direct test that no JSON dump survives
 - empty, null and array inputs never throw
-- chip rule: a short name is kept verbatim; a long Codex-style name falls back to the family. **Assert `label.length <= 24` for every row in the table**, so no future tool can burst the chip
+- chip rule: a short name is kept verbatim; a long Codex-style name falls back to the family.
+  **Assert `label.length <= 24` for every row in the table**, so no future tool can burst the chip
 - `headlineKind` is `'path'` for the file and glob families, `'text'` for shell and content search
 - a diff is produced only when both sides are present as own-property strings on a `file`-family row, and never fabricated from one — the canonical pair and both aliases qualify (empty strings included), while inherited/prototype keys, throwing accessors, one-sided pairs, wrong types, absent input, and alias-shaped keys on non-file families do not
 - a nonempty diff emits `+n` (success) and `−m` (danger) collapsed badges — each only when its side is positive — and body facts `N hunk`/`N hunks` then `replace_all: true|false` only for an own boolean input; the body bar composes `file · 1 hunk · replace_all: false` and never repeats the `+n −m` badges
 - an identical pair reports `no changes` with no badges; a refused pair keeps the preview fallback with no facts
 - repeated summary and body calls on the same record read the pair once (the record `WeakMap`), and a second record with equal strings reuses the identical pair-cache result object
-- the exit code reaches the row: a `bash` call recording `exit_code: 1` carries an `exit 1` badge on the **collapsed** row. This is CAP-1's own success signal and it is currently unreachable, the code discarding the value after deriving the outcome
+- the exit code reaches the row: a `bash` call recording `exit_code: 1` carries an `exit 1` badge on the **collapsed** row.
+  This is CAP-1's own success signal and it is currently unreachable, the code discarding the value after deriving the outcome
 - hostile and oversized outputs stay within the contract ceilings: nested `file_matches` and web-result arrays report their hidden tail, grep path/text values and generic field keys are independently bounded and sanitized, over-cap text ends in an ellipsis without exceeding its ceiling, and assembled web markdown cannot exceed the text ceiling
 - inherited enumerable properties are never emitted and count toward the finite key-scan budget, so a hostile prototype cannot force an unbounded scan
 
-CAP-5 scope is presentation over persisted rows — the resolved product gate: current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and no fixture row is a Codex row. A no-input fake-provider row exercises the same fallback as **generic defensive coverage only**; tests, reports, and docs label it that way and never read it as Codex behavior.
+CAP-5 scope is presentation over persisted rows — the resolved product gate: current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and no fixture row is a Codex row.
+A no-input fake-provider row exercises the same fallback as **generic defensive coverage only**; tests, reports, and docs label it that way and never read it as Codex behavior.
 
 ## Generic-fallback corpus audit — CAP-2 / Story 1.3 (the < 2% bound)
 
-The < 2% generic-fallback bound is measured against the deployment corpus (22,867 rows, 2,369 distinct names), **not** reproducible from a CI fixture. So it is a **release-time deployment audit**, not a unit test:
+The < 2% generic-fallback bound is measured against the deployment corpus (22,867 rows, 2,369 distinct names), **not** reproducible from a CI fixture.
+Therefore, it is a **release-time deployment audit**, not a unit test:
 
 - a **read-only replay script** (`scripts/audit-generic-fallback.ts`) queries the deployment DB for projected tool rows, runs the pairing + resolver over them, and reports the generic-fallback **numerator** (logical cards resolving to `generic`) and **denominator**, plus the fraction
 - the script records its result to a known location (the release audit log) with the corpus snapshot date; the release gate reads the recorded fraction and fails release if it is ≥ 2%
 - `--source` and optional generic-name diagnostics accept identifier-safe values only; record checking rejects unknown fields and non-canonical timestamps, and `--record` refuses to target the SQLite corpus itself before opening either path
 - group projection is streaming and keeps only the current group, rejecting non-monotonic input instead of retaining a set of every prior group; threshold comparison uses exact integer arithmetic
-- **denominator decision — adopted `logical-tool-cards-v1` (2026-09-18):** this section historically read "total rows" (raw storage rows), but paired call/result storage means raw rows double-count modern calls. The PRD's headless coordination-gate clause authorizes adopting the plan's recommended decision when no owner-ratified alternative exists — none was found — so the denominator is one **logical UI tool card per invocation**, projected through `projectToolTranscript()` per `(workflow_run_id, node_id)` group: pending call-only cards and legacy result-only cards each count once; text/status rows never enter the denominator. Only this metric is implemented. Evidence: `plans/260918-0834-issue-176-tool-family-bodies/reports/us-005-audit-decision.md`
+- **denominator decision — adopted `logical-tool-cards-v1` (2026-09-18):** this section historically read "total rows" (raw storage rows), but paired call/result storage means raw rows double-count modern calls.
+  The PRD's headless coordination-gate clause authorizes adopting the plan's recommended decision when no owner-ratified alternative exists — none was found — so the denominator is one **logical UI tool card per invocation**, projected through `projectToolTranscript()` per `(workflow_run_id, node_id)` group: pending call-only cards and legacy result-only cards each count once; text/status rows never enter the denominator.
+  Only this metric is implemented.
+  Evidence: `plans/260918-0834-issue-176-tool-family-bodies/reports/us-005-audit-decision.md`
 - **no numerator/denominator is frozen in this document** — the corpus is live data; the number is produced by the replay, not asserted here
 - the table-driven alias cases above stay as CI regression tests for named aliases (they cannot prove the corpus-wide bound)
 
 ## `diff-hunks.test.ts` — CAP-5
 
-The module is the only caller of `structuredPatch`, so its traps are tested here rather than through a renderer. Tests drive a `createDiffHunks` factory with injected `patch`/`byteLength`/memo budgets — the exported `diffHunks` singleton carries no test seams.
+The module is the only caller of `structuredPatch`, so its traps are tested here rather than through a renderer.
+Tests drive a `createDiffHunks` factory with injected `patch`/`byteLength`/memo budgets — the exported `diffHunks` singleton carries no test seams.
 
-- line numbers survive the `\ No newline at end of file` marker: a fixture whose hunk carries the marker **mid-array**, and one carrying it **twice**, both produce `oldLine`/`newLine` values matching a hand-checked expectation. Asserting only the trailing case passes while the counters are already desynchronised
-- an input above the byte ceiling returns `null` without calling `structuredPatch` — including a multibyte string that passes the code-unit `.length` precheck but fails the UTF-8 measurement — and a pair exceeding `maxEditLength` returns `null` (a real 1,001/1,000 disjoint-edit fixture plus an injected `undefined`), as does a thrown patch; both degrade to path plus preview, neither throws and neither hangs. Refusals are cached, but the uncached `.length` precheck never stores an oversized pair
+- line numbers survive the `\ No newline at end of file` marker: a fixture whose hunk carries the marker **mid-array**, and one carrying it **twice**, both produce `oldLine`/`newLine` values matching a hand-checked expectation.
+  Asserting only the trailing case passes while the counters are already desynchronised
+- an input above the byte ceiling returns `null` without calling `structuredPatch` — including a multibyte string that passes the code-unit `.length` precheck but fails the UTF-8 measurement — and a pair exceeding `maxEditLength` returns `null` (a real 1,001/1,000 disjoint-edit fixture plus an injected `undefined`), as does a thrown patch; both degrade to path plus preview, neither throws and neither hangs.
+  Refusals are cached, but the uncached `.length` precheck never stores an oversized pair
 - the line cap is exact: 2,000 logical lines accepted, 2,001 refused without `patch`, including the no-trailing-newline off-by-one
 - the same pair of strings yields the identical result object on repeat calls, which is what an edit-length bound buys over a wall-clock timeout; a cache hit refreshes LRU order, and count eviction plus source-weight eviction each recompute only the evicted pair
 - empty-to-content, deletion-to-empty, identical sides (`{ hunks: [] }`), repeated content, and CRLF-vs-LF pairs (raw-compared, so a line-ending rewrite shows changed rows with equal visible text) all produce deterministic results
@@ -89,6 +106,9 @@ Then one case per OMP op, plus the three traps.
 - an unknown op leaves state unchanged; `done` before any `init` renders nothing
 - `rm` that empties a phase drops the phase — assert no empty header survives, and that an all-empty fold returns `[]`
 - the real two-phase fixture from the observed database rows reproduces the expected state
+- terminal presentation is separate from the provider fold: completed nodes show unfinished items as completed, the 30-minute interruption failure resets only the current item to pending, and stored inputs plus the reusable fold result stay unchanged
+- the collapsed strip selects the current, then blocked, then last-completed item; reports the exact completed count; and renders one meter cell per item
+- the expanded strip starts with Raw closed, and Raw reveals the exact ordered provider inputs rather than the terminal presentation projection
 
 ## Renderer tests — CAP-1, CAP-6, CAP-7
 
@@ -97,10 +117,30 @@ Extending `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`, on **both** surfac
 - a successful tool call is collapsed by default; a failed one is expanded
 - an `exit 1` badge appears when the exit code is non-zero
 - a multi-occurrence node renders occurrence headers; a single-occurrence node renders none
+- every multi-occurrence separator uses primary `Run N` in occurrence order, with loop, pass, retry, and interruption context as a suffix; a single occurrence has no separator
 - a long path headline elides in the middle — **assert the filename is still present**
-- status is rendered as a glyph character, not colour alone. This is the accessibility guarantee and it is easy to regress in a restyle, so it gets its own assertion rather than riding along in a snapshot
+- status is rendered as a glyph character, not colour alone.
+  This is the accessibility guarantee and it is easy to regress in a restyle, so it gets its own assertion rather than riding along in a snapshot
 - the Raw toggle is present and closed by default, and reveals the original payload when opened
 - an `interrupted` status row folds into the **preceding** tool call so it shows `⚠ interrupted`, not `✕ failed` — asserted on a non-Claude fixture; this is the cross-provider reader fold the write half depends on, tested here in the read half where the fold lives
+- the todo strip is after the transcript and immediately above the queue or dock on both shells; it remains outside the transcript scroller
+- the five approved family treatments map shell/code, file/web, search/glob, todo/task, and generic exactly, while family text remains available without colour
+- `Execution` selection stays synchronized with the selected Logs row and remains separate from the scroll-only `Jump to` control
+- a finished loop iteration shows `Go to iteration N` and the shared read-only queue, exposes no steering action, and a synthetic delayed mutation with its old retry epoch is rejected by the steering contract tests
+
+## Approved mockup conformance — transcript and todo
+
+The [validated Agent Node Room manifest](../../planning-artifacts/mockup-manifests/agent-node-room.json) is the current 70-item product inventory.
+Its nine `CHANGE_FEATURE` rows and 61 `UNCHANGED_CONTEXT` rows remain current on each applicable Legacy and Console surface.
+This plan owns focused transcript assertions for M001/I007, M002/I070, and M007/I052; the steering plan owns M003–M006 and M008–M009.
+Both plans retain runnable checks for all 61 manifest `UNCHANGED_CONTEXT` rows, with no outer numbered state, node-kind, or provider-transport fixture control counted as product UI.
+
+| Manifest row                    | Required evidence                                                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M001 / I007                     | Console has one collapsible TODO strip after the scrolling transcript and before queue or dock; current item, progress, expanded phases, and Raw work.                   |
+| M002 / I070                     | Legacy has the same strip placement and disclosure behavior.                                                                                                             |
+| M007 / I052                     | Every multi-occurrence separator has primary `Run N` in occurrence order; loop, pass, retry, and interruption context is a suffix; a single occurrence has no separator. |
+| All 61 `UNCHANGED_CONTEXT` rows | Preserve existing context behavior and test each row on the surfaces marked applicable in the manifest.                                                                  |
 
 ## Boundary checks
 

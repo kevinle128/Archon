@@ -74,7 +74,7 @@ assistants:
     model: gpt-5
     modelReasoningEffort: high
   omp:
-    model: openai-codex/gpt-5.6-sol
+    model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
     enableExtensions: false
 
@@ -306,7 +306,7 @@ OMP does not translate Archon `mcp`, `hooks`, `agents`, or tool-restriction node
 
 ```yaml
 provider: omp
-model: openai-codex/gpt-5.6-sol
+model: openai-codex/gpt-6-sol
 effort: high
 skills: [archon]
 ```

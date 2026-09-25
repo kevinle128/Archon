@@ -44,6 +44,25 @@ describe('buildTerminalSpawnSpec', () => {
   });
 });
 
+describe('sawReadyCommandOutput', () => {
+  test('ignores READY inside the echoed command', () => {
+    const echoed = "PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\r\n";
+    expect(sawReadyCommandOutput(echoed)).toBe(false);
+  });
+
+  test('accepts the bracketed-paste CR that precedes command stdout on ubuntu runners', () => {
+    const echoed = "PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\r\n";
+    const reprinted = `${echoed}\u001b[?2004hrunner@host:~$ ${echoed.trimEnd()}\r\n`;
+    expect(sawReadyCommandOutput(reprinted)).toBe(false);
+    expect(sawReadyCommandOutput(`${reprinted}\u001b[?2004l\rREADY\r\n`)).toBe(true);
+  });
+
+  test('accepts a READY line delimited by LF', () => {
+    expect(sawReadyCommandOutput('echo READY; sleep 30\nREADY\n')).toBe(true);
+    expect(sawReadyCommandOutput('echo READY; sleep 30\nREADY\r\n')).toBe(true);
+  });
+});
+
 describe('spawnTerminalPty', () => {
   test('writes, resizes, and kills the inline terminal at most once', async () => {
     const events: string[] = [];
@@ -196,8 +215,11 @@ describe('spawnTerminalPty', () => {
         // Distinctive prompt + cleared PROMPT_COMMAND so CI profile scripts
         // cannot rewrite PS1 before we observe the post-SIGINT reprint.
         pty.write("PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
+        // The echoed input contains READY before the shell runs the command.
+        // Bracketed-paste mode off (ESC[?2004l) is followed by CR, not LF, so
+        // the real line is `\rREADY\r\n` — a newline-only boundary misses it.
         await waitFor(
-          () => output.includes('READY'),
+          () => sawReadyCommandOutput(output),
           10_000,
           'READY',
           () => output
@@ -233,6 +255,11 @@ describe('spawnTerminalPty', () => {
     45_000
   );
 });
+
+/** True once `echo READY` has written its own line, not merely been echoed. */
+function sawReadyCommandOutput(output: string): boolean {
+  return /(?:^|[\r\n])READY\r?\n/.test(output);
+}
 
 async function waitFor(
   predicate: () => boolean,

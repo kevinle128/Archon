@@ -265,7 +265,7 @@ Every node that takes an AI turn also reports **which provider and model it will
 
 ```text
 STUBBED   review__scope (prompt)
-  runs on: codex (node) / gpt-5.6-sol (node) [from review-block]
+  runs on: codex (node) / gpt-6-sol (node) [from review-block]
   effort: high (node)
 ```
 

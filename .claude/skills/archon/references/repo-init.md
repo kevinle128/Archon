@@ -142,7 +142,7 @@ assistants:
   claude:
     model: sonnet
   codex:
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     modelReasoningEffort: medium
 
 concurrency:

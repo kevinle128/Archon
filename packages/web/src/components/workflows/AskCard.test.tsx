@@ -475,6 +475,17 @@ describe('AskCard actions', () => {
     await act(async () => {
       root.unmount();
     });
+    // FocusScope restores focus in a host setTimeout(0) that constructs a
+    // CustomEvent and dispatches it. happy-dom rejects events from any other
+    // Event class, then throws window.TypeError — undefined on Bun's Window
+    // VM, so the throw is "undefined is not a constructor" and fails the file
+    // between tests. Drain that timer while this window's CustomEvent is
+    // still the global one.
+    await act(async () => {
+      await new Promise<void>(resolve => {
+        setTimeout(resolve, 0);
+      });
+    });
     win.close();
     restoreGlobals();
   });

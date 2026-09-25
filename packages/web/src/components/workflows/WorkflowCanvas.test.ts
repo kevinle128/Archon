@@ -78,7 +78,7 @@ describe('reactFlowToDagNodes read-only node passthrough', () => {
           rework: {
             prompt: 'Apply $REVIEW_ANNOTATIONS to $REVIEW_DOCUMENT.',
             provider: 'codex',
-            model: 'gpt-5.6-terra',
+            model: 'gpt-6-terra',
             effort: 'high',
           },
         },

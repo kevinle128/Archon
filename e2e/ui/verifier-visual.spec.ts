@@ -9,6 +9,8 @@ import { openRunDetail, openLegacyRunDetail } from '../lib/playwright/run-detail
 import {
   HITL_INSPECT_NODE,
   HITL_ASK_NODE,
+  E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+  QUEUE_GUIDANCE_NODE,
   TRANSCRIPT_STRUCTURED_NODE,
   TRANSCRIPT_STRUCTURED_TEXT,
   transcriptReportEnvelope,
@@ -19,8 +21,48 @@ const target = env.ARCHON_E2E_REPO_ROOT ?? tooling;
 const designRoot =
   '_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups';
 const mockRoot = '_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup';
+const steeringMockRoot = 'claude-design/design_handoff_node_room_transcript_steering';
+const queueMessages = ['wrong suite — use -p archon-workflows', 'and skip the doctests'] as const;
 // States captured from the prepared transcript-display run rather than the HITL run.
 const transcriptStates = new Set(['assistant-report', 'runtime-graph']);
+
+interface QueueAnatomy {
+  headerButton: boolean;
+  expanded: boolean;
+  caret: boolean;
+  ordinals: string[];
+  firstMarked: boolean;
+  humanTextUsesSans: boolean;
+  sentStatuses: number;
+}
+
+async function queueAnatomy(section: Locator): Promise<QueueAnatomy> {
+  return section.evaluate((element, messages) => {
+    const header = element.querySelector('button[aria-expanded]');
+    const list = element.querySelector('[role="list"], ul');
+    const rows = list === null ? [] : Array.from(list.children);
+    const firstMessage = Array.from(rows[0]?.querySelectorAll('span') ?? []).find(
+      child => child.textContent?.trim() === messages[0]
+    );
+    const font = firstMessage === undefined ? '' : getComputedStyle(firstMessage).fontFamily;
+    return {
+      headerButton: header !== null,
+      expanded: header?.getAttribute('aria-expanded') === 'true',
+      caret: header?.textContent?.includes('▾') ?? false,
+      ordinals: rows.map(row => row.firstElementChild?.textContent?.trim() ?? ''),
+      firstMarked: rows[0] !== undefined && getComputedStyle(rows[0]).boxShadow !== 'none',
+      humanTextUsesSans: /Inter|sans-serif/i.test(font) && !/JetBrains Mono|monospace/i.test(font),
+      sentStatuses: rows.reduce(
+        (count, row) =>
+          count +
+          Array.from(row.querySelectorAll('span')).filter(
+            child => child.textContent?.trim().toLowerCase() === 'sent'
+          ).length,
+        0
+      ),
+    };
+  }, queueMessages);
+}
 
 async function openRoom(
   page: Page,
@@ -78,7 +120,24 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
           const runId = transcriptStates.has(state) ? transcriptRun.runId : started.runId;
           let actual: Locator;
           let room: Locator | null = null;
-          if (state === 'runtime-graph') {
+          let queueFacts: QueueAnatomy | null = null;
+          if (state === 'queue-waiting') {
+            const queueRun = await archon.startWorkflowViaWeb(
+              E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+              `verify queue ${surface} ${String(viewport.width)}`
+            );
+            room = await openRoom(page, surface, queueRun.runId, QUEUE_GUIDANCE_NODE);
+            const field = room.getByRole('textbox', { name: /^message to / });
+            const queue = room.getByRole('button', { name: /^Queue/ });
+            for (const message of queueMessages) {
+              await field.fill(message);
+              await queue.click();
+            }
+            const list = room.getByRole('list', { name: /^Queued messages/ });
+            await expect(list.getByRole('listitem')).toHaveCount(queueMessages.length);
+            actual = list.locator('xpath=../..');
+            queueFacts = await queueAnatomy(actual);
+          } else if (state === 'runtime-graph') {
             if (surface === 'console') {
               await openRunDetail(page, runId);
               await page.getByRole('button', { name: 'Graph', exact: true }).click();
@@ -161,7 +220,13 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
           await reference.setViewportSize({ width: 1440, height: 1000 });
           let expected: Locator;
           let source: string;
-          if (state === 'ask-pending') {
+          if (state === 'queue-waiting') {
+            source = `${steeringMockRoot}/${surface === 'console' ? 'Console' : 'Legacy'} Node Room.dc.html`;
+            await reference.goto(pathToFileURL(join(target, source)).href);
+            const header = reference.getByRole('button', { name: /Queued.*2/i });
+            await expect(header).toBeVisible({ timeout: 30_000 });
+            expected = header.locator('xpath=..');
+          } else if (state === 'ask-pending') {
             source = `${mockRoot}/${surface === 'console' ? 'console' : 'index'}.html`;
             await reference.goto(pathToFileURL(join(target, source)).href);
             if (surface === 'legacy')
@@ -224,6 +289,17 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             join(output, 'visual-manifest.json'),
             JSON.stringify({ runId: started.runId, cases }, null, 2)
           );
+          if (queueFacts !== null) {
+            expect(queueFacts).toEqual({
+              headerButton: true,
+              expanded: true,
+              caret: true,
+              ordinals: ['1', '2'],
+              firstMarked: true,
+              humanTextUsesSans: true,
+              sentStatuses: 0,
+            });
+          }
         }
       }
     }

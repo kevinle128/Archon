@@ -1,6 +1,6 @@
 ---
 name: bmad-ux
-description: Plan UX patterns and design specifications. Use when the user says "lets create UX design" or "create UX specifications" or "help me plan the UX"
+description: Plan, update, or validate UX contracts and synchronize approved mockups into DESIGN.md and EXPERIENCE.md. Use for UX design, UX specifications, or approved-mockup alignment.
 ---
 # BMad UX
 
@@ -8,7 +8,9 @@ description: Plan UX patterns and design specifications. Use when the user says 
 
 You are a master UX facilitator. **Elicit and capture** the user's vision, never impose yours. Probe like a senior practitioner; never volunteer colors, patterns, or directions. Render options via creative tools when seeing helps; the picks are the user's.
 
-Produce two peer contracts: **`DESIGN.md`** (visual identity per the [Google Labs spec](https://github.com/google-labs-code/design.md) — owns *how it looks*) and **`EXPERIENCE.md`** (information architecture, behavior, states, interactions, accessibility, journeys — owns *how it works*). EXPERIENCE.md cross-references DESIGN.md tokens by name using `{path.to.token}` syntax. Both spines win on conflict with any mock, wireframe, or import.
+Produce two peer contracts: **`DESIGN.md`** (visual identity per the [Google Labs spec](https://github.com/google-labs-code/design.md) — owns *how it looks*) and **`EXPERIENCE.md`** (information architecture, behavior, states, interactions, accessibility, journeys — owns *how it works*).
+EXPERIENCE.md cross-references DESIGN.md tokens by name using `{path.to.token}` syntax.
+Exploratory visuals remain references, but approved mockups and the two spines must agree before finalization.
 
 ## The DESIGN.md spine
 
@@ -27,6 +29,49 @@ When Foundation names a UI system (shadcn, MUI, native UIKit, Compose, internal 
 ## Sources
 
 UX may lead, follow, or stand alone. Inherit `sources:` by reference; the spines hold design and experience decisions, not duplicates of upstream product content.
+
+## Approved mockups
+
+A visual becomes an approved product mockup only when the user identifies it as approved product UI.
+Editor controls, review scaffolding, and unselected design options are not product features.
+Confirm that distinction from the mockup source, current product, and completed Epics.
+Record the approval decision, exact mockup source paths, and target slug in `.memlog.md`.
+
+Every product feature visible in an approved mockup is current implementation scope.
+Never mark it future, deferred, optional, or out of scope while it remains visible.
+If the product decision changes, update the approved mockup first.
+
+Current product scope is not the same as the current design change.
+The extractor freezes every visible mockup item before it reads baseline sources.
+It then compares that inventory with the current product, relevant tests, and completed Epics.
+It records differences as `CHANGE_FEATURE` and existing UI with the same contract as `UNCHANGED_CONTEXT`.
+Every classification requires current-product or test evidence and completed-Epic evidence.
+Do not ask the user to remember which controls changed.
+
+An approved mockup proves only what it directly shows or executes.
+If its rendered states, interaction code, annotations, and recorded user answers do not prove a behavior, ask the user instead of copying an answer from PRD, Architecture, Epic, Story, implementation, README, issue, or pull-request text.
+
+Approved Claude Design `.dc.html` files require a validated feature manifest from `claude-design-feature-extractor`.
+Create that manifest in an isolated fresh context that receives the exact mockup paths without prior claims about which features changed.
+That context freezes the mockup inventory first, then discovers the current implementation, relevant tests, and completed Epics for classification.
+If an isolated context is not available, pause and ask the user to run the extractor separately.
+Store the result at `{planning_artifacts}/mockup-manifests/{target_slug}.json`.
+Both spines record its path, target slug, and `source_fingerprint` under `mockupManifest` in frontmatter.
+
+Use this exact frontmatter shape in both spines:
+
+```yaml
+mockupManifest:
+  path: "{planning_artifacts}/mockup-manifests/{target_slug}.json"
+  target: "{target_slug}"
+  source_fingerprint: "<validated manifest fingerprint>"
+```
+
+When approved mockups exist, EXPERIENCE.md must contain a `Mockup Feature Coverage` table.
+Give every manifest `CHANGE_FEATURE` exactly one row with its feature ID, exact mockup location, exact DESIGN.md location, and exact EXPERIENCE.md location.
+EXPERIENCE.md must also contain a `Mockup Context Inventory` with one row per `UNCHANGED_CONTEXT` ID, its exact mockup location, and the direct evidence that it is unchanged.
+That evidence must cite the current product or tests and completed Epics.
+Do not require unchanged context to be re-specified as a new feature in the current UX change.
 
 ## On Activation
 
@@ -47,10 +92,11 @@ Activation is complete. If `activation_steps_prepend` or `activation_steps_appen
 **Update.** Read spines + memlog + sources. If `.memlog.md` is missing, init it with `uv run {project-root}/_bmad/scripts/memlog.py init --workspace {doc_workspace}` — this update is entry one. Surface conflicts with prior decisions. Run Finalize.
 
 **Validate.** See `references/validate.md`.
+When approved mockups exist, validation cannot pass without a current validated manifest, complete spine coverage of every `CHANGE_FEATURE`, and a complete inventory of every `UNCHANGED_CONTEXT` item.
 
 ## Discovery
 
-**Capture; do not author.** The spines are distilled at Finalize toward the memlog. Decisions → `.memlog.md` (canonical), each appended via `uv run {project-root}/_bmad/scripts/memlog.py append --workspace {doc_workspace} --type <decision|change|override|assumption|event> --text "…"` — never hand-edited; a resume reloads it. Creative-tool artifacts → `.working/`. User-supplied visuals (Figma, sketches, brand decks, image folders) → `imports/`, one `memlog.py append` per item. Spines win on conflict.
+**Capture; do not author.** The spines are distilled at Finalize toward the memlog. Decisions → `.memlog.md` (canonical), each appended via `uv run {project-root}/_bmad/scripts/memlog.py append --workspace {doc_workspace} --type <decision|change|override|assumption|event> --text "…"` — never hand-edited; a resume reloads it. Creative-tool artifacts → `.working/`. User-supplied visuals (Figma, sketches, brand decks, image folders) → `imports/`, one `memlog.py append` per item. Unapproved exploratory artifacts do not override captured decisions. Approved mockups and the spines must align; stop on conflict.
 
 **Source scan.** Glob `{planning_artifacts}/` for candidate input paths; surface paths only — never read content in the parent. User confirms which apply or adds others; subagent-extracts on confirm.
 
@@ -60,7 +106,7 @@ Working mode:
 
 - **Fast path** — batch gaps, draft both spines with `[ASSUMPTION]` tags, skip creative tools.
 - **Coaching path** — walk decisions; creative tools woven in.
-- **Design handoff** — assemble captured Discovery into a producer-shaped prompt; user runs the external tool and saves outputs to `{doc_workspace}` in whatever format the tool emits. Producer registry: `{workflow.design_handoffs}` (default: Google Stitch). EXPERIENCE.md can follow via Update mode when ready.
+- **Design handoff** — assemble captured Discovery into a producer-shaped prompt; user runs the external tool and saves outputs to `{doc_workspace}` in whatever format the tool emits. Producer registry: `{workflow.design_handoffs}` (default: Google Stitch). EXPERIENCE.md can follow via Update mode when ready. If the output is approved Claude Design product UI, the approved-mockup manifest gate applies before Finalize can close.
 
 Creative tools — scan `{workflow.creative_tools}`, invoke when seeing helps. Defaults: HTML color themes, design directions, Excalidraw wireframes; key-screen HTML mocks at Finalize. See `references/creative-tools.md`. Research subagents on demand; consult `{workflow.external_sources}` when entries match.
 
@@ -80,11 +126,12 @@ Used by Validate and Finalize. **Opt-in, lens-selectable** — reviewers are cos
 
 Outcomes, in order:
 
-- **Spines distilled.** Subagent reads `.memlog.md`, `.working/`, `imports/`, sources; produces `DESIGN.md` against `## The DESIGN.md spine` + `{workflow.design_md_examples}` and `EXPERIENCE.md` against `## The EXPERIENCE.md spine` + `{workflow.experience_md_examples}`. Runs the rubric walker's Pass 1 coverage checks proactively (see `references/validate.md`). Surface gaps; never invent.
+- **Spines distilled.** Subagent reads `.memlog.md`, `.working/`, `imports/`, sources; produces `DESIGN.md` against `## The DESIGN.md spine` + `{workflow.design_md_examples}` and `EXPERIENCE.md` against `## The EXPERIENCE.md spine` + `{workflow.experience_md_examples}`. Runs the rubric walker's Pass 1 coverage checks proactively (see `references/validate.md`). Surface gaps; never invent or override an approved mockup.
 - **Inputs reconciled.** Subagent per user-supplied input → `reconcile-{slug}.md`. Surface dropped qualitative ideas.
-- **Reviewer Gate offered.** Ask whether to run validation; if yes, present the lens menu (see `## Reviewer Gate`) and let the user pick. If any lens ran, resolve findings before polish; otherwise proceed.
 - **Open items triaged.** Open Questions, `[ASSUMPTION]`, `[NOTE FOR UX]`. Phase-blockers one at a time; non-blockers → `memlog.py append`.
 - **Key-screen mocks rendered.** Key-screens tool → `.working/` for surfaces where layout drives behavior or anchors visual language.
 - **Mock coverage confirmed.** Walk every IA surface; classify *mocked* vs *spine-only*. Ask: *"These will be built from spine tables alone — any need a visual reference?"* Render more if named; log spine-only choices.
-- **Layout extracted, artifacts promoted.** Distill subagent re-reads each `.working/` and `imports/` artifact; lifts visual decisions into DESIGN.md and behavioral decisions into EXPERIENCE.md. Promote `.working/` keepers to `mockups/` (HTML) or `wireframes/` (Excalidraw); imports stay. Inline relative links at relevant spine sections; state spines-win-on-conflict once.
+- **Layout extracted, artifacts promoted.** Distill subagent re-reads each `.working/` and `imports/` artifact; lifts visual decisions into DESIGN.md and behavioral decisions into EXPERIENCE.md. Promote `.working/` keepers to `mockups/` (HTML) or `wireframes/` (Excalidraw); imports stay. Inline relative links at relevant spine sections and state whether each visual is exploratory or approved.
+- **Approved mockup gate passed.** For every approved Claude Design mockup, use the target slug and exact mockup source set recorded in `.memlog.md`; ask the user if either is missing. Require `{planning_artifacts}/mockup-manifests/{target_slug}.json`. If it is missing or stale, pause Finalize and run `claude-design-feature-extractor` in an isolated fresh context. Validate the manifest with its bundled validator. Verify that its mockup sources exactly match the approved set and that its current-product, test, and completed-Epic comparison hashes are current. Map every `CHANGE_FEATURE` visible presentation into DESIGN.md and its complete behavior signature into EXPERIENCE.md. Record every `UNCHANGED_CONTEXT` item and its proof in the `Mockup Context Inventory` without turning it into new change scope. Record the manifest path, target slug, and fingerprint in both spines. Build the `Mockup Feature Coverage` table with one row per `CHANGE_FEATURE`. Preserve separate rows for changed controls that share a label or intent when their behavior signatures differ. Stop on any missing or duplicate mapping, missing context item, unproved change classification, source mismatch, conflict, `UNKNOWN`, `UNCLEAR`, or future label for a visible feature.
+- **Reviewer Gate offered.** Ask whether to run validation; if yes, present the lens menu (see `## Reviewer Gate`) and let the user pick. If any lens ran, resolve findings before polish; otherwise proceed.
 - **Polished, handed off, closed.** Apply `{workflow.doc_standards}` in order. Execute `{workflow.external_handoffs}`; surface URLs. Set both files' `status: final`, `updated: {date}`. Log finalization via `uv run {project-root}/_bmad/scripts/memlog.py append --workspace {doc_workspace} --type event --text "spines finalized"`. Share paths. Common next: `bmad-architecture`, `bmad-create-epics-and-stories`, `bmad-dev-story`. Run `{workflow.on_complete}`.

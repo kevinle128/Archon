@@ -235,7 +235,7 @@ describe('GET /api/workflows', () => {
     mockDiscoverWorkflows.mockImplementationOnce(async () => ({
       workflows: [
         makeTestWorkflowWithSource(
-          { name: 'deploy', description: 'Deploy app', provider: 'codex', model: 'gpt-5.6-sol' },
+          { name: 'deploy', description: 'Deploy app', provider: 'codex', model: 'gpt-6-sol' },
           'bundled'
         ),
       ],
@@ -248,7 +248,7 @@ describe('GET /api/workflows', () => {
     };
 
     expect(body.workflows[0].workflow.provider).toBe('codex');
-    expect(body.workflows[0].workflow.model).toBe('gpt-5.6-sol');
+    expect(body.workflows[0].workflow.model).toBe('gpt-6-sol');
     // The EXPANDED node graph is what ships alongside it — the declared values are layered
     // over the definition, they do not replace it.
     expect(Array.isArray(body.workflows[0].workflow.nodes)).toBe(true);

@@ -80,7 +80,7 @@ assistants:
       - /absolute/path/to/other/repo
     # codexBinaryPath: /absolute/path/to/codex  # Optional: Codex CLI path
   omp:
-    model: openai-codex/gpt-5.6-sol
+    model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
     enableExtensions: false
     # ompBinaryPath: /absolute/path/to/omp  # Private server-side OMP CLI path

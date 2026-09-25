@@ -91,11 +91,11 @@ model = "sonnet"
 extra_args = ["--permission-mode", "bypassPermissions", "--effort", "xhigh"]
 [adapter.review]
 name = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 extra_args = ["--dangerously-bypass-approvals-and-sandbox", "-c", "model_reasoning_effort=xhigh"]
 [adapter.triage]
 name = "codex"
-model = "gpt-5.6-sol"
+model = "gpt-6-sol"
 extra_args = ["--dangerously-bypass-approvals-and-sandbox", "-c", "model_reasoning_effort=xhigh"]
 
 

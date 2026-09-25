@@ -187,7 +187,7 @@ function successfulLines(sessionId = 'omp-session-1', text = 'Hello'): string[] 
         role: 'assistant',
         content: [{ type: 'text', text }],
         provider: 'openai-codex',
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-sol',
         usage: { input: 3, output: 2, totalTokens: 5, cost: { total: 0.1 } },
         stopReason: 'stop',
       },
@@ -218,7 +218,7 @@ function modelErrorLines(): string[] {
         role: 'assistant',
         content: [{ type: 'text', text: '{"answer":"partial"}' }],
         provider: 'openai-codex',
-        model: 'gpt-5.6-sol',
+        model: 'gpt-6-sol',
         usage: { input: 7, output: 4, totalTokens: 11, cost: { total: 0.3 } },
         stopReason: 'error',
         errorMessage: 'rate limited',
@@ -268,7 +268,7 @@ describe('buildOmpArgs', () => {
       prompt: 'hello',
       cwd: '/repo',
       config: {
-        model: 'openai-codex/gpt-5.6-sol',
+        model: 'openai-codex/gpt-6-sol',
         modelReasoningEffort: 'high',
       },
       requestOptions: {
@@ -286,7 +286,7 @@ describe('buildOmpArgs', () => {
       '--no-title',
       '--no-extensions',
       '--model',
-      'openai-codex/gpt-5.6-sol',
+      'openai-codex/gpt-6-sol',
       '--thinking',
       'high',
       '--system-prompt',
@@ -405,7 +405,7 @@ describe('OmpProvider', () => {
       tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
       cost: 0.1,
       stopReason: 'stop',
-      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
     });
   });
 
@@ -450,7 +450,7 @@ describe('OmpProvider', () => {
       cost: 0.1,
       stopReason: 'stop',
       numTurns: 1,
-      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
       structuredOutput: { answer: 'ok' },
       isError: true,
       errorSubtype: 'omp_exit_nonzero',
@@ -508,7 +508,7 @@ describe('OmpProvider', () => {
       cost: 0.3,
       stopReason: 'error',
       numTurns: 1,
-      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
       structuredOutput: { answer: 'partial' },
       isError: true,
       errorSubtype: 'omp_protocol_error',
@@ -613,11 +613,11 @@ describe('OmpProvider', () => {
       tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
       cost: 0.1,
       stopReason: 'stop',
-      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
       usageBreakdown: [
         {
           provider: 'openai-codex',
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-sol',
           modelSource: 'reported',
           inputTokens: 3,
           outputTokens: 2,
@@ -642,7 +642,7 @@ describe('OmpProvider', () => {
       usageBreakdown: [
         {
           provider: 'openai-codex',
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-sol',
           modelSource: 'reported',
           inputTokens: 3,
           outputTokens: 2,
@@ -666,7 +666,7 @@ describe('OmpProvider', () => {
       usageBreakdown: [
         {
           provider: 'openai-codex',
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-sol',
           modelSource: 'reported',
           inputTokens: 3,
           outputTokens: 2,
@@ -1317,7 +1317,7 @@ describe('OmpProvider interrupt / stream-abort seam', () => {
             role: 'assistant',
             content: [{ type: 'text', text: 'Hi' }],
             provider: 'openai-codex',
-            model: 'gpt-5.6-sol',
+            model: 'gpt-6-sol',
             usage: { input: 3, output: 2, totalTokens: 5, cost: { total: 0.1 } },
             stopReason: 'stop',
           },
@@ -1337,11 +1337,11 @@ describe('OmpProvider interrupt / stream-abort seam', () => {
       tokens: { input: 3, output: 2, total: 5, cost: 0.1 },
       cost: 0.1,
       numTurns: 1,
-      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
       usageBreakdown: [
         {
           provider: 'openai-codex',
-          model: 'gpt-5.6-sol',
+          model: 'gpt-6-sol',
           modelSource: 'reported',
           inputTokens: 3,
           outputTokens: 2,

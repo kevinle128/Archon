@@ -8,7 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "test": "bun test src/lib/ && bun test src/stores/ && bun test src/hooks/ && NODE_ENV=development bun test src/components/ && NODE_ENV=development bun test src/component-integration/source-control-tab.test.tsx && NODE_ENV=development bun test src/experiments/console/",
+    "test": "bun test src/lib/ && bun test src/stores/ && bun test src/hooks/ && NODE_ENV=development bun test --preload ./src/test/preload-radix-dom.ts src/components/ && NODE_ENV=development bun test src/component-integration/source-control-tab.test.tsx && NODE_ENV=development bun test src/experiments/console/",
     "generate:types": "openapi-typescript http://localhost:3090/api/openapi.json -o src/lib/api.generated.d.ts"
   },
   "dependencies": {

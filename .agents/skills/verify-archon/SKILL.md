@@ -1,6 +1,7 @@
 ---
 name: verify-archon
 description: Prove Archon CLI workflows, solo HTTP API, and Console/Legacy run UI from an explicit selection; retain functional and visual evidence.
+disable-model-invocation: true
 ---
 
 # Verify Archon
@@ -96,8 +97,15 @@ The helper rechecks provenance, source cleanliness, attachments, and tooling aft
 
 Follow the complete [visual procedure](references/visual-verification.md).
 [visual-config.json](visual-config.json) pins the design source chain, content hashes, surfaces, states, viewports, region width, criteria, and accepted differences.
+Use this authority order for conflicts: current explicit user decision; user-approved normative mockup, design, or specification; other normative project documentation; agent-authored plan, report, or test; implementation and implementation screenshots.
+Only explicit supersession from the user or a higher-authority source can reverse an applicable mockup invariant.
+A scope cut can omit a capability, but it cannot redesign an in-scope element.
 The `ui.visual` runner identity includes that configuration's digest in the catalog.
 Every UI behavior includes this scenario, even when the proposal names only a functional behavior.
+
+The queue state compares both product surfaces with the approved Node Room mockups.
+It requires an interactive expanded header with a caret and count, one-based ordinals, a marked next item, sans-serif operator text, and no transcript-delivery `sent` label inside a waiting queue row.
+Stop, idle-after-interrupt, and provider-specific per-item controls are outside this queue-state check.
 Do not put ad hoc visual requirements into v1 proposal or selection fields.
 A new UI requirement needs a reviewed catalog/configuration update and fresh selection.
 
@@ -116,6 +124,7 @@ The helper owns its `lib/`, copied schemas, conformance vectors, catalog, and vi
 It reuses native E2E support and the mapped test IDs in `lib/browser-scenarios.ts`.
 `e2e/ui/verifier-visual.spec.ts` supplies matched captures.
 Existing tool-row and room tests honor `ARCHON_VERIFY_EVIDENCE` to retain captures in the current attempt.
+Queue guidance still writes tracked acceptance screenshots under `plans/`. After attachments are copied into the attempt, the browser runner restores those tracked `plans/` paths so the cleanliness guard measures the product tree.
 No root Playwright dependency is added.
 
 `coverage-gaps.json` explicitly defers login and multi-user authorization, live provider reasoning, external platform delivery, other UI surfaces, and uncovered workflow semantics.

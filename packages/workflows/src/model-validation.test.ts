@@ -171,7 +171,7 @@ describe('buildAiProfile — alias layering', () => {
   test('alias entry effort is preserved', () => {
     const profile = buildAiProfile('codex', {
       repoAliases: {
-        '@deep': { provider: 'codex', model: 'gpt-5.6-sol', effort: 'xhigh' },
+        '@deep': { provider: 'codex', model: 'gpt-6-sol', effort: 'xhigh' },
       },
     });
     expect(profile.aliases['@deep']?.effort).toBe('xhigh');

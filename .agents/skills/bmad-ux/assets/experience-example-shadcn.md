@@ -26,7 +26,7 @@ Single-surface responsive web. shadcn/ui on Next.js 15+ with Tailwind CSS. The c
 
 Sidebar collapses to icons on `md`; becomes a `Sheet` on `sm`. Modal stacks one level deep (e.g., open `Dialog` on top of a surface, never on top of another dialog).
 
-→ Composition reference: `mockups/today.html`, `mockups/project-detail.html`, `mockups/command-palette.html`. Spine wins on conflict.
+→ Exploratory composition references: `mockups/today.html`, `mockups/project-detail.html`, `mockups/command-palette.html`.
 
 ## Voice and Tone
 
