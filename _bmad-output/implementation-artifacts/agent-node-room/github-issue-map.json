@@ -6,7 +6,7 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRiwzGw",
       "number": 174,
-      "status": "backlog",
+      "status": "done",
       "title": "Scan a tool call as one readable row",
       "url": "https://github.com/kevinle128/Archon/issues/174"
     },
@@ -15,7 +15,7 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRiw4Fw",
       "number": 175,
-      "status": "backlog",
+      "status": "done",
       "title": "Inspect the raw payload of a tool call",
       "url": "https://github.com/kevinle128/Archon/issues/175"
     },
@@ -24,7 +24,7 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRiw9YA",
       "number": 176,
-      "status": "backlog",
+      "status": "done",
       "title": "Read expanded details shaped for the tool family",
       "url": "https://github.com/kevinle128/Archon/issues/176"
     },
@@ -36,7 +36,7 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRixDcQ",
       "number": 177,
-      "status": "backlog",
+      "status": "done",
       "title": "View a file edit as an inline diff",
       "url": "https://github.com/kevinle128/Archon/issues/177"
     },
@@ -45,7 +45,7 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRixKKw",
       "number": 178,
-      "status": "backlog",
+      "status": "done",
       "title": "Track the agent's current todo state in a pinned strip",
       "url": "https://github.com/kevinle128/Archon/issues/178"
     },
@@ -54,7 +54,7 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRixRFg",
       "number": 179,
-      "status": "backlog",
+      "status": "done",
       "title": "Inspect a subagent dispatch and its subtasks",
       "url": "https://github.com/kevinle128/Archon/issues/179"
     },
@@ -63,16 +63,52 @@
       "epic": 1,
       "node_id": "I_kwDOS4WbPs8AAAABRixWpA",
       "number": 180,
-      "status": "backlog",
+      "status": "done",
       "title": "Navigate transcript occurrences and loop iterations",
       "url": "https://github.com/kevinle128/Archon/issues/180"
+    },
+    "10-1-fix-room-geometry-and-execution-selection": {
+      "blocked_by": [],
+      "epic": 10,
+      "node_id": "I_kwDOS4WbPs8AAAABTKKTpA",
+      "number": 265,
+      "status": "ready-for-dev",
+      "title": "Fix room geometry and execution selection",
+      "url": "https://github.com/kevinle128/Archon/issues/265"
+    },
+    "10-2-deliver-one-selected-queued-message-without-stop": {
+      "blocked_by": [],
+      "epic": 10,
+      "node_id": "I_kwDOS4WbPs8AAAABTL79vA",
+      "number": 295,
+      "status": "backlog",
+      "title": "Deliver one selected queued message without Stop",
+      "url": "https://github.com/kevinle128/Archon/issues/295"
+    },
+    "10-3-preserve-every-unmatched-message-at-terminal-boundaries": {
+      "blocked_by": [],
+      "epic": 10,
+      "node_id": "I_kwDOS4WbPs8AAAABTL8A2Q",
+      "number": 296,
+      "status": "backlog",
+      "title": "Preserve every unmatched message at terminal boundaries",
+      "url": "https://github.com/kevinle128/Archon/issues/296"
+    },
+    "10-4-use-a-codex-supported-tool-status-presentation": {
+      "blocked_by": [],
+      "epic": 10,
+      "node_id": "I_kwDOS4WbPs8AAAABTL8EJg",
+      "number": 297,
+      "status": "backlog",
+      "title": "Use a Codex-supported tool status presentation",
+      "url": "https://github.com/kevinle128/Archon/issues/297"
     },
     "2-1-queue-guidance-for-a-running-agent": {
       "blocked_by": [],
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRixbuA",
       "number": 181,
-      "status": "backlog",
+      "status": "done",
       "title": "Queue guidance for a running agent",
       "url": "https://github.com/kevinle128/Archon/issues/181"
     },
@@ -84,7 +120,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRiy2KQ",
       "number": 190,
-      "status": "backlog",
+      "status": "done",
       "title": "See queued guidance while viewing a finished iteration",
       "url": "https://github.com/kevinle128/Archon/issues/190"
     },
@@ -96,7 +132,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRiy_Lw",
       "number": 191,
-      "status": "backlog",
+      "status": "done",
       "title": "Recover messages that were never sent when the node ends",
       "url": "https://github.com/kevinle128/Archon/issues/191"
     },
@@ -108,7 +144,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRizF3g",
       "number": 192,
-      "status": "backlog",
+      "status": "done",
       "title": "Fail an abandoned redirect safely after 30 minutes",
       "url": "https://github.com/kevinle128/Archon/issues/192"
     },
@@ -120,7 +156,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRizNuw",
       "number": 193,
-      "status": "backlog",
+      "status": "done",
       "title": "Preserve message order and attribution under concurrent operators",
       "url": "https://github.com/kevinle128/Archon/issues/193"
     },
@@ -129,7 +165,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRixgOQ",
       "number": 182,
-      "status": "backlog",
+      "status": "done",
       "title": "Withdraw a queued guidance message",
       "url": "https://github.com/kevinle128/Archon/issues/182"
     },
@@ -141,7 +177,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRixlpg",
       "number": 183,
-      "status": "backlog",
+      "status": "done",
       "title": "Interrupt and redirect a running Claude agent",
       "url": "https://github.com/kevinle128/Archon/issues/183"
     },
@@ -150,7 +186,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRixspQ",
       "number": 184,
-      "status": "backlog",
+      "status": "done",
       "title": "Interrupt and redirect a running Codex agent",
       "url": "https://github.com/kevinle128/Archon/issues/184"
     },
@@ -159,7 +195,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRixx4w",
       "number": 185,
-      "status": "backlog",
+      "status": "done",
       "title": "Interrupt and redirect a running OMP agent",
       "url": "https://github.com/kevinle128/Archon/issues/185"
     },
@@ -168,7 +204,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRiyTPA",
       "number": 186,
-      "status": "backlog",
+      "status": "done",
       "title": "Interrupt and redirect a running Grok agent",
       "url": "https://github.com/kevinle128/Archon/issues/186"
     },
@@ -177,7 +213,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRiyZIQ",
       "number": 187,
-      "status": "backlog",
+      "status": "done",
       "title": "Interrupt and redirect a running DeepSeek agent",
       "url": "https://github.com/kevinle128/Archon/issues/187"
     },
@@ -190,7 +226,7 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRiyfbQ",
       "number": 188,
-      "status": "backlog",
+      "status": "done",
       "title": "See operator messages in the transcript",
       "url": "https://github.com/kevinle128/Archon/issues/188"
     },
@@ -202,9 +238,315 @@
       "epic": 2,
       "node_id": "I_kwDOS4WbPs8AAAABRiyuBA",
       "number": 189,
-      "status": "backlog",
+      "status": "done",
       "title": "See the same live queue across tabs and operators",
       "url": "https://github.com/kevinle128/Archon/issues/189"
+    },
+    "3-1-match-the-approved-console-and-legacy-room-anatomy": {
+      "blocked_by": [
+        "1-1-scan-a-tool-call-as-one-readable-row",
+        "1-2-inspect-the-raw-payload-of-a-tool-call",
+        "1-3-read-expanded-details-shaped-for-the-tool-family",
+        "1-4-view-a-file-edit-as-an-inline-diff",
+        "1-5-track-the-agents-current-todo-state-in-a-pinned-strip",
+        "1-6-inspect-a-subagent-dispatch-and-its-subtasks",
+        "1-7-navigate-transcript-occurrences-and-loop-iterations"
+      ],
+      "epic": 3,
+      "node_id": "I_kwDOS4WbPs8AAAABTL5lhQ",
+      "number": 266,
+      "status": "backlog",
+      "title": "Match the approved Console and Legacy room anatomy",
+      "url": "https://github.com/kevinle128/Archon/issues/266"
+    },
+    "3-2-present-todo-state-exactly-as-approved": {
+      "blocked_by": [
+        "3-1-match-the-approved-console-and-legacy-room-anatomy",
+        "1-5-track-the-agents-current-todo-state-in-a-pinned-strip"
+      ],
+      "epic": 3,
+      "node_id": "I_kwDOS4WbPs8AAAABTL5vIA",
+      "number": 267,
+      "status": "backlog",
+      "title": "Present todo state exactly as approved",
+      "url": "https://github.com/kevinle128/Archon/issues/267"
+    },
+    "3-3-complete-transcript-interaction-and-accessibility-behavior": {
+      "blocked_by": [
+        "3-1-match-the-approved-console-and-legacy-room-anatomy",
+        "3-2-present-todo-state-exactly-as-approved"
+      ],
+      "epic": 3,
+      "node_id": "I_kwDOS4WbPs8AAAABTL50Vg",
+      "number": 268,
+      "status": "backlog",
+      "title": "Complete transcript interaction and accessibility behavior",
+      "url": "https://github.com/kevinle128/Archon/issues/268"
+    },
+    "4-1-persist-successful-codex-file-change-rows": {
+      "blocked_by": [
+        "3-1-match-the-approved-console-and-legacy-room-anatomy",
+        "1-4-view-a-file-edit-as-an-inline-diff"
+      ],
+      "epic": 4,
+      "node_id": "I_kwDOS4WbPs8AAAABTL552A",
+      "number": 269,
+      "status": "backlog",
+      "title": "Persist successful Codex file-change rows",
+      "url": "https://github.com/kevinle128/Archon/issues/269"
+    },
+    "4-2-use-readable-tool-presentation-in-runstream": {
+      "blocked_by": ["4-1-persist-successful-codex-file-change-rows"],
+      "epic": 4,
+      "node_id": "I_kwDOS4WbPs8AAAABTL5-0w",
+      "number": 270,
+      "status": "backlog",
+      "title": "Use readable tool presentation in RunStream",
+      "url": "https://github.com/kevinle128/Archon/issues/270"
+    },
+    "4-3-use-readable-tool-presentation-in-chat": {
+      "blocked_by": ["4-2-use-readable-tool-presentation-in-runstream"],
+      "epic": 4,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6DFA",
+      "number": 271,
+      "status": "backlog",
+      "title": "Use readable tool presentation in Chat",
+      "url": "https://github.com/kevinle128/Archon/issues/271"
+    },
+    "4-4-align-backend-tool-formatting": {
+      "blocked_by": ["4-3-use-readable-tool-presentation-in-chat"],
+      "epic": 4,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6HQg",
+      "number": 272,
+      "status": "backlog",
+      "title": "Align backend tool formatting",
+      "url": "https://github.com/kevinle128/Archon/issues/272"
+    },
+    "5-1-show-a-run-level-files-changed-panel": {
+      "blocked_by": ["4-4-align-backend-tool-formatting"],
+      "epic": 5,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6Mbg",
+      "number": 273,
+      "status": "backlog",
+      "title": "Show a run-level Files Changed panel",
+      "url": "https://github.com/kevinle128/Archon/issues/273"
+    },
+    "5-2-attribute-git-changes-to-node-executions": {
+      "blocked_by": ["5-1-show-a-run-level-files-changed-panel"],
+      "epic": 5,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6QwA",
+      "number": 274,
+      "status": "backlog",
+      "title": "Attribute Git changes to node executions",
+      "url": "https://github.com/kevinle128/Archon/issues/274"
+    },
+    "6-1-persist-and-present-agent-thinking": {
+      "blocked_by": ["4-4-align-backend-tool-formatting"],
+      "epic": 6,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6VRg",
+      "number": 275,
+      "status": "backlog",
+      "title": "Persist and present agent thinking",
+      "url": "https://github.com/kevinle128/Archon/issues/275"
+    },
+    "6-2-persist-and-present-the-triggering-prompt": {
+      "blocked_by": ["6-1-persist-and-present-agent-thinking"],
+      "epic": 6,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6Z_Q",
+      "number": 276,
+      "status": "backlog",
+      "title": "Persist and present the triggering prompt",
+      "url": "https://github.com/kevinle128/Archon/issues/276"
+    },
+    "6-3-persist-and-present-advisor-notifications": {
+      "blocked_by": ["6-2-persist-and-present-the-triggering-prompt"],
+      "epic": 6,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6edQ",
+      "number": 277,
+      "status": "backlog",
+      "title": "Persist and present advisor notifications",
+      "url": "https://github.com/kevinle128/Archon/issues/277"
+    },
+    "7-1-add-durable-steering-storage": {
+      "blocked_by": ["3-3-complete-transcript-interaction-and-accessibility-behavior"],
+      "epic": 7,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6jow",
+      "number": 278,
+      "status": "backlog",
+      "title": "Add durable steering storage",
+      "url": "https://github.com/kevinle128/Archon/issues/278"
+    },
+    "7-2-save-and-restore-composer-drafts": {
+      "blocked_by": ["7-1-add-durable-steering-storage"],
+      "epic": 7,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6oYw",
+      "number": 279,
+      "status": "backlog",
+      "title": "Save and restore composer drafts",
+      "url": "https://github.com/kevinle128/Archon/issues/279"
+    },
+    "7-3-preserve-the-shared-queue-and-fifo-order": {
+      "blocked_by": [
+        "7-2-save-and-restore-composer-drafts",
+        "2-13-preserve-message-order-and-attribution-under-concurrent-operators"
+      ],
+      "epic": 7,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6tYg",
+      "number": 280,
+      "status": "backlog",
+      "title": "Preserve the shared queue and FIFO order",
+      "url": "https://github.com/kevinle128/Archon/issues/280"
+    },
+    "7-4-recover-guidance-after-server-restart": {
+      "blocked_by": ["7-3-preserve-the-shared-queue-and-fifo-order"],
+      "epic": 7,
+      "node_id": "I_kwDOS4WbPs8AAAABTL6zUw",
+      "number": 281,
+      "status": "backlog",
+      "title": "Recover guidance after server restart",
+      "url": "https://github.com/kevinle128/Archon/issues/281"
+    },
+    "7-5-support-durable-auto-send-mode": {
+      "blocked_by": ["7-4-recover-guidance-after-server-restart"],
+      "epic": 7,
+      "node_id": "I_kwDOS4WbPs8AAAABTL63XQ",
+      "number": 282,
+      "status": "backlog",
+      "title": "Support durable auto-send mode",
+      "url": "https://github.com/kevinle128/Archon/issues/282"
+    },
+    "8-1-implement-the-provider-neutral-stop-contract": {
+      "blocked_by": ["7-3-preserve-the-shared-queue-and-fifo-order"],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL672Q",
+      "number": 283,
+      "status": "backlog",
+      "title": "Implement the provider-neutral Stop contract",
+      "url": "https://github.com/kevinle128/Archon/issues/283"
+    },
+    "8-2-expose-stop-through-the-api-and-both-node-room-shells": {
+      "blocked_by": [
+        "7-4-recover-guidance-after-server-restart",
+        "8-1-implement-the-provider-neutral-stop-contract"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7AJw",
+      "number": 284,
+      "status": "backlog",
+      "title": "Expose Stop through the API and both Node Room shells",
+      "url": "https://github.com/kevinle128/Archon/issues/284"
+    },
+    "8-3-complete-claude-stop-soft-injection-and-delivery-acknowledgement": {
+      "blocked_by": [
+        "8-2-expose-stop-through-the-api-and-both-node-room-shells",
+        "2-3-interrupt-and-redirect-a-running-claude-agent"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7GAg",
+      "number": 285,
+      "status": "backlog",
+      "title": "Complete Claude Stop, soft injection, and delivery acknowledgement",
+      "url": "https://github.com/kevinle128/Archon/issues/285"
+    },
+    "8-4-complete-codex-stop-and-session-continuation": {
+      "blocked_by": [
+        "4-1-persist-successful-codex-file-change-rows",
+        "8-2-expose-stop-through-the-api-and-both-node-room-shells",
+        "2-4-interrupt-and-redirect-a-running-codex-agent"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7L_w",
+      "number": 286,
+      "status": "backlog",
+      "title": "Complete Codex Stop and session continuation",
+      "url": "https://github.com/kevinle128/Archon/issues/286"
+    },
+    "8-5-complete-grok-stop-and-soft-injection": {
+      "blocked_by": [
+        "8-3-complete-claude-stop-soft-injection-and-delivery-acknowledgement",
+        "2-6-interrupt-and-redirect-a-running-grok-agent"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7TIQ",
+      "number": 287,
+      "status": "backlog",
+      "title": "Complete Grok Stop and soft injection",
+      "url": "https://github.com/kevinle128/Archon/issues/287"
+    },
+    "8-6-complete-deepseek-stop-and-continuation": {
+      "blocked_by": [
+        "8-4-complete-codex-stop-and-session-continuation",
+        "2-7-interrupt-and-redirect-a-running-deepseek-agent"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7YhQ",
+      "number": 288,
+      "status": "backlog",
+      "title": "Complete DeepSeek Stop and continuation",
+      "url": "https://github.com/kevinle128/Archon/issues/288"
+    },
+    "8-7-complete-omp-stop-and-soft-injection": {
+      "blocked_by": [
+        "8-5-complete-grok-stop-and-soft-injection",
+        "2-5-interrupt-and-redirect-a-running-omp-agent"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7egQ",
+      "number": 289,
+      "status": "backlog",
+      "title": "Complete OMP Stop and soft injection",
+      "url": "https://github.com/kevinle128/Archon/issues/289"
+    },
+    "8-8-present-truthful-provider-capabilities": {
+      "blocked_by": [
+        "8-3-complete-claude-stop-soft-injection-and-delivery-acknowledgement",
+        "8-4-complete-codex-stop-and-session-continuation",
+        "8-5-complete-grok-stop-and-soft-injection",
+        "8-6-complete-deepseek-stop-and-continuation",
+        "8-7-complete-omp-stop-and-soft-injection"
+      ],
+      "epic": 8,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7j8g",
+      "number": 290,
+      "status": "backlog",
+      "title": "Present truthful provider capabilities",
+      "url": "https://github.com/kevinle128/Archon/issues/290"
+    },
+    "9-1-support-stop-and-redirect-for-qoder-cli": {
+      "blocked_by": ["8-8-present-truthful-provider-capabilities"],
+      "epic": 9,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7sIA",
+      "number": 291,
+      "status": "backlog",
+      "title": "Support Stop and redirect for Qoder CLI",
+      "url": "https://github.com/kevinle128/Archon/issues/291"
+    },
+    "9-2-support-stop-and-redirect-for-pi": {
+      "blocked_by": ["9-1-support-stop-and-redirect-for-qoder-cli"],
+      "epic": 9,
+      "node_id": "I_kwDOS4WbPs8AAAABTL7wmA",
+      "number": 292,
+      "status": "backlog",
+      "title": "Support Stop and redirect for Pi",
+      "url": "https://github.com/kevinle128/Archon/issues/292"
+    },
+    "9-3-support-stop-and-redirect-for-github-copilot": {
+      "blocked_by": ["9-2-support-stop-and-redirect-for-pi"],
+      "epic": 9,
+      "node_id": "I_kwDOS4WbPs8AAAABTL71Ag",
+      "number": 293,
+      "status": "backlog",
+      "title": "Support Stop and redirect for GitHub Copilot",
+      "url": "https://github.com/kevinle128/Archon/issues/293"
+    },
+    "9-4-support-stop-and-redirect-for-opencode": {
+      "blocked_by": ["9-3-support-stop-and-redirect-for-github-copilot"],
+      "epic": 9,
+      "node_id": "I_kwDOS4WbPs8AAAABTL75UQ",
+      "number": 294,
+      "status": "backlog",
+      "title": "Support Stop and redirect for OpenCode",
+      "url": "https://github.com/kevinle128/Archon/issues/294"
     }
   }
 }

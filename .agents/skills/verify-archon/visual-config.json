@@ -39,43 +39,43 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "1215fb61f24555eb06818411525d9b5b6cf7ad81ac40481b7d07d3f02f9c4b65"
+      "sha256": "89cf15455fe4491f5a03a050264839184deebec0f9ea895e662705cc559ad32b"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
-      "sha256": "bbe189dd002a8fdd718c7d5d66878e6dcd4645e206bab8369fa02b6d87029fd0"
+      "sha256": "cf8f391c502c42717e4ee3fb1205bf2e4fca502b939ed82cbe40c8964bbecb1a"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
-      "sha256": "ea68cf948873531e7ccc3d2757d91013d4e74fc4912e8ff434a0b8274d4b8972"
+      "sha256": "a8b18bd4be07c61c1ec8994a0f16f59b18df519bf2b03f20e3def0f9b99a779a"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/EXPERIENCE.md",
-      "sha256": "0c39e580f160496f5c09d460deaf158c9e37fc03016024673b65e94ca4f7c305"
+      "sha256": "77b681e3a0f451901de084a6e259236dbdc5360141a2ff234769c50f35e2a987"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
-      "sha256": "0716b16ebe3ffc56dd4a5e93c330db36b55e60dc15c22dcb02a3dfe878319460"
+      "sha256": "d1786484041cf3743002628facd741eae7f3d1474f18515690c70d469497c065"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
-      "sha256": "b0359ab9d84bbfe995355b3a4bb179ba55735e713c0f72502982ba8b46e148d0"
+      "sha256": "c8030476e41d15df39b2998645aeb56e7178f5537280cf72a22e91cb3cc5633a"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
-      "sha256": "6eeb1621dd3d550f988d5bfcf78ebfe61787799711639d42c9afed60afa4bdc8"
+      "sha256": "da27302ac4074bca763b8e0e51762bc8e9929ccd83a16567b607849464a77e1a"
     },
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/README.md",
-      "sha256": "8d80940c3a90daa2ff060f1a8e186385d20d04b7a6d7ffa804e56f120dfa44c3"
+      "sha256": "99396fa9788da3688635241d21668701198183dcec2659a62833895552947dbc"
     },
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
-      "sha256": "207764b40c36a4ac605e84097fb21434bcdaf8634f933623c13609af169f0332"
+      "sha256": "7857c0ddbfdf3397f354f6fb374d6e9a4771e6f05815a7231393ed4319ac803f"
     },
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
-      "sha256": "01c56edf7f7d87cf284acc0b1dd872d47ccb79db0cb4c4355a030e085b294855"
+      "sha256": "e7e638c23e5ff99083614469e4f109f3c979803087608206e0a616fe54142061"
     },
     {
       "path": "claude-design/design_handoff_node_room_transcript_steering/support.js",

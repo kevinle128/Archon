@@ -1,5 +1,9 @@
 # Engine integration
 
+> **Historical source only.**
+> This document records the pre-merge live-steering design and is not an implementation contract.
+> The canonical current contract is `../../engine-integration.md`.
+
 Everything between the browser and the provider seam. The provider matrix answers _can the agent hear us_; this answers _can anything in Archon reach the agent to speak, and what does the engine do after_. Four findings, each verified against source, each deciding work the capabilities cannot be built without.
 
 The frame is the one the spine fixes: steering acts on the **live agent**, never on the node lifecycle. The node stays `running` throughout — there is no durable marker, no run pause, no stop-and-resume. What follows is how the executor reaches the live session, interrupts it without failing the node, and runs more than one turn on it.

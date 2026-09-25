@@ -6,10 +6,9 @@ One pure, React-free, provider-agnostic module produces a `ToolPresentation`; bo
 ## Module
 
 `packages/web/src/lib/tool-presentation.ts`.
-Input is structural rather than tied to `AgentHistoryItem`, so the chat card can adopt it later without a rewrite.
+Input is structural rather than tied to `AgentHistoryItem`, so Node Room, RunStream, and Chat can use the same semantic contract.
 
-The module exposes two API layers.
-The **summary layer** resolves the collapsed row; the **body layer** resolves the expanded body lazily, only while a row is open with Raw closed, so polling never pays for output normalization.
+The module exposes two API layers. The **summary layer** resolves the collapsed row; the **body layer** resolves the expanded body lazily, only while a row is open with Raw closed, so polling never pays for output normalization.
 
 ```ts
 export interface ToolPresentationInput {
@@ -105,17 +104,11 @@ export type ToolBody =
   | { kind: 'generic'; fields: ToolField[]; markdown: string | null; unreadable: boolean };
 ```
 
-`toolBodyPresentation` trusts `resolvedFamily` — it never re-runs family resolution, and output content picks the arm within a family but can never change the family itself.
-A `diff` body arm for file edits belongs to Story 1.4; `task` bodies belong to Story 1.6.
-Malformed values degrade to a bounded unreadable/generic body rather than throwing.
+`toolBodyPresentation` trusts `resolvedFamily` — it never re-runs family resolution, and output content picks the arm within a family but can never change the family itself. A `diff` body arm for file edits belongs to Story 1.4; `task` bodies to Story 1.6. Malformed values degrade to a bounded unreadable/generic body rather than throwing.
 
-**There is no `todo` body arm.**
-Todo state spans calls and folds one level up, in `buildAgentHistory()` — see `todo-fold-contract.md` (Story 1.5).
-`toolBodyPresentation` returns `null` for `todo` and `task`.
+**There is no `todo` body arm.** Todo state spans calls and folds one level up, in `buildAgentHistory()` — see `todo-fold-contract.md` (Story 1.5). `toolBodyPresentation` returns `null` for `todo` and `task`.
 
-**`matches` and `paths` are two arms, not one.**
-Grep returns `path:line: text`; glob returns bare file paths, and a metacharacter-free `path` makes it a recursive directory listing whose output has no line numbers to parse.
-One arm would force the renderer to guess which it received.
+**`matches` and `paths` are two arms, not one.** Grep returns `path:line: text`; glob returns bare file paths, and a metacharacter-free `path` makes it a recursive directory listing whose output has no line numbers to parse. One arm would force the renderer to guess which it received.
 
 ## Resolver — four tiers, in order
 
@@ -141,14 +134,11 @@ The bolded aliases were **measured, not guessed**: without them 4,914 of 22,867 
 The five together recover 3,753 of those.
 `find` and `ls` never fire on the observed corpus and stay as tolerant aliases; an alias that never fires costs nothing, a missing one costs a card.
 
-**Match exact tokens, never substrings.**
-`search_replace` normalizes to `searchreplace`, which _contains_ `search` but is an **edit** tool — 904 rows would land in the wrong family under substring matching, rendering an edit as a search result.
+**Match exact tokens, never substrings.** `search_replace` normalizes to `searchreplace`, which _contains_ `search` but is an **edit** tool — 904 rows would land in the wrong family under substring matching, rendering an edit as a search result.
 
 An MCP name (`mcp__server__tool`) resolves to `generic` with label `server · tool`, following the existing convention in the backend formatter.
 
-**Tier 2 — duck-type on input keys.**
-This tier is used when Tier 1 misses and to pick the headline _within_ a matched family.
-The first hit wins.
+**Tier 2 — duck-type on input keys.** Used when Tier 1 misses, and to pick the headline _within_ a matched family. First hit wins.
 
 | Signal       | Keys, in priority order                                                 |
 | ------------ | ----------------------------------------------------------------------- |
@@ -196,18 +186,12 @@ The body arm resolves by precedence:
 A provider that sends no `output_mode` at all (OMP's `grep`) is treated as `content`, which is what it returns.
 Choosing the arm from the family alone would mis-parse the majority of Claude's grep calls.
 
-**Tier 3 — name-only.**
-When `input` is absent or empty, which is every Codex call, use family `shell` and the name as the headline.
+**Tier 3 — name-only.** When `input` is absent or empty, which is every Codex call: family `shell`, headline from the name.
 This is 4,911 of 22,867 real rows, so it is a main path, not an edge case.
 
-**Strip the Codex wrapper first.**
-The name arrives wrapped in a fixed `/bin/zsh -lc '` or `/bin/bash -lc '` prefix with a matching closing quote.
-Remove both **before** choosing the headline; the untouched name stays available for the terminal body and the Raw toggle.
-Without this rule, the prefix is the first thing every Codex row shows, and the rule would otherwise exist only in `EXPERIENCE.md`, forcing each renderer to implement it for itself.
+**Strip the Codex wrapper first.** The name arrives wrapped in a fixed `/bin/zsh -lc '` or `/bin/bash -lc '` prefix with a matching closing quote. Remove both **before** choosing the headline; the untouched name stays available for the terminal body and the Raw toggle. Without this the prefix is the first thing every Codex row shows, and the rule would otherwise exist only in `EXPERIENCE.md`, forcing each renderer to implement it for itself.
 
-**The name is frequently multi-line.**
-Real rows carry whole shell scripts as the tool name — loops, `&&` chains, and heredocs.
-A collapsed row is one line, so the headline is the **first non-empty line** of the stripped name, with a trailing `…` when more lines follow; the full text belongs to the terminal body.
+**The name is frequently multi-line.** Real rows carry whole shell scripts as the tool name — loops, `&&` chains, heredocs. A collapsed row is one line, so the headline is the **first non-empty line** of the stripped name, with a trailing `…` when more lines follow; the full text belongs to the terminal body.
 Never feed the raw name into a single-line row.
 
 Emoji-bearing names pass through unchanged; they are already human-readable.
@@ -215,8 +199,7 @@ Emoji-bearing names pass through unchanged; they are already human-readable.
 The `code` family headlines the **first non-empty line of the source**, `headlineKind: 'text'`, with the language as a badge.
 The 80-character generic truncation is exactly why this family exists: `eval` carries whole programs, and the fallback would have shown a stub.
 
-**Tier 4 — generic.**
-Show up to three scalar top-level entries as `key: value`, with each value truncated to 80 characters.
+**Tier 4 — generic.** Up to three scalar top-level entries as `key: value`, each value truncated to 80 characters.
 Objects and arrays collapse to `{…}` / `[n]`, never expanded inline.
 With no scalar entry, the headline is the tool name alone.
 
@@ -229,9 +212,11 @@ chev glyph chip    headline (flex, min-width:0)        badges (right)
 ```
 
 **Status glyph `✓ ✕ ◐ ⚠ –`**, mapped from the existing `AgentHistoryItem.outcome` via `deriveOutcome()`, reused unchanged.
-The five characters represent the five values that the type carries (`agent-history.ts:36`).
-`⚠` is `interrupted` — a tool that was **stopped**, not one that failed, so it takes its own character rather than a recoloured `✕`.
-Only Claude produces it, from the `PostToolUseFailure` hook when `is_interrupt` is true (`claude/provider.ts:952-959`); Codex cannot produce it because its union is `success`/`error`/`unknown` (`codex/provider.ts:644-650`).
+Five characters represent the five values carried by the type (`agent-history.ts:36`).
+`⚠` is `interrupted` — a tool whose provider status proves interruption, not failure, so it uses its own character rather than a recoloured `✕`.
+Each provider boundary supplies only outcomes that its exercised status contract can prove.
+Codex cannot supply `interrupted`, so a Codex tool row never renders `⚠` and uses only a Codex-supported status presentation.
+The shared presenter remains provider-neutral and contains no Codex branch.
 Colour is applied _in addition to_ the glyph, never instead of it.
 
 **Chip** is the tool name **as the provider sent it** — `read_file`, `Edit`, `Grep`, `eval` — when that name is a single token of at most 24 characters, else the family name.
@@ -239,14 +224,6 @@ Normalisation (case-folding, stripping `_` and `-`) is a **matching** device for
 The family-name fallback is unchanged and is the rule; the 24-character cap is its guard, never an instruction to truncate with an ellipsis.
 Codex is the case the fallback exists for: the name is the whole command, so the chip reads `shell` and the command becomes the headline.
 `label` is resolved in the module, so renderers never re-derive it.
-
-**The nine families use the five approved visual treatments.**
-`shell` and `code` use the existing bash treatment.
-`file` and `web` use the existing command treatment.
-`search` and `glob` use the existing prompt treatment, with the approved derived text mix that clears the contrast floor.
-`todo` and `task` use the existing approval treatment.
-`generic` uses the surface text-secondary treatment.
-The family word stays available in text and the accessible name, so hue is never the only signal.
 
 **Headline elision** is middle-out for `headlineKind: 'path'` and end-cut otherwise.
 The headline element needs `min-width: 0` inside the flex row or it will not shrink.
@@ -269,71 +246,48 @@ The headline element needs `min-width: 0` inside the flex row or it will not shr
 
 ### Bounded output contract
 
-Expanded bodies are bounded before they reach React.
-Text, commands, code, and the assembled web markdown body use a 65,536-code-unit display ceiling.
-List channels emit at most 500 items, inspect at most 2,000 source entries, and bound each path, match path/text, title, and URL to 1,024 code units.
-Field enumeration inspects at most 32 entries; emitted keys and scalar values are bounded to 128 and 1,024 code units respectively.
-Inherited properties are never emitted, and they still count toward the enumeration budget so a hostile prototype cannot make work unbounded.
+Expanded bodies are bounded before they reach React. Text, commands, code, and the
+assembled web markdown body use a 65,536-code-unit display ceiling. List channels
+emit at most 500 items, inspect at most 2,000 source entries, and bound each path,
+match path/text, title, and URL to 1,024 code units. Field enumeration inspects at
+most 32 entries; emitted keys and scalar values are bounded to 128 and 1,024 code
+units respectively. Inherited properties are never emitted, and they still count
+toward the enumeration budget so a hostile prototype cannot make work unbounded.
 
-Every cut is visible: text bodies retain an ellipsis within their ceiling, while list and web bodies set `truncated` and carry an exact positive `omitted` count when known or `null` when it is not.
-Nested `file_matches` and web-result arrays propagate their own overflow into that metadata.
-A family body must not silently discard an over-cap tail or assemble many individually bounded values into an unbounded result.
+Every cut is visible: text bodies retain an ellipsis within their ceiling, while
+list and web bodies set `truncated` and carry an exact positive `omitted` count when
+known or `null` when it is not. Nested `file_matches` and web-result arrays propagate
+their own overflow into that metadata. A family body must not silently discard an
+over-cap tail or assemble many individually bounded values into an unbounded result.
 
 ## Inline diff
 
-`diff` (jsdiff) `9.0.0` is an exact direct dependency of `@archon/web`, and `packages/web/src/lib/diff-hunks.ts` is the **only** caller of `structuredPatch` in the tree — options are fixed inside it, and results are memoized on the two input strings.
-Neither renderer imports `diff`; renderers consume `FileDiff` (`= DiffHunksResult`, re-exported from `tool-presentation.ts`) and the moved `git-hunk-adapter.ts`.
+`diff` (jsdiff) `9.0.0` is an exact direct dependency of `@archon/web`, and `packages/web/src/lib/diff-hunks.ts` is the **only** caller of `structuredPatch` in the tree — options fixed inside it, results memoized on the two input strings. Neither renderer imports `diff`; renderers consume `FileDiff` (`= DiffHunksResult`, re-exported from `tool-presentation.ts`) and the moved `git-hunk-adapter.ts`.
 
-`StructuredPatchHunk` is `{oldStart, oldLines, newStart, newLines, lines: string[]}` with prefix-encoded lines, so the module walks `lines` with running old/new counters and synthesises the `@@ -a,b +c,d @@` header to produce `GitDiffHunk`.
-The shipped invariants are:
+`StructuredPatchHunk` is `{oldStart, oldLines, newStart, newLines, lines: string[]}` with prefix-encoded lines, so the module walks `lines` with running old/new counters and synthesises the `@@ -a,b +c,d @@` header to produce `GitDiffHunk`. The shipped invariants:
 
-- **Bounds are deterministic.**
-  jsdiff ships no default timeout and no default edit-length limit, and an unbounded synchronous Myers diff **hangs the thread** rather than failing.
-  A `.length` precheck refuses sides that cannot fit the 65,536-byte cap (UTF-8 is never shorter than UTF-16) before any work and stays uncached; on a miss both sides are measured in UTF-8 bytes (shared `TextEncoder`), logical lines are counted without `split` — `''` is 0 lines, `newlines + 1` when the string lacks a trailing newline, counting stops at limit + 1 — against a 2,000-line cap, and `structuredPatch('', '', before, after, '', '', { context: 4, maxEditLength: 2000 })` runs with no timeout or normalization options.
-  Every bound is a function of the inputs, so the same pair yields the same answer on every machine and in every test run: `null` (path plus preview) for over-cap, `undefined`, or thrown results; `{ hunks: [] }` for identical inputs.
-- **Memoization is dual-bounded.**
-  Results are keyed by the length-delimited pair and LRU-refreshed on hit; insertion evicts least-recently-used entries until both the 256-entry count and the 1,048,576-source-code-unit budgets hold — because the key retains source text, the weight budget caps retained input at roughly eight maximum-size pairs instead of 256.
-  `createDiffHunks` takes injectable `memoEntries`/`memoSourceCodeUnits`/`patch`/`byteLength` with fail-fast positive-integer validation; the exported `diffHunks` singleton exposes no test seams.
-- **The no-newline marker is not trailing.**
-  A line beginning with `\` is skipped **wherever it appears and however often**, advancing no counter: real jsdiff 9 output places it mid-array and can emit it twice in one hunk, and it is excluded from `oldLines`/`newLines`.
-  Treating it as one trailing line desynchronises every counter after it.
-- **Line numbers are snippet-relative.**
-  Counters start at each hunk's `oldStart`/`newStart` — the emitted `oldLine`/`newLine` are the real file positions for the rendered snippet, always positive, and `git-hunk-adapter`'s `requiredLine` guard accepts them.
-  jsdiff's hunk and change order is preserved verbatim, with deletes before inserts.
-- **Display content is sanitised; the diff is not.**
-  Diffing runs on the raw pair.
-  For display, each change's content passes `sanitizeBounded(..., 1024)`, then every Unicode format control (category `Cf`, including bidi and zero-width controls) plus `U+2028`/`U+2029` is escaped as uppercase ASCII `\u{HEX}` under a bounded code-point accumulator; an ellipsis fits inside the same 1,024-code-unit ceiling when either pass truncates.
-  ANSI/C0/C1 controls are stripped, so hostile input cannot create hidden, reordered, or fake lines.
-  Raw keeps the original payload untouched.
-- **The `@@` header is decoration-ready.**
-  Each hunk carries a deterministic `@@ -oldStart,oldLines +newStart,newLines @@` header; the renderer shows no decoration on a single-hunk diff and a text-only separator before each later hunk so omitted context is apparent.
+- **Bounds are deterministic.** jsdiff ships no default timeout and no default edit-length limit, and an unbounded synchronous Myers diff **hangs the thread** rather than failing. A `.length` precheck refuses sides that cannot fit the 65,536-byte cap (UTF-8 is never shorter than UTF-16) before any work and stays uncached; on a miss both sides are measured in UTF-8 bytes (shared `TextEncoder`), logical lines are counted without `split` — `''` is 0 lines, `newlines + 1` when the string lacks a trailing newline, counting stops at limit + 1 — against a 2,000-line cap, and `structuredPatch('', '', before, after, '', '', { context: 4, maxEditLength: 2000 })` runs with no timeout or normalization options. Every bound is a function of the inputs, so the same pair yields the same answer on every machine and in every test run: `null` (path plus preview) for over-cap, `undefined`, or thrown results; `{ hunks: [] }` for identical inputs.
+- **Memoization is dual-bounded.** Results are keyed by the length-delimited pair and LRU-refreshed on hit; insertion evicts least-recently-used entries until both the 256-entry count and the 1,048,576-source-code-unit budgets hold — because the key retains source text, the weight budget caps retained input at roughly eight maximum-size pairs instead of 256. `createDiffHunks` takes injectable `memoEntries`/`memoSourceCodeUnits`/`patch`/`byteLength` with fail-fast positive-integer validation; the exported `diffHunks` singleton exposes no test seams.
+- **The no-newline marker is not trailing.** A line beginning with `\` is skipped **wherever it appears and however often**, advancing no counter: real jsdiff 9 output places it mid-array and can emit it twice in one hunk, and it is excluded from `oldLines`/`newLines`. Treating it as one trailing line desynchronises every counter after it.
+- **Line numbers are snippet-relative.** Counters start at each hunk's `oldStart`/`newStart` — the emitted `oldLine`/`newLine` are the real file positions for the rendered snippet, always positive, and `git-hunk-adapter`'s `requiredLine` guard accepts them. jsdiff's hunk and change order is preserved verbatim, deletes before inserts.
+- **Display content is sanitised; the diff is not.** Diffing runs on the raw pair. For display, each change's content passes `sanitizeBounded(..., 1024)`, then every Unicode format control (category `Cf`, including bidi and zero-width controls) plus `U+2028`/`U+2029` is escaped as uppercase ASCII `\u{HEX}` under a bounded code-point accumulator; an ellipsis fits inside the same 1,024-code-unit ceiling when either pass truncates. ANSI/C0/C1 controls are stripped, so hostile input cannot create hidden, reordered, or fake lines. Raw keeps the original payload untouched.
+- **The `@@` header is decoration-ready.** Each hunk carries a deterministic `@@ -oldStart,oldLines +newStart,newLines @@` header; the renderer shows no decoration on a single-hunk diff and a text-only separator before each later hunk so omitted context is apparent.
 
-**The git-hunk adapter runs unchanged at `packages/web/src/lib/git-hunk-adapter.ts`** so Console can import it without crossing the `@/components/` boundary.
-It re-aliases `GitDiffHunk`/`GitDiffChange` from `api.generated` rather than `@/lib/api`, which the Console lint rule bans outright — including for `import type`.
-Its two consumers, `virtualized-diff.tsx` and its test, updated only their import paths.
+**The git-hunk adapter runs unchanged at `packages/web/src/lib/git-hunk-adapter.ts`** so Console can import it without crossing the `@/components/` boundary. It re-aliases `GitDiffHunk`/`GitDiffChange` from `api.generated` rather than `@/lib/api`, which the Console lint rule bans outright — including for `import type`. Its two consumers, `virtualized-diff.tsx` and its test, updated only their import paths.
 
-Qualification is structural, not per-provider, and the scope is presentation over persisted tool rows only (the resolved product-contract gate).
-`fileEditPair(record)` runs only after the family resolves to `file`: it requires a `BEFORE_AFTER_PAIRS` alias pair (`old_string`/`new_string`, `old_str`/`new_str`, or `content`/`new_content`) as **own properties** read inside `try`/`catch`, with both values strings — `''` qualifies, inherited/prototype keys, throwing accessors, one-sided pairs, wrong types, absent input, and alias-shaped keys on non-file families do not.
-A module-level `WeakMap` caches the result per input record so summary and body resolve the diff once per record; equal strings on a fresh record reuse the differ's pair cache and return the same result object.
+Qualification is structural, not per-provider, and the scope is presentation over persisted tool rows only (the resolved product-contract gate). `fileEditPair(record)` runs only after the family resolves to `file`: it requires a `BEFORE_AFTER_PAIRS` alias pair (`old_string`/`new_string`, `old_str`/`new_str`, or `content`/`new_content`) as **own properties** read inside `try`/`catch`, with both values strings — `''` qualifies, inherited/prototype keys, throwing accessors, one-sided pairs, wrong types, absent input, and alias-shaped keys on non-file families do not. A module-level `WeakMap` caches the result per input record so summary and body resolve the diff once per record; equal strings on a fresh record reuse the differ's pair cache and return the same result object.
 
-A nonempty diff adds collapsed badges `+n` (`kind: 'diff'`, `tone: 'success'`) when `added > 0` and `−m` (`tone: 'danger'`) when `deleted > 0`, and body facts `N hunk`/`N hunks` followed by `replace_all: true|false` only when the input carries `replace_all` as an own boolean.
-An identical pair adds no badges and reports `no changes`.
-A refused or non-qualifying pair adds no badges or facts and preserves the path-plus-preview fallback.
-Diff badges never reach the body bar.
-On a failed row, the diff still describes the attempted edit and the normalized failure output stays available to the body — successful provider prose remains behind Raw.
+A nonempty diff adds collapsed badges `+n` (`kind: 'diff'`, `tone: 'success'`) when `added > 0` and `−m` (`tone: 'danger'`) when `deleted > 0`, and body facts `N hunk`/`N hunks` followed by `replace_all: true|false` only when the input carries `replace_all` as an own boolean. An identical pair adds no badges and reports `no changes`. A refused or non-qualifying pair adds no badges or facts and preserves the path-plus-preview fallback. Diff badges never reach the body bar. On a failed row the diff still describes the attempted edit and the normalized failure output stays available to the body — successful provider prose remains behind Raw.
 
 Claude's `Edit` always qualifies because `FileEditInput` declares `old_string`/`new_string` required.
-Current Codex `file_change` events never reach this contract at all: `codex/provider.ts:709` emits them as `system` chunks and `dag-executor.ts` debug-logs them (`dag.system_message_unhandled`) instead of appending them to the node transcript, so no Codex file row is persisted.
-Making successful Codex file changes visible is separately tracked work, and a no-input row in tests is generic defensive coverage of this fallback — never a stand-in for Codex.
+Successful Codex `file_change` events must be normalized and persisted as typed node-message rows before they reach this contract.
+The persisted row must carry the changed path and the before/after content or equivalent bounded diff evidence that the file body requires.
+The presentation layer does not read the live Codex stream and does not treat a no-input synthetic row as evidence for Codex ingestion.
 
 ## Occurrence grouping
 
-Group rows by `occurrence_id` and render a header only when a node has more than one group.
-Use primary `Run N` in occurrence order for every multi-occurrence separator.
-Append loop iteration, provider pass, retry, or interruption context as a suffix when relevant.
-A single occurrence has no separator, and no reason-only or pass-only primary occurrence label appears.
-Never group by `attempt_id`.
-`mintTranscriptExecutionScope()` mints a new occurrence and attempt, while `newTranscriptAttempt()` reuses the occurrence, so an attempt remains finer than an occurrence even when the visible suffix includes `Pass N`.
+Group rows by `occurrence_id`, label from `retry_epoch` and `loop_ancestry`, and render a header only when a node has more than one group.
+Never group or label by `attempt_id`: `mintTranscriptExecutionScope()` mints a new occurrence _and_ attempt, while `newTranscriptAttempt()` reuses the occurrence, so one occurrence contains many attempts and a UI group called "Attempt" keyed on `attempt_id` would mean something finer than the label claims.
 
 ## Provider normalizers
 
@@ -352,19 +306,15 @@ The batch `context` block renders only when the provider sends one; Claude has n
 
 ### `todo` → `TodoPhase[]`
 
-See `todo-fold-contract.md`.
-OMP folds nine ops; Claude's whole-list `TodoWrite` is a degenerate fold where the last call wins.
+See `todo-fold-contract.md`. OMP folds nine ops; Claude's whole-list `TodoWrite` is a degenerate fold where the last call wins.
 
 ## Changes to the existing shared layer
 
-`buildAgentHistory()` **returns** an object carrying `items` plus the node's `TodoPhase[]`.
-A flat per-item array cannot hold node-level state, so the return type widens and its three call sites take a one-line edit each — `ConsoleNodeRoom.tsx:607`, `ConsoleExecutionHistory.tsx:204`, `NodeTranscriptPane.tsx:236`.
+`buildAgentHistory()` **returns** an object carrying `items` plus the node's `TodoPhase[]`. A flat per-item array cannot hold node-level state, so the return type widens and its three call sites take a one-line edit each — `ConsoleNodeRoom.tsx:607`, `ConsoleExecutionHistory.tsx:204`, `NodeTranscriptPane.tsx:236`.
 
 Each tool item gains the presentation.
 `TOOL_CONTEXT_KEYS` and `toolContext()` are superseded by the resolver and go away; their only readers are `NodeRoom.tsx:246` and `ConsoleAgentHistoryList.tsx:178`, both JSX this work rewrites.
 
-**The exit code must reach the item.**
-It is parsed at `agent-history.ts:115` and consumed at `:126` only to decide `failed`, then discarded — so today CAP-1's own success signal, the failing `bash` call showing its exit code with no click, is unimplementable.
-Carry it through to the badges.
+**The exit code must reach the item.** It is parsed at `agent-history.ts:115` and consumed at `:126` only to decide `failed`, then discarded — so today CAP-1's own success signal, the failing `bash` call showing its exit code with no click, is unimplementable. Carry it through to the badges.
 
 No renderer reads execution identity today, so occurrence grouping is new plumbing through the same layer.

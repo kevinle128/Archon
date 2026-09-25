@@ -26,39 +26,22 @@ mockup: ../../../claude-design/design_handoff_node_room_transcript_steering/
 
 ## Overview
 
-This document records the completed Epics 1–3 and the current corrective Epic 4 for the Legacy and Console node rooms.
-
-**Current contract (2026-09-24).**
-The [validated mockup manifest](../mockup-manifests/agent-node-room.json) defines 70 current product items: nine changed features and 61 unchanged context items.
-Epic 4 owns the corrections and supersedes conflicting criteria in the completed historical Stories below, including Story 1.5's TODO wording, Story 3.6's outer fixture controls, and Story 3.7's 64-row target.
-The text of Epics 1–3 and their old gate notes remains historical evidence; Epic 4 and the current Requirements Inventory govern new acceptance work where those records conflict.
-The outer numbered state, node-kind, and provider-transport controls are review fixtures; the in-product `Execution` selector remains product scope.
-G1, G2, G3, and G4 are current release proof gates, and no approved visible behavior is future work.
-The user's 2026-09-24 G3 decision requires Grok per-item Send now during the active turn in this release and supersedes the completed Epic 3 future label without rewriting that historical Epic.
-Current Grok `--single` is queue-only; Claude streaming input, a new Grok live-input path, and OMP RPC require conformance before their modes show the per-item action.
+This document decomposes `spec-agent-node-room` into two user-value epics for the Legacy and Console node rooms.
 
 - **Epic 1 — Readable Agent Transcript** replaces raw-JSON tool output with a transcript that operators can scan and inspect.
   It is retroactive and uses data that is already stored.
   It has no schema, migration, or backend change.
 - **Epic 2 — Live Agent Steering** lets operators queue guidance, interrupt and redirect each supported provider, and audit the result without stopping the node.
   It is in-process and reaches only a node whose executor is in the current server process.
-  All original Stories were completed, but the post-implementation review found behavior gaps against the approved mockups.
-- **Epic 3 — Agent Node Room Approved-Behavior Remediation** brings every visible approved mockup behavior into current scope without rewriting delivered Story history.
-  Its Stories are completed historical work; Epic 4 carries the revised approved contract.
-- **Epic 4 — Agent Node Room Current-Contract Correction** implements and verifies the 70-item approved product inventory and current active-turn delivery behavior.
+  v1 ends at the interrupt + `Queue` + `sent` floor.
 
-Epic 1 supplies the transcript primitives that Epic 2 uses for interrupted tool rows and operator messages.
-Epics 1–3 are the delivered baseline; Epic 4 corrects approved-behavior gaps across both surfaces.
+Epic 1 ships first and supplies the transcript primitives that Epic 2 uses for interrupted tool rows and operator messages.
 Each story delivers one observable feature that can be accepted independently.
 Registry, routes, sub-state projection, race handling, API regeneration, tests, and accessibility work are tasks or acceptance criteria of the feature that owns them.
 They are not separate technical stories.
 
-Completed Stories remain historical delivery records and are not reopened or rewritten as new work.
-Tracking state records implementation progress and does not classify product scope.
-
 The mockup handoff is in `claude-design/design_handoff_node_room_transcript_steering/`.
-Every visible approved product behavior in the 70-item manifest is current scope.
-The requirements, Architecture, UX, Stories, and verification evidence must agree with that behavior and cannot defer it through notes or backlog labels.
+The contracts and the two UX documents win if a mockup conflicts with them.
 The implementation must use existing Legacy and Console tokens instead of copying literal mockup values.
 
 The Legacy surface is in `packages/web/src/components/workflows/`.
@@ -81,10 +64,8 @@ Generic fallback must remain below 2% of production rows.
 
 FR3 (CAP-3): Fold provider todo calls into `TodoPhase[]` current state.
 Every todo call remains a one-line transcript row.
-The checklist appears only in a collapsible pinned strip below the transcript and immediately above the queue or dock, stays visible while the transcript scrolls, and is absent when there are no todos.
-Its collapsed header shows the current item, completed count, and segmented meter, and it provides its approved Raw control.
+The checklist appears only in a pinned strip at the top of the transcript, stays visible during scroll, and is absent when there are no todos.
 An `rm`-emptied phase disappears.
-Terminal todo changes are display projections and never rewrite stored provider state.
 
 FR4 (CAP-4): Render a subagent dispatch as batch context plus one collapsible card for each normalized `TaskSubtask`, with the subtask name and agent.
 
@@ -93,9 +74,7 @@ Otherwise render a path and preview, and never fabricate a diff from one side.
 
 FR6 (CAP-6): Group rows by `occurrence_id` when a node has more than one occurrence.
 Never group by `attempt_id`.
-Use primary `Run N` for every multi-occurrence separator in occurrence order, with loop iteration, provider pass, retry, or interruption context as a suffix; a single occurrence has no separator.
-Keep execution selection separate from scroll-only occurrence navigation, and omit group headers and navigation for a single occurrence.
-A mutation from a finished iteration carries its retry epoch and fails closed when that epoch is stale.
+Provide a loop-iteration selector that navigates to the group headers, and omit both group headers and selector for a single occurrence.
 
 FR7 (CAP-7): Every tool card provides a Raw toggle that reveals the original JSON and is closed by default.
 Raw is the only place serialized JSON appears, and the current `canLoadFullOutput` flow remains available.
@@ -104,8 +83,6 @@ FR8 (CAP-8): Mount and enable a composer while the node runs.
 While the agent generates, send reads `Queue` and holds guidance without interrupting the current turn.
 The executor delivers queued guidance at the natural turn boundary.
 The unsent draft is tab-local and the server queue is node-scoped and process-local.
-Accepted queue items are shared across tabs and operators.
-Full Legacy and Console rooms use the full-bleed queue band, while compact dock and state-review layouts use the inset queue well.
 
 FR9 (CAP-9): An interrupt ends the current provider turn but keeps the provider session and workflow node alive.
 The node stays `running`, the agent enters `idle-after-interrupt`, and the in-flight tool call is `interrupted`, not `failed`.
@@ -116,22 +93,14 @@ It flushes already queued messages and the new message in written order as the n
 The node continues and never enters a workflow resume state.
 
 FR11 (CAP-11): Operator messages and interrupted tool calls appear as ordinary transcript rows in happened order.
-An operator row is clearly distinct from agent text.
-Only the row created by accepted per-item Send now during generation hides its visible sender name; stored attribution and other operator-row display paths remain.
+An operator row is clearly distinct from agent text and shows its sender.
 
 FR12 (CAP-12): Sending is an ordinary provider prompt.
-Every provider supports boundary delivery through `Queue` and interrupt-then-continue.
-On a proven Archon live-turn mode, per-item Send now sends exactly the selected queued item into the active turn during generation without Stop, natural-end wait, or a new turn.
-Only that item leaves the queue on provider acceptance and appears immediately as a nameless `sent` operator row.
-Queue-only modes omit the per-item action; direct unsupported requests refuse without queue mutation.
-Claude streaming input, Grok live input, and OMP RPC are independent current G2/G3/G4 release proof gates, not proven capabilities of the current adapters.
-Grok must pass a real active-turn selected-item path and causal agent receipt gate in this release; its current `--single` mode remains queue-only.
+Every provider supports boundary delivery through `Queue` and interrupt-then-continue in v1.
+Mid-turn soft-inject remains provider-gated post-v1 work.
 
-FR13 (CAP-13): A registry receipt is `queued`, and accepted live-turn transport creates the `sent` operator row.
-The matching row advances to `delivered` only after a native lifecycle event or response stream causally linked to that selected message proves agent consumption.
-An RPC acknowledgement, unrelated stream, text match, or timestamp does not prove consumption.
-The stamped id remains the row and idempotency key, but exact echo is not the only valid proof.
-G1 is current release proof and implementation work.
+FR13 (CAP-13): A delivered operator message reads `sent` at the v1 floor.
+The Claude-only `sent → delivered` advance remains gated on an SDK version that echoes the stamped message id.
 
 ### NonFunctional Requirements
 
@@ -180,8 +149,7 @@ UX-DR3 (CAP-2/3/4/5): Expanded bodies use the declared terminal, diff, match, pa
 
 UX-DR4 (CAP-8/9/10): The dock reflects `generating`, UI-local `interrupting`, `idle-after-interrupt`, generating again, and finished states.
 
-UX-DR5 (CAP-11): The accepted per-item active-turn row shows operator role, full-strength text, and `sent` without a visible sender name; stored attribution remains.
-Other operator-row paths keep their existing display-name treatment.
+UX-DR5 (CAP-11): An operator row shows `operator · <sender display name>`, full-strength text, and the delivery badge.
 
 UX-DR6 (CAP-9/10): The dock discloses the 30-minute inactivity behavior, shows `NEVER SENT` after reconciliation, and restores focus safely when removed.
 
@@ -193,42 +161,36 @@ Reduced-motion and visible-label matching requirements apply to both surfaces.
 UX-DR8: The Legacy and Console docks use their own token roots but have identical anatomy, order, wording, and bordered send controls.
 
 UX-DR9 (CAP-3): The pinned todo strip is in scope and is the only place the current checklist appears.
-It appears below the transcript and immediately above the queue or dock in both approved room layouts.
 
-UX-DR10 (CAP-6): Execution selection and scroll-only occurrence navigation are distinct controls.
-Every multi-occurrence separator uses primary `Run N` in occurrence order with the applicable context suffix.
+UX-DR10 (CAP-6): The loop-iteration selector is in scope and navigates to occurrence-group headers.
 
 ### FR Coverage Map
 
-| FR / CAP                                     | Story coverage                                   |
-| -------------------------------------------- | ------------------------------------------------ |
-| FR1 (CAP-1)                                  | 1.1, 3.1                                         |
-| FR7 (CAP-7)                                  | 1.2                                              |
-| FR2 (CAP-2)                                  | 1.3                                              |
-| FR5 (CAP-5)                                  | 1.4                                              |
-| FR3 (CAP-3)                                  | 1.5, 3.1 historical; 4.1 current                 |
-| FR4 (CAP-4)                                  | 1.6                                              |
-| FR6 (CAP-6)                                  | 1.7, 2.9, 2.10, 3.2 historical; 4.2 current      |
-| FR8 (CAP-8)                                  | 2.1, 2.2, 2.9, 2.10, 3.3 historical; 4.3 current |
-| FR9 (CAP-9)                                  | 2.3, 2.4, 2.5, 2.6, 2.7, 3.6                     |
-| FR10 (CAP-10)                                | 2.3, 2.4, 2.5, 2.6, 2.7                          |
-| FR11 (CAP-11)                                | 2.8, 2.13 historical; 4.3 current                |
-| FR12 (CAP-12) boundary floor                 | 2.1, 2.3, 2.4, 2.5, 2.6, 2.7                     |
-| FR12 (CAP-12) active-turn Send now           | 3.4, 3.5 historical; 4.3, 4.4 current            |
-| FR12 (CAP-12) queue-only state               | 4.4 current                                      |
-| FR13 (CAP-13) `sent` and `delivered`         | 2.8, 3.5 historical; 4.4 current                 |
-| Terminal reconciliation                      | 2.11, 3.5                                        |
-| 30-minute idle-await safety                  | 2.12, 3.5                                        |
-| Concurrent ordering and attribution          | 2.13, 3.3, 3.4                                   |
-| Approved product chrome and fixture boundary | 3.6 historical; 4.5 current                      |
-| All 70 manifest product items                | 3.7 historical; 4.6 current                      |
+| FR / CAP                            | Story coverage               |
+| ----------------------------------- | ---------------------------- |
+| FR1 (CAP-1)                         | 1.1                          |
+| FR7 (CAP-7)                         | 1.2                          |
+| FR2 (CAP-2)                         | 1.3                          |
+| FR5 (CAP-5)                         | 1.4                          |
+| FR3 (CAP-3)                         | 1.5                          |
+| FR4 (CAP-4)                         | 1.6                          |
+| FR6 (CAP-6)                         | 1.7                          |
+| FR8 (CAP-8)                         | 2.1, 2.2, 2.9, 2.10          |
+| FR9 (CAP-9)                         | 2.3, 2.4, 2.5, 2.6, 2.7      |
+| FR10 (CAP-10)                       | 2.3, 2.4, 2.5, 2.6, 2.7      |
+| FR11 (CAP-11)                       | 2.8, 2.13                    |
+| FR12 (CAP-12) v1 floor              | 2.1, 2.3, 2.4, 2.5, 2.6, 2.7 |
+| FR12 (CAP-12) post-v1 soft-inject   | G2, G3, G4                   |
+| FR13 (CAP-13) `sent` floor          | 2.8                          |
+| FR13 (CAP-13) post-v1 `delivered`   | G1                           |
+| Terminal reconciliation             | 2.11                         |
+| 30-minute idle-await safety         | 2.12                         |
+| Concurrent ordering and attribution | 2.13                         |
 
 ## Epic List
 
 1. **Epic 1 — Readable Agent Transcript** (CAP-1…7) lets operators scan, inspect, and navigate historical or live agent activity without reading raw JSON.
 2. **Epic 2 — Live Agent Steering** (CAP-8…13) lets operators queue guidance, interrupt and redirect each supported provider, and audit steering safely while the workflow node stays running.
-3. **Epic 3 — Agent Node Room Approved-Behavior Remediation** is completed historical work against an earlier 64-row review inventory.
-4. **Epic 4 — Agent Node Room Current-Contract Correction** owns the 70-item manifest, live-turn Send now, truthful status, and conformance across Legacy and Console.
 
 ---
 
@@ -356,9 +318,7 @@ So that I can understand the change without leaving the transcript.
 **When** tests run
 **Then** output is deterministic, memoized (per-record `WeakMap` plus the dual-bounded pair cache), and has valid snippet-relative line numbers as required by the diff contract.
 
-_Scope:_ Presentation-only over persisted tool rows.
-Current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and nothing here is a Codex row.
-Making successful Codex file-change events visible in the transcript is separately tracked work.
+_Scope:_ presentation-only over persisted tool rows. Current Codex `file_change` events are emitted as `system` chunks (`codex/provider.ts:709`) that the executor debug-logs (`dag.system_message_unhandled`) rather than persisting, so they never become file rows and nothing here is a Codex row. Making successful Codex file-change events visible in the transcript is separately tracked work.
 
 _Refs:_ CAP-5, UX-DR3, `test-plan.md` diff-hunks contract.
 _Depends on:_ Stories 1.1 and 1.3.
@@ -377,13 +337,7 @@ So that I can track the plan while the transcript scrolls.
 
 **Given** current todo state
 **When** the transcript renders
-**Then** a collapsible pinned strip appears below the transcript and immediately above the queue or dock
-**And** its collapsed header shows the current item, completed count, and segmented meter
-**And** it expands to phase headers and per-item status, remains visible while the transcript scrolls, and is absent when there are no todos.
-
-**Given** a reader needs the exact folded todo data
-**When** the reader activates the todo strip's Raw control
-**Then** the approved raw projection appears without duplicating the checklist in transcript history.
+**Then** a pinned strip shows phase headers and per-item status, remains visible while the transcript scrolls, and is absent when there are no todos.
 
 **Given** any todo call in transcript history
 **When** the row renders
@@ -394,12 +348,7 @@ So that I can track the plan while the transcript scrolls.
 **When** state folds
 **Then** the empty phase disappears.
 
-**Given** the node reaches a terminal presentation
-**When** the room projects completion or failure
-**Then** any terminal todo change is a display projection
-**And** stored provider todo state remains unchanged.
-
-_Refs:_ CAP-3, UX-DR3, UX-DR9, `todo-fold-contract.md`, approved behaviors T20–T24.
+_Refs:_ CAP-3, UX-DR3, UX-DR9, `todo-fold-contract.md`.
 _Depends on:_ Story 1.1.
 
 ### Story 1.6: Inspect a subagent dispatch and its subtasks
@@ -440,23 +389,15 @@ So that repeated execution is not one undifferentiated transcript.
 **And** grouping never uses `attempt_id`.
 
 **Given** more than one occurrence
-**When** I use the scroll-only occurrence navigation
-**Then** it navigates directly to the matching occurrence header without changing the selected execution
+**When** I use the loop-iteration selector
+**Then** it navigates directly to the matching occurrence header
 **And** keyboard and focus behavior are equivalent on both surfaces.
-
-**Given** a repeated top-level execution, a loop occurrence, another provider turn in the same occurrence, or a non-numbered interruption or recovery occurrence
-**When** its occurrence heading renders
-**Then** the heading uses `Run N`, `Iteration N`, `Pass N`, or the approved reason-only label for that context.
-
-**Given** execution selection controls and scroll-only occurrence navigation are both present
-**When** I use either control
-**Then** execution selection changes the displayed execution and scroll-only navigation changes only the viewport target.
 
 **Given** a single occurrence
 **When** the transcript renders
 **Then** it shows neither occurrence headers nor an iteration selector.
 
-_Refs:_ CAP-6, UX-DR10, `EXPERIENCE.md`, approved behaviors T25–T28.
+_Refs:_ CAP-6, UX-DR10, `EXPERIENCE.md`.
 _Depends on:_ Story 1.1.
 
 ---
@@ -634,9 +575,9 @@ So that OMP changes direction without stopping the workflow node.
 **Then** both paths pass the shared steering contract.
 
 **Given** OMP soft-inject capability
-**When** the approved per-item action is used during generation
-**Then** current-scope Story 3.4 owns the G4 soft-inject path
-**And** this completed Story continues to own the interrupt-then-continue baseline.
+**When** v1 ships
+**Then** this story uses interrupt-then-continue only
+**And** mid-turn soft-inject remains gated by G4.
 
 _Refs:_ CAP-9–10, CAP-12 v1 floor, `provider-steering-matrix.md`, `steering-test-plan.md`.
 _Depends on:_ Story 2.3.
@@ -727,9 +668,9 @@ So that the steering exchange is part of the permanent audit trail.
 **Given** a message on any v1 provider
 **When** the transcript shows it
 **Then** it remains `sent`
-**And** current-scope Story 3.5 advances it to `delivered` only after provider confirmation by the stamped message id.
+**And** no provider advances it to `delivered` before G1.
 
-_Refs:_ CAP-11, CAP-13, UX-DR5, `engine-integration.md`, `EXPERIENCE.md`, approved behavior S12.
+_Refs:_ CAP-11, CAP-13 v1 floor, UX-DR5, `engine-integration.md`, `EXPERIENCE.md`.
 _Depends on:_ Stories 1.1, 2.1, and 2.3.
 
 ### Story 2.9: See the same live queue across tabs and operators
@@ -775,7 +716,7 @@ So that I retain context without sending to the wrong place.
 **Given** the read-only finished-iteration band
 **When** I inspect it
 **Then** it provides no composer, `Send now`, withdraw/delete, or interrupt action
-**And** any mutation request associated with the selected iteration carries its retry epoch and fails closed when that epoch is stale
+**And** the client issues no send, withdraw, or interrupt mutation for that finished iteration
 **And** the existing authenticated node-scoped `GET …/queue` poll remains allowed so the band can mirror the shared pending queue.
 
 **Given** I return to the live iteration
@@ -790,7 +731,7 @@ So that I retain context without sending to the wrong place.
 **When** the page renders
 **Then** the steering dock is absent.
 
-_Refs:_ CAP-8, UX-DR4, `control-states.md` "Viewing a finished iteration", `EXPERIENCE.md`, approved behaviors T28 and S24.
+_Refs:_ CAP-8, UX-DR4, `control-states.md` "Viewing a finished iteration", `EXPERIENCE.md`.
 _Depends on:_ Stories 1.7 and 2.9.
 
 ### Story 2.11: Recover messages that were never sent when the node ends
@@ -884,322 +825,28 @@ _Depends on:_ Stories 2.8 and 2.9.
 
 ---
 
-## Epic 3: Agent Node Room Approved-Behavior Remediation
+## Post-v1 gated backlog
 
-Operators can use every visible behavior in the approved Agent Node Room mockups on both Legacy and Console without misleading state, missing ownership, or conflicting interaction rules.
-This Epic preserves the completed history in Epics 1 and 2 and keeps new corrective work separate.
-Visible G1, G2, and G4 behavior is current scope in this Epic.
-G3 alone remains deferred because Grok hook-based soft-inject behavior is absent from the approved mockups.
+The two epics complete at the interrupt + `Queue` + `sent` v1 floor.
+The following items depend on separate external gates and do not block either epic.
 
-The corrective Stories execute in order from Story 3.1 through Story 3.7.
-No Story is complete until its approved behavior identifiers have requirement, implementation, and verification evidence in both approved shells.
+### G1: Show `delivered` after the Claude SDK echoes message ids
 
-### Completion Criteria
+**Given** `@anthropic-ai/claude-agent-sdk` is upgraded to at least 0.3.246
+**When** Claude echoes a stamped `message_id`
+**Then** the matching operator message advances from `sent` to `delivered` by id alone.
 
-- Every visible approved mockup behavior is current scope and has one consistent product rule.
-- The 64-behavior matrix reaches 64 `MATCHED` rows and has no `PARTIAL`, `MISSING`, `CONFLICT`, or `UNCLEAR` row.
-- Legacy and Console provide equivalent meaning, state transitions, keyboard behavior, focus behavior, and accessibility for shared behavior.
-- Visible G1, G2, and G4 behavior is complete in Stories 3.4 and 3.5.
-- G3 is the only deferred gate, and no approved mockup exposes its Grok hook behavior.
-- Epics 1 and 2 and all original Story rows remain `done` in the file-system tracker.
-- A new implementation-readiness assessment passes before this Epic closes.
+_Gate:_ Claude SDK pin moves from 0.3.209 to at least 0.3.246.
+_Refs:_ CAP-13, `provider-steering-matrix.md`.
 
-### Story 3.1: Reconcile transcript, family-chip, todo, and terminal projections
+### G2: Soft-inject guidance into Claude mid-turn
 
-As an operator reading a node transcript,
-I want its family chips, todo strip, Raw data, and terminal todo projections to match the approved room context,
-So that the transcript remains truthful and easy to scan from start through terminal state.
+**Given** the Claude `AsyncIterable` input and resume-protocol spike succeeds
+**When** guidance is soft-injected
+**Then** it arrives mid-turn without interrupt, interrupted tool status, or a new turn-start event.
 
-**Acceptance Criteria:**
-
-**Given** any of the nine approved tool families renders in Legacy or Console
-**When** its transcript row appears
-**Then** its family chip uses the approved five-treatment mapping
-**And** text and shape continue to carry meaning without relying on colour alone.
-
-**Given** the selected node has a non-empty folded todo state
-**When** either approved full room renders
-**Then** one collapsible pinned todo strip appears below the transcript and immediately above the queue or dock
-**And** the collapsed header shows the current item, completed count, and segmented meter
-**And** expansion shows the approved phase and item details without duplicating the checklist in historical todo rows.
-
-**Given** the pinned todo strip is visible
-**When** I activate its Raw control
-**Then** I can inspect the approved raw todo projection
-**And** the readable folded checklist remains the default presentation.
-
-**Given** a node completes or reaches the 30-minute failure state with unfinished todo items
-**When** the terminal room presentation renders
-**Then** the approved completion or reset treatment is a display projection only
-**And** stored provider todo calls and their folded source state remain unchanged.
-
-**Given** no current todo state exists
-**When** the transcript renders or reaches a terminal state
-**Then** no empty todo strip or fabricated terminal todo state appears.
-
-_Approved behavior evidence:_ T05 and T20–T24.
-_Affected completed Stories:_ 1.1, 1.2, 1.5, and 2.11.
-_Refs:_ CAP-1, CAP-3, FR1, FR3, UX-DR1, UX-DR3, UX-DR9, `tool-presentation-contract.md`, `todo-fold-contract.md`.
-_Depends on:_ The delivered transcript baseline in Stories 1.1 and 1.2.
-
-### Story 3.2: Reconcile occurrence labels and finished-iteration targeting
-
-As an operator reviewing repeated execution,
-I want each occurrence label and finished-iteration target to describe the execution that I am viewing,
-So that I can navigate history and avoid steering the wrong retry epoch.
-
-**Acceptance Criteria:**
-
-**Given** the room shows a repeated top-level execution, a loop occurrence, another provider turn in the same occurrence, or a non-numbered interruption or recovery occurrence
-**When** its heading renders
-**Then** the heading uses `Run N`, `Iteration N`, `Pass N`, or the approved reason-only label for that context
-**And** the label never substitutes `attempt_id` for `occurrence_id`.
-
-**Given** execution selection and occurrence navigation are both available
-**When** I select an execution
-**Then** the displayed execution changes and the room controls synchronize with that selection
-**And** when I use the scroll-only occurrence navigation, only the viewport target changes.
-
-**Given** I view a finished iteration of a live loop node
-**When** the room renders
-**Then** it shows the finished transcript, final todo projection, shared pending queue, and `Go to iteration N`
-**And** it does not present active steering controls for that finished iteration.
-
-**Given** a mutation request is associated with a selected finished iteration
-**When** the request reaches the server
-**Then** it carries the selected retry epoch
-**And** the server fails closed without node, queue, or transcript mutation when that epoch is stale.
-
-**Given** I use `Go to iteration N`
-**When** the live iteration opens
-**Then** the active dock returns with the same shared queue order.
-
-_Approved behavior evidence:_ T25–T28 and S24.
-_Affected completed Stories:_ 1.7, 2.9, and 2.10.
-_Refs:_ CAP-6, CAP-8, FR6, UX-DR10, `control-states.md`, `EXPERIENCE.md`.
-_Depends on:_ Story 3.1 and the shared queue baseline in Story 2.9.
-
-### Story 3.3: Present truthful shared queues in every approved layout
-
-As an operator working across tabs or with another operator,
-I want every approved queue layout to show the same node-scoped queue truthfully,
-So that I know which guidance is shared, which draft is local, and which item will send next.
-
-**Acceptance Criteria:**
-
-**Given** a full Legacy or Console room has queued messages
-**When** its queue renders
-**Then** it uses the approved full-bleed collapsible band
-**And** it shows the queue count, stable receipt order, ordinals, and next-out treatment.
-
-**Given** a compact dock or approved state-review layout has queued messages
-**When** its queue renders
-**Then** it uses the approved inset queue well
-**And** it represents the same node-scoped messages and order as the full-room band.
-
-**Given** the same live node is open in more than one tab or by more than one operator
-**When** any view queues or withdraws an item
-**Then** every view converges on the same accepted items, count, order, and identity
-**And** no view labels accepted queue data as `this tab only`.
-
-**Given** I have typed text that I have not submitted
-**When** the composer and queue render
-**Then** only that unsent draft carries the `this tab only` label
-**And** accepted queue items remain visibly shared.
-
-**Given** the room width is 460 pixels or the dock changes state
-**When** the queue and controls reflow
-**Then** the transcript remains the only scroller
-**And** Stop and Send remain on opposite edges with a stable send width and do not cover the watched row.
-
-**Given** the shared queue is empty
-**When** any approved layout renders
-**Then** no empty queue shell appears.
-
-_Approved behavior evidence:_ S03–S06, S20, S22, and S23.
-_Affected completed Stories:_ 2.1, 2.2, 2.9, 2.10, and 2.13.
-_Refs:_ CAP-8, FR8, NFR4, NFR8, UX-DR4, UX-DR7, UX-DR8, `control-states.md`, `steering-api-contract.md`.
-_Depends on:_ Story 3.2 and the shared queue behavior in Stories 2.2, 2.9, and 2.13.
-
-### Story 3.4: Send one queued item now during generation
-
-As an operator who has queued guidance,
-I want to send one selected item into a generating agent turn,
-So that urgent guidance can arrive without interrupting the turn or draining unrelated queue items.
-
-**Acceptance Criteria:**
-
-**Given** the selected provider supports current-scope soft-inject and the agent is generating
-**When** a queued item renders
-**Then** that item provides the approved `Send now` action
-**And** the normal composer action continues to read `Queue`.
-
-**Given** I activate `Send now` on one queued item
-**When** the provider accepts the soft-inject
-**Then** only that item leaves the queue and enters the active turn
-**And** the current tool is not interrupted, no interrupted status is written, and no phantom turn-start event is emitted.
-
-**Given** other messages remain queued
-**When** one selected item sends
-**Then** the remaining messages keep their receipt order, identity, attribution, and next-out state across all views.
-
-**Given** the current provider is Claude or OMP
-**When** provider conformance runs
-**Then** Claude uses the current G2 path and OMP uses the independent current G4 path
-**And** each path proves mid-turn delivery without depending on the other path.
-
-**Given** the same `message_id` is submitted again for per-item delivery
-**When** the action is replayed
-**Then** the original result is returned idempotently and the item is not delivered twice.
-
-_Approved behavior evidence:_ S07 and R04.
-_Affected completed Stories:_ 2.1, 2.3, 2.5, 2.9, and 2.13.
-_Refs:_ CAP-8, CAP-12, FR8, FR12, former gates G2 and G4, `provider-steering-matrix.md`, `steering-api-contract.md`.
-_Depends on:_ Story 3.3 and the delivered ordering and attribution baseline in Stories 2.9 and 2.13.
-
-### Story 3.5: Show honest soft-inject refusal and delivery-confirmation states
-
-As an operator sending guidance,
-I want unavailable delivery paths and confirmed delivery states to be explicit,
-So that the room never claims that guidance entered a turn or reached a provider when it did not.
-
-**Acceptance Criteria:**
-
-**Given** per-item `Send now` is visible but the selected provider or live handle cannot soft-inject
-**When** I activate the action
-**Then** the room shows the approved accessible refusal reason
-**And** the item stays queued in its original order without interrupting the turn or changing node or transcript state.
-
-**Given** a soft-inject request fails after it starts
-**When** the failure returns
-**Then** the item returns to the queue front with `couldn't send · back in the queue`
-**And** the failure is announced assertively without losing the message or its sender identity.
-
-**Given** an operator message has been accepted but the provider has not echoed its stamped `message_id`
-**When** the transcript renders the operator row
-**Then** its delivery badge reads `sent`.
-
-**Given** the provider echoes the same stamped `message_id`
-**When** the confirmation is reconciled
-**Then** only the matching operator row advances to `delivered`
-**And** no text, time, or positional match can advance another row.
-
-**Given** the room is `idle-after-interrupt`
-**When** either approved shell renders the live dock
-**Then** visible and accessible copy states that the node fails after 30 minutes of inactivity
-**And** it states that typing keeps the redirect open.
-
-**Given** the node is parked at its own unanswered ask or an interrupt acknowledgement is still pending
-**When** I attempt to send or inspect state
-**Then** the control exposes the approved accessible refusal or `Stopping…` state
-**And** it does not claim idle, delivery, or provider confirmation early.
-
-_Approved behavior evidence:_ S12, S17–S19, and S25.
-_Affected completed Stories:_ 2.3, 2.8, 2.11, and 2.12.
-_Refs:_ CAP-9, CAP-12, CAP-13, FR12, FR13, NFR6, NFR8, former gate G1, `control-states.md`, `provider-steering-matrix.md`.
-_Depends on:_ Story 3.4 and the delivered operator-row and terminal-reconciliation baseline in Stories 2.8 and 2.11.
-
-### Story 3.6: Provide approved state, node-kind, provider, rerun, navigation, artifact, and close controls
-
-As an operator using the approved node-room frame,
-I want every visible state, example, lifecycle, navigation, artifact, and close control to work in its approved context,
-So that no visible control is decorative or without a product owner.
-
-**Acceptance Criteria:**
-
-**Given** the approved state-review controls are present
-**When** I activate one of the eight numbered state controls
-**Then** the complete run, node, transcript, todo, queue, and dock frame changes to that scenario
-**And** the selected review state persists locally for that review context.
-
-**Given** the node-kind controls are present
-**When** I select `prompt` or `loop ×3`
-**Then** the log rows, execution options, todo state, and dock show the matching approved example
-**And** the selection remains synchronized across the frame.
-
-**Given** the provider control is present
-**When** I switch between the approved provider modes
-**Then** the queue actions, capability state, and explanatory copy change together
-**And** the room does not claim soft-inject for a provider that refuses it.
-
-**Given** an active run or node is displayed
-**When** I use Cancel
-**Then** the existing lifecycle action runs separately from steering
-**And** Stop is never presented as Cancel.
-
-**Given** a terminal Legacy run shows `Re-run`
-**When** I activate it
-**Then** the existing rerun behavior starts the approved new execution
-**And** it does not reuse a stale steering or retry-epoch state.
-
-**Given** `Log` or `Logs`, `Graph`, or a counted `Artifacts` control is visible
-**When** I activate the control
-**Then** the matching run surface opens and the run state does not change
-**And** the artifact count remains visible and correct.
-
-**Given** I activate a node execution row
-**When** the node room opens or changes selection
-**Then** the log selection, room header, transcript, and `Execution` control identify the same execution.
-
-**Given** the node room is open
-**When** I activate its `✕` control
-**Then** the room closes and focus returns to the control that opened it.
-
-**Given** any approved control is used with a keyboard or assistive technology
-**When** it receives focus or changes state
-**Then** its visible label, accessible name, focus order, and announcement describe the same action and result in both shells.
-
-_Approved behavior evidence:_ R01–R03 and C01–C07.
-_Affected completed Stories:_ 1.7, 2.3, and 2.10.
-_Refs:_ CAP-6, CAP-9, FR6, FR9, NFR8, UX-DR4, UX-DR7, approved Console and Legacy room mockups.
-_Depends on:_ Story 3.5 and the existing run lifecycle and navigation behavior.
-
-### Story 3.7: Prove Legacy and Console conformance for all 64 behaviors
-
-As a product owner and operator,
-I want one complete conformance result for both approved node rooms,
-So that corrective work closes only when every visible behavior is implemented and proven.
-
-**Acceptance Criteria:**
-
-**Given** Stories 3.1 through 3.6 are complete
-**When** the behavior trace is reviewed
-**Then** every identifier T01–T28, S01–S25, R01–R04, and C01–C07 has an exact requirement, Architecture owner, UX rule, Story owner, and verification path.
-
-**Given** the focused module, component, route, provider, executor, registry, and integration checks run
-**When** their results are collected
-**Then** all affected behavior passes without skipped current-scope cases
-**And** no test weakens the delivered baseline or treats visible G1, G2, or G4 behavior as optional.
-
-**Given** the end-to-end suite opens Legacy and Console
-**When** it exercises all approved transcript, todo, occurrence, queue, soft-inject, refusal, delivery, lifecycle, navigation, artifact, and close behavior
-**Then** both shells produce equivalent outcomes and preserve their approved shell-specific tokens and markup.
-
-**Given** each approved layout is tested at its required width and state
-**When** browser visual and accessibility evidence is collected
-**Then** the transcript remains usable at 460 pixels
-**And** keyboard, focus, screen-reader, contrast, timing disclosure, reduced-motion, and control-placement requirements pass in both shells.
-
-**Given** the final 64-row behavior matrix is scored
-**When** corrective verification completes
-**Then** all 64 rows are `MATCHED`
-**And** no row is `PARTIAL`, `MISSING`, `CONFLICT`, or `UNCLEAR`.
-
-**Given** the behavior matrix is complete
-**When** implementation readiness runs again
-**Then** the Agent Node Room target receives a passing verdict before Epic 3 closes.
-
-_Approved behavior evidence:_ T01–T28, S01–S25, R01–R04, and C01–C07.
-_Affected completed Stories:_ 1.1–1.7 and 2.1–2.13.
-_Refs:_ FR1–FR13, NFR1–NFR8, UX-DR1–UX-DR10, `test-plan.md`, `steering-test-plan.md`, `implementation-readiness-report-2026-09-20-agent-node-room.md`.
-_Depends on:_ Stories 3.1 through 3.6.
-
----
-
-## Future capability
-
-Only G3 has a future label because Grok hook-based soft-inject behavior is absent from every approved mockup.
-Visible G1, G2, and G4 behavior is current scope in Stories 3.4 and 3.5.
+_Gate:_ Claude streaming-input and resume-protocol spike.
+_Refs:_ CAP-12, `provider-steering-matrix.md`.
 
 ### G3: Soft-inject guidance through Grok hooks
 
@@ -1210,167 +857,964 @@ Visible G1, G2, and G4 behavior is current scope in Stories 3.4 and 3.5.
 _Gate:_ Grok hook payload-shape spike.
 _Refs:_ CAP-12, `provider-steering-matrix.md`.
 
+### G4: Soft-inject guidance into OMP mid-turn
+
+**Given** the OMP RPC protocol-version-2 path with `set_steering_mode:'all'` passes conformance
+**When** guidance is soft-injected
+**Then** it arrives mid-turn without interrupt, interrupted tool status, or a new turn-start event.
+
+_Gate:_ Independent OMP soft-inject conformance.
+_Refs:_ CAP-12, `provider-steering-matrix.md`.
+
 ---
 
-## Epic 4: Agent Node Room Current-Contract Correction
+## Approved Course Correction — 2026-09-21
 
-Operators can read and steer both approved node rooms with the current 70-item product contract.
-This Epic corrects the completed historical Epics 1–3 without reopening or rewriting their Stories.
-The [validated manifest](../mockup-manifests/agent-node-room.json) is the inventory authority for nine changed features and 61 unchanged context items.
-G1, G2, G3, and G4 are current release proof and implementation gates.
-G3 requires an actual Grok path for per-item Send now in the active turn in this release; a hook advertisement does not prove the path.
-The active Archon adapter and mode must pass the provider-specific gate before the per-item action appears.
+Epic 1, Epic 2, Stories 1.1 through 2.13, and G1 through G4 above are completed historical planning records.
+They remain unchanged and are cited below only for dependency and traceability.
+Every implementation outcome in the current approved scope is owned by a new story in Epic 3 through Epic 9.
+G1 through G4 retain historical provenance, while their current outcomes are owned by Stories 8.3, 8.5, and 8.7.
 
-### Story 4.1: Place and disclose the TODO strip
+The current scope has three explicit exclusions.
+It does not change the completed historical Cancel feature.
+It does not add individual-tool cancellation because Stop ends the whole current agent turn.
+It does not change CLI `archon workflow run --detach` or add detached behavior to Agent Node Room.
 
-As an operator, I want the current checklist below the scrolling transcript so that I can read work and progress together.
+## Epic 3: Complete the Approved Node Room Experience
 
-**Acceptance Criteria:**
+Operators get the complete approved Console and Legacy Node Room experience with equivalent behavior, correct todo presentation, and accessible transcript interaction.
 
-**Given** a Console or Legacy node with TODO state
-**When** the room renders
-**Then** one pinned, collapsible TODO strip is after the transcript scroller and before the queue or dock
-**And** its current item and progress remain visible while transcript rows scroll.
+### Story 3.1: Match the approved Console and Legacy room anatomy
 
-**Given** the strip is expanded
-**When** the operator reads it
-**Then** phases, items, status, and Raw use the existing fold and disclosure contract
-**And** no duplicate checklist appears inline in the transcript.
-
-_Manifest:_ M001/I007 and M002/I070.
-_Supersedes:_ The location phrase in completed Story 1.5; its prior acceptance text remains historical.
-
-### Story 4.2: Label every occurrence with Run N
-
-As a reader, I want one primary occurrence label so that I can compare executions without changing label rules by context.
+As an operator,
+I want both Node Room shells to match the approved anatomy,
+So that I can use the same workflow in either surface without relearning its structure.
 
 **Acceptance Criteria:**
 
-**Given** a transcript with two or more occurrences
-**When** the groups render
-**Then** every separator uses primary `Run N` in occurrence order
-**And** loop iteration, provider pass, retry, interruption, recovery, and collision detail follows as a suffix when relevant.
+**Given** the Console Node Room is open
+**When** the node panel renders
+**Then** the panel uses the approved 520-pixel width
+**And** the transcript, todo strip, queue band, composer dock, and room controls follow the approved order.
 
-**Given** a single occurrence
-**When** the transcript renders
-**Then** it has no occurrence separator.
+**Given** the Legacy Node Room is open
+**When** the node panel renders
+**Then** the panel uses the approved 460-pixel width
+**And** it has behavior equivalent to Console while using Legacy tokens and markup.
 
-**Given** the operator uses navigation
-**When** `Execution` or `Jump to` changes
-**Then** `Execution` selects the occurrence and `Jump to` only scrolls within loaded content.
+**Given** the two shells
+**When** shared semantic data changes
+**Then** each shell renders the same meaning without importing the other shell's components.
 
-_Manifest:_ M007/I052.
-_Supersedes:_ Alternative primary headings in completed Stories 1.7 and 3.2.
+_Refs:_ Agent Node Room CAP-1, CAP-2, `EXPERIENCE.md`, `DESIGN.md`.
+_Depends on:_ completed historical Stories 1.1 through 1.7 for traceability.
 
-### Story 4.3: Send one queued item into the active turn
+### Story 3.2: Present todo state exactly as approved
 
-As an operator, I want per-item Send now to deliver my selected correction while the agent generates.
-
-**Acceptance Criteria:**
-
-**Given** a queued item and a proven Archon live-turn mode
-**When** I select that item's Send now during generation
-**Then** exactly that existing server-owned item enters the same active turn without Stop, a natural-end wait, an interrupted tool call, or another turn
-**And** every other queued item keeps its order.
-
-**Given** queued messages in either full node room
-**When** the shared queue band renders or its disclosure changes
-**Then** it stays below the TODO strip and above the dock, shows the node-scoped receipt order, and keeps the approved collapse and expand behavior
-**And** disclosure changes no queue contents.
-
-**Given** the provider transport accepts the selected item
-**When** the receipt is recorded
-**Then** only that item leaves the shared queue and one operator row appears immediately with `sent` and no visible sender name
-**And** its stored `operator_user_id`, derived read-model attribution, and stamped id remain intact.
-
-**Given** the provider rejects before acceptance or the turn ends first
-**When** the operation resolves
-**Then** the item stays queued in its original position or an explicit unresolved result is reported
-**And** no silent next-turn fallback, duplicate injection, or false operator row occurs.
-
-**Given** an uncertain timeout or a transcript-write failure after acceptance
-**When** the client retries or reconnects
-**Then** the selected id does not enter a sendable queue again and the recording failure is visible.
-
-_Manifest:_ M003/I009, M004/I029, M005/I008, M006/I028, and M008/I063.
-_Release proof:_ G2 Claude actual `AsyncIterable` path, G3 an actual Grok live-input path, and G4 OMP actual RPC path must each prove same-turn input on the exercised Archon adapter and mode, including tool-boundary and pure-text cases.
-G3 is required for this release; if hooks cannot pass the gate, another Grok path must pass it or release remains blocked.
-_Supersedes:_ Per-item refusal and sender-name criteria in completed Stories 3.4 and 2.8 only for this accepted row.
-
-### Story 4.4: Show queue-only controls and truthful delivery status
-
-As an operator, I want controls and status to reflect what the active transport proved.
+As an operator,
+I want todo progress in the approved locations and forms,
+So that I can understand current work without losing the event history.
 
 **Acceptance Criteria:**
 
-**Given** a queue-only mode, including current Codex, DeepSeek, or Grok `--single`
-**When** the queued list renders
-**Then** it omits per-item Send now and retains Queue, Delete, Stop, and dock Send now after Stop under their existing state rules.
+**Given** a node has todo events
+**When** its transcript renders
+**Then** a collapsible todo strip appears below the transcript scroller and above the queue and composer dock
+**And** it remains visible while the transcript scrolls.
 
-**Given** a new Grok live-input mode
-**When** its actual Archon path has proved selected-item same-turn acceptance and causal agent receipt
-**Then** per-item Send now may appear during generation in both rooms for that mode
-**And** an advertised hook or unsupported mode does not make the action appear.
+**Given** several todo mutations exist
+**When** the rows render
+**Then** earlier mutations remain compact `todo updated` rows
+**And** the latest applicable row can expose the same folded inline checklist as the strip.
 
-**Given** a direct per-item request reaches a queue-only or stale mode
-**When** the server checks it
-**Then** it returns a typed refusal and changes no queue or transcript state.
+**Given** the node becomes completed or interrupted
+**When** the todo presentation updates
+**Then** the terminal treatment is derived only for presentation
+**And** no persisted todo event is rewritten.
 
-**Given** a selected accepted row reads `sent`
-**When** a matching native lifecycle event or a stream causally tied to that message proves agent consumption
-**Then** only that row changes to `delivered`.
+_Refs:_ Agent Node Room CAP-3, `todo-fold-contract.md`, readable-transcript AD-12 and AD-21.
+_Depends on:_ Story 3.1 and completed historical Story 1.5 for traceability.
 
-**Given** only an RPC acknowledgement, unrelated ongoing stream, text match, timestamp, or route receipt
-**When** the status is projected
-**Then** that row remains `sent`.
+### Story 3.3: Complete transcript interaction and accessibility behavior
 
-**Given** the operator presses dock Send now after Stop
-**When** the idle session continues
-**Then** all queued messages plus the new draft flush in receipt order as the next turn, separate from per-item active-turn delivery.
-
-_Manifest:_ M003/I009, M004/I029, and M009/I068; queue-only context C065/I065 in the manifest's inventory.
-_Release proof:_ G1 requires causal consumption evidence through the actual provider path; an SDK version or exact echoed id is not the universal test.
-G3 requires this proof on the new Grok path before that mode exposes the per-item action.
-_Supersedes:_ Visible queue-only refusal and exact-id-only status criteria in completed Stories 3.5 and 2.8.
-
-### Story 4.5: Keep product room controls inside the fixture boundary
-
-As an operator, I want the room's actual controls without review-only switches.
+As a keyboard or assistive-technology user,
+I want the complete transcript interaction contract on both shells,
+So that live updates do not take control or hide meaning from me.
 
 **Acceptance Criteria:**
 
-**Given** either product node room
+**Given** tool rows with different outcomes
+**When** they first render
+**Then** succeeded rows are collapsed, failed rows are expanded, and running, interrupted, and unknown rows are collapsed
+**And** a reader's manual disclosure choice survives live rerenders.
+
+**Given** new transcript rows arrive
+**When** the reader is already at the bottom
+**Then** the scroller remains pinned to the bottom
+**And** otherwise the reader's position and focus remain unchanged.
+
+**Given** either Node Room shell
+**When** keyboard, focus, live-region, reduced-motion, and colour-independent status checks run
+**Then** the shell meets the accessibility requirements in `EXPERIENCE.md`
+**And** Console passes at 520 pixels while Legacy passes at 460 pixels.
+
+_Refs:_ Agent Node Room CAP-4, CAP-6, CAP-7, `EXPERIENCE.md`, `test-plan.md`.
+_Depends on:_ Stories 3.1 and 3.2.
+
+## Epic 4: Apply Readable Tool Presentation Everywhere
+
+Operators receive the same readable tool meaning in Node Room, RunStream, Chat, and backend-formatted output, including successful Codex file changes.
+
+### Story 4.1: Persist successful Codex file-change rows
+
+As an operator using Codex,
+I want successful file changes to appear in the durable transcript,
+So that Codex edits are visible through the same file presentation as other providers.
+
+**Acceptance Criteria:**
+
+**Given** Codex emits a successful `file_change` event
+**When** the provider and executor process it
+**Then** they normalize and persist a typed node-message row
+**And** the row retains path, outcome, ordering, and bounded diff or preview evidence.
+
+**Given** the persisted Codex file row
+**When** the shared presenter reads it
+**Then** it resolves to the file family
+**And** it renders a diff when both sides exist or a path and preview otherwise.
+
+**Given** a successful Codex event is tested
+**When** acceptance evidence is collected
+**Then** the test starts at the provider event and ends at the persisted rendered row
+**And** a synthetic no-input row is not accepted as ingestion evidence.
+
+_Refs:_ Agent Node Room CAP-5, CAP-14, readable-transcript AD-17.
+_Depends on:_ Story 3.1 and completed historical Story 1.4 for traceability.
+
+### Story 4.2: Use readable tool presentation in RunStream
+
+As an operator reading RunStream,
+I want tool events presented with the shared readable contract,
+So that RunStream and Node Room describe the same event in the same way.
+
+**Acceptance Criteria:**
+
+**Given** a persisted tool event appears in RunStream
 **When** it renders
-**Then** the outer numbered review-state, node-kind, and provider-transport controls from the mockup sheets are absent
-**And** the in-product `Execution`, Cancel, Re-run, Log or Logs, Graph, counted Artifacts, and close controls retain their approved behavior.
+**Then** it uses the shared family, headline, outcome, ordered badges, body facts, and safe fallback
+**And** it does not render raw JSON by default.
 
-**Given** a Logs row or execution is selected
-**When** the room updates
-**Then** the selected row, room header, transcript, TODO projection, queue, and dock agree.
+**Given** the cross-surface fixture set
+**When** Node Room and RunStream render the same event
+**Then** their semantic outputs match
+**And** only their shell markup can differ.
 
-_Manifest:_ Fixture exclusion applies to the 70-item product inventory; unchanged product controls remain in the 61 manifest `UNCHANGED_CONTEXT` rows.
-_Supersedes:_ The outer-control criteria in completed Story 3.6.
+_Refs:_ Agent Node Room CAP-16, readable-transcript AD-1 and AD-18.
+_Depends on:_ Story 4.1.
 
-### Story 4.6: Prove all 70 approved product items
+### Story 4.3: Use readable tool presentation in Chat
 
-As a product owner, I want one conformance result for both rooms so that the current contract can be reviewed.
+As an operator reading Chat,
+I want tool calls to use the same readable meaning as Node Room,
+So that switching surfaces does not change what an event means.
 
 **Acceptance Criteria:**
 
-**Given** the validated manifest
-**When** the trace is built
-**Then** every one of its 70 product items has a requirement, implementation owner, and verification path on each applicable Legacy or Console surface
-**And** the nine `CHANGE_FEATURE` rows M001–M009 match their full behavior signatures
-**And** all 61 manifest `UNCHANGED_CONTEXT` rows remain covered without counting outer fixture controls.
+**Given** a tool call appears in Chat
+**When** its card renders
+**Then** it consumes the shared Web semantic presentation
+**And** it preserves the Chat shell without reinterpreting provider payloads.
 
-**Given** focused route, registry, executor, provider, component, and end-to-end checks
-**When** they run against actual Archon adapters and both rooms
-**Then** G2 Claude, G3 Grok, and G4 OMP actual adapter paths prove the active-turn contract, with G1 causal consumption evidence for each displayed `delivered` state
-**And** selected-item races, queue-only absence, TODO placement, universal headers, attribution, and room chrome pass without a skipped current item.
+**Given** the cross-surface fixture set
+**When** Chat and Node Room render the same event
+**Then** their family, headline, outcome, badge order, and fallback match.
 
-**Given** the conformance inventory is scored
-**When** Epic 4 closes
-**Then** all 70 items are `MATCHED` and none is `PARTIAL`, `MISSING`, `CONFLICT`, or `UNCLEAR`.
+_Refs:_ Agent Node Room CAP-16, readable-transcript AD-1 and AD-18.
+_Depends on:_ Story 4.2.
 
-_Manifest:_ M001–M009 and all 61 `UNCHANGED_CONTEXT` rows.
-_Depends on:_ Stories 4.1–4.5 and proven G1/G2/G3/G4 release gates.
+### Story 4.4: Align backend tool formatting
+
+As an operator receiving backend-formatted output,
+I want it to carry the same readable tool meaning as the Web surfaces,
+So that platform adapters do not report a conflicting interpretation.
+
+**Acceptance Criteria:**
+
+**Given** a tool event is formatted outside the Web package
+**When** backend formatting runs
+**Then** it produces the same semantic family, headline, outcome, and facts as the shared fixture
+**And** it keeps a compact transport-appropriate text form.
+
+**Given** package-boundary checks
+**When** the formatter is built
+**Then** backend code does not import Web code
+**And** fixture parity proves agreement across the boundary.
+
+_Refs:_ Agent Node Room CAP-16, readable-transcript AD-18.
+_Depends on:_ Story 4.3.
+
+## Epic 5: Show Files Changed and Git Attribution
+
+Operators can inspect run-level changed files and trace deterministic repository changes to node executions.
+
+### Story 5.1: Show a run-level Files Changed panel
+
+As an operator,
+I want one Files Changed panel for the workflow run,
+So that I can review repository impact without inspecting every tool row.
+
+**Acceptance Criteria:**
+
+**Given** a run has repository changes
+**When** the Files Changed panel opens
+**Then** it lists each changed path once in deterministic repository order
+**And** it shows the known node executions associated with that path.
+
+**Given** the run contains edits from several providers
+**When** the panel computes its content
+**Then** it uses repository evidence instead of provider prose or tool names
+**And** equivalent changes do not create duplicate paths.
+
+**Given** no changed paths exist
+**When** the panel opens
+**Then** it presents the approved empty state without inventing activity.
+
+_Refs:_ Agent Node Room CAP-17, readable-transcript AD-20.
+_Depends on:_ Story 4.4.
+
+### Story 5.2: Attribute Git changes to node executions
+
+As an operator,
+I want each Git change attributed to the node execution that produced it,
+So that I can audit repository effects beyond individual tool-call diffs.
+
+**Acceptance Criteria:**
+
+**Given** a node execution starts and ends in a Git repository
+**When** the executor records its boundaries
+**Then** it retains the deterministic repository evidence needed for attribution
+**And** the server computes the comparison through `@archon/git` functions.
+
+**Given** one path changed across multiple node executions
+**When** attribution renders
+**Then** every proven execution is shown in stable order
+**And** the run-level panel folds the same evidence.
+
+**Given** evidence is missing or ambiguous
+**When** attribution renders
+**Then** it shows `unknown`
+**And** it never guesses from agent text.
+
+_Refs:_ Agent Node Room CAP-17, readable-transcript AD-20.
+_Depends on:_ Story 5.1.
+
+## Epic 6: Expose Additional Agent Context
+
+Operators can read displayable thinking, the triggering prompt, and advisor notifications under explicit privacy, attribution, persistence, and ordering rules.
+
+### Story 6.1: Persist and present agent thinking
+
+As an operator,
+I want displayable agent thinking shown under a clear privacy contract,
+So that I can understand the agent's progress without exposing hidden reasoning.
+
+**Acceptance Criteria:**
+
+**Given** a provider emits content explicitly classified as displayable thinking
+**When** Archon ingests it
+**Then** Archon persists a typed node-message row in server sequence order
+**And** the transcript renders it with the `thinking` role treatment.
+
+**Given** provider content is hidden reasoning or lacks display permission
+**When** Archon processes it
+**Then** the content is not persisted or presented as thinking.
+
+**Given** displayable thinking exists
+**When** application logs are inspected
+**Then** the thinking content is absent from logs.
+
+_Refs:_ Agent Node Room CAP-19, readable-transcript AD-17 and AD-19.
+_Depends on:_ Story 4.4.
+
+### Story 6.2: Persist and present the triggering prompt
+
+As an operator,
+I want to see the prompt that triggered the agent turn with its attribution,
+So that I can understand why the agent acted.
+
+**Acceptance Criteria:**
+
+**Given** an agent turn starts
+**When** its triggering prompt is accepted
+**Then** Archon persists the exact prompt with actor, source, turn, and node attribution
+**And** it assigns transcript order at the server boundary.
+
+**Given** the transcript renders the prompt
+**When** an operator reads it
+**Then** the prompt text is preserved without editorial changes
+**And** the actor and source appear on the label line.
+
+**Given** application logs are inspected
+**When** the prompt has been persisted
+**Then** its content is not copied into logs.
+
+_Refs:_ Agent Node Room CAP-20, readable-transcript AD-17 and AD-19.
+_Depends on:_ Story 6.1.
+
+### Story 6.3: Persist and present advisor notifications
+
+As an operator,
+I want advisor notifications in the ordered transcript,
+So that I can see external guidance in the context where it affected the agent.
+
+**Acceptance Criteria:**
+
+**Given** an advisor emits a notification for a node
+**When** Archon accepts it
+**Then** Archon persists a typed row with advisor identity and server sequence
+**And** it associates the row with the correct run, node, and turn context.
+
+**Given** advisor and agent events arrive near each other
+**When** the transcript renders
+**Then** it follows server sequence order
+**And** the advisor notification does not float over later content.
+
+**Given** application logs are inspected
+**When** an advisor notification has been persisted
+**Then** its content is absent from logs.
+
+_Refs:_ Agent Node Room CAP-21, readable-transcript AD-17 and AD-19.
+_Depends on:_ Story 6.2.
+
+## Epic 7: Make Drafts and Guidance Durable
+
+Operators keep author drafts, shared node guidance, delivery state, and auto-send settings across reloads and server restarts without Archon guessing the fate of a lost process.
+
+### Story 7.1: Add durable steering storage
+
+As an operator,
+I want steering control data stored durably,
+So that a server process is not the only owner of my drafts and guidance.
+
+**Acceptance Criteria:**
+
+**Given** SQLite or PostgreSQL is active
+**When** the steering schema is applied
+**Then** additive records store author drafts, node queue entries, FIFO position, delivery intent, delivery state, timestamps, failure evidence, and auto-send settings
+**And** both dialects remain in schema parity.
+
+**Given** the server needs steering data
+**When** it uses the steering-store contract
+**Then** storage policy remains separate from the volatile live-turn registry
+**And** strict typed interfaces expose only the required operations.
+
+**Given** fresh-install, historical-upgrade, and reapply checks
+**When** the schema is validated
+**Then** each check passes without destructive migration behavior.
+
+_Refs:_ Agent Node Room CAP-8, live-steering AD-1 through AD-4.
+_Depends on:_ Story 3.3.
+
+### Story 7.2: Save and restore composer drafts
+
+As an operator,
+I want my composer draft saved on the server,
+So that reload, tab close, or server restart does not discard my words.
+
+**Acceptance Criteria:**
+
+**Given** an authenticated operator edits a node composer
+**When** draft persistence settles
+**Then** the server stores the draft for that operator, run, and node
+**And** another operator cannot read or overwrite it.
+
+**Given** the author reloads, reopens the node, or reconnects after restart
+**When** the composer loads
+**Then** the latest committed draft is restored
+**And** the interface says `saved for you` or equivalent server-persistence copy.
+
+**Given** the author clears or sends the draft
+**When** the durable operation commits
+**Then** later reads do not restore the cleared text.
+
+_Refs:_ Agent Node Room CAP-8, live-steering AD-5, `steering-api-contract.md`.
+_Depends on:_ Story 7.1.
+
+### Story 7.3: Preserve the shared queue and FIFO order
+
+As operators sharing a node,
+I want one durable queue with deterministic order and authorship,
+So that guidance remains trustworthy under concurrency.
+
+**Acceptance Criteria:**
+
+**Given** permitted operators queue messages concurrently
+**When** the server accepts them
+**Then** it assigns one transactional FIFO order
+**And** every entry retains its author and caller-stamped `message_id`.
+
+**Given** the same `message_id` is submitted again
+**When** the request is processed
+**Then** the existing receipt is returned
+**And** no duplicate entry is inserted.
+
+**Given** a queued entry is withdrawn
+**When** the durable delete commits
+**Then** it is removed before dispatch
+**And** withdrawal of a dispatched, delivered, or unknown identifier is an idempotent no-op.
+
+**Given** a queue request succeeds
+**When** the client receives acknowledgement
+**Then** the durable write has already committed
+**And** another permitted observer reads the same order.
+
+_Refs:_ Agent Node Room CAP-8, live-steering AD-6, `steering-api-contract.md`.
+_Depends on:_ Story 7.2 and completed historical Story 2.13 for traceability.
+
+### Story 7.4: Recover guidance after server restart
+
+As an operator,
+I want durable steering data restored after a server restart,
+So that I can continue through the existing Resume workflow without data loss or unsafe guesses.
+
+**Acceptance Criteria:**
+
+**Given** a non-terminal node has a draft, queue, delivery state, or auto-send setting
+**When** the server restarts with the same database
+**Then** those durable values are restored
+**And** the lost provider process is not represented as still live.
+
+**Given** no live turn handle exists after restart
+**When** the Node Room loads
+**Then** it is read-only and says `restored after server restart · Resume the workflow to continue`
+**And** it uses the existing Resume action rather than a new resume mechanism.
+
+**Given** a dispatch may have crossed the lost process boundary
+**When** recovery classifies it
+**Then** the entry remains explicitly ambiguous
+**And** Archon does not resend it automatically.
+
+**Given** the server starts
+**When** durable recovery runs
+**Then** it does not automatically resume the workflow or mark the old turn completed, failed, cancelled, or abandoned.
+
+_Refs:_ Agent Node Room CAP-14, live-steering AD-7, `control-states.md`.
+_Depends on:_ Story 7.3 and the existing Resume capability.
+
+### Story 7.5: Support durable auto-send mode
+
+As an operator,
+I want a durable auto-send mode for queued guidance,
+So that one correction can follow each natural reply without manual dispatch.
+
+**Acceptance Criteria:**
+
+**Given** the operator changes auto-send
+**When** the server commits the setting
+**Then** the setting survives reload and server restart
+**And** permitted observers see the current node setting.
+
+**Given** auto-send is enabled and the agent finishes a natural reply
+**When** an eligible queue entry exists
+**Then** exactly one FIFO entry is claimed and dispatched
+**And** no later entry overtakes it.
+
+**Given** Stop ends a turn
+**When** the interrupted outcome settles
+**Then** auto-send does not dispatch an entry.
+
+**Given** automatic dispatch fails before delivery is proven
+**When** failure is recorded
+**Then** the entry returns to the front of the queue with failure evidence.
+
+_Refs:_ Agent Node Room CAP-15, live-steering AD-8.
+_Depends on:_ Story 7.4.
+
+## Epic 8: Stop and Redirect Turns Across Core Providers
+
+Operators can stop only the current turn, redirect the same provider session, and see only actions and delivery states that each verified core adapter supports.
+
+### Story 8.1: Implement the provider-neutral Stop contract
+
+As an operator,
+I want Stop to end only the current agent turn,
+So that I can redirect the agent without ending the node or losing completed work.
+
+**Acceptance Criteria:**
+
+**Given** any agent turn starts
+**When** the executor invokes the provider
+**Then** it supplies a fresh per-turn signal through `AgentRequestOptions.interruptSignal`
+**And** the node-level `abortSignal` remains separate.
+
+**Given** the agent is thinking or executing a tool
+**When** Stop is accepted
+**Then** the current turn ends
+**And** the node, workflow run, and provider session remain available.
+
+**Given** a tool was active when Stop settled
+**When** the transcript is written
+**Then** the tool outcome is `interrupted`, not `failed`
+**And** completed writes and side effects remain in place with no rollback.
+
+**Given** the provider contract is reviewed
+**When** Stop support is added
+**Then** `IAgentProvider` does not gain a `cancel()` method
+**And** adapters map the existing interrupt signal to their native mechanism.
+
+_Refs:_ Agent Node Room CAP-9, live-steering AD-9 and AD-10.
+_Depends on:_ Story 7.3.
+
+### Story 8.2: Expose Stop through the API and both Node Room shells
+
+As an operator,
+I want Stop available through the authenticated API and both approved Node Room shells,
+So that turn control is consistent across the product.
+
+**Acceptance Criteria:**
+
+**Given** a live current turn exists
+**When** an authorized user invokes the typed Stop route
+**Then** the route interrupts that turn through the volatile live handle
+**And** returns the current typed control state.
+
+**Given** the active turn already ended
+**When** the same Stop request is repeated
+**Then** the operation is idempotent
+**And** no node-level abort is triggered.
+
+**Given** Console or Legacy displays a generating turn
+**When** Stop is pressed
+**Then** the shell shows the `Stopping…` transient without native disabling the focused control
+**And** the final disclosure says that files already written stay written.
+
+**Given** the server restarted and no live handle exists
+**When** Stop is requested
+**Then** the API returns typed 409 `recovery_required`
+**And** it does not classify the run as detached.
+
+_Refs:_ Agent Node Room CAP-9, `steering-api-contract.md`, `EXPERIENCE.md`.
+_Depends on:_ Stories 7.4 and 8.1.
+
+### Story 8.3: Complete Claude Stop, soft injection, and delivery acknowledgement
+
+As a Claude operator,
+I want Stop, mid-turn guidance, and truthful delivery acknowledgement,
+So that I can redirect Claude with the full approved interaction.
+
+**Acceptance Criteria:**
+
+**Given** Claude is generating or using a tool
+**When** Stop aborts `interruptSignal`
+**Then** the adapter invokes the supported Claude interrupt path
+**And** the same session remains usable for the next turn.
+
+**Given** a queued Claude message has per-item `Send now`
+**When** the operator invokes it during generation
+**Then** the adapter soft-injects the message without invoking Stop
+**And** the durable entry retains FIFO position and author identity.
+
+**Given** Archon stamps a Claude message with `message_id`
+**When** the supported SDK path echoes that identifier
+**Then** only the matching entry advances to `delivered`
+**And** missing or mismatched identifiers do not advance another entry.
+
+_Refs:_ Agent Node Room CAP-12, CAP-13, historical G1 and G2 for traceability.
+_Depends on:_ Story 8.2 and completed historical Story 2.3 for traceability.
+
+### Story 8.4: Complete Codex Stop and session continuation
+
+As a Codex operator,
+I want Stop to abort the current Codex turn and keep the thread usable,
+So that my next correction continues in the same context.
+
+**Acceptance Criteria:**
+
+**Given** Codex is streaming a turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter aborts the turn stream through the supported Codex mechanism
+**And** it classifies the terminal provider shape as interrupted.
+
+**Given** the interrupted turn has settled
+**When** queued guidance starts the next turn
+**Then** the adapter continues on the existing thread or session
+**And** it does not create a replacement conversation silently.
+
+**Given** Codex had an active tool
+**When** Stop settles
+**Then** the persisted tool row becomes `interrupted`
+**And** completed file changes remain visible through Story 4.1.
+
+_Refs:_ Agent Node Room CAP-9, CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Stories 4.1 and 8.2 and completed historical Story 2.4 for traceability.
+
+### Story 8.5: Complete Grok Stop and soft injection
+
+As a Grok operator,
+I want Stop and verified mid-turn guidance,
+So that I can redirect Grok without misleading controls.
+
+**Acceptance Criteria:**
+
+**Given** Grok has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter uses the supported Grok stream-abort path
+**And** the session can continue with the next turn.
+
+**Given** the Grok adapter has a verified soft-injection transport
+**When** per-item `Send now` is invoked
+**Then** the message arrives through that transport without invoking Stop
+**And** the durable delivery state records only proven progress.
+
+**Given** Grok conformance tests fail
+**When** capabilities are projected
+**Then** the unproven action is not advertised
+**And** the story remains incomplete until the adapter behavior passes.
+
+_Refs:_ Agent Node Room CAP-12, CAP-18, historical G3 for traceability.
+_Depends on:_ Story 8.3 and completed historical Story 2.6 for traceability.
+
+### Story 8.6: Complete DeepSeek Stop and continuation
+
+As a DeepSeek operator,
+I want an aborted provider result classified as Stop rather than failure,
+So that I can continue the same session after redirecting the turn.
+
+**Acceptance Criteria:**
+
+**Given** DeepSeek has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter uses its supported cancel-and-continue path
+**And** the provider session remains reusable.
+
+**Given** DeepSeek returns its provider-specific aborted result
+**When** the executor classifies the end cause
+**Then** it records an interrupted turn rather than a natural completion or node failure.
+
+**Given** queued guidance follows the interrupt
+**When** the next turn starts
+**Then** it uses the same continuation contract
+**And** preserves durable FIFO order.
+
+_Refs:_ Agent Node Room CAP-9, CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 8.4 and completed historical Story 2.7 for traceability.
+
+### Story 8.7: Complete OMP Stop and soft injection
+
+As an OMP operator,
+I want Stop and verified mid-turn guidance,
+So that an OMP abort is not mistaken for a failed node and supported redirects can arrive immediately.
+
+**Acceptance Criteria:**
+
+**Given** OMP has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter aborts the stream through its supported mechanism
+**And** the executor classifies the OMP abort throw as interrupted rather than failed.
+
+**Given** the OMP adapter has a verified protocol path for soft injection
+**When** per-item `Send now` is invoked
+**Then** the message is injected without invoking Stop
+**And** durable order and authorship remain unchanged.
+
+**Given** the next OMP turn starts after Stop
+**When** guidance is delivered
+**Then** the existing session contract is reused
+**And** no completed side effect is rolled back.
+
+_Refs:_ Agent Node Room CAP-12, CAP-18, historical G4 for traceability.
+_Depends on:_ Story 8.5 and completed historical Story 2.5 for traceability.
+
+### Story 8.8: Present truthful provider capabilities
+
+As an operator,
+I want the Node Room to show only actions and delivery states proven for the active provider,
+So that every visible control tells the truth.
+
+**Acceptance Criteria:**
+
+**Given** provider conformance fixtures run
+**When** Stop, soft injection, continuation, or delivery acknowledgement is proven
+**Then** the provider capability source records the supported behavior
+**And** an unproven behavior remains false.
+
+**Given** the Node Room renders controls
+**When** it receives provider capabilities
+**Then** it shows per-item `Send now` only for verified soft injection
+**And** it does not branch on provider names.
+
+**Given** an operator message is dispatched
+**When** provider evidence changes its delivery state
+**Then** the UI advances only to the last state that the adapter proves.
+
+_Refs:_ Agent Node Room CAP-12, CAP-13, CAP-18, live-steering AD-11.
+_Depends on:_ Stories 8.3 through 8.7.
+
+## Epic 9: Extend Steering to Remaining Providers
+
+Operators can Stop and redirect Qoder CLI, Pi, GitHub Copilot, and OpenCode through the same provider-neutral contract and truthful capability model.
+
+### Story 9.1: Support Stop and redirect for Qoder CLI
+
+As a Qoder CLI operator,
+I want to stop the current turn and continue with redirected guidance,
+So that Qoder CLI behaves consistently with the Node Room contract.
+
+**Acceptance Criteria:**
+
+**Given** Qoder CLI has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends the current Qoder CLI turn through its supported native process or stream mechanism
+**And** it does not end the workflow node.
+
+**Given** the interrupted turn has settled
+**When** guidance starts the next turn
+**Then** the adapter uses its supported continuation contract
+**And** preserves durable FIFO order and authorship.
+
+**Given** Qoder CLI conformance fixtures run
+**When** capabilities are published
+**Then** every true capability is backed by deterministic adapter evidence.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 8.8.
+
+### Story 9.2: Support Stop and redirect for Pi
+
+As a Pi operator,
+I want to stop the current turn and continue with redirected guidance,
+So that Pi participates in the same governed steering flow.
+
+**Acceptance Criteria:**
+
+**Given** Pi has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends the current Pi turn through its supported native mechanism
+**And** records an interrupted active tool when applicable.
+
+**Given** durable guidance is ready after Stop
+**When** the next turn starts
+**Then** Pi uses its supported session continuation contract
+**And** the workflow node remains running.
+
+**Given** Pi conformance fixtures run
+**When** capabilities are published
+**Then** the UI receives only behaviors the adapter proves.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 9.1.
+
+### Story 9.3: Support Stop and redirect for GitHub Copilot
+
+As a GitHub Copilot operator,
+I want to stop the current turn and continue with redirected guidance,
+So that Copilot follows the same auditable turn-control contract.
+
+**Acceptance Criteria:**
+
+**Given** GitHub Copilot has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends only the current turn through its supported native mechanism
+**And** completed side effects remain in place.
+
+**Given** redirected guidance is dispatched
+**When** the follow-up turn starts
+**Then** the adapter uses its supported continuation contract
+**And** operator transcript rows retain message and author correlation.
+
+**Given** GitHub Copilot conformance fixtures run
+**When** capabilities are published
+**Then** the UI does not expose unsupported soft injection or acknowledgement states.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`.
+_Depends on:_ Story 9.2.
+
+### Story 9.4: Support Stop and redirect for OpenCode
+
+As an OpenCode operator,
+I want to stop the current turn and continue with redirected guidance,
+So that all registered providers in the approved scope share the same governed behavior.
+
+**Acceptance Criteria:**
+
+**Given** OpenCode has an active turn
+**When** Stop aborts `interruptSignal`
+**Then** the adapter ends only the current OpenCode turn through its supported native mechanism
+**And** the node-level abort signal remains untouched.
+
+**Given** guidance follows the interrupted turn
+**When** OpenCode starts the next turn
+**Then** it uses its supported continuation contract
+**And** the provider session remains consistent with its adapter guarantees.
+
+**Given** the complete nine-provider conformance suite runs
+**When** OpenCode and the other adapters report capabilities
+**Then** every current provider passes Stop and redirect acceptance
+**And** the Node Room renders capability-driven controls without provider-branded forks.
+
+_Refs:_ Agent Node Room CAP-18, `provider-steering-matrix.md`, `steering-test-plan.md`.
+_Depends on:_ Story 9.3.
+
+---
+
+## Approved Course Correction — 2026-09-22
+
+Epic 1 through Epic 9 and all their Stories are complete historical planning records.
+They remain unchanged and can be cited only for evidence and dependency context.
+Epic 10 owns the current implementation work required to close approved mockup gaps M001, M002, M005, M007, M008, M009, M010, and M013.
+Every visible approved mockup feature remains current scope.
+Successful Codex file-change persistence maps to CAP-5 and CAP-16, not CAP-14.
+This traceability correction does not reopen or rewrite completed Story 4.1.
+
+## Epic 10: Complete the Approved Mockup Contract
+
+Operators receive every approved Node Room behavior that is not already covered by the completed Epics, with exact layout, queue, terminal, and provider-status behavior.
+
+### Story 10.1: Fix room geometry and execution selection
+
+As an operator,
+I want the approved Node Room dimensions and bounded execution selector,
+So that the live execution is clear and stale history cannot affect live work.
+
+**Acceptance Criteria:**
+
+**Given** the Console Node Room is open
+**When** the room renders
+**Then** its width is fixed at 520 pixels until close
+**And** the transcript scrolls above the sibling todo strip, queue band, and composer dock.
+
+**Given** the Legacy Node Room is open
+**When** the room renders
+**Then** its width is fixed at 460 pixels until close
+**And** it uses the same approved vertical order without overlaying the last transcript row.
+
+**Given** a loop node has more than one execution
+**When** the `Execution` selector first renders
+**Then** the live execution is selected
+**And** the selector exposes no more than eight executions.
+
+**Given** the operator selects one exposed execution
+**When** the selection changes
+**Then** the room immediately projects that execution
+**And** a stale execution is read-only and cannot send, withdraw, interrupt, or otherwise steer the live execution.
+
+**Given** a node has only one execution
+**When** the room renders
+**Then** the execution selector is absent.
+
+_Refs:_ Agent Node Room CAP-6, readable-transcript AD-12, live-steering AD-12, manifest M001, M002, and M005.
+_Depends on:_ Completed Epic 3 for historical shell and transcript behavior.
+
+### Story 10.2: Deliver one selected queued message without Stop
+
+As an operator,
+I want truthful auto-send state and exact per-item active-turn delivery,
+So that I know what will send and no other queued guidance changes by accident.
+
+**Acceptance Criteria:**
+
+**Given** the queue panel is visible and projected auto-send state is on
+**When** either Node Room shell renders the panel
+**Then** it shows one read-only `Auto-send on` indicator
+**And** the indicator performs no dispatch or setting mutation.
+
+**Given** the agent is generating and the active provider has verified soft injection
+**When** the queue renders
+**Then** each eligible queued item exposes per-item `Send now`.
+
+**Given** the operator selects per-item `Send now` on one queued message
+**When** the server accepts the action
+**Then** exactly that selected message receives its stamped message identity and leaves the queued collection
+**And** it enters the current active provider turn immediately.
+
+**Given** the selected message enters the active turn
+**When** delivery begins
+**Then** Stop is not invoked
+**And** generation continues
+**And** the active tool outcome does not change
+**And** no steering-owned turn-start event is emitted
+**And** the selected item is `sent` pending verified acknowledgement.
+
+**Given** other queued messages exist
+**When** one selected item is sent now
+**Then** every non-selected message keeps its identity, content, relative order, and `queued` state unchanged.
+
+**Given** the provider supports queue-at-boundary only
+**When** the queue renders
+**Then** per-item `Send now` is absent.
+
+_Refs:_ Agent Node Room CAP-12 and CAP-15, live-steering AD-4, AD-8, AD-9, and AD-12, manifest M007 and M008.
+_Depends on:_ Completed Epic 7 and Epic 8 for durable queue, provider capability, and delivery evidence.
+
+### Story 10.3: Preserve every unmatched message at terminal boundaries
+
+As an operator,
+I want unsent guidance preserved and labeled when a node ends,
+So that terminal or timeout transitions never hide or discard my instructions.
+
+**Acceptance Criteria:**
+
+**Given** a node reaches terminal completion or failure with durable queued or sent messages
+**When** terminal reconciliation runs
+**Then** every message without matching provider acknowledgement becomes a read-only `Never sent` record
+**And** all unmatched content remains readable.
+
+**Given** the terminal room contains `Never sent` records
+**When** it renders
+**Then** it exposes no edit, send, withdraw, or interrupt control.
+
+**Given** a terminal node has no durable draft, queue, or unmatched sent content
+**When** it renders
+**Then** it renders no steering dock.
+
+**Given** a live process owns an idle-after-interrupt handle with durable queued content
+**When** 30 minutes pass without activity
+**Then** the node execution fails
+**And** the durable queued content remains stored as read-only `Never sent` records.
+
+**Given** the operator types before timer expiry
+**When** composer activity is accepted
+**Then** the 30-minute timer is re-armed.
+
+**Given** the failed terminal room renders after timer expiry
+**When** the operator reads its status
+**Then** it explains that the interruption received no redirect
+**And** it states that none of the preserved content was sent.
+
+**Given** the server restarts while the prior node was idle after interruption
+**When** durable recovery loads
+**Then** no new process applies the lost timer
+**And** the existing recovery-required and Resume behavior remains unchanged.
+
+_Refs:_ Agent Node Room CAP-8 and CAP-9, live-steering AD-5 and AD-6, manifest M009 and M010.
+_Depends on:_ Completed Epic 7 for durable steering and restart recovery.
+
+### Story 10.4: Use a Codex-supported tool status presentation
+
+As a Codex operator,
+I want Stop and transcript status to match what Codex can prove,
+So that the room does not show an unsupported interrupted warning glyph.
+
+**Acceptance Criteria:**
+
+**Given** a Codex turn is stopped through the supported turn-abort path
+**When** the executor classifies the turn
+**Then** it records an operator-interrupted turn rather than a provider failure
+**And** the node, workflow run, reusable session, and completed side effects remain unchanged.
+
+**Given** a Codex tool row is presented
+**When** the provider status is normalized and the glyph is resolved
+**Then** the row never uses the interrupted warning glyph
+**And** it uses only a status presentation supported by Codex evidence.
+
+**Given** another provider proves an interrupted tool outcome
+**When** the same presenter renders that row
+**Then** the existing provider-neutral interrupted glyph remains available
+**And** no provider-specific branch exists in the presenter.
+
+**Given** provider and renderer tests run
+**When** Codex Stop evidence reaches the transcript
+**Then** they prove turn-level interruption and session continuation separately from tool-row glyph presentation.
+
+_Refs:_ Agent Node Room CAP-9 and CAP-18, readable-transcript AD-13, live-steering AD-1, manifest M013.
+_Depends on:_ Completed Story 8.4 for Codex Stop and session continuation evidence.

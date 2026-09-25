@@ -1,5 +1,9 @@
 # Control states
 
+> **Historical source only.**
+> This document records the pre-merge live-steering design and is not an implementation contract.
+> The canonical current contract is `../../control-states.md`.
+
 The two controls in a node room — the stop control and the send control, both on the composer dock pinned to the bottom of the node panel — and what each reads in every state.
 
 > **This is the ratified UX, re-expressed after the reframe.** The interaction Kevin settled in the UX run survives almost intact: **Stop + `Queue` while the agent is working, `Send now` after.** What the reframe changed is the _mechanism and the lifecycle underneath it_, and three consequences follow (flagged inline): the node **never pauses** — the controls now follow the **agent's** sub-state inside `node = running` (`generating` | `idle-after-interrupt`, spine AD-9), not a node-lifecycle state; `Stop` interrupts the **agent's current generation**, it does not stop the node (stopping the node is the separate **Cancel** button); and the in-flight wait shrinks from a 10-second database poll to a **sub-second** in-process interrupt ack. The visual and behavioural specs remain `ux-Archon-agent-node-room-2026-09-09/{DESIGN,EXPERIENCE}.md`.

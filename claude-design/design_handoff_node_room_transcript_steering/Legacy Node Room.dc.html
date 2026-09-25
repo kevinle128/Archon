@@ -247,8 +247,8 @@ assertion `left == right` failed
                   <button type="button" onClick="{{ onToggleDraft }}" aria-expanded="{{ draftOpen }}" style="display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;background:transparent;border:none;font:inherit;color:inherit;cursor:pointer;text-align:left" style-hover="background:var(--surface-hover)" style-focus="outline:2px solid var(--accent-bright);outline-offset:-2px">
                     <span style="font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--text-secondary)">{{ draftHeaderWord }}</span>
                     <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-secondary)">{{ draftCount }}</span>
-                    <sc-if value="{{ showTabOnly }}" hint-placeholder-val="{{ true }}">
-                      <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">this tab only</span>
+                    <sc-if value="{{ showSavedServer }}" hint-placeholder-val="{{ true }}">
+                      <span style="margin-left:auto;font-size:10px;color:var(--text-secondary)">saved to server · Auto-send on</span>
                     </sc-if>
                     <span style="flex:0 0 9px;font-size:9px;color:var(--text-tertiary);{{ draftMarginStyle }}{{ draftChevStyle }}">▾</span>
                   </button>
@@ -315,7 +315,7 @@ const STATES = {
     headerMeta: 'started 04:52 · running… · omp · claude-opus-5',
     tail: true, tailGlyph: '◐', tailGlyphColor: 'var(--accent-bright)', tailBadge: 'running · 1m 48s',
     draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
-    draftHeader: 'Queued · 2', tabOnly: true,
+    draftHeader: 'Queued · 2', savedServer: true,
     field: true, controls: true, stop: true, stopLabel: 'Stop', send: 'Queue',
     note: 'Legacy at 460px — the narrower of the two panels and the only width the room contract states. Row anatomy is byte-identical to Console; only the token block differs. Note the port keeps the send control BORDERED here: DESIGN.md reversed the earlier filled shadcn Button on measurement (primary-foreground on primary is 3.06:1 at 11.5px), and the spine wins over the mockup.'
   },
@@ -326,7 +326,7 @@ const STATES = {
     headerMeta: 'started 04:52 · running… · omp · claude-opus-5',
     tail: true, tailGlyph: '◐', tailGlyphColor: 'var(--accent-bright)', tailBadge: 'running · 2m 02s',
     draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
-    draftHeader: 'Queued · 2', tabOnly: true,
+    draftHeader: 'Queued · 2', savedServer: true,
     field: true, controls: true, stop: true, stopLabel: 'Stopping…', stopBusy: true, send: 'Queue',
     note: 'Sub-second transient. Send still reads Queue, because the node is still running. Stopping… stays focusable (aria-disabled) so a keyboard operator who just pressed it is not returned to the top of the document with the whole transcript between them and the dock.'
   },
@@ -337,7 +337,7 @@ const STATES = {
     headerMeta: 'started 04:52 · running… · waiting on operator · omp · claude-opus-5',
     tail: true, tailGlyph: '⚠', tailGlyphColor: 'var(--warning)', tailBadge: 'interrupted',
     draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
-    draftHeader: 'Will send · 2', tabOnly: true,
+    draftHeader: 'Will send · 2', savedServer: true,
     disclosure: 'stopped after the last completed tool call · files already written stay written',
     field: true, controls: true, stop: false, send: 'Send now',
     note: 'The interrupted shell call takes ⚠, a fifth character rather than a recoloured ✕ — the tool was stopped, not failed. On Legacy --warning and --node-bash are the same value, so this row draws its glyph in the same amber as its own chip: the one case where the glyph does not out-shout the chip. Recorded in DESIGN.md, not redesigned.'
@@ -363,7 +363,7 @@ const STATES = {
     closing: true,
     draft: ['check the fixture path too', 'and bump the timeout'],
     draftHeader: 'Never sent · 2',
-    disclosure: 'node finished · these never left this tab',
+    disclosure: 'node finished · none of this was sent',
     field: false, controls: false,
     note: 'The dock reduces to one read-only block. Read-only is carried by the absence of the controls and by the header word, never by a dimmed fill — same tokens, no new colour.'
   },
@@ -390,19 +390,21 @@ const STATES = {
     field: false, controls: false,
     note: 'Interrupt-then-abandon. The engine fails the node rather than waiting forever or quietly finishing on partial output. Resuming re-runs it with a fresh session — the interrupted agent\u2019s in-progress context is gone, and a builder must not try to preserve it.'
   },
-  detached: {
-    label: '8 · detached run',
-    run: 'Running', runColor: 'var(--accent-bright)', runAction: 'Cancel',
-    selected: 'running · 14m 07s · detached', selectedColor: 'var(--accent-bright)', verify: 'pending',
-    headerMeta: 'started 04:52 · running… · detached · omp · claude-opus-5',
-    tail: true, tailGlyph: '◐', tailGlyphColor: 'var(--accent-bright)', tailBadge: 'running · 1m 48s',
-    disclosure: 'not steerable here · this run was started detached, so its live session is not in this process',
+  recovery: {
+    label: '8 · restart recovery',
+    run: 'Running', runColor: 'var(--warning)', runAction: 'Resume',
+    selected: 'recovery required', selectedColor: 'var(--warning)', verify: 'pending',
+    headerMeta: 'restored after server restart · omp · claude-opus-5',
+    tail: true, tailGlyph: '⚠', tailGlyphColor: 'var(--warning)', tailBadge: 'delivery unknown',
+    draft: ['wrong suite — use -p archon-workflows', 'and skip the doctests'],
+    draftHeader: 'Queued · 2', savedServer: true,
+    disclosure: 'restored after server restart · Resume the workflow to continue',
     field: false, controls: false,
-    note: 'Added in this port — the state the spec requires but no earlier mockup drew. Steering binds to the in-process live handle, which a CLI --detach run has no entry in. Cancel and normal resume still work; the dock says why rather than offering a field whose send would 409.'
+    note: 'Read-only until the user invokes the existing Resume action. Archon does not automatically resume and does not resend an ambiguous dispatch.'
   }
 };
 
-const ORDER = ['generating','interrupting','idle','again','finishedUndelivered','finishedClean','failed','detached'];
+const ORDER = ['generating','interrupting','idle','again','finishedUndelivered','finishedClean','failed','recovery'];
 
 // A loop node runs the same node id many times; each iteration is its own execution,
 // listed as `implement ×N` and selectable from the header's Execution select.
@@ -546,7 +548,7 @@ class Component extends DCLogic {
         : 'color:' + (s.pillColor ?? 'var(--accent-bright)') + ';border-color:' + (s.pillBorder ?? 'oklch(0.4 0.12 250)'),
       showDock: viewingStale ? false : s.dock !== false,
       stateNote: canSendNow
-        ? s.note + ' \u2014 and because this provider\u2019s open stream takes a message mid-turn (CAP-5 soft-inject, claude streaming input), each queued item carries its own Send now: the same ordinary prompt, handed to the running turn, with no interrupt, no interrupted tool call and no turn-start event. Per-item send is offered ONLY here. On a queue-only provider the control is absent rather than disabled \u2014 there an individual message could do nothing but wait, and the only per-item action is delete. This path is spike-gated: the v1 floor is interrupt + Queue.'
+        ? s.note + ' \u2014 This provider has verified soft injection, so each queued item carries its own Send now. The message enters the active turn without invoking Stop. Queue-only providers omit this control.'
         : viewingStale
         ? 'A loop node runs the same node id many times, and each iteration is its own execution — listed as implement ×N in the log stream and selectable from the header. The select defaults to the running iteration; picking a finished one reads its transcript back, with that iteration\u2019s own final checklist pinned above it. Steering is not offered there: a steer carries the node id and retry epoch it was written against, so a message composed against a finished iteration would be rejected on arrival.'
         : s.note,
@@ -579,7 +581,7 @@ class Component extends DCLogic {
       draftOpen: this.state.draftOpen,
       onToggleDraft: () => this.setState(st => ({ draftOpen: !st.draftOpen })),
       draftChevStyle: 'transition:transform .12s;transform:rotate(' + (this.state.draftOpen ? '180' : '0') + 'deg)',
-      draftMarginStyle: s.tabOnly === true ? '' : 'margin-left:auto;',
+      draftMarginStyle: s.savedServer === true ? '' : 'margin-left:auto;',
       draftHeaderWord: (s.draftHeader ?? ' · ').split(' · ')[0],
       draftCount: (s.draftHeader ?? ' · ').split(' · ')[1] ?? '',
       draftItems: (s.draft ?? []).map((t, i) => ({
@@ -598,7 +600,7 @@ class Component extends DCLogic {
         sendNow: () => {},
         remove: () => {}
       })),
-      showTabOnly: s.tabOnly === true,
+      showSavedServer: s.savedServer === true,
       disclosure: s.disclosure ?? false,
       showField: s.field === true,
       showControls: s.controls === true,
