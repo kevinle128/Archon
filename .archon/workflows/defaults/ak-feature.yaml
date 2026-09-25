@@ -41,8 +41,8 @@ nodes:
   - id: resolve-bmad-story
     depends_on: [setup]
     provider: codex
-    model: gpt-6-sol
-    effort: xhigh
+    model: gpt-6-terra
+    effort: medium
     context: fresh
     prompt: |
       Find exactly one existing BMAD story file in this checkout that matches the user request:
@@ -77,10 +77,6 @@ nodes:
         printf 'Cannot select one BMAD story: %s\n' "$reason" >&2
         exit 1
       fi
-      if [ ! -f .agents/skills/bmad-validate-story/SKILL.md ]; then
-        echo 'Missing .agents/skills/bmad-validate-story/SKILL.md in this checkout.' >&2
-        exit 1
-      fi
       if [ ! -f "$story_path" ]; then
         printf 'BMAD story does not exist: %s\n' "$story_path" >&2
         exit 1
@@ -97,7 +93,7 @@ nodes:
   # ───────────────────────────────────────────────────────────────────
   - id: plan
     prompt: |
-      Read the validated BMAD story at $story-preflight.output.
+      Read the BMAD story at $story-preflight.output.
       Treat its acceptance criteria and approved source links as the required scope.
       /ak:plan --deep --tdd $ARGUMENTS
       When finished, trigger advisor review. Then return structured output with
