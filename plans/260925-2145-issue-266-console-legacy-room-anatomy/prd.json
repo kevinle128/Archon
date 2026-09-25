@@ -1,0 +1,83 @@
+{
+  "feature": "Node Room anatomy: fixed-width Console/Legacy split and approved band order (issue #266 plan, owned by #265 / Story 10.1 M001+M002)",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Fixed-width contract and split owners in both shells",
+      "description": "As an operator viewing a workflow run, I want the Console and Legacy Node Rooms to be fixed-width (520/460 CSS px), non-resizable siblings of the main view in split mode — and a full-width room over a hidden main view in single mode — so that geometry matches the approved design contract instead of a draggable ratio.",
+      "acceptanceCriteria": [
+        "packages/web/src/lib/room-split-layout.test.ts asserts ROOM_WIDTH_PX.console === 520 and ROOM_WIDTH_PX.legacy === 460, with ROOM_WIDTH_PX declared `satisfies Record<RoomSurface, number>` for compile-time surface coverage; the test was observed failing before the module change (TDD)",
+        "room-split-layout.ts exports RoomSurface, PanelPercent, and ROOM_WIDTH_PX at the same path; `rg 'roomPanelSizes|clampRoomRatio|readRoomRatio|writeRoomRatio|ROOM_SPLIT|run-room\\.ratio' packages/web/src` returns no hits except a deliberate stale-key regression fixture in tests",
+        "LegacyGraphLogsPane.test.tsx, WorkflowExecution.test.tsx, ConsoleInspectPane.test.tsx, RunDetailPage.test.tsx assert in split mode: outer #console-run-room is 520px / #legacy-run-room is 460px and cannot shrink (shrink-0); the main view stays mounted, occupies remaining flex width (min-w-0 flex-1); no 'Resize node room' separator exists; rerenders with changed transcript/selection do not change width; ids and data-testid='legacy-node-room' retained",
+        "Single-mode tests assert: main view mounted but truly hidden via mutually exclusive hidden/flex classes or inline display:none (not a bare HTML hidden attribute); room has no fixed inline width and fills the container (min-w-0 flex-1 w-full); Back restores view and focus; split↔single transition works including with a stored old archon.run-room.ratio.* value, and no Node Room call writes that key",
+        "Ratio state, persistence callbacks, props, and onLayoutChanged removed from both route owners and both split owners; Node Room panel groups replaced by a horizontal flex parent; separator's visual edge replaced by the shell's one-pixel left border INSIDE the fixed-width outer room using each theme's existing border token; flex-column/min-height chain keeps graph canvas and room scroller sized",
+        "Legacy Node Room path no longer uses viewport-based useStackedViewport(); the hook's other consumers (source control) are unchanged and modeForWidth is not exported for this work; mode comes solely from useContainerSplitMode",
+        "packages/web/src/index.css no longer declares --rv-panel-default-width, --rv-panel-min-width, --rv-panel-max-width; exactly those three rows removed from packages/docs-web/src/content/docs/brand/index.md after confirming no consumers outside packages/web/src; no other brand tokens touched",
+        "components/ui/resizable.tsx, the Console resizable primitive, PanelPercent export, and the Console isolation allowlist are unchanged",
+        "From packages/web: NODE_ENV=development bun test passes for room-split-layout.test.ts, LegacyGraphLogsPane.test.tsx, WorkflowExecution.test.tsx, ConsoleInspectPane.test.tsx, RunDetailPage.test.tsx (package.json script splits + Radix preload honored, Console tests in isolated invocation); bun run type-check passes"
+      ],
+      "technicalNotes": "Phases 1+2 of the plan, landed as ONE working change so removed ratio exports never leave the branch type-invalid. TDD order: update room-split-layout.test.ts first and see it fail; write focused split/single-mode owner tests; then rewrite room-split-layout.ts to the single ROOM_WIDTH_PX value (keep RoomSurface + PanelPercent exports; no wrapper function for two property reads; no new persistence key or migration — old ratio keys stay in localStorage unread/unwritten by Node Room); then rewire the four owner components; then remove --rv-panel-* tokens + docs rows. Existing close, query-opening, graph/Logs selection, run-change reset, scroll-memory, and focus tests must keep passing — update old separator assertions rather than deleting coverage. If needed, characterize the 14px-root/899px-viewport overlap in use-container-split-mode.test.tsx; Node Room uses the hook's mode, not the old stacked viewport rule. No API/DB/storage migration.",
+      "dependsOn": [],
+      "priority": 1,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-002",
+      "title": "Approved vertical band order in both room bodies",
+      "description": "As an operator reading a Node Room, I want the bands below the header ordered scroller → occurrence controls → todo strip → dock (with queue before the composer inside the dock), so that both shells match the approved written contract rather than the obsolete mockups' todo-before-scroller order.",
+      "acceptanceCriteria": [
+        "NodeTranscriptPane.test.tsx and ConsoleNodeRoom.test.tsx use equivalent data (multiple occurrence groups, todos, active dock, queued guidance) and assert room-region DIRECT-CHILD order is scroller → controls → todo → dock, and that inside the dock the queue precedes the composer; the two obsolete todo-before-scroller assertions are flipped, not deleted",
+        "Absent-state coverage: controls absent with one occurrence + scroll following; controls present for 'Jump to latest' alone; no todos; empty queue; terminal/no dock; read-only finished iteration with queue but no composer — missing bands leave no empty slot and no unrequested steering action appears",
+        "Only the todo element moved in each JSX tree (from before the scroller to after controls); resolvedScopeKey, props, conditions, folding, queue behavior, and separate shell tokens retained; scroller keeps min-h-0 flex-1 with its own overflow-y-auto and lower siblings outside it",
+        "Console RoomRegion's 4px outset when todo is visible is reviewed after the move — an unclipped visible focus ring for the todo toggle is preserved at the new edge (adjust only if a browser check proves clipping)",
+        "Elements identified by roles, labels, and existing test ids — not presentation classes; equivalent semantic state asserted per shell with no cross-shell component import (console-isolation.test.ts still passes)",
+        "Room-body tests, scroll-follow/focus tests, and console-isolation.test.ts pass; bun run type-check in packages/web passes",
+        "No change to Execution, 'Jump to' semantics, todo content, dock state, or server data flow"
+      ],
+      "technicalNotes": "Phase 3 of the plan. Files: packages/web/src/components/workflows/NodeTranscriptPane.tsx (+ test; Legacy RoomRegion lives in NodeRoom.tsx) and packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx (+ test). Design resolution already made: older key-*-node-room.html mockups show todo before occurrence controls — obsolete; Story 10.1 Task 2's corrected written order wins per its Dev Notes. Independent of US-001's files; may be implemented in any order relative to it. Browser box/last-row verification happens in US-003.",
+      "dependsOn": [],
+      "priority": 2,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-003",
+      "title": "Browser geometry, responsive, state, and visual evidence",
+      "description": "As a reviewer, I want Playwright evidence that both rooms measure 520/460 CSS px in split mode, behave correctly across single/split container modes and all approved states, and expose the last transcript row — so the shipped geometry is verified against the owning design, not the obsolete ratio contract.",
+      "acceptanceCriteria": [
+        "workflow-run-hitl-room.spec.ts: roomRatio() and the separator-drag test replaced by outer-panel boundingBox().width assertions at a measured split container — Console 520 ±1, Legacy 460 ±1; a dedicated regression test seeds old archon.run-room.ratio.* values and verifies fixed width, no Node Room separator, and no key write on open/reload/rerender; close, deep-link, Logs/graph selection, focus, scroll-memory, and narrow Back cases kept; LEGACY_RATIO_VIEWPORT renamed to a geometry-neutral name and mode asserted from actual container width at 1024×900",
+        "agent-todo-strip.spec.ts: setRoomWidth and the shared 460 target removed; #console-run-room/#legacy-run-room measured for the fixed-width contract; strip-width checks kept relative to the inner room region (Console has a 4px margin when todo is shown); strip-before-scroller checks changed to scroller → controls when present → strip → dock",
+        "New e2e/fixtures/workflows/e2e-room-anatomy.yaml registered in e2e/lib/playwright/archon-runtime.ts; it reuses existing e2e-fake provider directives (emitTodo, emitTool, repeatTool, interruptible, bounded delayMs), is dispatched through startWorkflowViaWeb, and produces a live running node with todo + tool rows while guidance is queued through the real UI — no provider changes, no DOM injection; the spec expands todo, scrolls to the last transcript row, and proves it lies within a sufficiently tall scroller above lower bands; at 200% zoom or short viewport, asserts non-overlay + independent scroll instead of an impossible full-row fit",
+        "workflow-run-hitl-visual.spec.ts: product-ratio acceptance assertion and obsolete comment replaced with measured outer width in split mode and full available width in single mode; actual-vs-historical mockup capture context retained without calling the old mockup authoritative",
+        "verifier-visual.spec.ts, agent-tool-row-visual.spec.ts, file-edit-diff.spec.ts, task-dispatch-body.spec.ts: ratio setup and desktop Console-at-460 assertions removed; row anatomy, no-wrap, overflow, contrast, and interaction proofs preserved at 520/460; any needed 460px Console stress case uses measured single-pane geometry or a local renderer fixture labeled as stress evidence; occurrence-navigation.spec.ts ratio comment, width assertions, and capture labels updated; whole e2e/ui tree re-grepped for run-room.ratio, roomRatio, Resize node room, and 460px Console assumptions",
+        "Browser review on both shells at 1440×1000, 1024×900, 768×900, 390×844, and 200% zoom reads the measured container mode at each step (520/460 demanded only in split mode); in split mode, varying container size without crossing 60rem proves width does not change; in single mode: no horizontal overflow, working Back, focus restoration, mounted-but-hidden main view; graph/Logs usable at the narrowest split width",
+        "Visual states captured per plan.md: room closed/open, todo absent/collapsed/expanded, controls absent/present, queue absent/present, writable and read-only dock, finished/failed/restart, terminal-without-dock, long transcript, keyboard focus; header wrapping, separate shell tokens, band adjacency, 168px todo-body and 33vh queue-body scroll caps, last-row reachability, and reduced-motion verified; captures + measurements recorded under plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/evidence/ or testInfo.outputPath (ARCHON_VERIFY_EVIDENCE override added only where a touched spec still hardcodes a historical directory); state labels/action identities unchanged",
+        "(cd e2e && bun run typecheck) passes; focused Playwright specs for workflow-run-hitl-room, agent-todo-strip, workflow-run-hitl-visual, occurrence-navigation, agent-finished-iteration, verifier-visual, agent-tool-row-visual, file-edit-diff, task-dispatch-body pass; ≤1 CSS px tolerance on outer width; tests fail on missing/zero-sized elements rather than accepting null geometry"
+      ],
+      "technicalNotes": "Phase 4 of the plan. E2E fixtures boot isolated Archon instances with deterministic fake-provider data — let the runner own worker processes, never start a duplicate dev server. Existing specs that write captures into historical issue-plan folders keep those stateful records; only NEW captures route to this plan's reports/evidence/. No Playwright snapshot pins need approving just because geometry changed. Queue-absent and controls-present checks stay as separate states on their existing fixtures (the todo fixture is a completed run and cannot also show a live queue — hence the new combined fixture).",
+      "dependsOn": ["US-001", "US-002"],
+      "priority": 3,
+      "passes": false,
+      "notes": ""
+    },
+    {
+      "id": "US-004",
+      "title": "Gates, docs consistency, and owner-aligned closeout",
+      "description": "As a maintainer, I want the full validation ladder run, evergreen docs consistent with shipped sizing, and an A1–A6 acceptance report under the owning issue's evidence path, so the change can be merged cleanly under Story 10.1/#265 ownership without tracker or historical-record corruption.",
+      "acceptanceCriteria": [
+        "Full gate sequence passes and is recorded: packages/web narrow tests first (room-split-layout, two split-owner, two route-owner, two room-body tests), then affected regressions (use-container-split-mode.test.tsx, LegacyNodeRoom.test.tsx, ConsoleComposerDock.test.tsx, ComposerDock.test.tsx, console-isolation.test.ts), then bun --filter @archon/web test, (cd packages/web && bun run type-check), (cd e2e && bun run typecheck), and the focused Playwright specs from US-003; NODE_ENV=development, Radix preload, and isolated Console invocation honored; separate bun test invocations used where mock.module() conflicts; bun test NEVER run from the monorepo root; failures fixed, never weakened",
+        "packages/docs-web/src/content/docs/brand/index.md and evergreen docs agree with shipped sizing — no --rv-panel-* rows if tokens were removed, no surviving instructions to drag/resize the Node Room; only real user-facing hits updated; historical docs/superpowers/ plans and old screenshot reports untouched; all plan links and file references verified",
+        "Acceptance report written under plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/ mapping A1–A6 to exact tests, browser measurements, viewport/mode, and capture filenames",
+        "Changed-file review confirms: no production API/schema/generated-type drift, no old ratio readers/writers left, no obsolete docs claims, no unintended changes to historical evidence, no dependency changes",
+        "Ownership honored: Story 3.1 / Epic 3 not marked done in sprint-status.yaml; issue map not hand-edited (status changes only via its owning workflow/generator); Story 10.1 AC not silently rewritten; M005 not declared complete",
+        "If a PR is in scope: bun run validate passes first; PR uses .github/pull_request_template.md (Problem and outcome, Review guidance, Solution, Validation kept; conditional sections only if material; no 'N/A' padding), targets develop, and links the owning issue #265; no comment claims #266 delivered Story 3.1"
+      ],
+      "technicalNotes": "Phase 5 of the plan. Ownership already resolved in prd.md: #265 / Story 10.1 owns M001/M002 per the approved 2026-09-22 course correction — the claimed transfer to #266 was never recorded, so treat it as nonexistent. Reconcile #266 with the owner through the normal issue workflow only after evidence exists. Rollback path: revert the focused web + e2e + brand-doc changes together; untouched old localStorage ratio keys become readable again. No schema-upgrade gate needed (no schema changed).",
+      "dependsOn": ["US-003"],
+      "priority": 4,
+      "passes": false,
+      "notes": ""
+    }
+  ]
+}
