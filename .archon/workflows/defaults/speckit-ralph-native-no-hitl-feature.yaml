@@ -56,7 +56,7 @@ nodes:
       - specify
     effort: xhigh
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     context: fresh
 
   - id: clarify-file-check
@@ -243,7 +243,7 @@ nodes:
       - plan
     effort: xhigh
     provider: codex
-    model: "gpt-5.6-sol"
+    model: "gpt-6-sol"
     context: fresh
 
   - id: analyze
@@ -256,7 +256,7 @@ nodes:
       - tasks
     provider: codex
     effort: xhigh
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     context: fresh
 
   - id: analyze-respond
@@ -458,7 +458,7 @@ nodes:
       - ralph-loop-run
     provider: codex
     effort: medium
-    model: gpt-5.6-terra
+    model: gpt-6-terra
     context: fresh
 
   - id: speckit-converge
@@ -471,7 +471,7 @@ nodes:
       - ralph-sync-back
     provider: codex
     effort: xhigh
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     context: fresh
     output_format:
       type: object
@@ -618,7 +618,7 @@ nodes:
     depends_on: [speckit-final-ralph-loop-run]
     provider: codex
     effort: medium
-    model: gpt-5.6-terra
+    model: gpt-6-terra
     context: fresh
 
   - id: cargo-clean-before-pr
@@ -652,7 +652,7 @@ nodes:
     depends_on: [cargo-clean-before-pr, speckit-final-cargo-clean-before-pr]
     trigger_rule: one_success
     context: fresh
-    model: gpt-5.6-terra
+    model: gpt-6-terra
 
   - id: create-pull-request
     command: archon-create-pr

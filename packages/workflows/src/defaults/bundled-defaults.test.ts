@@ -521,8 +521,9 @@ describe('bundled-defaults', () => {
       expect(createPr?.when).toBeUndefined();
     });
 
-    it('ak-feature matches ak-implement after the plan node', () => {
+    it('ak-feature validates the BMAD story before planning and matches ak-implement afterward', () => {
       const workflow = Bun.YAML.parse(BUNDLED_WORKFLOWS['ak-feature']) as {
+        interactive?: boolean;
         nodes: Array<{
           id: string;
           bash?: string;
@@ -546,7 +547,10 @@ describe('bundled-defaults', () => {
           loop?: {
             command?: string;
             fresh_context?: boolean;
+            interactive?: boolean;
             max_iterations?: number;
+            signal_completes?: boolean;
+            until?: string;
             until_bash?: string;
             until_field?: string;
           };
@@ -561,8 +565,19 @@ describe('bundled-defaults', () => {
       expect(workflow.nodes.some(node => node.id === 'verified-plan-blocked')).toBe(false);
       expect(workflow.nodes.some(node => node.id === 'stop-on-final-fix-failure')).toBe(false);
 
+      expect(workflow.interactive).toBe(true);
+      const storyValidation = workflow.nodes.find(node => node.id === 'validate-bmad-story');
+      expect(storyValidation?.depends_on).toEqual(['story-preflight']);
+      expect(storyValidation?.provider).toBe('codex');
+      expect(storyValidation?.model).toBe('gpt-6-sol');
+      expect(storyValidation?.loop?.interactive).toBe(true);
+      expect(storyValidation?.loop?.fresh_context).toBe(true);
+      expect(storyValidation?.loop?.until).toBe('STORY_VALIDATION_PASSED');
+      expect(storyValidation?.loop?.signal_completes).toBe(true);
+      expect(storyValidation?.output_format).toBeUndefined();
+
       const plan = workflow.nodes.find(node => node.id === 'plan');
-      expect(plan?.depends_on).toEqual(['setup']);
+      expect(plan?.depends_on).toEqual(['validate-bmad-story']);
       expect(plan?.prompt).toContain('/ak:plan --deep --tdd');
       expect(plan?.provider).toBe('claude');
       expect(plan?.output_format?.required).toEqual(['plan_path']);
@@ -640,7 +655,7 @@ describe('bundled-defaults', () => {
       expect(content).toContain('id: create-pull-request');
       expect(content).toContain('id: verify-blocked');
       expect(content).toContain('provider: codex');
-      expect(content).toContain('model: gpt-5.6-sol');
+      expect(content).toContain('model: gpt-6-sol');
       expect(content).toContain('.agents/skills/verify-archon/bin/verify-archon');
       expect(content).not.toContain('.cursor/skills/verify-archon');
       expect(content).toContain('verify-feature-gate.ts normalize');

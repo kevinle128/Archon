@@ -162,14 +162,14 @@ describe('parseOmpConfig', () => {
   test('parses the supported OMP defaults', () => {
     expect(
       parseOmpConfig({
-        model: 'openai-codex/gpt-5.6-sol',
+        model: 'openai-codex/gpt-6-sol',
         modelReasoningEffort: '  future-omp  ',
         ompBinaryPath: ' /opt/omp/bin/omp ',
         enableExtensions: true,
         ignored: 'value',
       })
     ).toEqual({
-      model: 'openai-codex/gpt-5.6-sol',
+      model: 'openai-codex/gpt-6-sol',
       modelReasoningEffort: '  future-omp  ',
       ompBinaryPath: '/opt/omp/bin/omp',
       enableExtensions: true,
@@ -475,7 +475,7 @@ const OMP_SUCCESS_LINES = [
         { type: 'text', text: 'Hello' },
       ],
       provider: 'openai-codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
       usage: {
         input: 10,
         output: 5,
@@ -514,7 +514,7 @@ const OMP_SUCCESS_LINES = [
       role: 'assistant',
       content: [{ type: 'text', text: 'Done' }],
       provider: 'openai-codex',
-      model: 'gpt-5.6-sol',
+      model: 'gpt-6-sol',
       usage: {
         input: 8,
         output: 2,
@@ -567,7 +567,7 @@ describe('OmpEventParser', () => {
       cost: 0.25,
       stopReason: 'stop',
       numTurns: 2,
-      resolvedModel: { id: 'openai-codex/gpt-5.6-sol' },
+      resolvedModel: { id: 'openai-codex/gpt-6-sol' },
       resumed: true,
     });
   });
@@ -849,7 +849,7 @@ describe('buildOmpArgs', () => {
       prompt: 'hello',
       cwd: '/repo',
       config: {
-        model: 'openai-codex/gpt-5.6-sol',
+        model: 'openai-codex/gpt-6-sol',
         modelReasoningEffort: 'high',
       },
       requestOptions: {
@@ -867,7 +867,7 @@ describe('buildOmpArgs', () => {
       '--no-title',
       '--no-extensions',
       '--model',
-      'openai-codex/gpt-5.6-sol',
+      'openai-codex/gpt-6-sol',
       '--thinking',
       'high',
       '--system-prompt',
@@ -1590,7 +1590,7 @@ test('exposes only safe OMP assistant fields', async () => {
   mockFsReadFile.mockResolvedValue(`
 assistants:
   omp:
-    model: openai-codex/gpt-5.6-sol
+    model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
     enableExtensions: true
     ompBinaryPath: /sensitive/omp
@@ -1598,7 +1598,7 @@ assistants:
   const config = await loadConfig();
   const safe = toSafeConfig(config);
   expect(safe.assistants.omp).toEqual({
-    model: 'openai-codex/gpt-5.6-sol',
+    model: 'openai-codex/gpt-6-sol',
     modelReasoningEffort: 'high',
     enableExtensions: true,
   });
@@ -1712,7 +1712,7 @@ assistants:
 ```yaml
 assistants:
   omp:
-    model: openai-codex/gpt-5.6-sol
+    model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
     enableExtensions: false
 ```
@@ -1774,7 +1774,7 @@ Use this OMP example.
 
 ```yaml
 provider: omp
-model: openai-codex/gpt-5.6-sol
+model: openai-codex/gpt-6-sol
 effort: high
 skills: [archon]
 ```

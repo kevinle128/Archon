@@ -409,7 +409,7 @@ streaming:
         }
         if (pathMatches(path, '.archon/config.yaml') && !globalConfigRead) {
           globalConfigRead = true;
-          return `assistants:\n  claude:\n    model: sonnet\n  codex:\n    model: gpt-5.6-sol\n    modelReasoningEffort: medium\n`;
+          return `assistants:\n  claude:\n    model: sonnet\n  codex:\n    model: gpt-6-sol\n    modelReasoningEffort: medium\n`;
         }
         const error = new Error('ENOENT') as NodeJS.ErrnoException;
         error.code = 'ENOENT';
@@ -418,7 +418,7 @@ streaming:
 
       const config = await loadConfig('/test/repo');
       expect(config.assistants.claude.model).toBe('sonnet');
-      expect(config.assistants.codex.model).toBe('gpt-5.6-sol');
+      expect(config.assistants.codex.model).toBe('gpt-6-sol');
       expect(config.assistants.codex.modelReasoningEffort).toBe('medium');
       expect(config.assistants.codex.webSearchMode).toBe('live');
       expect(config.assistants.codex.additionalDirectories).toEqual(['/repo']);
@@ -899,7 +899,7 @@ defaultAssistant: codex
 botName: MyBot
 assistants:
   codex:
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     modelReasoningEffort: medium
 `);
 
@@ -1115,7 +1115,7 @@ assistants:
       mockFsReadFile.mockResolvedValue(`
 assistants:
   omp:
-    model: openai-codex/gpt-5.6-sol
+    model: openai-codex/gpt-6-sol
     modelReasoningEffort: high
     enableExtensions: true
     ompBinaryPath: /sensitive/omp
@@ -1123,7 +1123,7 @@ assistants:
       const config = await loadConfig();
       const safe = toSafeConfig(config);
       expect(safe.assistants.omp).toEqual({
-        model: 'openai-codex/gpt-5.6-sol',
+        model: 'openai-codex/gpt-6-sol',
         modelReasoningEffort: 'high',
         enableExtensions: true,
       });

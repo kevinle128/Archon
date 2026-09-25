@@ -67,7 +67,7 @@
       },
       "review": {
         "name": "codex",
-        "model": "gpt-5.6-sol",
+        "model": "gpt-6-sol",
         "extra_args": [
           "--dangerously-bypass-approvals-and-sandbox",
           "-c",
@@ -78,7 +78,7 @@
       },
       "triage": {
         "name": "codex",
-        "model": "gpt-5.6-sol",
+        "model": "gpt-6-sol",
         "extra_args": [
           "--dangerously-bypass-approvals-and-sandbox",
           "-c",

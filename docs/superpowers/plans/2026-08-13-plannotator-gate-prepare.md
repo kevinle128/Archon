@@ -107,7 +107,7 @@ The existing supervisor remains the sole owner of pause, Plannotator subprocess,
 
 - [ ] Update structural/default-workflow tests to expect the three consolidated gate nodes and no standalone explain nodes, then verify they fail.
 - [ ] Move each existing explainer prompt and its provider/model/tool restrictions into the corresponding gate `prepare` block and remove the producer nodes.
-- [ ] Keep the `tasks` node provider/model pair consistent; after syncing current `dev`, retain its `provider: codex` and `model: gpt-5.6-sol` pair.
+- [ ] Keep the `tasks` node provider/model pair consistent; after syncing current `dev`, retain its `provider: codex` and `model: gpt-6-sol` pair.
 - [ ] Run the default Speckit FAIL → review → Ralph retry → PASS production-path test.
 - [ ] Update the workflow-creator skill and references to document both gate input modes, lifecycle, validation, and examples.
 - [ ] Run `bun run generate:bundled`; do not hand-edit its generated output.

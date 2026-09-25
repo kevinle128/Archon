@@ -36,6 +36,24 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def sha256_section(path: Path, scope: Any) -> str:
+    if (
+        not isinstance(scope, dict)
+        or set(scope) != {"start", "end"}
+        or any(not isinstance(scope[key], str) or not scope[key].strip() for key in ("start", "end"))
+    ):
+        raise ValueError("comparison source scope must have non-empty start and end lines")
+    lines = path.read_bytes().splitlines(keepends=True)
+    markers = [scope[key].encode("utf-8") for key in ("start", "end")]
+    matches = [
+        [index for index, line in enumerate(lines) if line.rstrip(b"\r\n") == marker]
+        for marker in markers
+    ]
+    if any(len(indices) != 1 for indices in matches) or matches[0][0] > matches[1][0]:
+        raise ValueError(f"comparison source scope markers must occur once in order: {path}")
+    return hashlib.sha256(b"".join(lines[matches[0][0]:matches[1][0] + 1])).hexdigest()
+
+
 def resolve_source(root: Path, raw_path: str) -> Path:
     root = root.resolve()
     relative = Path(raw_path)
@@ -288,7 +306,11 @@ def validate_manifest_data(
                 errors.append(f"{location}.sha256 must be 64 lowercase hex characters")
                 continue
             try:
-                actual_hash = sha256_file(resolve_source(root, path))
+                source_path = resolve_source(root, path)
+                scope = source.get("scope")
+                if "scope" in source and kind != "epic":
+                    raise ValueError(f"{location}.scope is allowed only for completed Epic sources")
+                actual_hash = sha256_section(source_path, scope) if "scope" in source else sha256_file(source_path)
             except ValueError as error:
                 errors.append(str(error))
                 continue
@@ -645,6 +667,14 @@ def fingerprint_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def fingerprint_section_command(args: argparse.Namespace) -> int:
+    path = resolve_source(Path(args.root), args.source)
+    scope = {"start": args.start, "end": args.end}
+    print(json.dumps({"kind": "epic", "path": args.source, "scope": scope,
+                      "sha256": sha256_section(path, scope)}, indent=2))
+    return 0
+
+
 def validate_command(args: argparse.Namespace) -> int:
     root = Path(args.root).resolve()
     with Path(args.manifest).open(encoding="utf-8") as source:
@@ -666,7 +696,12 @@ def self_test() -> int:
         epic = root / "completed-epic.md"
         mockup.write_text("<button>Send now</button>", encoding="utf-8")
         implementation.write_text("export const queue = ['Graph'];", encoding="utf-8")
-        epic.write_text("# Completed Epic\n\nGraph navigation exists.\n", encoding="utf-8")
+        epic.write_text(
+            "# Current requirements\n\n## Epic 1: Completed\nGraph navigation exists.\n"
+            "## Future capability\nHistorical note.\n\n## Epic 4: New work\n",
+            encoding="utf-8",
+        )
+        epic_scope = {"start": "## Epic 1: Completed", "end": "Historical note."}
         records = source_records(root, ["mock.dc.html"])
         comparison_sources = [
             {
@@ -677,7 +712,8 @@ def self_test() -> int:
             {
                 "kind": "epic",
                 "path": "completed-epic.md",
-                "sha256": sha256_file(epic),
+                "scope": epic_scope,
+                "sha256": sha256_section(epic, epic_scope),
             },
         ]
 
@@ -774,6 +810,20 @@ def self_test() -> int:
             }],
             "action_identity_groups": [],
         }
+        assert validate_manifest_data(manifest, root) == []
+        epic.write_text(
+            "# Updated requirements\n\n## Epic 1: Completed\nGraph navigation exists.\n"
+            "## Future capability\nHistorical note.\n\n## Epic 4: Expanded work\n",
+            encoding="utf-8",
+        )
+        assert validate_manifest_data(manifest, root) == []
+        epic.write_text(epic.read_text(encoding="utf-8").replace(
+            "Graph navigation exists.", "Graph navigation changed."
+        ), encoding="utf-8")
+        assert any("comparison source changed" in error for error in validate_manifest_data(manifest, root))
+        epic.write_text(epic.read_text(encoding="utf-8").replace(
+            "Graph navigation changed.", "Graph navigation exists."
+        ), encoding="utf-8")
         assert validate_manifest_data(manifest, root) == []
         assert any(
             "target must be another-target" in error
@@ -879,6 +929,13 @@ def build_parser() -> argparse.ArgumentParser:
     fingerprint_parser.add_argument("--root", required=True)
     fingerprint_parser.add_argument("sources", nargs="+")
     fingerprint_parser.set_defaults(handler=fingerprint_command)
+
+    section_parser = subparsers.add_parser("fingerprint-section")
+    section_parser.add_argument("--root", required=True)
+    section_parser.add_argument("--start", required=True)
+    section_parser.add_argument("--end", required=True)
+    section_parser.add_argument("source")
+    section_parser.set_defaults(handler=fingerprint_section_command)
 
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--root", required=True)

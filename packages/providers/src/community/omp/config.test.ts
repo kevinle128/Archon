@@ -6,14 +6,14 @@ describe('parseOmpConfig', () => {
   test('parses the supported OMP defaults', () => {
     expect(
       parseOmpConfig({
-        model: 'openai-codex/gpt-5.6-sol',
+        model: 'openai-codex/gpt-6-sol',
         modelReasoningEffort: '  future-omp  ',
         ompBinaryPath: ' /opt/omp/bin/omp ',
         enableExtensions: true,
         ignored: 'value',
       })
     ).toEqual({
-      model: 'openai-codex/gpt-5.6-sol',
+      model: 'openai-codex/gpt-6-sol',
       modelReasoningEffort: '  future-omp  ',
       ompBinaryPath: '/opt/omp/bin/omp',
       enableExtensions: true,

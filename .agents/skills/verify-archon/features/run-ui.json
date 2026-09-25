@@ -195,7 +195,8 @@
       },
       "prerequisites": [
         "Bun and installed target dependencies",
-        "Built target Web UI, E2E dependencies, and Chrome"
+        "Built target Web UI, E2E dependencies, and Chrome",
+        "Authenticated codex exec on PATH with image input and structured output"
       ],
       "proof_obligations": [
         "Pinned references render with required assets",

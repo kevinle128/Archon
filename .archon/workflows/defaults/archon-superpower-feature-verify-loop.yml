@@ -97,7 +97,7 @@ nodes:
   - id: review-fix-plan
     description: Review and repair the plan directly with Codex.
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     effort: xhigh
     context: fresh
     depends_on:
@@ -238,7 +238,7 @@ nodes:
     depends_on:
       - begin-verify
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     effort: xhigh
     context: fresh
     always_run: true
@@ -381,7 +381,7 @@ nodes:
   - id: fix-verify
     description: Diagnose failing behaviors; every fix goes back through commit, selection, and proof.
     provider: omp
-    model: cursor/gpt-5.6-sol
+    model: cursor/gpt-6-sol
     effort: xhigh
     context: fresh
     idle_timeout: 3600000

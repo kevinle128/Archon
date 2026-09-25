@@ -1,10 +1,11 @@
 name: ak-feature
 description: |
   Use when: User wants to build a feature end-to-end with the Claude Kit (ck)
-  pipeline running fully unattended in a worktree.
+  pipeline in a worktree, with user input when story validation finds a gap.
   Triggers: "ak feature", "ck feature", "claudekit feature", "ck plan and cook",
             "ck deep tdd", "plan then cook", "ck pipeline", "claude kit feature".
-  Does: deep TDD planning (/ak:plan --deep --tdd) -> independent Codex verify +
+  Does: resolve and interactively validate one existing BMAD story -> deep TDD
+        planning (/ak:plan --deep --tdd) -> independent Codex verify +
         fix of the plan -> conversion of the plan into a Ralph PRD (prd.md +
         prd.json) CO-LOCATED with it -> autonomous story-by-story implementation
         via a native in-parent Ralph loop -> Codex repairs any remaining Ralph
@@ -16,6 +17,7 @@ description: |
 # Default provider for the plan node (Claude Opus). Later nodes declare their
 # own providers. Codex reasoning effort is set per Codex node with `effort`.
 provider: claude
+interactive: true
 
 nodes:
   # ───────────────────────────────────────────────────────────────────
@@ -33,20 +35,111 @@ nodes:
       mkdir -p plans "$ARTIFACTS_DIR/ak-feature"
       git rev-parse HEAD > "$ARTIFACTS_DIR/ak-feature/base-sha.txt"
       echo ""
-      echo "Pipeline: /ak:plan --deep --tdd  ->  Codex verify+fix  ->  plan->Ralph PRD (co-located)  ->  native Ralph loop  ->  Codex final repair  ->  PR"
-      echo "Starting Step 1 of 6: deep TDD planning..."
+      echo "Pipeline: validate BMAD story  ->  /ak:plan --deep --tdd  ->  Codex verify+fix  ->  Ralph PRD  ->  native Ralph loop  ->  Codex final repair  ->  PR"
+      echo "Starting with story selection and validation..."
+
+  - id: resolve-bmad-story
+    depends_on: [setup]
+    provider: codex
+    model: gpt-6-sol
+    effort: xhigh
+    context: fresh
+    prompt: |
+      Find exactly one existing BMAD story file in this checkout that matches the user request:
+      $ARGUMENTS
+
+      Read the BMAD configuration, sprint status, and story files.
+      If the request names a story file, use that file.
+      Do not select a story that exists only in an Epic, create a story, or guess between matches.
+      Return `selected` and a path relative to this checkout only when one story is certain.
+      Otherwise return `blocked`, an empty path, and a reason that tells the user what to specify.
+      Do not edit files or create a plan.
+    output_format:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [selected, blocked]
+        story_path:
+          type: string
+        reason:
+          type: string
+      required: [status, story_path, reason]
+
+  - id: story-preflight
+    depends_on: [resolve-bmad-story]
+    bash: |
+      set -euo pipefail
+      status=$resolve-bmad-story.output.status
+      story_path=$resolve-bmad-story.output.story_path
+      reason=$resolve-bmad-story.output.reason
+      if [ "$status" != selected ]; then
+        printf 'Cannot select one BMAD story: %s\n' "$reason" >&2
+        exit 1
+      fi
+      if [ ! -f .agents/skills/bmad-validate-story/SKILL.md ]; then
+        echo 'Missing .agents/skills/bmad-validate-story/SKILL.md in this checkout.' >&2
+        exit 1
+      fi
+      if [ ! -f "$story_path" ]; then
+        printf 'BMAD story does not exist: %s\n' "$story_path" >&2
+        exit 1
+      fi
+      story_path=$(realpath "$story_path")
+      project_root=$(pwd -P)
+      case "$story_path" in
+        "$project_root"/*) printf '%s\n' "$story_path" ;;
+        *) echo 'BMAD story must be inside this checkout.' >&2; exit 1 ;;
+      esac
+
+  - id: validate-bmad-story
+    depends_on: [story-preflight]
+    provider: codex
+    model: gpt-6-sol
+    effort: xhigh
+    loop:
+      prompt: |
+        Use $bmad-validate-story and follow `.agents/skills/bmad-validate-story/SKILL.md`.
+        Validate only this existing story: $story-preflight.output
+        Earlier validation output: $LOOP_PREV_OUTPUT
+        Latest user answer: $LOOP_USER_INPUT
+
+        This is an interactive validation step.
+        On the first pass, review the story against its approved sources.
+        If it is not ready, show every finding and its specific question clearly.
+        The workflow will display that output and wait for the user's answer.
+        Do not edit the story or its sprint entry before the user answers.
+        On a later pass, use the answer to repair only this story, then repeat the full review.
+        Do not guess missing behavior or change an approved source.
+        If an answer is absent or insufficient, return the remaining questions and wait again.
+        Do not create a plan or implement code.
+
+        Only after a clean review and verification that the story and sprint
+        statuses are ready-for-dev, finish the report with a line containing
+        exactly STORY_VALIDATION_PASSED.
+        Never include that line in a response with remaining problems or questions.
+      until: STORY_VALIDATION_PASSED
+      max_iterations: 100
+      fresh_context: true
+      interactive: true
+      signal_completes: true
+      gate_message: |
+        Review the full validation findings in this node's output.
+        Answer the questions to correct the story, or reject to stop.
 
   # ───────────────────────────────────────────────────────────────────
   # STEP 2 / 6 — Deep TDD plan (Claude + ck:plan), fully autonomous
   # ───────────────────────────────────────────────────────────────────
   - id: plan
     prompt: |
+      Read the validated BMAD story at $story-preflight.output.
+      Treat its acceptance criteria and approved source links as the required scope.
       /ak:plan --deep --tdd $ARGUMENTS
       When finished, trigger advisor review. Then return structured output with
       plan_path set to the absolute path of the plan directory (the directory
       that contains plan.md — not the plan.md file, and not plans/journals or
       plans/reports). The directory must already exist on disk.
-    depends_on: [setup]
+    depends_on: [validate-bmad-story]
     provider: claude
     model: opus
     context: fresh
@@ -62,6 +155,7 @@ nodes:
   - id: verify-and-fix-plan
     prompt: |
       Review and revise the complete plan at `$plan.output.plan_path`.
+      Check it against the validated BMAD story at $story-preflight.output.
       Treat the current plan as an unverified draft.
       Do not trust its claims, assumptions, scope, file references, technical decisions, or conclusions.
 
@@ -121,7 +215,7 @@ nodes:
     depends_on: [plan]
     provider: codex
     effort: xhigh
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     context: fresh
     output_format:
       type: object
@@ -305,7 +399,7 @@ nodes:
   - id: codex-final-fix
     description: Repair and verify the implementation produced by the Ralph loop.
     provider: codex
-    model: gpt-5.6-terra 
+    model: gpt-6-terra
     effort: xhigh
     context: fresh
     idle_timeout: 3600000

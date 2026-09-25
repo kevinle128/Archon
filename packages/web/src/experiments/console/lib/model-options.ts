@@ -68,12 +68,12 @@ export const CLAUDE_MODEL_OPTIONS: readonly ModelOption[] = [
 
 /**
  * Codex model strings mirroring the current lineup in the repo's config
- * examples (docs/getting-started/ai-assistants.md and CLAUDE.md): `gpt-5.6-sol`
- * (flagship), `gpt-5.6-terra` (mid), `gpt-5.6-luna` (light).
+ * examples (docs/getting-started/ai-assistants.md and CLAUDE.md): `gpt-6-sol`
+ * (flagship), `gpt-6-terra` (mid), `gpt-5.6-luna` (light).
  */
 export const CODEX_MODEL_OPTIONS: readonly ModelOption[] = [
-  { value: 'gpt-5.6-sol' },
-  { value: 'gpt-5.6-terra' },
+  { value: 'gpt-6-sol' },
+  { value: 'gpt-6-terra' },
   { value: 'gpt-5.6-luna' },
 ];
 

@@ -15,7 +15,7 @@ import { extractUsageFromCodexEvent } from './provider';
  * SDK shape onto the ledger entry (Codex reports NO cost → tokens only).
  */
 
-// Realistic values from an actual Codex turn (gpt-5.6-sol); shape enforced by the SDK type.
+// Realistic values from an actual Codex turn (gpt-6-sol); shape enforced by the SDK type.
 const realTurnCompleted = {
   type: 'turn.completed',
   usage: {
@@ -28,13 +28,13 @@ const realTurnCompleted = {
 
 describe('Codex usage contract (SDK TurnCompletedEvent shape)', () => {
   test('parser maps a TurnCompletedEvent onto the expected ModelUsageEntry', () => {
-    const { usageBreakdown } = extractUsageFromCodexEvent(realTurnCompleted, 'gpt-5.6-sol');
+    const { usageBreakdown } = extractUsageFromCodexEvent(realTurnCompleted, 'gpt-6-sol');
     expect(usageBreakdown).toBeDefined();
     const entry = usageBreakdown?.[0];
     if (!entry) throw new Error('parser produced no usage breakdown for a real turn');
 
     expect(entry.provider).toBe('openai');
-    expect(entry.model).toBe('gpt-5.6-sol');
+    expect(entry.model).toBe('gpt-6-sol');
     expect(entry.modelSource).toBe('requested');
 
     // Non-cached input = input_tokens - cached_input_tokens; cache read is broken out.
