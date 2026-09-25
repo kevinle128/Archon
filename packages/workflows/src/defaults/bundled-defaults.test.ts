@@ -25,6 +25,7 @@ import {
   parsePackagedResourceReference,
 } from '../packaged-workflow';
 import { substituteNodeOutputRefs } from '../dag-executor';
+import { evaluateCondition } from '../condition-evaluator';
 import type { NodeOutput } from '../schemas';
 
 // Resolve the on-disk defaults directories relative to this test file so the
@@ -521,7 +522,7 @@ describe('bundled-defaults', () => {
       expect(createPr?.when).toBeUndefined();
     });
 
-    it('ak-feature validates the BMAD story before planning and matches ak-implement afterward', () => {
+    it('ak-feature plans from the feature request without requiring a BMAD story file', () => {
       const workflow = Bun.YAML.parse(BUNDLED_WORKFLOWS['ak-feature']) as {
         interactive?: boolean;
         nodes: Array<{
@@ -566,18 +567,13 @@ describe('bundled-defaults', () => {
       expect(workflow.nodes.some(node => node.id === 'stop-on-final-fix-failure')).toBe(false);
 
       expect(workflow.interactive).toBe(true);
-      const storyValidation = workflow.nodes.find(node => node.id === 'validate-bmad-story');
-      expect(storyValidation?.depends_on).toEqual(['story-preflight']);
-      expect(storyValidation?.provider).toBe('codex');
-      expect(storyValidation?.model).toBe('gpt-6-sol');
-      expect(storyValidation?.loop?.interactive).toBe(true);
-      expect(storyValidation?.loop?.fresh_context).toBe(true);
-      expect(storyValidation?.loop?.until).toBe('STORY_VALIDATION_PASSED');
-      expect(storyValidation?.loop?.signal_completes).toBe(true);
-      expect(storyValidation?.output_format).toBeUndefined();
+      expect(workflow.nodes.some(node => node.id === 'resolve-bmad-story')).toBe(false);
+      expect(workflow.nodes.some(node => node.id === 'story-preflight')).toBe(false);
 
       const plan = workflow.nodes.find(node => node.id === 'plan');
-      expect(plan?.depends_on).toEqual(['validate-bmad-story']);
+      expect(plan?.depends_on).toEqual(['setup']);
+      expect(plan?.prompt).toContain('read that issue with `gh`');
+      expect(plan?.prompt).toContain('an Epic story is a valid requirements source');
       expect(plan?.prompt).toContain('/ak:plan --deep --tdd');
       expect(plan?.provider).toBe('claude');
       expect(plan?.output_format?.required).toEqual(['plan_path']);
@@ -617,10 +613,27 @@ describe('bundled-defaults', () => {
       const finalFix = workflow.nodes.find(node => node.id === 'codex-final-fix');
       expect(finalFix?.depends_on).toEqual(['ralph-loop-run']);
       expect(finalFix?.trigger_rule).toBe('all_done');
+      expect(finalFix?.when).toBe(
+        "$plan.output.plan_path != '' && $build-ralph-prd.output.prd_dir != ''"
+      );
+      const knownNodes = new Map<string, readonly string[]>([
+        ['plan', ['plan_path']],
+        ['build-ralph-prd', ['prd_dir']],
+      ]);
+      const skippedPlan = new Map<string, NodeOutput>([
+        ['plan', { state: 'skipped', output: '' }],
+        ['build-ralph-prd', { state: 'skipped', output: '' }],
+      ]);
+      expect(evaluateCondition(finalFix!.when!, skippedPlan, knownNodes).result).toBe(false);
+      const completedInputs = new Map<string, NodeOutput>([
+        ['plan', { state: 'completed', output: '{"plan_path":"/tmp/plan"}' }],
+        ['build-ralph-prd', { state: 'completed', output: '{"prd_dir":"/tmp/plan"}' }],
+      ]);
+      expect(evaluateCondition(finalFix!.when!, completedInputs, knownNodes).result).toBe(true);
       expect(finalFix?.prompt).toContain('$plan.output.plan_path');
       expect(finalFix?.prompt).not.toContain('$resolve-plan');
+      expect(finalFix?.prompt).not.toContain('$ralph-loop-run.output');
       expect(finalFix?.prompt).toContain('$ARTIFACTS_DIR/ak-feature/base-sha.txt');
-      expect(finalFix?.when).toBeUndefined();
       expect(finalFix?.output_format?.required).not.toContain('gate');
 
       const createPr = workflow.nodes.find(node => node.id === 'create-pull-request');
