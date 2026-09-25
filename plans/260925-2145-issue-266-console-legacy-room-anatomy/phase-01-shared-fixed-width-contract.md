@@ -1,72 +1,23 @@
 ---
 phase: 1
-title: 'Phase 1: Shared fixed-width geometry contract'
+title: 'Shared fixed-width contract'
 status: pending
-priority: P1
-effort: '1.5h'
-dependencies: []
+dependencies: [issue-ownership-decision]
 ---
 
-# Phase 1: Shared fixed-width geometry contract
+# Shared fixed-width contract
 
-## Goal
+## Context and files
 
-Replace the percentage and ratio contract in `packages/web/src/lib/room-split-layout.ts`
-with one render-neutral source for the approved per-surface widths.
+`packages/web/src/lib/room-split-layout.ts` currently owns a 40% default, 24–60% clamp, percentage panel sizes, and `archon.run-room.ratio.<surface>` storage. Only `LegacyGraphLogsPane`, `ConsoleInspectPane`, `WorkflowExecution`, and `RunDetailPage` consume its ratio functions. The two generic resizable primitives still import `PanelPercent`, and Console's isolation test allows the shared module. `packages/web/src/index.css` defines unused `--rv-panel-default/min/max-width` tokens; `packages/docs-web/src/content/docs/brand/index.md` incorrectly documents them as live.
 
-## Evidence (verified at 4039a03d)
+## Steps
 
-- `room-split-layout.ts` exports `ROOM_SPLIT` (40% default, clamp from 24% to
-  60%), `clampRoomRatio`, `roomPanelSizes`, `readRoomRatio`, and
-  `writeRoomRatio` (key `archon.run-room.ratio.<surface>`), plus the
-  `PanelPercent` and `RoomSurface` types.
-- Consumers: `LegacyGraphLogsPane.tsx`, `ConsoleInspectPane.tsx`,
-  `WorkflowExecution.tsx`, and `RunDetailPage.tsx` use the ratio functions.
-  `execution-room-model.ts` uses `RoomSurface`. `components/ui/resizable.tsx`
-  and `console-resizable.tsx` import the `PanelPercent` type (8 references
-  outside the module).
-- `console-isolation.test.ts:121,161` lists `@/lib/room-split-layout` as an
-  allowed, required Console import. Keep the module path.
-- `index.css:448-450` defines `--rv-panel-default-width/min/max`, and nothing
-  reads them (grep shows only the definitions).
+1. Update `packages/web/src/lib/room-split-layout.test.ts` first: assert `ROOM_WIDTH_PX.console === 520` and `ROOM_WIDTH_PX.legacy === 460`. A `satisfies Record<RoomSurface, number>` declaration provides compile-time coverage; do not claim that `as const` freezes an object at runtime. Run this narrow test and confirm it fails for the intended missing contract.
+2. Replace ratio, clamp, panel-size, storage helpers and their types with the single `ROOM_WIDTH_PX` value. Keep `RoomSurface` and `PanelPercent` exported at the same path for existing consumers. No wrapper function is needed for two property reads. No new persistence key or migration: old ratio keys stay in localStorage but are never read or written by Node Room.
+3. Remove the unused `--rv-panel-*` declarations **and** their three rows in the brand-token page after checking for consumers outside `packages/web/src`; they describe a resizable range that no longer exists. Do not change unrelated brand tokens.
+4. Coordinate this phase with Phase 2 in one working change so removed ratio exports never leave the branch type-invalid. Recheck `rg 'roomPanelSizes|clampRoomRatio|readRoomRatio|writeRoomRatio|ROOM_SPLIT|run-room\.ratio' packages/web/src` after Phase 2; only a deliberate stale-key regression fixture may mention the key in tests.
 
-## Files
+## Acceptance and risk
 
-- Modify: `packages/web/src/lib/room-split-layout.ts`,
-  `packages/web/src/lib/room-split-layout.test.ts`
-- Possibly modify: `packages/web/src/index.css` (only the dead `--rv-panel-*`
-  variables)
-
-## TDD steps
-
-1. **Red.** Rewrite `room-split-layout.test.ts`:
-   - `roomWidthPx('console') === 520` and `roomWidthPx('legacy') === 460`.
-   - `ROOM_WIDTH_PX` is frozen (`as const`) and covers exactly the
-     `RoomSurface` union (a type-level `satisfies Record<RoomSurface, number>`).
-   Run `(cd packages/web && bun test src/lib/room-split-layout.test.ts)` and
-   confirm it fails.
-2. **Green.** Implement:
-   ```ts
-   export type RoomSurface = 'legacy' | 'console';
-   export const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const satisfies Record<RoomSurface, number>;
-   export function roomWidthPx(surface: RoomSurface): number { return ROOM_WIDTH_PX[surface]; }
-   ```
-   Keep `PanelPercent` exported from this module, because the two resizable
-   primitives import it and moving it would widen the change for no gain.
-   Delete the ratio functions and `ROOM_SPLIT`.
-3. Leave the four call sites broken; Phase 2 fixes them. If Phase 1 is
-   committed separately, commit it together with Phase 2 so `type-check`
-   never fails on the branch.
-4. Remove `--rv-panel-*` from `index.css` only if grep across `packages/web`
-   and `packages/docs-web` still shows no reader. Otherwise leave them and
-   note why.
-
-## Success criteria
-
-- The new unit test passes, and the module contains no ratio or storage code.
-- `grep -rn "run-room.ratio" packages/web/src` returns nothing.
-
-## Risks
-
-- Deleting exports breaks call sites until Phase 2 lands, so treat Phases 1
-  and 2 as one commit.
+The width unit test and web type-check pass after Phase 2; generic source-control resizing remains usable because its primitives and `PanelPercent` stay. `room-split-layout.ts` remains a render-neutral shared value module. Rollback restores the prior module and CSS/docs rows together.

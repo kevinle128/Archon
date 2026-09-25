@@ -1,95 +1,26 @@
 ---
 phase: 4
-title: 'Phase 4: Browser geometry and order evidence'
+title: 'Browser geometry and visual evidence'
 status: pending
-priority: P1
-effort: '4h'
 dependencies: [2, 3]
 ---
 
-# Phase 4: Browser geometry and order evidence
+# Browser geometry and visual evidence
 
-## Goal
+## Affected paths and evidence ownership
 
-Prove the anatomy in a real browser for both shells. Remove every E2E
-dependency on the ratio key and the resize separator.
+`e2e/ui/workflow-run-hitl-room.spec.ts` measures the old ratio and drags the separator. `workflow-run-hitl-visual.spec.ts` bounds that ratio while saving actual and historical HITL mockup captures. `agent-todo-strip.spec.ts` and `agent-tool-row-visual.spec.ts` force a 460px **inner region** through the ratio key; `task-dispatch-body.spec.ts` and `file-edit-diff.spec.ts` force per-surface reference widths, with `file-edit-diff` also testing a shared 460px stress width. `verifier-visual.spec.ts` writes the key too. `occurrence-navigation.spec.ts` has an obsolete ratio comment and width expectation. Search the whole `e2e/ui` tree again for `run-room.ratio`, `roomRatio`, ratio-derived width, `Resize node room`, and 460px Console assumptions before editing; contrast tests also use legitimate ratios.
 
-## Evidence (verified at 4039a03d)
+The E2E fixtures boot isolated Archon instances with deterministic fake-provider data. Existing specs also write captures or metrics into historical issue-plan folders. Preserve those stateful records. Route new captures and measurements to the chosen owner's `plans/.../reports/evidence/` (or Playwright `testInfo.outputPath`) and update misleading comments and filenames. `ARCHON_VERIFY_EVIDENCE` already works in some specs; add a narrow output override where a touched spec still hardcodes a historical directory. There are no Playwright snapshot pins to approve merely because geometry changed. Keep the older HITL mockup capture as a historical comparison, but compare the new room width/order to the current interactive handoff and written contract.
 
-- `e2e/ui/workflow-run-hitl-room.spec.ts`: `roomRatio()` (`:73-80`); the
-  ratio assertions at `:215,234`; the `[V:hitl.room-ratio]` drag-and-reload
-  test (`:612-640`); the separator required visible at `:978`; separator
-  absence at `:212`. Viewports: `SPLIT_VIEWPORT` 1440×1000,
-  `LEGACY_RATIO_VIEWPORT` 1024×900, `NARROW_VIEWPORT` 390×844.
-- `e2e/ui/agent-todo-strip.spec.ts:54,155-181`: `setRoomWidth` writes
-  `archon.run-room.ratio.<surface>` to reach `TARGET_ROOM_WIDTH = 460` for
-  both surfaces. Strip-above-scroller checks are at `:518,525,978-1011`.
-- `verifier-visual.spec.ts:176` writes the ratio key.
-  `agent-tool-row-visual.spec.ts`, `file-edit-diff.spec.ts`, and
-  `task-dispatch-body.spec.ts` also reference the ratio or separator (found by
-  grep). `workflow-run-hitl-visual.spec.ts:57` uses the same `panelLocator`,
-  and `:128-131,155-158` assert a product ratio between 0.24 and 0.6 via
-  `measureProductRatio`.
+## Steps
 
-## Files
+1. Replace `roomRatio()` and the separator-drag test in `workflow-run-hitl-room.spec.ts` with outer-panel `boundingBox().width` assertions at a measured split container: Console 520 ±1 CSS px, Legacy 460 ±1. Seed old `archon.run-room.ratio.*` values in a dedicated regression test, open/reload/rerender, verify fixed width and no Node Room separator or key write. Keep close, deep link, Logs/graph selection, focus, scroll-memory, and narrow Back cases. Rename `LEGACY_RATIO_VIEWPORT` to a geometry-neutral name; assert split or single based on the actual container width at 1024×900.
+2. In `agent-todo-strip.spec.ts`, remove `setRoomWidth` and the shared 460 target. Measure `#console-run-room` / `#legacy-run-room` for the fixed-width contract; keep strip-width checks relative to its **inner room region** (Console has a 4px margin when todo is shown). Change old strip-before-scroller checks to scroller → controls when present → strip → dock. The existing todo fixture is a completed run and cannot also show a live queue. For a combined live-state proof, add a small `e2e/fixtures/workflows/e2e-room-anatomy.yaml` fixture and register it in `e2e/lib/playwright/archon-runtime.ts`: reuse the existing e2e-fake provider's validated `emitTodo`, `emitTool`, `repeatTool`, `interruptible`, and bounded `delayMs` directives, dispatch through `startWorkflowViaWeb`, wait for todo/tool rows, then queue guidance through the real UI while the node is running. Do not alter the provider or inject DOM data. Expand todo, scroll to the last transcript row, and prove it lies within a sufficiently tall scroller above lower bands. At 200% zoom or a short viewport where the band cannot fit a full row, assert non-overlay and independent scroll instead of an impossible full-row fit. Keep queue-absent and controls-present checks as separate states using their existing fixtures.
+3. In `workflow-run-hitl-visual.spec.ts`, replace the product-ratio acceptance assertion and obsolete comment with measured outer width in split mode and full available width in single mode; retain actual-versus-historical mockup capture context without calling the old mockup authoritative for this change. In `verifier-visual.spec.ts`, `agent-tool-row-visual.spec.ts`, `file-edit-diff.spec.ts`, and `task-dispatch-body.spec.ts`, remove ratio setup and desktop Console-at-460 assertions. Preserve their row anatomy, no-wrap, overflow, contrast, and interaction proofs at the approved 520/460 widths. If an existing test needs a 460px Console stress case, use measured single-pane geometry or a local renderer fixture and label it as stress evidence, not the desktop contract. Update `occurrence-navigation.spec.ts`'s ratio comment, width assertions, and capture labels.
+4. Browser review on both shells at 1440×1000, 1024×900, 768×900, 390×844, and 200% zoom. Read the measured container mode at each step; only demand 520/460 when it is split. In split mode also vary container size without crossing 60rem and prove width does not change. In single mode verify no horizontal overflow, working Back, focus restoration, and a mounted but visually hidden main view. Confirm graph/Logs remain usable at the narrowest split width.
+5. Capture the required visual states from `plan.md`: room closed/open, todo absent/collapsed/expanded, controls present/absent, queue present/absent, writable and read-only dock, finished/failed/restart and terminal-without-dock states, long transcript, and keyboard focus. Verify header wrapping, separate shell tokens, band adjacency, 168px todo-body and 33vh queue-body scroll caps, transcript last-row reachability, and reduced-motion behavior. Record DOM measurements and filenames in the chosen owner's acceptance report. Do not change state labels or action identities to imitate static mockup snapshots.
 
-- Modify: the specs listed above, plus screenshot baselines only where the
-  approved width changes them.
-- Evidence: `plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/`
+## Validation and failure handling
 
-## TDD steps
-
-1. **Red: geometry.** In `workflow-run-hitl-room.spec.ts`, replace
-   `roomRatio()` with a `roomWidth(page, surface)` helper. At
-   `SPLIT_VIEWPORT`, assert Console is 520 ±1 and Legacy is 460 ±1.
-   Replace `[V:hitl.room-ratio]` with a fixed-width persistence test: seed
-   `archon.run-room.ratio.console = '0.6'`, open the room, check the width,
-   reload, reopen, check the width again, and assert that
-   `separator[name="Resize node room"]` has count 0. Replace the visible
-   separator assertion at `:978` with count 0. Keep the tests for close,
-   deep link, focus, selection memory, and narrow Back. Decide from the
-   container width at `LEGACY_RATIO_VIEWPORT` whether Legacy is in split or
-   single mode, and assert the matching contract (460 ±1, or full width with
-   Back).
-2. **Red: order and last-row visibility.** In `agent-todo-strip.spec.ts`,
-   delete `setRoomWidth` and the ratio constants, and assert each surface's
-   own width (Console 520, Legacy 460) for both surfaces. Invert the order
-   checks so that `scroller.bottom ≤ controls.top + 1`,
-   `controls.bottom ≤ strip.top + 1`, and `strip.bottom ≤ dock.top + 1`.
-   Add a case that uses the long-history fixture with the strip expanded and a
-   queued message: scroll to the end and assert that the last transcript
-   row's bottom is at or above `strip.top + 1` and is visible. Keep the
-   strip's internal body scroll and zoom checks, adjusted for its new
-   position.
-3. **Visual fixtures.** In `workflow-run-hitl-visual`, replace the
-   `measureProductRatio` bounds with the fixed-width assertions (Console 520
-   ±1, Legacy 460 ±1, or single mode where the container is below 60rem) and
-   re-pin any shifted screenshots. In `verifier-visual`, `agent-tool-row-visual`,
-   `file-edit-diff`, and `task-dispatch-body`, remove the ratio-key setup and
-   the desktop Console-at-460 assumptions. Measure desktop Console at 520 and
-   Legacy at 460. Keep any 460px Console stress case in single-pane flow or in
-   an isolated renderer fixture. Rename evidence files whose names encode the
-   old width.
-4. Run `(cd e2e && bun run typecheck)`. Then run the focused specs and confirm
-   the new assertions pass and nothing else regresses.
-5. Update only the screenshot pins whose geometry the approved width changed.
-   List each updated pin, with its reason, in
-   `reports/visual-pin-updates.md`.
-6. Save geometry captures (Console 520, Legacy 460, the order with the
-   expanded strip) into `reports/` using the specs' existing
-   `captureEvidence` helper, pointed at this plan's directory where the
-   helper takes a plan id.
-
-## Success criteria
-
-- AC1-AC5 are proven in a real browser for both shells.
-- `grep -rn "run-room.ratio" e2e/ui` matches only the deliberate
-  "stale key is ignored" seed.
-- All listed specs pass with fixtures that do not depend on outside services.
-
-## Risks
-
-- **Flaky geometry at fractional device-pixel ratios.** Use ±1 CSS pixel
-  tolerance. Never tolerate more.
-- **Long-history fixture cost.** Reuse `requireLongHistoryFixture`. Do not
-  build a new harness.
+Run `(cd e2e && bun run typecheck)`, then focused Playwright specs for `workflow-run-hitl-room`, `agent-todo-strip`, `workflow-run-hitl-visual`, `occurrence-navigation`, `agent-finished-iteration`, `verifier-visual`, `agent-tool-row-visual`, `file-edit-diff`, and `task-dispatch-body`. E2E owns its worker processes; let the runner shut them down and do not start a duplicate dev server. Use ≤1 CSS pixel tolerance on outer panel width; fail on missing/zero-sized elements rather than accepting `null` geometry. Review capture differences against the owning design and document any justified mismatch.
