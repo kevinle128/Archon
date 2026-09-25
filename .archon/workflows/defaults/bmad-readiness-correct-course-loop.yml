@@ -2,7 +2,7 @@ name: bmad-readiness-correct-course-loop
 description: |
   Use when: User wants to run BMAD implementation readiness, automatically correct planning issues, and repeat until readiness is clean.
   Triggers: "bmad readiness correct course loop", "check readiness until clean", "readiness correct course", "bmad implementation readiness loop".
-  Does: Validates BMAD command support, runs bmad-check-implementation-readiness, evaluates readiness, routes positive results to completion, and routes negative results through bmad-correct-course before rerunning readiness.
+  Does: Validates BMAD command support, extracts approved Claude Design features before bmad-check-implementation-readiness, evaluates readiness, routes positive results to completion, and routes negative results through bmad-correct-course before rerunning readiness.
   NOT for: Story implementation, code review fix loops, or manual planning review sessions.
 
 provider: codex
@@ -19,6 +19,7 @@ nodes:
       mkdir -p "$RUN_DIR"
 
       for required in \
+        ".agents/skills/claude-design-feature-extractor/SKILL.md" \
         ".agents/skills/bmad-check-implementation-readiness/SKILL.md" \
         ".agents/skills/bmad-correct-course/SKILL.md" \
         "_bmad/bmm/config.yaml"
@@ -44,8 +45,23 @@ nodes:
     timeout: 60000
     output_type: bmad-readiness-state
 
+  - id: claude-design-feature-extractor
+    depends_on: [validate-bmad-command]
+    prompt: |
+      Read and follow .agents/skills/claude-design-feature-extractor/SKILL.md in this fresh context.
+      Extract the approved Claude Design features for the target in the user request.
+      Get the exact approved mockup and behavior script paths and a browser URL as the skill requires.
+      Complete and validate the manifest before reporting its path.
+      If required input is missing, ask the user for it as the skill requires.
+
+      User request:
+      $ARGUMENTS
+    context: fresh
+    idle_timeout: 900000
+    output_type: mockup-feature-manifest
+
   - id: bmad-check-implementation-readiness
-    depends_on: [validate-bmad-command, bmad-correct-course]
+    depends_on: [claude-design-feature-extractor, bmad-correct-course]
     trigger_rule: one_success
     command: bmad-check-implementation-readiness
     context: fresh
