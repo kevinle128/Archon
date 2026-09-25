@@ -2,21 +2,9 @@
   "geometry-console": {
     "surface": "console",
     "reference": {
-      "tableWidth": 432,
+      "tableWidth": 433,
       "tableScroll": 0,
-      "boxContentWidth": 432,
-      "codeWhiteSpace": "pre-wrap",
-      "codeOverflowWrap": "anywhere",
-      "markerWidth": 6.890625,
-      "numberWidth": 20.6875,
-      "gutterWidth": 27.6875,
-      "cellsFit": true
-    },
-    "referenceOuterWidth": 520,
-    "stress": {
-      "tableWidth": 302,
-      "tableScroll": 0,
-      "boxContentWidth": 302,
+      "boxContentWidth": 433,
       "codeWhiteSpace": "pre-wrap",
       "codeOverflowWrap": "anywhere",
       "markerWidth": 6.890625,
@@ -24,14 +12,35 @@
       "gutterWidth": 27.59375,
       "cellsFit": true
     },
-    "stressRoomWidth": 389
+    "shared": {
+      "tableWidth": 373,
+      "tableScroll": 0,
+      "boxContentWidth": 373,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    },
+    "narrow": {
+      "tableWidth": 303,
+      "tableScroll": 0,
+      "boxContentWidth": 303,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    }
   },
   "geometry-legacy": {
     "surface": "legacy",
     "reference": {
-      "tableWidth": 372,
+      "tableWidth": 372.671875,
       "tableScroll": 0,
-      "boxContentWidth": 372,
+      "boxContentWidth": 373,
       "codeWhiteSpace": "pre-wrap",
       "codeOverflowWrap": "anywhere",
       "markerWidth": 6.890625,
@@ -39,11 +48,10 @@
       "gutterWidth": 27.59375,
       "cellsFit": true
     },
-    "referenceOuterWidth": 460,
-    "stress": {
-      "tableWidth": 302,
+    "shared": {
+      "tableWidth": 372.671875,
       "tableScroll": 0,
-      "boxContentWidth": 302,
+      "boxContentWidth": 373,
       "codeWhiteSpace": "pre-wrap",
       "codeOverflowWrap": "anywhere",
       "markerWidth": 6.890625,
@@ -51,21 +59,31 @@
       "gutterWidth": 27.59375,
       "cellsFit": true
     },
-    "stressRoomWidth": 389
+    "narrow": {
+      "tableWidth": 303,
+      "tableScroll": 0,
+      "boxContentWidth": 303,
+      "codeWhiteSpace": "pre-wrap",
+      "codeOverflowWrap": "anywhere",
+      "markerWidth": 6.890625,
+      "numberWidth": 20.6875,
+      "gutterWidth": 27.59375,
+      "cellsFit": true
+    }
   },
   "behavior-console": {
     "surface": "console",
     "edit": {
-      "toolUseId": "e2e-fake-tool-e2e-fake-eba52b07-0853-43fa-a272-440fdc4333a6",
+      "toolUseId": "e2e-fake-tool-e2e-fake-806511d8-07b4-45e7-963e-a02d1f4a9b28",
       "closedRow": {
         "height": 28.5,
-        "width": 495
+        "width": 440
       },
       "sizedClosed": {
         "height": 28.5,
-        "width": 495
+        "width": 496
       },
-      "bar": "file · 1 hunk · replace_all: false · 0ms",
+      "bar": "file · 1 hunk · replace_all: false · 1ms",
       "facts": {
         "codeClasses": [
           "diff-code diff-code-normal",
@@ -86,9 +104,9 @@
         "insideRow": false
       },
       "geometry": {
-        "tableWidth": 432,
+        "tableWidth": 433,
         "tableScroll": 0,
-        "boxContentWidth": 432,
+        "boxContentWidth": 433,
         "codeWhiteSpace": "pre-wrap",
         "codeOverflowWrap": "anywhere",
         "markerWidth": 6.890625,
@@ -117,14 +135,14 @@
   "behavior-legacy": {
     "surface": "legacy",
     "edit": {
-      "toolUseId": "e2e-fake-tool-e2e-fake-a8c290a8-284d-4d58-80ae-9a1da6e31dc7",
+      "toolUseId": "e2e-fake-tool-e2e-fake-c21a1dbc-cd81-49b5-93ca-8d46f9c7101b",
       "closedRow": {
         "height": 28.5,
-        "width": 435
+        "width": 551.59375
       },
       "sizedClosed": {
         "height": 28.5,
-        "width": 435
+        "width": 435.671875
       },
       "bar": "file · 1 hunk · replace_all: false · 1ms",
       "facts": {
@@ -147,9 +165,9 @@
         "insideRow": false
       },
       "geometry": {
-        "tableWidth": 372,
+        "tableWidth": 372.671875,
         "tableScroll": 0,
-        "boxContentWidth": 372,
+        "boxContentWidth": 373,
         "codeWhiteSpace": "pre-wrap",
         "codeOverflowWrap": "anywhere",
         "markerWidth": 6.890625,

@@ -1,7 +1,7 @@
 {
   "surface": "console",
-  "runId": "58a349935af9b6620db326623560463b",
-  "queuedMessage": "finished-iteration-console-776d1062f74d",
+  "runId": "c7d31870b33b3fd7009537578eb1b8a0",
+  "queuedMessage": "finished-iteration-console-a2c5d779bc44",
   "viewport": {
     "narrow": {
       "noPageOverflow": true,
@@ -30,9 +30,9 @@
     "totalJourneyMutations": 1
   },
   "timings": {
-    "iterationTwoStartedMs": 25371,
-    "finishedDockReadyMs": 27560,
-    "returnedLiveMs": 27772,
-    "completedMs": 50190
+    "iterationTwoStartedMs": 25254,
+    "finishedDockReadyMs": 27450,
+    "returnedLiveMs": 27629,
+    "completedMs": 50221
   }
 }
