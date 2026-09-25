@@ -1,98 +1,28 @@
 ---
 phase: 5
-title: 'Phase 5: Quality gates, tracker, and #265 handoff'
+title: 'Validation, docs, and owner-aligned closeout'
 status: pending
-priority: P1
-effort: '1.5h'
 dependencies: [4]
 ---
 
-# Phase 5: Quality gates, tracker, and #265 handoff
+# Validation, docs, and owner-aligned closeout
 
-## Goal
+## Gates
 
-Pass every repository gate, record the evidence, move the tracker entry to
-`done`, and hand the remaining Story 10.1 scope to #265 without duplicating
-work.
+Run the narrowest tests first, then widen after shared code changes. From `packages/web`, run `bun test src/lib/room-split-layout.test.ts`, then the two split-owner and two route-owner component tests, then the two room-body tests. Run focused files in separate Bun invocations when their process-wide `mock.module()` calls conflict, following the package's test-script splits. Use `NODE_ENV=development` and the package's Radix preload for tests under `src/components/` where required by `packages/web/package.json`; Console tests run in their existing isolated invocation. Also run `src/lib/use-container-split-mode.test.tsx`, `LegacyNodeRoom.test.tsx`, `ConsoleComposerDock.test.tsx`, `ComposerDock.test.tsx`, and `console-isolation.test.ts` as affected regressions. Fix failures, never weaken assertions merely to pass.
 
-## Gates (run in this order)
+Then run `bun --filter @archon/web test`, `(cd packages/web && bun run type-check)`, `(cd e2e && bun run typecheck)`, and the focused Playwright specs in Phase 4. If a PR is in scope after ownership resolution, run `bun run validate` before creating it, as the repository requires. Never run `bun test` from the monorepo root. No schema-upgrade gate is needed because this plan changes no schema. Record exact commands, results, and evidence captures under the chosen owner's plan reports path.
 
-```sh
-(cd packages/web && bun test src/lib/room-split-layout.test.ts src/lib/execution-room-model.test.ts)
+## Documentation and source consistency
 
-(cd packages/web && NODE_ENV=development bun test \
-  src/components/workflows/NodeTranscriptPane.test.tsx \
-  src/components/workflows/LegacyGraphLogsPane.test.tsx \
-  src/components/workflows/LegacyNodeRoom.test.tsx \
-  src/components/workflows/WorkflowExecution.test.tsx)
+`packages/docs-web/src/content/docs/brand/index.md` currently lists `--rv-panel-default/min/max-width`, while `packages/web/src/index.css` defines those variables with no source consumer. If Phase 1 removes them, remove exactly those rows from the brand table and check its remaining claims against CSS. Search evergreen docs for instructions to drag/resize the Node Room; update only a real user-facing hit. Historical `docs/superpowers/` plans and old screenshot reports remain records. Verify all plan links and file references before closeout.
 
-(cd packages/web && NODE_ENV=development bun test \
-  src/experiments/console/components/ConsoleNodeRoom.test.tsx \
-  src/experiments/console/components/ConsoleInspectPane.test.tsx \
-  src/experiments/console/routes/RunDetailPage.test.tsx \
-  src/experiments/console/console-isolation.test.ts)
+## Conditional tracker and issue steps
 
-bun --filter @archon/web test
+Resolve and record the owner choice first. If **#265 remains owner**, carry this implementation detail into Story 10.1's M001/M002 work; do not mark historical Story 3.1 or Epic 3 done, edit the issue map by hand, or claim #266 delivered it. Reconcile #266 with the owner through the normal issue workflow once the chosen implementation has evidence. If **#266 is explicitly assigned M001/M002**, update the approved Epic 10 story/issue boundary before coding and specify what #265 still owns; then update only the tracker entries the revised requirements authorize. Do not silently rewrite Story 10.1 AC or declare M005 complete. An issue-map status is a tracker contract, not a harmless manual JSON edit; use its owning workflow or verify its generator before changing it.
 
-(cd e2e && bun run typecheck)
+After all criteria pass, write an acceptance report mapping A1–A6 to exact tests, browser measurements, viewport/mode, and captures. Review the changed-file list for production API/schema drift, old ratio readers/writers, obsolete docs claims, and unintended changes to historical evidence. If a PR is authorized by the resolved ownership, use `.github/pull_request_template.md`, target `develop`, link the **chosen owning issue**, and include the completed validation. Any external issue comment should report verified delivery, not a planned handoff or an unrecorded decision.
 
-(cd e2e && bun run test:ui -- \
-  workflow-run-hitl-room.spec.ts \
-  workflow-run-hitl-visual.spec.ts \
-  agent-todo-strip.spec.ts \
-  occurrence-navigation.spec.ts \
-  agent-finished-iteration.spec.ts \
-  verifier-visual.spec.ts \
-  agent-tool-row-visual.spec.ts \
-  file-edit-diff.spec.ts \
-  task-dispatch-body.spec.ts)
+## Rollback
 
-bun run validate
-```
-
-Never run root `bun test`. If a gate fails, fix the cause; do not weaken the
-test.
-
-## Closeout steps
-
-1. Write `reports/acceptance-evidence.md`. For AC1-AC8, give the exact test
-   name or evidence file and the command that proved it, plus the commit SHA.
-2. In `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yaml`,
-   change `3-1-match-the-approved-console-and-legacy-room-anatomy: backlog`
-   to `done` and update `last_updated`. This follows the operator's
-   2026-09-25 decision, which chose issue #266's acceptance criteria over the
-   09-22 "do not edit historical entries" note. Move `epic-3` from
-   `backlog` to `in-progress`, following the tracker's own rule that an epic
-   becomes in-progress once its first story starts. It is not `done`, because
-   Stories 3.2 and 3.3 remain open.
-3. `github-issue-map.json` also has a per-story `status`. No skill or `ak`
-   command in this checkout or `~/.claude/skills` was found to regenerate it
-   (grep, 2026-09-25). Set the `3-1-…` entry to `done` so it agrees with the
-   sprint tracker, and note the manual edit in the acceptance report. If the
-   github-issue-tracker skill is available at closeout, use its sync command
-   instead.
-4. Re-run the docs grep
-   (`grep -rniE "resiz|room.*ratio" packages/docs-web/src/content/docs`). If a
-   hit describes a resizable node room, update that page in this PR.
-5. **Handoff to #265 (Story 10.1).** Under `Dev Notes` in
-   `_bmad-output/implementation-artifacts/agent-node-room/10-1-fix-room-geometry-and-execution-selection.md`,
-   add a short dated note: M001 and M002 (Tasks 1-2 and their geometry proof
-   in Tasks 5-6) were delivered by #266 at `<sha>`, so #265's remaining scope
-   is M005 (Tasks 3-4 and their proof). Do not rewrite the story's acceptance
-   criteria or its status. Post the same note as a comment on #265 with
-   `gh issue comment 265 -R kevinle128/Archon`, but only after confirming the
-   wording with the operator, because the comment is published outside this
-   checkout.
-6. Open the PR against `develop` using `.github/pull_request_template.md`,
-   with `Closes #266` in the body.
-
-## Success criteria
-
-- Every gate is green, and the evidence report is complete.
-- The tracker, the issue map, and the handoff note all agree.
-
-## Risks
-
-- The `validate` script includes `check:bundled` and other generators. This
-  change touches no generated source, so any drift they report comes from
-  somewhere else. Report it; do not regenerate unrelated files.
+Revert the focused web, E2E, and brand-doc changes together. Old localStorage ratio values were left intact and become readable again by the reverted implementation. No data migration or operational rollout is required.
