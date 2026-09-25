@@ -54,7 +54,7 @@ story_location: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_
 epics_file: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
 
 development_status:
-  epic-1: backlog
+  epic-1: done
   1-1-scan-a-tool-call-as-one-readable-row: done
   1-2-inspect-the-raw-payload-of-a-tool-call: done
   1-3-read-expanded-details-shaped-for-the-tool-family: done
@@ -64,7 +64,7 @@ development_status:
   1-7-navigate-transcript-occurrences-and-loop-iterations: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
+  epic-2: done
   2-1-queue-guidance-for-a-running-agent: done
   2-2-withdraw-a-queued-guidance-message: done
   2-3-interrupt-and-redirect-a-running-claude-agent: done
