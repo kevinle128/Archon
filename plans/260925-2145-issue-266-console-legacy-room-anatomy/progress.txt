@@ -105,7 +105,7 @@
 - [x] todo-strip: setRoomWidth gone; outer panel contract; strip relative to inner region; scroller→strip order; anatomy fixture live queue+todo last-row
 - [x] hitl-visual: fixed outer width split / full width single
 - [x] tool-row/file-edit/task-dispatch/verifier/occurrence: ratio path removed; 520/460; Console 460 stress via narrow single-pane
-- [x] e2e typecheck + focused Playwright specs green (76 focused suite: 75 pass + anatomy pass)
+- [x] e2e typecheck + focused Playwright specs green (77 focused suite: 76 original cases plus fixed-width container regression)
 
 **Learnings**:
 - bodyBarText must match span-based body bar markup; poll after open for async paint.
@@ -125,7 +125,7 @@
 - `plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/evidence/*` — copied live anatomy PNGs + metrics JSONs
 
 **Acceptance criteria verified**:
-- [x] Full gate ladder: narrow web tests, split/route/room-body + regressions (incl. LegacyNodeRoom, ComposerDock, use-container-split-mode, console-isolation), Console isolated, `bun --filter @archon/web test`, web+e2e type-check, focused Playwright 76 pass
+- [x] Full gate ladder: narrow web tests, split/route/room-body + regressions (incl. LegacyNodeRoom, ComposerDock, use-container-split-mode, console-isolation), Console isolated, `bun --filter @archon/web test`, web+e2e type-check, focused Playwright 77 pass
 - [x] Brand docs: no --rv-panel-* rows; no evergreen drag/resize Node Room instructions; historical plans untouched as authority
 - [x] Acceptance report under plans/.../reports/ mapping A1–A6
 - [x] Changed-file review: no API/schema/generated-type/deps drift; ratio readers/writers gone except deliberate fixtures; no ownership tracker edits

@@ -1,7 +1,7 @@
 {
   "surface": "legacy",
-  "runId": "77eba90dd7dde1813a72c81ab8b0e786",
-  "queuedMessage": "finished-iteration-legacy-5d795604955a",
+  "runId": "9c2229fdf1c89504f9753bc0b150aafe",
+  "queuedMessage": "finished-iteration-legacy-2921749cc2ca",
   "viewport": {
     "narrow": {
       "noPageOverflow": true,
@@ -25,14 +25,14 @@
     }
   },
   "requestCounts": {
-    "successfulQueueGets": 25,
+    "successfulQueueGets": 26,
     "finishedViewMutations": 0,
     "totalJourneyMutations": 1
   },
   "timings": {
-    "iterationTwoStartedMs": 25486,
-    "finishedDockReadyMs": 27770,
-    "returnedLiveMs": 27988,
-    "completedMs": 53183
+    "iterationTwoStartedMs": 25437,
+    "finishedDockReadyMs": 27704,
+    "returnedLiveMs": 27879,
+    "completedMs": 52952
   }
 }
