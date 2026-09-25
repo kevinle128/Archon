@@ -394,8 +394,6 @@ describe('ConsoleInspectPane', () => {
       logScrollRef,
       onSelectNode: (): void => undefined,
       onCloseRoom: (): void => undefined,
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       splitMode: 'split',
       loadDefinition: defaultLoadDefinition,
       loadMessages: defaultLoadMessages,
@@ -713,7 +711,7 @@ describe('ConsoleInspectPane', () => {
     expect(host.textContent).not.toContain('{"report"');
   });
 
-  test('split layout uses a 60/40 percentage room and omits the room when unselected', async () => {
+  test('split layout uses a fixed 520px room and omits the room when unselected', async () => {
     await act(async () => {
       renderPane({
         view: 'log',
@@ -727,6 +725,7 @@ describe('ConsoleInspectPane', () => {
     );
     expect(host.querySelector('[data-testid="console-inspect-room"]')).toBeNull();
     expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Resize node room"]')).toBeNull();
     expect(host.querySelector('#console-run-view')).not.toBeNull();
     expect(host.querySelector('#console-run-room')).toBeNull();
 
@@ -737,15 +736,32 @@ describe('ConsoleInspectPane', () => {
       'selected layout',
       () => host.querySelector('[data-testid="console-inspect-room"]') !== null
     );
-    expect(host.querySelector('#console-run-view')).not.toBeNull();
-    expect(host.querySelector('#console-run-room')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
+    const viewPanel = requireHtmlElement(host.querySelector('#console-run-view'), 'console view');
+    const roomPanel = requireHtmlElement(host.querySelector('#console-run-room'), 'console room');
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Resize node room"]')).toBeNull();
+    expect(roomPanel.className).toContain('shrink-0');
+    expect(roomPanel.style.width).toBe('520px');
+    expect(viewPanel.className).toContain('flex-1');
+    expect(viewPanel.className).toContain('min-w-0');
+    expect(roomPanel.className).toContain('border-l');
     expect(host.querySelector('[data-testid="console-inspect-pane"]')?.className).not.toContain(
       'lg:flex-row'
     );
     expect(
       host.querySelector('[data-testid="console-inspect-room"]')?.className ?? ''
     ).not.toContain('lg:w-[460px]');
+
+    await act(async () => {
+      renderPane({ view: 'log', selectedNodeId: 'plan', selectedLogRowId: 'plan-start' });
+    });
+    await flushUntil(
+      'rerendered fixed room',
+      () => host.querySelector('#console-run-room') !== null
+    );
+    expect(
+      requireHtmlElement(host.querySelector('#console-run-room'), 'rerender room').style.width
+    ).toBe('520px');
   });
 
   test('single mode keeps the main pane mounted with hidden and Back closes the room', async () => {
@@ -758,6 +774,9 @@ describe('ConsoleInspectPane', () => {
       host.querySelector('#console-run-view'),
       'split main pane'
     );
+    expect(
+      requireHtmlElement(host.querySelector('#console-run-room'), 'split room').style.width
+    ).toBe('520px');
 
     await act(async () => {
       renderPane({
@@ -771,9 +790,18 @@ describe('ConsoleInspectPane', () => {
     await flushUntil('single room', () => (host.textContent ?? '').includes(PLAN_TEXT));
     const main = requireHtmlElement(host.querySelector('#console-run-view'), 'main pane');
     expect(main).toBe(splitMain);
-    expect(main.hasAttribute('hidden')).toBe(true);
+    expect(main.className.split(/\s+/)).toContain('hidden');
+    expect(main.className.split(/\s+/)).not.toContain('flex');
+    expect(main.hasAttribute('hidden')).toBe(false);
     expect(host.textContent).toContain('Log header');
     expect(host.querySelector('[role="separator"]')).toBeNull();
+    const singleRoom = requireHtmlElement(
+      host.querySelector('#console-run-room'),
+      'single console room'
+    );
+    expect(singleRoom.style.width).toBe('');
+    expect(singleRoom.className).toContain('flex-1');
+    expect(singleRoom.className).toContain('w-full');
 
     const back = Array.from(host.querySelectorAll('button')).find(button =>
       (button.textContent ?? '').includes('Back')
@@ -797,8 +825,43 @@ describe('ConsoleInspectPane', () => {
       () => host.querySelector('[data-testid="console-inspect-room"]') === null
     );
     const restored = requireHtmlElement(host.querySelector('#console-run-view'), 'restored main');
-    expect(restored.hasAttribute('hidden')).toBe(false);
+    expect(restored.className.split(/\s+/)).toContain('flex');
+    expect(restored.className.split(/\s+/)).not.toContain('hidden');
     expect(host.textContent).toContain('Log header');
+  });
+
+  test('ignores stored archon.run-room.ratio keys and never writes them', async () => {
+    const key = 'archon.run-room.ratio.console';
+    globalThis.localStorage.setItem(key, '48');
+    const originalSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+    const writes: string[] = [];
+    globalThis.localStorage.setItem = (name: string, value: string): void => {
+      writes.push(name);
+      originalSetItem(name, value);
+    };
+
+    try {
+      await act(async () => {
+        renderPane({ view: 'log', splitMode: 'split' });
+      });
+      await flushUntil('stale split room', () => host.querySelector('#console-run-room') !== null);
+      expect(
+        requireHtmlElement(host.querySelector('#console-run-room'), 'stale split room').style.width
+      ).toBe('520px');
+
+      await act(async () => {
+        renderPane({ view: 'log', splitMode: 'single' });
+      });
+      await flushUntil('stale single room', () => host.querySelector('#console-run-room') !== null);
+      expect(
+        requireHtmlElement(host.querySelector('#console-run-room'), 'stale single room').style.width
+      ).toBe('');
+      expect(writes.some(name => name.includes('run-room.ratio'))).toBe(false);
+      expect(globalThis.localStorage.getItem(key)).toBe('48');
+    } finally {
+      globalThis.localStorage.setItem = originalSetItem;
+      globalThis.localStorage.removeItem(key);
+    }
   });
 
   test('Artifacts occupies the main pane while the same room stays docked', async () => {

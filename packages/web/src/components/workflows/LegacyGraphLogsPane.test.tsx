@@ -410,8 +410,6 @@ describe('LegacyGraphLogsPane', () => {
       selectedLogRowId,
       lastExplicitRowByNode,
       splitMode: 'split',
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       onOpenRoom: (rowId: string, nodeId: string): void => {
         setSelectedNodeId(nodeId);
         setSelectedLogRowId(rowId);
@@ -564,8 +562,6 @@ describe('LegacyGraphLogsPane', () => {
       lastExplicitRowByNode: {},
       onOpenRoom: (): void => undefined,
       onCloseRoom: overrides.onCloseRoom ?? ((): void => undefined),
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       runId: 'run-1',
       runStartedAt: CREATED_AT,
       nodeStates: [REVIEW_STATE],
@@ -592,7 +588,7 @@ describe('LegacyGraphLogsPane', () => {
     };
   }
 
-  test('opens a percentage room on demand and hides the main view in single mode', async () => {
+  test('opens a fixed-width room on demand and hides the main view in single mode', async () => {
     const closes: number[] = [];
     const onCloseRoom = (): void => {
       closes.push(1);
@@ -618,6 +614,7 @@ describe('LegacyGraphLogsPane', () => {
     await flush();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
     expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Resize node room"]')).toBeNull();
 
     await act(async () => {
       root.render(
@@ -639,27 +636,44 @@ describe('LegacyGraphLogsPane', () => {
     await flush();
     const viewPanel = host.querySelector('#legacy-run-view');
     const roomPanel = host.querySelector('#legacy-run-room');
-    expect(viewPanel).not.toBeNull();
-    expect(roomPanel).not.toBeNull();
+    if (viewPanel === null) throw new Error('missing legacy view');
+    if (roomPanel === null) throw new Error('missing legacy room');
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
-    expect(
-      viewPanel?.getAttribute('data-panel-size') ?? viewPanel?.getAttribute('style') ?? ''
-    ).toMatch(/60/);
-    expect(
-      roomPanel?.getAttribute('data-panel-size') ?? roomPanel?.getAttribute('style') ?? ''
-    ).toMatch(/40/);
-    // The right panel's content wrapper is a shrinkable overflow boundary —
-    // without it a long transcript stretches the document below the fixed run
-    // shell. react-resizable-panels puts className/style on the wrapper inside
-    // the #legacy-run-room panel element, and the inline overflow must win over
-    // the library's default `overflow: auto` so the transcript scroller stays
-    // the sole vertical scroll owner.
-    const roomContent = roomPanel?.firstElementChild as HTMLElement | null;
-    const roomContentClass = roomContent?.getAttribute('class') ?? '';
-    expect(roomContentClass).toContain('min-h-0');
-    expect(roomContentClass).toContain('overflow-hidden');
-    expect(roomContent?.style.overflow).toBe('hidden');
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect(host.querySelector('[aria-label="Resize node room"]')).toBeNull();
+    expect(roomPanel.className).toContain('shrink-0');
+    expect(roomPanel.style.width).toBe('460px');
+    expect(viewPanel.className).toContain('flex-1');
+    expect(viewPanel.className).toContain('min-w-0');
+    expect(roomPanel.className).toContain('border-l');
+    // Outer room is the overflow boundary so the transcript scroller owns vertical scroll.
+    expect(roomPanel.className).toContain('min-h-0');
+    expect(roomPanel.className).toContain('overflow-hidden');
+    expect(roomPanel.style.overflow).toBe('hidden');
+
+    // Rerender with the same room open — fixed width must not change.
+    await act(async () => {
+      root.render(
+        createElement(
+          reactQuery.QueryClientProvider,
+          { client: queryClient },
+          createElement(
+            legacyGraphLogsPane.LegacyGraphLogsPane,
+            paneProps({
+              selectedNodeId: 'review',
+              selectedLogRowId: 'start-review',
+              splitMode: 'split',
+              onCloseRoom,
+            })
+          )
+        )
+      );
+    });
+    await flush();
+    const rerenderedRoom = host.querySelector('#legacy-run-room');
+    if (rerenderedRoom === null) throw new Error('missing rerendered legacy room');
+    expect(rerenderedRoom.style.width).toBe('460px');
+    expect(rerenderedRoom.className).toContain('shrink-0');
 
     await act(async () => {
       root.render(
@@ -680,8 +694,17 @@ describe('LegacyGraphLogsPane', () => {
     });
     await flush();
     const mainView = host.querySelector('#legacy-run-view');
+    if (mainView === null) throw new Error('missing single main');
     expect(mainView).toBe(viewPanel);
-    expect((mainView as HTMLElement).hidden).toBe(true);
+    expect(mainView.className.split(/\s+/)).toContain('hidden');
+    expect(mainView.className.split(/\s+/)).not.toContain('flex');
+    expect(mainView.hasAttribute('hidden')).toBe(false);
+    const singleRoom = host.querySelector('#legacy-run-room');
+    if (singleRoom === null) throw new Error('missing single legacy room');
+    expect(singleRoom.style.width).toBe('');
+    expect(singleRoom.className).toContain('flex-1');
+    expect(singleRoom.className).toContain('w-full');
+    expect(singleRoom.className).not.toContain('shrink-0');
     const back = Array.from(host.querySelectorAll('button')).find(candidate =>
       (candidate.textContent ?? '').includes('Back')
     );
@@ -710,9 +733,70 @@ describe('LegacyGraphLogsPane', () => {
     });
     await flush();
     const closedMain = host.querySelector('#legacy-run-view');
-    expect(closedMain).not.toBeNull();
-    expect((closedMain as HTMLElement).hidden).toBe(false);
+    if (closedMain === null) throw new Error('missing closed single main');
+    expect(closedMain.className.split(/\s+/)).toContain('flex');
+    expect(closedMain.className.split(/\s+/)).not.toContain('hidden');
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
+  });
+
+  test('ignores stored archon.run-room.ratio keys and never writes them', async () => {
+    const key = 'archon.run-room.ratio.legacy';
+    globalThis.localStorage.setItem(key, '55');
+    const originalSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+    const writes: string[] = [];
+    globalThis.localStorage.setItem = (name: string, value: string): void => {
+      writes.push(name);
+      originalSetItem(name, value);
+    };
+
+    try {
+      await act(async () => {
+        root.render(
+          createElement(
+            reactQuery.QueryClientProvider,
+            { client: queryClient },
+            createElement(
+              legacyGraphLogsPane.LegacyGraphLogsPane,
+              paneProps({
+                selectedNodeId: 'review',
+                selectedLogRowId: 'start-review',
+                splitMode: 'split',
+              })
+            )
+          )
+        );
+      });
+      await flush();
+      const room = host.querySelector('#legacy-run-room');
+      if (room === null) throw new Error('missing room with stale ratio');
+      expect(room.style.width).toBe('460px');
+
+      await act(async () => {
+        root.render(
+          createElement(
+            reactQuery.QueryClientProvider,
+            { client: queryClient },
+            createElement(
+              legacyGraphLogsPane.LegacyGraphLogsPane,
+              paneProps({
+                selectedNodeId: 'review',
+                selectedLogRowId: 'start-review',
+                splitMode: 'single',
+              })
+            )
+          )
+        );
+      });
+      await flush();
+      const singleRoom = host.querySelector('#legacy-run-room');
+      if (singleRoom === null) throw new Error('missing single room with stale ratio');
+      expect(singleRoom.style.width).toBe('');
+      expect(writes.some(name => name.includes('run-room.ratio'))).toBe(false);
+      expect(globalThis.localStorage.getItem(key)).toBe('55');
+    } finally {
+      globalThis.localStorage.setItem = originalSetItem;
+      globalThis.localStorage.removeItem(key);
+    }
   });
 
   test('wires pre-selection copy, click-to-loader, and run-change reset', async () => {

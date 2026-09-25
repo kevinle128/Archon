@@ -55,7 +55,6 @@ import {
 import { nodeMessageScopeKey, type NodeMessageSelection } from '@/lib/node-message-pages';
 import type { AskDraft, AskDraftByRequest } from './parse-ask-envelope';
 import { ensureUtc, formatDurationMs } from '@/lib/format';
-import { readRoomRatio, writeRoomRatio } from '@/lib/room-split-layout';
 import { settleRunningDagNodesForTerminalStatus } from '@/lib/workflow-utils';
 import type {
   WorkflowState,
@@ -376,9 +375,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const queryClient = useQueryClient();
   const liveWorkflow = useWorkflowStore(s => s.workflows.get(runId));
   const [room, setRoom] = useState<RoomVisitState>(() => resetRoomVisit(runId));
-  const [roomRatio, setRoomRatio] = useState(() =>
-    typeof window === 'undefined' ? 40 : readRoomRatio('legacy', window.localStorage)
-  );
   const [codebaseName, setCodebaseName] = useState<string | null>(null);
   const [codebaseCwd, setCodebaseCwd] = useState<string | null>(null);
   const [workerRunId, setWorkerRunId] = useState<string | null>(null);
@@ -819,11 +815,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     [transcriptScopeKey]
   );
 
-  const handleRoomRatioChange = useCallback((value: number): void => {
-    writeRoomRatio('legacy', value, window.localStorage);
-    setRoomRatio(value);
-  }, []);
-
   // Handler for user-initiated node clicks (graph or sidebar).
   // Increments scroll trigger so WorkflowLogs scrolls to the node's section.
   const handleNodeClick = useCallback(
@@ -1017,8 +1008,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           lastExplicitRowByNode={room.lastExplicitRowByNode}
           onOpenRoom={handleOpenRoom}
           onCloseRoom={handleCloseRoom}
-          roomRatio={roomRatio}
-          onRoomRatioChange={handleRoomRatioChange}
           runId={runId}
           runStartedAt={runStartedAtIso}
           nodeStates={queryData?.nodeStates ?? []}

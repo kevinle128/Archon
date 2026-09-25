@@ -443,9 +443,4 @@ body {
   --rv-ask-card-border-color: var(--warning);
   --rv-ask-card-radius: var(--radius);
   --rv-ask-card-padding: 12px 14px;
-
-  /* Inspect panel dimensions */
-  --rv-panel-default-width: 460px;
-  --rv-panel-min-width: 320px;
-  --rv-panel-max-width: 720px;
 }

@@ -44,8 +44,5 @@ A small set of scoped CSS custom properties is defined in `packages/web/src/inde
 | `--rv-tool-io-font-size` | `11px` | Tool input/output pre-text |
 | `--rv-ask-card-border-color` | `var(--warning)` | Ask card warning border |
 | `--rv-ask-card-padding` | `12px 14px` | Ask card inner padding |
-| `--rv-panel-default-width` | `460px` | Inspect panel default width |
-| `--rv-panel-min-width` | `320px` | Inspect panel minimum width |
-| `--rv-panel-max-width` | `720px` | Inspect panel maximum width |
 
 Do not use these tokens outside the run-view roots, and do not add new run-view tokens without updating this table.
