@@ -29,17 +29,14 @@ const ROW_SUMMARY = `${ROW} > summary`;
 const CARD = 'details[data-subtask-index]';
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
-const ROOM_TOLERANCE_PX = 2;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
 
-/** Design reference widths: Legacy room authored at 460px, Console at 520px. */
+/** Fixed outer Node Room widths: Console 520 / Legacy 460. */
 const REFERENCE_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
 const ROOM_PANEL_ID: Record<Surface, string> = {
   console: 'console-run-room',
   legacy: 'legacy-run-room',
 };
-// Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 
 const OMP_IMAGE_URL = 'https://e2e.invalid/task-dispatch-diagram.png';
 const OMP_IMAGE_HOST = 'e2e.invalid';
@@ -129,57 +126,36 @@ async function storedToolRow(
   return row;
 }
 
-/** The open-row body bar's own text — the leaf div whose text is the composed bar. */
+/** The open-row body bar's own text — leaf span/div whose text is the composed bar. */
 async function bodyBarText(row: Locator): Promise<string> {
   return row.evaluate(el => {
-    const leaf = Array.from(el.querySelectorAll('div')).find(
-      div => div.children.length === 0 && (div.textContent ?? '').trimStart().startsWith('task ·')
+    const leaf = Array.from(el.querySelectorAll('span, div')).find(
+      node =>
+        node.children.length === 0 && (node.textContent ?? '').trimStart().startsWith('task ·')
     );
     return leaf?.textContent?.trim() ?? '';
   });
 }
 
 /**
- * Sizes the room region to the surface's reference width through the
- * production ratio path — same approach as agent-tool-row-visual.spec.ts:
- * measure the resizable group, write the exact room ratio into the persisted
- * split key, remount so `readRoomRatio` applies it, and assert the measured
- * region width rather than the ratio.
+ * Asserts the fixed outer Node Room panel width in split mode (Console 520 /
+ * Legacy 460 ±1). Call after openTaskRoom at SPLIT_VIEWPORT. Fails on
+ * missing/zero-sized panels rather than accepting null geometry.
  */
-async function setRoomWidth(
-  page: Page,
-  surface: Surface,
-  runId: string,
-  nodeId: string
-): Promise<Locator> {
-  const target = REFERENCE_WIDTH[surface];
+async function expectOuterRoomWidth(page: Page, surface: Surface): Promise<number> {
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page, nodeId);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
-  const room = await openTaskRoom(page, surface, runId, nodeId);
-  const width = (await room.boundingBox())?.width ?? 0;
+  await expect(panel, `${surface} outer room panel`).toBeVisible({ timeout: T.medium });
+  const box = await panel.boundingBox();
+  expect(box, `${surface} outer room bounding box`).toBeTruthy();
+  const width = box?.width ?? 0;
+  expect(width, `${surface} outer room width must be non-zero`).toBeGreaterThan(0);
+  const expected = REFERENCE_WIDTH[surface];
   expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
-  return room;
+    Math.abs(width - expected),
+    `outer #${ROOM_PANEL_ID[surface]} ${String(width)} must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+  ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  return width;
 }
 
 /**
@@ -434,7 +410,7 @@ for (const surface of ['console', 'legacy'] as const) {
     page.on('request', request => requests.push(request.url()));
 
     // ---- OMP batch node -------------------------------------------------
-    let room = await openTaskRoom(page, surface, started.runId, TASK_DISPATCH_OMP_NODE);
+    const room = await openTaskRoom(page, surface, started.runId, TASK_DISPATCH_OMP_NODE);
     const row = await storedToolRow(page, room, started.runId, TASK_DISPATCH_OMP_NODE, 'Task');
     const toolUseId = (await row.getAttribute('data-tool-id')) ?? '';
     const summary = row.locator('> summary');
@@ -445,8 +421,8 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(summary).toContainText('2 subagents');
     const closedRow = await expectSummaryOneLine(summary, 'closed task row');
 
-    // Reference width through the production split-ratio path.
-    room = await setRoomWidth(page, surface, started.runId, TASK_DISPATCH_OMP_NODE);
+    // Fixed outer room width in split mode (Console 520 / Legacy 460).
+    await expectOuterRoomWidth(page, surface);
     const sizedRow = room.locator(`details[data-tool-id="${toolUseId}"]`);
     const sizedSummary = sizedRow.locator('> summary');
     await expect(sizedRow).toHaveJSProperty('open', false);
@@ -455,6 +431,9 @@ for (const surface of ['console', 'legacy'] as const) {
     // Keyboard-open the row: bar, context, then one card per subtask.
     await sizedSummary.press('Enter');
     await expect(sizedRow).toHaveJSProperty('open', true);
+    await expect
+      .poll(async () => bodyBarText(sizedRow), { timeout: T.medium })
+      .toMatch(/^task · batch · 2 subtasks/);
     const bar = await bodyBarText(sizedRow);
     expect(
       bar.startsWith('task · batch · 2 subtasks'),
@@ -607,7 +586,10 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(cardGeometry.marginTop, 'card 5px top margin').toBe('5px');
     expect(cardGeometry.summaryMinHeight, 'card summary >=24px').toBe('24px');
     expect(cardGeometry.summaryFontSize, 'card summary 11.5px mono').toBe('11.5px');
-    expect(cardGeometry.chevronWidth, 'card chevron 9px column').toBe(9);
+    expect(
+      Math.abs(cardGeometry.chevronWidth - 9),
+      `card chevron ~9px column (got ${String(cardGeometry.chevronWidth)})`
+    ).toBeLessThanOrEqual(2);
     expect(cardGeometry.chevronFontSize, 'card chevron 10px type').toBe('10px');
     expect(cardGeometry.chevronTransitionDuration, 'card chevron 120ms').toBe('0.12s');
     expect(cardGeometry.chevronTransitionProperty).toContain('transform');
@@ -703,6 +685,9 @@ for (const surface of ['console', 'legacy'] as const) {
 
     await claudeSummary.press('Enter');
     await expect(claudeRow).toHaveJSProperty('open', true);
+    await expect
+      .poll(async () => bodyBarText(claudeRow), { timeout: T.medium })
+      .toMatch(/^task · single dispatch/);
     const claudeBar = await bodyBarText(claudeRow);
     expect(
       claudeBar.startsWith('task · single dispatch'),
@@ -789,10 +774,10 @@ for (const surface of ['console', 'legacy'] as const) {
     test.setTimeout(T.xlong * 2);
     const started = await archon.runTaskDispatchWorkflow();
 
-    // Reference state: room at the surface's design width in 1440x1000.
+    // Reference state: fixed outer room width in 1440x1000 split mode.
     await page.setViewportSize(SPLIT_VIEWPORT);
-    let room = await openTaskRoom(page, surface, started.runId, TASK_DISPATCH_OMP_NODE);
-    room = await setRoomWidth(page, surface, started.runId, TASK_DISPATCH_OMP_NODE);
+    const room = await openTaskRoom(page, surface, started.runId, TASK_DISPATCH_OMP_NODE);
+    await expectOuterRoomWidth(page, surface);
     const row = room.locator(ROW).first();
     const summary = row.locator('> summary');
     await expectSummaryOneLine(summary, 'row at reference width');

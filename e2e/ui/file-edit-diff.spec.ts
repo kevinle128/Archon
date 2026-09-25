@@ -39,19 +39,14 @@ const BODY_BOX = '.tool-family-body';
 const DIFF_TABLE = '.tool-diff';
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
-const ROOM_TOLERANCE_PX = 2;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
 
-/** Design reference widths: Legacy room authored at 460px, Console at 520px. */
+/** Fixed outer Node Room widths: Console 520 / Legacy 460. */
 const REFERENCE_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
-/** The forced shared width every surface must also hold. */
-const SHARED_WIDTH = 460;
 const ROOM_PANEL_ID: Record<Surface, string> = {
   console: 'console-run-room',
   legacy: 'legacy-run-room',
 };
-// Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CAPTURES_DIR = join(
@@ -142,45 +137,24 @@ async function bodyBarText(row: Locator): Promise<string> {
 }
 
 /**
- * Sizes the room region to a target width through the production ratio path —
- * same approach as task-dispatch-body.spec.ts: measure the resizable group,
- * write the exact room ratio into the persisted split key, remount so
- * `readRoomRatio` applies it, and assert the measured region width.
+ * Asserts the fixed outer Node Room panel width in split mode (Console 520 /
+ * Legacy 460 ±1). Call after openEditRoom at SPLIT_VIEWPORT. Fails on
+ * missing/zero-sized panels rather than accepting null geometry.
  */
-async function setRoomWidth(
-  page: Page,
-  surface: Surface,
-  runId: string,
-  nodeId: string,
-  target: number
-): Promise<Locator> {
+async function expectOuterRoomWidth(page: Page, surface: Surface): Promise<number> {
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page, nodeId);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
-  const room = await openEditRoom(page, surface, runId, nodeId);
-  const width = (await room.boundingBox())?.width ?? 0;
+  await expect(panel, `${surface} outer room panel`).toBeVisible({ timeout: T.medium });
+  const box = await panel.boundingBox();
+  expect(box, `${surface} outer room bounding box`).toBeTruthy();
+  const width = box?.width ?? 0;
+  expect(width, `${surface} outer room width must be non-zero`).toBeGreaterThan(0);
+  const expected = REFERENCE_WIDTH[surface];
   expect(
-    Math.abs(width - target),
-    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
-  return room;
+    Math.abs(width - expected),
+    `outer #${ROOM_PANEL_ID[surface]} ${String(width)} must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+  ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  return width;
 }
 
 /**
@@ -480,7 +454,7 @@ for (const surface of ['console', 'legacy'] as const) {
     };
 
     // ---- file-edit node: the qualified edit -------------------------------
-    let room = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
+    const room = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
     const row = await storedToolRow(page, room, started.runId, FILE_EDIT_NODE, EDIT_TOOL_NAME);
     const toolUseId = (await row.getAttribute('data-tool-id')) ?? '';
     const summary = row.locator('> summary');
@@ -491,13 +465,8 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(summary).toContainText(`${MINUS}2`);
     const closedRow = await expectSummaryOneLine(summary, 'closed edit row');
 
-    room = await setRoomWidth(
-      page,
-      surface,
-      started.runId,
-      FILE_EDIT_NODE,
-      REFERENCE_WIDTH[surface]
-    );
+    await expectOuterRoomWidth(page, surface);
+    // Room already open at the fixed outer width — re-locate the sized row.
     const sizedRow = room.locator(`details[data-tool-id="${toolUseId}"]`);
     const sizedSummary = sizedRow.locator('> summary');
     await expect(sizedRow).toHaveJSProperty('open', false);
@@ -727,16 +696,10 @@ for (const surface of ['console', 'legacy'] as const) {
     const started = await archon.runFileEditWorkflow();
     const geometry: Record<string, unknown> = { surface };
 
-    // Reference state: room at the surface's design width in 1440x1000.
+    // Reference state: fixed outer room width in 1440x1000 split mode.
     await page.setViewportSize(SPLIT_VIEWPORT);
-    let room = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
-    room = await setRoomWidth(
-      page,
-      surface,
-      started.runId,
-      FILE_EDIT_NODE,
-      REFERENCE_WIDTH[surface]
-    );
+    const room = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
+    await expectOuterRoomWidth(page, surface);
     const row = room.locator(ROW).first();
     const summary = row.locator('> summary');
     await expectSummaryOneLine(summary, 'edit row at reference width');
@@ -744,35 +707,25 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(row).toHaveJSProperty('open', true);
     geometry.reference = await expectDiffGeometry(row, 'at reference width');
     await expectNoDiffBodyOverflow(room, row, 'at reference width');
+    geometry.referenceOuterWidth = REFERENCE_WIDTH[surface];
 
-    // Forced shared width: the same room pinned to 460px on both surfaces.
-    const sharedRoom = await setRoomWidth(
-      page,
-      surface,
-      started.runId,
-      FILE_EDIT_NODE,
-      SHARED_WIDTH
-    );
-    const sharedRow = sharedRoom.locator(ROW).first();
-    const sharedSummary = sharedRow.locator('> summary');
-    await expectSummaryOneLine(sharedSummary, 'edit row at shared 460px');
-    await sharedSummary.press('Enter');
-    await expect(sharedRow).toHaveJSProperty('open', true);
-    geometry.shared = await expectDiffGeometry(sharedRow, 'at shared 460px');
-    await expectNoDiffBodyOverflow(sharedRoom, sharedRow, 'at shared 460px');
-    await captureEvidence(sharedRow, `${surface}-file-edit-open-460.png`, testInfo);
-
-    // Narrow state: production responsive layout at 390x844.
+    // Stress evidence (not desktop contract): single-pane narrow viewport.
+    // Measures natural single-pane geometry — never forces width via ratio keys.
     await page.setViewportSize(NARROW_VIEWPORT);
-    const narrowRoom = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
-    const narrowRow = narrowRoom.locator(ROW).first();
-    const narrowSummary = narrowRow.locator('> summary');
-    await expectSummaryOneLine(narrowSummary, 'edit row at 390px');
-    await narrowSummary.press('Enter');
-    await expect(narrowRow).toHaveJSProperty('open', true);
-    geometry.narrow = await expectDiffGeometry(narrowRow, 'at 390x844');
-    await expectNoDiffBodyOverflow(narrowRoom, narrowRow, 'at 390x844');
-    await captureEvidence(narrowRow, `${surface}-file-edit-open-390.png`, testInfo);
+    const stressRoom = await openEditRoom(page, surface, started.runId, FILE_EDIT_NODE);
+    const stressRow = stressRoom.locator(ROW).first();
+    const stressSummary = stressRow.locator('> summary');
+    await expectSummaryOneLine(stressSummary, 'edit row at narrow stress viewport');
+    await stressSummary.press('Enter');
+    await expect(stressRow).toHaveJSProperty('open', true);
+    geometry.stress = await expectDiffGeometry(stressRow, 'at narrow stress 390x844');
+    await expectNoDiffBodyOverflow(stressRoom, stressRow, 'at narrow stress 390x844');
+    const stressRegion = await stressRoom.boundingBox();
+    expect(stressRegion, 'stress room region bounding box').toBeTruthy();
+    const stressWidth = stressRegion?.width ?? 0;
+    expect(stressWidth, 'stress room width must be non-zero').toBeGreaterThan(0);
+    geometry.stressRoomWidth = stressWidth;
+    await captureEvidence(stressRow, `${surface}-file-edit-open-stress-390.png`, testInfo);
 
     await testInfo.attach(`${surface}-file-edit-geometry.json`, {
       body: JSON.stringify(geometry, null, 2),

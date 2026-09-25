@@ -89,6 +89,14 @@ const QUEUE_GUIDANCE_PAIR_WORKFLOW_FIXTURE = join(
   'workflows',
   'e2e-queue-guidance-pair.yaml'
 );
+const ROOM_ANATOMY_WORKFLOW_FIXTURE = join(
+  HERE,
+  '..',
+  '..',
+  'fixtures',
+  'workflows',
+  'e2e-room-anatomy.yaml'
+);
 
 /** Name of the seeded workflow whose single AI node runs on the fake provider. */
 export const E2E_WORKFLOW_NAME = 'e2e-usage-record';
@@ -131,6 +139,9 @@ export const TRANSCRIPT_PLAIN_NODE = 'plain';
 export const TRANSCRIPT_MULTI_NODE = 'multi';
 /** Node absent from the definition entirely — the deleted-definition fallback. */
 export const TRANSCRIPT_GHOST_NODE = 'ghost';
+export const E2E_ROOM_ANATOMY_WORKFLOW_NAME = 'e2e-room-anatomy';
+export const ROOM_ANATOMY_NODE = 'anatomy-live';
+
 export const TRANSCRIPT_STRUCTURED_TEXT = 'E2E structured report body';
 export const TRANSCRIPT_PLAIN_TEXT = 'E2E plain raw envelope';
 export const TRANSCRIPT_GHOST_TEXT = 'E2E ghost raw envelope';
@@ -536,6 +547,10 @@ async function startArchonRuntime(
   writeFileSync(
     join(home, 'workflows', `${E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME}.yaml`),
     readFileSync(QUEUE_GUIDANCE_PAIR_WORKFLOW_FIXTURE)
+  );
+  writeFileSync(
+    join(home, 'workflows', `${E2E_ROOM_ANATOMY_WORKFLOW_NAME}.yaml`),
+    readFileSync(ROOM_ANATOMY_WORKFLOW_FIXTURE)
   );
 
   writeFileSync(
