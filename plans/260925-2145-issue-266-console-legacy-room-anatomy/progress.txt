@@ -1,0 +1,110 @@
+## Codebase Patterns
+
+### Room-region band order
+- **Where**: `NodeTranscriptPane.tsx`, `ConsoleNodeRoom.tsx`
+- **Pattern**: Room-region direct children are scroller → optional controls → optional todo → dock. Dock is a fragment, so queue section + composer well are separate region children with queue first. Identify bands by roles/labels/testids (`node-transcript-scroll` / `console-node-room-scroll`, `section[aria-label="Todo"]`, `aria-label^="Queued messages"`, textarea parent). Scope navigator queries to the room region — Console header has its own Execution `<select>`.
+- **Example**: `{scroller}{controls}{todos.length > 0 ? <TodoStrip .../> : null}<ComposerDock .../>`
+
+### Fixed Node Room outer width
+- **Where**: `packages/web/src/lib/room-split-layout.ts`, split owners
+- **Pattern**: `ROOM_WIDTH_PX` is the only geometry contract. Split owners use a horizontal flex row: main `min-w-0 flex-1`, room `shrink-0` + inline `width: ${ROOM_WIDTH_PX.*}px` + `border-l border-border`. Single mode: main uses mutually exclusive `hidden` vs `flex` classes (not HTML hidden attr); room drops fixed width and uses `min-w-0 flex-1 w-full`.
+- **Example**: `style={mode === 'split' ? { width: \`${ROOM_WIDTH_PX.legacy}px\`, overflow: 'hidden' } : { overflow: 'hidden' }}`
+
+### Stale ratio keys
+- **Where**: owner tests + `room-split-layout.test.ts`
+- **Pattern**: Old `archon.run-room.ratio.*` localStorage values remain unread/unwritten. Deliberate test fixtures are the only production-tree mentions of those keys.
+
+
+### E2E fixed outer room width
+- **Where**: `e2e/ui/*` geometry helpers
+- **Pattern**: Measure `#console-run-room` / `#legacy-run-room` at 520/460 ±1 in split mode. Never write `archon.run-room.ratio.*`. Strip width is relative to the inner room region (Console 4px outset when todo shown). Band order: assert DOM sibling order when margins can overlap boxes. Live todo+queue proof uses `e2e-room-anatomy` + `startWorkflowViaWeb`.
+- **Example**: `expect(Math.abs(outerWidth - ROOM_WIDTH_PX[surface])).toBeLessThanOrEqual(1)`
+
+---
+
+## 2026-09-25 — US-001: Fixed-width contract and split owners in both shells
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/lib/room-split-layout.ts` — replaced ratio helpers with `ROOM_WIDTH_PX` (console 520, legacy 460); kept `RoomSurface` + `PanelPercent`
+- `packages/web/src/lib/room-split-layout.test.ts` — fixed-width contract + stale-key fixture
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.tsx` — flex fixed-width layout; removed ratio props, resizable group, `useStackedViewport`
+- `packages/web/src/components/workflows/LegacyGraphLogsPane.test.tsx` — fixed 460px / single-mode hide-class / stale-key assertions
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.tsx` — flex fixed-width layout; removed ratio props and Console panel group
+- `packages/web/src/experiments/console/components/ConsoleInspectPane.test.tsx` — fixed 520px / single-mode hide-class / stale-key assertions
+- `packages/web/src/components/workflows/WorkflowExecution.tsx` — removed ratio state/persistence props
+- `packages/web/src/experiments/console/routes/RunDetailPage.tsx` — removed ratio state/persistence props
+- `packages/web/src/index.css` — removed unused `--rv-panel-*` tokens
+- `packages/docs-web/src/content/docs/brand/index.md` — removed matching brand token rows
+
+**Acceptance criteria verified**:
+- [x] ROOM_WIDTH_PX.console === 520 and .legacy === 460 with `satisfies Record<RoomSurface, number>`
+- [x] Ratio helpers gone; only deliberate stale-key test fixtures mention run-room.ratio
+- [x] Split owners: outer rooms 520/460, shrink-0, main min-w-0 flex-1, no Resize separator, ids retained
+- [x] Single mode: mutually exclusive hidden/flex classes, room fills without fixed width, Back works, stale keys ignored/unwritten
+- [x] Ratio state/props/onLayoutChanged removed; flex parent + border-l inside outer room
+- [x] Legacy path no longer uses useStackedViewport; source-control consumer unchanged
+- [x] --rv-panel-* removed from CSS and brand docs
+- [x] resizable primitives, PanelPercent, console isolation allowlist unchanged
+- [x] Targeted bun tests + packages/web type-check pass
+
+**Learnings**:
+- Outer `#*-run-room` is the width target; put overflow-hidden + border-l on that element, not an inner wrapper only.
+- Happy-dom localStorage is readonly for wholesale replacement — spy `setItem` instead of reassigning storage.
+- Keep ratio export removal and consumer rewires in one commit so the branch never type-breaks.
+
+---
+## 2026-09-25 — US-002: Approved vertical band order in both room bodies
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/NodeTranscriptPane.tsx` — moved TodoStrip after controls
+- `packages/web/src/components/workflows/NodeTranscriptPane.test.tsx` — flipped order assertion; full band-order + absent-state coverage
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx` — moved ConsoleTodoStrip after controls; kept 4px outset when todo visible
+- `packages/web/src/experiments/console/components/ConsoleNodeRoom.test.tsx` — flipped order assertion; full band-order + absent-state coverage
+- Unblock (separate commit): `ConsoleInspectPane.tsx` dropped cn/`@/lib/utils`; `LegacyGraphLogsPane.test.tsx` HTMLElement casts
+
+**Acceptance criteria verified**:
+- [x] Equivalent multi-occurrence + todos + dock + queue data asserts scroller → controls → todo → dock; queue before composer; obsolete todo-before-scroller assertions flipped
+- [x] Absent-state coverage: no controls when following; Jump to latest alone; no todos; empty queue; terminal/no dock; finished-iteration queue without composer
+- [x] Only todo element moved; resolvedScopeKey/props/conditions retained; scroller keeps min-h-0 flex-1 overflow-y-auto
+- [x] Console 4px outset retained when todo visible (m-[4px] still asserted)
+- [x] Roles/labels/testids used; console-isolation.test.ts passes
+- [x] Room-body + isolation tests and packages/web type-check pass
+- [x] No Execution/Jump to/todo/dock/server data-flow changes
+
+**Learnings**:
+- ComposerDock/ConsoleComposerDock return fragments, so queue section and composer well are separate room-region children.
+- Console header Execution `<select>` must not be confused with occurrence navigator — scope queries to the room region.
+- US-001 left console-isolation (cn import) and Legacy HTMLElement style casts failing type-check; fix those as chore(unblock) before claiming US-002.
+
+---
+
+## 2026-09-25 — US-003: Browser geometry, responsive, state, and visual evidence
+
+**Status**: PASSED
+**Files changed**:
+- `e2e/fixtures/workflows/e2e-room-anatomy.yaml` — live todo+tool+interruptible fixture
+- `e2e/lib/playwright/archon-runtime.ts` — register anatomy fixture + node id
+- `e2e/ui/workflow-run-hitl-room.spec.ts` — fixed outer width + stale ratio key regression; no separator
+- `e2e/ui/agent-todo-strip.spec.ts` — fixed outer width, band order, anatomy live test
+- `e2e/ui/workflow-run-hitl-visual.spec.ts` — outer width split/single geometry
+- `e2e/ui/occurrence-navigation.spec.ts` — 520/460 surface-specific outer width
+- `e2e/ui/agent-tool-row-visual.spec.ts`, `file-edit-diff.spec.ts`, `task-dispatch-body.spec.ts`, `verifier-visual.spec.ts` — remove ratio setup; fixed widths; stress via narrow single-pane
+- `.agents/skills/verify-archon/visual-config.json` — refresh source hashes for US-001 token/docs + SPEC drift
+- Historical plan capture/evidence PNGs refreshed by focused Playwright runs
+
+**Acceptance criteria verified**:
+- [x] hitl-room: outer 520/460 ±1; stale ratio keys ignored/unwritten; no Resize separator; LEGACY_GEOMETRY_VIEWPORT mode from container
+- [x] todo-strip: setRoomWidth gone; outer panel contract; strip relative to inner region; scroller→strip order; anatomy fixture live queue+todo last-row
+- [x] hitl-visual: fixed outer width split / full width single
+- [x] tool-row/file-edit/task-dispatch/verifier/occurrence: ratio path removed; 520/460; Console 460 stress via narrow single-pane
+- [x] e2e typecheck + focused Playwright specs green (76 focused suite: 75 pass + anatomy pass)
+
+**Learnings**:
+- bodyBarText must match span-based body bar markup; poll after open for async paint.
+- Queue band is always-open `h3`+`ul` (no collapsible button) — verifier anatomy must match product, not obsolete mockup.
+- Console 4px todo outset can make bounding-box adjacency flaky; prefer DOM sibling order for band order.
+- Live streaming fixtures need soft scroll-tail slack; re-pin scrollTop while rows arrive.
+
+---
