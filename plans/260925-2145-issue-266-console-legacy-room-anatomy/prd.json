@@ -76,8 +76,8 @@
       "technicalNotes": "Phase 5 of the plan. Ownership already resolved in prd.md: #265 / Story 10.1 owns M001/M002 per the approved 2026-09-22 course correction — the claimed transfer to #266 was never recorded, so treat it as nonexistent. Reconcile #266 with the owner through the normal issue workflow only after evidence exists. Rollback path: revert the focused web + e2e + brand-doc changes together; untouched old localStorage ratio keys become readable again. No schema-upgrade gate needed (no schema changed).",
       "dependsOn": ["US-003"],
       "priority": 4,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 4. Gate ladder green (web package + 76 Playwright). LegacyNodeRoom.test order flip. Acceptance report reports/acceptance-a1-a6.md. Ownership #265/10.1 honored; no PR (parent). Files: LegacyNodeRoom.test.tsx, reports/*."
     }
   ]
 }
