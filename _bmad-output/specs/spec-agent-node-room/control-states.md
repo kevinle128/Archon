@@ -11,13 +11,14 @@ The dock is where the controls live because the shipped panel header cannot hold
 This placement was settled during the UX run.
 
 The stop and composer send controls follow **the agent's sub-state**, never a remembered mode.
-The approved provider selector exposes the real transport mode for the selected provider and decides whether per-item `Send now` executes or shows a refusal.
+The outer mockup provider selector is a review fixture.
+The product shows per-item `Send now` only when the active Archon adapter and mode have proven live-turn input.
 
 ## The table
 
 | Agent sub-state (node stays `running`) | Stop                         | Send       | What sending does                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | -------------------------------------- | ---------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **generating**                         | `Stop`                       | `Queue`    | Holds the new draft for the next natural boundary; every queued item also shows `Send now`, which soft-injects on Claude and OMP or shows a clear refusal without dequeueing on other providers.                                                                                                                                                                                                                                       |
+| **generating**                         | `Stop`                       | `Queue`    | Holds the new draft for the next natural boundary; a queued item shows per-item `Send now` only on a proven live-turn transport. It sends exactly that item into the active turn without Stop or a new turn. Queue-only modes omit the action.                                                                                                                                                                                         |
 | **interrupting**                       | `Stopping…`, `aria-disabled` | `Queue`    | The interrupt is in flight. Now **sub-second** (a provider primitive / stream-abort in-process, not a 10s poll) — whether to show this state at all is Kevin's call; if shown, it must be brief. **`aria-disabled`, never the `disabled` attribute** — the native one blurs the element that carries it, so the operator who just pressed the control lands on `<body>`.                                                               |
 | **idle-after-interrupt**               | —                            | `Send now` | The queued messages are already on the registry; `Send now` dispatches the newly typed one, and the executor flushes the registry — queued then just-typed, in receipt/written order — as the **next turn on the same live session**; the agent continues. The node never left `running`. Typing in the composer keeps the node open — the 30-minute idle-await timer is an inactivity timer re-armed by composer activity (SC 2.2.1). |
 | **finished**                           | —                            | —          | Nothing. The field and both controls are absent. The dock reduces to an undelivered draft box, rendered read-only and stating that the node finished and the messages never left — a half-typed line in the field folds in as its last item rather than vanishing. With nothing undelivered there is no dock at all.                                                                                                                   |
@@ -88,13 +89,15 @@ Making that an explicit `Stop` the operator presses, rather than something a `Se
 That costs one click and buys an interface that matches its own mechanism.
 
 (The old rationale also argued the stop was forced because "no provider has an inbound channel yet.")
-That mechanism argument is **retired** — every provider can be interrupted, and Claude/OMP can even take a message mid-turn without interrupting.
+That mechanism argument is **retired** — every provider can be interrupted, and proven Claude, Grok, or OMP live-input paths can take a selected message mid-turn without interrupting.
 The honesty argument is why the explicit `Stop` stays; the mechanism no longer requires it.
 
-Mid-turn delivery is current behavior for Claude and OMP.
-While generating, each queued item shows `Send now`.
-The selected item enters the active turn without interruption when the provider supports soft-inject.
-The same control stays visible on other providers and explains that the provider cannot send mid-turn; the item remains queued.
+Mid-turn delivery is current approved behavior on a proven Archon transport.
+Claude streaming input, Grok live input, and OMP RPC are current G2, G3, and G4 release proof gates, not established capabilities of the current adapters.
+Grok must support this active-turn action in the release, but its current `--single` mode stays queue-only until a new path proves same-turn acceptance and causal agent receipt.
+While generating on a proven soft-inject mode, each queued item shows `Send now`.
+The selected item enters the active turn without interruption, natural-end wait, or a new turn.
+Queue-only modes omit the per-item action; a direct unsupported request still receives a typed refusal and leaves the queue intact.
 The agent sub-state does not change in either case.
 
 ## Behaviour inside a state
@@ -103,9 +106,10 @@ The agent sub-state does not change in either case.
 A newly typed message joins the **end** of the queue rather than jumping it, so the agent reads corrections in the order the operator thought of them.
 
 **Per-item send while generating.**
-Every queued row has `Send now` and delete.
+Every queued row has Delete; only a proven live-turn mode adds `Send now`.
 `Send now` soft-injects only on a provider with an exercised transport.
-On a provider without soft-inject, activating it produces the inline `Cannot send during this provider's active turn` refusal and keeps the row and its order unchanged.
+On a queue-only mode, the UI omits this action; direct unsupported requests refuse without changing the row or its order.
+On acceptance, exactly the selected row leaves the shared queue and appears immediately as a nameless operator transcript row with `sent`; stored sender attribution remains.
 
 **Draft and queued scope.**
 The words `this tab only` qualify only text that is still unsent in the composer, even when the draft and queued rows share a combined surface.
@@ -122,8 +126,11 @@ Each live queued row shows its ordinal, and the first row has the next-out treat
 The read-only finished-iteration queue keeps order but omits next-out and item actions.
 
 **On send.**
-Every queued item leaves the box before delivery starts, so nothing can be picked up twice.
-If delivery fails, items return to the **front** of the queue rather than being dropped.
+A per-item message stays claimed in its queue position until active-turn provider acceptance.
+If the provider rejects before acceptance, the claim releases without a transcript row; other items keep their order.
+If acceptance is uncertain, the system does not inject again blindly or silently send at the next turn.
+An accepted item never returns to a sendable queue even if its transcript write needs recovery.
+Dock `Send now` after Stop remains the separate ordered next-turn flush.
 
 **Send now needs no durable phase gate.**
 There is no durable stop marker or phase because the node never left `running`.
@@ -135,17 +142,16 @@ The old `409` on `phase:'stop'` is gone with the durable marker it guarded.
 Controls follow the agent's projected sub-state (`generating` | `idle-after-interrupt`), a typed field the core emits — not a raw "is a chunk arriving right now" signal that flickers and makes the affordance appear and disappear under the operator's cursor.
 
 **Message status.**
-Three states exist: draft, `sent`, and `delivered`.
-A message becomes `delivered` only after the provider confirms the exact caller-stamped message id.
-G1 makes the Claude SDK upgrade to at least 0.3.246 current release work.
-Providers without exact-id confirmation remain at `sent`.
+The queue receipt is `queued`, transport acceptance is `sent`, and proven agent consumption is `delivered`.
+A matching native lifecycle event or a stream causally tied to the selected message can prove consumption.
+An RPC acknowledgement, unrelated ongoing stream, text match, or timestamp cannot.
+The caller-stamped id remains the row and idempotency key, but exact id echo is not the only valid proof.
+Without causal proof, an accepted row stays `sent`.
 
 ## Approved room controls
 
-The approved top controls are product behavior, not documentation scaffolding.
-The numbered state controls select the complete state presentation and keep the run, node, transcript, todo, queue, and dock data consistent.
-The node-kind control selects the prompt or `loop ×3` execution presentation.
-The provider control selects the Claude soft-inject or queue-only presentation and updates per-item capability feedback.
+The outer numbered state, node-kind, and provider-transport controls are mockup review fixtures, not product UI.
+The in-product `Execution` selector chooses the real occurrence and keeps the room synchronized.
 `Cancel` remains the separate lifecycle action while the run is active.
 `Re-run` appears for completed and failed runs and starts a new execution through the existing rerun behavior.
 `Log` or `Logs`, `Graph`, and the counted `Artifacts` control navigate to their existing surfaces without changing run state.

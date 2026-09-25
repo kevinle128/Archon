@@ -37,8 +37,10 @@ The elegant part: **steering-interrupt and Cancel can share the same low-level s
 ## Design Paradigm
 
 **Ports-and-adapters (hexagonal), inherited from the HITL spine.**
-`IAgentProvider` is the port.
-Steering adds **no new port and no durable store**: it drives the provider's native interrupt + streaming-input on the **live session handle** held in an **in-process registry**.
+`IAgentProvider` is the turn port.
+Selected-item Send now requires a distinct provider-owned live-input port or equivalent typed capability on the **live session handle** held in an **in-process registry**.
+This port is current required architecture, not an already proven Archon adapter capability.
+Steering adds no durable store.
 The one genuinely new engine behavior is that a **steered node runs multiple turns on one live session** instead of ending after the first.
 
 | Layer                                                                              | Namespace                                                 |
@@ -85,7 +87,7 @@ The in-session flow — the node never leaves `running`:
 ```mermaid
 flowchart TD
   GEN["node running: agent GENERATING (turn N)"] --> OP{"operator acts"}
-  OP -->|"soft-inject where offered (claude streaming input)"| INJ["fold into turn N, no interrupt"]
+  OP -->|"per-item Send now on proven live input"| INJ["selected item accepted into turn N, no interrupt"]
   OP -->|"Queue (any provider, non-interrupting)"| Q["hold in registry"]
   OP -->|"interrupt to redirect"| INT["provider interrupt / stream-abort: end turn N, session ALIVE"]
   INJ --> GEN
@@ -146,16 +148,17 @@ flowchart TD
   - **`Queue` (default, any provider):** the registry holds the message; it is delivered as **turn N+1 when the current turn ends naturally**.
     Non-interrupting — the operator chose to let the agent finish this thought.
     This is the "deliver at the next boundary" baseline.
-  - **Per-item `Send now` while generating:** every queued item keeps this visible action.
-    When the selected provider supports soft-inject, it sends only that item into the active turn and leaves the other items queued.
-    When the selected provider does not support soft-inject, the action remains visible in a clear refusal state that names the limit and keeps the item queued.
-    A shell must not hide the action or infer support from a provider name; it consumes the capability projection.
+  - **Per-item `Send now` while generating:** a queued item shows this action only on a proven Archon live-turn adapter and mode.
+    It sends exactly that item into the active turn without Stop, natural-end wait, or a new turn; other items stay queued.
+    Queue-only modes omit the action, while direct unsupported requests return a typed refusal without mutation.
+    A shell consumes a provider-and-mode capability projection, not a provider-name guess.
   - **`Send now` (any provider):** offered only once the agent is **idle-after-interrupt** (AD-9) — so it is simply an ordinary prompt on an idle session → **turn N+1 immediately**.
     The interrupt that made the agent idle is CAP-2, a separate act; Send now does not itself interrupt.
-  - **Soft-inject (CAP-5, current for G2 Claude and G4 OMP):** a supporting provider folds one selected queued item into the running turn with no interrupt and no fabricated turn-start event.
-    Codex and DeepSeek remain queue-only.
-    Grok hook soft-inject is the only deferred provider path (G3).
-- `IAgentProvider` exposes the normalized soft-inject capability and transport through the existing query/session port.
+  - **Soft-inject (CAP-5, G2 Claude, G3 Grok, and G4 OMP release gates):** a proven provider folds one selected queued item into the running turn with no interrupt and no fabricated turn-start event.
+    The user requires an actual Grok live-turn path in this release; a hook advertisement cannot satisfy G3.
+    Current Codex, DeepSeek, and Grok `--single` modes remain queue-only.
+- The provider-owned live-input port returns a typed acceptance result and independent causal consumption evidence where the adapter can prove it.
+  A second `sendQuery()` on a resumed session creates a new turn and cannot satisfy this per-item action.
   Interrupt-then-deliver remains reachable on **every** provider, so the visible refusal affects only the per-item mid-turn acceleration.
 
 ### AD-4 — A steered node runs multiple provider turns on one live session; turn-end has two causes
@@ -194,13 +197,10 @@ flowchart TD
 
 - **Binds:** CAP-1, CAP-2, CAP-5; the web-dispatch executor (`api.ts:3200-3228`); the CLI detach path (`cli/src/commands/workflow.ts:696-722`).
 - **Prevents:** pretending steering can reach a run whose live session is in another process; re-introducing durable state to bridge that gap.
-  <<<<<<< HEAD
 - **Rule:** the **in-process registry** — keyed `(runId, nodeId)`, holding the node's **live session handle** + an in-memory inbound queue, valid only while the node is `running` **in this process** — is the **sole** mechanism.
   A run whose executor is **not in this process** (detached CLI `--detach`) has no reachable live handle → steering is **unavailable** for it in v1: the UI states this, and **Cancel still works**; a detached node otherwise runs to completion on its own (there is nothing to "resume" while it is `running` — `/workflow resume` applies only if it later fails).
-  **No durable steering state:** a server restart drops the live session; any in-flight steer is lost and the run resumes normally — the accepted v1 boundary, matching aion.
-  =======
-- **Rule:** the **in-process registry** — keyed `(runId, nodeId)`, holding the node's **live session handle** + an in-memory inbound queue, valid only while the node is `running` **in this process** — is the **sole** mechanism. A run whose executor is **not in this process** (detached CLI `--detach`) has no reachable live handle → steering is **unavailable** for it in v1: the UI states this, and **Cancel still works**; a detached node otherwise runs to completion on its own (there is nothing to "resume" while it is `running` — `/workflow resume` applies only if it later fails). **No durable steering state:** a server restart drops the live session; any in-flight steer is lost and the process-local handle, timer, and continuation are dropped, leaving a durable non-terminal run; Archon never autonomously fails or resumes it from staleness — recovery is explicit abandon/cancel, then CLI `archon workflow retry-node` when desired (the web Retry action is not shown for a still-`running` node) — the accepted v1 boundary.
-  > > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
+  **No durable steering state:** a server restart drops the process-local handle, timer, and continuation, leaving a durable non-terminal run.
+  Archon never autonomously fails or resumes it from staleness; recovery uses explicit abandon or cancel and then CLI `archon workflow retry-node` when wanted.
 
 ### AD-6 — The executor is the single writer of the operator transcript row
 
@@ -208,7 +208,8 @@ flowchart TD
 - **Prevents:** a second appender to the node-message table; `seq` contention; an operator row whose position is unguaranteed; an operator row that cannot be attributed to its sender or reconciled against what the browser marked `sent`.
 - **Rule:** an operator message is an ordinary `text` row carrying **three additive `metadata` fields** — `origin = 'operator'`, `operator_user_id` (the acting identity from `resolveAuthContext`, so CAP-4 attributes the message across a multi-user install), and `message_id` (the caller-stamped id from CAP-6, so the client can reconcile which `sent` messages became rows — AD-11).
   All three are additive on the `.strict()` metadata schema (`workflows/src/schemas/node-execution.ts:29-43`) + a regenerated `api.generated`; **no migration** (the column is already JSON).
-  Written by the executor through the store at the point the message is delivered, placed by `seq` between the turn it redirected and the turn it caused.
+  Written by the executor through the store on provider transport acceptance for active-turn per-item delivery, placed by `seq` in the active turn.
+  Only that selected row hides the visible sender name; `operator_user_id` and derived read-model attribution stay intact.
   Delivered to the agent as a **plain prompt**, never `resumeInteractions` (that carriage is the Ask path's `tool_use_id`, which an operator message lacks).
   The **row is a receipt for the record** — the delivery vehicle is the live session, not this row.
   The server never writes it.
@@ -218,17 +219,19 @@ flowchart TD
 - **Binds:** CAP-3, CAP-4, CAP-5; the executor; every adapter; the transcript record.
 - **Prevents:** a fabricated turn boundary corrupting the record the read half projects from.
 - **Rule:** delivering an operator message — soft-inject mid-turn, or as the next turn after an interrupt — must emit **no `turn-start` event from the steering layer**; the turn boundary is where the agent's own loop puts it.
-  An adapter that cannot inject without signalling a new turn holds the message for the next boundary rather than fabricating one.
+  An adapter that cannot inject without signalling a new turn does not expose per-item Send now; Queue remains available as a separate action.
 
-### AD-8 — Delivery confirmation follows provider message-id confirmation
+### AD-8 — Delivery confirmation requires causal agent consumption
 
 - **Binds:** CAP-6, the UI status chip.
-- **Prevents:** claiming delivery from request acceptance, text equality, timing, or a provider that did not return the caller-stamped id.
-- **Rule:** confirmation reports arrival; it is not a delivery mechanism.
-  A row starts at `sent` and changes to `delivered` only after the provider confirms the same caller-stamped message id.
-  Claude message-id confirmation from G1 is current scope and requires `@anthropic-ai/claude-agent-sdk` **≥ 0.3.246**.
-  Providers without message-id confirmation remain at `sent`.
-  Correlation is by id, never text or timestamp.
+- **Prevents:** claiming consumption from route acceptance, RPC acknowledgement, unrelated stream output, text equality, or timing.
+- **Rule:** the registry receipt is `queued` and active-turn provider acceptance is `sent`.
+  Acceptance removes only the selected queue item and creates one transcript row immediately.
+  A matching native message lifecycle event or response stream causally tied to the selected message proves consumption and changes only that row to `delivered`.
+  The first model output of a new turn that exclusively carries one message can prove ordinary boundary delivery; it cannot turn a per-item active-turn request into a new-turn fallback.
+  An exact echoed id is sufficient but not the universal proof; the caller-stamped id remains the row and idempotency key.
+  Without causal proof the accepted row stays `sent`.
+  G1 is current release proof and implementation work; an SDK version alone does not satisfy it.
 
 ### AD-9 — The agent's generating/interruptible state is projected in the core; both shells read it
 
@@ -248,7 +251,7 @@ flowchart TD
   The new item kind and its two-shell treatment belong to that spec's own update, opened there before CAP-4 ships.
   **Sequencing:** an operator `text` row must not reach a live transcript until that reader recognizes `origin='operator'` (else it renders as agent text) — the reader change lands first.
 
-### AD-11 — Send and Interrupt are new authorized routes; races fold forward, only a finished node refuses
+### AD-11 — Send and Interrupt are authorized routes; selected-item races fail closed
 
 - **Binds:** CAP-1, CAP-2, CAP-5; the Send/Interrupt routes.
 - **Prevents:** an unauthenticated or cross-user steer mutating a run; a durable-marker/phase gate that this model does not have; a 409 where the queue already absorbs the race.
@@ -259,20 +262,27 @@ flowchart TD
   There is no durable phase marker beyond this fail-closed target check.
 - **The send route is the _dispatch_ call, made at `Queue`-press: a queued message is server-side from the moment it is queued.**
   While the agent is `generating`, pressing `Queue` dispatches the message to the send route (`intent: 'queue'`) and it enters the **in-process registry queue** on the live handle at once; the executor drains it when the current turn ends naturally, or `Send now` flushes it after an interrupt.
-  Per-item `Send now` uses the same caller-stamped id and targets only that accepted item.
+  Per-item `Send now` names the existing server-owned queued `message_id` and selected `retry_epoch`; the caller cannot replace its text or sender.
+  The registry claims that one item against the active turn token before it calls the provider-owned live-input port.
   `x`-delete of a queued message calls an **idempotent withdraw route** (`DELETE …/queue/:messageId`).
   The **client draft** is only the text still being composed and is the only state labelled `this tab only`; accepted queue items are node-scoped and shared across tabs and operators even when draft and queue content share one surface.
   The crossover is `Queue`-press, not the drain moment.
 - **The registry queue absorbs the races — no 409 for them, and nothing is lost.**
   A Send that arrives while an interrupt is still in flight simply **lands in the registry queue** and **waits** there — when the interrupt lands (AD-2) the node goes `idle-after-interrupt`, and the queue drains only on the operator's `Send now` (AD-4), never automatically.
   A `Queue` message whose _generating_ turn ends naturally is delivered at that natural boundary (CAP-1's contract) — the two drain rules differ by how the turn ended, not by a route branch.
-  The mutation refusals are explicit: a stale or finished `retry_epoch` rejects before registry access; a node **no longer running** returns 409 and keeps the draft; **no live handle in this process** (detached — AD-5) returns a clear "not steerable here" result and never creates a durable queue; and a provider without soft-inject capability keeps per-item `Send now` visible but refuses that action without removing the queued item.
+  The mutation refusals are explicit: a stale or finished `retry_epoch` rejects before registry access; a node **no longer running** returns 409 and keeps the draft; **no live handle in this process** (detached — AD-5) returns "not steerable here"; and a direct request to a queue-only mode refuses without removing the queued item.
+  Queue-only UI omits the per-item action.
+  A provider rejection before acceptance releases the claim in its original queue position; unrelated items keep receipt order.
+  Turn-end, Stop, Cancel, or epoch change before proven acceptance never silently converts this operation into next-turn send.
+  Late acknowledgement is fenced by the active turn token; uncertain timeout never causes blind reinjection.
+  Once accepted, an operator-row write failure is surfaced and the accepted id remains out of sendable queue state.
 - **Teardown is the last queue check.**
   A `Queue` message that lands after the loop's final natural-end check but before the registry entry is torn down is caught at teardown and returns **409 finished** — the browser keeps it as a draft.
 - **Every terminal cause surfaces the undelivered queue — the row is how, and the terminal event is when.**
   On **any** node termination (natural finish, Cancel, or the 30-minute idle-await fail) the in-memory queue dies with the registry, so a late edge is not the only way to strand a `sent` message.
   The client keeps an **observation ledger** of every generation-valid shared-queue receipt plus this tab's successful sends (later snapshot omission never erases it; only this tab's confirmed withdraw removes an id).
-  It reconciles that ledger against the `message_id` on the operator rows that were actually written (AD-6); any observed id with **no matching row** is **restored to the draft box as "Never sent"** (`control-states.md`'s finished row already draws this), with a still-pending submission and a different half-typed draft folded in last.
+  It reconciles that ledger against the `message_id` on the operator rows that were actually written (AD-6); an id proven unaccepted can be restored as "Never sent" with the half-typed draft folded in last.
+  An id accepted by the provider but missing its transcript row is an explicit recording failure, never a sendable draft.
   The reconciliation runs **only on actual node-terminal evidence** — a persisted lifecycle terminal event (`node_completed`/`node_failed`) or the server's exact-scope terminal projection of a transactionally purged parked Ask (including uniquely matched loop-owner segments via `loop_ancestry`; answered Ask resumes require their matching persisted `resumed:true` resolution event and retire only scoped pre-resolution segments proven superseded by corresponding later starts; unscoped/ambiguous data fails closed) — **never on a live refetch or on run-level terminal status alone**.
   Cancel may publish run `cancelled` before the raw node event, so mounted run-detail views keep a 3 s read-only catch-up while raw executions remain unsettled and start a separate **node-wide** transcript drain only after the real node event; comparison never uses occurrence filters.
   The client folds a resumed-Ask event into one **logical execution key** so Ask continuation preserves queue history while a true retry/resume resets it.
@@ -284,7 +294,7 @@ flowchart TD
   On a multi-user install two docks may steer one node — AD-3's "written order" is per-operator, and the single global order is the order the registry **received** the sends (server-side FIFO).
   Each operator row carries `operator_user_id` (AD-6) so CAP-4 attributes each message to its sender.
   There is **no per-node steering lock**: concurrent operators interleave in receipt order, attributed, not serialized.
-- Correlation of a soft-inject to its target turn is the registry's **in-memory** turn id (aion's `active_turn_id`/`expectedTurnId`), never a durable attempt-key.
+- Correlation of a soft-inject to its target turn is the registry's **in-memory** turn id, never a durable attempt-key or an Aion capability assumption.
 
 ### AD-12 — The operator display name is resolved at read time, server-side, and travels as row data
 
@@ -297,25 +307,27 @@ flowchart TD
   For a non-null `operator_user_id`, the server always emits either the trimmed current `users.display_name` or the first eight id characters (Story 2.8 — the server owns the short-id fallback).
   `null` is reserved for identity-less rows (`operator_user_id: null`).
   The web keeps the same short-id derivation only as a compatibility guard for older/partial responses and performs no user fetch.
+  The row created by accepted per-item Send now during generation does not render this name; it remains available as read-model data for attribution and other operator-row paths.
   Regenerate `api.generated` for the new response field.
   Impl owner: the operator-row story (1.11 / Story 2.8).
 
 ### AD-13 — The approved combined room and its controls are current product scope
 
 - **Binds:** the approved Console, Legacy, transcript-state, and steering-state mockups; both shells.
-- **Prevents:** classifying visible controls as review scaffolding, hiding capability refusals, or forking interaction rules by shell.
-- **Rule:** The shared room controller owns the state, node-kind, provider, and execution selections as typed product state.
-  The provider selection reflects a real provider capability profile; it does not rewrite a live provider session.
+- **Prevents:** classifying outer review fixtures as product controls or forking interaction rules by shell.
+- **Rule:** The outer numbered state, node-kind, and provider-transport controls are mockup fixtures.
+  The in-product `Execution` selector is typed product state and stays distinct from scroll-only `Jump to`.
   The Legacy and Console shells own only their markup and inherited tokens.
 - **Rule:** `Re-run`, Console `Log`, Legacy `Logs`, `Graph`, `Artifacts`, and close are current product behavior.
   Their existing route, mutation, selection, artifact, and focus-return owners stay authoritative.
   The node room must keep these controls synchronized with the selected execution.
-- **Rule:** The context projector uses one matrix on both shells: `Run N` is a repeated top-level node execution, `Iteration N` is a loop occurrence, `Pass N` is another provider turn inside the same occurrence, and a reason-only label is an unnumbered interruption or recovery occurrence.
+- **Rule:** The context projector uses primary `Run N` for every multi-occurrence separator in occurrence order on both shells.
+  Loop iteration, provider pass, retry, interruption, and nested-loop collision context follows as a suffix; a single occurrence has no separator.
 - **Rule:** The todo strip sits below the transcript and above the queue or dock.
   In the full Legacy and Console rooms, the queue is a full-bleed band between the todo strip and composer dock.
   In the compact dock and state-review layout, the same queue is an inset well.
   Only unsent composer content carries `this tab only`; queue content remains node-scoped and shared in both layouts.
-- **Rule:** The queue projection owns collapse state inputs, ordinals, the next-out marker, per-item capability/refusal state, and the shared count.
+- **Rule:** The queue projection owns collapse state inputs, ordinals, the next-out marker, proven per-item capability state, and the shared count.
   The shells render these values and keep the action order `Send now`, then delete.
   Collapsing the queue changes no server state.
 - **Rule:** The terminal todo treatment is a display projection only.
@@ -328,33 +340,34 @@ flowchart TD
 - **Rule:** Focus remains visible and survives every live update.
   When an active control unmounts, focus moves to its direct successor or owning selector and never to `<body>`.
   `Stopping…` uses `aria-disabled` with a suppressed handler, not the native `disabled` attribute, so focus stays on the control until it can move to `Send now`.
-- **Rule:** At 460px, state, node-kind, and provider groups can wrap in source order; permitted text can wrap or elide; Stop and the dock send control stay on one row at opposite edges; `Go to iteration N` stays fully visible; and the room has no horizontal overflow.
+- **Rule:** At 460px, product controls and fixture groups in the review sheet can wrap in source order; Stop and the dock send control stay on one row at opposite edges; `Go to iteration N` stays fully visible; and the room has no horizontal overflow.
 - **Rule:** Under `prefers-reduced-motion`, transcript, todo, and queue chevron rotation is disabled, smooth scrolling becomes immediate, and dock entrance, resize, and state-transition motion is disabled.
 - **Rule:** Idle-after-interrupt shows `no redirect ends this node after 30 min of inactivity · typing keeps it open`.
   Authorized typing activity sends the debounced composing keepalive and re-arms the inactivity timer.
   `Send now`, the cancel poll, or timer expiry resolves the idle wait exactly once.
   The interface shows no countdown.
   Expiry announces `node failed · interrupted with no redirect · none of this was sent`, restores unmatched content read-only, and moves dock focus to the last transcript row.
-- **Rule:** A refusal never disappears an action or discards content.
-  Pending Ask, detached execution, stale retry epoch, finished node, missing live handle, and queue-only per-item send each keep the operator's content, preserve focus, and name the reason in visible text and an accessible description without relying on colour.
+- **Rule:** A refusal never discards content.
+  Pending Ask, detached execution, stale retry epoch, finished node, and missing live handle preserve focus and explain the reason without relying on colour.
+  Queue-only UI omits per-item Send now; a direct unsupported request still receives a typed refusal.
 - **Rule:** Console and Legacy use one semantic test matrix for state transitions, context labels, queue ownership, provider capability and refusal, keyboard activation, focus recovery, accessible names, live announcements, the 460px layout, and reduced-motion behavior.
   They can differ only in inherited tokens, shell chrome, and the approved singular `Log` versus plural `Logs` label.
 
 ## Consistency Conventions
 
-| Concern              | Convention                                                                                                                                                                                                                                                               |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Steering target      | always the **live provider session** in the in-process registry; never node/run lifecycle state.                                                                                                                                                                         |
-| Interrupt            | provider-native `interrupt()` where offered, else a stream-abort on a **fresh per-turn signal** (`AbortSignal.any` with the node-level one); never the one-shot `nodeAbortController`, which is Cancel's (AD-2). Ends the turn, session persists.                        |
-| Node lifecycle       | untouched by steering — stays `running` (sub-state `generating` \| `idle-after-interrupt`, AD-9); completes only when a turn ends **naturally** with nothing queued. An interrupted turn never completes the node (AD-4). Cancel is the separate existing teardown.      |
-| Continuity           | the live session (claude resume / codex thread via `attemptResumeId`), never a durable marker.                                                                                                                                                                           |
-| Operator row         | `text` row, `metadata` = `{origin='operator', operator_user_id, message_id}`; never a widened `kind`, never a new table; a receipt, not the delivery vehicle (AD-6).                                                                                                     |
-| Soft-inject ordering | the executor delivers in **receipt order**; a soft-inject adapter owns its own transport quirks (omp `set_steering_mode:'all'`, not one-at-a-time; RPC mode, never ACP — which cancels). The interrupt path concatenates the flush into one prompt, so it is unaffected. |
-| Message identity     | correlation by caller-stamped id; `sent` until the provider confirms that id, then `delivered`. Providers without confirmation stay at `sent`.                                                                                                                           |
-| Turn id              | in-memory in the registry; a soft-inject targets the live turn, a stale target folds into the next turn.                                                                                                                                                                 |
-| Events               | reuse HITL/AD-7 refetch triggers on live node-state change; no card payloads on the wire; no `turn-start` from steering.                                                                                                                                                 |
-| Authorization        | Send/Interrupt resolve identity via `resolveAuthContext`, under HITL/AD-7 (AD-11).                                                                                                                                                                                       |
-| Console imports      | governed solely by `eslint.config.mjs:126-163`; `packages/web/src/lib` is shared ground.                                                                                                                                                                                 |
+| Concern              | Convention                                                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Steering target      | always the **live provider session** in the in-process registry; never node/run lifecycle state.                                                                                                                                                                    |
+| Interrupt            | provider-native `interrupt()` where offered, else a stream-abort on a **fresh per-turn signal** (`AbortSignal.any` with the node-level one); never the one-shot `nodeAbortController`, which is Cancel's (AD-2). Ends the turn, session persists.                   |
+| Node lifecycle       | untouched by steering — stays `running` (sub-state `generating` \| `idle-after-interrupt`, AD-9); completes only when a turn ends **naturally** with nothing queued. An interrupted turn never completes the node (AD-4). Cancel is the separate existing teardown. |
+| Continuity           | the live session (claude resume / codex thread via `attemptResumeId`), never a durable marker.                                                                                                                                                                      |
+| Operator row         | `text` row, `metadata` = `{origin='operator', operator_user_id, message_id}`; never a widened `kind`, never a new table; a receipt, not the delivery vehicle (AD-6).                                                                                                |
+| Soft-inject ordering | claim only the selected queued id against the active turn token; unrelated items retain registry receipt order. The provider-owned live-input port must prove acceptance before dequeue.                                                                            |
+| Message identity     | caller-stamped id keys the row and idempotency; acceptance is `sent`, and matching native lifecycle or causally linked stream consumption is `delivered`.                                                                                                           |
+| Turn id              | in-memory in the registry; a stale target never silently folds into the next turn or triggers blind reinjection.                                                                                                                                                    |
+| Events               | reuse HITL/AD-7 refetch triggers on live node-state change; no card payloads on the wire; no `turn-start` from steering.                                                                                                                                            |
+| Authorization        | Send/Interrupt resolve identity via `resolveAuthContext`, under HITL/AD-7 (AD-11).                                                                                                                                                                                  |
+| Console imports      | governed solely by `eslint.config.mjs:126-163`; `packages/web/src/lib` is shared ground.                                                                                                                                                                            |
 
 ## Stack
 
@@ -362,9 +375,9 @@ Seed — verified at authoring; the code owns it once it exists.
 
 | Name                             | Version / note                                                                                                                                                                                                                                                                                                        |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@anthropic-ai/claude-agent-sdk` | G1 and G2 require **≥ 0.3.246** so Claude soft-inject and caller-stamped message-id confirmation are current behavior.                                                                                                                                                                                                |
+| `@anthropic-ai/claude-agent-sdk` | Current Archon pin 0.3.209 holds one streaming input for interrupt. G2 must prove a second selected input enters the active turn; G1 must prove causal consumption. An SDK update may be needed but its version alone proves neither behavior.                                                                        |
 | `@openai/codex-sdk`              | `^0.144.5` (lockfile pins 0.144.5; npm latest 0.154.0). The TS SDK exposes only `run()`/`runStreamed()` — no `turn/steer`/`turn/interrupt` (those are app-server protocol) at 0.144.5, 0.153.4, or 0.154.0. So codex steering is **stream-abort + re-run on the resumed `thread`** (`resumeThread`), not soft-inject. |
-| omp / grok / deepseek            | OMP soft-inject is current through G4. DeepSeek stays queue-only. Grok hook soft-inject is deferred through G3. All keep the interrupt-then-continue floor.                                                                                                                                                           |
+| omp / grok / deepseek            | Archon OMP currently uses one-shot JSON mode; G4 must build and prove RPC active-turn steering. G3 must build and prove a Grok live-input path with same-turn selected-item acceptance and causal agent receipt; current Grok `--single` and DeepSeek remain queue-only. All keep the interrupt-then-continue floor.  |
 | SQLite / PostgreSQL              | additive-only (the operator-row `metadata` fields `origin`/`operator_user_id`/`message_id`); no steering state persisted.                                                                                                                                                                                             |
 
 ## Capability → Architecture Map
@@ -376,28 +389,23 @@ Seed — verified at authoring; the code owns it once it exists.
 | CAP-3 Redirect and continue on the same session           | executor per-node turn loop on the live session (`workflows`)                                                | AD-1, AD-4, AD-6                               |
 | CAP-4 The exchange is part of the record                  | operator row (`workflows` write, `web/lib` meaning)                                                          | AD-6, AD-7, AD-10, Track A/AD-1, Track A/AD-10 |
 | CAP-5 Mid-turn delivery where the provider allows         | capability-projected per-item action + soft-inject on the live session (`web`/`workflows`/`providers`)       | AD-3, AD-5, AD-7, AD-13                        |
-| CAP-6 Claim only what it knows                            | provider id confirmation + status chip; `message_id` on the row for reconciliation (`providers`/`web`)       | AD-6, AD-8, AD-11                              |
+| CAP-6 Claim only what it knows                            | provider acceptance and causal consumption evidence; status chip and row `message_id` (`providers`/`web`)    | AD-6, AD-8, AD-11                              |
+
+## Current Grok release proof
+
+G3 requires Grok per-item Send now during the active agent turn in this release.
+The actual Archon Grok adapter and mode must prove that only the selected queued item enters that same turn without Stop, a natural-end wait, or another turn.
+It must separately prove causal agent receipt before showing `delivered`; an advertised hook, RPC acknowledgement, and unrelated stream output are insufficient.
+Test tool-boundary and pure-text turns, turn-end and Stop races, stale epochs, rejection, and concurrent queue mutation before exposing the action.
+Current `grok --single` remains queue-only and omits the action.
+If hooks cannot meet the gate, another Grok path must pass it or the release remains blocked.
 
 ## Deferred
 
-<<<<<<< HEAD
-| Item | Why it can wait |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Steering a detached (`--detach`) run | AD-5: no live handle reachable across the process boundary. Revisit only if a provider offers a channel into a session it did not spawn (grok's leader socket is the one lead). |
-| Surviving a server restart mid-steer | No durable steering state by design; the run resumes normally. A durable design was built and rejected as over-engineering (memlog). |
-| The read-only transcript item kind for the operator row | Owned by `spec-readable-agent-transcript`'s own update (AD-10). |
-| G3 Grok hook soft-inject | This is the only non-visible G1–G4 behavior and remains gated on verified hook payload and continuation semantics. |
-| Cancel node | **Already exists** — the teardown/abort path is untouched by this feature; not in scope. |
-| Deploy / env / infra | Rides the existing single-tenant install, SSE, additive schema; no new topology. |
-=======
-| Item | Why it can wait |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Steering a detached (`--detach`) run | AD-5: no live handle reachable across the process boundary. Revisit only if a provider offers a channel into a session it did not spawn (grok's leader socket is the one lead). |
-| Surviving a server restart mid-steer | No durable steering state by design; restart drops the process-local handle/timer and leaves a durable non-terminal run with no autonomous recovery — operator abandon/cancel then CLI `archon workflow retry-node`. A durable design was built and rejected as over-engineering (memlog). |
-| CAP-6 `delivered` on claude | Needs SDK ≥ 0.3.246; unreachable at the pin 0.3.209. `sent` ships for all until the pin moves (AD-8). |
-| The read-only transcript item kind for the operator row | Owned by `spec-readable-agent-transcript`'s own update (AD-10). |
-| Per-provider soft-inject beyond claude + omp | The interrupt-then-continue floor ships for all; soft-inject (codex needs app-server, grok a spike) lands per transport. |
-| Cancel node | **Already exists** — the teardown/abort path is untouched by this feature; not in scope. |
-| Deploy / env / infra | Rides the existing single-tenant install, SSE, additive schema; no new topology. |
-
-> > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
+| Item                                    | Boundary                                                                                                                                  |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Steering a detached (`--detach`) run    | No live handle crosses the process boundary; a future channel must prove reachability and safety.                                         |
+| Surviving a server restart mid-steer    | The process-local handle and timer disappear, leaving a durable non-terminal run for explicit recovery; no autonomous staleness mutation. |
+| Read-only operator item kind            | The readable-transcript implementation owns this projection under AD-10.                                                                  |
+| Cancel node                             | Existing teardown remains separate from steering.                                                                                         |
+| Deploy, environment, and infrastructure | Existing single-tenant install and SSE topology remain.                                                                                   |

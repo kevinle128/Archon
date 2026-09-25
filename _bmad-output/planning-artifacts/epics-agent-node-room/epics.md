@@ -26,7 +26,16 @@ mockup: ../../../claude-design/design_handoff_node_room_transcript_steering/
 
 ## Overview
 
-This document decomposes `spec-agent-node-room` into three user-value epics for the Legacy and Console node rooms.
+This document records the completed Epics 1–3 and the current corrective Epic 4 for the Legacy and Console node rooms.
+
+**Current contract (2026-09-24).**
+The [validated mockup manifest](../mockup-manifests/agent-node-room.json) defines 70 current product items: nine changed features and 61 unchanged context items.
+Epic 4 owns the corrections and supersedes conflicting criteria in the completed historical Stories below, including Story 1.5's TODO wording, Story 3.6's outer fixture controls, and Story 3.7's 64-row target.
+The text of Epics 1–3 and their old gate notes remains historical evidence; Epic 4 and the current Requirements Inventory govern new acceptance work where those records conflict.
+The outer numbered state, node-kind, and provider-transport controls are review fixtures; the in-product `Execution` selector remains product scope.
+G1, G2, G3, and G4 are current release proof gates, and no approved visible behavior is future work.
+The user's 2026-09-24 G3 decision requires Grok per-item Send now during the active turn in this release and supersedes the completed Epic 3 future label without rewriting that historical Epic.
+Current Grok `--single` is queue-only; Claude streaming input, a new Grok live-input path, and OMP RPC require conformance before their modes show the per-item action.
 
 - **Epic 1 — Readable Agent Transcript** replaces raw-JSON tool output with a transcript that operators can scan and inspect.
   It is retroactive and uses data that is already stored.
@@ -35,20 +44,20 @@ This document decomposes `spec-agent-node-room` into three user-value epics for 
   It is in-process and reaches only a node whose executor is in the current server process.
   All original Stories were completed, but the post-implementation review found behavior gaps against the approved mockups.
 - **Epic 3 — Agent Node Room Approved-Behavior Remediation** brings every visible approved mockup behavior into current scope without rewriting delivered Story history.
-  It moves visible G1, G2, and G4 behavior into ordered corrective Stories and keeps only non-visible G3 behavior deferred.
+  Its Stories are completed historical work; Epic 4 carries the revised approved contract.
+- **Epic 4 — Agent Node Room Current-Contract Correction** implements and verifies the 70-item approved product inventory and current active-turn delivery behavior.
 
 Epic 1 supplies the transcript primitives that Epic 2 uses for interrupted tool rows and operator messages.
-Epic 3 depends on the delivered baseline from Epics 1 and 2 and corrects approved-behavior gaps across both surfaces.
+Epics 1–3 are the delivered baseline; Epic 4 corrects approved-behavior gaps across both surfaces.
 Each story delivers one observable feature that can be accepted independently.
 Registry, routes, sub-state projection, race handling, API regeneration, tests, and accessibility work are tasks or acceptance criteria of the feature that owns them.
 They are not separate technical stories.
 
-Completed Stories remain historical delivery records.
-All original Stories in Epics 1 and 2 are complete.
+Completed Stories remain historical delivery records and are not reopened or rewritten as new work.
 Tracking state records implementation progress and does not classify product scope.
 
 The mockup handoff is in `claude-design/design_handoff_node_room_transcript_steering/`.
-Every visible approved mockup behavior is current scope.
+Every visible approved product behavior in the 70-item manifest is current scope.
 The requirements, Architecture, UX, Stories, and verification evidence must agree with that behavior and cannot defer it through notes or backlog labels.
 The implementation must use existing Legacy and Console tokens instead of copying literal mockup values.
 
@@ -84,7 +93,7 @@ Otherwise render a path and preview, and never fabricate a diff from one side.
 
 FR6 (CAP-6): Group rows by `occurrence_id` when a node has more than one occurrence.
 Never group by `attempt_id`.
-Use `Run N` for a repeated top-level execution, `Iteration N` for a loop occurrence, `Pass N` for another provider turn in the same occurrence, and a reason-only label for a non-numbered interruption or recovery occurrence.
+Use primary `Run N` for every multi-occurrence separator in occurrence order, with loop iteration, provider pass, retry, or interruption context as a suffix; a single occurrence has no separator.
 Keep execution selection separate from scroll-only occurrence navigation, and omit group headers and navigation for a single occurrence.
 A mutation from a finished iteration carries its retry epoch and fails closed when that epoch is stale.
 
@@ -107,18 +116,22 @@ It flushes already queued messages and the new message in written order as the n
 The node continues and never enters a workflow resume state.
 
 FR11 (CAP-11): Operator messages and interrupted tool calls appear as ordinary transcript rows in happened order.
-An operator row is clearly distinct from agent text and shows its sender.
+An operator row is clearly distinct from agent text.
+Only the row created by accepted per-item Send now during generation hides its visible sender name; stored attribution and other operator-row display paths remain.
 
 FR12 (CAP-12): Sending is an ordinary provider prompt.
 Every provider supports boundary delivery through `Queue` and interrupt-then-continue.
-One queued item can be sent during generation when the selected provider supports soft-inject.
-The control stays visible with a clear refusal state when soft-inject is unavailable.
-Claude and OMP soft-inject are current corrective scope through independent G2 and G4 capability paths.
-Grok hook-based soft-inject remains deferred as G3 because it is absent from the approved mockups.
+On a proven Archon live-turn mode, per-item Send now sends exactly the selected queued item into the active turn during generation without Stop, natural-end wait, or a new turn.
+Only that item leaves the queue on provider acceptance and appears immediately as a nameless `sent` operator row.
+Queue-only modes omit the per-item action; direct unsupported requests refuse without queue mutation.
+Claude streaming input, Grok live input, and OMP RPC are independent current G2/G3/G4 release proof gates, not proven capabilities of the current adapters.
+Grok must pass a real active-turn selected-item path and causal agent receipt gate in this release; its current `--single` mode remains queue-only.
 
-FR13 (CAP-13): A submitted operator message reads `sent` until the provider confirms the stamped message id.
-It advances to `delivered` only after confirmation by that id and never by matching text or time.
-Claude delivery confirmation through G1 is current corrective scope.
+FR13 (CAP-13): A registry receipt is `queued`, and accepted live-turn transport creates the `sent` operator row.
+The matching row advances to `delivered` only after a native lifecycle event or response stream causally linked to that selected message proves agent consumption.
+An RPC acknowledgement, unrelated stream, text match, or timestamp does not prove consumption.
+The stamped id remains the row and idempotency key, but exact echo is not the only valid proof.
+G1 is current release proof and implementation work.
 
 ### NonFunctional Requirements
 
@@ -167,7 +180,8 @@ UX-DR3 (CAP-2/3/4/5): Expanded bodies use the declared terminal, diff, match, pa
 
 UX-DR4 (CAP-8/9/10): The dock reflects `generating`, UI-local `interrupting`, `idle-after-interrupt`, generating again, and finished states.
 
-UX-DR5 (CAP-11): An operator row shows `operator · <sender display name>`, full-strength text, and the delivery badge.
+UX-DR5 (CAP-11): The accepted per-item active-turn row shows operator role, full-strength text, and `sent` without a visible sender name; stored attribution remains.
+Other operator-row paths keep their existing display-name treatment.
 
 UX-DR6 (CAP-9/10): The dock discloses the 30-minute inactivity behavior, shows `NEVER SENT` after reconciliation, and restores focus safely when removed.
 
@@ -182,37 +196,39 @@ UX-DR9 (CAP-3): The pinned todo strip is in scope and is the only place the curr
 It appears below the transcript and immediately above the queue or dock in both approved room layouts.
 
 UX-DR10 (CAP-6): Execution selection and scroll-only occurrence navigation are distinct controls.
-The approved `Run`, `Iteration`, `Pass`, and reason-only labels identify their defined occurrence contexts.
+Every multi-occurrence separator uses primary `Run N` in occurrence order with the applicable context suffix.
 
 ### FR Coverage Map
 
-| FR / CAP                             | Story coverage                |
-| ------------------------------------ | ----------------------------- |
-| FR1 (CAP-1)                          | 1.1, 3.1                      |
-| FR7 (CAP-7)                          | 1.2                           |
-| FR2 (CAP-2)                          | 1.3                           |
-| FR5 (CAP-5)                          | 1.4                           |
-| FR3 (CAP-3)                          | 1.5, 3.1                      |
-| FR4 (CAP-4)                          | 1.6                           |
-| FR6 (CAP-6)                          | 1.7, 2.9, 2.10, 3.2, 3.6      |
-| FR8 (CAP-8)                          | 2.1, 2.2, 2.9, 2.10, 3.3, 3.4 |
-| FR9 (CAP-9)                          | 2.3, 2.4, 2.5, 2.6, 2.7, 3.6  |
-| FR10 (CAP-10)                        | 2.3, 2.4, 2.5, 2.6, 2.7       |
-| FR11 (CAP-11)                        | 2.8, 2.13                     |
-| FR12 (CAP-12) boundary floor         | 2.1, 2.3, 2.4, 2.5, 2.6, 2.7  |
-| FR12 (CAP-12) visible soft-inject    | 3.4, 3.5                      |
-| FR12 (CAP-12) deferred Grok hooks    | G3                            |
-| FR13 (CAP-13) `sent` and `delivered` | 2.8, 3.5                      |
-| Terminal reconciliation              | 2.11, 3.5                     |
-| 30-minute idle-await safety          | 2.12, 3.5                     |
-| Concurrent ordering and attribution  | 2.13, 3.3, 3.4                |
-| All 64 approved mockup behaviors     | 3.7                           |
+| FR / CAP                                     | Story coverage                                   |
+| -------------------------------------------- | ------------------------------------------------ |
+| FR1 (CAP-1)                                  | 1.1, 3.1                                         |
+| FR7 (CAP-7)                                  | 1.2                                              |
+| FR2 (CAP-2)                                  | 1.3                                              |
+| FR5 (CAP-5)                                  | 1.4                                              |
+| FR3 (CAP-3)                                  | 1.5, 3.1 historical; 4.1 current                 |
+| FR4 (CAP-4)                                  | 1.6                                              |
+| FR6 (CAP-6)                                  | 1.7, 2.9, 2.10, 3.2 historical; 4.2 current      |
+| FR8 (CAP-8)                                  | 2.1, 2.2, 2.9, 2.10, 3.3 historical; 4.3 current |
+| FR9 (CAP-9)                                  | 2.3, 2.4, 2.5, 2.6, 2.7, 3.6                     |
+| FR10 (CAP-10)                                | 2.3, 2.4, 2.5, 2.6, 2.7                          |
+| FR11 (CAP-11)                                | 2.8, 2.13 historical; 4.3 current                |
+| FR12 (CAP-12) boundary floor                 | 2.1, 2.3, 2.4, 2.5, 2.6, 2.7                     |
+| FR12 (CAP-12) active-turn Send now           | 3.4, 3.5 historical; 4.3, 4.4 current            |
+| FR12 (CAP-12) queue-only state               | 4.4 current                                      |
+| FR13 (CAP-13) `sent` and `delivered`         | 2.8, 3.5 historical; 4.4 current                 |
+| Terminal reconciliation                      | 2.11, 3.5                                        |
+| 30-minute idle-await safety                  | 2.12, 3.5                                        |
+| Concurrent ordering and attribution          | 2.13, 3.3, 3.4                                   |
+| Approved product chrome and fixture boundary | 3.6 historical; 4.5 current                      |
+| All 70 manifest product items                | 3.7 historical; 4.6 current                      |
 
 ## Epic List
 
 1. **Epic 1 — Readable Agent Transcript** (CAP-1…7) lets operators scan, inspect, and navigate historical or live agent activity without reading raw JSON.
 2. **Epic 2 — Live Agent Steering** (CAP-8…13) lets operators queue guidance, interrupt and redirect each supported provider, and audit steering safely while the workflow node stays running.
-3. **Epic 3 — Agent Node Room Approved-Behavior Remediation** reconciles all 64 visible approved behaviors across Legacy and Console while preserving the completed original Story history.
+3. **Epic 3 — Agent Node Room Approved-Behavior Remediation** is completed historical work against an earlier 64-row review inventory.
+4. **Epic 4 — Agent Node Room Current-Contract Correction** owns the 70-item manifest, live-turn Send now, truthful status, and conformance across Legacy and Console.
 
 ---
 
@@ -1193,3 +1209,168 @@ Visible G1, G2, and G4 behavior is current scope in Stories 3.4 and 3.5.
 
 _Gate:_ Grok hook payload-shape spike.
 _Refs:_ CAP-12, `provider-steering-matrix.md`.
+
+---
+
+## Epic 4: Agent Node Room Current-Contract Correction
+
+Operators can read and steer both approved node rooms with the current 70-item product contract.
+This Epic corrects the completed historical Epics 1–3 without reopening or rewriting their Stories.
+The [validated manifest](../mockup-manifests/agent-node-room.json) is the inventory authority for nine changed features and 61 unchanged context items.
+G1, G2, G3, and G4 are current release proof and implementation gates.
+G3 requires an actual Grok path for per-item Send now in the active turn in this release; a hook advertisement does not prove the path.
+The active Archon adapter and mode must pass the provider-specific gate before the per-item action appears.
+
+### Story 4.1: Place and disclose the TODO strip
+
+As an operator, I want the current checklist below the scrolling transcript so that I can read work and progress together.
+
+**Acceptance Criteria:**
+
+**Given** a Console or Legacy node with TODO state
+**When** the room renders
+**Then** one pinned, collapsible TODO strip is after the transcript scroller and before the queue or dock
+**And** its current item and progress remain visible while transcript rows scroll.
+
+**Given** the strip is expanded
+**When** the operator reads it
+**Then** phases, items, status, and Raw use the existing fold and disclosure contract
+**And** no duplicate checklist appears inline in the transcript.
+
+_Manifest:_ M001/I007 and M002/I070.
+_Supersedes:_ The location phrase in completed Story 1.5; its prior acceptance text remains historical.
+
+### Story 4.2: Label every occurrence with Run N
+
+As a reader, I want one primary occurrence label so that I can compare executions without changing label rules by context.
+
+**Acceptance Criteria:**
+
+**Given** a transcript with two or more occurrences
+**When** the groups render
+**Then** every separator uses primary `Run N` in occurrence order
+**And** loop iteration, provider pass, retry, interruption, recovery, and collision detail follows as a suffix when relevant.
+
+**Given** a single occurrence
+**When** the transcript renders
+**Then** it has no occurrence separator.
+
+**Given** the operator uses navigation
+**When** `Execution` or `Jump to` changes
+**Then** `Execution` selects the occurrence and `Jump to` only scrolls within loaded content.
+
+_Manifest:_ M007/I052.
+_Supersedes:_ Alternative primary headings in completed Stories 1.7 and 3.2.
+
+### Story 4.3: Send one queued item into the active turn
+
+As an operator, I want per-item Send now to deliver my selected correction while the agent generates.
+
+**Acceptance Criteria:**
+
+**Given** a queued item and a proven Archon live-turn mode
+**When** I select that item's Send now during generation
+**Then** exactly that existing server-owned item enters the same active turn without Stop, a natural-end wait, an interrupted tool call, or another turn
+**And** every other queued item keeps its order.
+
+**Given** queued messages in either full node room
+**When** the shared queue band renders or its disclosure changes
+**Then** it stays below the TODO strip and above the dock, shows the node-scoped receipt order, and keeps the approved collapse and expand behavior
+**And** disclosure changes no queue contents.
+
+**Given** the provider transport accepts the selected item
+**When** the receipt is recorded
+**Then** only that item leaves the shared queue and one operator row appears immediately with `sent` and no visible sender name
+**And** its stored `operator_user_id`, derived read-model attribution, and stamped id remain intact.
+
+**Given** the provider rejects before acceptance or the turn ends first
+**When** the operation resolves
+**Then** the item stays queued in its original position or an explicit unresolved result is reported
+**And** no silent next-turn fallback, duplicate injection, or false operator row occurs.
+
+**Given** an uncertain timeout or a transcript-write failure after acceptance
+**When** the client retries or reconnects
+**Then** the selected id does not enter a sendable queue again and the recording failure is visible.
+
+_Manifest:_ M003/I009, M004/I029, M005/I008, M006/I028, and M008/I063.
+_Release proof:_ G2 Claude actual `AsyncIterable` path, G3 an actual Grok live-input path, and G4 OMP actual RPC path must each prove same-turn input on the exercised Archon adapter and mode, including tool-boundary and pure-text cases.
+G3 is required for this release; if hooks cannot pass the gate, another Grok path must pass it or release remains blocked.
+_Supersedes:_ Per-item refusal and sender-name criteria in completed Stories 3.4 and 2.8 only for this accepted row.
+
+### Story 4.4: Show queue-only controls and truthful delivery status
+
+As an operator, I want controls and status to reflect what the active transport proved.
+
+**Acceptance Criteria:**
+
+**Given** a queue-only mode, including current Codex, DeepSeek, or Grok `--single`
+**When** the queued list renders
+**Then** it omits per-item Send now and retains Queue, Delete, Stop, and dock Send now after Stop under their existing state rules.
+
+**Given** a new Grok live-input mode
+**When** its actual Archon path has proved selected-item same-turn acceptance and causal agent receipt
+**Then** per-item Send now may appear during generation in both rooms for that mode
+**And** an advertised hook or unsupported mode does not make the action appear.
+
+**Given** a direct per-item request reaches a queue-only or stale mode
+**When** the server checks it
+**Then** it returns a typed refusal and changes no queue or transcript state.
+
+**Given** a selected accepted row reads `sent`
+**When** a matching native lifecycle event or a stream causally tied to that message proves agent consumption
+**Then** only that row changes to `delivered`.
+
+**Given** only an RPC acknowledgement, unrelated ongoing stream, text match, timestamp, or route receipt
+**When** the status is projected
+**Then** that row remains `sent`.
+
+**Given** the operator presses dock Send now after Stop
+**When** the idle session continues
+**Then** all queued messages plus the new draft flush in receipt order as the next turn, separate from per-item active-turn delivery.
+
+_Manifest:_ M003/I009, M004/I029, and M009/I068; queue-only context C065/I065 in the manifest's inventory.
+_Release proof:_ G1 requires causal consumption evidence through the actual provider path; an SDK version or exact echoed id is not the universal test.
+G3 requires this proof on the new Grok path before that mode exposes the per-item action.
+_Supersedes:_ Visible queue-only refusal and exact-id-only status criteria in completed Stories 3.5 and 2.8.
+
+### Story 4.5: Keep product room controls inside the fixture boundary
+
+As an operator, I want the room's actual controls without review-only switches.
+
+**Acceptance Criteria:**
+
+**Given** either product node room
+**When** it renders
+**Then** the outer numbered review-state, node-kind, and provider-transport controls from the mockup sheets are absent
+**And** the in-product `Execution`, Cancel, Re-run, Log or Logs, Graph, counted Artifacts, and close controls retain their approved behavior.
+
+**Given** a Logs row or execution is selected
+**When** the room updates
+**Then** the selected row, room header, transcript, TODO projection, queue, and dock agree.
+
+_Manifest:_ Fixture exclusion applies to the 70-item product inventory; unchanged product controls remain in the 61 manifest `UNCHANGED_CONTEXT` rows.
+_Supersedes:_ The outer-control criteria in completed Story 3.6.
+
+### Story 4.6: Prove all 70 approved product items
+
+As a product owner, I want one conformance result for both rooms so that the current contract can be reviewed.
+
+**Acceptance Criteria:**
+
+**Given** the validated manifest
+**When** the trace is built
+**Then** every one of its 70 product items has a requirement, implementation owner, and verification path on each applicable Legacy or Console surface
+**And** the nine `CHANGE_FEATURE` rows M001–M009 match their full behavior signatures
+**And** all 61 manifest `UNCHANGED_CONTEXT` rows remain covered without counting outer fixture controls.
+
+**Given** focused route, registry, executor, provider, component, and end-to-end checks
+**When** they run against actual Archon adapters and both rooms
+**Then** G2 Claude, G3 Grok, and G4 OMP actual adapter paths prove the active-turn contract, with G1 causal consumption evidence for each displayed `delivered` state
+**And** selected-item races, queue-only absence, TODO placement, universal headers, attribution, and room chrome pass without a skipped current item.
+
+**Given** the conformance inventory is scored
+**When** Epic 4 closes
+**Then** all 70 items are `MATCHED` and none is `PARTIAL`, `MISSING`, `CONFLICT`, or `UNCLEAR`.
+
+_Manifest:_ M001–M009 and all 61 `UNCHANGED_CONTEXT` rows.
+_Depends on:_ Stories 4.1–4.5 and proven G1/G2/G3/G4 release gates.

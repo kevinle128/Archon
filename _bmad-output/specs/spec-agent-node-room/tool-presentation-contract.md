@@ -329,12 +329,11 @@ Making successful Codex file changes visible is separately tracked work, and a n
 ## Occurrence grouping
 
 Group rows by `occurrence_id` and render a header only when a node has more than one group.
-Use `Run N` for repeated top-level node execution and `Iteration N` for a loop occurrence.
-Use `Pass N` for another provider turn within the same occurrence.
-Use a non-numbered reason-only header for an interruption or recovery occurrence.
-These labels are not alternatives for one event type; each names a distinct execution context in the approved states.
+Use primary `Run N` in occurrence order for every multi-occurrence separator.
+Append loop iteration, provider pass, retry, or interruption context as a suffix when relevant.
+A single occurrence has no separator, and no reason-only or pass-only primary occurrence label appears.
 Never group by `attempt_id`.
-`mintTranscriptExecutionScope()` mints a new occurrence and attempt, while `newTranscriptAttempt()` reuses the occurrence, so an attempt remains finer than an occurrence even when the visible provider-turn label reads `Pass N`.
+`mintTranscriptExecutionScope()` mints a new occurrence and attempt, while `newTranscriptAttempt()` reuses the occurrence, so an attempt remains finer than an occurrence even when the visible suffix includes `Pass N`.
 
 ## Provider normalizers
 

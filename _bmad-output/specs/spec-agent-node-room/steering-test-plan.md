@@ -37,13 +37,13 @@ Process-boundary tests exercise both in-process (web dispatch) and detached (no 
 
 One fixture per in-use provider; each proves the turn ends and the session survives for a follow-up run.
 
-- claude — native `interrupt()`; the abort yields no terminal `result`; current G2 also proves streaming input plus resume soft-injects one selected queued message without a turn-start event
+- claude — native `interrupt()`; G2 must prove the actual pinned or updated Archon `AsyncIterable` accepts a second selected message into the same active turn during tool and pure-text cases without Stop, natural-end wait, or turn-start event
 - codex — stream-abort → `resumeThread` re-runs the resumed thread; fixture pins its abort terminal shape (result vs throw vs clean end)
-- omp — stream-abort: its abort **throws** `Query aborted` (`provider.ts:317,450`) → fixture asserts the executor routes the throw (with `operatorInterrupt` set) to idle-await, not `dag_node_failed`; current G4 also proves RPC mode, protocol version 2, all-message steering, ordered soft-inject, and no ACP fallback
-- grok — stream-abort (`interject` unreachable; hooks are deferred G3); fixture pins its abort terminal shape and the per-item soft-inject action returns a clear refusal without dequeueing
+- omp — stream-abort: its abort **throws** `Query aborted` (`provider.ts:317,450`) → fixture asserts the executor routes the throw (with `operatorInterrupt` set) to idle-await, not `dag_node_failed`; G4 must first build or select Archon RPC mode and prove selected-item `steer` acceptance in the active turn with no ACP cancellation or next-turn fallback
+- grok — current Archon `--single` mode is queue-only; fixture pins its abort terminal shape, omits the per-item action, and proves a direct unsupported request refuses without dequeueing
 - deepseek — cancel-and-continue, partial retained: its abort emits a terminal `result` (`stopReason:'aborted'` / `errorSubtype:'deepseek_aborted'`, `acp-client.ts:105`) → fixture asserts the executor classifies it as an **interrupted** end, not natural completion
-- codex and deepseek per-item soft-inject requests return the same typed capability refusal and leave queue order unchanged
-- current G1 upgrades the Claude fixture to an SDK that echoes the caller-stamped id; the UI advances only that id from `sent` to `delivered`, while an absent, different, duplicated, text-matched, or time-adjacent id cannot advance it
+- codex and deepseek omit the per-item action; direct soft-inject requests return the same typed capability refusal and leave queue order unchanged
+- G1 proves `delivered` only after a matching native lifecycle event or a stream causally linked to the selected message; RPC acknowledgement, unrelated ongoing stream, text match, time adjacency, and an SDK version alone cannot advance it
 
 ## Registry and routes
 
@@ -58,16 +58,18 @@ Per `steering-api-contract.md`.
 - Send during an interrupt in flight waits in the queue for `Send now` — no 409, nothing lost
 - invalid run/node id → 404; unauthenticated → 401/403; malformed payload → 400; duplicate `message_id` → idempotent receipt replay; repeated interrupt while idle → idempotent no-op; node goes terminal mid-request → 409
 - **withdraw route** (`DELETE …/queue/:messageId`): removes a still-queued message from the registry queue; withdraw of an already-drained or unknown `message_id` → idempotent success no-op; unknown run/node → 404
-- **per-item soft-inject route:** `intent:'soft_inject'` returns `soft_injected` for Claude and OMP, returns 422 `soft_inject_unavailable` for Codex, DeepSeek, and Grok, and never reports `delivered`
+- **per-item soft-inject route:** the caller supplies an existing selected queued id and retry epoch, not replacement text or sender; only a proven Archon adapter and mode returns transport acceptance for that item, while queue-only modes return 422 `soft_inject_unavailable` and never report `delivered`
+- **active-turn races:** claim one selected item against the turn token; concurrent Delete, natural drain, Stop, Cancel, epoch change, late acknowledgement, uncertain timeout, repeat request, reconnect, and transcript-write failure never duplicate delivery or silently convert it to a new turn
 - every rejected request leaves the node, queue, and transcript unchanged (assert all three)
 
 ## Operator row and reconciliation
 
 - the executor is the sole writer; the row is a `text` row with `metadata` `{ origin='operator', operator_user_id, message_id }`; no new table, no widened `kind`; placed by `seq` between the turn it redirected and the turn it caused
-- every message starts at `sent`; only an exact provider confirmation of its caller-stamped id advances it to `delivered`
-- terminal reconciliation runs **only** on actual node-terminal evidence (persisted `node_completed`/`node_failed`, or exact-scope purged-Ask projection): each observed ledger id matches a written `message_id`; an unmatched id returns as `NEVER SENT`; assert it never runs on a live refetch or on run-level terminal status alone (a Cancel mid-flight must not mis-mark a delivered message)
+- registry acceptance is `queued`; active-turn provider acceptance removes only the selected item and writes one `sent` operator row immediately without a visible sender name, while stored `operator_user_id` and derived attribution remain
+- a matching native lifecycle event or causally linked stream upgrades only that row to `delivered`; unrelated stream and RPC acknowledgement leave it `sent`
+- terminal reconciliation runs **only** on actual node-terminal evidence (persisted `node_completed`/`node_failed`, or exact-scope purged-Ask projection): queued receipts proven unaccepted may become `NEVER SENT`, while an accepted id without its row is an explicit recording failure and never a sendable draft; assert reconciliation never runs on live refetch or run-level terminal status alone
 - **Story 2.11 focused coverage** — core: `packages/web/src/lib/steering-dock.test.ts` (T1.1–T1.22 ledger/reconcile/finished mode); docks: `ComposerDock.test.tsx` + `ConsoleComposerDock.test.tsx` (T2.1–T2.18); server projection: `packages/server/src/routes/workflow-execution-history.test.ts` (T3.1–T3.4 exact-scope purged Ask + nested owners, answered resume guard, fail-closed ambiguity); parents: `execution-room-model.test.ts`, `WorkflowExecution.test.tsx`, `RunDetailPage.test.tsx` (T3.5–T3.14 raw-history helpers + 3 s catch-up); panes: `NodeTranscriptPane.test.tsx` + `ConsoleNodeRoom.test.tsx` (T3.15–T3.26 node-terminal pass-through + node-wide drain); E2E: `e2e/ui/agent-never-sent.spec.ts` (E4.1–E4.5, E4.7–E4.8 Cancel/observer/idle-queue/draft/finished-iteration/focus/visual on both shells), natural-drain negative in `agent-queue-guidance.spec.ts` (E4.6), finished-iteration observer in `agent-finished-iteration.spec.ts`
-- display-name projection (AD-12 / Story 2.8): the served operator row carries `operator_display_name` from the read-time join; a non-null sender always gets a trimmed name or the 8-char short id (server-owned fallback); `null` is reserved for identity-less rows; the web does not fetch users
+- display-name projection (AD-12 / Story 2.8): the served operator row carries derived `operator_display_name` from the read-time join; only the accepted per-item active-turn row hides that name visually, while other operator rows keep their existing display behavior
 
 ## Concurrent operators
 
@@ -98,7 +100,9 @@ Extend the node-room E2E on **Legacy and Console**.
 - dock states across `generating` (`Stop` / `Queue`), the `interrupting` transient (`Stopping…` `aria-disabled`, never native disabled), `idle-after-interrupt` (`Send now`, `WILL SEND`), `generating again`, finished (`NEVER SENT` read-only), and the detached-run disclosure (state 8)
 - **the queue dispatches at `Queue`-press:** pressing `Queue` fires the send route (`intent:'queue'`) and the message is server-side at once; a later `x` fires the **withdraw route** for that `message_id`; a withdraw after the message has drained is a success no-op
 - `this tab only` labels only unsent composer content, including in a combined surface; queued rows from another tab or operator are visibly node-scoped and shared
-- every queued row shows per-item `Send now` during generation; Claude and OMP execute it, while Codex, DeepSeek, and Grok show the refusal and keep the row queued
+- a queued row shows per-item `Send now` only on a proven active-turn Archon mode; Codex, DeepSeek, and Grok `--single` omit it, and direct unsupported requests refuse without mutation
+- G3 exercises a new Archon Grok path during generation and proves exactly the selected queued item enters the same active turn without Stop, a natural-end wait, or another turn; test tool-boundary and pure-text cases, selected-item races, and causal agent receipt before exposing the action in either room
+- if the Grok hook path is unproved or fails, the release gate fails; an advertised hook, acknowledgement, unrelated stream, or silent Queue fallback cannot satisfy G3 or mark its accepted row `delivered`
 - interrupt → `Send now` → the agent continues on the same session against the redirected work
 - the interrupted tool call renders `⚠ interrupted`, not `✕ failed`, on a non-Claude provider (proves the reader fold)
 - accessibility: colour-free status glyph, per-transition polite live-region announcement, assertive delivery-failure `role="alert"`, focus transfer on dock change (never `<body>`), `Enter` inserts a newline and never sends, `prefers-reduced-motion`, `aria-describedby` on the ask-blocked Send
@@ -114,23 +118,16 @@ Extend the node-room E2E on **Legacy and Console**.
 - `@archon/web` imports nothing from `@archon/workflows`; wire types come from `api.generated`
 - Console imports nothing from `@/components/`; the dock JSX is written twice, thin
 
-## Approved mockup behavior coverage — steering and room controls
+## Approved mockup conformance — steering and room controls
 
-The [immutable readiness inventory](../../planning-artifacts/implementation-readiness-report-2026-09-20-agent-node-room.md) defines 25 steering behaviors S01 through S25, four room-review behaviors R01 through R04, and seven existing-chrome behaviors C01 through C07.
-All 36 are current scope and must have a runnable assertion.
-Together with T01 through T28 in `test-plan.md`, this covers all 64 approved behaviors.
-Coverage index: S01, S02, S03, S04, S05, S06, S07, S08, S09, S10, S11, S12, S13, S14, S15, S16, S17, S18, S19, S20, S21, S22, S23, S24, S25, R01, R02, R03, R04, C01, C02, C03, C04, C05, C06, and C07.
+The [validated Agent Node Room manifest](../../planning-artifacts/mockup-manifests/agent-node-room.json) is the current inventory of 70 product items.
+Together with `test-plan.md`, this plan tests all nine `CHANGE_FEATURE` rows and preserves runnable checks for all 61 `UNCHANGED_CONTEXT` rows on each applicable surface.
+Outer numbered review-state, node-kind, and provider-transport fixture controls are excluded; the in-product `Execution` selector remains in scope.
 
-| Behavior ids | Required test evidence                                                                                                                                |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S01–S05      | Generating controls, immediate Queue dispatch, shared order, collapsible ordinal queue with next-out state, and idempotent delete.                    |
-| S06–S07      | `this tab only` applies only to unsent draft content, and per-item `Send now` executes or refuses by provider capability without losing the row.      |
-| S08–S12      | Interrupting truthfulness, idle state, ordered same-session continuation, attributed operator record, and exact-id `delivered`.                       |
-| S13–S20      | Never-sent reconciliation, clean finish, 30-minute failure, detached state, delivery failure, ask blocking, interrupt race, and no empty queue shell. |
-| S21–S25      | Lifecycle separation, stable narrow layout, context-specific full-bleed or inset queue, retry-epoch stale refusal, and accessible idle-limit copy.    |
-| R01–R04      | Numbered state, node-kind, and provider selectors update the complete frame, and the selected provider makes per-item soft-inject execute or refuse.  |
-| C01–C07      | Cancel separation, Re-run, Log or Logs, Graph, counted Artifacts, execution-row synchronization, and close-room focus behavior.                       |
-
-The correction regression set for this plan is S04, S06, S07, S12, S22, S23, S24, S25, R01, R02, R03, R04, C01, C02, C03, C04, C05, and C07.
-These 18 ids join the six correction ids in `test-plan.md` to cover all 24 readiness gaps.
-Each needs a semantic interaction assertion on every approved surface where it is visible, plus the named visual measurement when geometry is part of the behavior.
+| Manifest row                    | Required evidence                                                                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M003 / I009 and M004 / I029     | Console and Legacy show per-item Send now only on a proven active-turn transport; it sends exactly the selected item during generation without Stop, natural-end wait, or a new turn. |
+| M005 / I008 and M006 / I028     | Both rooms keep the shared queued-message band and disclosure, with only the selected accepted item removed and all other items in receipt order.                                     |
+| M008 / I063                     | Accepted per-item Send now creates one immediate `sent` operator row with no visible sender name; stored attribution and other row display paths remain.                              |
+| M009 / I068                     | A matching native lifecycle event or causally linked stream changes only that row to `delivered`; RPC acknowledgement or unrelated stream leaves it `sent`.                           |
+| All 61 `UNCHANGED_CONTEXT` rows | Preserve and verify each unchanged product context item on the manifest's applicable surfaces, including actual room chrome and queue-only absence of per-item Send now.              |

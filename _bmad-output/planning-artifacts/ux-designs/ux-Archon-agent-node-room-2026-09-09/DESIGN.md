@@ -400,26 +400,24 @@ That is the visual proof of the one-presenter-two-renderers constraint, and it i
 The brainstorm imports (`imports/superpowers-transcript-v1.html`, `imports/superpowers-transcript-v2.html`) settled the row anatomy but carry GitHub-dark hexes; none of those values survive.
 Dark-only today, because both token sources are dark-only.
 
-The approved Console, Legacy, transcript-state, and steering-state mockups are immutable evidence for every visible control, state, transition, and layout context.
+The approved Console, Legacy, transcript-state, and steering-state mockups are immutable evidence for 70 product items: nine changed features and 61 unchanged context items.
+The outer numbered state, node-kind, and provider-transport controls are mockup fixtures, not product controls.
 This file defines how those visible behaviors use the product tokens and resolves only details the mockups do not show.
 
 ## Approved Current-Scope Context
 
-The context vocabulary is exact.
-`Run N` means a repeated top-level node execution.
-`Iteration N` means a loop occurrence.
-`Pass N` means another provider turn inside the same occurrence.
-A reason-only header means an unnumbered interruption or recovery occurrence.
+Every multi-occurrence separator has primary `Run N` in occurrence order.
+Loop iteration, provider pass, retry, and interruption context follows as a suffix when relevant; a single occurrence has no separator.
 
-The visible G1, G2, and G4 behavior is current scope.
-An operator row changes from `sent` to `delivered` only after provider confirmation of the same caller-stamped message id.
-During generation, every queued item keeps a visible `Send now` action.
-The action executes for the selected provider when its capability projection supports soft-inject.
-For a queue-only provider, the action stays visible in a clear refusal state and the item stays queued.
-Only G3, Grok hook soft-inject, remains deferred because it is not visible in the approved mockups.
+G1 truthful consumption and G2/G3/G4 live-turn delivery are current release proof gates.
+Claude streaming input, Grok live input, and OMP RPC require proof through their actual Archon modes; the user requires the Grok path in this release.
+During generation on a proven live-turn mode, each queued item shows `Send now` for exactly that item.
+On transport acceptance, only the selected item leaves the shared queue and appears immediately as a nameless operator row with `sent` and stored attribution intact.
+A matching lifecycle event or a stream causally tied to the selected message changes that row to `delivered`; an RPC acknowledgement or unrelated stream does not.
+Queue-only modes, including current Grok `--single`, omit the per-item action.
+The Grok action appears only after a new mode proves same-turn selected-item acceptance and causal agent receipt; an advertised hook is not proof.
 
-The state, node-kind, provider, `Re-run`, Console `Log`, Legacy `Logs`, `Graph`, `Artifacts`, and room close controls are product controls.
-They are not review scaffolding.
+The in-product `Execution` selector, `Re-run`, Console `Log`, Legacy `Logs`, `Graph`, `Artifacts`, and room close controls are product controls.
 Both shells keep the same control behavior, state semantics, keyboard path, and focus result.
 The shells differ only through inherited tokens, shell chrome, and the approved singular or plural log label.
 
@@ -681,7 +679,7 @@ Nesting a disclosure inside a disclosure is the reason the card reuses the row's
 **Key-value list** (`{components.kv-list}`) — up to three rows, key in text-secondary at `{spacing.kv-key-w}`, value in text-primary; `{…}` and `[n]` are literal text.
 
 **Context header** (`{components.occurrence-header}`) — `{typography.occurrence-header}` uppercase text-secondary label, then a 1px `border` rule to the right edge; margin `{spacing.occurrence-margin}`.
-It uses `Run N` for a repeated top-level node execution, `Iteration N` for a loop occurrence, `Pass N` for another provider turn in the same occurrence, and a reason-only label for an unnumbered interruption or recovery occurrence.
+It uses primary `Run N` for each multi-occurrence separator, with loop, pass, retry, or interruption context as a suffix.
 
 **Occurrence navigator** (adopted delta 5, 2026-09-19) — one control row at the bottom edge of the room region, a sibling of the transcript scroller like the dock is, never a child of it: the `Jump to` label in `text-xs` text-secondary beside a native `<select>` that shares the header `Execution` select's anatomy verbatim — `text-xs` text, `surface-elevated` fill, 1px `border`, `rounded`, end-elided, `10rem` max width — and `Jump to latest` holding the row's right edge unchanged.
 The row takes the room's existing `px-3` side padding and `py-2`; the select clears the 24px SC 2.5.8 floor through its `py-0.5` vertical padding plus border — grown, not enlarged, the way the tool row reaches it — so its painted anatomy stays the header select's.
@@ -691,14 +689,15 @@ It renders only while two or more displayable occurrence groups exist; its absen
 Inline code inside it is mono at 11px.
 
 **Operator text** (`{components.operator-text}`) — the same anatomy as Assistant text, one step up: sans, **text-primary**, under a 10px uppercase text-secondary `operator` role label.
-Two channels separate the operator's words from the model's, and neither is a hue: the label says who wrote it — and on a node with more than one operator that label names the **sender** (`operator_user_id`) rather than a bare `operator`, still in the same `{components.operator-text.label}` token, so distinguishing operators adds no colour — and full-strength text against the model's secondary says it a second time.
+Two channels separate the operator's words from the model's, and neither is a hue: the operator role and full-strength text identify operator content.
+Other operator-row paths can show the sender's derived display name on a multi-operator node, but the row created by accepted per-item Send now during generation has no visible sender name; stored `operator_user_id` remains.
 A reader who can distinguish no colour at all still cannot confuse them.
 A message-status badge sits on the label line, right-aligned.
 
 **Message status** (`{components.message-status}`) — `{typography.badge}`, the words `sent` and `delivered`, never a dot and never a colour alone.
 `sent` is text-secondary.
-`delivered` takes the success colour **in addition to** the word and appears only after the provider confirms the same caller-stamped message id.
-Request acceptance, matching text, and timing never produce `delivered`.
+`delivered` takes the success colour **in addition to** the word and appears only after a matching lifecycle event or causally linked response stream proves agent consumption.
+Transport acceptance produces `sent`; an RPC acknowledgement, unrelated stream, matching text, and timing never produce `delivered`.
 
 **Composer dock** (`{components.composer-dock}`) — pinned to the bottom of the node panel on both shells, `surface-elevated` with a 1px `border` top edge, padding `{spacing.dock-pad}`, children `{spacing.dock-gap}` apart.
 The full-room stack is transcript, todo strip, full-bleed queue band when non-empty, then dock.
@@ -745,9 +744,9 @@ Accepted queue items are node-scoped and shared across tabs and operators.
 It is a slot in the dock's anatomy rather than a caption on another component, because it is the one place the interface corrects a belief the operator is likely to hold, and a caption can be dropped by someone rearranging the thing it hangs off.
 
 **Queue item** (`{components.draft-item}`) — one line per waiting message, `{typography.badge}` text-secondary, end-elided, radius `{rounded.sm}`.
-During generation, every item shows `Send now` and delete at the row's right edge.
-When the selected provider supports soft-inject, `Send now` sends only that item into the active turn.
-When the selected provider is queue-only, `Send now` remains visible in a refusal state with text that explains that this provider waits for the next turn; activation does not remove or deliver the item.
+During generation, every item shows Delete; a proven live-turn mode also shows per-item `Send now` at the row's right edge.
+That action sends only the selected item into the active turn without Stop, natural-end wait, or a new turn.
+Queue-only modes omit the action; a direct unsupported request refuses without removing the item.
 Per-item controls clear the 24×24 SC 2.5.8 floor through padding — not the dock's 32px, which an 11px row cannot carry without becoming a card.
 
 **Finished-iteration dock (Story 2.10 / AD-16, issue #190 decision B2 — adopted 2026-09-20).**
@@ -765,10 +764,10 @@ When the operator is viewing a completed iteration of a still-live loop node thr
 Every iteration-scoped mutation carries the selected `retry_epoch`.
 The server rejects a stale or finished epoch before mutation, so a stale client fails closed even though the approved finished-iteration mode exposes no mutation control.
 
-**Room context and chrome controls** — the approved state, node-kind, provider, `Re-run`, Console `Log`, Legacy `Logs`, `Graph`, `Artifacts`, and close controls are current product behavior.
+**Room context and chrome controls** — the in-product `Execution` selector, `Re-run`, Console `Log`, Legacy `Logs`, `Graph`, `Artifacts`, and close controls are current product behavior.
 They use the existing room control sizes and focus tokens.
-State, node-kind, provider, and execution selection remain synchronized with the displayed transcript, todo projection, queue, and dock.
-Changing provider changes the real capability projection used by per-item `Send now`; it does not simulate support.
+`Execution` selection remains synchronized with the displayed transcript, todo projection, queue, and dock.
+The actual active adapter and mode determine per-item capability; the outer mockup transport selector does not change the product session.
 Close returns focus to the control or row that opened the room.
 
 **Interaction and accessibility** — native buttons and selects keep their platform keyboard behavior.
@@ -807,7 +806,7 @@ Elision of the disclosure string is **not** authorized; wrapping inside the flex
 | Draw the stop control bordered, in text-primary                          | Fill it, or colour it with `error` — a stop is not a failure        |
 | Render the draft box only when it holds something                        | Show an empty queue panel above the composer                        |
 | Put the stop and the send at opposite ends of the control row            | Set them side by side, where the wrong one is one thumb away        |
-| Keep per-item `Send now` visible and explain a queue-only refusal        | Hide the action because the selected provider cannot soft-inject    |
+| Show per-item `Send now` only on a proven live-turn mode                 | Show it in a queue-only mode or silently send in a new turn         |
 | Put the todo strip below the transcript and above the queue or dock      | Put the todo strip at the top of the transcript                     |
 
 ## Open Questions
