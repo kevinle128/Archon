@@ -1,0 +1,260 @@
+{
+  "geometry.console": {
+    "outerRoomWidth": 520,
+    "innerRoomWidth": 511,
+    "roomWidthTargetPx": 520,
+    "container": {
+      "flexGrow": "0",
+      "flexShrink": "0",
+      "background": "oklch(0.205 0.009 265)",
+      "borderBottomWidth": "1px",
+      "borderRadius": "0px"
+    },
+    "header": {
+      "padding": "6px 10px",
+      "columnGap": "8px",
+      "minHeight": "24px",
+      "measuredWidth": 511,
+      "measuredHeight": 29.25,
+      "whiteSpace": "nowrap"
+    },
+    "label": {
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "textTransform": "uppercase",
+      "letterSpacing": "0.7px",
+      "color": "oklch(0.745 0.014 265)"
+    },
+    "representative": {
+      "fontSize": "11.5px",
+      "fontFamily": "\"Geist Mono\", ui-monospace, \"SF Mono\", Menlo, monospace",
+      "elision": "hidden/ellipsis/nowrap",
+      "color": "oklch(0.975 0.004 265)",
+      "glyph": "◐"
+    },
+    "meter": {
+      "cells": 12,
+      "columnGap": "2px",
+      "cellHeight": 3
+    },
+    "count": {
+      "fontSize": "10px",
+      "fontFamily": "\"Geist Mono\", ui-monospace, \"SF Mono\", Menlo, monospace",
+      "color": "oklch(0.745 0.014 265)"
+    },
+    "caret": {
+      "fontSize": "9px",
+      "width": 9,
+      "rotate": "none",
+      "duration": "0.12s"
+    },
+    "body": {
+      "paddingTop": "4px",
+      "paddingRight": "10px",
+      "paddingBottom": "8px",
+      "paddingLeft": "10px",
+      "borderTopWidth": "1px",
+      "maxHeight": "168px",
+      "overflowY": "auto",
+      "scrollHeight": 329,
+      "clientHeight": 167
+    },
+    "phase": {
+      "fontSize": "10px",
+      "letterSpacing": "0.7px",
+      "marginTop": "4px",
+      "textTransform": "uppercase"
+    },
+    "item": {
+      "fontSize": "11.5px",
+      "lineHeight": "21.275px",
+      "fontFamily": "\"Geist Mono\", ui-monospace, \"SF Mono\", Menlo, monospace",
+      "color": "oklch(0.745 0.014 265)"
+    },
+    "currentRow": {
+      "background": "oklch(0.175 0.007 265)",
+      "color": "oklch(0.975 0.004 265)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklch(0.72 0.155 245) 2px 0px 0px 0px inset"
+    }
+  },
+  "overflow.console": {
+    "bodyMaxHeight": "168px",
+    "bodyOverflowY": "auto",
+    "bodyScrollHeight": 329,
+    "bodyClientHeight": 167,
+    "internalScroll": true
+  },
+  "geometry.legacy": {
+    "outerRoomWidth": 460,
+    "innerRoomWidth": 459,
+    "roomWidthTargetPx": 460,
+    "container": {
+      "flexGrow": "0",
+      "flexShrink": "0",
+      "background": "oklch(0.22 0.01 260)",
+      "borderBottomWidth": "1px",
+      "borderRadius": "0px"
+    },
+    "header": {
+      "padding": "6px 10px",
+      "columnGap": "8px",
+      "minHeight": "24px",
+      "measuredWidth": 459,
+      "measuredHeight": 29.25,
+      "whiteSpace": "nowrap"
+    },
+    "label": {
+      "fontSize": "10px",
+      "fontWeight": "700",
+      "textTransform": "uppercase",
+      "letterSpacing": "0.7px",
+      "color": "oklch(0.65 0.01 260)"
+    },
+    "representative": {
+      "fontSize": "11.5px",
+      "fontFamily": "\"JetBrains Mono\", ui-monospace, monospace",
+      "elision": "hidden/ellipsis/nowrap",
+      "color": "oklch(0.93 0.005 260)",
+      "glyph": "◐"
+    },
+    "meter": {
+      "cells": 12,
+      "columnGap": "2px",
+      "cellHeight": 3
+    },
+    "count": {
+      "fontSize": "10px",
+      "fontFamily": "\"JetBrains Mono\", ui-monospace, monospace",
+      "color": "oklch(0.65 0.01 260)"
+    },
+    "caret": {
+      "fontSize": "9px",
+      "width": 9,
+      "rotate": "none",
+      "duration": "0.12s"
+    },
+    "body": {
+      "paddingTop": "4px",
+      "paddingRight": "10px",
+      "paddingBottom": "8px",
+      "paddingLeft": "10px",
+      "borderTopWidth": "1px",
+      "maxHeight": "168px",
+      "overflowY": "auto",
+      "scrollHeight": 329,
+      "clientHeight": 167
+    },
+    "phase": {
+      "fontSize": "10px",
+      "letterSpacing": "0.7px",
+      "marginTop": "4px",
+      "textTransform": "uppercase"
+    },
+    "item": {
+      "fontSize": "11.5px",
+      "lineHeight": "21.275px",
+      "fontFamily": "\"JetBrains Mono\", ui-monospace, monospace",
+      "color": "oklch(0.65 0.01 260)"
+    },
+    "currentRow": {
+      "background": "oklch(0.18 0.008 260)",
+      "color": "oklch(0.93 0.005 260)",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklch(0.72 0.18 250) 2px 0px 0px 0px inset"
+    }
+  },
+  "overflow.legacy": {
+    "bodyMaxHeight": "168px",
+    "bodyOverflowY": "auto",
+    "bodyScrollHeight": 329,
+    "bodyClientHeight": 167,
+    "internalScroll": true
+  },
+  "meta": {
+    "commit": "ceea509f",
+    "viewport": "1440x1000",
+    "roomWidthTargetPx": {
+      "console": 520,
+      "legacy": 460
+    },
+    "source": "e2e/ui/agent-todo-strip.spec.ts"
+  },
+  "contrast": {
+    "console": {
+      "surface-elevated background": "oklch(0.205 0.009 265)",
+      "surface background": "oklch(0.175 0.007 265)",
+      "surface-hover background": "oklch(0.225 0.01 265)",
+      "TODO label (text-secondary) resolved": "oklch(0.745 0.014 265)",
+      "TODO label (text-secondary) vs oklch(0.205 0.009 265)": 7.9,
+      "count (text-secondary) resolved": "oklch(0.745 0.014 265)",
+      "count (text-secondary) vs oklch(0.205 0.009 265)": 7.9,
+      "representative (text-primary) resolved": "oklch(0.975 0.004 265)",
+      "representative (text-primary) vs oklch(0.205 0.009 265)": 16.72,
+      "completed glyph resolved": "oklch(0.755 0.165 168)",
+      "completed glyph vs oklch(0.205 0.009 265)": 8.97,
+      "completed item text resolved": "oklch(0.745 0.014 265)",
+      "completed item text vs oklch(0.205 0.009 265)": 7.9,
+      "in progress glyph resolved": "oklch(0.72 0.155 245)",
+      "in progress glyph vs oklch(0.175 0.007 265)": 7.72,
+      "in progress item text resolved": "oklch(0.975 0.004 265)",
+      "in progress item text vs oklch(0.175 0.007 265)": 17.72,
+      "pending glyph resolved": "oklch(0.745 0.014 265)",
+      "pending glyph vs oklch(0.205 0.009 265)": 7.9,
+      "pending item text resolved": "oklch(0.745 0.014 265)",
+      "pending item text vs oklch(0.205 0.009 265)": 7.9,
+      "blocked glyph resolved": "oklch(0.8 0.14 85)",
+      "blocked glyph vs oklch(0.205 0.009 265)": 9.54,
+      "blocked item text resolved": "oklch(0.745 0.014 265)",
+      "blocked item text vs oklch(0.205 0.009 265)": 7.9,
+      "abandoned glyph resolved": "oklch(0.745 0.014 265)",
+      "abandoned glyph vs oklch(0.205 0.009 265)": 7.9,
+      "abandoned item text resolved": "oklch(0.745 0.014 265)",
+      "abandoned item text vs oklch(0.205 0.009 265)": 7.9,
+      "focus ring on surface-elevated resolved": "oklch(0.64 0.295 330)",
+      "focus ring on surface-elevated vs oklch(0.205 0.009 265)": 4.57,
+      "focus ring on surface-hover resolved": "oklch(0.64 0.295 330)",
+      "focus ring on surface-hover vs oklch(0.225 0.01 265)": 4.35,
+      "meter cell (decorative)": 8.97
+    },
+    "legacy": {
+      "surface-elevated background": "oklch(0.22 0.01 260)",
+      "surface background": "oklch(0.18 0.008 260)",
+      "surface-hover background": "oklch(0.24 0.01 260)",
+      "TODO label (text-secondary) resolved": "oklch(0.65 0.01 260)",
+      "TODO label (text-secondary) vs oklch(0.22 0.01 260)": 5.33,
+      "count (text-secondary) resolved": "oklch(0.65 0.01 260)",
+      "count (text-secondary) vs oklch(0.22 0.01 260)": 5.33,
+      "representative (text-primary) resolved": "oklch(0.93 0.005 260)",
+      "representative (text-primary) vs oklch(0.22 0.01 260)": 14.08,
+      "completed glyph resolved": "oklch(0.65 0.17 155)",
+      "completed glyph vs oklch(0.22 0.01 260)": 5.81,
+      "completed item text resolved": "oklch(0.65 0.01 260)",
+      "completed item text vs oklch(0.22 0.01 260)": 5.33,
+      "in progress glyph resolved": "oklch(0.72 0.18 250)",
+      "in progress glyph vs oklch(0.18 0.008 260)": 7.39,
+      "in progress item text resolved": "oklch(0.93 0.005 260)",
+      "in progress item text vs oklch(0.18 0.008 260)": 15.28,
+      "pending glyph resolved": "oklch(0.65 0.01 260)",
+      "pending glyph vs oklch(0.22 0.01 260)": 5.33,
+      "pending item text resolved": "oklch(0.65 0.01 260)",
+      "pending item text vs oklch(0.22 0.01 260)": 5.33,
+      "blocked glyph resolved": "oklch(0.75 0.15 75)",
+      "blocked glyph vs oklch(0.22 0.01 260)": 7.58,
+      "blocked item text resolved": "oklch(0.65 0.01 260)",
+      "blocked item text vs oklch(0.22 0.01 260)": 5.33,
+      "abandoned glyph resolved": "oklch(0.65 0.01 260)",
+      "abandoned glyph vs oklch(0.22 0.01 260)": 5.33,
+      "abandoned item text resolved": "oklch(0.65 0.01 260)",
+      "abandoned item text vs oklch(0.22 0.01 260)": 5.33,
+      "focus ring on surface-elevated resolved": "oklch(0.72 0.18 250)",
+      "focus ring on surface-elevated vs oklch(0.22 0.01 260)": 6.8,
+      "focus ring on surface-hover resolved": "oklch(0.72 0.18 250)",
+      "focus ring on surface-hover vs oklch(0.24 0.01 260)": 6.51,
+      "meter cell (decorative)": 5.81
+    }
+  },
+  "room-anatomy": {
+    "workflow": "e2e-room-anatomy",
+    "node": "anatomy-live",
+    "surfaces": ["console", "legacy"]
+  }
+}

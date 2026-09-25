@@ -20,6 +20,12 @@
 - **Pattern**: Measure `#console-run-room` / `#legacy-run-room` at 520/460 ±1 in split mode. Never write `archon.run-room.ratio.*`. Strip width is relative to the inner room region (Console 4px outset when todo shown). Band order: assert DOM sibling order when margins can overlap boxes. Live todo+queue proof uses `e2e-room-anatomy` + `startWorkflowViaWeb`.
 - **Example**: `expect(Math.abs(outerWidth - ROOM_WIDTH_PX[surface])).toBeLessThanOrEqual(1)`
 
+### US-004 gate ladder
+- **Where**: `packages/web` test script splits + `e2e` focused Playwright
+- **Pattern**: Run narrow lib tests, then Radix-preloaded component regressions (include LegacyNodeRoom), then isolated Console invocation, then `bun --filter @archon/web test`, dual type-checks, then the nine focused Playwright specs. Never `bun test` from monorepo root. Sibling wrappers (LegacyNodeRoom) may still pin obsolete band order after room-body flips — flip those assertions in the gate story, do not weaken AC.
+- **Example**: `NODE_ENV=development bun test --preload ./src/test/preload-radix-dom.ts src/components/workflows/LegacyNodeRoom.test.tsx`
+
+
 ---
 
 ## 2026-09-25 — US-001: Fixed-width contract and split owners in both shells
@@ -106,5 +112,29 @@
 - Queue band is always-open `h3`+`ul` (no collapsible button) — verifier anatomy must match product, not obsolete mockup.
 - Console 4px todo outset can make bounding-box adjacency flaky; prefer DOM sibling order for band order.
 - Live streaming fixtures need soft scroll-tail slack; re-pin scrollTop while rows arrive.
+
+---
+
+## 2026-09-25 — US-004: Gates, docs consistency, and owner-aligned closeout
+
+**Status**: PASSED
+**Files changed**:
+- `packages/web/src/components/workflows/LegacyNodeRoom.test.tsx` — flipped obsolete todo-before-scroller region assertion to scroller → todo
+- `plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/acceptance-a1-a6.md` — A1–A6 mapped to tests, measurements, captures
+- `plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/gate-results.txt` — exact gate commands + results
+- `plans/260925-2145-issue-266-console-legacy-room-anatomy/reports/evidence/*` — copied live anatomy PNGs + metrics JSONs
+
+**Acceptance criteria verified**:
+- [x] Full gate ladder: narrow web tests, split/route/room-body + regressions (incl. LegacyNodeRoom, ComposerDock, use-container-split-mode, console-isolation), Console isolated, `bun --filter @archon/web test`, web+e2e type-check, focused Playwright 76 pass
+- [x] Brand docs: no --rv-panel-* rows; no evergreen drag/resize Node Room instructions; historical plans untouched as authority
+- [x] Acceptance report under plans/.../reports/ mapping A1–A6
+- [x] Changed-file review: no API/schema/generated-type/deps drift; ratio readers/writers gone except deliberate fixtures; no ownership tracker edits
+- [x] Ownership: epic-3 backlog; 10-1 ready-for-dev unchanged; issue map untouched; M005 not complete; Story 10.1 AC not rewritten
+- [x] PR not opened (Ralph parent owns PR); validate deferred to parent pre-PR step
+
+**Learnings**:
+- US-002 flipped NodeTranscriptPane/ConsoleNodeRoom tests but LegacyNodeRoom.test still expected todo-first — caught only by US-004 regression gate.
+- Copy live metrics into this plan's reports/evidence for closeout without rewriting historical issue folders' meaning.
+- Parent workflow must open PR against develop linking #265, not #266-as-Story-3.1.
 
 ---
