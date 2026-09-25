@@ -13,39 +13,39 @@ so that the live execution is clear and stale history cannot affect live work.
 
 ## Acceptance Criteria
 
-1. **Given** the Console Node Room is open  
-   **When** the room renders  
-   **Then** its width is fixed at 520 pixels until close  
+1. **Given** the Console Node Room is open<br>
+   **When** the room renders<br>
+   **Then** its width is fixed at 520 pixels until close<br>
    **And** the transcript scrolls above the sibling todo strip, queue band, and composer dock.
 
-2. **Given** the Legacy Node Room is open  
-   **When** the room renders  
-   **Then** its width is fixed at 460 pixels until close  
+2. **Given** the Legacy Node Room is open<br>
+   **When** the room renders<br>
+   **Then** its width is fixed at 460 pixels until close<br>
    **And** it uses the same approved vertical order without overlaying the last transcript row.
 
-3. **Given** a loop node has more than one execution and no explicit execution selection  
-   **When** the `Execution` selector first renders  
-   **Then** the live execution is selected  
+3. **Given** a loop node has more than one execution and no explicit execution selection<br>
+   **When** the `Execution` selector first renders<br>
+   **Then** the live execution is selected<br>
    **And** the selector exposes no more than eight executions.
 
-4. **Given** the operator selects one exposed execution  
-   **When** the selection changes  
-   **Then** the room immediately projects that execution  
-   **And** writable steering controls appear only when the selected execution id matches the resolved live execution id, even if an older row still reports `running`  
+4. **Given** the operator selects one exposed execution<br>
+   **When** the selection changes<br>
+   **Then** the room immediately projects that execution<br>
+   **And** writable steering controls appear only when the selected execution id matches the resolved live execution id, even if an older row still reports `running`<br>
    **And** a stale execution is read-only and cannot send, withdraw, interrupt, or otherwise steer the live execution.
 
-5. **Given** a node has only one execution  
-   **When** the room renders  
+5. **Given** a node has only one execution<br>
+   **When** the room renders<br>
    **Then** the execution selector is absent.
 
-6. **Given** an open room has one execution selected implicitly and no `Execution` selector  
-   **When** a second same-node execution starts without reopening the room  
-   **Then** the selector first appears with the resolved live execution selected  
+6. **Given** an open room has one execution selected implicitly and no `Execution` selector<br>
+   **When** a second same-node execution starts without reopening the room<br>
+   **Then** the selector first appears with the resolved live execution selected<br>
    **And** the transcript, message request scope, and dock state immediately match that live execution in Legacy and Console.
 
-7. **Given** an operator explicitly opened an execution from Logs or a graph occurrence, or chose one through an existing `Execution` selector  
-   **When** another same-node execution starts without reopening the room  
-   **Then** the selected execution, transcript, and message request scope remain on the chosen row in Legacy and Console  
+7. **Given** an operator explicitly opened an execution from Logs or a graph occurrence, or chose one through an existing `Execution` selector<br>
+   **When** another same-node execution starts without reopening the room<br>
+   **Then** the selected execution, transcript, and message request scope remain on the chosen row in Legacy and Console<br>
    **And** its dock is read-only if that row is no longer live.
 
 ## Scope Boundary
