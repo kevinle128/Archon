@@ -92,41 +92,6 @@ nodes:
         *) echo 'BMAD story must be inside this checkout.' >&2; exit 1 ;;
       esac
 
-  - id: validate-bmad-story
-    depends_on: [story-preflight]
-    provider: codex
-    model: gpt-6-sol
-    effort: xhigh
-    loop:
-      prompt: |
-        Use $bmad-validate-story and follow `.agents/skills/bmad-validate-story/SKILL.md`.
-        Validate only this existing story: $story-preflight.output
-        Earlier validation output: $LOOP_PREV_OUTPUT
-        Latest user answer: $LOOP_USER_INPUT
-
-        This is an interactive validation step.
-        On the first pass, review the story against its approved sources.
-        If it is not ready, show every finding and its specific question clearly.
-        The workflow will display that output and wait for the user's answer.
-        Do not edit the story or its sprint entry before the user answers.
-        On a later pass, use the answer to repair only this story, then repeat the full review.
-        Do not guess missing behavior or change an approved source.
-        If an answer is absent or insufficient, return the remaining questions and wait again.
-        Do not create a plan or implement code.
-
-        Only after a clean review and verification that the story and sprint
-        statuses are ready-for-dev, finish the report with a line containing
-        exactly STORY_VALIDATION_PASSED.
-        Never include that line in a response with remaining problems or questions.
-      until: STORY_VALIDATION_PASSED
-      max_iterations: 100
-      fresh_context: true
-      interactive: true
-      signal_completes: true
-      gate_message: |
-        Review the full validation findings in this node's output.
-        Answer the questions to correct the story, or reject to stop.
-
   # ───────────────────────────────────────────────────────────────────
   # STEP 2 / 6 — Deep TDD plan (Claude + ck:plan), fully autonomous
   # ───────────────────────────────────────────────────────────────────
@@ -139,12 +104,10 @@ nodes:
       plan_path set to the absolute path of the plan directory (the directory
       that contains plan.md — not the plan.md file, and not plans/journals or
       plans/reports). The directory must already exist on disk.
-    depends_on: [validate-bmad-story]
+    depends_on: [story-preflight]
     provider: claude
     model: opus
     context: fresh
-    denied_tools:
-      - AskUserQuestion
     output_format:
       type: object
       properties:
