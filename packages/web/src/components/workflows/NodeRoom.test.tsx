@@ -299,6 +299,27 @@ describe('selectNodeRoomMessages', () => {
 });
 
 describe('NodeRoom', () => {
+  test('shows structured assistant fields with a raw disclosure', () => {
+    const raw = '{"status":"blocked","reason":"Inspecting the story"}';
+    const item: AgentHistoryItem = {
+      kind: 'assistant',
+      id: 'structured',
+      seq: 1,
+      role: 'assistant',
+      text: raw,
+      execution: null,
+      structuredFields: [
+        { name: 'status', value: 'blocked' },
+        { name: 'reason', value: 'Inspecting the story' },
+      ],
+    };
+    const markup = renderRoom({ items: [item] });
+    expect(markup).toContain('<dt');
+    expect(markup).toContain('Inspecting the story');
+    expect(markup).toContain('<summary class="cursor-pointer">Raw JSON</summary>');
+    expect(markup).toContain(raw.replaceAll('"', '&quot;'));
+  });
+
   test('renders assistant, tool, and lifecycle history', () => {
     const unselected = renderRoom({ nodeId: null, items: [] });
     expect(visibleText(unselected)).toBe('Select a node');

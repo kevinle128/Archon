@@ -4928,6 +4928,9 @@ describe('ConsoleNodeRoom', () => {
         seq: overrides.seq ?? 2,
         role: 'assistant',
         text: overrides.text ?? 'Understood — switching suites.',
+        ...(overrides.structuredFields === undefined
+          ? {}
+          : { structuredFields: overrides.structuredFields }),
         execution: overrides.execution === undefined ? null : overrides.execution,
       };
     }
@@ -5153,6 +5156,25 @@ describe('ConsoleNodeRoom', () => {
       expect(body.className).toContain('leading-[1.55]');
       expect(body.className).toContain('text-text-secondary');
       expect(body.querySelector('strong')?.textContent).toBe('hello');
+    });
+
+    test('shows structured assistant fields and keeps raw JSON available', async () => {
+      const raw = '{"status":"blocked","reason":"Inspecting the story"}';
+      await act(async () => {
+        mountList([
+          assistantItem({
+            text: raw,
+            structuredFields: [
+              { name: 'status', value: 'blocked' },
+              { name: 'reason', value: 'Inspecting the story' },
+            ],
+          }),
+        ]);
+      });
+      expect(host.querySelector('dt')?.textContent).toBe('status');
+      expect(host.querySelectorAll('dd')[1]?.textContent).toBe('Inspecting the story');
+      expect(host.querySelector('summary')?.textContent).toBe('Raw JSON');
+      expect(host.querySelector('pre')?.textContent).toBe(raw);
     });
   });
 

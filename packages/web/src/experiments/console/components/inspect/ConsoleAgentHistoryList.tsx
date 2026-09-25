@@ -209,13 +209,32 @@ function AssistantHistory({
         className="chat-markdown max-w-none font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary"
         style={{ margin: '0 2px 6px' }}
       >
-        <ReactMarkdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS}
-          components={MARKDOWN_COMPONENTS}
-        >
-          {item.text}
-        </ReactMarkdown>
+        {item.structuredFields === undefined ? (
+          <ReactMarkdown
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
+            components={MARKDOWN_COMPONENTS}
+          >
+            {item.text}
+          </ReactMarkdown>
+        ) : (
+          <>
+            <dl className="space-y-2">
+              {item.structuredFields.map(field => (
+                <div key={field.name}>
+                  <dt className="font-mono text-[11px] text-text-primary">{field.name}</dt>
+                  <dd className="m-0 whitespace-pre-wrap">{field.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <details className="mt-2">
+              <summary className="cursor-pointer">Raw JSON</summary>
+              <pre className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11px]">
+                {item.text}
+              </pre>
+            </details>
+          </>
+        )}
       </div>
     </div>
   );

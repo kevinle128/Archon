@@ -198,7 +198,13 @@ CAP-14 through CAP-21 define the approved current-scope expansion.
 ### Read and presentation paths
 
 - Existing persisted rows remain retroactively readable. New transcript sources and steering state use additive schemas and typed backend paths where the source data does not already exist.
-- **Serialized JSON is never a default presentation, and unclassifiable assistant text fails closed to its original bytes.** Tool payloads keep CAP-7's explicit Raw affordance — that toggle remains the only place tool input/output JSON appears. Assistant text is classified losslessly or left alone: when the matched definition node's `output_format` is an object schema declaring exactly one `type: 'string'` property and the stored text is the canonical serialization of that one-key envelope, the transcript renders the envelope's string value through the existing Markdown path; every other shape — absent or ineligible schema, malformed or non-canonical text — renders the original bytes unchanged. The shared `buildAgentHistory()` projector applies this rule with the schema forwarded by the three production surfaces — `LegacyNodeRoom` via `NodeTranscriptPane`, `ConsoleNodeRoom`, and `ConsoleInspectPane` via `ConsoleExecutionHistory`. Stored rows, API output, and the engine's structured result are never mutated.
+- **Serialized JSON is never a default presentation, and unclassifiable assistant text fails closed to its original bytes.**
+  Tool payloads keep CAP-7's explicit Raw affordance.
+  When the matched definition node's `output_format` declares one string property and the stored text is its canonical one-key JSON envelope, the transcript renders that string through Markdown.
+  When the schema declares multiple properties and the stored text is canonical JSON with exactly those keys, the transcript shows labeled values and a collapsed Raw JSON disclosure.
+  All other assistant text remains unchanged.
+  The shared `buildAgentHistory()` projector applies these rules in Legacy and Console node rooms and Console inspection history.
+  Stored rows, API output, and the engine's structured result are never mutated.
 - Status must be decodable **without colour** — a glyph character carries it, colour only reinforces.
 - A chip shows the tool name only when that name is **a single token of at most 24 characters**; otherwise it shows the **family name**. The 24-character cap is the guard behind the rule, never an instruction to truncate with an ellipsis.
 - Tool identification **duck-types over alias sets**; no name-keyed mapping table. Match **exact tokens, never substrings** (`search_replace` is an edit, not a search).
