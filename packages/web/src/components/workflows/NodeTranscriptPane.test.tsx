@@ -1211,7 +1211,7 @@ describe('NodeTranscriptPane', () => {
     return button;
   }
 
-  test('mounts the folded todo strip ahead of the scroller inside one room region', async () => {
+  test('mounts the folded todo strip after the scroller inside one room region', async () => {
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1231,9 +1231,9 @@ describe('NodeTranscriptPane', () => {
     const strip = stripSection();
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing scroller');
-    // The strip and the scroller are siblings inside the single region.
-    expect(region.firstElementChild).toBe(strip);
-    expect(strip?.nextElementSibling).toBe(scroller);
+    // Approved order: scroller first; todo follows as a room-region sibling.
+    expect(region.firstElementChild).toBe(scroller);
+    expect(scroller.nextElementSibling).toBe(strip);
     expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
     // The scroller owns scrolling; the region does not scroll.
     const scrollerClass = scroller.getAttribute('class') ?? '';
@@ -1274,6 +1274,310 @@ describe('NodeTranscriptPane', () => {
         rowEl.querySelector('[data-testid="todo-list"], [data-testid="todo-meter"], ul')
       ).toBeNull();
     }
+  });
+
+  test('room-region direct children are scroller → controls → todo → dock with queue before composer', async () => {
+    const OCC_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const OCC_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const execMeta = (
+      occurrenceId: string,
+      retryEpoch = 0
+    ): {
+      execution: { occurrence_id: string; attempt_id: string; retry_epoch: number };
+    } => ({
+      execution: {
+        occurrence_id: occurrenceId,
+        attempt_id: `${occurrenceId}-attempt-1`,
+        retry_epoch: retryEpoch,
+      },
+    });
+    const withExec = (
+      messages: readonly WorkflowNodeMessageResponse[],
+      occurrenceId: string,
+      retryEpoch = 0,
+      seqOffset = 0
+    ): WorkflowNodeMessageResponse[] =>
+      messages.map(message => ({
+        ...message,
+        seq: message.seq + seqOffset,
+        metadata: {
+          ...(message.metadata ?? {}),
+          ...execMeta(occurrenceId, retryEpoch),
+        },
+      }));
+    const bandMessages: WorkflowNodeMessageResponse[] = [
+      {
+        id: 'status-1',
+        seq: 1,
+        kind: 'status',
+        payload: { state: 'started' },
+        metadata: execMeta(OCC_A),
+        created_at: CREATED_AT,
+      },
+      {
+        id: 'text-2',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'run-one' },
+        metadata: execMeta(OCC_A),
+        created_at: CREATED_AT,
+      },
+      ...withExec(TODO_MESSAGES, OCC_A, 0, 2),
+      {
+        id: 'status-3',
+        seq: 20,
+        kind: 'status',
+        payload: { state: 'completed' },
+        metadata: execMeta(OCC_A),
+        created_at: CREATED_AT,
+      },
+      {
+        id: 'status-4',
+        seq: 21,
+        kind: 'status',
+        payload: { state: 'started' },
+        metadata: execMeta(OCC_B, 1),
+        created_at: CREATED_AT,
+      },
+      {
+        id: 'text-5',
+        seq: 22,
+        kind: 'text',
+        payload: { text: 'run-two' },
+        metadata: execMeta(OCC_B, 1),
+        created_at: CREATED_AT,
+      },
+    ];
+
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              queued: [{ message_id: 'q-1', message: 'steer once' }],
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
+
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: bandMessages,
+        }),
+      });
+    });
+    await flushUntil(host, 'band order', () => {
+      return (
+        stripSection() !== null &&
+        host.querySelector('select') !== null &&
+        dockField() !== null &&
+        (host.textContent ?? '').includes('queued · 1')
+      );
+    });
+
+    const region = host.querySelector('[role="region"][aria-label="review room"]');
+    if (region === null) throw new Error('missing room region');
+    const children = Array.from(region.children);
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    const controls = children.find(
+      child =>
+        child.querySelector('select') !== null ||
+        Array.from(child.querySelectorAll('button')).some(button =>
+          (button.textContent ?? '').includes('Jump to latest')
+        )
+    );
+    const strip = stripSection();
+    const queueList = host.querySelector('[aria-label^="Queued messages"]');
+    const queueSection = queueList?.closest('section') ?? null;
+    const field = dockField();
+    const composerWell = field?.parentElement ?? null;
+    if (scroller === null || controls === undefined || strip === null) {
+      throw new Error('missing scroller, controls, or todo strip');
+    }
+    if (queueSection === null || composerWell === null) {
+      throw new Error('missing queue or composer');
+    }
+
+    expect(children.indexOf(scroller)).toBe(0);
+    expect(children.indexOf(controls)).toBe(1);
+    expect(children.indexOf(strip)).toBe(2);
+    expect(children.indexOf(queueSection)).toBe(3);
+    expect(children.indexOf(composerWell)).toBe(4);
+    expect(children).toHaveLength(5);
+    expect(
+      queueSection.compareDocumentPosition(composerWell) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(host.querySelector('label')?.textContent).toContain('Jump to');
+    expect(host.textContent).toContain('steer once');
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+  });
+
+  test('absent bands leave no empty slot and no unrequested steering action', async () => {
+    // One occurrence + scroll following: no controls, no todos, empty queue, live dock.
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'running',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'live single-occurrence', () => dockField() !== null);
+
+    let region = host.querySelector('[role="region"][aria-label="review room"]');
+    if (region === null) throw new Error('missing room region');
+    let children = Array.from(region.children);
+    const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    const field = dockField();
+    const composerWell = field?.parentElement ?? null;
+    if (scroller === null || composerWell === null) throw new Error('missing scroller or dock');
+    expect(children).toEqual([scroller, composerWell]);
+    expect(host.querySelector('select')).toBeNull();
+    expect(
+      Array.from(host.querySelectorAll('button')).some(button =>
+        (button.textContent ?? '').includes('Jump to latest')
+      )
+    ).toBe(false);
+    expect(stripSection()).toBeNull();
+    expect(host.textContent).not.toContain('queued ·');
+    expect(host.querySelector('[aria-label^="Queued messages"]')).toBeNull();
+
+    // Controls present for Jump to latest alone after the reader scrolls away.
+    const liveScroller = scroller as unknown as HTMLElement;
+    Object.defineProperty(liveScroller, 'scrollHeight', { configurable: true, value: 400 });
+    Object.defineProperty(liveScroller, 'clientHeight', { configurable: true, value: 200 });
+    await act(async () => {
+      liveScroller.scrollTop = 200;
+      liveScroller.dispatchEvent(new win.Event('scroll', { bubbles: true }) as unknown as Event);
+    });
+    await act(async () => {
+      liveScroller.scrollTop = 175;
+      liveScroller.dispatchEvent(new win.Event('scroll', { bubbles: true }) as unknown as Event);
+    });
+    const jump = Array.from(host.querySelectorAll('button')).find(button =>
+      (button.textContent ?? '').includes('Jump to latest')
+    );
+    if (jump === undefined) throw new Error('missing Jump to latest');
+    region = host.querySelector('[role="region"][aria-label="review room"]');
+    if (region === null) throw new Error('missing room region after jump');
+    children = Array.from(region.children);
+    const controls = children.find(child =>
+      Array.from(child.querySelectorAll('button')).some(button =>
+        (button.textContent ?? '').includes('Jump to latest')
+      )
+    );
+    if (controls === undefined) throw new Error('missing controls band');
+    expect(children).toEqual([scroller, controls, composerWell]);
+    expect(host.querySelector('select')).toBeNull();
+    expect(stripSection()).toBeNull();
+
+    // Terminal / no dock: only scroller remains.
+    await act(async () => {
+      renderPane({
+        row: { ...REVIEW_ROW, status: 'completed' },
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil(host, 'terminal no dock', () => (host.textContent ?? '').includes('first'));
+    region = host.querySelector('[role="region"][aria-label="review room"]');
+    if (region === null) throw new Error('missing terminal room region');
+    children = Array.from(region.children);
+    const terminalScroller = host.querySelector('[data-testid="node-transcript-scroll"]');
+    if (terminalScroller === null) throw new Error('missing terminal scroller');
+    expect(children).toEqual([terminalScroller]);
+    expect(dockField()).toBeNull();
+    expect(stripSection()).toBeNull();
+    expect(host.textContent).not.toContain('Cmd/Ctrl+Enter to send');
+    expect(host.textContent).not.toContain('Queue');
+
+    // Read-only finished iteration with queue but no composer.
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              queued: [{ message_id: 'q-ro', message: 'read-only receipt' }],
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
+
+    await act(async () => {
+      renderPane({
+        row: {
+          id: 'occ-1',
+          nodeId: 'loop',
+          label: 'Loop ×1',
+          status: 'completed',
+          order: 0,
+          sourceIndex: 0,
+          selection: { kind: 'loop_iteration', iteration: 1 },
+        },
+        runStatus: 'running',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] }),
+        finishedIteration: { liveRowId: 'occ-2', liveIteration: 2 },
+        onSelectLiveRow: (): void => undefined,
+      });
+    });
+    await flushUntil(host, 'finished queue', () => (host.textContent ?? '').includes('queued · 1'));
+    expect(dockField()).toBeNull();
+    expect(host.textContent).toContain('read-only receipt');
+    expect(host.textContent).toContain('Go to iteration 2');
+    expect(host.textContent).not.toContain('Cmd/Ctrl+Enter to send');
+    const go = Array.from(host.querySelectorAll('button')).find(button =>
+      (button.textContent ?? '').includes('Go to iteration 2')
+    );
+    expect(go).toBeDefined();
+    expect(
+      Array.from(host.querySelectorAll('button')).some(
+        button => (button.textContent ?? '').trim() === 'Queue'
+      )
+    ).toBe(false);
   });
 
   test('renders no strip when the transcript has no foldable todo state', async () => {
