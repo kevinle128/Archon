@@ -1444,6 +1444,48 @@ describe('buildAgentHistory', () => {
     };
     const CANONICAL = '{"report":"# Report\\n\\nFindings **bold**"}';
 
+    test('presents canonical multi-field output without changing its raw text', () => {
+      const text = '{"status":"blocked","story_path":"","reason":"Inspecting the story"}';
+      const schema = {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          story_path: { type: 'string' },
+          reason: { type: 'string' },
+        },
+      };
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [textRow('multi', 1, text)],
+        outputFormat: schema,
+      });
+      expect(items[0]).toMatchObject({
+        kind: 'assistant',
+        text,
+        structuredFields: [
+          { name: 'status', value: 'blocked' },
+          { name: 'story_path', value: '' },
+          { name: 'reason', value: 'Inspecting the story' },
+        ],
+      });
+      const { items: unmatched } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          textRow(
+            'extra',
+            1,
+            '{"status":"blocked","story_path":"","reason":"Inspecting the story","extra":1}'
+          ),
+        ],
+        outputFormat: schema,
+      });
+      expect(unmatched[0]).not.toHaveProperty('structuredFields');
+    });
+
     function historyFor(
       rows: NodeMessageRow[],
       outputFormat?: Record<string, unknown>

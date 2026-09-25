@@ -128,11 +128,17 @@ export const E2E_TRANSCRIPT_DISPLAY_WORKFLOW_NAME = 'e2e-transcript-display';
 export const TRANSCRIPT_STRUCTURED_NODE = 'group.structured';
 /** Definition sibling with no `output_format` — its seeded envelope must stay serialized. */
 export const TRANSCRIPT_PLAIN_NODE = 'plain';
+export const TRANSCRIPT_MULTI_NODE = 'multi';
 /** Node absent from the definition entirely — the deleted-definition fallback. */
 export const TRANSCRIPT_GHOST_NODE = 'ghost';
 export const TRANSCRIPT_STRUCTURED_TEXT = 'E2E structured report body';
 export const TRANSCRIPT_PLAIN_TEXT = 'E2E plain raw envelope';
 export const TRANSCRIPT_GHOST_TEXT = 'E2E ghost raw envelope';
+export const TRANSCRIPT_MULTI_TEXT = JSON.stringify({
+  status: 'blocked',
+  story_path: '',
+  reason: 'Inspecting the story',
+});
 /**
  * Delta fragments persisted for the structured node: they assemble to exactly
  * `transcriptReportEnvelope(TRANSCRIPT_STRUCTURED_TEXT)`, so projection merges
@@ -814,6 +820,11 @@ async function startArchonRuntime(
           {
             nodeId: TRANSCRIPT_PLAIN_NODE,
             rows: [transcriptReportEnvelope(TRANSCRIPT_PLAIN_TEXT)],
+            deltas: [],
+          },
+          {
+            nodeId: TRANSCRIPT_MULTI_NODE,
+            rows: [TRANSCRIPT_MULTI_TEXT],
             deltas: [],
           },
         ]),

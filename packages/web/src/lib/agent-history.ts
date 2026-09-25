@@ -31,6 +31,7 @@ export type AgentHistoryItem =
       seq: number;
       role: 'assistant';
       text: string;
+      structuredFields?: { name: string; value: string }[];
       execution: TranscriptExecution | null;
     }
   | {
@@ -128,6 +129,35 @@ function presentedText(schemaKey: string | null, text: string): string {
   if (typeof value !== 'string') return text;
   if (text !== JSON.stringify(parsed)) return text;
   return value;
+}
+
+/** Keep the original text for audit while presenting canonical multi-field results as fields. */
+function structuredFields(
+  outputFormat: Record<string, unknown> | undefined,
+  text: string
+): { name: string; value: string }[] | undefined {
+  if (outputFormat?.type !== 'object') return undefined;
+  const properties = asRecord(outputFormat.properties);
+  if (properties === null || Object.keys(properties).length < 2) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  const record = asRecord(parsed);
+  if (record === null || text !== JSON.stringify(parsed)) return undefined;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== Object.keys(properties).length ||
+    keys.some(key => !Object.hasOwn(properties, key))
+  ) {
+    return undefined;
+  }
+  return keys.map(name => ({
+    name,
+    value: typeof record[name] === 'string' ? record[name] : JSON.stringify(record[name]),
+  }));
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | null {
@@ -364,12 +394,14 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
       continue;
     }
     if (message.kind === 'text') {
+      const fields = structuredFields(input.outputFormat, message.payload.text);
       items.push({
         kind: 'assistant',
         id: message.id,
         seq: message.seq,
         role: 'assistant',
         text: presentedText(envelopeKey, message.payload.text),
+        ...(fields === undefined ? {} : { structuredFields: fields }),
         execution: message.metadata?.execution ?? null,
       });
       continue;

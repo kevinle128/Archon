@@ -10,6 +10,8 @@ import {
   TRANSCRIPT_GHOST_NODE,
   TRANSCRIPT_GHOST_TEXT,
   TRANSCRIPT_INELIGIBLE_TEXTS,
+  TRANSCRIPT_MULTI_NODE,
+  TRANSCRIPT_MULTI_TEXT,
   TRANSCRIPT_PLAIN_NODE,
   TRANSCRIPT_PLAIN_TEXT,
   TRANSCRIPT_STRUCTURED_NODE,
@@ -43,7 +45,10 @@ async function waitForRunTitle(page: Page): Promise<void> {
 }
 
 function executionSection(page: Page, nodeText: string): Locator {
-  return page.locator('section[data-execution-row-id]').filter({ hasText: nodeText }).first();
+  return page
+    .locator('section[data-execution-row-id]')
+    .filter({ has: page.getByRole('button', { name: new RegExp(nodeText) }) })
+    .first();
 }
 
 async function openConsoleLogRow(page: Page, nodeText: string): Promise<void> {
@@ -97,6 +102,15 @@ async function expectRawEnvelope(
   });
 }
 
+async function expectStructuredFields(container: Locator): Promise<void> {
+  await expect(container.locator('dt')).toHaveText(['status', 'story_path', 'reason']);
+  await expect(container.locator('dd')).toHaveText(['blocked', '', 'Inspecting the story']);
+  const raw = container.locator('pre', { hasText: TRANSCRIPT_MULTI_TEXT });
+  await expect(raw).toBeHidden();
+  await container.locator('summary', { hasText: 'Raw JSON' }).click();
+  await expect(raw).toBeVisible();
+}
+
 /**
  * API contract: ordered payload.text equals the seeded fragments verbatim and
  * every scoped row retains the execution ids the executor minted for the
@@ -115,6 +129,7 @@ async function expectApiRowsSerialized(page: Page, runId: string): Promise<void>
   for (const [nodeId, texts] of [
     [TRANSCRIPT_STRUCTURED_NODE, STRUCTURED_ROW_TEXTS],
     [TRANSCRIPT_PLAIN_NODE, [PLAIN_ENVELOPE]],
+    [TRANSCRIPT_MULTI_NODE, [TRANSCRIPT_MULTI_TEXT]],
   ] as const) {
     const messages = await listNodeMessages(page, runId, nodeId);
     expect(
@@ -164,13 +179,14 @@ function expectStoredRowsSerialized(archon: ArchonRuntime, runId: string): void 
   for (const [nodeId, texts] of [
     [TRANSCRIPT_STRUCTURED_NODE, STRUCTURED_ROW_TEXTS],
     [TRANSCRIPT_PLAIN_NODE, [PLAIN_ENVELOPE]],
+    [TRANSCRIPT_MULTI_NODE, [TRANSCRIPT_MULTI_TEXT]],
     [TRANSCRIPT_GHOST_NODE, [GHOST_ENVELOPE]],
   ] as const) {
     expect(textsByNode.get(nodeId), `${nodeId} stored rows unchanged`).toEqual([...texts]);
   }
 }
 
-test('[P1] [V:transcript-display.structured] Exact one-string report unwraps in all three mounts; ineligible and stored rows stay serialized', async ({
+test('[P1] [V:transcript-display.structured] Structured reports render in all three mounts; ineligible and stored rows stay serialized', async ({
   page,
   archon,
 }) => {
@@ -185,6 +201,7 @@ test('[P1] [V:transcript-display.structured] Exact one-string report unwraps in 
   const inlineSection = executionSection(page, TRANSCRIPT_STRUCTURED_NODE);
   await expectUnwrapped(inlineSection, 'Console inline execution history');
   await expectIneligibleRows(inlineSection, 'Console inline execution history');
+  await expectStructuredFields(executionSection(page, TRANSCRIPT_MULTI_NODE));
 
   // Selecting the row suspends its inline body and opens the node room — the
   // second mount must apply the same unwrapping.
@@ -192,6 +209,8 @@ test('[P1] [V:transcript-display.structured] Exact one-string report unwraps in 
   const structuredRoom = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
   await expectUnwrapped(structuredRoom, 'Console selected node room');
   await expectIneligibleRows(structuredRoom, 'Console selected node room');
+  await openConsoleLogRow(page, TRANSCRIPT_MULTI_NODE);
+  await expectStructuredFields(await waitForRoom(page, TRANSCRIPT_MULTI_NODE));
 
   // `plain` resolves a definition node with no output_format; `ghost` resolves
   // no definition node at all. Both must render the serialized bytes.
@@ -218,6 +237,8 @@ test('[P1] [V:transcript-display.structured] Exact one-string report unwraps in 
   const legacyRoom = await waitForRoom(page, TRANSCRIPT_STRUCTURED_NODE);
   await expectUnwrapped(legacyRoom, 'Legacy node room');
   await expectIneligibleRows(legacyRoom, 'Legacy node room');
+  await openLegacyLogRow(page, TRANSCRIPT_MULTI_NODE);
+  await expectStructuredFields(await waitForRoom(page, TRANSCRIPT_MULTI_NODE));
 
   await openLegacyLogRow(page, TRANSCRIPT_PLAIN_NODE);
   await expectRawEnvelope(
@@ -254,6 +275,7 @@ test('[P1] [V:transcript-display.graph] Legacy runtime graph drops the minimap; 
   const viewport = page.locator('.react-flow__viewport');
   const transform = async (): Promise<string> =>
     viewport.evaluate(el => getComputedStyle(el).transform);
+  await fitView.click();
   const fitted = await transform();
 
   // Zoom changes the viewport transform; fit restores it.
