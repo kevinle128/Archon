@@ -14,17 +14,17 @@ Soft injection and delivery acknowledgement appear only when adapter conformance
 
 ## Capability contract
 
-| Provider | Stop implementation | Session continuation | Soft injection | Delivery acknowledgement | Current story |
-| --- | --- | --- | --- | --- | --- |
-| Claude | SDK-native query interrupt through interruptSignal | Resume the existing Claude session | Streaming input, subject to conformance in the current story | Stamped message-id echo after the required SDK update | 8.3 |
-| Codex | Abort the active streamed turn through interruptSignal | Resume the existing Codex thread | Not exposed by the current TypeScript SDK path | Not currently exposed | 8.4 |
-| Grok | Adapter stream abort through interruptSignal | Continue the existing Grok session | Verified hook path | Not currently exposed | 8.5 |
-| DeepSeek | Provider-native turn abort through interruptSignal | Continue the warm ACP session | Concurrent prompt is not accepted | Not currently exposed | 8.6 |
-| OMP | RPC-mode turn interruption through interruptSignal | Continue the existing RPC session | RPC steering with all-item ordering | Not currently exposed | 8.7 |
-| Qoder CLI | Adapter-specific Stop mapping required | Preserve or re-establish the documented session | Expose only if conformance proves it | Expose only if conformance proves it | 9.1 |
-| Pi | Adapter-specific Stop mapping required | Preserve or re-establish the documented session | Expose only if conformance proves it | Expose only if conformance proves it | 9.2 |
-| GitHub Copilot | Adapter-specific Stop mapping required | Preserve or re-establish the documented session | Expose only if conformance proves it | Expose only if conformance proves it | 9.3 |
-| OpenCode | Adapter-specific Stop mapping required | Preserve or re-establish the documented session | Expose only if conformance proves it | Expose only if conformance proves it | 9.4 |
+| Provider       | Stop implementation                                    | Session continuation                            | Soft injection                                               | Delivery acknowledgement                              | Current story |
+| -------------- | ------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------ | ----------------------------------------------------- | ------------- |
+| Claude         | SDK-native query interrupt through interruptSignal     | Resume the existing Claude session              | Streaming input, subject to conformance in the current story | Stamped message-id echo after the required SDK update | 8.3           |
+| Codex          | Abort the active streamed turn through interruptSignal | Resume the existing Codex thread                | Not exposed by the current TypeScript SDK path               | Not currently exposed                                 | 8.4           |
+| Grok           | Adapter stream abort through interruptSignal           | Continue the existing Grok session              | Verified hook path                                           | Not currently exposed                                 | 8.5           |
+| DeepSeek       | Provider-native turn abort through interruptSignal     | Continue the warm ACP session                   | Concurrent prompt is not accepted                            | Not currently exposed                                 | 8.6           |
+| OMP            | RPC-mode turn interruption through interruptSignal     | Continue the existing RPC session               | RPC steering with all-item ordering                          | Not currently exposed                                 | 8.7           |
+| Qoder CLI      | Adapter-specific Stop mapping required                 | Preserve or re-establish the documented session | Expose only if conformance proves it                         | Expose only if conformance proves it                  | 9.1           |
+| Pi             | Adapter-specific Stop mapping required                 | Preserve or re-establish the documented session | Expose only if conformance proves it                         | Expose only if conformance proves it                  | 9.2           |
+| GitHub Copilot | Adapter-specific Stop mapping required                 | Preserve or re-establish the documented session | Expose only if conformance proves it                         | Expose only if conformance proves it                  | 9.3           |
+| OpenCode       | Adapter-specific Stop mapping required                 | Preserve or re-establish the documented session | Expose only if conformance proves it                         | Expose only if conformance proves it                  | 9.4           |
 
 The provider registrations and capability declarations in packages/providers are the executable owners after implementation.
 

@@ -1863,9 +1863,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "Console node room layout",
       "control_or_state": "Fixed 520-pixel Console room with a non-overlay dock",
-      "inventory_ids": [
-        "I035"
-      ],
+      "inventory_ids": ["I035"],
       "action_key": null,
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -1991,9 +1989,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
       "rendered_state": "Legacy node room layout",
       "control_or_state": "Fixed 460-pixel Legacy room",
-      "inventory_ids": [
-        "I036"
-      ],
+      "inventory_ids": ["I036"],
       "action_key": null,
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2119,10 +2115,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "loop node execution selector",
       "control_or_state": "Selector defaults to live execution and exposes at most eight entries",
-      "inventory_ids": [
-        "I032",
-        "I066"
-      ],
+      "inventory_ids": ["I032", "I066"],
       "action_key": "select-node-execution",
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2253,9 +2246,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
       "rendered_state": "legacy generating queue panel",
       "control_or_state": "Projected Auto-send on status indicator",
-      "inventory_ids": [
-        "I044"
-      ],
+      "inventory_ids": ["I044"],
       "action_key": null,
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2381,13 +2372,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "verified soft-inject mode",
       "control_or_state": "Per-item Send now injects one queued message without Stop",
-      "inventory_ids": [
-        "I015",
-        "I016",
-        "I049",
-        "I050",
-        "I085"
-      ],
+      "inventory_ids": ["I015", "I016", "I049", "I050", "I085"],
       "action_key": "send-now-active-turn",
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2513,11 +2498,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "terminal state with undelivered content",
       "control_or_state": "Unmatched durable messages become read-only Never sent records",
-      "inventory_ids": [
-        "I025",
-        "I059",
-        "I076"
-      ],
+      "inventory_ids": ["I025", "I059", "I076"],
       "action_key": null,
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2643,11 +2624,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "failed after idle timeout",
       "control_or_state": "Thirty-minute interrupted-idle timeout fails the node and preserves durable queue content",
-      "inventory_ids": [
-        "I028",
-        "I061",
-        "I078"
-      ],
+      "inventory_ids": ["I028", "I061", "I078"],
       "action_key": null,
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2773,9 +2750,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "provider-specific status annotation",
       "control_or_state": "Codex cannot produce the interrupted warning glyph",
-      "inventory_ids": [
-        "I100"
-      ],
+      "inventory_ids": ["I100"],
       "action_key": null,
       "scope": "CURRENT",
       "coverage_role": "CHANGE_FEATURE",
@@ -2903,14 +2878,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "Console run shell and room header",
       "control_or_state": "Existing run navigation, run metadata, filters, node list, and room header",
-      "inventory_ids": [
-        "I001",
-        "I002",
-        "I003",
-        "I004",
-        "I005",
-        "I006"
-      ],
+      "inventory_ids": ["I001", "I002", "I003", "I004", "I005", "I006"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "These controls reproduce the existing Console workflow-run shell and do not change its contract.",
@@ -2932,12 +2900,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "Console and Legacy transcripts",
       "control_or_state": "Existing chronological transcript and tool disclosure controls",
-      "inventory_ids": [
-        "I007",
-        "I008",
-        "I041",
-        "I042"
-      ],
+      "inventory_ids": ["I007", "I008", "I041", "I042"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The current product already interleaves assistant text and tool rows and supplies independent disclosure and Raw controls.",
@@ -2993,15 +2956,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "interrupting and idle-after-interrupt transition",
       "control_or_state": "Existing brief Stopping state and interrupted tool outcome",
-      "inventory_ids": [
-        "I017",
-        "I018",
-        "I019",
-        "I051",
-        "I052",
-        "I053",
-        "I072"
-      ],
+      "inventory_ids": ["I017", "I018", "I019", "I051", "I052", "I053", "I072"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The approved brief disabled Stopping state, enabled Queue, lack of progress UI, and warning presentation already match the completed steering baseline.",
@@ -3061,15 +3016,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "terminal steering states",
       "control_or_state": "Existing terminal reconciliation, clean omission, lifecycle actions, and read-only affordance",
-      "inventory_ids": [
-        "I026",
-        "I027",
-        "I060",
-        "I062",
-        "I077",
-        "I083",
-        "I089"
-      ],
+      "inventory_ids": ["I026", "I027", "I060", "I062", "I077", "I083", "I089"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "These terminal rules already exist as the baseline; the new durable Never sent records and recovery behavior are classified as changes.",
@@ -3091,14 +3038,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "loop execution history",
       "control_or_state": "Existing per-iteration rows, stale read-only state, and Go to live iteration",
-      "inventory_ids": [
-        "I031",
-        "I033",
-        "I034",
-        "I065",
-        "I067",
-        "I068"
-      ],
+      "inventory_ids": ["I031", "I033", "I034", "I065", "I067", "I068"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The current product already models loop executions separately and keeps stale iterations read-only with navigation back to live.",
@@ -3120,12 +3060,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
       "rendered_state": "Legacy run shell and room header",
       "control_or_state": "Existing Legacy run metadata, tabs, node list, selector, and Close control",
-      "inventory_ids": [
-        "I037",
-        "I038",
-        "I039",
-        "I040"
-      ],
+      "inventory_ids": ["I037", "I038", "I039", "I040"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "These elements reproduce the current Legacy workflow execution shell.",
@@ -3147,9 +3082,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
       "rendered_state": "Legacy node room layout",
       "control_or_state": "Existing sibling dock below the transcript",
-      "inventory_ids": [
-        "I069"
-      ],
+      "inventory_ids": ["I069"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The current room already keeps the dock as a sibling below the transcript so it does not overlay the last row; only fixed panel sizing changes.",
@@ -3171,10 +3104,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
       "rendered_state": "refused composer input behaviors",
       "control_or_state": "Enter does not submit and empty drafts are omitted",
-      "inventory_ids": [
-        "I087",
-        "I088"
-      ],
+      "inventory_ids": ["I087", "I088"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The current composer already requires the explicit action and rejects empty draft rendering or submission.",
@@ -3196,13 +3126,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "tool family palette",
       "control_or_state": "Existing semantic color tokens for tool families",
-      "inventory_ids": [
-        "I090",
-        "I091",
-        "I092",
-        "I093",
-        "I094"
-      ],
+      "inventory_ids": ["I090", "I091", "I092", "I093", "I094"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The approved family chips retain the current semantic color mapping.",
@@ -3224,13 +3148,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "tool status palette",
       "control_or_state": "Existing succeeded, failed, running, interrupted, and unknown glyphs",
-      "inventory_ids": [
-        "I095",
-        "I096",
-        "I097",
-        "I098",
-        "I099"
-      ],
+      "inventory_ids": ["I095", "I096", "I097", "I098", "I099"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The general status glyph palette is unchanged; the Codex-specific exception is classified separately.",
@@ -3252,10 +3170,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "collapsed tool rows",
       "control_or_state": "Existing collapsed anatomy and provider-name retention",
-      "inventory_ids": [
-        "I101",
-        "I102"
-      ],
+      "inventory_ids": ["I101", "I102"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Collapsed rows keep the current anatomy and preserve provider tool names while family controls color.",
@@ -3277,13 +3192,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "tool presentation hard cases",
       "control_or_state": "Existing long-path, Codex script, MCP, and unknown-tool fallbacks",
-      "inventory_ids": [
-        "I103",
-        "I104",
-        "I105",
-        "I106",
-        "I107"
-      ],
+      "inventory_ids": ["I103", "I104", "I105", "I106", "I107"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The approved hard cases preserve the current deterministic presentation rules.",
@@ -3305,14 +3214,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "expanded common tool families",
       "control_or_state": "Existing shell, file, web, search, glob, and code bodies",
-      "inventory_ids": [
-        "I108",
-        "I109",
-        "I110",
-        "I111",
-        "I112",
-        "I113"
-      ],
+      "inventory_ids": ["I108", "I109", "I110", "I111", "I112", "I113"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The expanded bodies use the existing family-specific renderers.",
@@ -3334,10 +3236,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "expanded task tools",
       "control_or_state": "Existing OMP task batch and Claude Agent dispatch bodies",
-      "inventory_ids": [
-        "I117",
-        "I118"
-      ],
+      "inventory_ids": ["I117", "I118"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The approved task bodies retain the current distinction between batched OMP tasks and one Claude dispatch.",
@@ -3359,10 +3258,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "occurrence grouping and headers",
       "control_or_state": "Existing occurrence_id grouping and approved header wording",
-      "inventory_ids": [
-        "I119",
-        "I120"
-      ],
+      "inventory_ids": ["I119", "I120"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The approved mockup keeps the current occurrence grouping and header rules.",
@@ -3384,9 +3280,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "Raw payload control",
       "control_or_state": "Existing closed-by-default complete JSON disclosure",
-      "inventory_ids": [
-        "I121"
-      ],
+      "inventory_ids": ["I121"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "The Raw control retains the current one-click access to the complete payload.",
@@ -3408,9 +3302,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "tool disclosure independence",
       "control_or_state": "Existing independent open state for every tool row",
-      "inventory_ids": [
-        "I122"
-      ],
+      "inventory_ids": ["I122"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Each disclosure already owns independent expanded state.",
@@ -3432,10 +3324,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "todo projection strip in both node rooms",
       "control_or_state": "Todo strip is a sibling below the transcript scroller",
-      "inventory_ids": [
-        "I009",
-        "I043"
-      ],
+      "inventory_ids": ["I009", "I043"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Completed Story 3.2 already defines the approved below-scroller todo strip as current product scope.",
@@ -3457,11 +3346,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Transcript States.dc.html",
       "rendered_state": "expanded OMP and Claude todo tools",
       "control_or_state": "Latest todo call uses the checklist renderer and earlier calls use a one-line update",
-      "inventory_ids": [
-        "I114",
-        "I115",
-        "I116"
-      ],
+      "inventory_ids": ["I114", "I115", "I116"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Completed Story 3.2 already defines the shared latest-checklist and compact earlier-row contract.",
@@ -3483,9 +3368,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "generating queue panel",
       "control_or_state": "Queued drafts are durable and shared by the server",
-      "inventory_ids": [
-        "I010"
-      ],
+      "inventory_ids": ["I010"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Completed Epic 7 already defines durable server-owned drafts and shared queue state as current product scope.",
@@ -3507,13 +3390,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
       "rendered_state": "restart recovery",
       "control_or_state": "Durable content recovers read-only and requires explicit Resume",
-      "inventory_ids": [
-        "I029",
-        "I030",
-        "I063",
-        "I064",
-        "I079"
-      ],
+      "inventory_ids": ["I029", "I030", "I063", "I064", "I079"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Completed Story 7.4 already defines the approved read-only recovery and explicit Resume behavior.",
@@ -3535,10 +3412,7 @@
       "mockup_file": "claude-design/design_handoff_node_room_transcript_steering/Steering Dock States.dc.html",
       "rendered_state": "message status examples",
       "control_or_state": "Delivered requires matching provider acknowledgement",
-      "inventory_ids": [
-        "I082",
-        "I086"
-      ],
+      "inventory_ids": ["I082", "I086"],
       "scope": "CURRENT",
       "coverage_role": "UNCHANGED_CONTEXT",
       "reason": "Completed Story 8.3 already defines matching provider acknowledgement as the Delivered boundary.",

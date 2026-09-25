@@ -41,7 +41,7 @@ From `architecture-Archon-workflow-run-view-hitl-2026-09-05` (HITL spine, featur
 
 | Inherited                             | From parent | Binds here                                                                                                                                                                                                                                                                                                               |
 | ------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| HITL AD-3 — per-node transcript table | HITL spine  | `remote_agent_workflow_node_messages` ordered by `seq` remains the canonical ordered transcript source. New providers and transcript sources normalize into that store before presentation. Existing rows remain readable without rewriting them.                                                                          |
+| HITL AD-3 — per-node transcript table | HITL spine  | `remote_agent_workflow_node_messages` ordered by `seq` remains the canonical ordered transcript source. New providers and transcript sources normalize into that store before presentation. Existing rows remain readable without rewriting them.                                                                        |
 | HITL AD-4 — Console isolation         | HITL spine  | Console must not import `@/components`, `@/contexts`, `@/hooks`, `@/routes`, `@/stores`, `@tanstack/react-query`, or `@/lib/api` **functions**. Type-only `api.generated.d.ts` **is** allowed — a different module path, outside the ban — which is the carve-out AD-6 relies on. Each surface owns its own React shell. |
 
 **Correction to HITL AD-4, carried by AD-2 below.** The parent also calls `lib/run-graph` "the one sanctioned console isolation exception". That clause is stale: the enforced rule is the prohibition list, and `@/lib/` outside `@/lib/api` was never restricted. The parent's prohibition list stands unchanged; only its exception-counting sentence is wrong, and it should be amended upstream.
@@ -298,24 +298,24 @@ flowchart LR
 
 ## Capability → Architecture Map
 
-| Capability                | Lives in                                                              | Governed by                                         |
-| ------------------------- | --------------------------------------------------------------------- | --------------------------------------------------- |
-| CAP-1 scannable rows      | `tool-presentation.ts` + both shells                                  | AD-1, AD-3, AD-8, AD-10, AD-11, AD-13, AD-14, AD-15 |
-| CAP-2 per-family body     | `tool-presentation.ts`                                                | AD-1, AD-3                                          |
-| CAP-3 todo as state       | `todo-state.ts` (`projectTodoState`), folded in `buildAgentHistory()` | AD-1, AD-7, AD-12                                   |
-| CAP-4 task dispatch       | `task-normalize.ts`                                                   | AD-1, AD-3                                          |
-| CAP-5 inline diff and Codex file-change ingestion | provider normalization + node-message persistence + `lib/diff-hunks.ts` | AD-4, AD-5, AD-6, AD-17 |
-| CAP-6 occurrence grouping | `occurrence-groups.ts`                                                | AD-7, AD-10                                         |
-| CAP-7 raw payload         | both shells; payload carried on the item                              | AD-1, AD-3, AD-12                                   |
-| CAP-9 provider-supported status presentation | provider status normalization + shared outcome projection | AD-13 |
-| CAP-16 surface parity     | Web semantic core + backend semantic fixtures                         | AD-1, AD-18                                         |
-| CAP-17 Git impact         | executor boundary evidence + `@archon/git` server projection          | AD-20                                               |
-| CAP-18 provider coverage  | provider normalization adapters                                       | AD-17, live-steering spine                          |
-| CAP-19 thinking           | typed node-message persistence + semantic presentation                | AD-17, AD-19                                        |
-| CAP-20 triggering prompt  | typed node-message persistence + semantic presentation                | AD-17, AD-19                                        |
-| CAP-21 advisor notices    | typed node-message persistence + semantic presentation                | AD-17, AD-19                                        |
-| Shared-module placement   | `packages/web/src/lib/`                                               | AD-2, HITL AD-4                                     |
-| Ship and roll back        | the web bundle                                                        | AD-9                                                |
+| Capability                                        | Lives in                                                                | Governed by                                         |
+| ------------------------------------------------- | ----------------------------------------------------------------------- | --------------------------------------------------- |
+| CAP-1 scannable rows                              | `tool-presentation.ts` + both shells                                    | AD-1, AD-3, AD-8, AD-10, AD-11, AD-13, AD-14, AD-15 |
+| CAP-2 per-family body                             | `tool-presentation.ts`                                                  | AD-1, AD-3                                          |
+| CAP-3 todo as state                               | `todo-state.ts` (`projectTodoState`), folded in `buildAgentHistory()`   | AD-1, AD-7, AD-12                                   |
+| CAP-4 task dispatch                               | `task-normalize.ts`                                                     | AD-1, AD-3                                          |
+| CAP-5 inline diff and Codex file-change ingestion | provider normalization + node-message persistence + `lib/diff-hunks.ts` | AD-4, AD-5, AD-6, AD-17                             |
+| CAP-6 occurrence grouping                         | `occurrence-groups.ts`                                                  | AD-7, AD-10                                         |
+| CAP-7 raw payload                                 | both shells; payload carried on the item                                | AD-1, AD-3, AD-12                                   |
+| CAP-9 provider-supported status presentation      | provider status normalization + shared outcome projection               | AD-13                                               |
+| CAP-16 surface parity                             | Web semantic core + backend semantic fixtures                           | AD-1, AD-18                                         |
+| CAP-17 Git impact                                 | executor boundary evidence + `@archon/git` server projection            | AD-20                                               |
+| CAP-18 provider coverage                          | provider normalization adapters                                         | AD-17, live-steering spine                          |
+| CAP-19 thinking                                   | typed node-message persistence + semantic presentation                  | AD-17, AD-19                                        |
+| CAP-20 triggering prompt                          | typed node-message persistence + semantic presentation                  | AD-17, AD-19                                        |
+| CAP-21 advisor notices                            | typed node-message persistence + semantic presentation                  | AD-17, AD-19                                        |
+| Shared-module placement                           | `packages/web/src/lib/`                                                 | AD-2, HITL AD-4                                     |
+| Ship and roll back                                | the web bundle                                                          | AD-9                                                |
 
 ## Deliberate Implementation Limits
 

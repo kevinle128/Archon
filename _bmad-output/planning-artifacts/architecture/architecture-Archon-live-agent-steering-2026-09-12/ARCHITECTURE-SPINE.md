@@ -45,12 +45,12 @@ The existing provider request contract carries both node-level abortSignal and t
 
 The design does not add cancel() to IAgentProvider.
 
-| Layer | Responsibility |
-| --- | --- |
-| Web shells | Composer, queue, Stop, recovery, auto-send, and accessible state presentation |
-| Server routes | Authentication, validation, durable mutation, typed errors, and generated API contracts |
-| Steering store | Drafts, settings, FIFO queue, delivery lifecycle, attribution, and restart restoration |
-| Workflow executor | Queue claiming, turn loop, Stop classification, provider continuation, and transcript receipts |
+| Layer             | Responsibility                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| Web shells        | Composer, queue, Stop, recovery, auto-send, and accessible state presentation                             |
+| Server routes     | Authentication, validation, durable mutation, typed errors, and generated API contracts                   |
+| Steering store    | Drafts, settings, FIFO queue, delivery lifecycle, attribution, and restart restoration                    |
+| Workflow executor | Queue claiming, turn loop, Stop classification, provider continuation, and transcript receipts            |
 | Provider adapters | Native interrupt or safe stream abort, session continuation, soft injection, and acknowledgement evidence |
 
 ## Inherited invariants
@@ -295,22 +295,22 @@ Delivered transcript receipts continue in the existing node-message store.
 
 ## Capability map
 
-| Capability | Architecture owner |
-| --- | --- |
-| CAP-8 durable compose and queue | AD-3, AD-4, AD-12 |
-| CAP-9 Stop current turn | AD-1, AD-2, AD-6 |
-| CAP-10 continue same session | AD-2, AD-5, AD-6 |
-| CAP-11 audit exchange | AD-7, AD-11 |
-| CAP-12 verified soft injection | AD-8, AD-12 |
-| CAP-13 truthful delivery | AD-7, AD-8 |
-| CAP-14 restart restoration | AD-3, AD-5, AD-10 |
-| CAP-15 auto-send | AD-6, AD-9 |
-| CAP-16 cross-surface presentation | AD-11, readable-transcript spine |
-| CAP-17 Git impact | readable-transcript spine and source-control architecture |
-| CAP-18 all approved providers | AD-2, AD-8, provider matrix |
-| CAP-19 thinking | AD-11, readable-transcript spine |
-| CAP-20 triggering prompt | AD-11, readable-transcript spine |
-| CAP-21 advisor notifications | AD-11, readable-transcript spine |
+| Capability                        | Architecture owner                                        |
+| --------------------------------- | --------------------------------------------------------- |
+| CAP-8 durable compose and queue   | AD-3, AD-4, AD-12                                         |
+| CAP-9 Stop current turn           | AD-1, AD-2, AD-6                                          |
+| CAP-10 continue same session      | AD-2, AD-5, AD-6                                          |
+| CAP-11 audit exchange             | AD-7, AD-11                                               |
+| CAP-12 verified soft injection    | AD-8, AD-12                                               |
+| CAP-13 truthful delivery          | AD-7, AD-8                                                |
+| CAP-14 restart restoration        | AD-3, AD-5, AD-10                                         |
+| CAP-15 auto-send                  | AD-6, AD-9                                                |
+| CAP-16 cross-surface presentation | AD-11, readable-transcript spine                          |
+| CAP-17 Git impact                 | readable-transcript spine and source-control architecture |
+| CAP-18 all approved providers     | AD-2, AD-8, provider matrix                               |
+| CAP-19 thinking                   | AD-11, readable-transcript spine                          |
+| CAP-20 triggering prompt          | AD-11, readable-transcript spine                          |
+| CAP-21 advisor notifications      | AD-11, readable-transcript spine                          |
 
 ## Verification
 

@@ -137,13 +137,13 @@ Target: `_bmad-output/specs/spec-agent-node-room/SPEC.md`.
 **Replace the CAP-6 success paragraph with:**
 
 > - **success:** A node whose rows span more than one `occurrence_id` renders a header per group; a single-occurrence node renders none.
-> Grouping keys on `occurrence_id`, never on `attempt_id`.
-> When a loop node has more than one execution, the `Execution` selector is present, selects the live execution by default, and exposes no more than eight executions.
-> Selecting an execution immediately projects that execution in the room.
-> A stale selection is read-only and cannot steer the live execution.
-> On a live loop node, selecting a finished iteration through the `Execution` selection controls renders the approved read-only dock and shared pending queue.
-> The composer is absent, and the client issues no send, withdraw, or interrupt mutation for the finished iteration.
-> The authenticated node-scoped queue read remains allowed.
+>   Grouping keys on `occurrence_id`, never on `attempt_id`.
+>   When a loop node has more than one execution, the `Execution` selector is present, selects the live execution by default, and exposes no more than eight executions.
+>   Selecting an execution immediately projects that execution in the room.
+>   A stale selection is read-only and cannot steer the live execution.
+>   On a live loop node, selecting a finished iteration through the `Execution` selection controls renders the approved read-only dock and shared pending queue.
+>   The composer is absent, and the client issues no send, withdraw, or interrupt mutation for the finished iteration.
+>   The authenticated node-scoped queue read remains allowed.
 
 **Rationale:** This closes M005 without changing the existing occurrence-grouping or stale-view rules.
 
@@ -180,14 +180,14 @@ Target: `_bmad-output/specs/spec-agent-node-room/SPEC.md`.
 **Replace the CAP-12 success paragraph with:**
 
 > - **success:** `Queue` delivers at the next natural turn boundary on every provider.
-> Where a verified provider transport accepts a message during generation, each queued item exposes per-item `Send now`.
-> Selecting that action atomically targets exactly the selected queued message and the current active provider turn.
-> The selected message receives its stamped message identity, leaves the queued collection, and enters the active turn immediately.
-> Stop is not invoked, generation continues, the active tool outcome does not change, and no steering-owned turn-start event is emitted.
-> The selected message becomes `sent` pending verified provider acknowledgement.
-> Every non-selected queued message keeps its identity, content, relative order, and `queued` state unchanged.
-> A queue-only provider omits per-item `Send now`.
-> Verification of each soft-injection transport is current implementation work.
+>   Where a verified provider transport accepts a message during generation, each queued item exposes per-item `Send now`.
+>   Selecting that action atomically targets exactly the selected queued message and the current active provider turn.
+>   The selected message receives its stamped message identity, leaves the queued collection, and enters the active turn immediately.
+>   Stop is not invoked, generation continues, the active tool outcome does not change, and no steering-owned turn-start event is emitted.
+>   The selected message becomes `sent` pending verified provider acknowledgement.
+>   Every non-selected queued message keeps its identity, content, relative order, and `queued` state unchanged.
+>   A queue-only provider omits per-item `Send now`.
+>   Verification of each soft-injection transport is current implementation work.
 
 **Rationale:** This records the established product decision and closes the complete M008 collection-mutation gap.
 
@@ -256,10 +256,10 @@ Remove the stale `CAP-14 Codex ingestion` and `CAP-15 auto-send display` rows.
 **Replace item 7 in AD-12 with:**
 
 > 7. When a loop node has more than one execution, the `Execution` selector selects the live execution by default and exposes no more than eight executions.
-> Selection immediately projects the chosen execution.
-> A stale execution is read-only and cannot steer the live execution.
-> The selector is absent when only one execution exists.
-> It uses the existing execution-selection identity and does not add a second occurrence-navigation mechanism.
+>    Selection immediately projects the chosen execution.
+>    A stale execution is read-only and cannot steer the live execution.
+>    The selector is absent when only one execution exists.
+>    It uses the existing execution-selection identity and does not add a second occurrence-navigation mechanism.
 
 **Rationale:** This closes the readable Architecture part of M005.
 
@@ -537,13 +537,13 @@ Target: `_bmad-output/implementation-artifacts/agent-node-room/sprint-status.yam
 Append these entries without changing any existing status:
 
 ```yaml
-  # 2026-09-22 approved readiness correction.
-  # Epic 1 through Epic 9 remain complete historical planning records.
-  epic-10: backlog
-  10-1-fix-room-geometry-and-execution-selection: backlog
-  10-2-deliver-one-selected-queued-message-without-stop: backlog
-  10-3-preserve-every-unmatched-message-at-terminal-boundaries: backlog
-  10-4-use-a-codex-supported-tool-status-presentation: backlog
+# 2026-09-22 approved readiness correction.
+# Epic 1 through Epic 9 remain complete historical planning records.
+epic-10: backlog
+10-1-fix-room-geometry-and-execution-selection: backlog
+10-2-deliver-one-selected-queued-message-without-stop: backlog
+10-3-preserve-every-unmatched-message-at-terminal-boundaries: backlog
+10-4-use-a-codex-supported-tool-status-presentation: backlog
 ```
 
 Do not change old Epic or Story status values as part of this correction.
@@ -564,30 +564,30 @@ After the proposal is approved and applied, verification must:
 
 ## 10. Checklist Status
 
-| Checklist item | Status | Result |
-| --- | --- | --- |
-| 1.1 Triggering evidence | Done | The 2026-09-22 readiness report triggered the correction. |
-| 1.2 Core problem | Done | Eight current mockup features lack exact cross-artifact coverage. |
-| 1.3 Supporting evidence | Done | The immutable manifest proves all behavior fields and has no open question. |
-| 2.1 Existing Epic viability | Done | Existing Epics remain complete historical records. |
-| 2.2 Required Epic changes | Done | Append Epic 10 and four current Stories. |
-| 2.3 Remaining Epic review | Done | No existing Epic is reopened or changed. |
-| 2.4 New Epic need | Done | Epic 10 is required for missing current work. |
-| 2.5 Order and priority | Done | Stories follow presentation, delivery, terminal safety, and provider status boundaries. |
-| 3.1 PRD conflict review | Done | Six PRD gaps and their companion contracts have exact replacement or insertion text. |
-| 3.2 Architecture conflict review | Done | Both Architecture spines have exact corrections. |
-| 3.3 UX conflict review | Done | The universal interrupted-tool claim is removed, and the immutable approved manifest remains the UX authority. |
-| 3.4 Other artifacts | Done | The approved Epic 10 sprint-status entries are appended. |
-| 4.1 Direct Adjustment | Viable | It preserves scope and history while adding current ownership. |
-| 4.2 Potential rollback | Not viable | Rollback would reopen completed work and does not close document gaps. |
-| 4.3 MVP review | Not viable | All visible approved features are current scope and cannot be deferred. |
-| 4.4 Recommended path | Done | Direct Adjustment through PRD, Architecture, Epic 10, and sprint status. |
-| 5.1 through 5.5 Proposal components | Done | This document contains the summary, impact, exact edits, and handoff. |
-| 6.1 Checklist review | Done | All applicable items are addressed. |
-| 6.2 Proposal accuracy | Done | Exact text is tied to readiness and manifest evidence. |
-| 6.3 User approval | Done | The product owner approved the proposal on 2026-09-22. |
-| 6.4 Sprint status | Done | The Epic 10 backlog entries are appended without changing prior entries. |
-| 6.5 Handoff | Done | The corrected planning set is ready for a new readiness assessment. |
+| Checklist item                      | Status     | Result                                                                                                         |
+| ----------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------- |
+| 1.1 Triggering evidence             | Done       | The 2026-09-22 readiness report triggered the correction.                                                      |
+| 1.2 Core problem                    | Done       | Eight current mockup features lack exact cross-artifact coverage.                                              |
+| 1.3 Supporting evidence             | Done       | The immutable manifest proves all behavior fields and has no open question.                                    |
+| 2.1 Existing Epic viability         | Done       | Existing Epics remain complete historical records.                                                             |
+| 2.2 Required Epic changes           | Done       | Append Epic 10 and four current Stories.                                                                       |
+| 2.3 Remaining Epic review           | Done       | No existing Epic is reopened or changed.                                                                       |
+| 2.4 New Epic need                   | Done       | Epic 10 is required for missing current work.                                                                  |
+| 2.5 Order and priority              | Done       | Stories follow presentation, delivery, terminal safety, and provider status boundaries.                        |
+| 3.1 PRD conflict review             | Done       | Six PRD gaps and their companion contracts have exact replacement or insertion text.                           |
+| 3.2 Architecture conflict review    | Done       | Both Architecture spines have exact corrections.                                                               |
+| 3.3 UX conflict review              | Done       | The universal interrupted-tool claim is removed, and the immutable approved manifest remains the UX authority. |
+| 3.4 Other artifacts                 | Done       | The approved Epic 10 sprint-status entries are appended.                                                       |
+| 4.1 Direct Adjustment               | Viable     | It preserves scope and history while adding current ownership.                                                 |
+| 4.2 Potential rollback              | Not viable | Rollback would reopen completed work and does not close document gaps.                                         |
+| 4.3 MVP review                      | Not viable | All visible approved features are current scope and cannot be deferred.                                        |
+| 4.4 Recommended path                | Done       | Direct Adjustment through PRD, Architecture, Epic 10, and sprint status.                                       |
+| 5.1 through 5.5 Proposal components | Done       | This document contains the summary, impact, exact edits, and handoff.                                          |
+| 6.1 Checklist review                | Done       | All applicable items are addressed.                                                                            |
+| 6.2 Proposal accuracy               | Done       | Exact text is tied to readiness and manifest evidence.                                                         |
+| 6.3 User approval                   | Done       | The product owner approved the proposal on 2026-09-22.                                                         |
+| 6.4 Sprint status                   | Done       | The Epic 10 backlog entries are appended without changing prior entries.                                       |
+| 6.5 Handoff                         | Done       | The corrected planning set is ready for a new readiness assessment.                                            |
 
 ## 11. Implementation Handoff
 

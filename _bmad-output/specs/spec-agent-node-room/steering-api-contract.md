@@ -12,17 +12,17 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 
 ## Routes
 
-| Method + path                                                      | Purpose                                                                                                                                            |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/workflows/runs/:runId/nodes/:nodeId/draft`               | Read the acting operator's server-side draft and auto-send setting.                                                                                |
-| `PUT /api/workflows/runs/:runId/nodes/:nodeId/draft`               | Upsert the acting operator's draft after debounced composer changes.                                                                               |
-| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft`            | Clear the acting operator's saved draft idempotently.                                                                                              |
-| `PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send`           | Persist the acting operator's auto-send setting for this node.                                                                                     |
-| `POST /api/workflows/runs/:runId/nodes/:nodeId/send`               | Persist a queued message or request immediate delivery of a persisted item.                                                                        |
-| `POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt`          | End the active agent turn through `interruptSignal`; the node and provider session remain available.                                               |
-| `POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive`          | Re-arm the live idle-after-interrupt inactivity timer without delivering a message.                                                                |
-| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId` | Withdraw a durable queued message before it is claimed.                                                                                            |
-| `GET /api/workflows/runs/:runId/nodes/:nodeId/queue`               | Read the durable node queue in server FIFO order, including delivery state and whether live execution requires the existing Resume action.          |
+| Method + path                                                      | Purpose                                                                                                                                    |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/workflows/runs/:runId/nodes/:nodeId/draft`               | Read the acting operator's server-side draft and auto-send setting.                                                                        |
+| `PUT /api/workflows/runs/:runId/nodes/:nodeId/draft`               | Upsert the acting operator's draft after debounced composer changes.                                                                       |
+| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft`            | Clear the acting operator's saved draft idempotently.                                                                                      |
+| `PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send`           | Persist the acting operator's auto-send setting for this node.                                                                             |
+| `POST /api/workflows/runs/:runId/nodes/:nodeId/send`               | Persist a queued message or request immediate delivery of a persisted item.                                                                |
+| `POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt`          | End the active agent turn through `interruptSignal`; the node and provider session remain available.                                       |
+| `POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive`          | Re-arm the live idle-after-interrupt inactivity timer without delivering a message.                                                        |
+| `DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId` | Withdraw a durable queued message before it is claimed.                                                                                    |
+| `GET /api/workflows/runs/:runId/nodes/:nodeId/queue`               | Read the durable node queue in server FIFO order, including delivery state and whether live execution requires the existing Resume action. |
 
 ## Request schemas
 
@@ -62,14 +62,14 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 
 One error shape across all routes: `{ success: false, error: { code: string, message: string } }`, so a consumer classifies by `code`, never by prose.
 
-| Condition                                     | HTTP      | `error.code`                    |
-| --------------------------------------------- | --------- | ------------------------------- |
-| No resolved identity                          | 401 / 403 | `unauthenticated` / `forbidden` |
-| Unknown `runId` / `nodeId`                    | 404       | `not_found`                     |
-| Malformed or schema-invalid payload           | 400       | `invalid_request`               |
-| Node no longer running                        | 409       | `node_finished`                 |
-| Durable node requires existing Resume action  | 409       | `recovery_required`             |
-| Message outcome became ambiguous after loss   | 409       | `delivery_unknown`              |
+| Condition                                    | HTTP      | `error.code`                    |
+| -------------------------------------------- | --------- | ------------------------------- |
+| No resolved identity                         | 401 / 403 | `unauthenticated` / `forbidden` |
+| Unknown `runId` / `nodeId`                   | 404       | `not_found`                     |
+| Malformed or schema-invalid payload          | 400       | `invalid_request`               |
+| Node no longer running                       | 409       | `node_finished`                 |
+| Durable node requires existing Resume action | 409       | `recovery_required`             |
+| Message outcome became ambiguous after loss  | 409       | `delivery_unknown`              |
 
 The API never infers process origin from a missing live handle.
 
