@@ -196,8 +196,9 @@ describe('spawnTerminalPty', () => {
         // Distinctive prompt + cleared PROMPT_COMMAND so CI profile scripts
         // cannot rewrite PS1 before we observe the post-SIGINT reprint.
         pty.write("PROMPT_COMMAND=; PS1='ARCHON_PTY> '; echo READY; sleep 30\n");
+        // The echoed input contains READY before the shell runs the command.
         await waitFor(
-          () => output.includes('READY'),
+          () => /(?:^|\r?\n)READY\r?\n/.test(output),
           10_000,
           'READY',
           () => output
