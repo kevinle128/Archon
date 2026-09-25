@@ -19,8 +19,8 @@
       "technicalNotes": "Phases 1+2 of the plan, landed as ONE working change so removed ratio exports never leave the branch type-invalid. TDD order: update room-split-layout.test.ts first and see it fail; write focused split/single-mode owner tests; then rewrite room-split-layout.ts to the single ROOM_WIDTH_PX value (keep RoomSurface + PanelPercent exports; no wrapper function for two property reads; no new persistence key or migration — old ratio keys stay in localStorage unread/unwritten by Node Room); then rewire the four owner components; then remove --rv-panel-* tokens + docs rows. Existing close, query-opening, graph/Logs selection, run-change reset, scroll-memory, and focus tests must keep passing — update old separator assertions rather than deleting coverage. If needed, characterize the 14px-root/899px-viewport overlap in use-container-split-mode.test.tsx; Node Room uses the hook's mode, not the old stacked viewport rule. No API/DB/storage migration.",
       "dependsOn": [],
       "priority": 1,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 1. Files: room-split-layout.ts/.test.ts, LegacyGraphLogsPane.tsx/.test.tsx, ConsoleInspectPane.tsx/.test.tsx, WorkflowExecution.tsx, RunDetailPage.tsx, index.css, brand/index.md. Commit c8b72da9."
     },
     {
       "id": "US-002",
@@ -38,8 +38,8 @@
       "technicalNotes": "Phase 3 of the plan. Files: packages/web/src/components/workflows/NodeTranscriptPane.tsx (+ test; Legacy RoomRegion lives in NodeRoom.tsx) and packages/web/src/experiments/console/components/ConsoleNodeRoom.tsx (+ test). Design resolution already made: older key-*-node-room.html mockups show todo before occurrence controls — obsolete; Story 10.1 Task 2's corrected written order wins per its Dev Notes. Independent of US-001's files; may be implemented in any order relative to it. Browser box/last-row verification happens in US-003.",
       "dependsOn": [],
       "priority": 2,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 2. Files: NodeTranscriptPane.tsx/.test.tsx, ConsoleNodeRoom.tsx/.test.tsx. Unblock commit dbf59493 for US-001 isolation/type leftovers. Commit a2c8ef52."
     },
     {
       "id": "US-003",
@@ -58,8 +58,8 @@
       "technicalNotes": "Phase 4 of the plan. E2E fixtures boot isolated Archon instances with deterministic fake-provider data — let the runner own worker processes, never start a duplicate dev server. Existing specs that write captures into historical issue-plan folders keep those stateful records; only NEW captures route to this plan's reports/evidence/. No Playwright snapshot pins need approving just because geometry changed. Queue-absent and controls-present checks stay as separate states on their existing fixtures (the todo fixture is a completed run and cannot also show a live queue — hence the new combined fixture).",
       "dependsOn": ["US-001", "US-002"],
       "priority": 3,
-      "passes": false,
-      "notes": ""
+      "passes": true,
+      "notes": "Implemented in iteration 3. E2E geometry re-anchored to ROOM_WIDTH_PX 520/460; e2e-room-anatomy fixture + live band/last-row proof; focused Playwright specs + e2e typecheck green."
     },
     {
       "id": "US-004",

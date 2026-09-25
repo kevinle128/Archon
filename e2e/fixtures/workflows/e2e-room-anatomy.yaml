@@ -1,0 +1,11 @@
+name: e2e-room-anatomy
+description: "E2E — live running node with todo + tool rows while guidance can be queued through the real UI."
+mutates_checkout: false
+
+nodes:
+  - id: anatomy-live
+    provider: e2e-fake
+    model: e2e-fake-model
+    prompt: |
+      <<E2E_SCENARIO>>{"emitTodo":true,"emitTool":true,"repeatTool":24,"interruptible":true,"delayMs":45000}<</E2E_SCENARIO>>
+      $ARGUMENTS

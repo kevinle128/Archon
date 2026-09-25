@@ -1,6 +1,8 @@
 {
   "geometry.console": {
-    "roomWidth": 460,
+    "outerRoomWidth": 520,
+    "innerRoomWidth": 511,
+    "roomWidthTargetPx": 520,
     "container": {
       "flexGrow": "0",
       "flexShrink": "0",
@@ -12,7 +14,7 @@
       "padding": "6px 10px",
       "columnGap": "8px",
       "minHeight": "24px",
-      "measuredWidth": 460,
+      "measuredWidth": 511,
       "measuredHeight": 29.25,
       "whiteSpace": "nowrap"
     },
@@ -83,7 +85,9 @@
     "internalScroll": true
   },
   "geometry.legacy": {
-    "roomWidth": 459.671875,
+    "outerRoomWidth": 460,
+    "innerRoomWidth": 459,
+    "roomWidthTargetPx": 460,
     "container": {
       "flexGrow": "0",
       "flexShrink": "0",
@@ -95,7 +99,7 @@
       "padding": "6px 10px",
       "columnGap": "8px",
       "minHeight": "24px",
-      "measuredWidth": 459.671875,
+      "measuredWidth": 459,
       "measuredHeight": 29.25,
       "whiteSpace": "nowrap"
     },
@@ -166,9 +170,12 @@
     "internalScroll": true
   },
   "meta": {
-    "commit": "00fd30a5",
+    "commit": "a2c8ef52",
     "viewport": "1440x1000",
-    "roomWidthTargetPx": 460,
+    "roomWidthTargetPx": {
+      "console": 520,
+      "legacy": 460
+    },
     "source": "e2e/ui/agent-todo-strip.spec.ts"
   },
   "contrast": {
@@ -244,5 +251,10 @@
       "focus ring on surface-hover vs oklch(0.24 0.01 260)": 6.51,
       "meter cell (decorative)": 5.81
     }
+  },
+  "room-anatomy": {
+    "workflow": "e2e-room-anatomy",
+    "node": "anatomy-live",
+    "surfaces": ["console", "legacy"]
   }
 }
