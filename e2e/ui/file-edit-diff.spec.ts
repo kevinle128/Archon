@@ -52,9 +52,9 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CAPTURES_DIR = join(
   REPO_ROOT,
   'plans',
-  '260919-0142-issue-177-inline-file-edit-diff',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
-  'captures'
+  'evidence'
 );
 const MEASUREMENTS_FILE = join(CAPTURES_DIR, 'file-edit-measurements.json');
 

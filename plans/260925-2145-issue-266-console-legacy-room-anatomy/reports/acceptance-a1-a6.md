@@ -1,9 +1,9 @@
 # Acceptance report — Node Room anatomy (issue #266 plan / Story 10.1 M001+M002)
 
-**Date**: 2026-09-25  
-**Branch**: `archon/thread-6983766e`  
-**Owner**: #265 / Story 10.1 (M001, M002). M005 out of scope.  
-**PRD**: `plans/260925-2145-issue-266-console-legacy-room-anatomy/prd.md`  
+**Date**: 2026-09-25
+**Branch**: `archon/thread-6983766e`
+**Owner**: #265 / Story 10.1 (M001, M002). M005 out of scope.
+**PRD**: `plans/260925-2145-issue-266-console-legacy-room-anatomy/prd.md`
 **Gate log**: `reports/gate-results.txt`
 
 ## Summary
@@ -39,14 +39,14 @@ Fixed-width Console (520 CSS px) and Legacy (460 CSS px) Node Rooms in split mod
 
 **Browser (Playwright)**
 
-| Spec                                                            | Viewport / mode                                  | Measurement                                                   | Capture / artifact                                                             |
-| --------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `workflow-run-hitl-room.spec.ts` `[V:hitl.console-room-layout]` | split (desktop)                                  | `#console-run-room` width 520 ±1                              | suite pass                                                                     |
-| `workflow-run-hitl-room.spec.ts` `[V:hitl.legacy-room-layout]`  | split                                            | `#legacy-run-room` width 460 ±1                               | suite pass                                                                     |
-| `workflow-run-hitl-room.spec.ts` `[V:hitl.room-fixed-width]`    | split + seeded `archon.run-room.ratio.*`         | fixed 520/460; no separator; keys unread/unwritten            | suite pass                                                                     |
-| `agent-todo-strip.spec.ts` geometry                             | split 1440-class                                 | `outerRoomWidth` console **520**, legacy **460**              | `evidence/todo-strip-metrics.json`                                             |
-| `workflow-run-hitl-visual.spec.ts`                              | 1440×1000, 1024×900, 768×900, 390×844, 200% zoom | measured outer width in split; full available width in single | historical HITL capture dirs refreshed by run; not treated as design authority |
-| `occurrence-navigation.spec.ts`                                 | split                                            | surface-specific 520/460 labels                               | suite pass                                                                     |
+| Spec                                                            | Viewport / mode                                  | Measurement                                                   | Capture / artifact                                            |
+| --------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------------- |
+| `workflow-run-hitl-room.spec.ts` `[V:hitl.console-room-layout]` | split (desktop)                                  | `#console-run-room` width 520 ±1                              | suite pass                                                    |
+| `workflow-run-hitl-room.spec.ts` `[V:hitl.legacy-room-layout]`  | split                                            | `#legacy-run-room` width 460 ±1                               | suite pass                                                    |
+| `workflow-run-hitl-room.spec.ts` `[V:hitl.room-fixed-width]`    | split + seeded `archon.run-room.ratio.*`         | fixed 520/460; no separator; keys unread/unwritten            | suite pass                                                    |
+| `agent-todo-strip.spec.ts` geometry                             | split 1440-class                                 | `outerRoomWidth` console **520**, legacy **460**              | `evidence/todo-strip-metrics.json`                            |
+| `workflow-run-hitl-visual.spec.ts`                              | 1440×1000, 1024×900, 768×900, 390×844, 200% zoom | measured outer width in split; full available width in single | focused suite pass; historical HITL captures remain unchanged |
+| `occurrence-navigation.spec.ts`                                 | split                                            | surface-specific 520/460 labels                               | suite pass                                                    |
 
 **In-split container change without mode flip**: owner + E2E assert fixed px width (not ratio of container).
 
@@ -122,7 +122,7 @@ State labels and action identities unchanged (no M005 / `select-node-execution` 
 
 - Removed exactly `--rv-panel-default-width`, `--rv-panel-min-width`, `--rv-panel-max-width` from `packages/web/src/index.css` and matching rows in `packages/docs-web/src/content/docs/brand/index.md`.
 - Grep evergreen `packages/docs-web`: no `rv-panel`, no "Resize node room", no `run-room.ratio` user instructions.
-- Historical `docs/superpowers/` and prior plan screenshot trees not rewritten as design authority; E2E may refresh capture bytes under their historical folders.
+- Historical `docs/superpowers/` and prior plan screenshot trees remain unchanged.
 
 **Storage**
 
@@ -130,17 +130,17 @@ State labels and action identities unchanged (no M005 / `select-node-execution` 
 
 **Changed-file review** (`git diff develop...HEAD --name-only` production-relevant)
 
-| Bucket                                        | Paths                                                              | OK?                                                   |
-| --------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------- |
-| Web contract + owners + bodies                | `room-split-layout.ts`, split owners, room bodies, `index.css`     | yes                                                   |
-| Web tests                                     | paired `*.test.tsx` including `LegacyNodeRoom.test.tsx` order flip | yes                                                   |
-| E2E                                           | fixtures, runtime registration, focused UI specs                   | yes                                                   |
-| Brand docs                                    | `brand/index.md` three rows only                                   | yes                                                   |
-| Visual skill hashes                           | `.agents/skills/verify-archon/visual-config.json`                  | yes                                                   |
-| Plan / Ralph tracking                         | `plans/260925-2145-…`                                              | yes                                                   |
-| Historical captures                           | prior plan PNG/JSON refreshed by Playwright                        | intentional evidence refresh, not requirement rewrite |
-| API / schema / generated types / package.json | **none**                                                           | yes                                                   |
-| sprint-status / issue-map                     | **none**                                                           | yes                                                   |
+| Bucket                                        | Paths                                                              | OK?                                                 |
+| --------------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------- |
+| Web contract + owners + bodies                | `room-split-layout.ts`, split owners, room bodies, `index.css`     | yes                                                 |
+| Web tests                                     | paired `*.test.tsx` including `LegacyNodeRoom.test.tsx` order flip | yes                                                 |
+| E2E                                           | fixtures, runtime registration, focused UI specs                   | yes                                                 |
+| Brand docs                                    | `brand/index.md` three rows only                                   | yes                                                 |
+| Visual verifier hashes                        | `.agents/skills/verify-archon/visual-config.json`                  | updated for changed contract, docs, and CSS sources |
+| Plan / Ralph tracking                         | `plans/260925-2145-…`                                              | yes                                                 |
+| Historical captures                           | prior plan PNG/JSON unchanged                                      | yes                                                 |
+| API / schema / generated types / package.json | **none**                                                           | yes                                                 |
+| sprint-status / issue-map                     | **none**                                                           | yes                                                 |
 
 **Ownership**
 
@@ -160,7 +160,7 @@ See `reports/gate-results.txt`. Headline:
 3. Console isolated: **273 pass**
 4. `bun --filter @archon/web test`: **exit 0**
 5. `packages/web` + `e2e` type-check: **pass**
-6. Focused Playwright (9 specs): **76 passed (5.5m)**
+6. Focused Playwright (9 specs): **77 passed (5.4m)**
 
 ---
 

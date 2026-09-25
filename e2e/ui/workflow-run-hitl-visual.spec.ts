@@ -26,9 +26,9 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CAPTURE_DIR = join(
   REPO_ROOT,
   'plans',
-  '260907-1454-workflow-run-hitl-mockup-alignment',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
-  'captures'
+  'evidence'
 );
 const MOCKUP_CONSOLE = join(
   REPO_ROOT,

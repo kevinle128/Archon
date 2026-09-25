@@ -60,7 +60,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EVIDENCE_DIR = join(
   REPO_ROOT,
   'plans',
-  '260918-1711-issue-180-navigate-occurrences-and-loop-iterations',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
   'evidence'
 );

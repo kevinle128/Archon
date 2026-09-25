@@ -39,11 +39,17 @@ const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
 
-/** Story 1.2 evidence directory — the Console long-payload Raw capture lands here. */
+/** Current Node Room anatomy evidence directory for the long-payload Raw capture. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const STORY_12_EVIDENCE_DIR =
+const ROOM_ANATOMY_EVIDENCE_DIR =
   env.ARCHON_VERIFY_EVIDENCE ??
-  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
+  join(
+    REPO_ROOT,
+    'plans',
+    '260925-2145-issue-266-console-legacy-room-anatomy',
+    'reports',
+    'evidence'
+  );
 
 async function pageWaitStarter(
   browser: Parameters<typeof createIdentityContext>[0],
@@ -692,6 +698,45 @@ test('[P1] [V:hitl.room-fixed-width] Fixed outer width ignores stale ratio keys 
   expect(await ratioKeyValue(page, 'legacy'), 'legacy key stays seeded and unread').toBe('24');
 });
 
+test('[P1] [V:hitl.room-fixed-width-container] Split-mode outer widths stay fixed as wide containers change', async ({
+  page,
+  archon,
+}) => {
+  const started = await archon.runHitlWorkflow();
+
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  await openRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-run');
+  await openConsoleLogRow(page, HITL_INSPECT_NODE);
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const consoleInitial = await expectOuterRoomGeometry(page, 'console');
+  expect(consoleInitial.mode).toBe('split');
+
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const consoleResized = await expectOuterRoomGeometry(page, 'console');
+  expect(consoleResized.mode).toBe('split');
+  expect(Math.abs(consoleResized.width - consoleInitial.width)).toBeLessThanOrEqual(
+    OUTER_WIDTH_TOLERANCE_PX
+  );
+
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  await openLegacyRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-run');
+  await openLegacyLogRow(page, HITL_INSPECT_NODE);
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const legacyInitial = await expectOuterRoomGeometry(page, 'legacy');
+  expect(legacyInitial.mode).toBe('split');
+
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const legacyResized = await expectOuterRoomGeometry(page, 'legacy');
+  expect(legacyResized.mode).toBe('split');
+  expect(Math.abs(legacyResized.width - legacyInitial.width)).toBeLessThanOrEqual(
+    OUTER_WIDTH_TOLERANCE_PX
+  );
+});
+
 test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundary', async ({
   page,
   archon,
@@ -780,9 +825,9 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
   );
   expect(pageOverflow, 'page has no horizontal scroll with long Raw open').toBeLessThanOrEqual(1);
-  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
   const rawShot = await rawPanel.screenshot({
-    path: join(STORY_12_EVIDENCE_DIR, 'console-long-raw-open.png'),
+    path: join(ROOM_ANATOMY_EVIDENCE_DIR, 'console-long-raw-open.png'),
   });
   await testInfo.attach('console-long-raw-open.png', {
     body: rawShot,

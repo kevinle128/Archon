@@ -40,7 +40,7 @@ US-004 gate ladder — 2026-09-25
      ui/agent-tool-row-visual.spec.ts \
      ui/file-edit-diff.spec.ts \
      ui/task-dispatch-body.spec.ts
-   → 76 passed (5.5m)
+   → 77 passed (5.4m)
 
 Ownership
 - sprint-status.yaml: epic-3=backlog; 10-1-fix-room-geometry-and-execution-selection=ready-for-dev (unchanged)
@@ -48,4 +48,3 @@ Ownership
 - M005 not declared complete
 - No package.json / schema / api.generated drift
 - PR deferred to parent workflow (Ralph no-PR rule)
-

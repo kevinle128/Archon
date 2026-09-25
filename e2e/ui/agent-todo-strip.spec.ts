@@ -28,10 +28,10 @@ import { T } from '../lib/playwright/timeouts';
  *
  * Phase-1 cases prove mounting/collapse/status semantics; Phase-3 cases record
  * the acceptance evidence in
- * plans/260918-0826-issue-178-pinned-todo-strip/reports/visual-acceptance.md:
- * pinning geometry, internal body scroll, 460px anatomy, responsive/zoom,
- * keyboard/focus/motion, contrast ratios, and the Chromium AX tree. Captures
- * and todo-strip-metrics.json are written to the plan's reports/evidence/ dir.
+ * the current Node Room anatomy plan: pinning geometry, internal body scroll,
+ * fixed outer widths, responsive/zoom, keyboard/focus/motion, contrast ratios,
+ * and the Chromium AX tree. Captures and todo-strip-metrics.json are written
+ * to that plan's reports/evidence/ directory.
  */
 
 type Surface = 'console' | 'legacy';
@@ -48,7 +48,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EVIDENCE_DIR = join(
   REPO_ROOT,
   'plans',
-  '260918-0826-issue-178-pinned-todo-strip',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
   'evidence'
 );

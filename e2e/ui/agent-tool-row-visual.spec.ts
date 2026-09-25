@@ -22,8 +22,8 @@ import { T } from '../lib/playwright/timeouts';
  * and plans/260918-0834-issue-176-tool-family-bodies/reports/implementation-evidence.md.
  * The gallery tests run on deterministic route-fulfilled transcript fixtures —
  * labeled as such in their attachments — not fake-provider claims.
- * Captures go to the Playwright output dir via testInfo; the Story 1.2 Raw
- * captures are also written to the supplement's reports/evidence/ directory.
+ * Captures go to the Playwright output dir via testInfo; Raw captures are also
+ * written to the current Node Room anatomy plan's reports/evidence/ directory.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -35,9 +35,15 @@ const MOCKUP_DIR = join(
   'ux-Archon-agent-node-room-2026-09-09',
   'mockups'
 );
-const STORY_12_EVIDENCE_DIR =
+const ROOM_ANATOMY_EVIDENCE_DIR =
   env.ARCHON_VERIFY_EVIDENCE ??
-  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
+  join(
+    REPO_ROOT,
+    'plans',
+    '260925-2145-issue-266-console-legacy-room-anatomy',
+    'reports',
+    'evidence'
+  );
 
 type Surface = 'console' | 'legacy';
 
@@ -903,13 +909,13 @@ for (const surface of ['console', 'legacy'] as const) {
       fullPage: true,
     });
 
-    // Story 1.2 evidence: closed and open Raw at the fixed outer room width,
-    // plus a desktop context shot, written to the supplement's evidence dir.
-    mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+    // Closed and open Raw at the fixed outer room width, plus a desktop context
+    // shot, are written to the current plan's evidence directory.
+    mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
     await summary.press('Enter');
     await expect(row).toHaveJSProperty('open', true);
     const closedRowShot = await row.screenshot({
-      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-closed-${fixedLabel}.png`),
+      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-closed-${fixedLabel}.png`),
     });
     await testInfo.attach(`${surface}-raw-closed-${fixedLabel}.png`, {
       body: closedRowShot,
@@ -918,14 +924,14 @@ for (const surface of ['console', 'legacy'] as const) {
     await rawToggle.click();
     await expect(row.locator('pre')).toBeVisible({ timeout: T.medium });
     const openRowShot = await row.screenshot({
-      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-${fixedLabel}.png`),
+      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-open-${fixedLabel}.png`),
     });
     await testInfo.attach(`${surface}-raw-open-${fixedLabel}.png`, {
       body: openRowShot,
       contentType: 'image/png',
     });
     await page.screenshot({
-      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
+      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
       fullPage: true,
     });
   });
@@ -1327,9 +1333,9 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
     };
     evidence[surface] = surfaceEvidence;
   }
-  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
   writeFileSync(
-    join(STORY_12_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
+    join(ROOM_ANATOMY_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
     `${JSON.stringify(rawEvidence, null, 2)}\n`
   );
   await testInfo.attach('raw-toggle-contrast.json', {
