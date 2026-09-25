@@ -82,6 +82,10 @@ It does not prove the action target, target count, timing, effect on active work
 
 6. Discover and fingerprint the current implementation, relevant tests, and completed Epic sources.
    Record them in `comparison_sources` with `implementation` or `epic` kinds.
+   If a completed Epic shares a file with current requirements or new Stories, hash only the completed historical section.
+   Its `scope.start` and `scope.end` must be unique, exact lines that include all completed Epic evidence cited by the manifest.
+   Use `fingerprint-section --root {project-root} --start '<first historical heading>' --end '<last historical line>' <epic-file>` and copy the returned record into `comparison_sources`.
+   Do not lock the entire evolving Epic file or refresh the hash merely because current planning changed.
 
 7. Compare every frozen inventory row with the current product and completed Epics.
    Use `CHANGE_FEATURE` when direct comparison evidence shows that the mockup adds or changes the item.
@@ -164,7 +168,7 @@ Use this top-level shape:
   ],
   "comparison_sources": [
     {"kind": "implementation", "path": "packages/web/src/example.tsx", "sha256": "<64 lowercase hex characters>"},
-    {"kind": "epic", "path": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md", "sha256": "<64 lowercase hex characters>"}
+    {"kind": "epic", "path": "_bmad-output/planning-artifacts/epics-agent-node-room/epics.md", "scope": {"start": "<first completed Epic heading>", "end": "<last completed Epic line>"}, "sha256": "<hash of the inclusive historical section>"}
   ],
   "mockup_inventory": [
     {
@@ -286,4 +290,5 @@ Pass the validated manifest to PRD, Architecture, Epic, Story, and implementatio
 Those workflows must check the recorded source hashes before they use the manifest.
 They must map every `CHANGE_FEATURE` row into the current PRD, Architecture, Epic, and Story scope.
 They must preserve `UNCHANGED_CONTEXT` as current product context without requiring it to be re-specified as a new feature in the current change.
-If a source hash changed, regenerate the manifest instead of repairing it from planning documents.
+If an approved mockup source, current-product comparison source, or recorded completed-Epic section changed, regenerate the manifest instead of repairing it from planning documents.
+Changes to current requirements or new Stories outside the completed-Epic section do not invalidate extraction; rerun readiness against those updated planning documents.

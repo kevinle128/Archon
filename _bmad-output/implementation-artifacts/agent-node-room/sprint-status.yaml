@@ -1,18 +1,14 @@
-# generated: 2026-09-16 15:38:51 +0700
-<<<<<<< HEAD
-# last_updated: "2026-09-20 23:25:56 +0700"
-=======
-# last_updated: "2026-09-20 20:40:00 +0000"
->>>>>>> 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
+# generated: 2026-09-25 10:57:02 +0700
+# last_updated: 2026-09-25 10:57:02 +0700
 # project: Archon
 # project_key: NOKEY
 # tracking_system: file-system
-# story_location: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/implementation-artifacts/agent-node-room
-# epics: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
+# story_location: /Users/dale/orca/workspaces/Archon/agent-node-room-readiness-260924/_bmad-output/implementation-artifacts/agent-node-room
+# epics: /Users/dale/orca/workspaces/Archon/agent-node-room-readiness-260924/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
 #
 # Feature-scoped sprint plan for Agent Node Room.
-# Visible G1, G2, and G4 behavior is current scope in Epic 3.
-# G3 alone is a future capability because its Grok hook behavior is absent from the approved mockups.
+# Epics 1–3 are completed historical work; Epic 4 owns the current correction.
+# G1–G4 are current release proof gates.
 # File-system tracking state records implementation progress; it does not classify product scope.
 #
 # STATUS DEFINITIONS:
@@ -50,18 +46,14 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; sprint-status surfaces open ones
 
-generated: "2026-09-16 15:38:51 +0700"
-<<<<<<< HEAD
-last_updated: "2026-09-20 23:25:56 +0700"
-=======
-last_updated: "2026-09-20 20:40:00 +0000"
->>>>>>> 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
+generated: "2026-09-25 10:57:02 +0700"
+last_updated: "2026-09-25 10:57:02 +0700"
 project: Archon
 feature: agent-node-room
 project_key: NOKEY
 tracking_system: file-system
-story_location: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/implementation-artifacts/agent-node-room
-epics_file: /Users/dale/Desktop/workspace/OceanLabs/workflow-engine/archon/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
+story_location: /Users/dale/orca/workspaces/Archon/agent-node-room-readiness-260924/_bmad-output/implementation-artifacts/agent-node-room
+epics_file: /Users/dale/orca/workspaces/Archon/agent-node-room-readiness-260924/_bmad-output/planning-artifacts/epics-agent-node-room/epics.md
 
 development_status:
   epic-1: done
@@ -90,12 +82,21 @@ development_status:
   2-13-preserve-message-order-and-attribution-under-concurrent-operators: done
   epic-2-retrospective: optional
 
-  epic-3: backlog
-  3-1-reconcile-transcript-family-chip-todo-and-terminal-projections: backlog
-  3-2-reconcile-occurrence-labels-and-finished-iteration-targeting: backlog
-  3-3-present-truthful-shared-queues-in-every-approved-layout: backlog
-  3-4-send-one-queued-item-now-during-generation: backlog
-  3-5-show-honest-soft-inject-refusal-and-delivery-confirmation-states: backlog
-  3-6-provide-approved-state-node-kind-provider-rerun-navigation-artifact-and-close-controls: backlog
-  3-7-prove-legacy-and-console-conformance-for-all-64-behaviors: backlog
+  epic-3: done
+  3-1-reconcile-transcript-family-chip-todo-and-terminal-projections: done
+  3-2-reconcile-occurrence-labels-and-finished-iteration-targeting: done
+  3-3-present-truthful-shared-queues-in-every-approved-layout: done
+  3-4-send-one-queued-item-now-during-generation: done
+  3-5-show-honest-soft-inject-refusal-and-delivery-confirmation-states: done
+  3-6-provide-approved-state-node-kind-provider-rerun-navigation-artifact-and-close-controls: done
+  3-7-prove-legacy-and-console-conformance-for-all-64-behaviors: done
   epic-3-retrospective: optional
+
+  epic-4: backlog
+  4-1-place-and-disclose-the-todo-strip: backlog
+  4-2-label-every-occurrence-with-run-n: backlog
+  4-3-send-one-queued-item-into-the-active-turn: backlog
+  4-4-show-queue-only-controls-and-truthful-delivery-status: backlog
+  4-5-keep-product-room-controls-inside-the-fixture-boundary: backlog
+  4-6-prove-all-70-approved-product-items: backlog
+  epic-4-retrospective: optional

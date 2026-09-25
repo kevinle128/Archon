@@ -117,7 +117,7 @@ Extending `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`, on **both** surfac
 - a successful tool call is collapsed by default; a failed one is expanded
 - an `exit 1` badge appears when the exit code is non-zero
 - a multi-occurrence node renders occurrence headers; a single-occurrence node renders none
-- repeated top-level execution uses `Run N`, loop occurrence uses `Iteration N`, another provider turn in the same occurrence uses `Pass N`, and interruption or recovery uses a non-numbered reason-only header
+- every multi-occurrence separator uses primary `Run N` in occurrence order, with loop, pass, retry, and interruption context as a suffix; a single occurrence has no separator
 - a long path headline elides in the middle — **assert the filename is still present**
 - status is rendered as a glyph character, not colour alone.
   This is the accessibility guarantee and it is easy to regress in a restyle, so it gets its own assertion rather than riding along in a snapshot
@@ -128,25 +128,19 @@ Extending `NodeRoom.test.tsx` and `ConsoleNodeRoom.test.tsx`, on **both** surfac
 - `Execution` selection stays synchronized with the selected Logs row and remains separate from the scroll-only `Jump to` control
 - a finished loop iteration shows `Go to iteration N` and the shared read-only queue, exposes no steering action, and a synthetic delayed mutation with its old retry epoch is rejected by the steering contract tests
 
-## Approved mockup behavior coverage — transcript and todo
+## Approved mockup conformance — transcript and todo
 
-The [immutable readiness inventory](../../planning-artifacts/implementation-readiness-report-2026-09-20-agent-node-room.md) defines 28 transcript and todo behaviors, T01 through T28.
-All 28 are current scope and must have a runnable assertion.
-Coverage index: T01, T02, T03, T04, T05, T06, T07, T08, T09, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20, T21, T22, T23, T24, T25, T26, T27, and T28.
+The [validated Agent Node Room manifest](../../planning-artifacts/mockup-manifests/agent-node-room.json) is the current 70-item product inventory.
+Its nine `CHANGE_FEATURE` rows and 61 `UNCHANGED_CONTEXT` rows remain current on each applicable Legacy and Console surface.
+This plan owns focused transcript assertions for M001/I007, M002/I070, and M007/I052; the steering plan owns M003–M006 and M008–M009.
+Both plans retain runnable checks for all 61 manifest `UNCHANGED_CONTEXT` rows, with no outer numbered state, node-kind, or provider-transport fixture control counted as product UI.
 
-| Behavior ids | Required test evidence                                                                                                     |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| T01–T04      | Both-shell row anatomy, initial disclosure state, and five non-colour-only outcome glyphs.                                 |
-| T05–T10      | Five family treatments, chip fallback, elision, Codex wrapper handling, MCP labels, and bounded generic fallback.          |
-| T11–T19      | Every family body, truthful diff, task normalization, and closed-by-default Raw with original payload.                     |
-| T20–T24      | Compact historical todo rows, bottom-pinned current strip, summary meter, strip Raw, and terminal presentation projection. |
-| T25–T26      | Context-specific `Run N`, `Iteration N`, `Pass N`, and reason-only occurrence labels.                                      |
-| T27          | Logs-row and `Execution` selection synchronization with separate scroll-only navigation.                                   |
-| T28          | Finished-iteration read-only queue, `Go to iteration N`, no visible mutation actions, and fail-closed stale-epoch defense. |
-
-The correction regression set for this plan is T05, T21, T22, T23, T24, and T26.
-These six ids were previously partial, missing, or conflicting and cannot be satisfied by a snapshot-only assertion.
-Each needs the explicit semantic assertions named above on both shells where the behavior is visible.
+| Manifest row                    | Required evidence                                                                                                                                                        |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| M001 / I007                     | Console has one collapsible TODO strip after the scrolling transcript and before queue or dock; current item, progress, expanded phases, and Raw work.                   |
+| M002 / I070                     | Legacy has the same strip placement and disclosure behavior.                                                                                                             |
+| M007 / I052                     | Every multi-occurrence separator has primary `Run N` in occurrence order; loop, pass, retry, and interruption context is a suffix; a single occurrence has no separator. |
+| All 61 `UNCHANGED_CONTEXT` rows | Preserve existing context behavior and test each row on the surfaces marked applicable in the manifest.                                                                  |
 
 ## Boundary checks
 

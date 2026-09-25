@@ -174,13 +174,12 @@ graph TD
   Each tool item gains `presentation` and carries `metadata.execution` through; the `context` field and `toolContext()` go away, and their only two readers are `NodeRoom.tsx:246` and `ConsoleAgentHistoryList.tsx:178`, both JSX this work rewrites.
   A separate pure function in `lib/` takes `items` and returns groups, and it decides four things so neither shell does:
   1. **When headers appear.**
-     `Run N` and `Iteration N` appear when two or more distinct occurrences are displayed.
-     `Pass N` appears for another provider turn inside one occurrence.
-     A reason-only header appears for an unnumbered interruption or recovery occurrence.
-     A single occurrence with one provider turn has no header.
+     A primary `Run N` header appears for every occurrence when two or more distinct occurrences are displayed, in occurrence order.
+     Loop iteration, provider pass, retry, and interruption or recovery context follows as a suffix when relevant.
+     A single occurrence has no separator.
      A row whose `metadata.execution` is absent attaches to the nearest preceding context by `seq`, never to a group of its own.
   2. **What the label says.**
-     The core applies the approved context matrix: `Run N` is a repeated top-level node execution, `Iteration N` is a loop occurrence, `Pass N` is another provider turn inside the same occurrence, and a reason-only label is an unnumbered interruption or recovery occurrence.
+     The core applies the approved context matrix with universal primary `Run N` and a contextual suffix, including collision disambiguation for nested loop paths.
      A shell renders the string; it never derives it.
   3. **That every item groups, not only tool items.**
      Assistant and lifecycle items carry `metadata.execution` through too, or an occurrence header would sit above a group its prose rows fell out of.
@@ -189,7 +188,7 @@ graph TD
      `attempt_id` is never a display label.
 
   All three call sites feed this the output of `selectNodeRoomMessages`, and on the _occurrence-entry_ path the server has already filtered to one occurrence (`select-node-room-messages.ts:12`).
-  This suppresses `Run N` or `Iteration N` occurrence headers, but it does not suppress a nested `Pass N` or reason-only context when that occurrence contains one.
+  This suppresses the occurrence separator when only one occurrence is loaded; provider-pass and interruption context remains available as row context without inventing another primary header.
   CAP-6 still provides the node-entry multi-occurrence path.
   Every surface applies the projection; a surface may not opt out.
 
@@ -306,11 +305,9 @@ graph TD
 ### AD-17 — The approved room controls and terminal todo treatment are current scope
 
 - **Binds:** both shells, the approved Console, Legacy, transcript-state, and steering-state mockups.
-- **Prevents:** treating visible controls as review scaffolding, moving the todo strip above the transcript, or rewriting provider todo history to make a terminal sample look complete.
-- **Rule:** The state, node-kind, and provider controls are product controls, not review-only switches.
-  The shared room controller supplies their typed options and selected values.
-  The shells render them and dispatch their declared selections.
-  Provider selection exposes the selected provider's real capabilities and never fabricates a capability.
+- **Prevents:** treating outer review fixtures as product controls, moving the todo strip above the transcript, or rewriting provider todo history to make a terminal sample look complete.
+- **Rule:** The outer numbered state, node-kind, and provider-transport selectors are mockup fixtures.
+  The in-product `Execution` selector remains a product control and stays distinct from scroll-only `Jump to`.
 - **Rule:** `Re-run`, Console `Log`, Legacy `Logs`, `Graph`, `Artifacts`, and the room close control are current product behavior.
   Existing run and navigation owners execute them; this feature must preserve their labels, counts, selection synchronization, keyboard behavior, and focus return.
 - **Rule:** Terminal todo behavior is a **display projection** over the last provider-authored `TodoPhase[]`.
@@ -323,13 +320,14 @@ graph TD
   These are two approved layout contexts for the same node-scoped shared queue, not competing data models.
 - **Rule:** Only unsent composer text carries `this tab only`, including when draft and queue content share one visual surface.
   Accepted queue items are scoped to `(runId, nodeId)`, shared across tabs and operators, and ordered by server receipt.
-- **Rule:** G1 message-id delivery confirmation, G2 Claude soft-inject, and G4 OMP soft-inject are current scope because they are visible in the approved mockups.
-  Only non-visible G3 Grok hook soft-inject remains deferred.
-- **Rule:** During generation, every queued item has a visible `Send now`.
-  The action executes only when the selected provider capability supports soft-inject.
-  Otherwise it stays visible with a clear accessible refusal and leaves the item queued.
-- **Rule:** An operator row stays `sent` until the provider confirms the same caller-stamped message id.
-  Only that confirmation can project `delivered`; text, time, route acceptance, and transcript position cannot.
+- **Rule:** G1 truthful consumption, G2 Claude live input, G3 Grok live input, and G4 OMP RPC are current release proof gates.
+  The user requires Grok per-item Send now in the active turn in this release; the new Archon Grok path must prove same-turn acceptance and causal agent receipt before the action appears.
+  Grok's current `--single` mode is queue-only.
+- **Rule:** During generation, a queued item has per-item `Send now` only on a proven live-turn transport.
+  It sends exactly that item without Stop or a new turn; queue-only modes omit the action, while direct unsupported requests refuse without mutation.
+- **Rule:** On provider acceptance, only the selected item leaves the queue and creates one `sent` operator row immediately without a visible sender name; stored attribution remains.
+  A matching native lifecycle event or causally linked stream proves consumption and changes only that row to `delivered`.
+  An RPC acknowledgement, unrelated stream, text match, and timestamp do not prove consumption.
 - **Rule:** Native buttons and selects keep their platform keyboard behavior.
   `Tab` follows document and reading order.
   `Enter` and `Space` activate buttons and disclosures.
@@ -338,15 +336,16 @@ graph TD
 - **Rule:** Focus remains visible and survives every live update.
   When an active control unmounts, focus moves to its direct successor or owning selector and never to `<body>`.
   `Stopping…` uses `aria-disabled` with a suppressed handler, not the native `disabled` attribute, so focus stays on the control until it can move to `Send now`.
-- **Rule:** At 460px, state, node-kind, and provider groups can wrap in source order; permitted text can wrap or elide; Stop and the dock send control stay on one row at opposite edges; `Go to iteration N` stays fully visible; and the room has no horizontal overflow.
+- **Rule:** At 460px, product controls and fixture groups in a review sheet can wrap in source order; Stop and the dock send control stay on one row at opposite edges; `Go to iteration N` stays fully visible; and the room has no horizontal overflow.
 - **Rule:** Under `prefers-reduced-motion`, transcript, todo, and queue chevron rotation is disabled, smooth scrolling becomes immediate, and dock entrance, resize, and state-transition motion is disabled.
 - **Rule:** Idle-after-interrupt shows `no redirect ends this node after 30 min of inactivity · typing keeps it open`.
   Authorized typing activity sends the debounced composing keepalive and re-arms the inactivity timer.
   `Send now`, the cancel poll, or timer expiry resolves the idle wait exactly once.
   The interface shows no countdown.
   Expiry announces `node failed · interrupted with no redirect · none of this was sent`, restores unmatched content read-only, and moves dock focus to the last transcript row.
-- **Rule:** A refusal never disappears an action or discards content.
-  Pending Ask, detached execution, stale retry epoch, finished node, missing live handle, and queue-only per-item send each keep the operator's content, preserve focus, and name the reason in visible text and an accessible description without relying on colour.
+- **Rule:** A refusal does not discard content.
+  Pending Ask, detached execution, stale retry epoch, finished node, and missing live handle preserve focus and explain the reason without relying on colour.
+  A queue-only mode omits per-item `Send now`; a direct unsupported request still receives a typed refusal.
 - **Rule:** Console and Legacy use one semantic test matrix for state transitions, context labels, queue ownership, provider capability and refusal, keyboard activation, focus recovery, accessible names, live announcements, the 460px layout, and reduced-motion behavior.
   They can differ only in inherited tokens, shell chrome, and the approved singular `Log` versus plural `Logs` label.
 

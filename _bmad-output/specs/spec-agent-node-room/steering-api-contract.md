@@ -22,23 +22,15 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 
 ## Request schemas
 
-<<<<<<< HEAD
-
-- **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now' | 'soft_inject', retry_epoch: integer (non-negative) }`.
-  `message_id` is the correlation key for terminal reconciliation and current-scope G1 `delivered`.
-  `soft_inject` is the per-item `Send now` action during generation.
+- **send** — a discriminated request with `retry_epoch: integer (non-negative)`.
+  `intent: 'queue' | 'send_now'` carries a non-empty `message` and caller-stamped UUID `message_id`; `send_now` is the dock action after Stop.
+  `intent: 'soft_inject'` carries only `selected_message_id`, the UUID of an existing server-owned queued item; the server resolves its stored message text and `operator_user_id` and rejects replacement content.
+  The selected id is also the transcript row and idempotency key.
 - **interrupt** — `{ retry_epoch: integer (non-negative) }`; the target is the live turn on the registry handle.
 - **keepalive** — `{ retry_epoch: integer (non-negative) }`; it only re-arms the timer.
   This is the composing keepalive within the same actor grant, not a new grant.
 - **withdraw** — `{ retry_epoch: integer (non-negative) }`; `message_id` is the path parameter.
   It removes that message from the registry queue if it is still present.
-  =======
-- **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now' }`.
-  `message_id` is the correlation key for terminal reconciliation (CAP-11 / AD-11) and, post-G1, for `delivered`.
-- **interrupt** — `{}` (no body); the target is the live turn on the registry handle.
-- **keepalive** — no request body; it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
-- **withdraw** — `{}` (no body); `message_id` is the path parameter. Removes that message from the registry queue if it is still present.
-  > > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
 - **queue read** — bodyless GET: no request body and no query parameters; `runId`/`nodeId` are the only path parameters.
 
 Every mutation compares `retry_epoch` with the live handle before it changes state.
@@ -52,22 +44,18 @@ Queue read stays node-scoped because the queue is shared across occurrences.
   `awaiting_send_now` means an idle-after-interrupt node accepted the item and is waiting for the composer `Send now`.
   `soft_injected` means the provider transport accepted the selected queued item into the active turn.
   Delivery itself — the drain into turn N+1 — is the executor's, reported via the node sub-state stream, not the send response.
-  No state in this response means `delivered`; the UI waits for exact message-id confirmation.
+  No state in this response means `delivered`; only later causal agent-consumption proof can advance the matching row.
 - **withdraw** — `{ success: true, message_id: string }`; idempotent — success whether the message was still queued (now removed) or had already drained (nothing to remove).
 - **interrupt** — `{ success: true, sub_state: 'idle-after-interrupt' | 'generating' }`.
-  <<<<<<< HEAD
   `idle-after-interrupt` applies when the interrupt landed mid-turn; **`generating`** applies when the turn already ended naturally before the interrupt landed (interrupt spent, AD-2) and a queued message auto-drained into turn N+1.
   If the turn ended naturally with an **empty** queue, the node has completed — the route then returns 409 `node_finished` (below), not a success shape.
-- # **keepalive** — `{ success: true }`.
-  `idle-after-interrupt` when the interrupt landed mid-turn; **`generating`** when the turn already ended naturally before the interrupt landed (interrupt spent, AD-2) and a queued message auto-drained into turn N+1. If the turn ended naturally with an **empty** queue the node has completed — the route then returns 409 `node_finished` (below), not a success shape.
 - **keepalive** — `{ success: true }` on every successful call against a live handle:
   - live idle → re-arms the inactivity timer (private; not exposed on the wire);
   - live generating / between-turn / queue-only → 200 no-op (timer not armed or already settled);
   - parked handle or missing in-process handle → **422** `not_steerable_here` (checked before keepalive, because keepalive itself returns not_idle for parked);
   - terminal run/node or closed handle → **409** `node_finished`;
   - unknown run/node → **404**; unauthenticated → **401**.
-    Bodyless POST; writes no durable row; same steering actor grant as send/interrupt.
-    > > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
+    It writes no durable row and uses the same steering actor grant as send/interrupt.
 - **queue read** — `{ success: true, queued: [{ message_id: string (uuid), message: string }] }`.
   `queued` contains only the handle's current pending items, in server receipt order — drained or withdrawn ids and accepted-id memory never appear on the wire.
   No `operator_user_id`, `received_at`, handle phase, or durable version is exposed.
@@ -75,7 +63,9 @@ Queue read stays node-scoped because the queue is shared across occurrences.
   Every queue-read outcome — 200 and each error status — carries `Cache-Control: no-store` so a live queue snapshot is never served from a shared cache.
 
 No route response reports `delivered`.
-G1 is current scope, but only the provider message-id confirmation can advance a message from `sent` to `delivered`.
+G1 is current scope; a matching native lifecycle event or a stream causally linked to the selected message advances its `sent` row to `delivered`.
+The first model output of a new turn carrying only one message can prove ordinary boundary consumption, but starting that turn does not satisfy per-item Send now during generation.
+An RPC acknowledgement, unrelated stream, text match, or timestamp does not.
 
 ## Error schema and status codes
 
@@ -107,8 +97,15 @@ The alternative was 409 with a discriminated `error.code`; it was rejected becau
 - **Withdraw of an already-drained or unknown `message_id`** — an idempotent success no-op; there is no message-level 404 (404 is only an unknown `runId`/`nodeId`).
 - **Withdraw from a parked retained queue** — DELETE may remove an already-accepted item from a parked retained queue because it manages the queue, not the live provider session; new sends remain refused while parked, and a closed handle still returns `node_finished`.
 - **Send while an interrupt is in flight** — the message lands in the registry queue and waits for `Send now`; the queue absorbs the race with no 409 (AD-11).
-- **Per-item `Send now` while generating** — Claude and OMP accept `intent:'soft_inject'`.
-  Codex, DeepSeek, and Grok return `soft_inject_unavailable`; the item stays queued and keeps its position.
+- **Per-item `Send now` while generating** — only a proven Archon live-turn adapter and mode offers the UI action.
+  The server claims exactly the selected queued id against the active turn token and asks the provider-owned live-input port for acceptance; it does not drain the rest of the queue or start another turn.
+  Codex, DeepSeek, Grok `--single`, and any unproved mode return `soft_inject_unavailable` to direct requests without queue mutation.
+  G3 requires a separate Grok live-turn mode to pass same-turn selected-item acceptance and causal agent receipt before it offers the action in this release.
+  An advertised hook or transport acknowledgement alone does not pass that gate.
+  If the provider rejects before acceptance, the claim releases in its original queue position; a turn-end, Stop, Cancel, or stale-epoch race does not silently turn this action into next-turn delivery.
+  Proven acceptance removes only that item and creates one `sent` transcript row immediately.
+  A late acknowledgement is fenced by the active turn token; an uncertain timeout does not cause blind reinjection.
+  A transcript-write failure after acceptance leaves an explicit recording failure and does not return the accepted item to a sendable queue.
 - **Node goes terminal mid-request** — the route returns 409 `node_finished`; the teardown queue check is the last gate (AD-11).
 - **Every rejected request leaves the node, queue, and transcript unchanged** — a refusal is never a partial mutation.
 - **Read racing a send/withdraw** — a queue read reflects the registry at the snapshot tick: it may include a message whose send response is still in flight, or omit one whose withdraw landed first.
@@ -131,6 +128,7 @@ Response-only derived field on the text variant of the node-message read API:
 - `null` only when `operator_user_id` is null (identity-less)
 - lookup failure fails open to the short-id map; transcript list/detail still return 200
 - the web never fetches users for this field (compat short-id guard only)
+- the accepted per-item active-turn row omits the visible sender name only; stored `operator_user_id` and derived attribution remain available, and other operator rows keep their existing display rule
 
 ## Boundary notes
 

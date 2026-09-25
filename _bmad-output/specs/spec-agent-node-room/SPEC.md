@@ -68,15 +68,13 @@ Everything else reuses seams that already exist.
 
 The **read** half is CAP-1…CAP-7; the **write** half is CAP-8…CAP-13.
 
-The approved Console, Legacy, Transcript States, and Steering Dock States mockups define 64 visible current-scope behaviors.
-Every visible control, state, transition, and layout variant in those mockups is product behavior, including the review-state, node-kind, provider, rerun, navigation, artifact, and close controls.
+The validated mockup manifest defines 70 current product items: nine changed features and 61 unchanged context items across the approved Console, Legacy, Transcript States, and Steering Dock States mockups.
+The outer numbered review-state, node-kind, and provider-transport controls are mockup fixtures, not product controls.
+The in-product `Execution` selector, lifecycle, navigation, artifact, and close controls remain product behavior.
 Mockup context resolves apparent alternatives instead of deferring them: a full Legacy or Console room uses the full-bleed queue band, while the compact dock and state-review layout uses the inset queue well.
 
-Execution labels use four distinct contexts.
-`Run N` is a repeated top-level node execution.
-`Iteration N` is a loop occurrence.
-`Pass N` is another provider turn within the same occurrence.
-A reason-only header is a non-numbered interruption or recovery occurrence.
+Every multi-occurrence separator uses `Run N` as its primary label in occurrence order.
+Loop iteration, provider pass, retry, and interruption context can follow as a suffix.
 
 ### Read — a scannable transcript
 
@@ -124,7 +122,7 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
   - **intent:** A reader can tell which attempt or loop iteration produced a given tool call.
   - **success:** A node whose rows span more than one `occurrence_id` renders a header per group; a single-occurrence node renders none.
     Grouping keys on `occurrence_id`, never on `attempt_id`.
-    Headers use `Run N` for repeated top-level execution, `Iteration N` for a loop occurrence, `Pass N` for another provider turn inside the same occurrence, and a non-numbered reason-only header for interruption or recovery.
+    Every group header uses primary `Run N` in occurrence order; loop iteration, provider pass, retry, and interruption context follows as a suffix when relevant.
     A **loop-iteration selector** lets the reader navigate directly between occurrence groups; the per-group headers remain its targets, and it is absent on a single-occurrence node.
     On a live loop node, selecting a **finished** iteration through the **`Execution` selection controls** (header select, Logs row, or graph occurrence; `Jump to` stays scroll-only) renders a read-only dock, a `Go to iteration N` control, and a read-only band that mirrors the node-scoped shared pending queue across operators and tabs.
     The composer and steering actions are absent in this view.
@@ -173,18 +171,22 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
   - **intent:** The operator's message reaches a running agent without interrupting it, and sooner on a provider whose transport can take it mid-turn.
   - **success:** Sending to a running agent is an **ordinary prompt**, not a separate steer primitive.
     `Queue` remains available on every provider and delivers at the next natural boundary without an interrupt.
-    Every queued item also shows `Send now` while the agent is generating.
-    Selecting it soft-injects that item into the active turn when the selected provider supports soft-inject, with no interrupt, interrupted tool call, or turn-start event.
-    On providers without soft-inject, the same visible control returns a clear refusal state and leaves the item queued.
-    Claude streaming input and OMP RPC mode are current-scope soft-inject transports.
-    Grok hooks remain deferred because no approved mockup shows that transport.
+    Per-item `Send now` appears only while the agent generates on an Archon transport proven to accept live input.
+    Selecting it sends exactly that queued item into the active turn without Stop, a natural-end wait, an interrupted tool call, or another turn.
+    On provider transport acceptance, only that item leaves the shared queue and appears immediately as an operator transcript row with `sent` and no visible sender name.
+    A queue-only mode omits the per-item action; a direct unsupported request returns a typed refusal without changing the queue.
+    Claude streaming input, OMP RPC, and a new Grok live-input path must pass current release proof gates G2, G4, and G3 respectively.
+    G3 requires Grok per-item Send now during the active agent turn in this release, including causal proof that the agent received the selected item.
+    An advertised hook is a candidate mechanism, not proof of this behavior.
+    Archon's current Grok `--single` path is queue-only.
 
 - **CAP-13** — The interface claims only what it knows
   - **intent:** An operator can tell whether a message merely left the browser or actually reached the agent.
-  - **success:** A message reads `sent` until the provider confirms the exact caller-stamped message id, at which point it reads `delivered`.
-    Correlation is by id alone.
-    `delivered` is current product behavior and is reachable only after the Claude dependency is at `@anthropic-ai/claude-agent-sdk` **≥ 0.3.246**.
-    Providers that cannot confirm the id remain at `sent`.
+  - **success:** A queued receipt remains `queued`; only provider acceptance into the active turn changes the selected item to `sent` and creates its single transcript row.
+    The row changes to `delivered` only when a matching native lifecycle event or a stream causally tied to that item proves agent consumption.
+    An RPC acknowledgement, unrelated ongoing stream, text match, or timestamp does not prove consumption.
+    The caller-stamped `message_id` stays the row and idempotency key; an echoed id is sufficient but is not the only valid proof.
+    G1 is a current release proof and implementation gate, and an unconfirmed accepted row stays `sent`.
 
 ## Constraints
 
@@ -218,12 +220,11 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
 
 ### Write half
 
-<<<<<<< HEAD
-
 - **Current release scope.**
-  G1 delivery confirmation, G2 Claude soft-inject, and G4 OMP soft-inject are current product behavior because they are visible in the approved mockups.
-  Their SDK, spike, and conformance work is an implementation prerequisite, not deferred backlog.
-  G3 Grok hooks remain deferred because they are absent from the approved mockups.
+  G1 truthful delivery, G2 Claude soft-inject, G3 Grok live-turn delivery, and G4 OMP soft-inject are current release proof and implementation gates.
+  The candidate Archon paths are not proven by an SDK feature or another product's adapter.
+  Grok must support per-item Send now during an active turn in this release through a path proved in Archon.
+  Its current `--single` adapter remains queue-only and omits the action until a separate path proves same-turn acceptance and causal agent receipt.
   The universal interrupt plus `Queue` path remains available on every provider.
 - **Steering acts on the live agent, never on the node lifecycle.**
   _Send_ and _interrupt_ both operate on the running node's **live provider session**.
@@ -244,7 +245,8 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
 - **In-process only; no durable steering state.**
   The **in-process registry** — keyed `(runId, nodeId)`, holding the node's live session handle plus an in-memory inbound queue, valid only while the node runs in this process — is the sole mechanism.
   Web dispatch runs the executor in the API server's process; a detached CLI run has no reachable handle, so steering is **unavailable** for it in v1 (Cancel and normal resume still work; the UI states this).
-  A server restart drops the live session and any in-flight steer; the run resumes normally.
+  A server restart drops the live session, timer, and any in-flight steer, leaving a durable non-terminal run.
+  Archon does not autonomously fail or resume that ambiguous run from staleness; the operator must use explicit recovery.
 - **Two queues, split on typing vs queued.**
   The pre-`Queue` **draft** is text still being composed and is per-tab browser state with no table or migration.
   The `this tab only` label qualifies only this unsent draft, even when draft and queued content share one combined surface.
@@ -256,14 +258,17 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
 - **An operator message is an ordinary `text` transcript row carrying three additive `metadata` fields:** `origin = 'operator'`, `operator_user_id` (the sender, for CAP-11 attribution on a multi-user install), and `message_id` (the caller-stamped id, so the client can reconcile which `sent` messages became rows).
   No new table, no widened `kind` enum — the `.strict()` metadata schema takes additive fields plus a regenerated `api.generated`, not a migration.
   The executor is the **sole** writer; the row is a receipt for the record, not the delivery vehicle.
+  Only the row created by accepted per-item `Send now` during generation hides its visible sender name; stored attribution and other operator-row display paths remain.
 - **Send and Interrupt are new routes; the queue absorbs races and epoch checks fail closed.**
   `POST /api/workflows/runs/:runId/nodes/:nodeId/send` and `…/interrupt` resolve identity through `resolveAuthContext` under the steering-specific actor grant.
   Any authenticated identity may steer and is attributed by `operator_user_id`; unauthenticated calls return 401; identity-less runs are allowed.
   Every mutation carries `retry_epoch`.
   A stale epoch returns a typed refusal and changes no node, queue, or transcript state.
   A Send arriving while an interrupt is in flight waits in the queue for the operator's `Send now`.
-  A node no longer running returns 409, a detached run returns `not steerable here`, and per-item `Send now` on a provider without soft-inject returns a clear capability refusal without removing the item.
-  On any terminal event, the client reconciles its `sent` ids against operator-row `message_id` values only after the executor's terminal write; unmatched ids return as `Never sent`.
+  A node no longer running returns 409, a detached run returns `not steerable here`, and a direct per-item request on a queue-only mode returns a typed capability refusal without removing the item.
+  Queue-only UI omits that per-item action.
+  On any terminal event, the client reconciles queued receipts against operator-row ids only after the executor's terminal write; an item proven unaccepted may return as `Never sent`.
+  An accepted id with a failed transcript write is a recording failure, never a sendable `Never sent` draft.
   With two docks on one node, global order is the registry receipt order and each row keeps its `operator_user_id`.
 - **The dock does not appear on a finished node.**
   Settled by the owner.
@@ -273,20 +278,18 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
 - **Interrupt is not undo.**
   Session state is saved up to the last completed tool call, but files already written stay written — nothing is rolled back.
   The control must not imply otherwise.
-  =======
-- **v1 release gate (owner-ratified 2026-09-15).** Steering v1 ships at the universal floor — interrupt + `Queue`, every message `sent`, on every provider. `delivered` (G1 · claude SDK ≥ 0.3.246), claude soft-inject (G2 · spike), omp soft-inject (G4 · conformance, independent of G2), and grok hooks (G3 · spike) are **post-v1 gated backlog**, each on its own external gate; none blocks the v1 release.
-- **Steering acts on the live agent, never on the node lifecycle.** _Send_ and _interrupt_ both operate on the running node's **live provider session**. The node stays `running` throughout — no pause, no `pending`, no resume, no `node_failed`. There is **no durable steering state**: no marker, no phase, no CAS, no attempt-key. Stopping the whole node is the existing **Cancel**/abort path, out of scope and untouched.
-- **Interrupt is the provider's own primitive (or a stream-abort) on a per-turn signal, never the node-level one.** The executor's `nodeAbortController` (`dag-executor.ts:2209`) is **one-shot and Cancel's** (its `:3124` check fails the node; the re-ask loop stops on it, `:3032`). Steering interrupts through a **fresh per-turn signal** combined with the node-level one (`AbortSignal.any`), so each new turn gets a fresh signal — which is what lets the node run multiple turns and never trips `:3124`. `operatorInterrupt` is a **per-turn flag resolved by placement** in the existing flow (`stream → validation → canReask :3032 → :3124 Cancel check → completion`): `canReask` must also stop on it; validation is skipped on an interrupted turn; its branch sits immediately after the `:3124` Cancel check so Cancel dominates by position; it is reset at turn N+1. **End cause** is a five-case rule the executor resolves, not result-presence alone: a `result` with no abort marker is a natural end; a `result` carrying an abort marker (DeepSeek `stopReason:'aborted'`) or a thrown abort (OMP `Query aborted`) with `operatorInterrupt` set is an **interrupted end** into idle-await, never `node_failed`; a throw without the flag is a real failure; Cancel dominates by position. The executor classifies the abort-marked `result` and the abort throw — the provider adapter never suppresses them. This applies on both `executeNodeInternal` and `executeLoopNode` (AI loop nodes are steerable in v1). See `engine-integration.md`.
-- **A steered node runs multiple provider turns on one live session — the one new engine behaviour.** It reuses the structured-output re-ask seam that re-invokes `sendQuery` with `attemptResumeId` on the same session (`dag-executor.ts:2290`). **Turn-end has two causes:** a **natural** end **auto-drains** (next turn on a queued message, else completes the node when the queue is empty); an **interrupted** end produces a **partial** result that must not be validated, completed, or advanced, and **always enters idle-await whatever the queue holds** — draining only on the operator's `Send now`.
-- **In-process only; no durable steering state.** The **in-process registry** — keyed `(runId, nodeId)`, holding the node's live session handle plus an in-memory inbound queue, valid only while the node runs in this process — is the sole mechanism. Web dispatch runs the executor in the API server's process; a detached CLI run has no reachable handle, so steering is **unavailable** for it in v1 (Cancel and normal resume still work; the UI states this). A server restart drops the live session and any in-flight steer; the process-local handle, timer, and continuation are dropped, leaving a durable non-terminal run; Archon never autonomously fails or resumes it from staleness — recovery is explicit abandon/cancel, then CLI `archon workflow retry-node` when desired (the web Retry action is not shown for a still-`running` node).
-- **Two queues, split on typing vs queued.** The pre-`Queue` **draft** — text still being composed — is per-tab browser state (no table, no migration). Pressing `Queue` **dispatches** the message to the send route with `intent: 'queue'`, and from that moment it rides the **in-memory registry queue** on the live handle: the executor drains it at the natural turn boundary, or `Send now` flushes it. Delete of a queued message calls an **idempotent withdraw route** (a delete after the message has drained is a success no-op). A queued message is therefore server-side — it survives a tab close and dies on a server restart, since the registry is in-process (NFR-ANR-15 holds: no durable steering state). The crossover from client to server is `Queue`-press, not the drain moment.
-- **An operator message is an ordinary `text` transcript row carrying three additive `metadata` fields:** `origin = 'operator'`, `operator_user_id` (the sender, for CAP-11 attribution on a multi-user install), and `message_id` (the caller-stamped id, so the client can reconcile which `sent` messages became rows). No new table, no widened `kind` enum — the `.strict()` metadata schema takes additive fields plus a regenerated `api.generated`, not a migration. The executor is the **sole** writer; the row is a receipt for the record, not the delivery vehicle.
-- **Send and Interrupt are new routes; the queue absorbs races, only a finished node refuses.** `POST /api/workflows/runs/:runId/nodes/:nodeId/send` and `…/interrupt`, resolving identity via `resolveAuthContext` under a **steering-specific actor grant** (owner-ratified 2026-09-15): any authenticated identity may steer, attributed by `operator_user_id`; unauthenticated → 401; identity-less run → allowed — broadening HITL/AD-7 for the steering routes only. There is **no phase/marker gate**, and nothing is lost. A Send arriving while an interrupt is in flight waits in the queue for the operator's `Send now`. The **only** refusal: a node no longer running — `node finished` → **409** (the draft stays in the browser) — and no live handle in this process (detached) → a clear "not steerable here". On **any** terminal (finish, Cancel, or the 30-minute idle-await fail) the in-memory queue dies with the registry, so the client reconciles its `sent` ids against the `message_id` on the operator rows actually written — **only on the node's terminal event** (`node_completed`/`node_failed`, never a live refetch); any unmatched `sent` id is restored to the draft box as **"Never sent"**. With two docks on one node, **global order is the registry's receipt order**; each row's `operator_user_id` attributes it — no per-node steering lock.
-- **The dock does not appear on a finished node.** Settled by the owner. The field and both controls are absent — a control that cannot act must not be drawn. Re-running a finished node is `workflow retry-node`, its own capability with its own confirmation, not this dock. An undelivered draft box stays rendered **read-only**, stating the node finished and the messages never left.
-- **Interrupt is not undo.** Session state is saved up to the last completed tool call, but files already written stay written — nothing is rolled back. The control must not imply otherwise.
-  > > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
 - **A steer delivery must not emit a turn-start event** — a stray one opens a phantom turn boundary and corrupts the record the transcript is built from.
-- **Delivery is confirmed by id, never by matching text or timestamps.**
+- **Delivery requires causal consumption proof, never matching text or timestamps.**
+  A matching native lifecycle event or stream causally tied to the selected message can prove consumption.
+  An RPC acknowledgement proves only transport acceptance, and unrelated ongoing stream output proves neither selected-message consumption nor `delivered`.
+- **Selected-item live input is separate from dock Send now.**
+  A server-owned queued `message_id` and selected `retry_epoch` identify the item; the caller cannot replace its stored text or `operator_user_id`.
+  The registry claims that one item against the active turn token and asks a provider-owned live-input port for acceptance.
+  Acceptance removes only that item and writes one idempotent `sent` operator row immediately; consumption changes only that row to `delivered`.
+  A rejected attempt releases the claim without moving the item; a turn-end or Stop race never silently falls back to a new turn.
+  An uncertain timeout must not trigger blind reinjection, and a transcript-write failure after acceptance must not return the item to a sendable queue.
+  Repeated receipts, concurrent operators, and reconnects preserve one send and one row per stamped id.
+  Dock `Send now` after Stop remains the separate next-turn flush of queued items plus the new draft.
 - **Steering is universal over a queue-and-flush floor; mid-turn is the acceleration.**
   Every provider delivers an operator message — at worst as the next prompt at turn-end.
   A provider earns _soft-inject_ only from a transport exercised against it, never one merely advertised.
@@ -295,9 +298,9 @@ A reason-only header is a non-numbered interruption or recovery occurrence.
   The full Legacy and Console rooms use the full-bleed queue band.
   The compact dock and state-review layout uses the inset queue well.
   These are two layouts for two contexts, not alternatives for one context.
-- **Approved surrounding controls are product behavior.**
-  The numbered state selector, prompt versus loop node-kind selector, provider transport selector, Cancel, Re-run, Log or Logs, Graph, counted Artifacts, execution-row selection, and node-room close control all act as shown in the approved mockups.
-  They are part of current scope even when they reuse existing run-page behavior rather than steering internals.
+- **Approved room controls are product behavior.**
+  The in-product `Execution` selector, Cancel, Re-run, Log or Logs, Graph, counted Artifacts, and node-room close control act as shown in the approved mockups.
+  Outer numbered review-state, node-kind, and provider-transport controls are fixture scaffolding.
 - **The 30-minute idle-await fail is an inactivity timer (owner-ratified, SC 2.2.1).**
   While the agent is `idle-after-interrupt` and nothing is sent, a **fresh 30-minute timer** (an explicit fail branch — not the existing idle-timeout, which _completes_ the node) fails the node (`interrupted by operator, no redirect received`).
   Idle-await runs its own timer-driven status poll so `/workflow cancel` still reaches it, and **resolves exactly once** (`Send now`, cancel-poll, or timer).
@@ -352,8 +355,9 @@ Reading that transcript a week later shows the wrong command, the operator's cor
 
 ## Open questions
 
-> **Current-scope mapping (2026-09-20):** the approved mockups bring the `delivered` chip (**G1**), Claude soft-inject (**G2**), and OMP soft-inject (**G4**) into the current release.
-> Grok hooks (**G3**) stay deferred because they are absent from the approved mockups.
+> **Current-scope mapping (2026-09-24):** the approved mockups bring `delivered` (**G1**) and per-item active-turn delivery through proven provider paths into the current release.
+> The user's explicit G3 decision also requires Grok per-item Send now in the active turn in this release, alongside Claude G2 and OMP G4 proof gates.
+> Grok's present `--single` mode is queue-only.
 
 - **Settled — interrupt-then-abandon fails the node after 30 minutes** (owner-ratified; see the write-half constraint).
   The timer is an inactivity timer re-armed by a composing keepalive (SC 2.2.1); resume re-runs with a fresh session.
@@ -362,10 +366,13 @@ Reading that transcript a week later shows the wrong command, the operator's cor
   Revisit when a provider offers a channel into a session it did not spawn — grok's leader socket is the only lead found.
 - **Current prerequisite — Claude soft-inject.**
   Exercise Claude `AsyncIterable` streaming input with the resume protocol and ship the confirmed path as G2.
-- **Deferred — Grok hooks payload.**
-  The mechanism is advertised and the handshake confirms it, but the exact text-field shape is unexercised.
-  This is G3 and is not visible in the approved mockups.
+- **Current prerequisite — Grok live-turn delivery (G3).**
+  Prove a reachable Archon Grok path sends exactly the selected queued item into the same active turn and provides causal evidence that the agent received it.
+  The advertised hooks and their exact text-field shape are unexercised, so they establish no shipping capability.
+  If hooks cannot pass the same-turn and receipt gate, another Grok path must pass it or the release stays blocked.
+  Keep current `--single` queue-only and hide its per-item action.
 - **Current prerequisite — delivery confirmation.**
-  Raise `@anthropic-ai/claude-agent-sdk` to at least 0.3.246 and keep `delivered` unreachable until the provider confirms the exact message id.
-  Providers without confirmation remain at `sent`.
+  Prove a matching native lifecycle event or a response stream causally linked to the selected message before changing its row to `delivered`.
+  An SDK update may be necessary for a given transport, but its version alone is not proof.
+  An accepted message without causal consumption evidence remains `sent`.
 - **Resolved during the read-half specification** (from the pinned SDK's `sdk-tools.d.ts`): the Agent SDK schemas match the harness schemas; `glob` earns its own family (Claude's required `pattern` + optional `path`-as-directory vs OMP's `path`-is-pattern); the grep body arm comes from `output_mode`, not the family; Claude's `TodoWrite` (whole-list replacement) and `Agent` (single dispatch) normalize at the edge.

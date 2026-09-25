@@ -8,11 +8,8 @@ The frame is the one the spine fixes: steering acts on the **live agent**, never
 The node stays `running` throughout — there is no durable marker, no run pause, and no stop-and-resume.
 This document explains how the executor reaches the live session, interrupts it without failing the node, and runs more than one turn on it.
 
-The visible execution vocabulary distinguishes engine scopes.
-`Run N` is a repeated top-level node execution.
-`Iteration N` is a loop occurrence.
-`Pass N` is another provider turn on the same occurrence and live session.
-A reason-only header is a non-numbered interruption or recovery occurrence.
+The visible multi-occurrence vocabulary uses primary `Run N` in occurrence order.
+Loop iteration, provider pass, retry, and interruption context follows as a suffix where relevant.
 
 ## 1. Interrupt is a provider primitive on the live handle — and the abort plumbing already exists
 
@@ -80,11 +77,13 @@ The flag is set when steering fires the per-turn abort, and three edits at three
   The queued messages are already on the registry from the `Queue` press; `Send now` dispatches the newly typed one, and the executor flushes the queued messages and then this one in receipt/written order before turn N+1.
   This rule preserves the ratified `Send now` moment (`control-states.md`): after Stop, the operator adds the final correction before anything is sent.
 
-**Per-item `Send now` is also available during generation.**
-The selected provider capability decides the outcome.
-Claude streaming input and OMP RPC mode soft-inject the selected queued item into the active turn without creating a new pass or a turn-start event.
-Codex, DeepSeek, and Grok keep the item queued and return the typed `soft_inject_unavailable` refusal.
-Grok hooks remain deferred because that transport is not visible in the approved mockups.
+**Per-item `Send now` is current during generation only on a proven Archon live-turn transport.**
+It sends exactly the selected queued message into the active turn without Stop, a natural-end wait, or a new turn.
+Claude streaming input, Grok live input, and OMP RPC are current G2/G3/G4 release proof gates; none is established by an advertised provider feature alone.
+Grok must pass its actual Archon same-turn and causal receipt gate in this release.
+Codex, DeepSeek, and Grok `--single` are queue-only modes and omit the action.
+A direct unsupported request returns `soft_inject_unavailable` without queue mutation.
+The selected-item path is separate from the dock `Send now` next-turn flush after Stop.
 
 **A steered node runs multiple turns on one live session.**
 Continuing across turns reuses a seam that already exists:
@@ -139,13 +138,9 @@ The process boundary now binds **all** of steering, not only mid-turn delivery:
 - A run whose executor is a **detached child** has no reachable live handle → Send and Interrupt return a clear "not steerable here" (the UI states it).
   Cancel and normal `/workflow resume` still work on it.
 
-<<<<<<< HEAD
-This is the accepted v1 boundary.
-A server restart drops the registry with the live sessions; any in-flight steer is lost and the run resumes normally — matching aion, which keeps `active_turn_id` in memory and treats a crash mid-turn the same way.
-=======
-This is the accepted v1 boundary. A server restart drops the registry with the live sessions; any in-flight steer is lost and the process-local handle, timer, and continuation are dropped, leaving a durable non-terminal run; Archon never autonomously fails or resumes it from staleness — recovery is explicit abandon/cancel, then CLI `archon workflow retry-node` when desired (the web Retry action is not shown for a still-`running` node) — matching aion's process-local `active_turn_id` loss on crash, without inventing autonomous recovery.
-
-> > > > > > > 17ab7bf8cc33a2f69a9a0f784daaf74975fb64c7
+This is the accepted process boundary.
+A server restart drops the registry, live session, timer, and in-flight steer but leaves a durable non-terminal run.
+Archon does not autonomously fail or resume that ambiguous run from staleness; recovery uses explicit abandon or cancel and then CLI `archon workflow retry-node` when wanted.
 
 Each live handle also carries the current `retry_epoch` as a mutation fence.
 Every send, interrupt, keepalive, and withdraw mutation supplies the epoch selected by the client.
@@ -166,12 +161,16 @@ There is no new table and no widened `kind` enum — the same lesson Aion record
 The cost is honest and small: three optional fields on a strict schema, plus a regenerated `api.generated` for the web.
 **No database migration is necessary** — the column is already JSON.
 The **executor is the sole writer** (HITL/AD-3, which assigns `seq`), placing the row by `seq` between the turn it interrupted and the turn it caused.
-The row is a **receipt for the record** — the delivery vehicle is the live session, not this row — and its `message_id` is what lets the client mark any unmatched `sent` message "Never sent" rather than lose it silently.
-That reconciliation runs **only on the node's terminal event** (`node_completed`/`node_failed`, HITL/AD-7's refetch trigger, which sequences after the executor's last write), never on a live refetch — otherwise a Cancel mid-flight could read rows before the final insert commits and mis-mark a _delivered_ message "Never sent", duplicating the correction on resend.
+The row is a **receipt for the record** — the delivery vehicle is the live session, not this row — and its `message_id` supports terminal reconciliation of queued but unaccepted work.
+That reconciliation runs **only on the node's terminal event** (`node_completed`/`node_failed`, HITL/AD-7's refetch trigger, which sequences after the executor's last write), never on a live refetch.
+An accepted id without a row is an explicit recording failure, not a `Never sent` draft eligible for resend.
 
-The UI changes `sent` to `delivered` only after the provider confirms that exact `message_id`.
-G1 is current scope, so the Claude dependency upgrade that exposes this confirmation is a release prerequisite.
-No response, elapsed time, text match, or turn boundary can synthesize delivery.
+The queue receipt is `queued`; live provider transport acceptance removes only the selected item and writes one `sent` operator row immediately.
+Only this accepted per-item row hides its visible sender name; stored `operator_user_id` and read-model attribution remain.
+The UI changes that row to `delivered` only after a matching native lifecycle event or a stream causally tied to that message proves agent consumption.
+An RPC acknowledgement proves acceptance only; unrelated ongoing output, elapsed time, text match, and a turn boundary cannot synthesize consumption.
+The stamped `message_id` is the row and idempotency key, but an echoed id is not the only valid proof.
+G1 is a current release proof gate, not an assumption that a Claude SDK version establishes delivery.
 
 **This reaches outside the spec.**
 `AgentHistoryItem` in `spec-readable-agent-transcript` has kinds `assistant | tool | lifecycle`; an operator row is none of them, and that spec's AD-1 puts every row's meaning in the shared core.
@@ -195,9 +194,14 @@ Ordered by what blocks what:
    This is `(runId, nodeId) → live session handle + inbound queue + retry epoch`, populated while the node runs in-process and torn down when it ends.
    Send, Interrupt, keepalive, and Withdraw routes resolve the handle here and fail closed on a stale epoch; no handle means `not steerable here`.
 4. **The operator row.**
-   Add `origin`, `operator_user_id`, `message_id` to the transcript metadata schema, regenerate `api.generated`, write the `text` row and the `interrupted` status row through the store at delivery; the client reconciles `sent` ids against `message_id` on any terminal (mark unmatched "Never sent"); open the matching `AgentHistoryItem` change against `spec-readable-agent-transcript`.
-5. **The provider seam.**
-   The matrix describes this seam.
-   Sending is an ordinary prompt.
-   G2 makes Claude streaming input current behavior, G4 makes OMP RPC soft-inject current behavior, and a visible per-item action returns a typed refusal on other providers.
-   G3 Grok hooks remain deferred.
+   Add `origin`, `operator_user_id`, `message_id` to the transcript metadata schema, regenerate `api.generated`, and write the `text` row on transport acceptance for per-item active-turn sending.
+   The client reconciles queued receipts against written ids at terminal, marks only proven unaccepted items `Never sent`, and surfaces an accepted-but-unrecorded id as a recording failure.
+   Open the matching `AgentHistoryItem` change against `spec-readable-agent-transcript`.
+5. **The selected-item live-input seam.**
+   The send route resolves a server-owned queued `message_id` and selected `retry_epoch`, rather than accepting replacement text or sender identity from the per-item caller.
+   The registry claims that one item against an active turn token and calls a provider-owned live-input port; a second `sendQuery()` on a resumed session is a new turn and cannot satisfy this action.
+   The port returns a typed acceptance result for `sent` and independent, causally linked consumption evidence for `delivered` when available.
+   A rejection releases the claim in place; turn-end, Stop, Cancel, epoch change, or uncertain timeout cannot silently convert the action into next-turn delivery or trigger blind reinjection.
+   If transcript recording fails after acceptance, keep the accepted id out of sendable queue state and surface the failure.
+   G2, G3, and G4 require provider-specific proof through the actual Archon Claude, Grok, and OMP modes before the action appears; Codex, DeepSeek, and Grok `--single` remain queue-only.
+   G3 is a release requirement, and its Grok path must also prove causal agent receipt for G1 status.
