@@ -15,7 +15,6 @@ import {
 } from '@/lib/execution-room-model';
 import { ROOM_WIDTH_PX } from '@/lib/room-split-layout';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
-import { cn } from '@/lib/utils';
 
 import type { RunEvent } from '../primitives/event';
 import type { Message } from '../primitives/message';
@@ -384,20 +383,22 @@ export function ConsoleInspectPane({
       <div className="flex min-h-0 min-w-0 flex-1 flex-row">
         <div
           id="console-run-view"
-          className={cn(
-            'min-h-0 min-w-0 flex-col',
-            hideMainView ? 'hidden' : 'flex min-w-0 flex-1'
-          )}
+          className={
+            hideMainView
+              ? 'hidden min-h-0 min-w-0 flex-col'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col'
+          }
         >
           {mainPane}
         </div>
         {roomOpen ? (
           <div
             id="console-run-room"
-            className={cn(
-              'flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-border',
-              mode === 'single' ? 'min-w-0 w-full flex-1' : 'shrink-0'
-            )}
+            className={
+              mode === 'single'
+                ? 'flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden border-l border-border'
+                : 'flex min-h-0 min-w-0 shrink-0 flex-col overflow-hidden border-l border-border'
+            }
             style={
               mode === 'split'
                 ? { width: `${String(ROOM_WIDTH_PX.console)}px`, overflow: 'hidden' }

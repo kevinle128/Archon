@@ -636,8 +636,8 @@ describe('LegacyGraphLogsPane', () => {
     await flush();
     const viewPanel = host.querySelector('#legacy-run-view');
     const roomPanel = host.querySelector('#legacy-run-room');
-    if (viewPanel === null) throw new Error('missing legacy view');
-    if (roomPanel === null) throw new Error('missing legacy room');
+    if (!(viewPanel instanceof HTMLElement)) throw new Error('missing legacy view');
+    if (!(roomPanel instanceof HTMLElement)) throw new Error('missing legacy room');
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
     expect(host.querySelector('[role="separator"]')).toBeNull();
     expect(host.querySelector('[aria-label="Resize node room"]')).toBeNull();
@@ -671,7 +671,7 @@ describe('LegacyGraphLogsPane', () => {
     });
     await flush();
     const rerenderedRoom = host.querySelector('#legacy-run-room');
-    if (rerenderedRoom === null) throw new Error('missing rerendered legacy room');
+    if (!(rerenderedRoom instanceof HTMLElement)) throw new Error('missing rerendered legacy room');
     expect(rerenderedRoom.style.width).toBe('460px');
     expect(rerenderedRoom.className).toContain('shrink-0');
 
@@ -700,7 +700,7 @@ describe('LegacyGraphLogsPane', () => {
     expect(mainView.className.split(/\s+/)).not.toContain('flex');
     expect(mainView.hasAttribute('hidden')).toBe(false);
     const singleRoom = host.querySelector('#legacy-run-room');
-    if (singleRoom === null) throw new Error('missing single legacy room');
+    if (!(singleRoom instanceof HTMLElement)) throw new Error('missing single legacy room');
     expect(singleRoom.style.width).toBe('');
     expect(singleRoom.className).toContain('flex-1');
     expect(singleRoom.className).toContain('w-full');
@@ -768,7 +768,7 @@ describe('LegacyGraphLogsPane', () => {
       });
       await flush();
       const room = host.querySelector('#legacy-run-room');
-      if (room === null) throw new Error('missing room with stale ratio');
+      if (!(room instanceof HTMLElement)) throw new Error('missing room with stale ratio');
       expect(room.style.width).toBe('460px');
 
       await act(async () => {
@@ -789,7 +789,8 @@ describe('LegacyGraphLogsPane', () => {
       });
       await flush();
       const singleRoom = host.querySelector('#legacy-run-room');
-      if (singleRoom === null) throw new Error('missing single room with stale ratio');
+      if (!(singleRoom instanceof HTMLElement))
+        throw new Error('missing single room with stale ratio');
       expect(singleRoom.style.width).toBe('');
       expect(writes.some(name => name.includes('run-room.ratio'))).toBe(false);
       expect(globalThis.localStorage.getItem(key)).toBe('55');
