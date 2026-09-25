@@ -2027,7 +2027,7 @@ Archon does not keep an internal allow-list for literal model ids because vendor
 Common shapes you'll see in practice:
 
 - **Claude (Anthropic):** family aliases (`sonnet`, `opus`, `haiku`), full model IDs (`claude-opus-4-7`, `claude-3-5-sonnet-20241022`), context-window suffixed forms (`opus[1m]`, `claude-opus-4-7[1m]`), or `inherit` to reuse the previous session's model.
-- **Codex (OpenAI):** any OpenAI model ID — `gpt-6-sol`, `gpt-6-terra`, `o5-pro`, etc.
+- **Codex (OpenAI):** any OpenAI model ID — `gpt-6-sol`, `gpt-5.6-terra`, `o5-pro`, etc.
 - **Pi (community):** `<backend>/<model-id>` refs — e.g. `google/gemini-2.5-pro`, `openrouter/qwen/qwen3-coder`.
 - **Copilot (community):** GitHub Copilot model names — e.g. `gpt-5`, `gpt-5-mini`, `claude-sonnet-4.5`, or `auto`.
 

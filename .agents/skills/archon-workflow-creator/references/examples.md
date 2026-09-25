@@ -187,7 +187,7 @@ description: |
   NOT for: Production document review.
 
 provider: codex
-model: gpt-6-terra
+model: gpt-5.6-terra
 effort: medium
 interactive: true
 worktree:
@@ -250,7 +250,7 @@ For a gate that needs to create its initial document with AI, replace the produc
           Create a readable standalone HTML review document under $ARTIFACTS_DIR.
           Print exactly its absolute path on one line and no other text.
         provider: codex
-        model: gpt-6-terra
+        model: gpt-5.6-terra
         effort: medium
         allowed_tools: [Read, Edit]
       rework:
