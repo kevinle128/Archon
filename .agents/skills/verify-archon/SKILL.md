@@ -124,6 +124,7 @@ The helper owns its `lib/`, copied schemas, conformance vectors, catalog, and vi
 It reuses native E2E support and the mapped test IDs in `lib/browser-scenarios.ts`.
 `e2e/ui/verifier-visual.spec.ts` supplies matched captures.
 Existing tool-row and room tests honor `ARCHON_VERIFY_EVIDENCE` to retain captures in the current attempt.
+Queue guidance still writes tracked acceptance screenshots under `plans/`. After attachments are copied into the attempt, the browser runner restores those tracked `plans/` paths so the cleanliness guard measures the product tree.
 No root Playwright dependency is added.
 
 `coverage-gaps.json` explicitly defers login and multi-user authorization, live provider reasoning, external platform delivery, other UI surfaces, and uncovered workflow semantics.
