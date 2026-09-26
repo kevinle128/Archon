@@ -4,18 +4,22 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 
 ## Phases
 
-- [ ] A — Room anatomy + a11y (3.1, 3.2, 3.3, 10.1) — agent phase-a-ui (worktree)
-- [ ] B — Durable steering + Stop backend (7.1–7.5, 8.1, 8.2 API, 10.2/10.3 backend) — agent phase-b-backend (worktree)
-- [ ] B-UI — wire new steering API into both shells (7.2 draft, auto-send, recovery, per-item Send now, delivery states, Stopping…)
-- [ ] C — Readable tools everywhere: 4.2–4.4 agent phase-c-surfaces (worktree); 4.1 + 10.4 after B merges
-- [ ] D — Thinking / prompt / advisor rows (6.1–6.3); advisor = Claude SDK advisor tool
-- [ ] E — Files changed + git attribution (5.1, 5.2) — agent phase-e-files (worktree)
-- [ ] F — Providers on real binaries (8.3–8.8); Epic 9 out of scope
+- [x] A — 3.1, 3.2, 3.3, 10.1 merged (4e84d1c3); overflow regression fixed by me (a9354f7e)
+- [x] A2 — loop execution dedupe + mockup header merged (f1795a8f); [hidden] vs flex fix (aed984b0)
+- [ ] QA — independent visual QA of every mockup state (8 sub-states × prompt/loop × Console/Legacy) after B-UI
+- [x] B — durable steering + Stop backend merged (b14a0b8a); check:schema-upgrades OK. Live Stop→idle→Send now not yet proven on a real run (B-UI/F1 must prove)
+- [ ] B-UI — wire steering API into both shells; fix 6 web type errors — agent phase-b-ui (worktree)
+- [x] C1 — 4.2–4.4 merged (a281aaf3). Chat outcome plumbing fixed by me
+- [ ] F2 — 4.1, 8.4, 10.4 Codex + 8.6 DeepSeek — agent phase-f2-providers (worktree)
+- [ ] D — Thinking / prompt / advisor rows (6.1–6.3); advisor = Claude SDK advisor tool — agent phase-d-context (worktree)
+- [x] E — 5.1, 5.2 merged (d25f185a). check:schema-upgrades OK on develop-2 after E merge; rerun after B and D merge
+- [ ] F1 — 8.3 Claude, 8.5 Grok, 8.7 OMP, 8.8 — agent phase-f1-providers (worktree); Epic 9 out of scope
 
 ## Background processes started by this session
 
 - mockup static server: PID 48474 port 8791
 - isolated API server: PID 68792 port 3317 (ARCHON_HOME=scratchpad/archon-home)
+- docker postgres: container archon-schema-check-c3af on 127.0.0.1:55432 (run check with PATH=/opt/homebrew/opt/libpq/bin:$PATH PGHOST=127.0.0.1 PGPORT=55432 PGUSER=pgcheck PGPASSWORD=pgcheck)
 - web dev server: PID 63192 port 5187
 
 ## Review
