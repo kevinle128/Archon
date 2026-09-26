@@ -3,8 +3,8 @@
  * real SqliteAdapter.
  *
  * Covers FIFO position assignment under concurrency, message_id idempotency,
- * claim/state transitions, terminal and boot-time reconciliation, and
- * cascade deletion with the owning run.
+ * claim/state transitions, terminal reconciliation, and cascade deletion
+ * with the owning run.
  *
  * Own `bun test` segment — mock.module('./connection') conflicts with other DB tests.
  */

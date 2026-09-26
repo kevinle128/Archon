@@ -444,9 +444,9 @@ export async function claimSteeringQueue(
 /**
  * `dispatching` -> `sent` once a transcript receipt exists for these ids. Also
  * accepts a prior `delivery_unknown`: a transcript receipt is stronger
- * evidence than the boot sweep's guess, so a message the sweep marked
- * ambiguous still advances correctly when the same claim goes on to deliver
- * (e.g. a CLI-resumed executor completing a claim a restarted server swept).
+ * evidence than an earlier ambiguous-claim judgment, so a message once
+ * marked ambiguous still advances correctly if the same claim goes on to
+ * deliver after all.
  */
 export async function markSteeringMessagesSent(
   workflowRunId: string,
