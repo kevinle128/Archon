@@ -45,6 +45,7 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeRunOfTotal,
   openRoom,
   openExplicitRoom,
   askCardId,
@@ -778,12 +779,14 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           events: queryData?.events ?? [],
           runStartedAt: runStartedAtIso,
         });
+  const executionRowsForSelectedNode =
+    selectedExecutionRow === null
+      ? []
+      : executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId);
   const headerOptions =
     selectedExecutionRow === null
       ? []
-      : capExecutionOptions(
-          executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId)
-        ).map(candidate => ({
+      : capExecutionOptions(executionRowsForSelectedNode).map(candidate => ({
           rowId: candidate.id,
           label: buildExecutionHeader({
             row: candidate,
@@ -791,6 +794,11 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             runStartedAt: runStartedAtIso,
           }).executionLabel,
         }));
+  const executionCount = executionRowsForSelectedNode.length;
+  const runOfTotal =
+    selectedExecutionRow === null
+      ? null
+      : computeRunOfTotal(executionRowsForSelectedNode, selectedExecutionRow.id);
   const handleSelectExecution = useCallback(
     (rowId: string): void => {
       const next = executionRows.find(candidate => candidate.id === rowId);
@@ -1046,6 +1054,8 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           onSubmitAsk={askController.submit}
           headerModel={headerModel}
           headerOptions={headerOptions}
+          executionCount={executionCount}
+          runOfTotal={runOfTotal}
           onSelectExecution={handleSelectExecution}
           scopeKey={transcriptScopeKey}
           initialScrollTop={initialScrollTop}

@@ -652,6 +652,11 @@ describe('LegacyGraphLogsPane', () => {
     const roomPanelClass = roomPanel?.getAttribute('class') ?? '';
     expect(roomPanelClass).toContain('min-h-0');
     expect(roomPanelClass).toContain('overflow-hidden');
+    // A flex child defaults to min-width:auto, which lets its content (a long
+    // unwrapped tool row) grow the column past the viewport and push the
+    // fixed-width room off screen. min-w-0 caps the view pane at the space
+    // the flex layout actually gives it.
+    expect((viewPanel as HTMLElement).className).toContain('min-w-0');
 
     await act(async () => {
       root.render(

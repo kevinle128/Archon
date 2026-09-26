@@ -736,13 +736,19 @@ describe('ConsoleInspectPane', () => {
       () => host.querySelector('[data-testid="console-inspect-room"]') !== null
     );
     const roomPanel = host.querySelector('#console-run-room');
-    expect(host.querySelector('#console-run-view')).not.toBeNull();
+    const viewPanel = host.querySelector('#console-run-view');
+    expect(viewPanel).not.toBeNull();
     expect(roomPanel).not.toBeNull();
     // The approved node panel is a fixed width, not a user-resizable share
     // of the window, so it carries no drag handle.
     expect(host.querySelector('[role="separator"]')).toBeNull();
     expect((roomPanel as HTMLElement).style.width).toBe('520px');
     expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
+    // A flex child defaults to min-width:auto, which lets its content (a long
+    // unwrapped tool row) grow the column past the viewport and push the
+    // fixed-width room off screen. min-w-0 caps the view pane at the space
+    // the flex layout actually gives it.
+    expect((viewPanel as HTMLElement).className).toContain('min-w-0');
   });
 
   test('single mode keeps the main pane mounted with hidden and Back closes the room', async () => {
@@ -772,12 +778,10 @@ describe('ConsoleInspectPane', () => {
     expect(host.textContent).toContain('Log header');
     expect(host.querySelector('[role="separator"]')).toBeNull();
 
-    const back = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Back')
-    );
-    if (back === undefined) throw new Error('missing Back');
+    const back = host.querySelector('button[aria-label="Back"]');
+    if (back === null) throw new Error('missing Back');
     await act(async () => {
-      back.click();
+      (back as HTMLElement).click();
     });
     expect(closes).toEqual([1]);
 
