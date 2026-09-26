@@ -394,8 +394,6 @@ describe('ConsoleInspectPane', () => {
       logScrollRef,
       onSelectNode: (): void => undefined,
       onCloseRoom: (): void => undefined,
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       splitMode: 'split',
       loadDefinition: defaultLoadDefinition,
       loadMessages: defaultLoadMessages,
@@ -713,7 +711,7 @@ describe('ConsoleInspectPane', () => {
     expect(host.textContent).not.toContain('{"report"');
   });
 
-  test('split layout uses a 60/40 percentage room and omits the room when unselected', async () => {
+  test('split layout uses a fixed-width room with no drag handle and omits the room when unselected', async () => {
     await act(async () => {
       renderPane({
         view: 'log',
@@ -737,15 +735,20 @@ describe('ConsoleInspectPane', () => {
       'selected layout',
       () => host.querySelector('[data-testid="console-inspect-room"]') !== null
     );
-    expect(host.querySelector('#console-run-view')).not.toBeNull();
-    expect(host.querySelector('#console-run-room')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
-    expect(host.querySelector('[data-testid="console-inspect-pane"]')?.className).not.toContain(
-      'lg:flex-row'
-    );
-    expect(
-      host.querySelector('[data-testid="console-inspect-room"]')?.className ?? ''
-    ).not.toContain('lg:w-[460px]');
+    const roomPanel = host.querySelector('#console-run-room');
+    const viewPanel = host.querySelector('#console-run-view');
+    expect(viewPanel).not.toBeNull();
+    expect(roomPanel).not.toBeNull();
+    // The approved node panel is a fixed width, not a user-resizable share
+    // of the window, so it carries no drag handle.
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect((roomPanel as HTMLElement).style.width).toBe('520px');
+    expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
+    // A flex child defaults to min-width:auto, which lets its content (a long
+    // unwrapped tool row) grow the column past the viewport and push the
+    // fixed-width room off screen. min-w-0 caps the view pane at the space
+    // the flex layout actually gives it.
+    expect((viewPanel as HTMLElement).className).toContain('min-w-0');
   });
 
   test('single mode keeps the main pane mounted with hidden and Back closes the room', async () => {
@@ -772,15 +775,16 @@ describe('ConsoleInspectPane', () => {
     const main = requireHtmlElement(host.querySelector('#console-run-view'), 'main pane');
     expect(main).toBe(splitMain);
     expect(main.hasAttribute('hidden')).toBe(true);
+    // A display utility beats `[hidden]` in Tailwind, so the class must hide it too.
+    expect(main.classList.contains('hidden')).toBe(true);
+    expect(main.classList.contains('flex')).toBe(false);
     expect(host.textContent).toContain('Log header');
     expect(host.querySelector('[role="separator"]')).toBeNull();
 
-    const back = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Back')
-    );
-    if (back === undefined) throw new Error('missing Back');
+    const back = host.querySelector('button[aria-label="Back"]');
+    if (back === null) throw new Error('missing Back');
     await act(async () => {
-      back.click();
+      (back as HTMLElement).click();
     });
     expect(closes).toEqual([1]);
 

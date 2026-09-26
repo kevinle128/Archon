@@ -32,7 +32,9 @@ import {
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   saveSteeringDraft,
+  savedToServerLine,
   sendNowButtonAccessibleName,
+  sendNowItemAccessibleName,
   startQueuePolling,
   steeringAgentMode,
   steeringBlockedReason,
@@ -97,6 +99,7 @@ function modeFor(
     finishedIteration?: { liveRowId: string; liveIteration: number } | null;
     neverSent?: readonly NeverSentEntry[] | null;
     nodeTerminal?: boolean;
+    recoveryRequired?: boolean;
   }
 ): string {
   return steeringDockMode({
@@ -107,8 +110,27 @@ function modeFor(
     finishedIteration: overrides?.finishedIteration,
     neverSent: overrides?.neverSent,
     nodeTerminal: overrides?.nodeTerminal,
+    recoveryRequired: overrides?.recoveryRequired,
   });
 }
+
+describe('savedToServerLine', () => {
+  test('states the persistence fact without the durable setting', () => {
+    expect(savedToServerLine(false)).toBe('saved to server');
+  });
+
+  test('appends the read-only Auto-send indicator only when confirmed enabled', () => {
+    expect(savedToServerLine(true)).toBe('saved to server · Auto-send on');
+  });
+});
+
+describe('sendNowItemAccessibleName', () => {
+  test('names the exact message the per-item control delivers', () => {
+    expect(sendNowItemAccessibleName('use -p archon-workflows')).toBe(
+      'Send now · use -p archon-workflows'
+    );
+  });
+});
 
 describe('steeringDockMode visibility table', () => {
   test('running live row shows the composer', () => {
@@ -133,6 +155,22 @@ describe('steeringDockMode visibility table', () => {
   test('non-live historical execution hides the dock even for a running row', () => {
     expect(modeFor('running', { live: false })).toBe('hidden');
     expect(modeFor('awaiting', { live: false })).toBe('hidden');
+  });
+
+  test('an explicit recovery-required signal wins over every other check', () => {
+    expect(modeFor('running', { recoveryRequired: true })).toBe('recovery-required');
+    expect(modeFor('running', { recoveryRequired: true, live: false })).toBe('recovery-required');
+    expect(
+      modeFor('completed', {
+        recoveryRequired: true,
+        nodeTerminal: true,
+        neverSent: [{ message: 'queued', messageId: 'm1' }],
+      })
+    ).toBe('recovery-required');
+  });
+
+  test('an absent or false recovery-required signal changes nothing', () => {
+    expect(modeFor('running', { recoveryRequired: false })).toBe('composer');
   });
 
   test('stored 422 not_steerable_here flips a generating row to detached', () => {

@@ -1,6 +1,6 @@
 import type { ReactElement, ReactNode } from 'react';
 
-export type DetailView = 'log' | 'graph' | 'artifacts';
+export type DetailView = 'log' | 'graph' | 'artifacts' | 'files-changed';
 
 export interface NodeFilterOption {
   id: string;
@@ -145,6 +145,13 @@ export function StreamToolbar({
           active={view === 'artifacts'}
           onClick={() => {
             onChangeView('artifacts');
+          }}
+        />
+        <Tab
+          label="Files changed"
+          active={view === 'files-changed'}
+          onClick={() => {
+            onChangeView('files-changed');
           }}
         />
       </nav>

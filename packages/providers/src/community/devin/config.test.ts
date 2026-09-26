@@ -91,6 +91,8 @@ describe('DEVIN_CAPABILITIES', () => {
       containerExec: false,
       askHuman: true,
       interrupt: false,
+      softInjection: false,
+      deliveryAck: false,
     });
   });
 });

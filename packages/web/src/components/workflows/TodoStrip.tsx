@@ -85,6 +85,35 @@ function TodoStripRow({ item, current }: { item: TodoItem; current: boolean }): 
   );
 }
 
+/**
+ * The folded checklist body. Shared by the pinned strip and by the latest
+ * todo tool row in the transcript, so both surfaces read the same state.
+ */
+export function TodoChecklist({ phases }: TodoStripProps): React.ReactElement {
+  const currentItem =
+    phases.flatMap(phase => phase.items).find(item => item.status === 'in_progress') ?? null;
+  return (
+    <>
+      {phases.map(phase => (
+        <div key={phase.phase}>
+          <h3 className="mt-[4px] text-[10px] uppercase tracking-[0.07em] text-text-secondary">
+            {phase.phase}
+          </h3>
+          <ul>
+            {phase.items.map((item, index) => (
+              <TodoStripRow
+                key={`${index}-${item.content}`}
+                item={item}
+                current={item === currentItem}
+              />
+            ))}
+          </ul>
+        </div>
+      ))}
+    </>
+  );
+}
+
 export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null {
   const [open, setOpen] = useState(false);
   const bodyId = useId();
@@ -93,10 +122,9 @@ export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null
   const summary = summarizeTodoState(phases);
   const items = phases.flatMap(phase => phase.items);
   const representative = summary.current;
-  const currentItem = items.find(item => item.status === 'in_progress') ?? null;
 
   return (
-    <section aria-label="Todo" className="flex-none border-b border-border bg-surface-elevated">
+    <section aria-label="Todo" className="flex-none border-t border-border bg-surface-elevated">
       <button
         type="button"
         aria-expanded={open}
@@ -157,22 +185,7 @@ export function TodoStrip({ phases }: TodoStripProps): React.ReactElement | null
         hidden={!open}
         className="max-h-[168px] overflow-y-auto border-t border-border px-[10px] pb-[8px] pt-[4px]"
       >
-        {phases.map(phase => (
-          <div key={phase.phase}>
-            <h3 className="mt-[4px] text-[10px] uppercase tracking-[0.07em] text-text-secondary">
-              {phase.phase}
-            </h3>
-            <ul>
-              {phase.items.map((item, index) => (
-                <TodoStripRow
-                  key={`${index}-${item.content}`}
-                  item={item}
-                  current={item === currentItem}
-                />
-              ))}
-            </ul>
-          </div>
-        ))}
+        <TodoChecklist phases={phases} />
       </div>
     </section>
   );

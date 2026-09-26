@@ -534,14 +534,45 @@ export const reviewFeedbackResponseSchema = z
 // ---------------------------------------------------------------------------
 
 /**
+ * Durable delivery state as reported at the moment a route responds. A route
+ * response only ever reports a state known at response time — `dispatching`,
+ * `sent`, `delivered`, and `delivery_unknown` describe later, asynchronous
+ * transitions a caller observes through the queue read, never invented here.
+ */
+export const steeringDeliveryStateSchema = z.enum([
+  'queued',
+  'awaiting_send_now',
+  'dispatching',
+  'sent',
+  'delivered',
+  'delivery_unknown',
+]);
+
+/**
+ * Per-item queue-read state: the delivery states plus `never_sent`, which
+ * only ever appears once terminal reconciliation has run. `withdrawn` is
+ * never on the wire — a withdrawn item is simply absent from the read.
+ */
+export const steeringQueueItemStateSchema = z.enum([
+  'queued',
+  'awaiting_send_now',
+  'dispatching',
+  'sent',
+  'delivered',
+  'delivery_unknown',
+  'never_sent',
+]);
+
+/**
  * Request body for operator steering guidance.
  *
  * `message` is refined for non-blank content but NEVER transformed — the
  * operator's original characters (leading/trailing whitespace included) are
  * queued verbatim. `message_id` is the caller-stamped correlation key for
- * idempotent replay and terminal reconciliation. `intent: 'send_now'` is
- * already public; until an idle-after-interrupt state exists it queues
- * identically to `queue`.
+ * idempotent replay and terminal reconciliation. `queued_message_id` selects
+ * an existing durable queue entry for per-item Send now (soft injection into
+ * the active turn); it must belong to the same node and is only honored when
+ * the active provider's capability data proves soft injection.
  */
 export const sendWorkflowNodeBodySchema = z
   .object({
@@ -550,6 +581,7 @@ export const sendWorkflowNodeBodySchema = z
     }),
     message_id: z.string().uuid(),
     intent: z.enum(['queue', 'send_now']),
+    queued_message_id: z.string().uuid().optional(),
   })
   .strict()
   .openapi('SendWorkflowNodeBody');
@@ -557,15 +589,15 @@ export const sendWorkflowNodeBodySchema = z
 export type SendWorkflowNodeBody = z.infer<typeof sendWorkflowNodeBodySchema>;
 
 /**
- * Send success receipt. `queued` — accepted onto the registry queue to drain
- * at the next natural provider-turn boundary; `awaiting_send_now` — accepted
- * into an idle-after-interrupt node's queue awaiting Send now.
+ * Send success receipt. Reports only the state known at response time — a
+ * durable insert reports `queued` or `awaiting_send_now`; a synchronous
+ * per-item soft injection (via `queued_message_id`) reports `sent`.
  */
 export const sendWorkflowNodeResponseSchema = z
   .object({
     success: z.literal(true),
     message_id: z.string().uuid(),
-    state: z.enum(['queued', 'awaiting_send_now']),
+    state: steeringDeliveryStateSchema,
   })
   .strict()
   .openapi('SendWorkflowNodeResponse');
@@ -664,28 +696,132 @@ export const readWorkflowNodeQueueParamsSchema = z
   .strict();
 
 /**
- * One still-pending queued guidance row on the wire. `message` stays an
- * untransformed string — the registry holds text the send route accepted
- * verbatim. `message_id` is the caller-stamped UUID correlation key.
+ * One durable queue row on the wire, in server FIFO order. `message` stays
+ * an untransformed string — the durable store holds text the send route
+ * accepted verbatim. `message_id` is the caller-stamped UUID correlation
+ * key. `operator_user_id` is the author's identity, or `null` for an
+ * identity-less (solo, no web auth) install.
  */
 export const queuedGuidanceMessageSchema = z
   .object({
     message_id: z.string().uuid(),
     message: z.string(),
+    operator_user_id: z.string().nullable(),
+    state: steeringQueueItemStateSchema,
   })
   .strict()
   .openapi('QueuedGuidanceMessage');
 
 /**
- * Queue snapshot response: only the handle's current pending items, in
- * receipt order. Drained/withdrawn ids and accepted-id memory never appear.
+ * Truthful, provider-neutral steering capability data so the UI never
+ * branches on a provider name. `false` until the owning provider's own
+ * conformance story proves the transport against its production adapter.
+ */
+export const steeringCapabilitiesSchema = z
+  .object({
+    soft_injection: z.boolean(),
+    delivery_ack: z.boolean(),
+  })
+  .strict()
+  .openapi('SteeringCapabilities');
+
+/**
+ * Queue snapshot response: every durable row for the node except `withdrawn`
+ * ones, in FIFO order — including `never_sent` rows once a terminal node has
+ * been reconciled. `execution_state` distinguishes a live in-process handle
+ * from durable-only recovery-required data from a terminal node so the
+ * client never infers process origin itself. `capabilities` reflects the
+ * provider stamped at registration; both flags are `false` when no
+ * provider has been stamped yet (durable recovery with no prior run) or
+ * when the node was never steerable.
  */
 export const readWorkflowNodeQueueResponseSchema = z
   .object({
     success: z.literal(true),
+    execution_state: z.enum(['live', 'recovery_required', 'finished']),
+    auto_send: z.boolean(),
+    capabilities: steeringCapabilitiesSchema,
     queued: z.array(queuedGuidanceMessageSchema),
   })
   .strict()
   .openapi('ReadWorkflowNodeQueueResponse');
 
 export type ReadWorkflowNodeQueueResponse = z.infer<typeof readWorkflowNodeQueueResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// GET/PUT/DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft (steering, Story 7.2)
+// ---------------------------------------------------------------------------
+
+export const steeringDraftParamsSchema = z
+  .object({
+    runId: z.string().min(1),
+    nodeId: z.string().min(1),
+  })
+  .strict();
+
+/** Draft write body. An empty string clears via the idempotent DELETE route instead. */
+export const putSteeringDraftBodySchema = z
+  .object({
+    message: z.string(),
+  })
+  .strict()
+  .openapi('PutSteeringDraftBody');
+
+export type PutSteeringDraftBody = z.infer<typeof putSteeringDraftBodySchema>;
+
+/** Shared draft shape for the GET/PUT response's `draft` field, or `null` when unset. */
+export const steeringDraftSummarySchema = z
+  .object({
+    message: z.string(),
+    updated_at: z.string(),
+  })
+  .strict()
+  .openapi('SteeringDraftSummary');
+
+/**
+ * Draft read/write response — the acting operator's own draft (private to
+ * them) plus the node's durable (shared) auto-send setting, so the composer
+ * can render both from one round trip.
+ */
+export const steeringDraftResponseSchema = z
+  .object({
+    success: z.literal(true),
+    draft: steeringDraftSummarySchema.nullable(),
+    auto_send: z.boolean(),
+  })
+  .strict()
+  .openapi('SteeringDraftResponse');
+
+export type SteeringDraftResponse = z.infer<typeof steeringDraftResponseSchema>;
+
+export const clearSteeringDraftResponseSchema = z
+  .object({
+    success: z.literal(true),
+  })
+  .strict()
+  .openapi('ClearSteeringDraftResponse');
+
+export type ClearSteeringDraftResponse = z.infer<typeof clearSteeringDraftResponseSchema>;
+
+// ---------------------------------------------------------------------------
+// PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send (steering, Story 7.5)
+// ---------------------------------------------------------------------------
+
+export const putAutoSendBodySchema = z
+  .object({
+    enabled: z.boolean(),
+  })
+  .strict()
+  .openapi('PutAutoSendBody');
+
+export type PutAutoSendBody = z.infer<typeof putAutoSendBodySchema>;
+
+export const putAutoSendResponseSchema = z
+  .object({
+    success: z.literal(true),
+    enabled: z.boolean(),
+  })
+  .strict()
+  .openapi('PutAutoSendResponse');
+
+export type PutAutoSendResponse = z.infer<typeof putAutoSendResponseSchema>;

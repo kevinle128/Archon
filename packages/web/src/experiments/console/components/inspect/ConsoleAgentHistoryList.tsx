@@ -36,6 +36,9 @@ import {
   type ToolRowBadgeTone,
   type ToolRowPresentation,
 } from '@/lib/tool-presentation';
+import type { TodoPhase } from '@/lib/todo-state';
+
+import { ConsoleTodoChecklist } from '../ConsoleTodoStrip';
 
 export const UNKNOWN_SCOPE_NOTICE =
   'Execution scope was not recorded; this history may include other executions of the same node.';
@@ -75,6 +78,12 @@ export interface ConsoleAgentHistoryListProps {
   occurrenceGrouping?: OccurrenceGrouping;
   /** useId-owned namespace for occurrence heading DOM ids (navigator targets). */
   headingIdPrefix?: string;
+  /**
+   * The node's folded todo state. When set, the latest todo-family tool row
+   * exposes this same projection as its expanded body, instead of an empty
+   * one — every earlier todo call still folds to a plain one-line row.
+   */
+  todos?: readonly TodoPhase[];
 }
 
 const REMARK_PLUGINS = [remarkGfm, remarkBreaks];
@@ -819,9 +828,12 @@ function GenericBody({ body }: { body: Extract<ToolBody, { kind: 'generic' }> })
 function ToolHistory({
   item,
   onLoadFullOutput,
+  checklist,
 }: {
   item: Extract<AgentHistoryItem, { kind: 'tool' }>;
   onLoadFullOutput: ConsoleAgentHistoryListProps['onLoadFullOutput'];
+  /** Non-null only for the latest todo-family row; renders in place of the body. */
+  checklist: readonly TodoPhase[] | null;
 }): ReactElement {
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
@@ -955,6 +967,8 @@ function ToolHistory({
             >
               {toolRawPayloadJson(presentation.rawPayload)}
             </pre>
+          ) : checklist !== null && checklist.length > 0 ? (
+            <ConsoleTodoChecklist phases={checklist} />
           ) : presentation.body?.kind === 'task' ? (
             <TaskBody body={presentation.body} />
           ) : presentation.body?.kind === 'generic' ? (
@@ -1015,6 +1029,7 @@ export function ConsoleAgentHistoryList({
   unknownScope = false,
   occurrenceGrouping,
   headingIdPrefix,
+  todos = [],
 }: ConsoleAgentHistoryListProps): ReactElement {
   const generatedHeadingPrefix = useId();
   if (items.length === 0) {
@@ -1042,10 +1057,16 @@ export function ConsoleAgentHistoryList({
   // Only the actual last rendered history item is programmatically focusable
   // (the steering dock's Stop-removal focus target); it never joins Tab order.
   let lastItemId: string | null = null;
+  // The latest todo call is where the folded checklist reads best; every
+  // earlier call stays a plain "todo updated" row with no expandable body.
+  let latestTodoItemId: string | null = null;
   for (const item of items) {
     const after = afterById.get(item.id);
     if (historyItemRowVisible(item, filters) || (after !== undefined && after !== null)) {
       lastItemId = item.id;
+    }
+    if (item.kind === 'tool' && item.presentation.family === 'todo') {
+      latestTodoItemId = item.id;
     }
   }
   const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
@@ -1083,7 +1104,11 @@ export function ConsoleAgentHistoryList({
     if (item.kind === 'tool') {
       return (
         <div key={item.id} className={ring === '' ? undefined : ring.trim()} {...marker}>
-          <ToolHistory item={item} onLoadFullOutput={onLoadFullOutput} />
+          <ToolHistory
+            item={item}
+            onLoadFullOutput={onLoadFullOutput}
+            checklist={item.id === latestTodoItemId ? todos : null}
+          />
           {after === undefined || after === null ? null : <div className="mt-1.5">{after}</div>}
         </div>
       );

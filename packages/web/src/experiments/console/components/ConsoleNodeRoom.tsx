@@ -15,8 +15,10 @@ import {
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
   buildExecutionHeader,
+  nodeKindChip,
   type ExecutionHeaderModel,
   type FinishedIterationView,
+  type RunOfTotal,
 } from '@/lib/execution-room-model';
 import {
   beginNodeMessageRefresh,
@@ -105,6 +107,10 @@ export interface ConsoleNodeRoomProps {
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
   headerModel?: ExecutionHeaderModel | null;
   headerOptions?: readonly ConsoleExecutionHeaderOption[];
+  /** Uncapped execution total for the node, for the header's "of N · max 8" caption. */
+  executionCount?: number;
+  /** Retry position/count for the selected row, from the parent pane. */
+  runOfTotal?: RunOfTotal | null;
   onSelectRow?: (rowId: string) => void;
   /** Proven finished-iteration descriptor from the parent pane. */
   finishedIteration?: FinishedIterationView | null;
@@ -493,6 +499,8 @@ export function ConsoleNodeRoom({
   onSubmitAsk,
   headerModel,
   headerOptions,
+  executionCount,
+  runOfTotal = null,
   onSelectRow,
   finishedIteration = null,
   nodeTerminal = false,
@@ -750,6 +758,15 @@ export function ConsoleNodeRoom({
     (computedHeader === null || row === null
       ? []
       : [{ rowId: row.id, label: computedHeader.executionLabel }]);
+  const resolvedExecutionCount = executionCount ?? computedOptions.length;
+  const kindChip = nodeKindChip(resolution?.nodeType ?? null);
+  // Viewing a proven-finished iteration while the node still runs live
+  // elsewhere: the header leads with that iteration number and drops the
+  // run count, matching the mockup's stale-history reading.
+  const iterationPrefix =
+    finishedIteration !== null && row !== null && row.selection.kind === 'occurrence'
+      ? (row.selection.iteration ?? null)
+      : null;
 
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
@@ -958,6 +975,7 @@ export function ConsoleNodeRoom({
         showToolCalls={showToolCalls}
         showSystem={showSystem}
         unknownScope={row.unknownScope === true}
+        todos={agentHistory.todos}
         onLoadFullOutput={async (item): Promise<unknown> => {
           const message = await loadMessage(run.id, row.nodeId, item.messageId);
           return message.kind === 'tool' ? message.payload.output : undefined;
@@ -1073,6 +1091,11 @@ export function ConsoleNodeRoom({
         }}
         onClose={onClose}
         closeLabel={closeLabel}
+        kindChip={kindChip}
+        executionCount={resolvedExecutionCount}
+        runOfTotal={runOfTotal}
+        idleAwaitExpired={idleAwaitExpired}
+        iterationPrefix={iterationPrefix}
       />
     );
 
@@ -1124,9 +1147,6 @@ export function ConsoleNodeRoom({
         body
       ) : (
         <RoomRegion nodeId={nodeId} allowOutsetFocus={showTodoStrip}>
-          {showTodoStrip ? (
-            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
-          ) : null}
           <div
             ref={scrollRef}
             data-testid="console-node-room-scroll"
@@ -1137,6 +1157,9 @@ export function ConsoleNodeRoom({
           >
             {body}
           </div>
+          {showTodoStrip ? (
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+          ) : null}
           {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock

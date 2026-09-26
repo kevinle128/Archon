@@ -8,7 +8,7 @@
 --     COMMENT ON COLUMN — goes in the final "Indexes and column comments"
 --     section, below every ADD COLUMN.
 --
--- 23 Application Tables (+ the 4 remote_agent_auth_* Better Auth tables, listed inline below):
+-- 24 Application Tables (+ the 4 remote_agent_auth_* Better Auth tables, listed inline below):
 --   1. remote_agent_codebases
 --   2. remote_agent_codebase_env_vars
 --   3. remote_agent_users
@@ -32,7 +32,8 @@
 --  21. remote_agent_workflow_envs
 --  22. remote_agent_workflow_node_messages
 --  23. remote_agent_pending_interactions
---  24-27. remote_agent_auth_user / session / account / verification (PostgreSQL-only)
+--  24. remote_agent_workflow_node_execution_evidence
+--  25-28. remote_agent_auth_user / session / account / verification (PostgreSQL-only)
 --
 -- Dropped tables (via migrations):
 --   - remote_agent_command_templates (017)
@@ -783,11 +784,99 @@ CREATE TABLE IF NOT EXISTS remote_agent_pending_interactions (
 COMMENT ON TABLE remote_agent_pending_interactions IS
   'Structured pending AskHuman and permission interactions; unique per (workflow_run_id, tool_use_id); cascade-deletes with the run.';
 
+-- ============================================================================
+-- Table 24: Steering drafts (per-author composer draft, per node)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS remote_agent_steering_drafts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_run_id UUID NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  node_id VARCHAR(255) NOT NULL,
+  operator_user_id VARCHAR(255) NOT NULL DEFAULT '',
+  message TEXT NOT NULL,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_steering_drafts_run_node_operator
+    UNIQUE (workflow_run_id, node_id, operator_user_id)
+);
+
+COMMENT ON TABLE remote_agent_steering_drafts IS
+  'Server-persisted composer draft, one row per (run, node, operator); cascade-deletes with the run.';
+
+-- ============================================================================
+-- Table 25: Steering queue entries (durable node-scoped guidance queue)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS remote_agent_steering_queue_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_run_id UUID NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  node_id VARCHAR(255) NOT NULL,
+  message_id VARCHAR(255) NOT NULL,
+  message TEXT NOT NULL,
+  operator_user_id VARCHAR(255) NOT NULL DEFAULT '',
+  fifo_position INTEGER NOT NULL CHECK (fifo_position >= 1),
+  state VARCHAR(32) NOT NULL DEFAULT 'queued',
+  last_error TEXT,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_steering_queue_run_node_message
+    UNIQUE (workflow_run_id, node_id, message_id),
+  CONSTRAINT uq_steering_queue_run_node_position
+    UNIQUE (workflow_run_id, node_id, fifo_position)
+);
+
+COMMENT ON TABLE remote_agent_steering_queue_entries IS
+  'Durable FIFO guidance queue per node; message_id is the caller-stamped idempotency and delivery-correlation key. State is validated in application code, not a CHECK constraint, because the state set is open-ended (queued, awaiting_send_now, dispatching, sent, delivered, delivery_unknown, withdrawn, never_sent, failed, and future additions); cascade-deletes with the run.';
+
+-- ============================================================================
+-- Table 26: Steering node settings (durable per-node auto-send + provider)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS remote_agent_steering_node_settings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_run_id UUID NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  node_id VARCHAR(255) NOT NULL,
+  auto_send_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by_user_id VARCHAR(255),
+  provider_id VARCHAR(64),
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_steering_node_settings_run_node
+    UNIQUE (workflow_run_id, node_id)
+);
+
+COMMENT ON TABLE remote_agent_steering_node_settings IS
+  'Durable per-node steering settings shared by every permitted observer: auto-send toggle and the provider id stamped by the executor at registration, so capability data survives a restart with no live handle; cascade-deletes with the run.';
+
 ALTER TABLE remote_agent_workflow_node_messages
   ADD COLUMN IF NOT EXISTS metadata JSONB;
 
 ALTER TABLE remote_agent_pending_interactions
   ADD COLUMN IF NOT EXISTS execution_scope JSONB;
+
+-- ============================================================================
+-- Table 24: Workflow node execution evidence (git attribution)
+-- ============================================================================
+
+-- One row per node execution attempt (a node can execute more than once
+-- within a run: a loop body, a reactivated route target, a retried node).
+-- `start_*` is recorded before the execution begins; `end_*` is filled in
+-- after it finishes and stays NULL when the execution never reached that
+-- point (still running, or the end snapshot could not be captured) — a NULL
+-- end column means this execution has no proven end state.
+CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_execution_evidence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_run_id UUID NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  node_id VARCHAR(255) NOT NULL,
+  retry_epoch INTEGER NOT NULL DEFAULT 0,
+  start_checkpoint_ref TEXT NOT NULL,
+  start_commit_sha TEXT NOT NULL,
+  started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  end_checkpoint_ref TEXT,
+  end_commit_sha TEXT,
+  ended_at TIMESTAMP WITH TIME ZONE
+);
+
+COMMENT ON TABLE remote_agent_workflow_node_execution_evidence IS
+  'Git snapshots bracketing one node execution, read by the server to compute which repository paths that execution changed. Cascade-deletes with the run.';
 
 -- ============================================================================
 -- Indexes and column comments
@@ -927,6 +1016,12 @@ CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run
 CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run_node_epoch
   ON remote_agent_workflow_node_checkpoints(workflow_run_id, node_id, retry_epoch DESC);
 
+-- Workflow node execution evidence
+CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run
+  ON remote_agent_workflow_node_execution_evidence(workflow_run_id);
+CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run_node_epoch
+  ON remote_agent_workflow_node_execution_evidence(workflow_run_id, node_id, retry_epoch DESC);
+
 -- Workflow provider bindings
 CREATE INDEX IF NOT EXISTS idx_provider_bindings_codebase
   ON remote_agent_workflow_provider_bindings(codebase_id);
@@ -1032,3 +1127,39 @@ COMMENT ON COLUMN remote_agent_pending_interactions.resolved_by IS
   'Identity of the resolver; NULL while pending.';
 COMMENT ON COLUMN remote_agent_pending_interactions.execution_scope IS
   'Nullable occurrence/attempt identity captured at Ask pause; absent on older rows.';
+
+-- Steering drafts
+CREATE INDEX IF NOT EXISTS idx_steering_drafts_run_node
+  ON remote_agent_steering_drafts(workflow_run_id, node_id);
+
+COMMENT ON COLUMN remote_agent_steering_drafts.operator_user_id IS
+  'Draft author; empty string sentinel means an identity-less (solo, no web auth) caller.';
+COMMENT ON COLUMN remote_agent_steering_drafts.message IS
+  'Verbatim composer text; never transformed.';
+COMMENT ON COLUMN remote_agent_steering_drafts.updated_at IS
+  'Set on every write; the client reads this as the last-saved timestamp.';
+
+-- Steering queue entries
+CREATE INDEX IF NOT EXISTS idx_steering_queue_run_node_position
+  ON remote_agent_steering_queue_entries(workflow_run_id, node_id, fifo_position);
+CREATE INDEX IF NOT EXISTS idx_steering_queue_state
+  ON remote_agent_steering_queue_entries(state);
+
+COMMENT ON COLUMN remote_agent_steering_queue_entries.message_id IS
+  'Caller-stamped correlation key; UNIQUE(workflow_run_id, node_id, message_id) makes a repeated send idempotent.';
+COMMENT ON COLUMN remote_agent_steering_queue_entries.operator_user_id IS
+  'Queued-message author; empty string sentinel means an identity-less (solo, no web auth) caller.';
+COMMENT ON COLUMN remote_agent_steering_queue_entries.fifo_position IS
+  'Server-assigned order, unique per (workflow_run_id, node_id); assigned as MAX(fifo_position)+1 inside a transaction.';
+COMMENT ON COLUMN remote_agent_steering_queue_entries.state IS
+  'Delivery state; validated in application code against the open steering state set.';
+COMMENT ON COLUMN remote_agent_steering_queue_entries.last_error IS
+  'Failure evidence for a returned-to-queue or never_sent entry; NULL otherwise.';
+
+-- Steering node settings
+COMMENT ON COLUMN remote_agent_steering_node_settings.auto_send_enabled IS
+  'Durable per-node auto-send toggle; shared by every permitted observer of the node.';
+COMMENT ON COLUMN remote_agent_steering_node_settings.updated_by_user_id IS
+  'Attribution only for the last write; not a scoping key.';
+COMMENT ON COLUMN remote_agent_steering_node_settings.provider_id IS
+  'Resolved provider id stamped by the executor at steering registration; lets the queue read report capability data with no live handle.';

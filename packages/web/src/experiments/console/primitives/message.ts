@@ -3,6 +3,7 @@
  * and chat `messages` (the AI's and user's text). The Run detail page merges
  * both into a single timeline keyed by timestamp.
  */
+import type { ToolOutcome } from '@/lib/tool-presentation';
 
 export type MessageRole = 'user' | 'assistant' | 'system';
 
@@ -11,6 +12,13 @@ export interface InlineToolCall {
   input: Record<string, unknown>;
   output?: string;
   durationMs?: number;
+  exitCode?: number;
+  /**
+   * A message-inline call (Claude tool calls persisted on the chat message
+   * itself) carries no provable error signal — only whether a result has
+   * arrived yet. `succeeded` here means "returned", not "returned cleanly".
+   */
+  outcome: ToolOutcome;
 }
 
 export interface InlineError {
@@ -118,6 +126,9 @@ export function toMessage(raw: RawMessage): Message {
     input: tc.input ?? {},
     output: tc.output,
     durationMs: tc.duration,
+    // A result (output or a measured duration) has arrived; no failure signal
+    // is ever persisted for a message-inline call, so this is the honest ceiling.
+    outcome: tc.output !== undefined || tc.duration !== undefined ? 'succeeded' : 'running',
   }));
   const error: InlineError | null =
     meta.error !== undefined

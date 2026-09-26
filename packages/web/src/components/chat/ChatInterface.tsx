@@ -24,6 +24,7 @@ import {
 import type { ConversationResponse, CodebaseResponse, MessageResponse } from '@/lib/api';
 import type {
   ChatMessage,
+  ChatToolResultOutcome,
   FileAttachment,
   ToolCallDisplay,
   ErrorDisplay,
@@ -49,6 +50,8 @@ function mapMessageRow(row: MessageResponse): ChatMessage {
       input: Record<string, unknown>;
       duration?: number;
       output?: string;
+      outcome?: ChatToolResultOutcome;
+      exitCode?: number;
     }[];
     error?: ErrorDisplay;
     workflowDispatch?: { workerConversationId: string; workflowName: string };
@@ -379,7 +382,13 @@ export function ChatInterface({
   );
 
   const onToolResult = useCallback(
-    (name: string, output: string, duration: number, toolCallId?: string): void => {
+    (
+      name: string,
+      output: string,
+      duration: number,
+      toolCallId?: string,
+      result?: { outcome?: ChatToolResultOutcome; exitCode?: number }
+    ): void => {
       setMessages(prev => {
         // Search all messages (not just last) — tool_result may arrive after a text message
         let targetIdx = -1;
@@ -400,7 +409,13 @@ export function ChatInterface({
         const msg = prev[targetIdx];
         const updatedTools = msg.toolCalls?.map(tc => {
           if (toolCallId ? tc.id === toolCallId : tc.name === name && tc.duration === undefined) {
-            return { ...tc, output: output !== undefined ? output : tc.output, duration };
+            return {
+              ...tc,
+              output: output !== undefined ? output : tc.output,
+              duration,
+              ...(result?.outcome !== undefined ? { outcome: result.outcome } : {}),
+              ...(result?.exitCode !== undefined ? { exitCode: result.exitCode } : {}),
+            };
           }
           return tc;
         });

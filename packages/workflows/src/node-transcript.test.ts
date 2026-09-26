@@ -116,16 +116,14 @@ test('appends one operator text row per drained message in order', async () => {
     scope,
     messages: [
       {
-        messageId: 'm-1',
+        message_id: 'm-1',
         message: '  first note\nwith newline  ',
-        operatorUserId: 'op-alpha',
-        receivedAt: '2026-01-01T00:00:00.000Z',
+        operator_user_id: 'op-alpha',
       },
       {
-        messageId: 'm-2',
+        message_id: 'm-2',
         message: 'second note',
-        operatorUserId: null,
-        receivedAt: '2026-01-01T00:00:01.000Z',
+        operator_user_id: null,
       },
     ],
   });
@@ -185,16 +183,14 @@ test('continues after a rejecting operator append (fail-open)', async () => {
       scope,
       messages: [
         {
-          messageId: 'm-1',
+          message_id: 'm-1',
           message: 'first',
-          operatorUserId: 'op-1',
-          receivedAt: '2026-01-01T00:00:00.000Z',
+          operator_user_id: 'op-1',
         },
         {
-          messageId: 'm-2',
+          message_id: 'm-2',
           message: 'second',
-          operatorUserId: 'op-2',
-          receivedAt: '2026-01-01T00:00:01.000Z',
+          operator_user_id: 'op-2',
         },
       ],
     })

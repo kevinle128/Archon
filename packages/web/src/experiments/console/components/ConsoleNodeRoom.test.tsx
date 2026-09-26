@@ -381,7 +381,7 @@ describe('ConsoleNodeRoom', () => {
     expect(toolRowEl?.textContent).not.toContain('"ok"');
     expect(host.textContent).toContain('iteration_started');
     expect(host.textContent).toContain('iteration_failed');
-    expect(host.textContent).toContain('waiting on you');
+    expect(host.textContent).toContain('Waiting on you');
     expect(host.textContent).toContain('Iteration 2');
     expect(host.textContent).not.toContain('first');
     assertNoConversationComposer(host);
@@ -1057,7 +1057,7 @@ describe('ConsoleNodeRoom', () => {
     expect(
       firstTool.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0);
-    expect(host.textContent).toContain('waiting on you');
+    expect(host.textContent).toContain('Waiting on you');
     expect(host.textContent).toContain('Execution scope was not recorded for this interaction.');
     assertNoConversationComposer(host);
   });
@@ -1273,10 +1273,8 @@ describe('ConsoleNodeRoom', () => {
       });
     });
     await flush();
-    const close = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Close')
-    );
-    expect(close).toBeDefined();
+    const close = host.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+    expect(close).not.toBeNull();
     await act(async () => {
       close?.click();
     });
@@ -2945,7 +2943,7 @@ describe('ConsoleNodeRoom', () => {
       return button;
     }
 
-    test('mounts the folded todo strip ahead of the scroller inside one room region', async () => {
+    test('mounts the folded todo strip below the scroller inside one room region', async () => {
       await act(async () => {
         renderRoom({
           loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
@@ -2964,8 +2962,8 @@ describe('ConsoleNodeRoom', () => {
       const strip = stripSection();
       const scroller = host.querySelector('[data-testid="console-node-room-scroll"]');
       if (scroller === null) throw new Error('missing scroller');
-      expect(region.firstElementChild).toBe(strip);
-      expect(strip?.nextElementSibling).toBe(scroller);
+      expect(region.firstElementChild).toBe(scroller);
+      expect(scroller.nextElementSibling).toBe(strip);
       expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
 
       const button = stripButton();
@@ -3003,6 +3001,45 @@ describe('ConsoleNodeRoom', () => {
           rowEl.querySelector('[data-testid="todo-list"], [data-testid="todo-meter"], ul')
         ).toBeNull();
       }
+    });
+
+    test('only the latest todo row exposes the folded checklist inline', async () => {
+      await act(async () => {
+        renderRoom({
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [...TODO_MESSAGES],
+          }),
+        });
+      });
+      await flushUntil('todo strip', () => stripSection() !== null);
+
+      function rowSummaryOf(row: Element): HTMLElement {
+        const summary = row.querySelector('summary');
+        if (!(summary instanceof HTMLElement)) throw new Error('missing row summary');
+        return summary;
+      }
+
+      const todoRows = Array.from(host.querySelectorAll('details[data-tool-id]'));
+      expect(todoRows).toHaveLength(4);
+      const [earliest, , , latest] = todoRows;
+      if (earliest === undefined || latest === undefined) {
+        throw new Error('missing todo rows');
+      }
+
+      await act(async () => {
+        rowSummaryOf(earliest).click();
+        rowSummaryOf(latest).click();
+      });
+
+      expect(earliest.querySelector('[data-testid="todo-list"], ul')).toBeNull();
+      const latestChecklists = latest.querySelectorAll('ul');
+      if (latestChecklists.length === 0)
+        throw new Error('missing inline checklist on the latest row');
+      expect(latest.textContent).toContain('Map the message path');
+      expect(latest.textContent).toContain('· blocked: CI has one build job');
+      expect(latest.textContent).toContain('· dropped');
+      const headings = Array.from(latest.querySelectorAll('h3')).map(h => h.textContent);
+      expect(headings).toEqual(['Research', 'Implement']);
     });
 
     test('renders no strip when the transcript has no foldable todo state', async () => {
@@ -4408,7 +4445,8 @@ describe('ConsoleNodeRoom', () => {
       await flushUntil('visible b', () => (host.textContent ?? '').includes('visible-b'));
       expect(headings()).toHaveLength(0);
       expect(host.querySelector('details[data-tool-id="tool-1"]')).toBeNull();
-      expect(host.querySelectorAll('select')).toHaveLength(1);
+      // A single execution renders no Execution selector.
+      expect(host.querySelectorAll('select')).toHaveLength(0);
     });
 
     test('keeps a hidden tool group visible through its attached Ask card', async () => {
@@ -4646,8 +4684,9 @@ describe('ConsoleNodeRoom', () => {
       });
       await flushUntil('single occurrence', () => (host.textContent ?? '').includes('solo'));
       expect(navigatorSelect()).toBeNull();
-      // The header Execution filter select is untouched and still present.
-      expect(host.querySelector('select[aria-label="Execution"]')).not.toBeNull();
+      // The occurrence navigator is a distinct control from the header's
+      // Execution filter, which is absent here because there is one execution.
+      expect(host.querySelector('select[aria-label="Execution"]')).toBeNull();
     });
 
     test('renders a labelled select whose options mirror the headings verbatim', async () => {

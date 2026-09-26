@@ -1,20 +1,25 @@
 /**
- * SteeringRegistry - process-local queue for operator guidance sent to a
- * running agent node.
+ * SteeringRegistry - process-local live turn handle for a running agent node.
  *
- * Lives in @archon/workflows so the DAG executor and the server send route can
- * share one registry. Keyed by (runId, stepName) where stepName is the
- * namespaced node id used by transcript routes and loop-group bodies.
+ * Lives in @archon/workflows so the DAG executor and the server steering
+ * routes can share one registry. Keyed by (runId, stepName) where stepName is
+ * the namespaced node id used by transcript routes and loop-group bodies.
+ *
+ * This registry is the VOLATILE execution plane only: the live provider turn
+ * handle, its per-turn interrupt controller, and the idle-after-interrupt
+ * wait. It holds no guidance content and no queue. The durable control plane
+ * (drafts, the node guidance queue, FIFO order, delivery state, auto-send) is
+ * `IWorkflowSteeringStore` in `./store` — the executor is the sole claimer of
+ * that durable queue, and every route mutates it, never this registry's
+ * in-memory state. A live SDK handle is never serialized; a server restart
+ * always loses it, by design.
  *
  * Design:
  * - Singleton for production via getSteeringRegistry(); createSteeringRegistry()
  *   builds isolated instances for tests.
- * - Fully synchronous: accept/enqueue and the closeIfEmpty() last gate never
- *   await, so no receipt can succeed after the executor commits to teardown.
- * - Idempotent for a handle's entire lifetime: every accepted message_id maps
- *   to its original receipt (and original message) until the handle is
- *   discarded. There is no queue-depth, message-length, or accepted-id cap.
- * - Message content is never logged anywhere in this module.
+ * - Turn transitions (beginTurn/endTurnStream/settleTurn/interrupt/enterIdle)
+ *   stay fully synchronous where the executor's teardown ordering depends on
+ *   it, so a Stop can never race past a settlement the executor already made.
  *
  * Per-turn interruption (#183): an interruptible handle additionally models
  * ONE active provider turn at a time, tokenized by a monotonically increasing
@@ -36,6 +41,12 @@
  * *completes* a node. Keepalive re-arms the timer without waking the waiter.
  * Duration is a fixed product rule (30 minutes); no config key, YAML field, or
  * DB state. Timer + handle are process-local and do not survive restart.
+ *
+ * `wakeForSendNow()` is a content-free wake: it only signals "durable guidance
+ * may now be claimable" so the executor re-checks the durable store. The
+ * executor may find nothing there (a race with a concurrent withdraw) and
+ * must re-wait via `awaitSendNowAgain()` rather than start a turn with no
+ * guidance.
  *
  * Exported only via the ./steering-registry subpath - never through the
  * workflows package root.
@@ -105,35 +116,7 @@ export function resolveIdleAwaitInactivityMs(
   return parsed;
 }
 
-export interface QueuedOperatorMessage {
-  readonly messageId: string;
-  readonly message: string;
-  readonly operatorUserId: string | null;
-  readonly receivedAt: string;
-}
-
-export interface AcceptedSteeringReceipt {
-  readonly messageId: string;
-  /**
-   * `queued` while the node is generating/interrupting; `awaiting_send_now`
-   * while the handle sits in `idle-after-interrupt` — accepted onto the
-   * pending queue but NOT an implicit wake (#183 — a stopped turn does not
-   * surprise-resume on later queueing). Receipts are immutable: an
-   * `awaiting_send_now` row is never rewritten to `queued`.
-   */
-  readonly state: 'queued' | 'awaiting_send_now';
-}
-
 export type SteeringHandlePhase = 'live' | 'parked' | 'closed';
-
-export type EnqueueResult =
-  | { readonly ok: true; readonly duplicate: boolean; readonly receipt: AcceptedSteeringReceipt }
-  | { readonly ok: false; readonly reason: 'not_live' | 'closed' };
-
-/** Atomic accept surface (#183) — same result shape as {@link EnqueueResult}. */
-export type AcceptResult = EnqueueResult;
-
-export type SteeringIntent = 'queue' | 'send_now';
 
 /**
  * Projected steering sub-state (#183) — live interruptible handles only.
@@ -162,27 +145,24 @@ export type InterruptSettlement =
   | 'not_steerable_here';
 
 /**
- * What an idle executor wakes to (#183 / #192). `send_now` carries the full
- * drained batch; `terminated` is teardown (Cancel/park/discard/close);
- * `expired` is the inactivity timer — distinct from stream idle-timeout
- * completion. Exactly one of these settles the single idle waiter.
+ * What an idle executor wakes to (#183 / #192). `send_now` is content-free —
+ * it means "durable guidance may now be claimable", and the executor must
+ * claim from the durable store to find out; a race with a concurrent
+ * withdraw can legitimately find nothing, and the executor re-waits via
+ * `awaitSendNowAgain()` rather than starting a turn with no guidance.
+ * `terminated` is teardown (Cancel/park/discard/close); `expired` is the
+ * inactivity timer — distinct from stream idle-timeout completion. Exactly
+ * one of these settles the single idle waiter.
  */
 export type SteeringIdleWake =
-  | { readonly kind: 'send_now'; readonly messages: readonly QueuedOperatorMessage[] }
+  | { readonly kind: 'send_now' }
   | { readonly kind: 'terminated' }
   | { readonly kind: 'expired' };
 
 export interface SteeringHandleSnapshot {
   readonly phase: SteeringHandlePhase;
-  readonly queued: readonly QueuedOperatorMessage[];
-  readonly acceptedCount: number;
   /** Only ever set on live interruptible handles (#183). */
   readonly subState: SteeringSubState | undefined;
-}
-
-interface AcceptedEntry {
-  readonly receipt: AcceptedSteeringReceipt;
-  readonly message: QueuedOperatorMessage;
 }
 
 interface PendingInterrupt {
@@ -201,8 +181,6 @@ interface ActiveTurn {
 
 export class NodeSteeringHandle {
   private phase: SteeringHandlePhase = 'live';
-  private pending: QueuedOperatorMessage[] = [];
-  private readonly accepted = new Map<string, AcceptedEntry>();
   private readonly interruptible: boolean;
   private readonly idleAwaitInactivityMs: number;
   private readonly scheduleIdleExpiry: ScheduleIdleExpiry;
@@ -347,9 +325,10 @@ export class NodeSteeringHandle {
    * Move a classified-interrupted turn into `idle-after-interrupt`: resolves
    * that token's pending interrupt as `idle-after-interrupt`, releases the
    * turn slot, arms the inactivity timer, and returns ONE waiter resolved by
-   * the first of `send_now` (with the drained batch), inactivity expiry,
-   * discard, or terminal cleanup. Fails fast on a stale/already-settled token
-   * — idle entry is a classification outcome, not a fallback.
+   * the first of `send_now` (content-free — the executor claims the durable
+   * store to find out what to send), inactivity expiry, discard, or terminal
+   * cleanup. Fails fast on a stale/already-settled token — idle entry is a
+   * classification outcome, not a fallback.
    */
   enterIdle(token: number): Promise<SteeringIdleWake> {
     const turn = this.currentTurn;
@@ -365,6 +344,26 @@ export class NodeSteeringHandle {
     this.subState = 'idle-after-interrupt';
     // Install the waiter first, then arm — a zero-delay test scheduler must
     // still observe a pending waiter when its callback runs.
+    const promise = new Promise<SteeringIdleWake>(resolve => {
+      this.idleWaiter = { resolve };
+    });
+    this.armIdleExpiry();
+    return promise;
+  }
+
+  /**
+   * Re-wait for another `send_now` after a wake produced no claimable durable
+   * content (a race with a concurrent withdraw). Requires the handle to
+   * already be idle-after-interrupt with no waiter currently installed.
+   * Re-arms the inactivity timer, exactly like the original `enterIdle` wait.
+   */
+  awaitSendNowAgain(): Promise<SteeringIdleWake> {
+    if (!this.interruptible || this.phase !== 'live' || this.subState !== 'idle-after-interrupt') {
+      throw new Error('awaitSendNowAgain requires a live idle-after-interrupt handle');
+    }
+    if (this.idleWaiter !== undefined) {
+      throw new Error('awaitSendNowAgain while a waiter is already installed');
+    }
     const promise = new Promise<SteeringIdleWake>(resolve => {
       this.idleWaiter = { resolve };
     });
@@ -403,98 +402,31 @@ export class NodeSteeringHandle {
   }
 
   /**
-   * Atomic accept for operator guidance (#183). The pending queue and the
-   * idle waiter are updated in ONE synchronous mutation, so a duplicate
-   * `send_now` can never produce a second drain and a queue-intent row can
-   * never wake the idle executor implicitly.
+   * Content-free wake for a route that durably enqueued a `send_now` message
+   * while the handle sat idle-after-interrupt. Cancels the inactivity timer
+   * and resolves the idle waiter with no payload — the executor claims the
+   * durable store to learn what to send. Sub-state stays `idle-after-interrupt`
+   * until a turn actually begins: the claim can legitimately find nothing (a
+   * race with a concurrent withdraw), and the handle must not report
+   * `generating` to a reader before real work starts. Returns `not_idle` (a
+   * no-op) when the handle is not currently an idle handle with a waiter
+   * installed, e.g. a Stop already landed, or a duplicate call arrives after
+   * the first wake already fired.
    */
-  accept(message: QueuedOperatorMessage, intent: SteeringIntent): AcceptResult {
-    const existing = this.accepted.get(message.messageId);
-    if (existing !== undefined) {
-      return { ok: true, duplicate: true, receipt: existing.receipt };
-    }
-    if (this.phase === 'closed') {
-      return { ok: false, reason: 'closed' };
-    }
-    if (this.phase !== 'live') {
-      return { ok: false, reason: 'not_live' };
-    }
-    const idle = this.subState === 'idle-after-interrupt';
-    const receipt: AcceptedSteeringReceipt = {
-      messageId: message.messageId,
-      state: idle ? 'awaiting_send_now' : 'queued',
-    };
-    this.pending.push(message);
-    this.accepted.set(message.messageId, { receipt, message });
+  wakeForSendNow(): 'woken' | 'not_idle' {
     if (
-      idle &&
-      intent === 'send_now' &&
-      message.message.trim() !== '' &&
-      this.idleWaiter !== undefined
+      !this.interruptible ||
+      this.phase !== 'live' ||
+      this.subState !== 'idle-after-interrupt' ||
+      this.idleWaiter === undefined
     ) {
-      // First-wins release: drain the whole pending batch in accepted order,
-      // flip the handle back to generating, cancel the inactivity timer, and
-      // resolve the idle waiter in the same synchronous tick — no second
-      // drain is possible after this.
-      const batch = this.pending;
-      this.pending = [];
-      this.subState = 'generating';
-      this.invalidateIdleExpiry();
-      const waiter = this.idleWaiter;
-      this.idleWaiter = undefined;
-      waiter.resolve({ kind: 'send_now', messages: batch });
+      return 'not_idle';
     }
-    return { ok: true, duplicate: false, receipt };
-  }
-
-  /**
-   * Queue-intent accept — the sole mutation surface for `#181` callers
-   * (server send route) that predate intent. Identical to
-   * `accept(message, 'queue')`: on an idle handle the row lands as
-   * `awaiting_send_now` and never implicitly wakes the executor.
-   */
-  enqueue(message: QueuedOperatorMessage): EnqueueResult {
-    return this.accept(message, 'queue');
-  }
-
-  pendingCount(): number {
-    return this.pending.length;
-  }
-
-  /**
-   * The executor's last gate before teardown: synchronously seals an empty
-   * live handle in the same tick so no later receipt can succeed. Sealing
-   * resolves a pending interrupt as `node_finished` and any idle waiter as
-   * terminated.
-   */
-  closeIfEmpty(): boolean {
-    if (this.phase === 'live' && this.pending.length === 0) {
-      this.seal('node_finished');
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Atomically returns and removes the pending items without closing the
-   * handle. Accepted-id memory is preserved, so drained ids stay idempotent.
-   */
-  drain(): readonly QueuedOperatorMessage[] {
-    const items = this.pending;
-    this.pending = [];
-    return items;
-  }
-
-  /**
-   * Removes one still-pending message from a live or parked queue. Accepted-id
-   * memory and handle phase are preserved. Closed handles are immutable.
-   */
-  withdraw(messageId: string): boolean {
-    if (this.phase === 'closed') return false;
-    const index = this.pending.findIndex(item => item.messageId === messageId);
-    if (index === -1) return false;
-    this.pending.splice(index, 1);
-    return true;
+    this.invalidateIdleExpiry();
+    const waiter = this.idleWaiter;
+    this.idleWaiter = undefined;
+    waiter.resolve({ kind: 'send_now' });
+    return 'woken';
   }
 
   park(): void {
@@ -522,27 +454,21 @@ export class NodeSteeringHandle {
   snapshot(): SteeringHandleSnapshot {
     return {
       phase: this.phase,
-      queued: [...this.pending],
-      acceptedCount: this.accepted.size,
       subState: this.steeringSubState(),
     };
   }
 
   /**
-   * Registry-internal teardown: seals the handle and drops all pending items
-   * and accepted-id memory. A pending interrupt resolves `not_steerable_here`
-   * (the park/discard race → 422) and the idle waiter resolves terminated so
-   * the executor lands on its existing Cancel path. Returns the number of
-   * pending items dropped, for content-free cleanup logging by the caller.
-   * Called only by SteeringRegistry.discardRun()/clearForTests() - never by
-   * executor or route code.
+   * Registry-internal teardown: seals the handle. A pending interrupt
+   * resolves `not_steerable_here` (the park/discard race -> 422) and the idle
+   * waiter resolves terminated so the executor lands on its existing Cancel
+   * path. Durable queue content is untouched here — it is reconciled by the
+   * executor's own terminal path, never by registry teardown. Called only by
+   * SteeringRegistry.discardRun()/clearForTests() - never by executor or
+   * route code.
    */
-  discard(): number {
-    const dropped = this.pending.length;
-    this.pending = [];
-    this.accepted.clear();
+  discard(): void {
     this.seal('not_steerable_here');
-    return dropped;
   }
 
   /**
@@ -684,22 +610,22 @@ export class SteeringRegistry {
   }
 
   /**
-   * Closes, clears, and removes every handle for the named run only, returning
-   * content-free counts for the caller to log. Handles still referenced
-   * elsewhere (e.g. an executor unwinding after Cancel) are left closed and
-   * emptied so they cannot drain or accept. Never touches database state.
+   * Closes and removes every handle for the named run only, returning a
+   * content-free count for the caller to log. Handles still referenced
+   * elsewhere (e.g. an executor unwinding after Cancel) are left closed so
+   * they cannot accept a new turn. Never touches database state — durable
+   * queue reconciliation is the executor's own terminal path, not this call.
    */
-  discardRun(runId: string): { readonly handles: number; readonly queued: number } {
+  discardRun(runId: string): { readonly handles: number } {
     const nodes = this.runs.get(runId);
     if (nodes === undefined) {
-      return { handles: 0, queued: 0 };
+      return { handles: 0 };
     }
-    let queued = 0;
     for (const handle of nodes.values()) {
-      queued += handle.discard();
+      handle.discard();
     }
     this.runs.delete(runId);
-    return { handles: nodes.size, queued };
+    return { handles: nodes.size };
   }
 
   clearForTests(): void {

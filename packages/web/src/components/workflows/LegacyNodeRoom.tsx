@@ -6,7 +6,12 @@ import {
   type WorkflowEventResponse,
   type WorkflowNodeStateResponse,
 } from '@/lib/api';
-import { type ExecutionHeaderModel, type FinishedIterationView } from '@/lib/execution-room-model';
+import {
+  nodeKindChip,
+  type ExecutionHeaderModel,
+  type FinishedIterationView,
+  type RunOfTotal,
+} from '@/lib/execution-room-model';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -51,6 +56,10 @@ export interface LegacyNodeRoomProps {
   nodeState: WorkflowNodeStateResponse | undefined;
   headerModel?: ExecutionHeaderModel;
   headerOptions?: readonly ExecutionHeaderOption[];
+  /** Uncapped execution total for the node, for the header's "of N · max 8" caption. */
+  executionCount?: number;
+  /** Retry position/count for the selected row, from the parent pane. */
+  runOfTotal?: RunOfTotal | null;
   onSelectRow?: (rowId: string) => void;
   /** Proven finished-iteration descriptor; pass-through only. */
   finishedIteration?: FinishedIterationView | null;
@@ -118,6 +127,8 @@ export function LegacyNodeRoom({
   nodeState,
   headerModel,
   headerOptions,
+  executionCount,
+  runOfTotal = null,
   onSelectRow,
   finishedIteration = null,
   nodeTerminal = false,
@@ -140,16 +151,31 @@ export function LegacyNodeRoom({
     resolution.definitionNode === null &&
     resolution.kind === 'agent' &&
     resolution.nodeType === 'unknown';
+  const resolvedOptions = headerOptions ?? [];
+  const resolvedExecutionCount = executionCount ?? resolvedOptions.length;
+  const kindChip = nodeKindChip(resolution.nodeType);
+  // Viewing a proven-finished iteration while the node still runs live
+  // elsewhere: the header leads with that iteration number and drops the
+  // run count, matching the mockup's stale-history reading.
+  const iterationPrefix =
+    finishedIteration !== null && row.selection.kind === 'occurrence'
+      ? (row.selection.iteration ?? null)
+      : null;
 
   const header =
     headerModel !== undefined && onSelectRow !== undefined && onClose !== undefined ? (
       <NodeRoomHeader
         model={headerModel}
-        options={headerOptions ?? []}
+        options={resolvedOptions}
         selectedRowId={row.id}
         onSelectRow={onSelectRow}
         onClose={onClose}
         closeLabel={closeLabel}
+        kindChip={kindChip}
+        executionCount={resolvedExecutionCount}
+        runOfTotal={runOfTotal}
+        idleAwaitExpired={idleAwaitExpired}
+        iterationPrefix={iterationPrefix}
       />
     ) : (
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">

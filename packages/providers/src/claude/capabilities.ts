@@ -68,4 +68,6 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   containerExec: true, // spawns the CLI in-container via spawnClaudeCodeProcess
   askHuman: true,
   interrupt: 'native', // Query.interrupt() over streaming input
+  softInjection: false, // transport conformance is current implementation work
+  deliveryAck: false, // message-id echo is current implementation work
 };
