@@ -1,0 +1,222 @@
+[
+  {
+    "id": "shell-succeeded",
+    "name": "Bash",
+    "input": { "command": "npm test" },
+    "output": "All tests passed",
+    "facts": { "outcome": "succeeded", "exitCode": 0, "durationMs": 1200 },
+    "expected": {
+      "family": "shell",
+      "label": "Bash",
+      "headline": "npm test",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [
+        { "kind": "exit", "text": "exit 0" },
+        { "kind": "duration", "text": "1.2s" }
+      ]
+    }
+  },
+  {
+    "id": "shell-failed",
+    "name": "Bash",
+    "input": { "command": "npm test" },
+    "output": "FAIL",
+    "facts": { "outcome": "failed", "exitCode": 1, "durationMs": 800 },
+    "expected": {
+      "family": "shell",
+      "label": "Bash",
+      "headline": "npm test",
+      "headlineKind": "text",
+      "glyph": "✕",
+      "badges": [
+        { "kind": "exit", "text": "exit 1" },
+        { "kind": "duration", "text": "800ms" }
+      ]
+    }
+  },
+  {
+    "id": "shell-running-codex-wrapper",
+    "name": "/bin/zsh -lc 'bun test ./apps/gateway'",
+    "input": {},
+    "output": null,
+    "facts": { "outcome": "running" },
+    "expected": {
+      "family": "shell",
+      "label": "shell",
+      "headline": "bun test ./apps/gateway",
+      "headlineKind": "text",
+      "glyph": "◐",
+      "badges": [{ "kind": "state", "text": "running" }]
+    }
+  },
+  {
+    "id": "file-read",
+    "name": "Read",
+    "input": { "file_path": "/src/index.ts" },
+    "output": "file contents here",
+    "facts": { "outcome": "succeeded", "durationMs": 50 },
+    "expected": {
+      "family": "file",
+      "label": "Read",
+      "headline": "/src/index.ts",
+      "headlineKind": "path",
+      "glyph": "✓",
+      "badges": [{ "kind": "duration", "text": "50ms" }]
+    }
+  },
+  {
+    "id": "search-content",
+    "name": "Grep",
+    "input": { "pattern": "TODO", "path": "src" },
+    "output": 14,
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "search",
+      "label": "Grep",
+      "headline": "TODO in src",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [{ "kind": "count", "text": "14 matches" }]
+    }
+  },
+  {
+    "id": "glob",
+    "name": "Glob",
+    "input": { "pattern": "**/*.tsx" },
+    "output": null,
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "glob",
+      "label": "Glob",
+      "headline": "**/*.tsx",
+      "headlineKind": "path",
+      "glyph": "✓",
+      "badges": [{ "kind": "placeholder", "text": "—" }]
+    }
+  },
+  {
+    "id": "code",
+    "name": "eval",
+    "input": { "code": "print(1)", "language": "python" },
+    "output": "1",
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "code",
+      "label": "eval",
+      "headline": "print(1)",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [{ "kind": "language", "text": "python" }]
+    }
+  },
+  {
+    "id": "todo",
+    "name": "TodoWrite",
+    "input": { "op": "add", "todos": [] },
+    "output": null,
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "todo",
+      "label": "TodoWrite",
+      "headline": "todo updated",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [{ "kind": "operation", "text": "op: add" }]
+    }
+  },
+  {
+    "id": "task",
+    "name": "Task",
+    "input": {
+      "description": "Investigate flaky test",
+      "prompt": "go",
+      "subagent_type": "debugger"
+    },
+    "output": null,
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "task",
+      "label": "Task",
+      "headline": "Investigate flaky test",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [{ "kind": "count", "text": "1 subagent" }]
+    }
+  },
+  {
+    "id": "web",
+    "name": "WebFetch",
+    "input": { "url": "https://example.com" },
+    "output": "small markdown body",
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "web",
+      "label": "WebFetch",
+      "headline": "https://example.com",
+      "headlineKind": "path",
+      "glyph": "✓",
+      "badges": [{ "kind": "placeholder", "text": "—" }]
+    }
+  },
+  {
+    "id": "generic",
+    "name": "unknown_custom_tool",
+    "input": { "one": 1, "two": "abc" },
+    "output": null,
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "generic",
+      "label": "unknown_custom_tool",
+      "headline": "one: 1 · two: abc",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [{ "kind": "placeholder", "text": "—" }]
+    }
+  },
+  {
+    "id": "mcp",
+    "name": "mcp__github__create_issue",
+    "input": {},
+    "output": null,
+    "facts": { "outcome": "succeeded" },
+    "expected": {
+      "family": "generic",
+      "label": "github · create_issue",
+      "headline": "github · create_issue",
+      "headlineKind": "text",
+      "glyph": "✓",
+      "badges": [{ "kind": "placeholder", "text": "—" }]
+    }
+  },
+  {
+    "id": "interrupted",
+    "name": "Bash",
+    "input": { "command": "sleep 100" },
+    "output": null,
+    "facts": { "outcome": "interrupted" },
+    "expected": {
+      "family": "shell",
+      "label": "Bash",
+      "headline": "sleep 100",
+      "headlineKind": "text",
+      "glyph": "⚠",
+      "badges": [{ "kind": "state", "text": "interrupted" }]
+    }
+  },
+  {
+    "id": "unknown",
+    "name": "Bash",
+    "input": { "command": "???" },
+    "output": null,
+    "facts": { "outcome": "unknown" },
+    "expected": {
+      "family": "shell",
+      "label": "Bash",
+      "headline": "???",
+      "headlineKind": "text",
+      "glyph": "–",
+      "badges": [{ "kind": "state", "text": "output unknown" }]
+    }
+  }
+]
