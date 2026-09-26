@@ -604,7 +604,7 @@ export function LegacyGraphLogsPane({
       <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
         <div
           id="legacy-run-view"
-          className="flex min-h-0 flex-1 flex-col"
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
           hidden={mode === 'single' && roomOpen}
         >
           {wrappedLeft}

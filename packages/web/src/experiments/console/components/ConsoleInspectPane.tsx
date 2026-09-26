@@ -390,7 +390,7 @@ export function ConsoleInspectPane({
       <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
         <div
           id="console-run-view"
-          className="flex min-h-0 flex-1 flex-col"
+          className="flex min-h-0 min-w-0 flex-1 flex-col"
           hidden={mode === 'single' && roomOpen}
         >
           {mainPane}
