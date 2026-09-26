@@ -10,7 +10,10 @@
  * reconstruction so existing runs remain displayable.
  */
 import type { NodeExecution, WorkflowEventResponse, WorkflowNodeStateResponse } from '@/lib/api';
-import type { ExecutionLoopAncestryEntry } from '@/lib/execution-room-model';
+import {
+  excludeRepresentedLoopContainers,
+  type ExecutionLoopAncestryEntry,
+} from '@/lib/execution-room-model';
 
 export type LogRowSelection =
   | { kind: 'node' }
@@ -192,8 +195,9 @@ export function buildLogRows(
 ): LogRow[] {
   if (nodeExecutions && nodeExecutions.length > 0) {
     const nameById = new Map<string, string>(nodeStates.map(s => [s.nodeId, s.name]));
+    const deduped = excludeRepresentedLoopContainers(nodeExecutions);
     return appendUnrepresentedStates(
-      buildFromOccurrences(nodeExecutions, nameById, runStartedAt),
+      buildFromOccurrences(deduped, nameById, runStartedAt),
       nodeStates
     );
   }

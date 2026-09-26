@@ -183,6 +183,97 @@ export function capExecutionOptions<T extends { order: number }>(rows: readonly 
   return [...rows].sort((a, b) => a.order - b.order).slice(rows.length - max);
 }
 
+interface LoopAncestryLike {
+  readonly node_id: string;
+  readonly iteration: number;
+}
+
+/** The wire fields `excludeRepresentedLoopContainers` needs, nothing more. */
+export interface LoopContainerCandidate {
+  readonly node_id: string;
+  readonly node_type?: string;
+  readonly retry_epoch?: number;
+  readonly route_activation_seq?: number;
+  readonly loop_ancestry?: readonly LoopAncestryLike[];
+  readonly started_at?: string;
+  readonly ended_at?: string;
+}
+
+function normalizedEpoch(value: number | undefined): number {
+  return value ?? 0;
+}
+
+function ancestryPrefixEquals(
+  left: readonly LoopAncestryLike[],
+  right: readonly LoopAncestryLike[] | undefined
+): boolean {
+  const rightEntries = right ?? [];
+  if (left.length !== rightEntries.length) return false;
+  return left.every(
+    (entry, index) =>
+      entry.node_id === rightEntries[index]?.node_id &&
+      entry.iteration === rightEntries[index]?.iteration
+  );
+}
+
+/** Whether `candidateStartedAt` falls inside the container's own run window. */
+function executionWindowContains(
+  container: LoopContainerCandidate,
+  candidateStartedAt: string
+): boolean {
+  const containerStart =
+    container.started_at !== undefined ? Date.parse(container.started_at) : Number.NaN;
+  const candidateStart = Date.parse(candidateStartedAt);
+  if (!Number.isFinite(containerStart) || !Number.isFinite(candidateStart)) return false;
+  if (candidateStart < containerStart) return false;
+  if (container.ended_at === undefined) return true;
+  const containerEnd = Date.parse(container.ended_at);
+  return !Number.isFinite(containerEnd) || candidateStart <= containerEnd;
+}
+
+/**
+ * A loop node mints one "container" execution for its own top-level
+ * started/failed lifecycle, then a separate execution per iteration nested
+ * inside it (`dag-executor.ts`'s `outerExecutionScope` /
+ * `iterationExecutionScope`). Both share the loop's retry epoch and route
+ * activation and start within the same instant, so a container with no
+ * transcript of its own is the same physical invocation an iteration row
+ * already carries the transcript for — drop it so the Execution list, and its
+ * default selection, land on the iteration instead. A container proven to
+ * own no iteration (the loop failed before iteration 1 started) is never
+ * dropped, so a genuinely distinct execution never disappears.
+ */
+export function excludeRepresentedLoopContainers<T extends LoopContainerCandidate>(
+  executions: readonly T[]
+): T[] {
+  const isContainer = (exec: LoopContainerCandidate): boolean =>
+    exec.node_type === 'loop' &&
+    (exec.loop_ancestry === undefined || exec.loop_ancestry.length === 0);
+
+  const isRepresentedByAnIteration = (container: T): boolean =>
+    executions.some(candidate => {
+      if (candidate.node_id !== container.node_id) return false;
+      const ancestry = candidate.loop_ancestry;
+      if (ancestry === undefined || ancestry.length === 0) return false;
+      if (!ancestryPrefixEquals(ancestry.slice(0, -1), container.loop_ancestry)) return false;
+      if (normalizedEpoch(candidate.retry_epoch) !== normalizedEpoch(container.retry_epoch)) {
+        return false;
+      }
+      if (
+        normalizedEpoch(candidate.route_activation_seq) !==
+        normalizedEpoch(container.route_activation_seq)
+      ) {
+        return false;
+      }
+      return (
+        candidate.started_at !== undefined &&
+        executionWindowContains(container, candidate.started_at)
+      );
+    });
+
+  return executions.filter(exec => !isContainer(exec) || !isRepresentedByAnIteration(exec));
+}
+
 function sameAncestryPrefix(
   left: readonly ExecutionLoopAncestryEntry[],
   right: readonly ExecutionLoopAncestryEntry[]

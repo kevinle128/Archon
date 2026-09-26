@@ -8,6 +8,7 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  excludeRepresentedLoopContainers,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   hasUnsettledNodeExecutions,
@@ -99,6 +100,100 @@ describe('chooseExecutionForNode', () => {
 
   test('returns null for an unknown node', () => {
     expect(chooseExecutionForNode(rows, 'other', 'awaiting')).toBeNull();
+  });
+});
+
+describe('excludeRepresentedLoopContainers', () => {
+  const container = {
+    node_id: 'loop',
+    node_type: 'loop',
+    occurrence_id: 'container-1',
+    retry_epoch: 0,
+    started_at: '2026-09-20T12:45:01.000Z',
+    ended_at: '2026-09-20T13:52:50.000Z',
+  };
+  const iteration = {
+    node_id: 'loop',
+    occurrence_id: 'iteration-1',
+    retry_epoch: 0,
+    loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+    started_at: '2026-09-20T12:45:01.000Z',
+  };
+
+  test('drops the container when a matching iteration owns the same run window', () => {
+    const result = excludeRepresentedLoopContainers([container, iteration]);
+    expect(result).toEqual([iteration]);
+  });
+
+  test('a non-loop node_type is never treated as a container', () => {
+    const notALoop = { ...container, node_type: 'prompt' };
+    const result = excludeRepresentedLoopContainers([notALoop, iteration]);
+    expect(result).toEqual([notALoop, iteration]);
+  });
+
+  test("a container already carrying loop_ancestry (a nested loop's own container) is kept", () => {
+    const nestedContainer = {
+      ...container,
+      loop_ancestry: [{ node_id: 'outer', iteration: 1 }],
+    };
+    const result = excludeRepresentedLoopContainers([nestedContainer, iteration]);
+    expect(result).toEqual([nestedContainer, iteration]);
+  });
+
+  test('keeps the container when the iteration ancestry prefix does not match', () => {
+    const deeperIteration = {
+      ...iteration,
+      loop_ancestry: [
+        { node_id: 'outer', iteration: 2 },
+        { node_id: 'loop', iteration: 1 },
+      ],
+    };
+    const result = excludeRepresentedLoopContainers([container, deeperIteration]);
+    expect(result).toEqual([container, deeperIteration]);
+  });
+
+  test('keeps the container when retry epochs differ', () => {
+    const laterEpochIteration = { ...iteration, retry_epoch: 1 };
+    const result = excludeRepresentedLoopContainers([container, laterEpochIteration]);
+    expect(result).toEqual([container, laterEpochIteration]);
+  });
+
+  test('keeps the container when route activation sequences differ', () => {
+    const routedContainer = { ...container, route_activation_seq: 1 };
+    const result = excludeRepresentedLoopContainers([routedContainer, iteration]);
+    expect(result).toEqual([routedContainer, iteration]);
+  });
+
+  test('keeps the container when the iteration starts outside its run window', () => {
+    const laterIteration = { ...iteration, started_at: '2026-09-26T06:37:33.000Z' };
+    const result = excludeRepresentedLoopContainers([container, laterIteration]);
+    expect(result).toEqual([container, laterIteration]);
+  });
+
+  test('a resumed invocation is a distinct window and both containers stay distinguishable', () => {
+    const secondContainer = {
+      ...container,
+      occurrence_id: 'container-2',
+      started_at: '2026-09-26T06:37:33.000Z',
+      ended_at: '2026-09-26T06:37:44.000Z',
+    };
+    const secondIteration = {
+      ...iteration,
+      occurrence_id: 'iteration-2',
+      started_at: '2026-09-26T06:37:33.000Z',
+    };
+    const result = excludeRepresentedLoopContainers([
+      container,
+      iteration,
+      secondContainer,
+      secondIteration,
+    ]);
+    expect(result).toEqual([iteration, secondIteration]);
+  });
+
+  test('never hides a container that owns no iteration at all', () => {
+    const result = excludeRepresentedLoopContainers([container]);
+    expect(result).toEqual([container]);
   });
 });
 
