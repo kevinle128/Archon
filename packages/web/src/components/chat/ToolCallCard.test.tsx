@@ -56,6 +56,23 @@ describe('ToolCallCard — collapsed row', () => {
     expect(html).not.toContain('⚠');
   });
 
+  test('a provider-reported error outcome renders as failed and opens by default', () => {
+    const html = markup(tool({ output: 'boom', duration: 40, outcome: 'error' }));
+    expect(html).toContain('✕');
+    expect(html).toContain('aria-expanded="true"');
+  });
+
+  test('a non-zero exit code renders as failed with an exit badge', () => {
+    const html = markup(tool({ output: 'fail', duration: 40, exitCode: 101 }));
+    expect(html).toContain('✕');
+    expect(html).toContain('exit 101');
+  });
+
+  test('a provider-reported unknown outcome is not shown as succeeded', () => {
+    const html = markup(tool({ output: '', duration: 40, outcome: 'unknown' }));
+    expect(html).not.toContain('✓');
+  });
+
   test('status is decodable from a glyph and a screen-reader label, not colour alone', () => {
     const html = markup(tool({ output: 'ok', duration: 5 }));
     expect(html).toContain('>succeeded<');

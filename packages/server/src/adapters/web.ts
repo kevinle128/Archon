@@ -188,7 +188,8 @@ export class WebAdapter implements IWebPlatformAdapter {
           conversationId,
           chunk.toolName,
           chunk.toolOutput,
-          duration
+          duration,
+          { toolOutcome: chunk.toolOutcome, exitCode: chunk.exitCode }
         );
       } catch (e: unknown) {
         getLog().error({ conversationId, err: e }, 'tool_result_persist_failed');
@@ -200,6 +201,8 @@ export class WebAdapter implements IWebPlatformAdapter {
         name: chunk.toolName,
         output: truncateToolOutput(chunk.toolOutput),
         duration,
+        ...(chunk.toolOutcome !== undefined ? { outcome: chunk.toolOutcome } : {}),
+        ...(chunk.exitCode !== undefined ? { exitCode: chunk.exitCode } : {}),
         timestamp: now,
       });
     } else if (chunk.type === 'result' && chunk.sessionId) {

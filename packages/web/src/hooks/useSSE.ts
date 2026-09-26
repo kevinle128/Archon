@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { startsNewTextBatch } from '@/lib/chat-message-reducer';
 import type {
+  ChatToolResultOutcome,
   TextEventMeta,
   SSEEvent,
   ErrorDisplay,
@@ -35,7 +36,13 @@ function parseSSEEvent(raw: string): SSEEvent | null {
 interface SSEHandlers {
   onText: (content: string, meta?: TextEventMeta) => void;
   onToolCall: (name: string, input: Record<string, unknown>, toolCallId?: string) => void;
-  onToolResult: (name: string, output: string, duration: number, toolCallId?: string) => void;
+  onToolResult: (
+    name: string,
+    output: string,
+    duration: number,
+    toolCallId?: string,
+    result?: { outcome?: ChatToolResultOutcome; exitCode?: number }
+  ) => void;
   onError: (error: ErrorDisplay) => void;
   onLockChange: (locked: boolean, queuePosition?: number) => void;
   onSessionInfo: (sessionId: string, cost?: number) => void;
@@ -159,7 +166,10 @@ export function useSSE(
           case 'tool_result':
             // Flush buffered text before tool result too
             flushTextNow();
-            h.onToolResult(data.name, data.output, data.duration, data.toolCallId);
+            h.onToolResult(data.name, data.output, data.duration, data.toolCallId, {
+              outcome: data.outcome,
+              exitCode: data.exitCode,
+            });
             break;
           case 'error':
             h.onError({

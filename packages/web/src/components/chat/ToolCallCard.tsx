@@ -167,16 +167,21 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
 }
 
 /**
- * A chat tool call carries no provable failure signal — only whether a
- * result has arrived. `cancelled` (an operator-caused stop) is the one
- * chat status that proves interruption; `stopped` (the run ended while the
- * tool was still open) proves nothing about the tool itself, so it degrades
- * to `unknown` rather than a guessed `interrupted`.
+ * The provider-reported outcome and exit code decide the result, with the
+ * same precedence as the node room. `cancelled` (an operator-caused stop)
+ * proves interruption; `stopped` (the run ended while the tool was still
+ * open) proves nothing about the tool itself, so it degrades to `unknown`.
+ * A completed call without a reported outcome keeps the historical
+ * `succeeded` reading.
  */
 function chatToolOutcome(tool: ToolCallDisplay, isRunning: boolean): ToolOutcome {
   if (isRunning) return 'running';
   if (tool.status === 'cancelled') return 'interrupted';
   if (tool.status === 'stopped') return 'unknown';
+  if (tool.exitCode !== undefined && tool.exitCode !== 0) return 'failed';
+  if (tool.outcome === 'error') return 'failed';
+  if (tool.outcome === 'interrupted') return 'interrupted';
+  if (tool.outcome === 'unknown') return 'unknown';
   return 'succeeded';
 }
 
@@ -205,11 +210,12 @@ export function ToolCallCard({ tool }: ToolCallCardProps): React.ReactElement {
         { name: tool.name, input: tool.input, output: tool.output },
         {
           outcome,
+          exitCode: tool.exitCode ?? null,
           durationMs: tool.duration ?? null,
           runningElapsedMs: isRunning ? elapsed : null,
         }
       ),
-    [tool.name, tool.input, tool.output, tool.duration, outcome, isRunning, elapsed]
+    [tool.name, tool.input, tool.output, tool.exitCode, tool.duration, outcome, isRunning, elapsed]
   );
   // A failed call opens automatically, matching the read contract every other
   // surface follows; a running/succeeded/interrupted/unknown call starts closed.

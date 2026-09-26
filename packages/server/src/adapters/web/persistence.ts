@@ -14,6 +14,14 @@ interface BufferedToolCall {
   startedAt: number;
   duration?: number;
   output?: string;
+  outcome?: ToolResultOutcome['toolOutcome'];
+  exitCode?: number;
+}
+
+/** Provider-reported tool outcome, carried to the chat card and history. */
+export interface ToolResultOutcome {
+  toolOutcome?: 'success' | 'error' | 'interrupted' | 'unknown';
+  exitCode?: number;
 }
 
 interface BufferedSegment {
@@ -129,7 +137,13 @@ export class MessagePersistence {
    * unresolved tool call (no output yet). This mirrors WorkflowLogs.tsx's
    * reverse-iteration approach for multi-tool-same-name correctness.
    */
-  appendToolResult(conversationId: string, name: string, output: string, duration: number): void {
+  appendToolResult(
+    conversationId: string,
+    name: string,
+    output: string,
+    duration: number,
+    result: ToolResultOutcome = {}
+  ): void {
     const buf = this.assistantBuffer.get(conversationId);
     if (!buf) {
       getLog().warn({ conversationId, name }, 'tool_result_dropped_no_buffer');
@@ -142,6 +156,8 @@ export class MessagePersistence {
       if (tc) {
         tc.output = output;
         tc.duration = duration;
+        if (result.toolOutcome !== undefined) tc.outcome = result.toolOutcome;
+        if (result.exitCode !== undefined) tc.exitCode = result.exitCode;
         matched = true;
         break;
       }
@@ -255,6 +271,8 @@ export class MessagePersistence {
           input: tc.input,
           duration: tc.duration,
           ...(tc.output !== undefined ? { output: tc.output } : {}),
+          ...(tc.outcome !== undefined ? { outcome: tc.outcome } : {}),
+          ...(tc.exitCode !== undefined ? { exitCode: tc.exitCode } : {}),
         }));
         const metadata = {
           ...(toolCalls.length > 0 ? { toolCalls } : {}),
