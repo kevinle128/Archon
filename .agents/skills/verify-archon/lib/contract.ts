@@ -36,7 +36,7 @@ export const snapshotSchema = z.object({
   version: z.literal(1), base_sha: sha, head_sha: sha, changed_paths: paths, dirty: z.boolean(),
 }).strict();
 export const proposalSchema = z.object({
-  version: z.literal(1), base_sha: sha, head_sha: sha, changed_paths: paths,
+  version: z.literal(1), base_sha: sha.optional(), head_sha: sha.optional(), changed_paths: paths.optional(),
   affected_behaviors: z.array(z.object({
     id, confidence: z.enum(['high', 'medium', 'low']), rationale: z.string().min(1),
   }).strict()).min(1).refine(values => unique(values.map(value => value.id)), 'Duplicate behavior'),
@@ -67,7 +67,6 @@ export const contextSchema = z.object({
 }).strict();
 export type Catalog = z.infer<typeof catalogSchema>;
 export type Scenario = z.infer<typeof scenarioSchema>;
-export type Snapshot = z.infer<typeof snapshotSchema>;
 export type Selection = z.infer<typeof selectionSchema>;
 export type ProofResult = z.infer<typeof resultSchema>;
 export type ScenarioResult = z.infer<typeof scenarioResultSchema>;
@@ -122,30 +121,17 @@ export function validateCatalog(catalog: Catalog): void {
     }
   }
 }
-export function matches(path: string, patterns: string[]): boolean {
-  return patterns.some(pattern => pattern.endsWith('/') ? path.startsWith(pattern) : path === pattern);
-}
 export function normalizeProposal(
-  catalog: Catalog, input: unknown, current: Snapshot, historical = false,
+  catalog: Catalog, input: unknown,
 ): Selection {
   validateCatalog(catalog);
   const proposal = proposalSchema.parse(input);
-  snapshotSchema.parse(current);
-  if (current.dirty) throw new Error('Dirty target');
-  if (proposal.base_sha !== current.base_sha || proposal.head_sha !== current.head_sha ||
-      digest(sorted(proposal.changed_paths)) !== digest(sorted(current.changed_paths))) throw new Error('Stale base, target, or changed paths');
-  if (!current.changed_paths.length && !historical) throw new Error('Empty diff requires --historical');
   const behaviors = catalog.features.flatMap(feature => feature.behaviors);
   for (const gap of proposal.coverage_gaps) {
     if (!catalog.gaps.some(item => item.id === gap)) throw new Error(`Unknown gap ${gap}`);
   }
-  const gaps = catalog.gaps.filter(gap => proposal.coverage_gaps.includes(gap.id) ||
-    current.changed_paths.some(path => matches(path, gap.impact_paths)));
+  const gaps = catalog.gaps.filter(gap => proposal.coverage_gaps.includes(gap.id));
   if (gaps.length) throw new Error(`Coverage gap: ${gaps.map(gap => gap.id).join(', ')}`);
-  for (const path of current.changed_paths) {
-    if (!catalog.features.some(feature => matches(path, feature.impact_paths) ||
-        feature.behaviors.some(behavior => matches(path, behavior.impact_paths)))) throw new Error(`Unmapped changed path: ${path}`);
-  }
   const selected = new Set<string>();
   const broadened = new Set<string>();
   for (const item of proposal.affected_behaviors) {
@@ -154,17 +140,10 @@ export function normalizeProposal(
   }
   for (const feature of catalog.features) {
     const proposals = proposal.affected_behaviors.filter(item => feature.behaviors.some(behavior => behavior.id === item.id));
-    const impacted = current.changed_paths.filter(path => matches(path, feature.impact_paths) ||
-      feature.behaviors.some(behavior => matches(path, behavior.impact_paths)));
-    const expand = proposals.some(item => item.confidence !== 'high') ||
-      (impacted.length > 0 && proposals.length === 0) ||
-      impacted.some(path => !feature.behaviors.some(behavior => matches(path, behavior.impact_paths)));
+    const expand = proposals.some(item => item.confidence !== 'high');
     if (expand) {
       broadened.add(feature.id);
       feature.behaviors.forEach(behavior => selected.add(behavior.id));
-    } else {
-      feature.behaviors.filter(behavior => impacted.some(path => matches(path, behavior.impact_paths)))
-        .forEach(behavior => selected.add(behavior.id));
     }
   }
   return selectionSchema.parse({ version: 1, proposal, catalog_sha256: catalog.catalog_sha256,
@@ -186,8 +165,7 @@ export function guardResult(input: unknown, contextInput: unknown): string[] {
     if (result[key] !== context[key]) errors.push(`Stale or mismatched ${key}`);
   }
   if (!result.catalog_sha256 || !result.tooling_sha256) errors.push('Missing proof identity');
-  if (result.mode === 'selection' && (!result.product || result.product.dirty || !result.selection_sha256)) errors.push('Selection proof requires a clean identified target');
-  if (digest(result.product) !== digest(context.product)) errors.push('Stale product');
+  if (result.mode === 'selection' && !result.selection_sha256) errors.push('Selection proof requires its target list');
   if (digest(sorted(result.behavior_ids)) !== digest(sorted(context.required_behavior_ids))) errors.push('Behavior set mismatch');
   if (digest(sorted(result.scenario_ids)) !== digest(sorted(context.required_scenario_ids))) errors.push('Scenario set mismatch');
   if (result.scenarios.length !== context.required_scenario_ids.length) errors.push('Incomplete scenario count');

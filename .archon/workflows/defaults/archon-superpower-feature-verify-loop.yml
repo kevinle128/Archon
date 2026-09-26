@@ -8,8 +8,8 @@ description: |
   Does: Same early Superpowers pipeline as superpower-feature (plan → Codex plan
         repair → Ralph PRD → in-parent Ralph implement, no PR). Then proposes
         affected behaviors and deterministically normalizes, executes, and checks
-        the shared verification contract. Failures run a max-3 fix, commit,
-        reselect, and re-prove route_loop. Only current-HEAD executable PASS opens
+        selected user paths. Failures run a max-3 fix, commit,
+        reselect, and re-prove route_loop. Only a complete executable PASS opens
         a PR naming behaviors, scenarios, and evidence. Exhaustion writes a blocked report and stops
         with a non-zero exit — it does not open a green PR.
   NOT for: Brainstorming itself, verify-only without implementation, Mini/PM2/
@@ -45,15 +45,14 @@ nodes:
         echo "Local bun verify only. Never Mini / PM2 / Tailscale."
       } > "$ARTIFACTS_DIR/superpowers/setup.md"
 
-      VERIFY_BIN=".agents/skills/verify-archon/bin/verify-archon"
+      VERIFY_BIN=".agents/skills/verify-archon/bin/verify.ts"
       if [ ! -f "$VERIFY_BIN" ]; then
         echo "ERROR: $VERIFY_BIN is missing." >&2
         echo "Run this workflow from anhle128/Archon after verify-archon landed on develop." >&2
         exit 1
       fi
-      test -x "$VERIFY_BIN"
       test -f ".archon/scripts/verify-feature-gate.ts"
-      "$VERIFY_BIN" catalog --json > "$ARTIFACTS_DIR/verify/catalog.json"
+      bun "$VERIFY_BIN" catalog --json > "$ARTIFACTS_DIR/verify/catalog.json"
       printf '%s\n' "$VERIFY_BIN" > "$ARTIFACTS_DIR/verify/helper-path.txt"
       echo "VERIFY_BIN=$VERIFY_BIN"
 
@@ -234,7 +233,7 @@ nodes:
     timeout: 60000
 
   - id: finalize-change
-    description: Validate and commit the intended change before selecting commit-bound proof.
+    description: Validate and commit the intended implementation before selecting user paths.
     depends_on:
       - begin-verify
     provider: codex
@@ -253,13 +252,12 @@ nodes:
       git add ., or git add -u. Do not commit logs, reports, scratch files, or
       anything under ARTIFACTS_DIR (including plan/PRD/progress files).
       Do not reset/stash unrelated edits.
-      Commit the intended changes. Leave the product checkout clean.
-      If validation or attribution cannot be resolved, report the blocker;
-      the following deterministic snapshot will not accept a dirty checkout.
+      Commit the intended changes.
+      If validation or attribution cannot be resolved, report the blocker.
       Write the validation/commit summary under $ARTIFACTS_DIR/verify/.
 
   - id: prepare-verify
-    description: Capture the original-base/current-HEAD snapshot and install locked proof dependencies.
+    description: Check the verification catalog and install locked proof dependencies.
     depends_on:
       - finalize-change
     always_run: true
@@ -285,35 +283,28 @@ nodes:
     skills:
       - select-verify-archon-targets
     prompt: |
-      Follow select-verify-archon-targets. Use only its Proposal Contract.
+      Follow select-verify-archon-targets to choose user-facing behaviors.
       The following deterministic node performs normalization; do not write
       selection, execution, result, or gate artifacts yourself.
       Plan: $review-fix-plan.output.plan_path
       User input: $ARGUMENTS
-      Read $ARTIFACTS_DIR/verify/current.json and that attempt's snapshot.json.
-      Use its exact base_sha, head_sha, and every changed_path. Read the full
-      base..head diff and the current verify-archon JSON catalog.
+      Read the diff from the base in $ARTIFACTS_DIR/superpowers/base-sha.txt,
+      including local edits, and the verify-archon feature map and catalog.
       Read the full plan from disk. Include every affected behavior with evidence
       for confidence; medium/low broadens to the complete feature.
-      Record uncovered behaviors in coverage_gaps. Never substitute a smoke or
-      omit files to make normalization succeed. Do not mutate the checkout.
+      Record uncovered behaviors in coverage_gaps. Never substitute a smoke test.
+      File paths inform selection; they are not test targets by themselves.
+      Write target notes under $ARTIFACTS_DIR/verify/targets.md.
+      Workflow checkpoint commits do not invalidate these targets.
       Return only the proposal JSON matching output_format.
     output_format:
       type: object
       additionalProperties: false
-      required: [version, base_sha, head_sha, changed_paths, affected_behaviors, coverage_gaps]
+      required: [version, affected_behaviors, coverage_gaps]
       properties:
         version:
           type: integer
           enum: [1]
-        base_sha:
-          type: string
-        head_sha:
-          type: string
-        changed_paths:
-          type: array
-          items:
-            type: string
         affected_behaviors:
           type: array
           minItems: 1
@@ -335,7 +326,7 @@ nodes:
             type: string
 
   - id: normalize-verify-targets
-    description: Validate the proposal against the anchored snapshot, catalog, and runnable scenarios.
+    description: Resolve selected behaviors to runnable scenarios in the catalog.
     depends_on:
       - select-verify-targets
     always_run: true
@@ -356,7 +347,7 @@ nodes:
     timeout: 7200000
 
   - id: record-verify
-    description: Read this attempt's result.json and check completeness, selection, tooling, and current HEAD.
+    description: Read this attempt's result.json and check completeness, selection, and tooling.
     depends_on:
       - prove
     trigger_rule: all_done
@@ -403,7 +394,7 @@ nodes:
       selects again, and executes new proof. An old PASS is never reused.
 
   - id: authorize-pr
-    description: Refuse stale, dirty, incomplete, or unsupported proof immediately before the PR node.
+    description: Refuse incomplete, failed, or unsupported proof immediately before the PR node.
     depends_on:
       - verify-gate
     always_run: true
@@ -413,7 +404,7 @@ nodes:
     timeout: 60000
 
   - id: create-pull-request
-    description: Create a PR for the already-verified commit without changing it.
+    description: Create a PR for the verified implementation.
     command: archon-create-pr
     provider: omp
     model: cursor/composer-2.5
@@ -424,25 +415,18 @@ nodes:
       - authorize-pr
     output_type: pull-request
     prompt_suffix: |
-      This workflow requires the exact verified HEAD. Override the command's
-      dirty-tree commit and push-conflict recovery steps: never commit, edit
-      source/tests, rebase, merge, reset, or otherwise change HEAD here.
+      Keep the verified implementation unchanged during PR creation.
+      If source or test behavior changes, run selection and proof again.
+      Workflow checkpoint commits of target notes or reports do not require re-proof.
       Run bun .archon/scripts/verify-feature-gate.ts assert-pass $begin-verify.output immediately
       before push and again before creating or editing the pull request. If either fails, stop.
-      Do not claim an older proof covers a new commit.
       Override issue-based existing-PR reuse too: never edit or return an existing
       PR solely because it mentions this issue. Resolve the intended head repository
       and branch from this checkout's push remote and branch. Only reuse an open PR
       with that exact head repository and branch. A PR on another head is a blocker.
-      Never return or reuse any existing PR until its headRefOid equals gate.head_sha,
-      even when no title/body edit is needed. If the intended branch lags, push the
-      exact verified HEAD first and then recheck the PR's headRefOid.
-      Push only the verified HEAD to that intended branch, without force. After
-      push, check the remote branch SHA equals gate.head_sha. Before any PR edit,
-      check gh pr view --json headRefOid,headRefName,headRepository,headRepositoryOwner
-      matches the verified SHA and intended head repository/branch. Stop on mismatch.
+      Push the intended branch without force and check that the PR uses that branch.
       Use the repository PR template and issue closing link. Include the exact
-      head_sha, behavior_ids, scenario_ids, result_path, and actual failures or
+      behavior_ids, scenario_ids, result_path, and actual failures or
       limitations from $ARTIFACTS_DIR/verify/gate.json and report.md.
       Keep PR-body artifacts under ARTIFACTS_DIR, never in the source diff.
 

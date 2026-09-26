@@ -42,13 +42,15 @@ import { T } from '../lib/playwright/timeouts';
 type Surface = 'console' | 'legacy';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const EVIDENCE_DIR = join(
-  REPO_ROOT,
-  'plans',
-  '260918-1721-issue-181-queue-guidance-for-running-agent',
-  'reports',
-  'evidence'
-);
+const EVIDENCE_DIR =
+  process.env.ARCHON_VERIFY_EVIDENCE ??
+  join(
+    REPO_ROOT,
+    'plans',
+    '260918-1721-issue-181-queue-guidance-for-running-agent',
+    'reports',
+    'evidence'
+  );
 const MEASUREMENTS_FILE = join(EVIDENCE_DIR, 'us-005-measurements.json');
 
 const SCROLLER_TESTID: Record<Surface, string> = {

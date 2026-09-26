@@ -4,7 +4,7 @@ import { join, relative, basename } from 'node:path';
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { z } from '@hono/zod-openapi';
 import { command } from './cli-scenarios';
-import { TOOLING_REPO, writeJson, contains, git } from './io';
+import { TOOLING_REPO, writeJson, contains } from './io';
 import type { ScenarioResult } from './contract';
 
 export const browserCases: Record<string, string[]> = {
@@ -28,26 +28,6 @@ const suiteSchema = z.object({
   })).optional(),
   get suites(): z.ZodOptional<z.ZodArray<typeof suiteSchema>> { return z.array(suiteSchema).optional(); },
 });
-
-/** Mapped suites such as queue guidance overwrite tracked `plans/` acceptance shots.
- * Attachments are already copied into the attempt. Restore only those tracked
- * paths so the cleanliness guard still measures the product tree. */
-async function restoreTrackedPlanReports(repo: string): Promise<void> {
-  const status = await git(repo, ['status', '--porcelain=v1', '-z', '--', 'plans']);
-  if (!status) return;
-  const paths: string[] = [];
-  const parts = status.split('\0').filter(part => part.length > 0);
-  for (let index = 0; index < parts.length; index++) {
-    const item = parts[index];
-    const code = item.slice(0, 2);
-    const path = item.slice(3);
-    if (!path.startsWith('plans/')) continue;
-    if (/[RC]/.test(code)) index++;
-    if (code.includes('?')) continue;
-    paths.push(path);
-  }
-  if (paths.length > 0) await git(repo, ['restore', '--source=HEAD', '--worktree', '--', ...paths]);
-}
 
 export async function runBrowserScenario(repo: string, id: string, evidence: string): Promise<ScenarioResult> {
   const cases = browserCases[id];
@@ -112,9 +92,5 @@ export async function runBrowserScenario(repo: string, id: string, evidence: str
     // Reading the fresh report here makes a missing current file a proof failure.
     await readFile(join(directory, 'report.json'));
   } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
-  finally {
-    try { await restoreTrackedPlanReports(repo); }
-    catch (error) { errors.push(error instanceof Error ? error.message : String(error)); }
-  }
   return { id, status: errors.length ? 'failed' : 'passed', errors, attachments };
 }

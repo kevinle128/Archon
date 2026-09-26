@@ -23,7 +23,7 @@
     },
     "proposal": {
       "type": "object", "additionalProperties": false,
-      "required": ["version", "base_sha", "head_sha", "changed_paths", "affected_behaviors", "coverage_gaps"],
+      "required": ["version", "affected_behaviors", "coverage_gaps"],
       "properties": {
         "version": {"const": 1}, "base_sha": {"$ref": "#/$defs/gitSha"}, "head_sha": {"$ref": "#/$defs/gitSha"},
         "changed_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}},

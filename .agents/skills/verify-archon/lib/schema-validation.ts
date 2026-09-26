@@ -3,7 +3,7 @@ import { z } from '@hono/zod-openapi';
 
 /** Zod supports the canonical schemas except their root if/then constraints. */
 export function protocolSchema(name: string): z.ZodType {
-  if (!['contract', 'catalog', 'gaps', 'snapshot', 'proposal', 'selection', 'result'].includes(name)) throw new Error('Unknown protocol schema');
+  if (!['catalog', 'gaps', 'proposal', 'selection', 'result'].includes(name)) throw new Error('Unknown helper schema');
   const json: z.core.JSONSchema.JSONSchema = JSON.parse(readFileSync(new URL(`../schemas/${name}.schema.json`, import.meta.url), 'utf8'));
   const conditions = (json.allOf ?? []).filter(part => typeof part === 'object' && part.if !== undefined);
   const base = z.fromJSONSchema({ ...json, allOf: (json.allOf ?? []).filter(part => !conditions.includes(part)) });
