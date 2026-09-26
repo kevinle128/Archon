@@ -555,6 +555,13 @@ export function RunDetailPage(): ReactElement {
           setViewPersist('artifacts');
         },
       },
+      {
+        keys: ['4'],
+        label: 'Files changed tab',
+        run: (): void => {
+          setViewPersist('files-changed');
+        },
+      },
       { keys: ['t'], label: 'Toggle tool calls', run: toggleToolCalls },
       { keys: ['s'], label: 'Toggle system', run: toggleSystem },
       {

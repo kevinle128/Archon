@@ -3646,6 +3646,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/workflows/runs/{runId}/files-changed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a run's changed files with node execution attribution */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Changed files with known node executions, or a CAP-6 empty envelope */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FilesChangedResponse"];
+                    };
+                };
+                /** @description Workflow run not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Git read failed */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/usage": {
         parameters: {
             query?: never;
@@ -6165,6 +6221,23 @@ export interface components {
             type: "delete";
             content: string;
             oldLine: number;
+        };
+        FilesChangedResponse: {
+            files: components["schemas"]["FilesChangedPath"][];
+        } | {
+            emptyReason: components["schemas"]["GitEmptyReason"];
+            files: components["schemas"]["FilesChangedPath"][];
+        };
+        FilesChangedPath: {
+            path: string;
+            status: components["schemas"]["GitChangedFileStatus"];
+            executions: components["schemas"]["AttributedNodeExecution"][];
+        };
+        AttributedNodeExecution: {
+            nodeId: string;
+            retryEpoch: number;
+            startedAt: string;
+            endedAt: string;
         };
         UsageReport: {
             scope: {

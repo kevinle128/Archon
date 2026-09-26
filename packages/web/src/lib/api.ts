@@ -538,6 +538,20 @@ export async function getWorkflowRunGitChanges(
   );
 }
 
+export type FilesChangedResponse = components['schemas']['FilesChangedResponse'];
+export type FilesChangedPath = components['schemas']['FilesChangedPath'];
+export type AttributedNodeExecution = components['schemas']['AttributedNodeExecution'];
+
+export async function getWorkflowRunFilesChanged(
+  runId: string,
+  options?: { signal?: AbortSignal }
+): Promise<FilesChangedResponse> {
+  return fetchJSON(
+    `/api/workflows/runs/${encodeURIComponent(runId)}/files-changed`,
+    options?.signal ? { signal: options.signal } : undefined
+  );
+}
+
 export async function getWorkflowRunGitLog(
   runId: string,
   options?: { signal?: AbortSignal }

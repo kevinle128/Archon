@@ -19,6 +19,7 @@ import { ArtifactSummary } from './ArtifactSummary';
 import { WorkflowNodeRetryAction } from './WorkflowNodeRetryAction';
 import { DagRunTabs, type WorkflowRunView } from './source-control/dag-run-tabs';
 import { SourceControlTab } from './source-control/source-control-tab';
+import { FilesChangedTab } from './source-control/files-changed-tab';
 import { TerminalTab } from './terminal/terminal-tab';
 import { useWorkflowStore } from '@/stores/workflow-store';
 import {
@@ -319,6 +320,7 @@ export function buildWorkflowDagNodeStates(
 export type WorkflowExecutionBody =
   | 'graph-logs-pane'
   | 'source-control'
+  | 'files-changed'
   | 'terminal'
   | 'sequential';
 
@@ -328,6 +330,7 @@ export function resolveWorkflowExecutionBody(input: {
 }): WorkflowExecutionBody {
   if (!input.isDag) return 'sequential';
   if (input.activeView === 'source-control') return 'source-control';
+  if (input.activeView === 'files-changed') return 'files-changed';
   if (input.activeView === 'terminal') return 'terminal';
   return 'graph-logs-pane';
 }
@@ -1053,6 +1056,9 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     }
     if (body === 'source-control') {
       return <SourceControlTab key={runId} runId={runId} />;
+    }
+    if (body === 'files-changed') {
+      return <FilesChangedTab key={runId} runId={runId} />;
     }
     if (body === 'terminal') {
       return <TerminalTab key={runId} runId={runId} />;

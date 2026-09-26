@@ -354,6 +354,20 @@ export async function listRunArtifacts(runId: string): Promise<ArtifactFile[]> {
   return res.files;
 }
 
+/**
+ * Re-exported from the generated OpenAPI types so the console doesn't drift
+ * from the server contract. Schema lives in
+ * packages/server/src/routes/schemas/files-changed.schemas.ts.
+ */
+export type FilesChangedResponse = components['schemas']['FilesChangedResponse'];
+export type FilesChangedPath = components['schemas']['FilesChangedPath'];
+
+export async function getFilesChanged(runId: string): Promise<FilesChangedResponse> {
+  return requestJson<FilesChangedResponse>(
+    `/api/workflows/runs/${encodeURIComponent(runId)}/files-changed`
+  );
+}
+
 /** Fetch a single artifact file as text (markdown or plain). */
 export async function fetchArtifact(runId: string, path: string): Promise<string> {
   const encodedPath = path.split('/').map(encodeURIComponent).join('/');

@@ -611,6 +611,8 @@ import { handleGitLog } from './git/log-handler';
 import { gitDiffRoute } from './git/diff-route';
 import { handleGitDiff } from './git/diff-handler';
 import { handleGitFile } from './git/file-handler';
+import { filesChangedRoute } from './git/files-changed-route';
+import { handleFilesChanged } from './git/files-changed-handler';
 
 // Read app version: use build-time constant in binary, package.json in dev
 let appVersion = 'unknown';
@@ -6296,6 +6298,11 @@ export function registerApiRoutes(
   // OpenAPI 3.0 cannot represent this wildcard, and successful responses are raw bytes.
   app.get('/api/workflows/runs/:runId/git/file/*', async c => {
     return handleGitFile(c, apiError);
+  });
+
+  // GET /api/workflows/runs/:runId/files-changed - Run-level changed files with node attribution
+  registerOpenApiRoute(filesChangedRoute, async c => {
+    return handleFilesChanged(c, apiError);
   });
 
   // GET /api/usage - Installation usage/cost report (direct runs only)
