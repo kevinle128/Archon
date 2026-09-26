@@ -165,7 +165,22 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
   if (awaiting.length > 0) return latestByOrder(awaiting);
   const running = forNode.filter(row => row.status === 'running');
   if (running.length > 0) return latestByOrder(running);
+  // A skipped row (including a resume's "prior success" marker) carries no
+  // transcript content and a later order than the real work it stands in
+  // for. Prefer the latest row that actually ran unless every row skipped.
+  const ran = forNode.filter(row => row.status !== 'skipped');
+  if (ran.length > 0) return latestByOrder(ran);
   return latestByOrder(forNode);
+}
+
+/**
+ * Cap the executions a header selector exposes, keeping the most recent
+ * ones so a long-running loop never grows the control past what CAP-6
+ * allows. Chronological order is preserved among the kept rows.
+ */
+export function capExecutionOptions<T extends { order: number }>(rows: readonly T[], max = 8): T[] {
+  if (rows.length <= max) return [...rows];
+  return [...rows].sort((a, b) => a.order - b.order).slice(rows.length - max);
 }
 
 function sameAncestryPrefix(

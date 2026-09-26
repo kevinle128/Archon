@@ -6,6 +6,7 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 
 import {
   buildExecutionHeader,
+  capExecutionOptions,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
@@ -13,17 +14,12 @@ import {
   type ExecutionHeaderModel,
   type ExecutionRow,
 } from '@/lib/execution-room-model';
-import { clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
+import { CONSOLE_ROOM_WIDTH_PX } from '@/lib/room-split-layout';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
 
 import type { RunEvent } from '../primitives/event';
 import type { Message } from '../primitives/message';
 import type { Run } from '../primitives/run';
-import {
-  ConsolePanel,
-  ConsolePanelGroup,
-  ConsolePanelSeparator,
-} from '../primitives/console-resizable';
 import type {
   AskAnswerBody,
   NodeExecution,
@@ -80,8 +76,6 @@ export interface ConsoleInspectPaneProps {
   logScrollRef: RefObject<HTMLDivElement | null>;
   onSelectNode: (nodeId: string, rowId?: string) => void;
   onCloseRoom: () => void;
-  roomRatio?: number;
-  onRoomRatioChange?: (ratio: number) => void;
   splitMode?: ContainerSplitMode;
   loadDefinition: (workflowName: string, cwd: string) => Promise<DagNode[]>;
   loadMessages: (
@@ -157,9 +151,14 @@ function executionOptionsForNode(
   events: readonly WorkflowEvent[],
   runStartedAt: string
 ): ConsoleExecutionHeaderOption[] {
+  const forNode = entries
+    .filter(entry => entry.row.nodeId === nodeId)
+    .map(entry => ({ id: entry.row.id, order: entry.row.order }));
+  const capped = capExecutionOptions(forNode);
+  const cappedIds = new Set(capped.map(row => row.id));
   const options: ConsoleExecutionHeaderOption[] = [];
   for (const entry of entries) {
-    if (entry.row.nodeId !== nodeId) continue;
+    if (entry.row.nodeId !== nodeId || !cappedIds.has(entry.row.id)) continue;
     options.push({
       rowId: entry.row.id,
       label: buildExecutionHeader({
@@ -195,8 +194,6 @@ export function ConsoleInspectPane({
   logScrollRef,
   onSelectNode,
   onCloseRoom,
-  roomRatio = 40,
-  onRoomRatioChange,
   splitMode,
   loadDefinition,
   loadMessages,
@@ -233,8 +230,6 @@ export function ConsoleInspectPane({
       entry => entry.row.nodeId === selectedRow.nodeId && entry.row.order > selectedRow.order
     );
   const roomOpen = selectedNodeId !== null;
-  const ratio = clampRoomRatio(roomRatio);
-  const sizes = roomPanelSizes(ratio);
   const selectedNodeState =
     selectedRow === null
       ? undefined
@@ -386,61 +381,34 @@ export function ConsoleInspectPane({
       </div>
     );
 
-  const handleLayoutChanged = (layout: Record<string, number>): void => {
-    if (mode !== 'split') return;
-    const roomSize = layout['console-run-room'];
-    if (typeof roomSize !== 'number') return;
-    onRoomRatioChange?.(clampRoomRatio(roomSize));
-  };
-
   return (
     <div
       ref={paneRef}
       data-testid="console-inspect-pane"
       className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
-      <ConsolePanelGroup
-        orientation="horizontal"
-        className="min-h-0 flex-1"
-        defaultLayout={
-          mode === 'single'
-            ? roomOpen
-              ? { 'console-run-view': 0, 'console-run-room': 100 }
-              : { 'console-run-view': 100 }
-            : roomOpen
-              ? {
-                  'console-run-view': 100 - ratio,
-                  'console-run-room': ratio,
-                }
-              : { 'console-run-view': 100 }
-        }
-        onLayoutChanged={handleLayoutChanged}
-      >
-        <ConsolePanel
+      <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
+        <div
           id="console-run-view"
-          className="flex min-h-0 flex-col"
+          className="flex min-h-0 flex-1 flex-col"
           hidden={mode === 'single' && roomOpen}
-          defaultSize={
-            mode === 'single' && roomOpen ? '0%' : roomOpen ? sizes.view.defaultSize : '100%'
-          }
-          minSize={mode === 'single' && roomOpen ? '0%' : sizes.view.minSize}
         >
           {mainPane}
-        </ConsolePanel>
+        </div>
         {roomOpen ? (
-          <>
-            {mode === 'split' ? <ConsolePanelSeparator aria-label="Resize node room" /> : null}
-            <ConsolePanel
-              id="console-run-room"
-              defaultSize={mode === 'single' ? '100%' : sizes.room.defaultSize}
-              minSize={mode === 'single' ? '100%' : sizes.room.minSize}
-              maxSize={mode === 'single' ? '100%' : sizes.room.maxSize}
-            >
-              {roomPane}
-            </ConsolePanel>
-          </>
+          <div
+            id="console-run-room"
+            className="min-h-0 min-w-0"
+            style={
+              mode === 'single'
+                ? { width: '100%' }
+                : { width: CONSOLE_ROOM_WIDTH_PX, flexShrink: 0 }
+            }
+          >
+            {roomPane}
+          </div>
         ) : null}
-      </ConsolePanelGroup>
+      </div>
     </div>
   );
 }

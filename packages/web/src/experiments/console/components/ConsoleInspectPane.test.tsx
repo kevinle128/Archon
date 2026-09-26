@@ -394,8 +394,6 @@ describe('ConsoleInspectPane', () => {
       logScrollRef,
       onSelectNode: (): void => undefined,
       onCloseRoom: (): void => undefined,
-      roomRatio: 40,
-      onRoomRatioChange: (): void => undefined,
       splitMode: 'split',
       loadDefinition: defaultLoadDefinition,
       loadMessages: defaultLoadMessages,
@@ -713,7 +711,7 @@ describe('ConsoleInspectPane', () => {
     expect(host.textContent).not.toContain('{"report"');
   });
 
-  test('split layout uses a 60/40 percentage room and omits the room when unselected', async () => {
+  test('split layout uses a fixed-width room with no drag handle and omits the room when unselected', async () => {
     await act(async () => {
       renderPane({
         view: 'log',
@@ -737,15 +735,14 @@ describe('ConsoleInspectPane', () => {
       'selected layout',
       () => host.querySelector('[data-testid="console-inspect-room"]') !== null
     );
+    const roomPanel = host.querySelector('#console-run-room');
     expect(host.querySelector('#console-run-view')).not.toBeNull();
-    expect(host.querySelector('#console-run-room')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
-    expect(host.querySelector('[data-testid="console-inspect-pane"]')?.className).not.toContain(
-      'lg:flex-row'
-    );
-    expect(
-      host.querySelector('[data-testid="console-inspect-room"]')?.className ?? ''
-    ).not.toContain('lg:w-[460px]');
+    expect(roomPanel).not.toBeNull();
+    // The approved node panel is a fixed width, not a user-resizable share
+    // of the window, so it carries no drag handle.
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect((roomPanel as HTMLElement).style.width).toBe('520px');
+    expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
   });
 
   test('single mode keeps the main pane mounted with hidden and Back closes the room', async () => {

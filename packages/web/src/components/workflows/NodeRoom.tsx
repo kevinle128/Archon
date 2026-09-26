@@ -29,10 +29,12 @@ import {
   type ToolRowBadgeTone,
   type ToolRowPresentation,
 } from '@/lib/tool-presentation';
+import type { TodoPhase } from '@/lib/todo-state';
 import { cn } from '@/lib/utils';
 
 import type { LogRowSelection } from './build-log-rows';
 import { RoomIncompleteNotice } from './RoomIncompleteNotice';
+import { TodoChecklist } from './TodoStrip';
 
 export interface NodeRoomProps {
   nodeId: string | null;
@@ -59,6 +61,12 @@ export interface NodeRoomProps {
   occurrenceGrouping?: OccurrenceGrouping;
   /** useId-owned namespace for occurrence heading DOM ids (navigator targets). */
   headingIdPrefix?: string;
+  /**
+   * The node's folded todo state. When set, the latest todo-family tool row
+   * exposes this same projection as its expanded body, instead of an empty
+   * one — every earlier todo call still folds to a plain one-line row.
+   */
+  todos?: readonly TodoPhase[];
 }
 
 const UNKNOWN_SCOPE_NOTICE =
@@ -883,11 +891,14 @@ function ToolHistory({
   runId,
   nodeId,
   loadMessage,
+  checklist,
 }: {
   item: Extract<AgentHistoryItem, { kind: 'tool' }>;
   runId: string;
   nodeId: string;
   loadMessage: typeof getWorkflowNodeMessage;
+  /** Non-null only for the latest todo-family row; renders in place of the body. */
+  checklist: readonly TodoPhase[] | null;
 }): React.ReactElement {
   const [open, setOpen] = useState<boolean>(item.presentation.initialOpen);
   const [touched, setTouched] = useState<boolean>(false);
@@ -1031,6 +1042,8 @@ function ToolHistory({
             >
               {toolRawPayloadJson(presentation.rawPayload)}
             </pre>
+          ) : checklist !== null && checklist.length > 0 ? (
+            <TodoChecklist phases={checklist} />
           ) : presentation.body?.kind === 'task' ? (
             <TaskBody body={presentation.body} />
           ) : presentation.body?.kind === 'generic' ? (
@@ -1087,6 +1100,7 @@ export function NodeRoom({
   embedded = false,
   occurrenceGrouping,
   headingIdPrefix,
+  todos = [],
 }: NodeRoomProps): React.ReactElement {
   const generatedHeadingPrefix = useId();
   if (nodeId === null) {
@@ -1105,6 +1119,14 @@ export function NodeRoom({
     item.id === lastItemId
       ? 'focus-visible:outline-2 focus-visible:outline-accent-bright'
       : undefined;
+  // The latest todo call is where the folded checklist reads best; every
+  // earlier call stays a plain "todo updated" row with no expandable body.
+  let latestTodoItemId: string | null = null;
+  for (const item of items) {
+    if (item.kind === 'tool' && item.presentation.family === 'todo') {
+      latestTodoItemId = item.id;
+    }
+  }
 
   const renderItem = (item: AgentHistoryItem): React.ReactElement => {
     if (item.kind === 'assistant') {
@@ -1126,7 +1148,13 @@ export function NodeRoom({
     if (item.kind === 'tool') {
       return (
         <div key={item.id} className={lastRowRing(item)} {...lastRowMarker(item)}>
-          <ToolHistory item={item} runId={runId} nodeId={nodeId} loadMessage={loadMessage} />
+          <ToolHistory
+            item={item}
+            runId={runId}
+            nodeId={nodeId}
+            loadMessage={loadMessage}
+            checklist={item.id === latestTodoItemId ? todos : null}
+          />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
       );

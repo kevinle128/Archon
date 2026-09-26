@@ -1211,7 +1211,7 @@ describe('NodeTranscriptPane', () => {
     return button;
   }
 
-  test('mounts the folded todo strip ahead of the scroller inside one room region', async () => {
+  test('mounts the folded todo strip below the scroller inside one room region', async () => {
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1232,8 +1232,8 @@ describe('NodeTranscriptPane', () => {
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing scroller');
     // The strip and the scroller are siblings inside the single region.
-    expect(region.firstElementChild).toBe(strip);
-    expect(strip?.nextElementSibling).toBe(scroller);
+    expect(region.firstElementChild).toBe(scroller);
+    expect(scroller.nextElementSibling).toBe(strip);
     expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
     // The scroller owns scrolling; the region does not scroll.
     const scrollerClass = scroller.getAttribute('class') ?? '';
@@ -1274,6 +1274,47 @@ describe('NodeTranscriptPane', () => {
         rowEl.querySelector('[data-testid="todo-list"], [data-testid="todo-meter"], ul')
       ).toBeNull();
     }
+  });
+
+  test('only the latest todo row exposes the folded checklist inline', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...TODO_MESSAGES],
+        }),
+      });
+    });
+    await flushUntil(host, 'todo strip', () => stripSection() !== null);
+
+    const todoRows = Array.from(host.querySelectorAll('details[data-tool-id]'));
+    expect(todoRows).toHaveLength(4);
+    const [earliest, , , latest] = todoRows;
+    if (earliest === undefined || latest === undefined) {
+      throw new Error('missing todo rows');
+    }
+
+    function rowSummaryOf(row: Element): HTMLElement {
+      const summary = row.querySelector('summary');
+      if (!(summary instanceof HTMLElement)) throw new Error('missing row summary');
+      return summary;
+    }
+
+    await act(async () => {
+      rowSummaryOf(earliest).click();
+      rowSummaryOf(latest).click();
+    });
+
+    expect(earliest.querySelector('[data-testid="todo-list"], ul')).toBeNull();
+    const latestChecklists = latest.querySelectorAll('ul');
+    if (latestChecklists.length === 0)
+      throw new Error('missing inline checklist on the latest row');
+    expect(latest.textContent).toContain('Map the message path');
+    expect(latest.textContent).toContain('· blocked: CI has one build job');
+    expect(latest.textContent).toContain('· dropped');
+    const headings = Array.from(latest.querySelectorAll('h3')).map(h => h.textContent);
+    expect(headings).toEqual(['Research', 'Implement']);
   });
 
   test('renders no strip when the transcript has no foldable todo state', async () => {

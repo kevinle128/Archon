@@ -958,6 +958,7 @@ export function ConsoleNodeRoom({
         showToolCalls={showToolCalls}
         showSystem={showSystem}
         unknownScope={row.unknownScope === true}
+        todos={agentHistory.todos}
         onLoadFullOutput={async (item): Promise<unknown> => {
           const message = await loadMessage(run.id, row.nodeId, item.messageId);
           return message.kind === 'tool' ? message.payload.output : undefined;
@@ -1124,9 +1125,6 @@ export function ConsoleNodeRoom({
         body
       ) : (
         <RoomRegion nodeId={nodeId} allowOutsetFocus={showTodoStrip}>
-          {showTodoStrip ? (
-            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
-          ) : null}
           <div
             ref={scrollRef}
             data-testid="console-node-room-scroll"
@@ -1137,6 +1135,9 @@ export function ConsoleNodeRoom({
           >
             {body}
           </div>
+          {showTodoStrip ? (
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+          ) : null}
           {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock
