@@ -4,8 +4,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, readdir, realpath, stat, rename, lstat } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
-  catalogSchema, featureSchema, gapsSchema, digest, sorted, snapshotSchema,
-  validateCatalog, relativePathSchema, type Catalog, type Snapshot,
+  catalogSchema, featureSchema, gapsSchema, digest, sorted,
+  validateCatalog, relativePathSchema, type Catalog,
 } from './contract';
 
 const exec = promisify(execFile);
@@ -36,18 +36,6 @@ export async function loadCatalog(): Promise<Catalog & { sha256: string }> {
   // Existing workflow consumers use this alias; it is not a protocol field.
   return Object.defineProperty(catalog, 'sha256', { value: catalog.catalog_sha256 }) as Catalog & { sha256: string };
 }
-export async function resolveBase(repo: string, base?: string): Promise<string> {
-  if (base) return git(repo, ['rev-parse', '--verify', base + '^{commit}']);
-  // Local develop is this repository's documented integration branch.
-  // Fall back only when that ref is absent, never when a merge-base is invalid.
-  for (const ref of ['refs/heads/develop', 'refs/remotes/origin/develop']) {
-    try { await git(repo, ['rev-parse', '--verify', ref]); }
-    catch { continue; }
-    return git(repo, ['merge-base', 'HEAD', ref]);
-  }
-  if ((await git(repo, ['rev-list', '--count', 'HEAD'])) === '1') return git(repo, ['rev-parse', 'HEAD']);
-  throw new Error('No development branch is available; supply an independent --base');
-}
 export function contains(parent: string, path: string): boolean {
   const rel = relative(parent, path);
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith('..' + sep));
@@ -61,36 +49,6 @@ export async function resolvedPath(path: string): Promise<string> {
     if (parent === path) throw error;
     return join(await resolvedPath(parent), relative(parent, path));
   }
-}
-export async function snapshot(repo: string, base?: string): Promise<Snapshot> {
-  repo = await realpath(repo);
-  if (await realpath(await git(repo, ['rev-parse', '--show-toplevel'])) !== repo) throw new Error('--repo must name the repository root');
-  const head = await git(repo, ['rev-parse', '--verify', 'HEAD']);
-  const pinned = await resolveBase(repo, base);
-  await git(repo, ['merge-base', '--is-ancestor', pinned, head]);
-  const diff = (await git(repo, ['diff', '--name-status', '-z', '--find-renames', pinned, head, '--'])).split('\0').filter(Boolean);
-  const paths: string[] = [];
-  for (let i = 0; i < diff.length;) {
-    const status = diff[i++];
-    const count = /^[RC]/.test(status) ? 2 : 1;
-    for (let index = 0; index < count; index++) paths.push(relativePathSchema.parse(diff[i++]));
-  }
-  const status = (await git(repo, ['status', '--porcelain=v1', '-z', '--untracked-files=all'])).split('\0').filter(Boolean);
-  let dirty = false;
-  const retained = join(repo, ARTIFACT_SUBTREE);
-  for (let i = 0; i < status.length; i++) {
-    const item = status[i];
-    const code = item.slice(0, 2);
-    const path = item.slice(3);
-    if (/[RC]/.test(code)) i++;
-    // Only untracked retained artifacts are exempt. Tracked edits remain dirty.
-    if (code === '??' && path.startsWith(ARTIFACT_SUBTREE + '/') &&
-        contains(retained, await resolvedPath(join(repo, path))) &&
-        await resolvedPath(retained) === retained) continue;
-    dirty = true;
-  }
-  return snapshotSchema.parse({ version: 1, base_sha: pinned, head_sha: head,
-    changed_paths: sorted(new Set(paths)), dirty });
 }
 export async function sourceFiles(root: string): Promise<string[]> {
   const paths: string[] = [];
@@ -132,7 +90,7 @@ export async function evidenceDirectory(repo: string, root: string): Promise<str
 export async function attachmentInventory(directory: string, paths: string[]): Promise<string[]> {
   const inventory: string[] = [];
   const root = await realpath(directory);
-  for (const path of paths) {
+  for (const path of new Set(paths)) {
     relativePathSchema.parse(path);
     const full = join(root, path);
     try {

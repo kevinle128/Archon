@@ -5,7 +5,6 @@ import {
   catalogSchema,
   featureSchema,
   gapsSchema,
-  snapshotSchema,
   normalizeProposal,
   guardResult,
   digest,
@@ -16,8 +15,7 @@ const vectorSchema = z.object({
   schema_cases: z.array(z.object({ id: z.string(), schema: z.string(), instance: z.unknown() })),
   canonicalization_cases: z.array(z.object({ id: z.string(), canonical_value: z.unknown(), expected_sha256: z.string() })),
   selection_cases: z.array(z.object({
-    id: z.string(), catalog: z.unknown(), snapshot: z.unknown(), proposal: z.unknown(),
-    request: z.object({ base: z.string(), historical: z.boolean() }),
+    id: z.string(), catalog: z.unknown(), proposal: z.unknown(),
     expected: z.object({ behavior_ids: z.array(z.string()), scenario_ids: z.array(z.string()), broadened_features: z.array(z.string()) }).optional(),
     expected_failure: z.unknown().optional(),
   })),
@@ -67,9 +65,7 @@ for (const item of vectors.canonicalization_cases) {
 for (const item of vectors.selection_cases) {
   test(`selection: ${item.id}`, (): void => {
     const run = (): ReturnType<typeof normalizeProposal> => {
-      const current = snapshotSchema.parse(item.snapshot);
-      if (current.base_sha !== item.request.base) throw new Error('Independent base differs');
-      return normalizeProposal(catalogSchema.parse(item.catalog), item.proposal, current, item.request.historical);
+      return normalizeProposal(catalogSchema.parse(item.catalog), item.proposal);
     };
     if (item.expected) expect(run()).toMatchObject(item.expected);
     else expect(run).toThrow();

@@ -6,7 +6,7 @@ import {
   catalogSchema, selectionSchema, digest, normalizeProposal, guardResult, resultSchema,
   type Catalog, type Selection, type ProofResult,
 } from './contract';
-import { SKILL_ROOT, TOOLING_REPO, ARTIFACT_SUBTREE, readJson, writeJson, snapshot, toolingDigest, loadCatalog, evidenceDirectory, attachmentInventory } from './io';
+import { TOOLING_REPO, ARTIFACT_SUBTREE, readJson, writeJson, toolingDigest, loadCatalog, evidenceDirectory, attachmentInventory } from './io';
 import { runCliScenario, command, isolatedEnvironment } from './cli-scenarios';
 import { runApiScenario } from './api-scenario';
 import { browserCases, runBrowserScenario } from './browser-scenarios';
@@ -26,20 +26,17 @@ export function validateRunnable(catalog: Catalog, ids = catalog.features.flatMa
     )) throw new Error(`Unsupported runner binding ${binding.kind}:${binding.id}`);
   }
 }
-export async function validateSelection(catalog: Catalog, repo: string, input: unknown, base?: string, historical = false): Promise<Selection> {
+export async function validateSelection(catalog: Catalog, input: unknown): Promise<Selection> {
   const selection = selectionSchema.parse(input);
-  const current = await snapshot(repo, base);
-  const expected = normalizeProposal(catalog, selection.proposal, current, historical);
+  const expected = normalizeProposal(catalog, selection.proposal);
   if (digest(expected) !== digest(selection)) throw new Error('Selection was changed or catalog is stale');
   validateRunnable(catalog, selection.scenario_ids);
-  if (selection.scenario_ids.includes('ui.visual')) await checkVisualSources(repo);
   return selection;
 }
 export async function doctor(repo: string): Promise<{ ok: boolean; repo: string; version: string; tooling: string }> {
   repo = await realpath(repo);
   const manifest = z.object({ name: z.literal('archon'), version: z.string() }).parse(await readJson(join(repo, 'package.json')));
   await stat(join(repo, 'packages/cli/src/cli.ts'));
-  protocolSchema('contract').parse(await readJson(join(SKILL_ROOT, 'contract.json')));
   const catalog = await loadCatalog();
   protocolSchema('catalog').parse(catalogSchema.parse(catalog));
   validateRunnable(catalog);
@@ -47,8 +44,8 @@ export async function doctor(repo: string): Promise<{ ok: boolean; repo: string;
 }
 export async function prove(
   catalog: Catalog, repo: string, ids: string[], evidenceRoot: string,
-  selection?: Selection, base?: string,
-  options: { historical?: boolean; selectionPath?: string; preflightError?: string } = {},
+  selection?: Selection,
+  options: { selectionPath?: string; preflightError?: string } = {},
 ): Promise<ProofResult> {
   repo = resolve(repo);
   try { repo = await realpath(repo); } catch { /* The proof records an invalid target below. */ }
@@ -68,14 +65,14 @@ export async function prove(
   try {
     if (pathError || options.preflightError) throw new Error(pathError ?? options.preflightError);
     await doctor(repo);
-    result.product = await snapshot(repo, base);
     result.catalog_sha256 = catalog.catalog_sha256;
     result.tooling_sha256 = await toolingDigest();
     if (selection) {
-      await validateSelection(catalog, repo, selection, base, options.historical);
+      await validateSelection(catalog, selection);
       result.selection_sha256 = digest(selection);
     }
     validateRunnable(catalog, ids);
+    if (ids.includes('ui.visual')) await checkVisualSources(repo);
     await writeJson(join(evidence, 'proof-context.json'), {
       run_id: result.run_id, repo, product: result.product,
       catalog_sha256: result.catalog_sha256, selection_sha256: result.selection_sha256,
@@ -97,14 +94,14 @@ export async function prove(
     }
     const currentCatalog = await loadCatalog();
     const currentSelection = options.selectionPath ? selectionSchema.parse(await readJson(options.selectionPath)) : selection;
-    if (currentSelection) await validateSelection(currentCatalog, repo, currentSelection, base, options.historical);
+    if (currentSelection) await validateSelection(currentCatalog, currentSelection);
     const inventory = await attachmentInventory(evidence, result.scenarios.flatMap(item => item.attachments.map(attachment => attachment.path)));
     result.ok = true;
     result.verdict = 'PASS';
     result.errors = guardResult(result, {
       run_id: result.run_id, repo, evidence_dir: evidence,
       required_behavior_ids: selection?.behavior_ids ?? [], required_scenario_ids: ids,
-      product: await snapshot(repo, base), catalog_sha256: currentCatalog.catalog_sha256,
+      product: null, catalog_sha256: currentCatalog.catalog_sha256,
       selection_sha256: currentSelection ? digest(currentSelection) : null,
       tooling_sha256: await toolingDigest(), attachment_inventory: inventory,
     });

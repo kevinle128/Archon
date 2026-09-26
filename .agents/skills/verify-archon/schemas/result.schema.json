@@ -21,7 +21,7 @@
   "allOf": [
     {"if": {"properties": {"ok": {"const": true}}, "required": ["ok"]}, "then": {"properties": {"verdict": {"const": "PASS"}}}},
     {"if": {"properties": {"verdict": {"const": "PASS"}}, "required": ["verdict"]}, "then": {"properties": {"ok": {"const": true}, "catalog_sha256": {"$ref": "#/$defs/digest"}, "tooling_sha256": {"$ref": "#/$defs/digest"}, "errors": {"maxItems": 0}}}},
-    {"if": {"properties": {"mode": {"const": "selection"}, "verdict": {"const": "PASS"}}, "required": ["mode", "verdict"]}, "then": {"properties": {"selection_sha256": {"$ref": "#/$defs/digest"}, "product": {"$ref": "#/$defs/cleanProduct"}}}},
+    {"if": {"properties": {"mode": {"const": "selection"}, "verdict": {"const": "PASS"}}, "required": ["mode", "verdict"]}, "then": {"properties": {"selection_sha256": {"$ref": "#/$defs/digest"}}}},
     {"if": {"properties": {"verdict": {"const": "FAIL"}}, "required": ["verdict"]}, "then": {"properties": {"ok": {"const": false}, "errors": {"minItems": 1}}}}
   ],
   "$defs": {
@@ -34,7 +34,6 @@
       "type": "object", "additionalProperties": false, "required": ["version", "base_sha", "head_sha", "changed_paths", "dirty"],
       "properties": {"version": {"const": 1}, "base_sha": {"$ref": "#/$defs/gitSha"}, "head_sha": {"$ref": "#/$defs/gitSha"}, "changed_paths": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/path"}}, "dirty": {"type": "boolean"}}
     },
-    "cleanProduct": {"allOf": [{"$ref": "#/$defs/product"}, {"properties": {"dirty": {"const": false}}}]},
     "attachment": {
       "type": "object", "additionalProperties": false, "required": ["name", "path"],
       "properties": {"name": {"type": "string", "minLength": 1}, "path": {"$ref": "#/$defs/path"}}
