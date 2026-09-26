@@ -128,7 +128,7 @@ development_status:
   # 2026-09-22 approved readiness correction.
   # Epic 1 through Epic 9 remain complete historical planning records.
   epic-10: in-progress
-  10-1-fix-room-geometry-and-execution-selection: ready-for-dev
+  10-1-fix-room-geometry-and-execution-selection: backlog
   10-2-deliver-one-selected-queued-message-without-stop: backlog
   10-3-preserve-every-unmatched-message-at-terminal-boundaries: backlog
   10-4-use-a-codex-supported-tool-status-presentation: backlog
