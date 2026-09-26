@@ -8,3 +8,8 @@
 
 - Mistake: read "some features are not in the mockup, e.g. providers" as "providers are out of scope".
 - Rule: a feature the mockup does not draw can still be in scope when it is configured elsewhere (for example, the provider is set in the node config). Before cutting scope from a user remark, confirm the direction ("do you mean skip X, or also build X?").
+
+## 2026-09-26 — Verify merged UI in a real browser, not only the agent's screenshots
+
+- Mistake: Phase A's own screenshots looked right, but after merge the run log column overflowed to ~6600px (flex child without `min-w-0`) and hid the fixed-width room.
+- Rule: after each UI merge, open the real app at a common width and measure `scrollWidth` vs `innerWidth`; a "deep link does not open" report can be an off-screen layout bug.
