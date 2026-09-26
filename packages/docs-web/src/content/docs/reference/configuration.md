@@ -72,6 +72,11 @@ assistants:
     # (e.g. @anthropic-ai/claude-code-win32-x64 — auto-expanded to claude/claude.exe).
     # Source/dev mode auto-resolves.
     # claudeBinaryPath: /absolute/path/to/claude
+    # Optional: model id for Claude Code's advisor consult (SDK Settings.advisorModel).
+    # Setting this both enables the consult and lets Archon attribute the
+    # resulting advisor notification to a known model; leaving it unset means
+    # a consult triggered by some other setting source shows with no identity.
+    # advisorModel: claude-opus-4-8
   codex:
     model: gpt-5.5
     modelReasoningEffort: medium # Legacy provider default; prefer preset/workflow/node `effort`
