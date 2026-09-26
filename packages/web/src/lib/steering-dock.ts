@@ -86,6 +86,7 @@ export type SteeringDockMode =
   | 'hidden'
   | 'blocked'
   | 'detached'
+  | 'recovery-required'
   | 'composer'
   | 'finished-iteration'
   | 'finished';
@@ -143,6 +144,14 @@ const STEERING_NOT_STEERABLE_CODE = 'not_steerable_here';
 const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
 
 /**
+ * Restart-recovery band copy (CAP-14). A live provider process does not
+ * survive a server restart; the durable draft and queue do, read-only, until
+ * the operator invokes the existing workflow Resume action.
+ */
+export const STEERING_RECOVERY_DISCLOSURE =
+  'restored after server restart · Resume the workflow to continue';
+
+/**
  * Visibility/block precedence: a nonempty never-sent result with explicit
  * node-terminal evidence selects finished first (so Cancel that flips the run
  * non-live after observation still surfaces recovery); otherwise a non-live
@@ -157,6 +166,11 @@ const STEERING_STORAGE_PREFIX = 'archon:steering-draft:';
  * Reconcile still never *triggers* on `!live` alone — finished requires both
  * nonempty neverSent and nodeTerminal. Cold opens of terminal runs stay hidden
  * because they never observed a ledger.
+ *
+ * An explicit `recoveryRequired` signal (server restart, CAP-14) is checked
+ * before the terminal and liveness checks: it comes from the server telling
+ * the client the live process is gone, not from a guess this code makes, so
+ * it overrides what `live`/`rowStatus` would otherwise imply.
  */
 export function steeringDockMode(input: {
   rowStatus: string;
@@ -166,7 +180,9 @@ export function steeringDockMode(input: {
   finishedIteration?: FinishedIterationView | null;
   neverSent?: readonly NeverSentEntry[] | null;
   nodeTerminal?: boolean;
+  recoveryRequired?: boolean;
 }): SteeringDockMode {
+  if (input.recoveryRequired === true) return 'recovery-required';
   if (
     input.nodeTerminal === true &&
     input.neverSent !== null &&
@@ -278,6 +294,17 @@ export function queueListLabel(count: number): string {
 
 export function willSendListLabel(count: number): string {
   return `Will send, ${count.toString()}`;
+}
+
+/**
+ * The live queue band's persistence line (CAP-8/CAP-15): the draft and queue
+ * genuinely are server-persisted today, so this always renders while the
+ * band is live. `Auto-send on` reports the durable setting's projected
+ * state; it appends only when the caller confirms it — no caller does yet,
+ * since the durable setting itself is not built.
+ */
+export function savedToServerLine(autoSendEnabled: boolean): string {
+  return autoSendEnabled ? 'saved to server · Auto-send on' : 'saved to server';
 }
 
 /** Lowercase DOM source heading; the renderer applies CSS uppercase tracking. */
@@ -627,6 +654,8 @@ export function resolveWithdrawFailure(
 }
 
 export const STEERING_DELETE_LABEL = 'delete';
+/** Visible label for the per-item soft-injection control (CAP-12). */
+export const STEERING_SEND_NOW_ITEM_LABEL = 'Send now';
 
 /**
  * Accessible name for the per-row delete control. The visible text stays
@@ -635,6 +664,15 @@ export const STEERING_DELETE_LABEL = 'delete';
  */
 export function deleteButtonAccessibleName(message: string): string {
   return `delete · ${message.trim()}`;
+}
+
+/**
+ * Accessible name for the per-item Send now control. Present only on a
+ * queued item, only while a verified soft-injection transport can accept it
+ * mid-turn — a queue-only provider never renders this control at all.
+ */
+export function sendNowItemAccessibleName(message: string): string {
+  return `Send now · ${message.trim()}`;
 }
 
 export type RemovalFocusTarget =
