@@ -27,10 +27,10 @@ export const nodeTranscriptToolPhaseSchema = z.enum(['call', 'result']);
 export const nodeTranscriptTextModeSchema = z.enum(['complete', 'delta', 'snapshot']);
 
 /**
- * Where a `kind: 'text'` row came from. `operator` is the redirect-turn receipt
- * (CAP-11). The three added here reuse the same additive-metadata pattern
- * instead of a new `kind`, which the table's CHECK constraint forbids without
- * a SQLite rebuild:
+ * Where a `kind: 'text'` row came from. `operator` is the redirect-turn receipt.
+ * The three added here reuse the same additive-metadata pattern instead of a
+ * new `kind`, which the table's CHECK constraint forbids without a SQLite
+ * rebuild:
  * - `thinking` — provider reasoning explicitly marked displayable.
  * - `prompt` — the exact text that triggered an agent turn.
  * - `advisor` — a notification from a consulted advisor model.
@@ -42,7 +42,7 @@ export const nodeTranscriptOriginSchema = z.enum(['operator', 'thinking', 'promp
  * turn's first pass (inline `prompt:` vs a loaded `command:` file); `reask`
  * covers a structured-output validation retry. A redirect (guidance) turn's
  * pass zero is deliberately absent from this enum: its triggering text is the
- * operator message already persisted as an `operator`-origin row (CAP-11), so
+ * operator message already persisted as an `operator`-origin row, so
  * recording it again under `prompt` would duplicate the same text twice.
  */
 export const promptTranscriptSourceSchema = z.enum(['node_prompt', 'command_file', 'reask']);

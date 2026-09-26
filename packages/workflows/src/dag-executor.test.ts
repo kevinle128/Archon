@@ -26020,6 +26020,42 @@ describe('executeDagWorkflow -- AskHuman resume re-entry', () => {
     ]);
   });
 
+  it('records no prompt row on an AskHuman-resume pass — the provider substitutes the human answers for the node prompt', async () => {
+    // The Claude provider swaps attemptPrompt for the mapped answers
+    // internally (buildClaudeAskResumePrompt); attemptPrompt itself is text
+    // the model never sees on this pass, so persisting it as a prompt row
+    // would misattribute the turn.
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_1' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [{ id: 'review', command: 'my-cmd' }]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
+  it('records no prompt row on a loop node AskHuman-resume pass either', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok <promise>DONE</promise>' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_loop' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [
+      { id: 'review', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
+    ]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
   it('maps decline to declined payload', async () => {
     mockSendQueryDag.mockImplementation(function* () {
       yield { type: 'assistant', content: 'ok' };

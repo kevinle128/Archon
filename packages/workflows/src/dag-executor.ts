@@ -2500,11 +2500,23 @@ async function executeNodeInternal(
       };
       // A redirect (guidance) turn's triggering text is the drained operator
       // message already recorded above — recording it again here under
-      // `prompt` would show the same words twice. Every other pass (turn 1,
-      // and any reask) gets its exact triggering text recorded once.
+      // `prompt` would show the same words twice. An AskHuman-resume pass is
+      // skipped for a different reason: a provider that supports it
+      // substitutes the human's answers for `attemptPrompt` internally
+      // (Claude's `buildClaudeAskResumePrompt`, Devin's
+      // `buildDevinAskResumePrompt`), so `attemptPrompt` is stale text the
+      // model never actually saw — recording it would misattribute the turn.
+      // Every other pass (turn 1, and any reask) gets its exact triggering
+      // text recorded once.
       let promptRecorded = false;
       const recordPromptIfNeeded = async (): Promise<void> => {
-        if (promptRecorded || operatorReceipt !== undefined) return;
+        if (
+          promptRecorded ||
+          operatorReceipt !== undefined ||
+          (passOptions.resumeInteractions?.length ?? 0) > 0
+        ) {
+          return;
+        }
         promptRecorded = true;
         await appendPromptTranscript(deps.store, {
           workflow_run_id: workflowRun.id,
@@ -6500,11 +6512,22 @@ async function executeLoopNodeInner(
             pendingOperatorReceipt.recorded = true;
           };
 
-          // See the AI-node stream loop for why a guidance turn's pass zero
-          // is skipped: its triggering text is already the operator row above.
+          // See the AI-node stream loop for why a guidance turn's pass zero,
+          // and an AskHuman-resume pass, are both skipped: a guidance turn's
+          // triggering text is already the operator row above, and a
+          // supporting provider sends the human's answers in place of
+          // `finalPrompt` on an AskHuman-resume pass (the same substitution
+          // the plain AI-node path guards against), so `finalPrompt` is stale
+          // text the model never saw.
           let promptRecorded = false;
           const recordPromptIfNeeded = async (): Promise<void> => {
-            if (promptRecorded || pendingOperatorReceipt !== undefined) return;
+            if (
+              promptRecorded ||
+              pendingOperatorReceipt !== undefined ||
+              (askResumeThisPass && reaskAttempt === 0 && !turnIsGuidance)
+            ) {
+              return;
+            }
             promptRecorded = true;
             await appendPromptTranscript(deps.store, {
               workflow_run_id: workflowRun.id,

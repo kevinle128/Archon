@@ -116,7 +116,7 @@ export async function appendThinkingTranscript(
 /**
  * Append the exact text that triggered one agent turn as a `prompt`-origin
  * text row. Callers must skip this for a redirect turn's first pass — that
- * text is already persisted as the caused operator row (CAP-11); see
+ * text is already persisted as the caused operator row; see
  * `promptTranscriptSourceSchema` for the cases this covers.
  */
 export async function appendPromptTranscript(
