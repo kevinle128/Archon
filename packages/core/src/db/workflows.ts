@@ -1440,19 +1440,20 @@ export async function failWorkflowRun(id: string, error: string): Promise<void> 
 }
 
 /**
- * Post-commit in-process steering cleanup (#181): seal + drop a cancelled
- * run's node handles so queued operator guidance can never drain into a
- * cancelled run. Runs on the idempotent already-terminal path too — a stale
- * same-process handle is stale either way. Counts only, never message
- * content. Best-effort: a cleanup failure cannot roll back or falsely fail
- * a committed cancellation, and it never runs when the transaction threw.
+ * Post-commit in-process steering cleanup (#181): seal a cancelled run's node
+ * handles so no live turn can accept further guidance. Runs on the
+ * idempotent already-terminal path too — a stale same-process handle is
+ * stale either way. Durable queue content is reconciled by each node's own
+ * terminal path, not here — this only seals the volatile turn handle.
+ * Best-effort: a cleanup failure cannot roll back or falsely fail a
+ * committed cancellation, and it never runs when the transaction threw.
  */
 function discardRunSteeringHandles(runId: string): void {
   try {
     const discarded = getSteeringRegistry().discardRun(runId);
     if (discarded.handles > 0) {
       getLog().info(
-        { workflowRunId: runId, handles: discarded.handles, queued: discarded.queued },
+        { workflowRunId: runId, handles: discarded.handles },
         'db.workflow_run_cancel_steering_discarded'
       );
     }

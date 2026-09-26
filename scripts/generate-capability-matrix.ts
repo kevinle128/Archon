@@ -68,6 +68,8 @@ const AXES: readonly { key: keyof ProviderCapabilities; label: string }[] = [
   { key: 'containerExec', label: 'Container exec (folder-project container backend)' },
   { key: 'askHuman', label: 'AskHuman mid-turn questions' },
   { key: 'interrupt', label: 'Turn interrupt (operator Stop)' },
+  { key: 'softInjection', label: 'Soft injection (per-item Send now while generating)' },
+  { key: 'deliveryAck', label: 'Delivery acknowledgement (message-id echo)' },
 ];
 
 /**

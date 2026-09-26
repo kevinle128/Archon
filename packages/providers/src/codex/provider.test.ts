@@ -103,6 +103,8 @@ describe('CodexProvider', () => {
         containerExec: false,
         askHuman: false,
         interrupt: false,
+        softInjection: false,
+        deliveryAck: false,
       });
     });
   });

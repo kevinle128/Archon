@@ -9,7 +9,7 @@ import { createLogger } from '@archon/paths';
 import type { AppendNodeMessageInput } from './schemas/node-message';
 import type { TranscriptExecutionScope } from './schemas/node-execution';
 import type { IWorkflowNodeMessageStore } from './store';
-import type { QueuedOperatorMessage } from './steering-registry';
+import type { ClaimedSteeringMessage } from './schemas/steering';
 import { transcriptMetadata } from './transcript-execution-scope';
 
 const log = createLogger('workflows.node-transcript');
@@ -72,7 +72,7 @@ export async function appendOperatorTranscript(
     workflow_run_id: string;
     node_id: string;
     scope: TranscriptExecutionScope;
-    messages: readonly QueuedOperatorMessage[];
+    messages: readonly ClaimedSteeringMessage[];
   }
 ): Promise<void> {
   for (const message of input.messages) {
@@ -83,8 +83,8 @@ export async function appendOperatorTranscript(
       payload: { text: message.message },
       metadata: transcriptMetadata(input.scope, {
         origin: 'operator',
-        operator_user_id: message.operatorUserId,
-        message_id: message.messageId,
+        operator_user_id: message.operator_user_id,
+        message_id: message.message_id,
       }),
     });
   }

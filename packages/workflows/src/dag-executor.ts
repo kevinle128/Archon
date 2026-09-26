@@ -108,9 +108,9 @@ import { getWorkflowEventEmitter, type LoopProgress } from './event-emitter';
 import {
   getSteeringRegistry,
   type NodeSteeringHandle,
-  type QueuedOperatorMessage,
   type SteeringIdleWake,
 } from './steering-registry';
+import type { ClaimedSteeringMessage } from './schemas/steering';
 import { evaluateCondition } from './condition-evaluator';
 import {
   declaredFieldsFromSchema,
@@ -577,8 +577,78 @@ interface PassTurn {
 /** Pending operator-row receipt for a guidance turn's first stream pass. */
 interface PendingOperatorReceipt {
   readonly scope: TranscriptExecutionScope;
-  readonly messages: readonly QueuedOperatorMessage[];
+  readonly messages: readonly ClaimedSteeringMessage[];
   recorded: boolean;
+}
+
+/**
+ * Claim limit for the durable guidance queue at a natural turn boundary:
+ * auto-send claims exactly one FIFO entry per natural reply; the default
+ * claims every currently eligible entry as one combined next-turn prompt.
+ */
+async function resolveSteeringClaimLimit(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  nodeId: string
+): Promise<number | 'all'> {
+  const settings = await deps.store.getSteeringNodeSettings(workflowRunId, nodeId);
+  return settings?.auto_send_enabled === true ? 1 : 'all';
+}
+
+/**
+ * `dispatching` -> `sent` once the operator transcript receipt for these
+ * claimed messages has actually committed. Best-effort: a write failure here
+ * degrades only the durable delivery-state projection, never this turn — the
+ * transcript row is already the audit receipt regardless.
+ */
+async function markSteeringMessagesDelivered(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  stepName: string,
+  messages: readonly ClaimedSteeringMessage[]
+): Promise<void> {
+  if (messages.length === 0) return;
+  try {
+    await deps.store.markSteeringMessagesSent(
+      workflowRunId,
+      stepName,
+      messages.map(message => message.message_id)
+    );
+  } catch (err) {
+    getLog().warn(
+      { err: err as Error, workflowRunId, nodeId: stepName },
+      'dag.steering_mark_sent_failed'
+    );
+  }
+}
+
+/**
+ * Terminal reconciliation: every durable queue entry left `queued`,
+ * `awaiting_send_now`, or `dispatching` when a node reaches a true terminal
+ * outcome (completed, failed, or cancelled — never a resumable pause) becomes
+ * a read-only `never_sent` record. Best-effort and content-free logging: a
+ * reconciliation failure must not fail an already-decided node outcome.
+ */
+async function reconcileNeverSentSteering(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  logNodeId: string,
+  stepName: string
+): Promise<void> {
+  try {
+    const reconciled = await deps.store.reconcileNeverSentSteeringMessages(workflowRunId, stepName);
+    if (reconciled.count > 0) {
+      getLog().info(
+        { workflowRunId, nodeId: logNodeId, neverSentCount: reconciled.count },
+        'dag.steering_queue_never_sent'
+      );
+    }
+  } catch (err) {
+    getLog().warn(
+      { err: err as Error, workflowRunId, nodeId: logNodeId },
+      'dag.steering_reconcile_failed'
+    );
+  }
 }
 
 /**
@@ -2487,6 +2557,12 @@ async function executeNodeInternal(
           messages: operatorReceipt.messages,
         });
         operatorReceipt.recorded = true;
+        await markSteeringMessagesDelivered(
+          deps,
+          workflowRun.id,
+          stepName,
+          operatorReceipt.messages
+        );
       };
       for await (const msg of withIdleTimeout(
         aiClient.sendQuery(attemptPrompt, cwd, attemptResumeId, passOptions),
@@ -3262,6 +3338,25 @@ async function executeNodeInternal(
         interruptible: providerInterruptible,
       })
     : undefined;
+  if (steeringHandle !== undefined) {
+    // Durable trace that this node IS steerable, stamped with its resolved
+    // provider, so a route can tell "recovery required" (durable settings
+    // exist, no live handle — e.g. after a restart) from a node that never
+    // supported steering. Best-effort: a write failure here degrades only
+    // post-restart recovery reporting, never this run.
+    deps.store
+      .upsertSteeringNodeSettings({
+        workflow_run_id: workflowRun.id,
+        node_id: stepName,
+        provider_id: provider,
+      })
+      .catch((err: unknown) => {
+        getLog().warn(
+          { err: err as Error, workflowRunId: workflowRun.id, nodeId: node.id },
+          'dag.steering_node_settings_upsert_failed'
+        );
+      });
+  }
   // The interrupt-capable face of the handle (#183): only when the resolved
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
@@ -3325,7 +3420,7 @@ async function executeNodeInternal(
     let turnPrompt = finalPrompt;
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
-    let turnGuidanceMessages: readonly QueuedOperatorMessage[] = [];
+    let turnGuidanceMessages: readonly ClaimedSteeringMessage[] = [];
     // Token capture folds across every provider turn; re-ask passes inside a
     // turn keep their existing last-pass-wins semantics.
     let accumulatedTokens: TokenUsage | undefined;
@@ -3573,14 +3668,23 @@ async function executeNodeInternal(
         // outcome precedes the interrupt request's resolution (the UI reads it
         // before rendering the idle dock).
         await recordNodeStatus('interrupted');
-        const idleWaiter = interruptibleHandle.enterIdle(lastPassToken);
-        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
-        if (wake.kind === 'send_now') {
-          // Same-session redirect: carry drained objects; join at the guidance head.
-          turnGuidanceMessages = wake.messages;
-          turnResumeId = interruptedSessionId;
-          turnIsGuidance = true;
-          continue turns;
+        let wake = await raceIdleWake(
+          deps,
+          workflowRun.id,
+          interruptibleHandle.enterIdle(lastPassToken)
+        );
+        while (wake.kind === 'send_now') {
+          // Content-free wake: claim the durable queue to learn what to send.
+          // A race with a concurrent withdraw can legitimately claim nothing
+          // — re-wait rather than start a turn with no guidance.
+          const claimed = await deps.store.claimSteeringQueue(workflowRun.id, stepName, 'all');
+          if (claimed.length > 0) {
+            turnGuidanceMessages = claimed;
+            turnResumeId = interruptedSessionId;
+            turnIsGuidance = true;
+            continue turns;
+          }
+          wake = await raceIdleWake(deps, workflowRun.id, interruptibleHandle.awaitSendNowAgain());
         }
         if (wake.kind === 'expired') {
           // Explicit fail — throw into the generic catch (sole prompt finalizer).
@@ -3696,12 +3800,16 @@ async function executeNodeInternal(
         return { state: 'failed', output: '', error: emptyError };
       }
 
-      // Natural-boundary last gate (#181) — fully synchronous so no route-side
-      // enqueue can land between the empty check, the session-id decision, and
-      // the drain. An idle timeout is NOT a natural boundary: the handle seals
-      // and the node takes its existing terminal path without draining.
+      // Natural-boundary last gate (#181): claim the durable queue for this
+      // node. An idle timeout is NOT a natural boundary: the handle seals and
+      // the node takes its existing terminal path without claiming. The claim
+      // itself is async, so a route-side enqueue can land in the gap between
+      // this check and the close() below — that entry stays durably queued
+      // and the node's terminal reconciliation resolves it, never silently.
       if (steeringHandle !== undefined && !nodeIdleTimedOut) {
-        if (!steeringHandle.closeIfEmpty()) {
+        const claimLimit = await resolveSteeringClaimLimit(deps, workflowRun.id, stepName);
+        const claimed = await deps.store.claimSteeringQueue(workflowRun.id, stepName, claimLimit);
+        if (claimed.length > 0) {
           if (newSessionId === undefined) {
             // Design decision 6: leave the queue intact and fail — never drain
             // a message that cannot be delivered, and never fall back to a
@@ -3711,13 +3819,12 @@ async function executeNodeInternal(
               `Node '${node.id}' has queued operator guidance but the provider turn returned no session id to resume — failing instead of dropping the guidance.`
             );
           }
-          const drained = steeringHandle.drain();
           // Settle the just-ended turn before its guidance successor begins
           // (#183) — 'generating' resolves a Stop that raced this boundary.
           if (lastPassToken !== undefined) {
             interruptibleHandle?.settleTurn(lastPassToken, 'generating');
           }
-          turnGuidanceMessages = drained;
+          turnGuidanceMessages = claimed;
           turnResumeId = newSessionId;
           turnIsGuidance = true;
           continue turns;
@@ -3924,19 +4031,13 @@ async function executeNodeInternal(
     };
   } finally {
     if (steeringHandle !== undefined) {
-      const queuedCount = steeringHandle.pendingCount();
-      if (queuedCount > 0) {
-        // Counts only — operator message text is never logged (#181).
-        getLog().warn(
-          { runId: workflowRun.id, nodeId: node.id, queuedCount },
-          'dag.steering_queue_unconsumed'
-        );
-      }
       // A parked AskHuman pause is the only outcome that intentionally leaves
-      // a registered handle behind — the resumed execution inherits it.
+      // a registered handle behind — the resumed execution inherits it, and
+      // durable content stays exactly as it is until then.
       if (!steeringPauseCommitted) {
         steeringHandle.close();
         getSteeringRegistry().unregister(workflowRun.id, stepName);
+        await reconcileNeverSentSteering(deps, workflowRun.id, node.id, stepName);
       }
     }
   }
@@ -5728,19 +5829,10 @@ async function executeLoopNode(
     );
   } finally {
     const steeringHandle = steering.steeringHandle;
-    if (steeringHandle !== undefined) {
-      const queuedCount = steeringHandle.pendingCount();
-      if (queuedCount > 0) {
-        // Counts only — operator message text is never logged (#181).
-        getLog().warn(
-          { runId: workflowRun.id, nodeId: node.id, queuedCount },
-          'dag.steering_queue_unconsumed'
-        );
-      }
-      if (steering.steeringPauseCommitted !== true) {
-        steeringHandle.close();
-        getSteeringRegistry().unregister(workflowRun.id, stepNamePrefix + node.id);
-      }
+    if (steeringHandle !== undefined && steering.steeringPauseCommitted !== true) {
+      steeringHandle.close();
+      getSteeringRegistry().unregister(workflowRun.id, stepNamePrefix + node.id);
+      await reconcileNeverSentSteering(deps, workflowRun.id, node.id, stepNamePrefix + node.id);
     }
   }
 }
@@ -6213,7 +6305,7 @@ async function executeLoopNodeInner(
     // returned and sends the drained operator messages verbatim — never a loop
     // iteration of its own.
     let turnGuidancePrompt: string | undefined;
-    let turnGuidanceMessages: readonly QueuedOperatorMessage[] = [];
+    let turnGuidanceMessages: readonly ClaimedSteeringMessage[] = [];
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
     // Completion verdict of the FINAL turn — re-evaluated after every settled
@@ -6444,6 +6536,12 @@ async function executeLoopNodeInner(
               messages: pendingOperatorReceipt.messages,
             });
             pendingOperatorReceipt.recorded = true;
+            await markSteeringMessagesDelivered(
+              deps,
+              workflowRun.id,
+              stepName,
+              pendingOperatorReceipt.messages
+            );
           };
 
           for await (const msg of withIdleTimeout(generator, effectiveIdleTimeout, () => {
@@ -7207,14 +7305,23 @@ async function executeLoopNodeInner(
         // ONE 'interrupted' status row — awaited so the committed transcript
         // outcome precedes the interrupt request's resolution.
         await recordLoopStatus(iterationExecutionScope, 'interrupted', String(i));
-        const idleWaiter = interruptibleHandle.enterIdle(turnToken);
-        const wake = await raceIdleWake(deps, workflowRun.id, idleWaiter);
-        if (wake.kind === 'send_now') {
-          // Same-session redirect: carry drained objects; join at the guidance head.
-          turnGuidanceMessages = wake.messages;
-          turnResumeId = interruptedSessionId;
-          turnIsGuidance = true;
-          continue turns;
+        let wake = await raceIdleWake(
+          deps,
+          workflowRun.id,
+          interruptibleHandle.enterIdle(turnToken)
+        );
+        while (wake.kind === 'send_now') {
+          // Content-free wake: claim the durable queue to learn what to send.
+          // A race with a concurrent withdraw can legitimately claim nothing
+          // — re-wait rather than start a turn with no guidance.
+          const claimed = await deps.store.claimSteeringQueue(workflowRun.id, stepName, 'all');
+          if (claimed.length > 0) {
+            turnGuidanceMessages = claimed;
+            turnResumeId = interruptedSessionId;
+            turnIsGuidance = true;
+            continue turns;
+          }
+          wake = await raceIdleWake(deps, workflowRun.id, interruptibleHandle.awaitSendNowAgain());
         }
         if (wake.kind === 'expired') {
           const duration = Date.now() - iterationStart;
@@ -7447,12 +7554,10 @@ async function executeLoopNodeInner(
       // turn it supersedes.
       completionDetected = fieldComplete || signalDetected || bashComplete;
       const wouldComplete = completionDetected && (!interactiveFirstRun || signalCompletes);
-      // Steering boundary (#181): a settled turn whose handle holds queued
-      // operator guidance runs the drain as another provider turn in THIS
+      // Steering boundary (#181): a settled turn whose node has claimable
+      // durable guidance runs the claim as another provider turn in THIS
       // iteration — guidance turns never consume a loop iteration, and every
-      // completion channel re-evaluates on the newest turn's output. Fully
-      // synchronous: no await may sit between the queue check, the session-id
-      // decision, and the drain.
+      // completion channel re-evaluates on the newest turn's output.
       if (
         steering.steeringHandle !== undefined &&
         !iterationIdleTimedOut &&
@@ -7462,13 +7567,9 @@ async function executeLoopNodeInner(
         // for an interactive gate is not terminal for this execution.
         const wouldGate = !wouldComplete && loop.interactive === true && !!loop.gate_message;
         const terminalBoundary = wouldComplete || (i === loop.max_iterations && !wouldGate);
-        // Terminal boundaries seal an empty queue via the closeIfEmpty last
-        // gate; non-terminal ones keep the handle live. Either way, pending
-        // guidance wins and runs before the node finishes or pauses.
-        const hasQueuedGuidance = terminalBoundary
-          ? !steering.steeringHandle.closeIfEmpty()
-          : steering.steeringHandle.pendingCount() > 0;
-        if (hasQueuedGuidance) {
+        const claimLimit = await resolveSteeringClaimLimit(deps, workflowRun.id, stepName);
+        const claimed = await deps.store.claimSteeringQueue(workflowRun.id, stepName, claimLimit);
+        if (claimed.length > 0) {
           if (settledTurnSessionId === undefined) {
             // Design decision 6: leave the queue intact and fail BEFORE drain —
             // matching the direct-node invariant; never fall back to a fresh
@@ -7486,16 +7587,20 @@ async function executeLoopNodeInner(
               resumabilityError
             );
           }
-          const drained = steering.steeringHandle.drain();
           // Settle the just-ended turn before its guidance successor begins
           // (#183) — 'generating' resolves a Stop that raced this boundary.
           if (turnToken !== undefined) {
             interruptibleHandle?.settleTurn(turnToken, 'generating');
           }
-          turnGuidanceMessages = drained;
+          turnGuidanceMessages = claimed;
           turnResumeId = settledTurnSessionId;
           turnIsGuidance = true;
           continue turns;
+        } else if (terminalBoundary) {
+          // Nothing claimable at a boundary the loop would otherwise end on
+          // — seal now so a later durable insert lands as recovery/never-sent
+          // evidence instead of racing a live handle that no longer drains.
+          steering.steeringHandle.close();
         }
       }
       // Settle the final attempt's token before the next provider pass — a

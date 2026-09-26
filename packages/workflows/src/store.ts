@@ -20,6 +20,17 @@ import type {
   ResolvePendingInteractionInput,
   ResolvePendingInteractionResult,
 } from './schemas/pending-interaction';
+import type {
+  ClaimedSteeringMessage,
+  EnqueueSteeringMessageInput,
+  EnqueueSteeringMessageResult,
+  SteeringDraft,
+  SteeringDraftKey,
+  SteeringNodeSettings,
+  SteeringQueueEntry,
+  UpsertSteeringDraftInput,
+  UpsertSteeringNodeSettingsInput,
+} from './schemas/steering';
 
 export interface PersistRouteDecisionTransitionInput {
   workflow_run_id: string;
@@ -284,12 +295,86 @@ export interface IWorkflowPendingInteractionStore {
   ): Promise<ResolvePendingInteractionResult>;
 }
 
+/**
+ * Durable steering persistence: drafts, the node guidance queue, and per-node
+ * settings. Inherited by `IWorkflowStore` so the engine dependency object
+ * stays one seam. This is the control plane only — the live provider turn
+ * handle and its per-turn interrupt controller stay in the volatile
+ * `SteeringRegistry` and are never persisted through this interface.
+ */
+export interface IWorkflowSteeringStore {
+  getSteeringDraft(key: SteeringDraftKey): Promise<SteeringDraft | null>;
+  upsertSteeringDraft(input: UpsertSteeringDraftInput): Promise<SteeringDraft>;
+  clearSteeringDraft(key: SteeringDraftKey): Promise<void>;
+
+  getSteeringNodeSettings(
+    workflowRunId: string,
+    nodeId: string
+  ): Promise<SteeringNodeSettings | null>;
+  /** Partial merge — only the fields present on `input` change. */
+  upsertSteeringNodeSettings(input: UpsertSteeringNodeSettingsInput): Promise<SteeringNodeSettings>;
+
+  /**
+   * Insert a queue entry with a transactionally assigned FIFO position.
+   * Idempotent on `message_id`: a repeat returns the existing row with
+   * `duplicate: true` instead of inserting a second entry.
+   */
+  enqueueSteeringMessage(input: EnqueueSteeringMessageInput): Promise<EnqueueSteeringMessageResult>;
+  /** Idempotent: removes a still-claimable entry; a no-op otherwise. */
+  withdrawSteeringMessage(
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ): Promise<{ removed: boolean }>;
+  /** Every visible entry (everything but `withdrawn`) in FIFO order. */
+  listSteeringQueue(workflowRunId: string, nodeId: string): Promise<SteeringQueueEntry[]>;
+
+  /**
+   * Atomically claim up to `limit` of the oldest claimable entries for the
+   * next provider turn, transitioning them to `dispatching`. `'all'` claims
+   * every claimable entry (the default natural-boundary continuation);
+   * a number claims at most that many (auto-send claims exactly one).
+   */
+  claimSteeringQueue(
+    workflowRunId: string,
+    nodeId: string,
+    limit: number | 'all'
+  ): Promise<ClaimedSteeringMessage[]>;
+  /** `dispatching` -> `sent`, once a transcript receipt exists for these ids. */
+  markSteeringMessagesSent(
+    workflowRunId: string,
+    nodeId: string,
+    messageIds: readonly string[]
+  ): Promise<void>;
+  /**
+   * Claim exactly one still-queued entry by id for soft injection into the
+   * active turn (moves it straight to `sent`, skipping `dispatching` — there
+   * is no follow-up provider turn to await). Returns `null` when the id is
+   * not currently claimable.
+   */
+  claimSteeringMessageForSoftInjection(
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ): Promise<ClaimedSteeringMessage | null>;
+  /**
+   * Terminal reconciliation: every entry still in `queued`, `awaiting_send_now`,
+   * or `dispatching` becomes `never_sent`. Idempotent — a second call finds
+   * nothing left to convert.
+   */
+  reconcileNeverSentSteeringMessages(
+    workflowRunId: string,
+    nodeId: string
+  ): Promise<{ count: number }>;
+}
+
 export interface IWorkflowStore
   extends
     IRunTreeStore,
     IWorkflowEnvOverlayStore,
     IWorkflowNodeMessageStore,
-    IWorkflowPendingInteractionStore {
+    IWorkflowPendingInteractionStore,
+    IWorkflowSteeringStore {
   // Run lifecycle
   createWorkflowRun(data: {
     workflow_name: string;

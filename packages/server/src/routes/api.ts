@@ -99,7 +99,8 @@ import { parseWorkflow } from '@archon/workflows/loader';
 import { resolveWorkflowName } from '@archon/workflows/router';
 import { isValidCommandName, isValidWorkflowName } from '@archon/workflows/command-validation';
 import { projectLatestEffectiveNodeStates } from '@archon/workflows/retry-state';
-import { getSteeringRegistry } from '@archon/workflows/steering-registry';
+import { getSteeringRegistry, type NodeSteeringHandle } from '@archon/workflows/steering-registry';
+import type { SteeringQueueEntry } from '@archon/core/schemas/workflow-steering';
 import type { SteeringSubState } from '@archon/workflows/steering-registry';
 import { projectWorkflowExecutionHistory } from './workflow-execution-history';
 import { BUNDLED_WORKFLOWS, BUNDLED_COMMANDS, isBinaryBuild } from '@archon/workflows/defaults';
@@ -453,6 +454,8 @@ import * as userDb from '@archon/core/db/users';
 import * as workflowEnvDb from '@archon/core/db/workflow-envs';
 import * as workflowNodeMessageDb from '@archon/core/db/workflow-node-messages';
 import * as workflowPendingInteractionDb from '@archon/core/db/workflow-pending-interactions';
+import * as workflowSteeringDb from '@archon/core/db/workflow-steering';
+import { getProviderCapabilities } from '@archon/providers';
 import {
   abandonWorkflow,
   answerAskHuman,
@@ -515,6 +518,13 @@ import {
   readWorkflowNodeQueueResponseSchema,
   withdrawWorkflowNodeParamsSchema,
   withdrawWorkflowNodeResponseSchema,
+  steeringDraftParamsSchema,
+  putSteeringDraftBodySchema,
+  steeringDraftResponseSchema,
+  clearSteeringDraftResponseSchema,
+  putAutoSendBodySchema,
+  putAutoSendResponseSchema,
+  steeringDeliveryStateSchema,
 } from './schemas/workflow.schemas';
 import {
   workflowEnvWorkflowParamsSchema,
@@ -1611,14 +1621,18 @@ const sendWorkflowNodeRoute = createRoute({
   method: 'post',
   path: '/api/workflows/runs/{runId}/nodes/{nodeId}/send',
   tags: ['Workflows'],
-  summary: 'Queue operator guidance for a running workflow node',
+  summary: 'Persist operator guidance for a running workflow node',
   description:
-    'Accepts operator guidance for a live in-process agent node without interrupting ' +
-    'the current provider turn. Queued messages drain at the next natural ' +
-    'provider-turn boundary on the same provider session; `intent: "send_now"` ' +
-    'queues identically until an idle-after-interrupt state exists. Idempotent on ' +
-    '`message_id` — a duplicate replays the original receipt. Rejections leave the ' +
-    'run, queue, and transcript unchanged.',
+    'Durably inserts operator guidance for a live in-process agent node ' +
+    "without interrupting the current provider turn — commits before it's " +
+    'acknowledged. Queued messages claim at the next natural provider-turn ' +
+    'boundary on the same provider session; `intent: "send_now"` additionally ' +
+    'wakes an idle-after-interrupt handle. `queued_message_id` instead selects ' +
+    'an existing durable entry for per-item Send now (soft injection into the ' +
+    'active turn); honored only when the live provider capability proves soft ' +
+    'injection, else 409 `soft_injection_unavailable`. Idempotent on ' +
+    '`message_id` — a duplicate replays the original receipt. Rejections leave ' +
+    'the run, queue, and transcript unchanged.',
   request: {
     params: z.object({
       runId: z.string().min(1),
@@ -1632,14 +1646,14 @@ const sendWorkflowNodeRoute = createRoute({
   responses: {
     200: {
       content: { 'application/json': { schema: sendWorkflowNodeResponseSchema } },
-      description: 'Guidance accepted onto the steering queue',
+      description: 'Guidance committed to the durable queue',
     },
     400: steeringJsonError('Malformed or schema-invalid payload'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
     404: steeringJsonError('Unknown run or node'),
-    409: steeringJsonError('Node no longer running'),
-    422: steeringJsonError('No live steering session in this process'),
+    409: steeringJsonError('Node finished, recovery required, or soft injection unavailable'),
+    422: steeringJsonError('Node was never steerable'),
   },
 });
 
@@ -1655,7 +1669,9 @@ const interruptWorkflowNodeRoute = createRoute({
     'stopped and the node awaits Send now on the same provider session) or ' +
     '`generating` (the turn already ended naturally or queued guidance drained ' +
     'it before Stop took effect). Terminal outcomes map to the steering error ' +
-    'shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.',
+    'shape — 409 `node_finished` (terminal) or 409 `recovery_required` (a ' +
+    'durable non-terminal node with no live handle after a server restart), ' +
+    '422 `not_steerable_here` (never a steerable node). Has no request body.',
   request: {
     params: z.object({
       runId: z.string().min(1),
@@ -1670,8 +1686,8 @@ const interruptWorkflowNodeRoute = createRoute({
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
     404: steeringJsonError('Unknown run or node'),
-    409: steeringJsonError('Node no longer running'),
-    422: steeringJsonError('No live steering session in this process'),
+    409: steeringJsonError('Node finished or recovery required'),
+    422: steeringJsonError('Node was never steerable'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -1687,7 +1703,9 @@ const keepaliveWorkflowNodeRoute = createRoute({
     'idle-after-interrupt with a pending waiter; other live handle states are a ' +
     'successful no-op. Never resolves idle-await, never writes a durable row, and ' +
     'never sends operator prose. Terminal outcomes map to the steering error ' +
-    'shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.',
+    'shape — 409 `node_finished` (terminal) or 409 `recovery_required` (a ' +
+    'durable non-terminal node with no live handle), 422 `not_steerable_here` ' +
+    '(never a steerable node). Has no request body.',
   request: {
     params: z.object({
       runId: z.string().min(1),
@@ -1702,8 +1720,8 @@ const keepaliveWorkflowNodeRoute = createRoute({
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
     404: steeringJsonError('Unknown run or node'),
-    409: steeringJsonError('Node no longer running'),
-    422: steeringJsonError('No live steering session in this process'),
+    409: steeringJsonError('Node finished or recovery required'),
+    422: steeringJsonError('Node was never steerable'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -1712,26 +1730,28 @@ const withdrawWorkflowNodeRoute = createRoute({
   method: 'delete',
   path: '/api/workflows/runs/{runId}/nodes/{nodeId}/queue/{messageId}',
   tags: ['Workflows'],
-  summary: 'Withdraw a queued guidance message from a running workflow node',
+  summary: 'Withdraw a queued guidance message from a workflow node',
   description:
-    "Removes one still-pending operator message from the node's in-process " +
-    'steering queue. Bodyless; idempotent on `messageId` — a repeat, ' +
-    'already-drained, or never-seen id returns the same success receipt. ' +
-    'Rejections leave the run, queue, and transcript unchanged.',
+    "Removes one still-claimable entry from the node's durable queue. " +
+    'Manages durable guidance rather than the live provider process, so it ' +
+    'works during `recovery_required` too — a restored node without a live ' +
+    'handle can still have its queue edited. Bodyless; idempotent on ' +
+    '`messageId` — a repeat, already-claimed, or never-seen id returns the ' +
+    'same success receipt. Rejections leave the run, queue, and transcript ' +
+    'unchanged.',
   request: {
     params: withdrawWorkflowNodeParamsSchema,
   },
   responses: {
     200: {
       content: { 'application/json': { schema: withdrawWorkflowNodeResponseSchema } },
-      description: 'Message withdrawn or already absent from the queue',
+      description: 'Message withdrawn or already unclaimable',
     },
     400: steeringJsonError('Malformed or schema-invalid request'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
     404: steeringJsonError('Unknown run or node'),
     409: steeringJsonError('Node no longer running'),
-    422: steeringJsonError('No live steering session in this process'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -1740,15 +1760,17 @@ const readWorkflowNodeQueueRoute = createRoute({
   method: 'get',
   path: '/api/workflows/runs/{runId}/nodes/{nodeId}/queue',
   tags: ['Workflows'],
-  summary: "Read a running workflow node's queued guidance snapshot",
+  summary: "Read a running workflow node's durable guidance queue",
   description:
-    "Returns the node's in-process steering queue — only still-pending " +
-    'operator messages, in receipt order. Bodyless and mutation-free: no ' +
-    'request body, no query parameters, and the read never changes the run, ' +
-    'queue, or transcript. Every outcome carries `Cache-Control: no-store`. ' +
-    'Live and parked handles read normally; a closed handle or terminal ' +
-    'run/node is 409, and a known non-terminal node with no in-process ' +
-    'handle is 422.',
+    "Returns the node's durable queue in server FIFO order, including " +
+    'delivery state, the durable auto-send setting, and provider capability ' +
+    'data. Bodyless and mutation-free: no request body, no query parameters, ' +
+    'and the read never changes the run, queue, or transcript. Every outcome ' +
+    'carries `Cache-Control: no-store`. `execution_state` is `live` with a ' +
+    'live in-process handle, `recovery_required` for a durable non-terminal ' +
+    'node with no live handle (a server restart), or `finished` for a ' +
+    'terminal run/node — never a 409 for a terminal node, since its durable ' +
+    'content (including `never_sent` records) must stay readable.',
   request: {
     params: readWorkflowNodeQueueParamsSchema,
   },
@@ -1757,14 +1779,126 @@ const readWorkflowNodeQueueRoute = createRoute({
       content: {
         'application/json': { schema: readWorkflowNodeQueueResponseSchema },
       },
-      description: 'Still-pending queued guidance in receipt order',
+      description: 'Durable guidance queue in server FIFO order',
     },
     400: steeringJsonError('Malformed or schema-invalid request'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
     404: steeringJsonError('Unknown run or node'),
+    422: steeringJsonError('Node was never steerable'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
+const steeringDraftRoute = createRoute({
+  method: 'get',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/draft',
+  tags: ['Workflows'],
+  summary: "Read the acting operator's server-side composer draft",
+  description:
+    "Returns the acting operator's own draft (private to them) for this " +
+    'node, plus the node durable auto-send setting shared by every permitted ' +
+    'observer. `draft` is `null` when the operator has never saved one, or ' +
+    'after it was cleared or sent. Available on a terminal node too — a ' +
+    'saved draft is never discarded.',
+  request: {
+    params: steeringDraftParamsSchema,
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: steeringDraftResponseSchema } },
+      description: "The operator's draft and the node's auto-send setting",
+    },
+    400: steeringJsonError('Malformed or schema-invalid request'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
+const putSteeringDraftRoute = createRoute({
+  method: 'put',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/draft',
+  tags: ['Workflows'],
+  summary: "Upsert the acting operator's server-side composer draft",
+  description:
+    'Persists the draft for this operator, run, and node after a debounced ' +
+    'composer change. Another operator can never read or overwrite it. An ' +
+    'empty string is accepted and stored verbatim — clearing is the ' +
+    'idempotent DELETE route, not a second shape here.',
+  request: {
+    params: steeringDraftParamsSchema,
+    body: {
+      content: { 'application/json': { schema: putSteeringDraftBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: steeringDraftResponseSchema } },
+      description: 'Draft committed — the saved draft and current auto-send setting',
+    },
+    400: steeringJsonError('Malformed or schema-invalid request'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
+const deleteSteeringDraftRoute = createRoute({
+  method: 'delete',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/draft',
+  tags: ['Workflows'],
+  summary: "Clear the acting operator's server-side composer draft",
+  description:
+    'Idempotent: clearing an already-cleared or never-saved draft is still a ' +
+    '200. Later reads never restore the cleared text.',
+  request: {
+    params: steeringDraftParamsSchema,
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: clearSteeringDraftResponseSchema } },
+      description: 'Draft cleared (or already absent)',
+    },
+    400: steeringJsonError('Malformed or schema-invalid request'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run'),
+    500: steeringJsonError('Server error'),
+  },
+});
+
+const putAutoSendRoute = createRoute({
+  method: 'put',
+  path: '/api/workflows/runs/{runId}/nodes/{nodeId}/auto-send',
+  tags: ['Workflows'],
+  summary: "Persist the node's durable auto-send setting",
+  description:
+    'Durable per-node setting (not per-user): once set, every permitted ' +
+    'observer of the node sees the same value. When enabled, the executor ' +
+    'claims exactly one durable FIFO entry after each natural agent reply; ' +
+    'an interrupted turn never auto-sends. Disabling it never withdraws or ' +
+    'discards any queued entry.',
+  request: {
+    params: steeringDraftParamsSchema,
+    body: {
+      content: { 'application/json': { schema: putAutoSendBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: {
+      content: { 'application/json': { schema: putAutoSendResponseSchema } },
+      description: 'Auto-send setting committed',
+    },
+    400: steeringJsonError('Malformed or schema-invalid request'),
+    401: steeringJsonError('Authentication required'),
+    403: steeringJsonError('Forbidden'),
+    404: steeringJsonError('Unknown run'),
     409: steeringJsonError('Node no longer running'),
-    422: steeringJsonError('No live steering session in this process'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -2357,6 +2491,78 @@ export function registerApiRoutes(
   }
 
   /**
+   * Steering lifecycle classification shared by every mutation route that
+   * requires a live turn handle (send, interrupt, keepalive). The durable
+   * settings row's `provider_id` (stamped by the executor only when it
+   * actually registers a live handle) is what distinguishes
+   * `recovery_required` — a node that WAS steerable and has durable data,
+   * but lost its live handle (a server restart) — from `not_steerable_here`
+   * — a node that never registered a handle at all (its provider does not
+   * support session resume, or it is not an agent node). A row with
+   * `provider_id` still null proves only that an operator set a draft or
+   * auto-send value before, or without, the node ever running — the auto-send
+   * route writes that row on any nodeId with no node-existence check — so it
+   * must never satisfy `recovery_required` on its own. The API never infers
+   * process origin from a missing live handle; the executor-stamped trace is
+   * what makes the distinction honest.
+   */
+  type SteeringLifecycle =
+    | { readonly kind: 'live'; readonly handle: NodeSteeringHandle; readonly parked: boolean }
+    | { readonly kind: 'node_finished' }
+    | { readonly kind: 'recovery_required' }
+    | { readonly kind: 'not_steerable_here' }
+    | { readonly kind: 'not_found' };
+
+  async function classifySteeringLifecycle(
+    runId: string,
+    nodeId: string
+  ): Promise<SteeringLifecycle> {
+    const run = await workflowDb.getWorkflowRun(runId);
+    if (!run) return { kind: 'not_found' };
+
+    const events = await workflowEventDb.listWorkflowEvents(runId);
+    const pendingInteractions = await workflowPendingInteractionDb.listPendingInteractions(runId);
+    const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
+      state => state.nodeId === nodeId
+    );
+    const handle = getSteeringRegistry().get(runId, nodeId);
+    const durableSettings = await workflowSteeringDb.getSteeringNodeSettings(runId, nodeId);
+    const everRegisteredLive = handle !== undefined || durableSettings?.provider_id != null;
+
+    if (nodeState === undefined && !everRegisteredLive) {
+      return { kind: 'not_found' };
+    }
+    if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+      return { kind: 'node_finished' };
+    }
+    if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+      return { kind: 'node_finished' };
+    }
+    if (handle?.snapshot().phase === 'closed') {
+      return { kind: 'node_finished' };
+    }
+    if (handle !== undefined) {
+      return { kind: 'live', handle, parked: handle.snapshot().phase === 'parked' };
+    }
+    return durableSettings?.provider_id != null
+      ? { kind: 'recovery_required' }
+      : { kind: 'not_steerable_here' };
+  }
+
+  /**
+   * Narrow the durable queue's open state set to the send response's 6-value
+   * delivery-state wire enum. `withdrawn` and `never_sent` are not reachable
+   * through the normal send path, but a replayed `message_id` can look up an
+   * entry that reached one of them since — report the honest fallback
+   * (`delivery_unknown`) rather than widen the wire enum for a corner case.
+   */
+  function toSendDeliveryState(
+    state: SteeringQueueEntry['state']
+  ): z.infer<typeof steeringDeliveryStateSchema> {
+    return state === 'withdrawn' || state === 'never_sent' ? 'delivery_unknown' : state;
+  }
+
+  /**
    * Validate a run request's declared-inputs map (#2554): a flat object whose every
    * value is a string, which is exactly the shape `readSubrunMetadata` will accept back
    * off the run row. Refuse anything else here rather than let it be persisted into a
@@ -2454,6 +2660,50 @@ export function registerApiRoutes(
       const requester = await resolveAuthContext(c);
       if (!requester) {
         return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    return next();
+  });
+
+  // Steering draft (GET/PUT/DELETE) and auto-send (PUT) authentication must
+  // run before the install-wide API gate and OpenAPI validation, matching the
+  // other steering routes' nested error shape. PUT also pre-parses the body
+  // so a malformed JSON payload maps to the nested `invalid_request` shape
+  // instead of a raw Hono exception.
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/draft', async (c, next) => {
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    if (c.req.method === 'PUT') {
+      const contentType = c.req.header('Content-Type');
+      if (contentType !== undefined && /^application\/([a-z-.]+\+)?json/i.test(contentType)) {
+        try {
+          await c.req.json();
+        } catch {
+          return steeringError(c, 400, 'invalid_request', 'Malformed request body');
+        }
+      }
+    }
+    return next();
+  });
+
+  app.use('/api/workflows/runs/:runId/nodes/:nodeId/auto-send', async (c, next) => {
+    if (c.req.method !== 'PUT') return next();
+    if (isWebAuthEnabled() || isApiGateEnabled()) {
+      const requester = await resolveAuthContext(c);
+      if (!requester) {
+        return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+      }
+    }
+    const contentType = c.req.header('Content-Type');
+    if (contentType !== undefined && /^application\/([a-z-.]+\+)?json/i.test(contentType)) {
+      try {
+        await c.req.json();
+      } catch {
+        return steeringError(c, 400, 'invalid_request', 'Malformed request body');
       }
     }
     return next();
@@ -5394,7 +5644,7 @@ export function registerApiRoutes(
     return next();
   });
 
-  // POST /api/workflows/runs/:runId/nodes/:nodeId/send - Queue operator guidance
+  // POST /api/workflows/runs/:runId/nodes/:nodeId/send - Queue or soft-inject operator guidance
   registerOpenApiRoute(
     sendWorkflowNodeRoute,
     async c => {
@@ -5407,35 +5657,85 @@ export function registerApiRoutes(
         }
         const body = getValidatedBody(c, sendWorkflowNodeBodySchema);
 
-        const run = await workflowDb.getWorkflowRun(runId);
-        if (!run) {
-          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        const classification = await classifySteeringLifecycle(runId, nodeId);
+        if (classification.kind === 'not_found') {
+          return steeringError(c, 404, 'not_found', 'Workflow run or node not found');
         }
-
-        // Project the effective node state and inspect the registry handle to
-        // establish the target. The projection is authoritative for lifecycle —
-        // a stale live handle can never beat a terminal run/node.
-        const events = await workflowEventDb.listWorkflowEvents(runId);
-        const pendingInteractions =
-          await workflowPendingInteractionDb.listPendingInteractions(runId);
-        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
-          state => state.nodeId === nodeId
-        );
-        const handle = getSteeringRegistry().get(runId, nodeId);
-
-        if (nodeState === undefined && handle === undefined) {
-          return steeringError(c, 404, 'not_found', 'Workflow node not found');
-        }
-        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
-          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
-        }
-        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+        if (classification.kind === 'node_finished') {
           return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
         }
-        if (handle?.snapshot().phase === 'closed') {
-          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+        if (classification.kind === 'recovery_required') {
+          return steeringError(
+            c,
+            409,
+            'recovery_required',
+            'Node requires the existing Resume action before it can accept guidance'
+          );
         }
-        if (handle === undefined) {
+        if (classification.kind === 'not_steerable_here') {
+          return steeringError(c, 422, 'not_steerable_here', 'This node does not support steering');
+        }
+        const { handle } = classification;
+
+        // Per-item soft injection (Story 10.2): targets exactly the selected
+        // durable entry and the current active turn. Stop is never invoked and
+        // no steering-owned turn-start event is emitted — the durable claim IS
+        // the seam; the verified transport that actually injects mid-stream and
+        // attributes the resulting transcript row is each provider's own
+        // conformance story (out of scope here).
+        if (body.queued_message_id !== undefined) {
+          const settings = await workflowSteeringDb.getSteeringNodeSettings(runId, nodeId);
+          const capabilities =
+            settings?.provider_id !== null && settings?.provider_id !== undefined
+              ? getProviderCapabilities(settings.provider_id)
+              : undefined;
+          if (capabilities?.softInjection !== true || handle.steeringSubState() !== 'generating') {
+            return steeringError(
+              c,
+              409,
+              'soft_injection_unavailable',
+              'The active provider has no verified soft-injection transport'
+            );
+          }
+          const claimed = await workflowSteeringDb.claimSteeringMessageForSoftInjection(
+            runId,
+            nodeId,
+            body.queued_message_id
+          );
+          if (claimed === null) {
+            return steeringError(
+              c,
+              404,
+              'not_found',
+              'Queued message not found or no longer claimable'
+            );
+          }
+          return c.json(
+            { success: true as const, message_id: claimed.message_id, state: 'sent' as const },
+            200
+          );
+        }
+
+        // Idempotent replay wins over every phase check, including parked:
+        // a caller retrying after a network blip must see the SAME receipt,
+        // never a different rejection because the phase changed meanwhile.
+        const existingQueue = await workflowSteeringDb.listSteeringQueue(runId, nodeId);
+        const existingEntry = existingQueue.find(entry => entry.message_id === body.message_id);
+        if (existingEntry !== undefined) {
+          return c.json(
+            {
+              success: true as const,
+              message_id: existingEntry.message_id,
+              state: toSendDeliveryState(existingEntry.state),
+            },
+            200
+          );
+        }
+
+        // A parked (AskHuman) handle manages its own resumable pause; new
+        // guidance is not durably queryable against it until the run resumes
+        // and re-registers a live handle.
+        if (classification.parked) {
           return steeringError(
             c,
             422,
@@ -5444,8 +5744,10 @@ export function registerApiRoutes(
           );
         }
 
-        // Final gate: a concurrent terminal transition wins. enqueue() is
-        // synchronous — no await runs between this read and the mutation.
+        // Final gate: a concurrent terminal transition wins. Durable insert
+        // commits before acknowledgement; the wake (if any) follows in the
+        // same synchronous step as the insert result, so no route-side await
+        // can land between "durably queued" and "the idle handle knows".
         const latestRun = await workflowDb.getWorkflowRun(runId);
         if (latestRun === null) {
           return steeringError(c, 404, 'not_found', 'Workflow run not found');
@@ -5453,38 +5755,35 @@ export function registerApiRoutes(
         if (TERMINAL_WORKFLOW_STATUSES.includes(latestRun.status)) {
           return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
         }
-
-        // The registry owns the atomic mutation: receipt acceptance, the idle
-        // check, and the send_now release happen in ONE synchronous step — the
-        // route never performs "read sub-state, then send now" as two
-        // operations, and no await sits between the final gate and accept.
-        const result = handle.accept(
-          {
-            messageId: body.message_id,
-            message: body.message,
-            operatorUserId: requester?.userId ?? null,
-            receivedAt: new Date().toISOString(),
-          },
-          body.intent
-        );
-        if (!result.ok) {
-          return result.reason === 'closed'
-            ? steeringError(c, 409, 'node_finished', 'Workflow node is finished')
-            : steeringError(
-                c,
-                422,
-                'not_steerable_here',
-                'No live steering session for this node in this process'
-              );
+        // The run re-read awaited — the handle may have closed during that gap
+        // (the executor's teardown gate), independent of the run row's own
+        // status field.
+        if (handle.snapshot().phase === 'closed') {
+          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
         }
-        // The receipt is immutable and idempotent: `queued` while generating/
-        // interrupting, `awaiting_send_now` while idle — including the very
-        // message whose send_now released the batch.
+
+        const idleBeforeInsert = handle.steeringSubState() === 'idle-after-interrupt';
+        const { entry, duplicate } = await workflowSteeringDb.enqueueSteeringMessage({
+          workflow_run_id: runId,
+          node_id: nodeId,
+          message_id: body.message_id,
+          message: body.message,
+          operator_user_id: requester?.userId ?? null,
+          initial_state: idleBeforeInsert ? 'awaiting_send_now' : 'queued',
+        });
+        if (
+          !duplicate &&
+          idleBeforeInsert &&
+          body.intent === 'send_now' &&
+          body.message.trim() !== ''
+        ) {
+          handle.wakeForSendNow();
+        }
         return c.json(
           {
             success: true as const,
-            message_id: result.receipt.messageId,
-            state: result.receipt.state,
+            message_id: entry.message_id,
+            state: toSendDeliveryState(entry.state),
           },
           200
         );
@@ -5516,39 +5815,25 @@ export function registerApiRoutes(
           return steeringError(c, 401, 'unauthenticated', 'Authentication required');
         }
 
-        const run = await workflowDb.getWorkflowRun(runId);
-        if (!run) {
-          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        const classification = await classifySteeringLifecycle(runId, nodeId);
+        if (classification.kind === 'not_found') {
+          return steeringError(c, 404, 'not_found', 'Workflow run or node not found');
         }
-
-        const events = await workflowEventDb.listWorkflowEvents(runId);
-        const pendingInteractions =
-          await workflowPendingInteractionDb.listPendingInteractions(runId);
-        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
-          state => state.nodeId === nodeId
-        );
-        const handle = getSteeringRegistry().get(runId, nodeId);
-
-        if (nodeState === undefined && handle === undefined) {
-          return steeringError(c, 404, 'not_found', 'Workflow node not found');
-        }
-        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
-          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
-        }
-        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+        if (classification.kind === 'node_finished') {
           return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
         }
-        if (handle?.snapshot().phase === 'closed') {
-          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
-        }
-        if (handle === undefined) {
+        if (classification.kind === 'recovery_required') {
           return steeringError(
             c,
-            422,
-            'not_steerable_here',
-            'No live steering session for this node in this process'
+            409,
+            'recovery_required',
+            'Node requires the existing Resume action before it can be interrupted'
           );
         }
+        if (classification.kind === 'not_steerable_here') {
+          return steeringError(c, 422, 'not_steerable_here', 'This node does not support steering');
+        }
+        const { handle } = classification;
 
         // Final async gate: a concurrent terminal transition wins. Everything
         // below is synchronous until the settlement await — interrupt() aborts
@@ -5608,47 +5893,25 @@ export function registerApiRoutes(
           return steeringError(c, 401, 'unauthenticated', 'Authentication required');
         }
 
-        const run = await workflowDb.getWorkflowRun(runId);
-        if (!run) {
-          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        const classification = await classifySteeringLifecycle(runId, nodeId);
+        if (classification.kind === 'not_found') {
+          return steeringError(c, 404, 'not_found', 'Workflow run or node not found');
         }
-
-        const events = await workflowEventDb.listWorkflowEvents(runId);
-        const pendingInteractions =
-          await workflowPendingInteractionDb.listPendingInteractions(runId);
-        const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
-          state => state.nodeId === nodeId
-        );
-        const handle = getSteeringRegistry().get(runId, nodeId);
-
-        if (nodeState === undefined && handle === undefined) {
-          return steeringError(c, 404, 'not_found', 'Workflow node not found');
-        }
-        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
-          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
-        }
-        if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
+        if (classification.kind === 'node_finished') {
           return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
         }
-        if (handle?.snapshot().phase === 'closed') {
-          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
-        }
-        if (handle === undefined) {
+        if (classification.kind === 'recovery_required') {
           return steeringError(
             c,
-            422,
-            'not_steerable_here',
-            'No live steering session for this node in this process'
+            409,
+            'recovery_required',
+            'Node requires the existing Resume action before it can be kept alive'
           );
         }
-        if (handle.snapshot().phase === 'parked') {
-          return steeringError(
-            c,
-            422,
-            'not_steerable_here',
-            'No live steering session for this node in this process'
-          );
+        if (classification.kind === 'not_steerable_here' || classification.parked) {
+          return steeringError(c, 422, 'not_steerable_here', 'This node does not support steering');
         }
+        const { handle } = classification;
 
         // Final async gate: a concurrent terminal transition wins. keepalive() is
         // synchronous after this point — no await may sit between this read and
@@ -5691,43 +5954,26 @@ export function registerApiRoutes(
           return steeringError(c, 404, 'not_found', 'Workflow run not found');
         }
 
-        // Project the effective node state and inspect the registry handle to
-        // establish the target — the same precedence ladder as send. The
-        // projection is authoritative for lifecycle: a stale live handle can
-        // never beat a terminal run/node. A parked handle is intentionally
-        // allowed — withdraw manages the queue, not the provider session.
+        // Withdraw manages durable guidance, not the live provider process —
+        // it works during recovery_required too, so it does NOT require a live
+        // handle, and it never 404s on the node: withdrawing an id that was
+        // never durably queued (an unknown node, a never-seen id, or an
+        // already-claimed one) is an idempotent no-op, not an error. Only
+        // run/node terminal state gates it.
         const events = await workflowEventDb.listWorkflowEvents(runId);
         const pendingInteractions =
           await workflowPendingInteractionDb.listPendingInteractions(runId);
         const nodeState = projectApiWorkflowNodeStates(events, pendingInteractions).find(
           state => state.nodeId === nodeId
         );
-        const handle = getSteeringRegistry().get(runId, nodeId);
-
-        if (nodeState === undefined && handle === undefined) {
-          return steeringError(c, 404, 'not_found', 'Workflow node not found');
-        }
         if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
           return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
         }
         if (nodeState !== undefined && TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
           return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
         }
-        if (handle?.snapshot().phase === 'closed') {
-          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
-        }
-        if (handle === undefined) {
-          return steeringError(
-            c,
-            422,
-            'not_steerable_here',
-            'No live steering session for this node in this process'
-          );
-        }
 
-        // Final gate: a concurrent terminal transition wins. withdraw() is
-        // synchronous — no await runs between the post-await phase recheck
-        // and the mutation.
+        // Final gate: a concurrent terminal transition wins.
         const latestRun = await workflowDb.getWorkflowRun(runId);
         if (latestRun === null) {
           return steeringError(c, 404, 'not_found', 'Workflow run not found');
@@ -5736,14 +5982,11 @@ export function registerApiRoutes(
           return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
         }
 
-        // The run re-read awaited — the handle may have closed during that gap
-        // (the executor's teardown gate). Recheck before mutating: withdraw()
-        // alone cannot distinguish "closed" from "id not found" by boolean.
-        if (handle.snapshot().phase === 'closed') {
-          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
-        }
-
-        const removed = handle.withdraw(messageId);
+        const { removed } = await workflowSteeringDb.withdrawSteeringMessage(
+          runId,
+          nodeId,
+          messageId
+        );
         getLog().info(
           {
             runId,
@@ -5766,7 +6009,7 @@ export function registerApiRoutes(
     steeringValidationErrorHook
   );
 
-  // GET /api/workflows/runs/:runId/nodes/:nodeId/queue - Read queued guidance
+  // GET /api/workflows/runs/:runId/nodes/:nodeId/queue - Read the durable guidance queue
   // Authentication was already enforced by the pre-gate middleware above —
   // the read needs no requester (no attribution), so it is not resolved again.
   registerOpenApiRoute(
@@ -5779,58 +6022,224 @@ export function registerApiRoutes(
         if (!run) {
           return steeringError(c, 404, 'not_found', 'Workflow run not found');
         }
-        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
-          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
-        }
 
-        // Hot path: one synchronous registry get + one snapshot() in the same
-        // tick — deliberately NO workflow-event, message, or pending-
-        // interaction reads. The executor seals a direct-node handle before
-        // the first awaited terminal write (dag-executor.ts ~3290-3568; loop
-        // registration/drain/cleanup ~5669-5674 and ~6868-7119), so a live or
-        // parked handle's pending list is already truthful. Do not
-        // reintroduce per-poll event-history reads here.
         const handle = getSteeringRegistry().get(runId, nodeId);
-        if (handle !== undefined) {
-          const snapshot = handle.snapshot();
-          if (snapshot.phase === 'closed') {
-            return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
-          }
-          return c.json(
-            {
-              success: true as const,
-              queued: snapshot.queued.map(item => ({
-                message_id: item.messageId,
-                message: item.message,
-              })),
-            },
-            200
+        const durableSettings = await workflowSteeringDb.getSteeringNodeSettings(runId, nodeId);
+        const capabilities =
+          durableSettings?.provider_id !== null && durableSettings?.provider_id !== undefined
+            ? getProviderCapabilities(durableSettings.provider_id)
+            : undefined;
+        const autoSend = durableSettings?.auto_send_enabled ?? false;
+        const responseCapabilities = {
+          soft_injection: capabilities?.softInjection === true,
+          delivery_ack: capabilities?.deliveryAck === true,
+        };
+
+        // Node-level terminal state needs the event projection only in the
+        // cold path (no live handle): a live/parked handle is authoritative on
+        // its own (the executor closes it at node completion before the first
+        // awaited terminal write), so the hot path skips this read entirely.
+        let nodeTerminal = false;
+        let nodeKnown = handle !== undefined || durableSettings?.provider_id != null;
+        if (handle === undefined) {
+          const events = await workflowEventDb.listWorkflowEvents(runId);
+          const nodeState = projectApiWorkflowNodeStates(events).find(
+            state => state.nodeId === nodeId
           );
+          if (nodeState !== undefined) {
+            nodeKnown = true;
+            nodeTerminal = TERMINAL_API_NODE_STATUSES.includes(nodeState.status);
+          }
         }
 
-        // Cold path: no in-process handle — classify the node from the event
-        // projection alone (no pending-interaction read; this route never
-        // steers, so ask/permission state is irrelevant to the snapshot).
-        const events = await workflowEventDb.listWorkflowEvents(runId);
-        const nodeState = projectApiWorkflowNodeStates(events).find(
-          state => state.nodeId === nodeId
-        );
-        if (nodeState === undefined) {
+        if (!nodeKnown) {
           return steeringError(c, 404, 'not_found', 'Workflow node not found');
         }
-        if (TERMINAL_API_NODE_STATUSES.includes(nodeState.status)) {
-          return steeringError(c, 409, 'node_finished', 'Workflow node is finished');
+
+        const runTerminal = TERMINAL_WORKFLOW_STATUSES.includes(run.status);
+        const handleClosed = handle?.snapshot().phase === 'closed';
+        const isFinished = runTerminal || nodeTerminal || handleClosed;
+
+        if (!isFinished && handle === undefined && durableSettings?.provider_id == null) {
+          // Known node (e.g. a bash node, or one an operator only ever set a
+          // draft/auto-send value on), never registered a live steering handle.
+          return steeringError(c, 422, 'not_steerable_here', 'This node does not support steering');
         }
-        return steeringError(
-          c,
-          422,
-          'not_steerable_here',
-          'No live steering session for this node in this process'
+
+        const executionState: 'live' | 'recovery_required' | 'finished' = isFinished
+          ? 'finished'
+          : handle !== undefined
+            ? 'live'
+            : 'recovery_required';
+
+        const queued = await workflowSteeringDb.listSteeringQueue(runId, nodeId);
+        return c.json(
+          {
+            success: true as const,
+            execution_state: executionState,
+            auto_send: autoSend,
+            capabilities: responseCapabilities,
+            queued: queued.map(entry => ({
+              message_id: entry.message_id,
+              message: entry.message,
+              operator_user_id: entry.operator_user_id,
+              state: entry.state === 'withdrawn' ? ('delivery_unknown' as const) : entry.state,
+            })),
+          },
+          200
         );
       } catch (error) {
         // Content-free: the err object carries no queued-message text.
         getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_queue_read_failed');
         return steeringError(c, 500, 'internal_error', 'Failed to read queued guidance');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // GET /api/workflows/runs/:runId/nodes/:nodeId/draft - Read the operator's draft
+  registerOpenApiRoute(
+    steeringDraftRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        const operatorUserId = requester?.userId ?? null;
+        const [draft, settings] = await Promise.all([
+          workflowSteeringDb.getSteeringDraft({
+            workflow_run_id: runId,
+            node_id: nodeId,
+            operator_user_id: operatorUserId,
+          }),
+          workflowSteeringDb.getSteeringNodeSettings(runId, nodeId),
+        ]);
+        return c.json(
+          {
+            success: true as const,
+            draft:
+              draft === null
+                ? null
+                : { message: draft.message, updated_at: toISOString(draft.updated_at) },
+            auto_send: settings?.auto_send_enabled ?? false,
+          },
+          200
+        );
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_draft_read_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to read draft');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // PUT /api/workflows/runs/:runId/nodes/:nodeId/draft - Upsert the operator's draft
+  registerOpenApiRoute(
+    putSteeringDraftRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+        const body = getValidatedBody(c, putSteeringDraftBodySchema);
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        const operatorUserId = requester?.userId ?? null;
+        const [draft, settings] = await Promise.all([
+          workflowSteeringDb.upsertSteeringDraft({
+            workflow_run_id: runId,
+            node_id: nodeId,
+            operator_user_id: operatorUserId,
+            message: body.message,
+          }),
+          workflowSteeringDb.getSteeringNodeSettings(runId, nodeId),
+        ]);
+        return c.json(
+          {
+            success: true as const,
+            draft: { message: draft.message, updated_at: toISOString(draft.updated_at) },
+            auto_send: settings?.auto_send_enabled ?? false,
+          },
+          200
+        );
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_draft_write_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to save draft');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft - Clear the operator's draft
+  registerOpenApiRoute(
+    deleteSteeringDraftRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        await workflowSteeringDb.clearSteeringDraft({
+          workflow_run_id: runId,
+          node_id: nodeId,
+          operator_user_id: requester?.userId ?? null,
+        });
+        return c.json({ success: true as const }, 200);
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_draft_clear_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to clear draft');
+      }
+    },
+    steeringValidationErrorHook
+  );
+
+  // PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send - Persist the node's auto-send setting
+  registerOpenApiRoute(
+    putAutoSendRoute,
+    async c => {
+      const runId = c.req.param('runId') ?? '';
+      const nodeId = c.req.param('nodeId') ?? '';
+      try {
+        const requester = await resolveAuthContext(c);
+        if ((isWebAuthEnabled() || isApiGateEnabled()) && !requester) {
+          return steeringError(c, 401, 'unauthenticated', 'Authentication required');
+        }
+        const body = getValidatedBody(c, putAutoSendBodySchema);
+        const run = await workflowDb.getWorkflowRun(runId);
+        if (!run) {
+          return steeringError(c, 404, 'not_found', 'Workflow run not found');
+        }
+        if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
+          return steeringError(c, 409, 'node_finished', 'Workflow run is finished');
+        }
+        const settings = await workflowSteeringDb.upsertSteeringNodeSettings({
+          workflow_run_id: runId,
+          node_id: nodeId,
+          auto_send_enabled: body.enabled,
+          updated_by_user_id: requester?.userId ?? null,
+        });
+        return c.json({ success: true as const, enabled: settings.auto_send_enabled }, 200);
+      } catch (error) {
+        getLog().error({ err: error, runId, nodeId }, 'api.workflow_node_auto_send_write_failed');
+        return steeringError(c, 500, 'internal_error', 'Failed to save auto-send setting');
       }
     },
     steeringValidationErrorHook
