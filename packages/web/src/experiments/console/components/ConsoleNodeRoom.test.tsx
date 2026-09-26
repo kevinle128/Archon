@@ -381,7 +381,7 @@ describe('ConsoleNodeRoom', () => {
     expect(toolRowEl?.textContent).not.toContain('"ok"');
     expect(host.textContent).toContain('iteration_started');
     expect(host.textContent).toContain('iteration_failed');
-    expect(host.textContent).toContain('waiting on you');
+    expect(host.textContent).toContain('Waiting on you');
     expect(host.textContent).toContain('Iteration 2');
     expect(host.textContent).not.toContain('first');
     assertNoConversationComposer(host);
@@ -1057,7 +1057,7 @@ describe('ConsoleNodeRoom', () => {
     expect(
       firstTool.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING
     ).not.toBe(0);
-    expect(host.textContent).toContain('waiting on you');
+    expect(host.textContent).toContain('Waiting on you');
     expect(host.textContent).toContain('Execution scope was not recorded for this interaction.');
     assertNoConversationComposer(host);
   });
@@ -1273,10 +1273,8 @@ describe('ConsoleNodeRoom', () => {
       });
     });
     await flush();
-    const close = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Close')
-    );
-    expect(close).toBeDefined();
+    const close = host.querySelector<HTMLButtonElement>('button[aria-label="Close"]');
+    expect(close).not.toBeNull();
     await act(async () => {
       close?.click();
     });

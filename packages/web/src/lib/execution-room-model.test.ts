@@ -8,11 +8,14 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeRunOfTotal,
   excludeRepresentedLoopContainers,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   hasUnsettledNodeExecutions,
+  headerMetaLine,
   latestNodeExecutionKey,
+  nodeKindChip,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
@@ -21,10 +24,16 @@ import {
   resolveRunDetailRefetchIntervalMs,
   roomOpenerId,
   runtimeForSelection,
+  statusPill,
   type ExecutionLoopAncestryEntry,
   type ExecutionRow,
   type ExecutionRowSelection,
 } from './execution-room-model';
+
+/** Local hour for a fixed UTC instant, so header clock-label tests are timezone-agnostic. */
+function startedHours(): string {
+  return String(new Date('2026-09-08T04:52:00.000Z').getHours()).padStart(2, '0');
+}
 
 const RUN_STARTED_AT = '2026-09-08T00:00:00.000Z';
 const NODE_ID = 'review';
@@ -642,6 +651,190 @@ describe('chooseExecutionForInteraction', () => {
   });
 });
 
+describe('nodeKindChip', () => {
+  test('maps a kind with an established token to its label and tone', () => {
+    expect(nodeKindChip('command')).toEqual({ label: 'command', tone: 'node-command' });
+    expect(nodeKindChip('prompt')).toEqual({ label: 'prompt', tone: 'node-prompt' });
+    expect(nodeKindChip('bash')).toEqual({ label: 'bash', tone: 'node-bash' });
+    expect(nodeKindChip('loop')).toEqual({ label: 'loop', tone: 'node-loop' });
+    expect(nodeKindChip('approval')).toEqual({ label: 'approval', tone: 'node-approval' });
+  });
+
+  test('folds script into bash and a plannotator gate into approval', () => {
+    expect(nodeKindChip('script')).toEqual({ label: 'script', tone: 'node-bash' });
+    expect(nodeKindChip('plannotator_gate')).toEqual({
+      label: 'plannotator_gate',
+      tone: 'node-approval',
+    });
+  });
+
+  test('omits the chip for a kind with no established token, rather than inventing one', () => {
+    expect(nodeKindChip('workflow')).toBeNull();
+    expect(nodeKindChip('route_loop')).toBeNull();
+    expect(nodeKindChip('loop_group')).toBeNull();
+    expect(nodeKindChip('unknown')).toBeNull();
+    expect(nodeKindChip(null)).toBeNull();
+    expect(nodeKindChip(undefined)).toBeNull();
+  });
+});
+
+describe('statusPill', () => {
+  test('capitalizes the label and assigns the matching status tone', () => {
+    expect(statusPill('running')).toEqual({ label: 'Running', tone: 'accent' });
+    expect(statusPill('awaiting')).toEqual({ label: 'Waiting on you', tone: 'warning' });
+    expect(statusPill('completed')).toEqual({ label: 'Completed', tone: 'success' });
+    expect(statusPill('failed')).toEqual({ label: 'Failed', tone: 'error' });
+  });
+
+  test('skipped and cancelled read a neutral, colorless pill', () => {
+    expect(statusPill('skipped')).toEqual({ label: 'Skipped', tone: null });
+    expect(statusPill('cancelled')).toEqual({ label: 'Cancelled', tone: null });
+  });
+});
+
+describe('computeRunOfTotal', () => {
+  function occ(
+    id: string,
+    status: string,
+    selection: Extract<ExecutionRowSelection, { kind: 'occurrence' }>
+  ): { id: string; status: string; selection: ExecutionRowSelection } {
+    return { id, status, selection };
+  }
+
+  test('reports run position and total across two real retries in the same slot', () => {
+    const rows = [
+      occ('run-1', 'failed', { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 }),
+      occ('run-2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-2', retryEpoch: 1 }),
+    ];
+    expect(computeRunOfTotal(rows, 'run-2')).toEqual({ run: 2, total: 2 });
+    expect(computeRunOfTotal(rows, 'run-1')).toEqual({ run: 1, total: 2 });
+  });
+
+  test('is null when the node only ever ran once in that slot', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeRunOfTotal(rows, 'run-1')).toBeNull();
+  });
+
+  test('excludes a skipped resume marker from the total, even with a different retry epoch', () => {
+    const rows = [
+      occ('real', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 }),
+      occ('resume-marker', 'skipped', { kind: 'occurrence', occurrenceId: 'occ-2', retryEpoch: 1 }),
+    ];
+    expect(computeRunOfTotal(rows, 'real')).toBeNull();
+  });
+
+  test('scopes the count to the selected row’s own iteration, not the whole node', () => {
+    const rows = [
+      occ('iter1-run1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('iter3-run1', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-2',
+        iteration: 3,
+        retryEpoch: 0,
+      }),
+      occ('iter3-run2', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-3',
+        iteration: 3,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeRunOfTotal(rows, 'iter3-run2')).toEqual({ run: 2, total: 2 });
+    expect(computeRunOfTotal(rows, 'iter1-run1')).toBeNull();
+  });
+
+  test('is null for a non-occurrence selection or an unknown row id', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeRunOfTotal(rows, 'missing')).toBeNull();
+    expect(
+      computeRunOfTotal(
+        [
+          {
+            id: 'loop-iter',
+            status: 'running',
+            selection: { kind: 'loop_iteration', iteration: 1 },
+          },
+        ],
+        'loop-iter'
+      )
+    ).toBeNull();
+  });
+});
+
+describe('headerMetaLine', () => {
+  test('joins start time, live state, run count, provider, and model', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: { run: 2, total: 2 },
+        provider: 'omp',
+        model: 'claude-opus-5',
+      })
+    ).toBe(`started ${startedHours()}:52 · running… · run 2 of 2 · omp · claude-opus-5`);
+  });
+
+  test('reports a finished duration instead of running when the row is terminal', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'completed',
+        durationMs: 18 * 60_000 + 21_000,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+      })
+    ).toBe(`started ${startedHours()}:52 · 18m 21s · omp · claude-opus-5`);
+  });
+
+  test('reads a failed idle-await expiry without inventing a duration number', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'failed',
+        durationMs: 1_800_000,
+        runOfTotal: null,
+        provider: null,
+        model: null,
+        idleAwaitExpired: true,
+      })
+    ).toBe(`started ${startedHours()}:52 · failed after idle timeout`);
+  });
+
+  test('omits every segment whose own data is absent', () => {
+    expect(
+      headerMetaLine({
+        startedAt: null,
+        status: 'pending',
+        durationMs: null,
+        runOfTotal: null,
+        provider: null,
+        model: null,
+      })
+    ).toBeNull();
+  });
+
+  test('prefixes the iteration and drops the run count while viewing finished history', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'completed',
+        durationMs: 6 * 60_000 + 4_000,
+        runOfTotal: { run: 2, total: 2 },
+        provider: 'omp',
+        model: 'claude-opus-5',
+        iterationPrefix: 1,
+      })
+    ).toBe(`iteration 1 · started ${startedHours()}:52 · 6m 04s · omp · claude-opus-5`);
+  });
+});
+
 describe('buildExecutionHeader', () => {
   test('labels iteration, route, attempt, and unknown executions from selection data', () => {
     expect(
@@ -689,7 +882,7 @@ describe('buildExecutionHeader', () => {
         events: [],
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
-    ).toBe('Attempt 3');
+    ).toBe('Run 3');
     expect(
       buildExecutionHeader({
         row: row({
@@ -728,7 +921,7 @@ describe('buildExecutionHeader', () => {
         events: [],
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
-    ).toBe('Iteration 2 · Attempt 2');
+    ).toBe('Iteration 2 · Run 2');
 
     expect(
       buildExecutionHeader({
@@ -743,6 +936,27 @@ describe('buildExecutionHeader', () => {
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
     ).toBe('Execution unknown');
+  });
+
+  test('a bare first occurrence reads "Run 1", never the banned "Attempt" wording', () => {
+    expect(
+      buildExecutionHeader({
+        row: row({
+          id: 'bare',
+          status: 'completed',
+          order: 0,
+          selection: {
+            kind: 'occurrence',
+            occurrenceId: 'occ-bare',
+            attemptId: 'att-bare',
+            retryEpoch: 0,
+          },
+          unknownScope: false,
+        }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).executionLabel
+    ).toBe('Run 1');
   });
 
   test('startedOffsetMs is measured from the run started_at', () => {

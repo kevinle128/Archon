@@ -7,12 +7,14 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 import {
   buildExecutionHeader,
   capExecutionOptions,
+  computeRunOfTotal,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
   resolveFinishedIterationView,
   type ExecutionHeaderModel,
   type ExecutionRow,
+  type RunOfTotal,
 } from '@/lib/execution-room-model';
 import { CONSOLE_ROOM_WIDTH_PX } from '@/lib/room-split-layout';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
@@ -171,6 +173,23 @@ function executionOptionsForNode(
   return options;
 }
 
+/** Uncapped execution total for the node — the header's "of N" caption reads
+ * the real count even past the selector's own eight-option ceiling. */
+function executionCountForNode(entries: readonly ConsoleLogEntry[], nodeId: string): number {
+  return entries.reduce((count, entry) => (entry.row.nodeId === nodeId ? count + 1 : count), 0);
+}
+
+function runOfTotalForNode(
+  entries: readonly ConsoleLogEntry[],
+  nodeId: string,
+  selectedRowId: string
+): RunOfTotal | null {
+  const forNode = entries
+    .filter(entry => entry.row.nodeId === nodeId)
+    .map(entry => ({ id: entry.row.id, status: entry.row.status, selection: entry.row.selection }));
+  return computeRunOfTotal(forNode, selectedRowId);
+}
+
 export function ConsoleInspectPane({
   view,
   run,
@@ -262,6 +281,12 @@ export function ConsoleInspectPane({
     selectedNodeId === null
       ? []
       : executionOptionsForNode(logEntries, selectedNodeId, rawEvents, run.startedAt);
+  const executionCount =
+    selectedNodeId === null ? 0 : executionCountForNode(logEntries, selectedNodeId);
+  const runOfTotal =
+    selectedNodeId === null || selectedRow === null
+      ? null
+      : runOfTotalForNode(logEntries, selectedNodeId, selectedRow.id);
 
   const mainPane: ReactElement =
     view === 'log' ? (
@@ -362,6 +387,8 @@ export function ConsoleInspectPane({
           onSubmitAsk={onSubmitAsk}
           headerModel={headerModel}
           headerOptions={headerOptions}
+          executionCount={executionCount}
+          runOfTotal={runOfTotal}
           onSelectRow={(rowId: string): void => {
             onSelectNode(selectedNodeId, rowId);
           }}

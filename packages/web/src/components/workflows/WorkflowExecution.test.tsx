@@ -681,8 +681,13 @@ describe('WorkflowExecution room visit', () => {
   }
 
   async function clickNamed(label: string): Promise<HTMLElement> {
-    const button = Array.from(host.querySelectorAll('button')).find(candidate =>
-      (candidate.textContent ?? '').includes(label)
+    // The room header's Close/Back control is an icon button whose accessible
+    // name comes from aria-label, not visible text — check both so callers
+    // can name a button by whichever the room exposes.
+    const button = Array.from(host.querySelectorAll('button')).find(
+      candidate =>
+        (candidate.textContent ?? '').includes(label) ||
+        candidate.getAttribute('aria-label') === label
     );
     if (button === undefined) throw new Error(`missing ${label}`);
     await activate(button);

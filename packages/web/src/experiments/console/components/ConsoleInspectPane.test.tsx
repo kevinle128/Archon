@@ -778,12 +778,10 @@ describe('ConsoleInspectPane', () => {
     expect(host.textContent).toContain('Log header');
     expect(host.querySelector('[role="separator"]')).toBeNull();
 
-    const back = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Back')
-    );
-    if (back === undefined) throw new Error('missing Back');
+    const back = host.querySelector('button[aria-label="Back"]');
+    if (back === null) throw new Error('missing Back');
     await act(async () => {
-      back.click();
+      (back as HTMLElement).click();
     });
     expect(closes).toEqual([1]);
 

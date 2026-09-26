@@ -29,6 +29,7 @@ import {
   resolveFinishedIterationView,
   roomOpenerId,
   type ExecutionHeaderModel,
+  type RunOfTotal,
 } from '@/lib/execution-room-model';
 import { LEGACY_ROOM_WIDTH_PX, clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
 import type { WorkflowRunStatus } from '@/lib/types';
@@ -99,6 +100,10 @@ export interface LegacyGraphLogsPaneProps {
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
   headerModel?: ExecutionHeaderModel;
   headerOptions?: readonly ExecutionHeaderOption[];
+  /** Uncapped execution total for the node, for the header's "of N · max 8" caption. */
+  executionCount?: number;
+  /** Retry position/count for the selected row, from the parent pane. */
+  runOfTotal?: RunOfTotal | null;
   onSelectExecution?: (rowId: string) => void;
   scopeKey?: string;
   initialScrollTop?: number;
@@ -222,6 +227,8 @@ export function LegacyGraphLogsPane({
   onSubmitAsk,
   headerModel,
   headerOptions,
+  executionCount,
+  runOfTotal = null,
   onSelectExecution,
   scopeKey,
   initialScrollTop,
@@ -534,6 +541,8 @@ export function LegacyGraphLogsPane({
         nodeState={selectedNodeState}
         headerModel={headerModel}
         headerOptions={headerOptions}
+        executionCount={executionCount}
+        runOfTotal={runOfTotal}
         onSelectRow={onSelectExecution}
         finishedIteration={finishedIteration}
         nodeTerminal={nodeTerminal}
