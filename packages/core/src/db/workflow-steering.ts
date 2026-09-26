@@ -496,6 +496,23 @@ export async function claimSteeringMessageForSoftInjection(
 
 const RECONCILE_STATES = ['queued', 'awaiting_send_now', 'dispatching'] as const;
 
+/**
+ * Marks every still-open entry (`queued`, `awaiting_send_now`, or
+ * `dispatching`) for one (run, node) as `never_sent`. Called by the executor
+ * that owned the node, from its own terminal `finally`, at the moment it
+ * knows the node will never claim another entry — so a `dispatching` row
+ * only ever resolves through the same in-process authority that could see
+ * it live, never through a separate process guessing at another one's
+ * outcome. This is why no table-wide sweep runs at server startup either:
+ * the CLI drives the same executor against the same database
+ * (single-tenant-per-install means one install, not one writer process), so
+ * a `dispatching` row this process cannot see live may still be owned by a
+ * different one, and mutating it anyway is exactly what the "No Autonomous
+ * Lifecycle Mutation Across Process Boundaries" rule forbids. The queue
+ * read's `execution_state: 'recovery_required'` combined with a queued
+ * item's own `dispatching` state already gives an honest, unmutated view of
+ * that ambiguity instead.
+ */
 export async function reconcileNeverSentSteeringMessages(
   workflowRunId: string,
   nodeId: string
@@ -507,36 +524,6 @@ export async function reconcileNeverSentSteeringMessages(
      SET state = 'never_sent', updated_at = ${dialect.now()}
      WHERE workflow_run_id = $1 AND node_id = $2 AND state IN (${stateList})`,
     [workflowRunId, nodeId, ...RECONCILE_STATES]
-  );
-  return { count: result.rowCount ?? 0 };
-}
-
-/**
- * Marks every entry still `dispatching` as `delivery_unknown` — its outcome
- * is unknowable once the process holding the claim is gone. Never resent
- * automatically. Safe to call repeatedly; idempotent.
- *
- * NOT called at server boot. A `dispatching` row is not safely attributable
- * to "the crashed server" alone: the CLI drives the same executor against
- * the same database (single-tenant-per-install means one install, not one
- * writer process — the CLI and the server can hold live claims at the same
- * time). A table-wide sweep at server startup could therefore reclassify a
- * row a live CLI run still owns, which is exactly the case the "No
- * Autonomous Lifecycle Mutation Across Process Boundaries" rule forbids:
- * mutating non-terminal state owned by a party this process cannot verify
- * is gone. The client gets the same honesty without that risk by combining
- * the queue read's `execution_state: 'recovery_required'` with a `queued`
- * item's own `dispatching` state — both are truthful, unmutated reads.
- * Exported as an explicit utility for a future operator-triggered action
- * (a one-click "resolve ambiguous claims" per the same rule), not for an
- * automatic hook.
- */
-export async function reconcileDispatchingSteeringMessagesOnBoot(): Promise<{ count: number }> {
-  const dialect = getDialect();
-  const result = await pool.query(
-    `UPDATE remote_agent_steering_queue_entries
-     SET state = 'delivery_unknown', updated_at = ${dialect.now()}
-     WHERE state = 'dispatching'`
   );
   return { count: result.rowCount ?? 0 };
 }

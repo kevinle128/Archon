@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { OpenAPIHono } from '@hono/zod-openapi';
+import { isRegisteredProvider, registerProvider } from '@archon/providers';
 import type { ConversationLockManager } from '@archon/core';
 import type { WebAdapter } from '../adapters/web';
 import { validationErrorHook } from './openapi-defaults';
@@ -999,17 +1000,6 @@ mock.module('@archon/core/db/workflow-steering', () => ({
           entry.state === 'dispatching')
       ) {
         entry.state = 'never_sent';
-        entry.updated_at = new Date();
-        count += 1;
-      }
-    }
-    return { count };
-  },
-  reconcileDispatchingSteeringMessagesOnBoot: async () => {
-    let count = 0;
-    for (const entry of mockSteeringQueue) {
-      if (entry.state === 'dispatching') {
-        entry.state = 'delivery_unknown';
         entry.updated_at = new Date();
         count += 1;
       }
@@ -9357,5 +9347,373 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
     expect((await getNodeQueue(app)).headers.get('cache-control')).toBe('no-store');
+  });
+});
+
+function getNodeDraft(
+  app: OpenAPIHono,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/draft`, {
+    method: 'GET',
+    headers,
+  });
+}
+
+function putNodeDraft(
+  app: OpenAPIHono,
+  body: unknown,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/draft`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+function deleteNodeDraft(
+  app: OpenAPIHono,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/draft`, {
+    method: 'DELETE',
+    headers,
+  });
+}
+
+function putNodeAutoSend(
+  app: OpenAPIHono,
+  body: unknown,
+  headers: Record<string, string> = {},
+  runId: string = STEER_RUN_ID,
+  nodeId: string = STEER_NODE_ID
+): Promise<Response> {
+  return app.request(`/api/workflows/runs/${runId}/nodes/${nodeId}/auto-send`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: typeof body === 'string' ? body : JSON.stringify(body),
+  });
+}
+
+describe('GET/PUT/DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft — operator composer draft', () => {
+  beforeEach(() => {
+    getSteeringRegistry().clearForTests();
+    resetSteeringStoreMock();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+  });
+
+  test('reads a never-saved draft as null alongside the current auto-send value', async () => {
+    const { app } = makeApp();
+    const res = await getNodeDraft(app, { 'X-Archon-User': STEER_STARTER_ID });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, draft: null, auto_send: false });
+  });
+
+  test('saves a draft and a later read restores the exact same text', async () => {
+    const { app } = makeApp();
+    const putRes = await putNodeDraft(
+      app,
+      { message: 'ask it to re-check the migration' },
+      { 'X-Archon-User': STEER_STARTER_ID }
+    );
+    expect(putRes.status).toBe(200);
+    const putBody = (await putRes.json()) as {
+      success: boolean;
+      draft: { message: string; updated_at: string } | null;
+    };
+    expect(putBody.success).toBe(true);
+    expect(putBody.draft?.message).toBe('ask it to re-check the migration');
+
+    const getRes = await getNodeDraft(app, { 'X-Archon-User': STEER_STARTER_ID });
+    expect(await getRes.json()).toEqual({
+      success: true,
+      draft: { message: 'ask it to re-check the migration', updated_at: putBody.draft?.updated_at },
+      auto_send: false,
+    });
+  });
+
+  test("one operator can never read or overwrite another operator's draft", async () => {
+    const { app } = makeApp();
+    await putNodeDraft(app, { message: 'from operator A' }, { 'X-Archon-User': 'operator-a' });
+
+    const bRead = await getNodeDraft(app, { 'X-Archon-User': 'operator-b' });
+    expect(await bRead.json()).toEqual({ success: true, draft: null, auto_send: false });
+
+    await putNodeDraft(app, { message: 'from operator B' }, { 'X-Archon-User': 'operator-b' });
+    const aRead = await getNodeDraft(app, { 'X-Archon-User': 'operator-a' });
+    const aBody = (await aRead.json()) as { draft: { message: string } | null };
+    expect(aBody.draft?.message).toBe('from operator A');
+  });
+
+  test('clearing is idempotent and a later read never restores the cleared text', async () => {
+    const { app } = makeApp();
+    await putNodeDraft(app, { message: 'discard me' }, { 'X-Archon-User': STEER_STARTER_ID });
+
+    const first = await deleteNodeDraft(app, { 'X-Archon-User': STEER_STARTER_ID });
+    expect(first.status).toBe(200);
+    expect(await first.json()).toEqual({ success: true });
+
+    // Clearing an already-cleared draft is still a 200, not a 404.
+    const second = await deleteNodeDraft(app, { 'X-Archon-User': STEER_STARTER_ID });
+    expect(second.status).toBe(200);
+
+    const read = await getNodeDraft(app, { 'X-Archon-User': STEER_STARTER_ID });
+    expect(await read.json()).toEqual({ success: true, draft: null, auto_send: false });
+  });
+
+  test('a saved draft survives the node reaching a terminal state', async () => {
+    const { app } = makeApp();
+    await putNodeDraft(
+      app,
+      { message: 'kept after finish' },
+      { 'X-Archon-User': STEER_STARTER_ID }
+    );
+
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
+    const res = await getNodeDraft(app, { 'X-Archon-User': STEER_STARTER_ID });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { draft: { message: string } | null };
+    expect(body.draft?.message).toBe('kept after finish');
+  });
+
+  test('reports the shared auto-send setting alongside a private draft', async () => {
+    const { app } = makeApp();
+    await putNodeAutoSend(app, { enabled: true }, { 'X-Archon-User': STEER_STARTER_ID });
+
+    const res = await getNodeDraft(app, { 'X-Archon-User': 'a-different-observer' });
+    expect(await res.json()).toEqual({ success: true, draft: null, auto_send: true });
+  });
+
+  test('returns 404 for an unknown run on read, write, and clear', async () => {
+    mockGetWorkflowRun.mockResolvedValue(null);
+    const { app } = makeApp();
+
+    await expectSteeringError(await getNodeDraft(app), 404, 'not_found');
+    await expectSteeringError(await putNodeDraft(app, { message: 'x' }), 404, 'not_found');
+    await expectSteeringError(await deleteNodeDraft(app), 404, 'not_found');
+  });
+
+  test('returns nested 401 for a gated unauthenticated caller before the body is validated', async () => {
+    getAuth();
+    const savedDb = process.env.DATABASE_URL;
+    const savedSecret = process.env.BETTER_AUTH_SECRET;
+    const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
+    process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
+    process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
+    process.env.ARCHON_WEB_AUTH_REQUIRED = 'false';
+    try {
+      const { app } = makeApp();
+      const res = await putNodeDraft(app, '{not valid json');
+      await expectSteeringError(res, 401, 'unauthenticated');
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+    } finally {
+      if (savedDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedDb;
+      if (savedSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = savedSecret;
+      if (savedRequired === undefined) delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+      else process.env.ARCHON_WEB_AUTH_REQUIRED = savedRequired;
+    }
+  });
+});
+
+describe('PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send — durable per-node setting', () => {
+  beforeEach(() => {
+    getSteeringRegistry().clearForTests();
+    resetSteeringStoreMock();
+    mockGetWorkflowRun.mockReset();
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+  });
+
+  test('enabling then disabling both commit and echo the new value', async () => {
+    const { app } = makeApp();
+    const on = await putNodeAutoSend(app, { enabled: true }, { 'X-Archon-User': STEER_STARTER_ID });
+    expect(on.status).toBe(200);
+    expect(await on.json()).toEqual({ success: true, enabled: true });
+
+    const off = await putNodeAutoSend(
+      app,
+      { enabled: false },
+      { 'X-Archon-User': STEER_STARTER_ID }
+    );
+    expect(await off.json()).toEqual({ success: true, enabled: false });
+  });
+
+  test('every permitted observer reads the same durable value, not a per-user one', async () => {
+    const { app } = makeApp();
+    await putNodeAutoSend(app, { enabled: true }, { 'X-Archon-User': 'operator-a' });
+
+    const res = await getNodeDraft(app, { 'X-Archon-User': 'operator-b' });
+    expect((await res.json()).auto_send).toBe(true);
+  });
+
+  test('toggling alone never stamps a provider id — that only happens at node registration', async () => {
+    const { app } = makeApp();
+    await putNodeAutoSend(app, { enabled: true }, { 'X-Archon-User': STEER_STARTER_ID });
+
+    const settings = mockSteeringSettings.find(
+      s => s.workflow_run_id === STEER_RUN_ID && s.node_id === STEER_NODE_ID
+    );
+    expect(settings?.provider_id).toBeNull();
+  });
+
+  test('returns 404 for an unknown run', async () => {
+    mockGetWorkflowRun.mockResolvedValue(null);
+    const { app } = makeApp();
+    await expectSteeringError(await putNodeAutoSend(app, { enabled: true }), 404, 'not_found');
+  });
+
+  test('returns 409 once the run has already finished', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'failed' }));
+    const { app } = makeApp();
+    await expectSteeringError(await putNodeAutoSend(app, { enabled: true }), 409, 'node_finished');
+  });
+
+  test('returns nested 401 for a gated unauthenticated caller before the body is validated', async () => {
+    getAuth();
+    const savedDb = process.env.DATABASE_URL;
+    const savedSecret = process.env.BETTER_AUTH_SECRET;
+    const savedRequired = process.env.ARCHON_WEB_AUTH_REQUIRED;
+    process.env.DATABASE_URL = 'postgres://127.0.0.1:1/archon-test';
+    process.env.BETTER_AUTH_SECRET = 's'.repeat(32);
+    process.env.ARCHON_WEB_AUTH_REQUIRED = 'false';
+    try {
+      const { app } = makeApp();
+      const res = await putNodeAutoSend(app, '{not valid json');
+      await expectSteeringError(res, 401, 'unauthenticated');
+      expect(mockGetWorkflowRun).not.toHaveBeenCalled();
+    } finally {
+      if (savedDb === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = savedDb;
+      if (savedSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
+      else process.env.BETTER_AUTH_SECRET = savedSecret;
+      if (savedRequired === undefined) delete process.env.ARCHON_WEB_AUTH_REQUIRED;
+      else process.env.ARCHON_WEB_AUTH_REQUIRED = savedRequired;
+    }
+  });
+});
+
+// Registered once, real (not mocked): the queue-read route resolves a
+// non-null settings provider_id through the real provider registry to
+// report capabilities, so the recovery_required test below needs one
+// genuinely registered id. Guarded because module-scope registration code
+// in a Bun test file can run more than once in the same process.
+const RECOVERY_TEST_PROVIDER_ID = 'test-steering-recovery-provider';
+if (!isRegisteredProvider(RECOVERY_TEST_PROVIDER_ID)) {
+  registerProvider({
+    id: RECOVERY_TEST_PROVIDER_ID,
+    displayName: 'Test Steering Recovery Provider',
+    factory: () => {
+      throw new Error('never instantiated — capability lookup only');
+    },
+    capabilities: {
+      sessionResume: true,
+      mcp: false,
+      hooks: false,
+      skills: false,
+      agents: false,
+      toolRestrictions: false,
+      structuredOutput: false,
+      envInjection: false,
+      costControl: false,
+      effortControl: false,
+      thinkingControl: false,
+      fallbackModel: false,
+      sandbox: false,
+      settingSources: false,
+      nativeTools: false,
+      containerExec: false,
+      askHuman: false,
+      interrupt: 'native',
+      softInjection: false,
+      deliveryAck: false,
+    },
+    builtIn: false,
+    credentials: { kind: 'static', specs: [] },
+  });
+}
+
+describe('steering lifecycle classification — a settings row alone is never proof of a live registration', () => {
+  beforeEach(() => {
+    getSteeringRegistry().clearForTests();
+    resetSteeringStoreMock();
+    mockGetWorkflowRun.mockReset();
+    mockListWorkflowEvents.mockReset();
+    mockListPendingInteractions.mockReset();
+  });
+
+  test('an executor-stamped provider id after a restart is the genuine recovery_required case', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    mockSteeringSettings.push({
+      id: 'settings-restarted',
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      auto_send_enabled: false,
+      updated_by_user_id: null,
+      provider_id: RECOVERY_TEST_PROVIDER_ID,
+      updated_at: new Date(),
+    });
+    const { app } = makeApp();
+
+    await expectSteeringError(await postNodeSend(app, sendPayload()), 409, 'recovery_required');
+    const queueRes = await getNodeQueue(app);
+    expect(queueRes.status).toBe(200);
+    const queueBody = (await queueRes.json()) as {
+      execution_state: string;
+      capabilities: { soft_injection: boolean; delivery_ack: boolean };
+    };
+    expect(queueBody.execution_state).toBe('recovery_required');
+    expect(queueBody.capabilities).toEqual({ soft_injection: false, delivery_ack: false });
+  });
+
+  test('an auto-send toggle on a node that never ran stays not_found, not recovery_required', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([]);
+    // Mirrors exactly what the auto-send route persists: no node-existence
+    // check, so a typo'd nodeId still gets a durable row with no provider id.
+    mockSteeringSettings.push({
+      id: 'settings-typo',
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      auto_send_enabled: true,
+      updated_by_user_id: 'some-operator',
+      provider_id: null,
+      updated_at: new Date(),
+    });
+    const { app } = makeApp();
+
+    await expectSteeringError(await postNodeSend(app, sendPayload()), 404, 'not_found');
+    const queueRes = await getNodeQueue(app);
+    await expectSteeringError(queueRes, 404, 'not_found');
+  });
+
+  test('an auto-send toggle on a real non-steerable node stays not_steerable_here, not recovery_required', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    // The node is running (a bash node, say) but never registered for steering.
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    mockSteeringSettings.push({
+      id: 'settings-non-steerable',
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      auto_send_enabled: true,
+      updated_by_user_id: 'some-operator',
+      provider_id: null,
+      updated_at: new Date(),
+    });
+    const { app } = makeApp();
+
+    await expectSteeringError(await postNodeSend(app, sendPayload()), 422, 'not_steerable_here');
+    const queueRes = await getNodeQueue(app);
+    await expectSteeringError(queueRes, 422, 'not_steerable_here');
   });
 });

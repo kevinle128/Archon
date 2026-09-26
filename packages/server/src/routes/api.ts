@@ -1810,7 +1810,7 @@ const steeringDraftRoute = createRoute({
     400: steeringJsonError('Malformed or schema-invalid request'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
-    404: steeringJsonError('Unknown run or node'),
+    404: steeringJsonError('Unknown run'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -1840,7 +1840,7 @@ const putSteeringDraftRoute = createRoute({
     400: steeringJsonError('Malformed or schema-invalid request'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
-    404: steeringJsonError('Unknown run or node'),
+    404: steeringJsonError('Unknown run'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -1864,7 +1864,7 @@ const deleteSteeringDraftRoute = createRoute({
     400: steeringJsonError('Malformed or schema-invalid request'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
-    404: steeringJsonError('Unknown run or node'),
+    404: steeringJsonError('Unknown run'),
     500: steeringJsonError('Server error'),
   },
 });
@@ -1895,7 +1895,7 @@ const putAutoSendRoute = createRoute({
     400: steeringJsonError('Malformed or schema-invalid request'),
     401: steeringJsonError('Authentication required'),
     403: steeringJsonError('Forbidden'),
-    404: steeringJsonError('Unknown run or node'),
+    404: steeringJsonError('Unknown run'),
     409: steeringJsonError('Node no longer running'),
     500: steeringJsonError('Server error'),
   },
@@ -2491,13 +2491,18 @@ export function registerApiRoutes(
   /**
    * Steering lifecycle classification shared by every mutation route that
    * requires a live turn handle (send, interrupt, keepalive). The durable
-   * settings row (stamped by the executor at registration) is what
-   * distinguishes `recovery_required` — a node that WAS steerable and has
-   * durable data, but lost its live handle (a server restart) — from
-   * `not_steerable_here` — a node that never registered a handle at all
-   * (its provider does not support session resume, or it is not an agent
-   * node). The API never infers process origin from a missing live handle;
-   * the durable trace is what makes that distinction honest.
+   * settings row's `provider_id` (stamped by the executor only when it
+   * actually registers a live handle) is what distinguishes
+   * `recovery_required` — a node that WAS steerable and has durable data,
+   * but lost its live handle (a server restart) — from `not_steerable_here`
+   * — a node that never registered a handle at all (its provider does not
+   * support session resume, or it is not an agent node). A row with
+   * `provider_id` still null proves only that an operator set a draft or
+   * auto-send value before, or without, the node ever running — the auto-send
+   * route writes that row on any nodeId with no node-existence check — so it
+   * must never satisfy `recovery_required` on its own. The API never infers
+   * process origin from a missing live handle; the executor-stamped trace is
+   * what makes the distinction honest.
    */
   type SteeringLifecycle =
     | { readonly kind: 'live'; readonly handle: NodeSteeringHandle; readonly parked: boolean }
@@ -2520,8 +2525,9 @@ export function registerApiRoutes(
     );
     const handle = getSteeringRegistry().get(runId, nodeId);
     const durableSettings = await workflowSteeringDb.getSteeringNodeSettings(runId, nodeId);
+    const everRegisteredLive = handle !== undefined || durableSettings?.provider_id != null;
 
-    if (nodeState === undefined && handle === undefined && durableSettings === null) {
+    if (nodeState === undefined && !everRegisteredLive) {
       return { kind: 'not_found' };
     }
     if (TERMINAL_WORKFLOW_STATUSES.includes(run.status)) {
@@ -2536,7 +2542,7 @@ export function registerApiRoutes(
     if (handle !== undefined) {
       return { kind: 'live', handle, parked: handle.snapshot().phase === 'parked' };
     }
-    return durableSettings !== null
+    return durableSettings?.provider_id != null
       ? { kind: 'recovery_required' }
       : { kind: 'not_steerable_here' };
   }
@@ -6032,7 +6038,7 @@ export function registerApiRoutes(
         // its own (the executor closes it at node completion before the first
         // awaited terminal write), so the hot path skips this read entirely.
         let nodeTerminal = false;
-        let nodeKnown = handle !== undefined || durableSettings !== null;
+        let nodeKnown = handle !== undefined || durableSettings?.provider_id != null;
         if (handle === undefined) {
           const events = await workflowEventDb.listWorkflowEvents(runId);
           const nodeState = projectApiWorkflowNodeStates(events).find(
@@ -6052,8 +6058,9 @@ export function registerApiRoutes(
         const handleClosed = handle?.snapshot().phase === 'closed';
         const isFinished = runTerminal || nodeTerminal || handleClosed;
 
-        if (!isFinished && handle === undefined && durableSettings === null) {
-          // Known node (e.g. a bash node), never registered for steering.
+        if (!isFinished && handle === undefined && durableSettings?.provider_id == null) {
+          // Known node (e.g. a bash node, or one an operator only ever set a
+          // draft/auto-send value on), never registered a live steering handle.
           return steeringError(c, 422, 'not_steerable_here', 'This node does not support steering');
         }
 

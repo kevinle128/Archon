@@ -33,7 +33,6 @@ const {
   markSteeringMessagesSent,
   claimSteeringMessageForSoftInjection,
   reconcileNeverSentSteeringMessages,
-  reconcileDispatchingSteeringMessagesOnBoot,
 } = await import('./workflow-steering');
 
 afterAll(async () => {
@@ -494,33 +493,6 @@ describe('reconciliation', () => {
     expect(second.count).toBe(0);
     // A different node on the same run is untouched.
     expect((await listSteeringQueue('run-1', 'other-node'))[0]?.state).toBe('queued');
-  });
-
-  test('boot sweep converts every dispatching entry across all runs to delivery_unknown', async () => {
-    await seedRun('run-2');
-    await enqueueSteeringMessage({
-      workflow_run_id: 'run-1',
-      node_id: 'review',
-      message_id: 'm-1',
-      message: 'a',
-      operator_user_id: 'op-1',
-      initial_state: 'queued',
-    });
-    await enqueueSteeringMessage({
-      workflow_run_id: 'run-2',
-      node_id: 'review',
-      message_id: 'm-2',
-      message: 'b',
-      operator_user_id: 'op-1',
-      initial_state: 'queued',
-    });
-    await claimSteeringQueue('run-1', 'review', 'all');
-    await claimSteeringQueue('run-2', 'review', 'all');
-
-    const swept = await reconcileDispatchingSteeringMessagesOnBoot();
-    expect(swept.count).toBe(2);
-    expect((await listSteeringQueue('run-1', 'review'))[0]?.state).toBe('delivery_unknown');
-    expect((await listSteeringQueue('run-2', 'review'))[0]?.state).toBe('delivery_unknown');
   });
 });
 
