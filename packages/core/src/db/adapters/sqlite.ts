@@ -892,6 +892,25 @@ export class SqliteAdapter implements IDatabase {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- One row per node execution attempt (a node can execute more than once
+      -- within a run: a loop body, a reactivated route target, a retried
+      -- node). start_* is recorded before the execution begins; end_* is
+      -- filled in after it finishes and stays NULL when the execution never
+      -- reached that point. Read by the server to compute which repository
+      -- paths that execution changed.
+      CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_execution_evidence (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        retry_epoch INTEGER NOT NULL DEFAULT 0,
+        start_checkpoint_ref TEXT NOT NULL,
+        start_commit_sha TEXT NOT NULL,
+        started_at TEXT DEFAULT (datetime('now')),
+        end_checkpoint_ref TEXT,
+        end_commit_sha TEXT,
+        ended_at TEXT
+      );
+
       -- Per-node provider session IDs persisted across workflow re-runs
       CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_sessions (
         workflow_name TEXT NOT NULL,
@@ -920,6 +939,10 @@ export class SqliteAdapter implements IDatabase {
       CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run ON remote_agent_workflow_node_checkpoints(workflow_run_id);
       CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run_node_epoch
         ON remote_agent_workflow_node_checkpoints(workflow_run_id, node_id, retry_epoch DESC);
+      CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run
+        ON remote_agent_workflow_node_execution_evidence(workflow_run_id);
+      CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run_node_epoch
+        ON remote_agent_workflow_node_execution_evidence(workflow_run_id, node_id, retry_epoch DESC);
       -- NOTE: the idx_workflow_events_run_order index and the assign_order trigger
       -- are deliberately NOT created here. Both reference event_order, which does
       -- not exist on databases created before it was introduced — and CREATE INDEX

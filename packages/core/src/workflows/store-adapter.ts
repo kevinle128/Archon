@@ -14,6 +14,7 @@ import * as workflowNodeSessionDb from '../db/workflow-node-sessions';
 import * as workflowNodeMessageDb from '../db/workflow-node-messages';
 import * as workflowPendingInteractionDb from '../db/workflow-pending-interactions';
 import * as workflowCheckpointDb from '../db/workflow-checkpoints';
+import * as workflowNodeExecutionEvidenceDb from '../db/workflow-node-execution-evidence';
 import * as codebaseDb from '../db/codebases';
 import * as envVarDb from '../db/env-vars';
 import { resolveEventRoute, type NotRoutableReason } from '../events/binding-router';
@@ -429,6 +430,10 @@ export function createWorkflowStore(): IWorkflowStore {
     enqueueExternalWorkflowEvent,
     upsertWorkflowNodeCheckpoint: workflowCheckpointDb.upsertWorkflowNodeCheckpoint,
     getLatestWorkflowNodeCheckpoint: workflowCheckpointDb.getLatestWorkflowNodeCheckpoint,
+    startWorkflowNodeExecutionEvidence:
+      workflowNodeExecutionEvidenceDb.startWorkflowNodeExecutionEvidence,
+    completeWorkflowNodeExecutionEvidence:
+      workflowNodeExecutionEvidenceDb.completeWorkflowNodeExecutionEvidence,
     getDagResumeSnapshot: workflowEventDb.getDagResumeSnapshot,
     getCodebase: codebaseDb.getCodebase,
     getCodebaseEnvVars: envVarDb.getCodebaseEnvVars,

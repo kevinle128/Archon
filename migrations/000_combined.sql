@@ -8,7 +8,7 @@
 --     COMMENT ON COLUMN — goes in the final "Indexes and column comments"
 --     section, below every ADD COLUMN.
 --
--- 23 Application Tables (+ the 4 remote_agent_auth_* Better Auth tables, listed inline below):
+-- 24 Application Tables (+ the 4 remote_agent_auth_* Better Auth tables, listed inline below):
 --   1. remote_agent_codebases
 --   2. remote_agent_codebase_env_vars
 --   3. remote_agent_users
@@ -32,7 +32,8 @@
 --  21. remote_agent_workflow_envs
 --  22. remote_agent_workflow_node_messages
 --  23. remote_agent_pending_interactions
---  24-27. remote_agent_auth_user / session / account / verification (PostgreSQL-only)
+--  24. remote_agent_workflow_node_execution_evidence
+--  25-28. remote_agent_auth_user / session / account / verification (PostgreSQL-only)
 --
 -- Dropped tables (via migrations):
 --   - remote_agent_command_templates (017)
@@ -790,6 +791,32 @@ ALTER TABLE remote_agent_pending_interactions
   ADD COLUMN IF NOT EXISTS execution_scope JSONB;
 
 -- ============================================================================
+-- Table 24: Workflow node execution evidence (git attribution)
+-- ============================================================================
+
+-- One row per node execution attempt (a node can execute more than once
+-- within a run: a loop body, a reactivated route target, a retried node).
+-- `start_*` is recorded before the execution begins; `end_*` is filled in
+-- after it finishes and stays NULL when the execution never reached that
+-- point (still running, or the end snapshot could not be captured) — a NULL
+-- end column means this execution has no proven end state.
+CREATE TABLE IF NOT EXISTS remote_agent_workflow_node_execution_evidence (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_run_id UUID NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+  node_id VARCHAR(255) NOT NULL,
+  retry_epoch INTEGER NOT NULL DEFAULT 0,
+  start_checkpoint_ref TEXT NOT NULL,
+  start_commit_sha TEXT NOT NULL,
+  started_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  end_checkpoint_ref TEXT,
+  end_commit_sha TEXT,
+  ended_at TIMESTAMP WITH TIME ZONE
+);
+
+COMMENT ON TABLE remote_agent_workflow_node_execution_evidence IS
+  'Git snapshots bracketing one node execution, read by the server to compute which repository paths that execution changed. Cascade-deletes with the run.';
+
+-- ============================================================================
 -- Indexes and column comments
 -- ============================================================================
 --
@@ -926,6 +953,12 @@ CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run
   ON remote_agent_workflow_node_checkpoints(workflow_run_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_node_checkpoints_run_node_epoch
   ON remote_agent_workflow_node_checkpoints(workflow_run_id, node_id, retry_epoch DESC);
+
+-- Workflow node execution evidence
+CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run
+  ON remote_agent_workflow_node_execution_evidence(workflow_run_id);
+CREATE INDEX IF NOT EXISTS idx_node_execution_evidence_run_node_epoch
+  ON remote_agent_workflow_node_execution_evidence(workflow_run_id, node_id, retry_epoch DESC);
 
 -- Workflow provider bindings
 CREATE INDEX IF NOT EXISTS idx_provider_bindings_codebase

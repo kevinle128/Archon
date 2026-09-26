@@ -42,6 +42,7 @@ import type { AskActionStateByRequest } from './ask/ask-answer-controller';
 import type { AskDraft, AskDraftByRequest } from './ask/parse-ask-envelope';
 import { ArtifactPanel } from './ArtifactPanel';
 import { ConsoleNodeRoom } from './ConsoleNodeRoom';
+import { FilesChangedPanel } from './FilesChangedPanel';
 import { RunGraphPanel } from './RunGraphPanel';
 import { RunStream } from './RunStream';
 import type { ConsoleLogEntry } from './inspect/build-console-log-entries';
@@ -54,7 +55,7 @@ import type { ConsoleExecutionHeaderOption } from './inspect/ConsoleRoomHeader';
 import { isInspectRunLive } from './inspect/inspect-status';
 import { resolveRoomKind } from './inspect/resolve-room-kind';
 
-export type ConsoleInspectView = 'log' | 'graph' | 'artifacts';
+export type ConsoleInspectView = 'log' | 'graph' | 'artifacts' | 'files-changed';
 
 export interface ConsoleInspectPaneProps {
   view: ConsoleInspectView;
@@ -332,6 +333,8 @@ export function ConsoleInspectPane({
           }}
         />
       </div>
+    ) : view === 'files-changed' ? (
+      <FilesChangedPanel runId={run.id} />
     ) : (
       <ArtifactPanel runId={run.id} />
     );

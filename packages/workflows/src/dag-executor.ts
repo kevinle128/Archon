@@ -16,6 +16,7 @@ import {
   toWorktreePath,
   upsertCheckpointRef,
 } from '@archon/git';
+import { beginNodeExecutionEvidence, endNodeExecutionEvidence } from './node-execution-evidence';
 import { discoverScriptsForCwd } from './script-discovery';
 import { discoverWorkflowsWithConfig } from './workflow-discovery';
 import { resolveWorkflowName } from './router';
@@ -9467,6 +9468,11 @@ async function runLayers(ctx: RunLayersContext): Promise<'completed' | 'pending'
     // below can tag the session with its owner (#1992).
     const layerResults = await Promise.allSettled(
       layer.map(async (node): Promise<LayerNodeResult> => {
+        // Set only when this dispatch actually reaches the pre-node checkpoint
+        // below (never for a skipped/blocked/cached return) — the finally
+        // block below uses it to capture matching end-of-execution evidence
+        // only for a node that actually started, never for one that did not.
+        let executionEvidenceId: string | undefined;
         try {
           // Include nodes are expanded away at discovery time (include-expander.ts): one
           // must never reach the executor. This guard is FIRST in the per-node body — before
@@ -9750,6 +9756,13 @@ async function runLayers(ctx: RunLayersContext): Promise<'completed' | 'pending'
               node,
               retryContext,
               checkpointNodeId: stepNamePrefix + node.id,
+            });
+            executionEvidenceId = await beginNodeExecutionEvidence({
+              deps,
+              cwd,
+              workflowRunId: workflowRun.id,
+              nodeId: stepNamePrefix + node.id,
+              retryEpoch: getRunRetryEpoch(workflowRun, retryContext),
             });
           }
 
@@ -10528,6 +10541,19 @@ async function runLayers(ctx: RunLayersContext): Promise<'completed' | 'pending'
             nodeId: node.id,
             output: { state: 'failed' as const, output: '', error: err.message },
           };
+        } finally {
+          // Runs whether the node succeeded, failed, or threw before dispatch
+          // completed — so an execution's evidence always closes once opened,
+          // and a node that failed mid-write still gets a proven end state.
+          if (executionEvidenceId !== undefined) {
+            await endNodeExecutionEvidence({
+              deps,
+              cwd,
+              workflowRunId: workflowRun.id,
+              nodeId: stepNamePrefix + node.id,
+              evidenceId: executionEvidenceId,
+            });
+          }
         }
       })
     );
