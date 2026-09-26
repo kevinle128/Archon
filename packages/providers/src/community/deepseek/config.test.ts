@@ -142,6 +142,8 @@ describe('DEEPSEEK_CAPABILITIES', () => {
       containerExec: false,
       askHuman: false,
       interrupt: false,
+      softInjection: false,
+      deliveryAck: false,
     });
   });
 });
