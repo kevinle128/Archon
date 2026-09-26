@@ -75,8 +75,10 @@ describe('pairToolEvents — node identity threading', () => {
     const byId = new Map(paired.map(p => [p.id, p]));
     expect(byId.get('s1')?.nodeId).toBe('plan');
     expect(byId.get('s1')?.call.durationMs).toBe(120);
+    expect(byId.get('s1')?.call.outcome).toBe('succeeded');
     expect(byId.get('s2')?.nodeId).toBe('implement');
     expect(byId.get('s2')?.call.durationMs).toBe(300);
+    expect(byId.get('s2')?.call.outcome).toBe('succeeded');
   });
 
   test('a tool_called with a null step_name stays unattributed (nodeId null)', () => {
@@ -87,6 +89,33 @@ describe('pairToolEvents — node identity threading', () => {
     ]);
     expect(paired).toHaveLength(1);
     expect(paired[0]?.nodeId).toBeNull();
+  });
+
+  test('an unmatched call (no tool_completed yet) is running', () => {
+    const paired = pairToolEvents([
+      toRunEvent(raw({ id: 's1', event_type: 'tool_called', data: { tool_name: 'Bash' } })),
+    ]);
+    expect(paired[0]?.call.outcome).toBe('running');
+    expect(paired[0]?.call.durationMs).toBeUndefined();
+  });
+
+  test('a persisted failed outcome and exit code carry through to the paired call', () => {
+    const events = [
+      toRunEvent(
+        raw({ id: 's1', event_type: 'tool_called', data: { tool_name: 'Bash', tool_input: {} } })
+      ),
+      toRunEvent(
+        raw({
+          id: 'c1',
+          event_type: 'tool_completed',
+          data: { tool_name: 'Bash', duration_ms: 50, tool_outcome: 'error', exit_code: 1 },
+        })
+      ),
+    ];
+    const paired = pairToolEvents(events);
+    expect(paired[0]?.call.outcome).toBe('failed');
+    expect(paired[0]?.call.exitCode).toBe(1);
+    expect(paired[0]?.call.durationMs).toBe(50);
   });
 });
 
