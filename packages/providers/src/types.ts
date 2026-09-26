@@ -465,7 +465,12 @@ export type MessageChunk =
       outcome: 'success' | 'error' | 'cancelled';
       exitCode?: number;
     }
-  | { type: 'workflow_dispatch'; workerConversationId: string; workflowName: string };
+  | { type: 'workflow_dispatch'; workerConversationId: string; workflowName: string }
+  // Provider-verified acknowledgement that a specific caller-stamped operator
+  // message (soft-injected or delivered at a natural turn boundary) was
+  // accepted by the live turn (CAP-13). Correlation is by `messageId` alone —
+  // never inferred from provider text or timing. Emitted at most once per id.
+  | { type: 'operator_delivery_ack'; messageId: string };
 
 /**
  * System prompt input accepted by all providers. Mirrors the Claude Agent SDK
@@ -595,6 +600,39 @@ export interface AgentTraceContext {
 }
 
 /**
+ * One operator-authored message offered to a live provider turn without
+ * invoking Stop (CAP-12 per-item "Send now"). `messageId` is the durable
+ * caller-stamped id used for delivery correlation — never inferred from
+ * `text` content or timing.
+ */
+export interface SoftInjectionRequest {
+  readonly messageId: string;
+  readonly text: string;
+}
+
+/**
+ * Turn-scoped mid-generation delivery channel (operator per-item "Send now"
+ * without Stop). Symmetric with `interruptSignal`/`AbortSignal`: the executor
+ * owns the writable controller and hands the adapter only this read-only
+ * view through `AgentRequestOptions.softInjection`. A provider whose
+ * `capabilities.softInjection` is `true` calls `ready()` once its live turn
+ * can accept a message (e.g. once its streaming-input handle exists); a
+ * provider without the capability never calls it, exactly like a provider
+ * that ignores `interruptSignal`.
+ */
+export interface SoftInjectionChannel {
+  /**
+   * Registers the handler that attempts delivery into the live turn.
+   * `handler` resolves to whether THIS turn's live transport actually
+   * accepted the request — never inferred from provider text or timing.
+   * Returns an unregister function; the adapter MUST call it once the turn
+   * can no longer accept injections (stream ended or closing), so a stale
+   * handler is never left registered against a dead turn.
+   */
+  ready(handler: (request: SoftInjectionRequest) => Promise<boolean>): () => void;
+}
+
+/**
  * Universal request options accepted by all providers.
  * Provider-specific fields go through `nodeConfig` and `assistantConfig` in SendQueryOptions.
  */
@@ -613,6 +651,16 @@ export interface AgentRequestOptions {
    * capability ignore it.
    */
   interruptSignal?: AbortSignal;
+  /**
+   * Mid-turn soft-injection channel (operator "Send now" on one queued item
+   * without Stop, CAP-12): providers declaring `capabilities.softInjection
+   * === true` register a delivery handler on it while their live turn can
+   * accept one. An accepted injection never ends the turn and never emits a
+   * steering-owned turn-start event. Always present on an interruptible
+   * handle's turn; a provider without the capability must ignore it, exactly
+   * like a provider that ignores `interruptSignal`.
+   */
+  softInjection?: SoftInjectionChannel;
   systemPrompt?: SystemPromptInput;
   outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
   env?: Record<string, string>;

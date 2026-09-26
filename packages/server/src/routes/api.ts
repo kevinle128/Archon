@@ -5679,10 +5679,12 @@ export function registerApiRoutes(
 
         // Per-item soft injection (Story 10.2): targets exactly the selected
         // durable entry and the current active turn. Stop is never invoked and
-        // no steering-owned turn-start event is emitted — the durable claim IS
-        // the seam; the verified transport that actually injects mid-stream and
-        // attributes the resulting transcript row is each provider's own
-        // conformance story (out of scope here).
+        // no steering-owned turn-start event is emitted. The durable claim
+        // happens first (engine-integration.md: "Queue acknowledgement is
+        // returned only after database commit"), then the live turn is
+        // offered the request through the provider-neutral soft-injection
+        // channel (`NodeSteeringHandle.softInject`); a refusal reverts the
+        // claim so the queue stays unchanged from the caller's perspective.
         if (body.queued_message_id !== undefined) {
           const settings = await workflowSteeringDb.getSteeringNodeSettings(runId, nodeId);
           const capabilities =
@@ -5708,6 +5710,23 @@ export function registerApiRoutes(
               404,
               'not_found',
               'Queued message not found or no longer claimable'
+            );
+          }
+          const outcome = await handle.softInject({
+            messageId: claimed.message_id,
+            text: claimed.message,
+          });
+          if (outcome !== 'delivered') {
+            await workflowSteeringDb.revertSteeringSoftInjectionClaim(
+              runId,
+              nodeId,
+              claimed.message_id
+            );
+            return steeringError(
+              c,
+              409,
+              'soft_injection_unavailable',
+              'The active provider turn did not accept the message'
             );
           }
           return c.json(

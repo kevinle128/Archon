@@ -68,6 +68,17 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   containerExec: true, // spawns the CLI in-container via spawnClaudeCodeProcess
   askHuman: true,
   interrupt: 'native', // Query.interrupt() over streaming input
-  softInjection: false, // transport conformance is current implementation work
-  deliveryAck: false, // message-id echo is current implementation work
+  // Verified false against the real SDK (spike:softinject:claude, 0.3.209):
+  // Query.streamInput() delivers a pushed message only as a NEW queued turn
+  // (a second `result` event), never into the turn already streaming — the
+  // Anthropic API has no primitive to alter an in-flight completion. Holds
+  // for both a mid-token-stream push and a push at a between-tool-calls
+  // boundary. Confirmed unchanged in the sdk.d.ts shipped with 0.3.283.
+  softInjection: false,
+  // Verified false against the real SDK: no output message ever echoed the
+  // caller-stamped uuid, on any provider message type, in either scenario
+  // above. `UserPromptSubmitHookInput` (a candidate boundary-delivery ack
+  // path) carries no field an adapter could correlate back to the stamped
+  // id — only an SDK-internal `prompt_id` unrelated to it.
+  deliveryAck: false,
 };
