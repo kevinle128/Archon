@@ -495,6 +495,130 @@ describe('buildLogRows', () => {
     });
   });
 
+  test('drops a loop node_type container row already represented by its iteration', () => {
+    const rows = buildLogRows(
+      [nodeState({ nodeId: 'loop', name: 'Loop', status: 'failed' })],
+      [],
+      [
+        // The loop's own top-level lifecycle (dag-executor.ts outerExecutionScope):
+        // no loop_ancestry of its own, node_type marks it as the container.
+        {
+          node_id: 'loop',
+          node_type: 'loop',
+          status: 'failed',
+          occurrence_id: 'container-1',
+          attempt_id: 'container-attempt-1',
+          retry_epoch: 0,
+          started_at: '2026-09-20T12:45:01.000Z',
+          ended_at: '2026-09-20T13:52:50.000Z',
+        },
+        // Iteration 1's own scope (dag-executor.ts iterationExecutionScope):
+        // same retry epoch, starts inside the container's window, carries the
+        // real transcript.
+        {
+          node_id: 'loop',
+          status: 'failed',
+          occurrence_id: 'iteration-1',
+          attempt_id: 'iteration-attempt-1',
+          retry_epoch: 0,
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+          started_at: '2026-09-20T12:45:01.000Z',
+          ended_at: '2026-09-20T13:52:50.000Z',
+        },
+      ]
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.selection).toMatchObject({
+      kind: 'occurrence',
+      occurrenceId: 'iteration-1',
+    });
+  });
+
+  test('keeps two real invocations as two rows, one per iteration, across a resume', () => {
+    const rows = buildLogRows(
+      [nodeState({ nodeId: 'loop', name: 'Loop', status: 'failed' })],
+      [],
+      [
+        {
+          node_id: 'loop',
+          node_type: 'loop',
+          status: 'failed',
+          occurrence_id: 'container-1',
+          attempt_id: 'container-attempt-1',
+          retry_epoch: 0,
+          started_at: '2026-09-20T12:45:01.000Z',
+          ended_at: '2026-09-20T13:52:50.000Z',
+        },
+        {
+          node_id: 'loop',
+          status: 'failed',
+          occurrence_id: 'iteration-1',
+          attempt_id: 'iteration-attempt-1',
+          retry_epoch: 0,
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+          started_at: '2026-09-20T12:45:01.000Z',
+          ended_at: '2026-09-20T13:52:50.000Z',
+        },
+        // A later resume re-invokes the same loop node with the same retry
+        // epoch (a workflow-level resume, not a loop-level retry) — the
+        // dedup must key on the run window, not epoch alone, or this second,
+        // genuinely distinct invocation's container would wrongly match the
+        // first invocation's iteration and get hidden.
+        {
+          node_id: 'loop',
+          node_type: 'loop',
+          status: 'failed',
+          occurrence_id: 'container-2',
+          attempt_id: 'container-attempt-2',
+          retry_epoch: 0,
+          started_at: '2026-09-26T06:37:33.000Z',
+          ended_at: '2026-09-26T06:37:44.000Z',
+        },
+        {
+          node_id: 'loop',
+          status: 'failed',
+          occurrence_id: 'iteration-2',
+          attempt_id: 'iteration-attempt-2',
+          retry_epoch: 0,
+          loop_ancestry: [{ node_id: 'loop', iteration: 1 }],
+          started_at: '2026-09-26T06:37:33.000Z',
+          ended_at: '2026-09-26T06:37:44.000Z',
+        },
+      ]
+    );
+
+    expect(rows).toHaveLength(2);
+    expect(rows.map(row => (row.selection as { occurrenceId?: string }).occurrenceId)).toEqual([
+      'iteration-1',
+      'iteration-2',
+    ]);
+  });
+
+  test('never hides a loop container that owns no iteration of its own', () => {
+    const rows = buildLogRows(
+      [nodeState({ nodeId: 'loop', name: 'Loop', status: 'failed' })],
+      [],
+      [
+        // The loop failed before iteration 1 ever started — the container is
+        // the only record of what happened and must stay visible.
+        {
+          node_id: 'loop',
+          node_type: 'loop',
+          status: 'failed',
+          occurrence_id: 'container-only',
+          attempt_id: 'container-attempt-only',
+          retry_epoch: 0,
+          started_at: '2026-09-20T12:45:01.000Z',
+          ended_at: '2026-09-20T12:45:02.000Z',
+        },
+      ]
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.selection).toMatchObject({ occurrenceId: 'container-only' });
+  });
+
   test('maps one-entry and nested loop_ancestry to camelCase without losing order', () => {
     const rows = buildLogRows(
       [nodeState({ nodeId: 'body', name: 'Body', status: 'running' })],

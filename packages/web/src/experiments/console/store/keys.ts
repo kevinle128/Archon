@@ -46,6 +46,7 @@ export const K = {
   workflowEnvPreview: (cwd: string, workflowName: string, envId: string | null): string =>
     workflowEnvPreviewCacheKey(cwd, workflowName, envId),
   artifacts: (runId: string): string => `artifacts:${runId}`,
+  filesChanged: (runId: string): string => `files-changed:${runId}`,
   nodeMessages: (runId: string, nodeId: string): string =>
     `run-node-messages:${encodeURIComponent(runId)}:${encodeURIComponent(nodeId)}`,
   workflowDagNodes: (cwd: string | undefined, workflowName: string): string =>

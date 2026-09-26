@@ -99,6 +99,29 @@ describe('toMessage — dispatch (regression)', () => {
   });
 });
 
+describe('toMessage — inline tool call outcome', () => {
+  test('a call with no output and no duration yet is running', () => {
+    const m = toMessage(
+      raw({ id: 'm1' }, { toolCalls: [{ name: 'Bash', input: { command: 'ls' } }] })
+    );
+    expect(m.toolCalls[0]?.outcome).toBe('running');
+  });
+
+  test('a call with a duration but empty output is succeeded — a result has arrived', () => {
+    const m = toMessage(
+      raw({ id: 'm1' }, { toolCalls: [{ name: 'Bash', input: {}, duration: 12 }] })
+    );
+    expect(m.toolCalls[0]?.outcome).toBe('succeeded');
+  });
+
+  test('a call with output text is succeeded', () => {
+    const m = toMessage(
+      raw({ id: 'm1' }, { toolCalls: [{ name: 'Read', input: {}, output: 'file contents' }] })
+    );
+    expect(m.toolCalls[0]?.outcome).toBe('succeeded');
+  });
+});
+
 describe('isSystemCategory', () => {
   test('workflow_result is a system category (so ChatStream must branch BEFORE the filter)', () => {
     expect(isSystemCategory('workflow_result')).toBe(true);

@@ -26,4 +26,6 @@ export const DEVIN_CAPABILITIES = {
   containerExec: false,
   askHuman: true,
   interrupt: false,
+  softInjection: false,
+  deliveryAck: false,
 } as const satisfies ProviderCapabilities;

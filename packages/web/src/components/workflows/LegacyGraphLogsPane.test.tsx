@@ -592,7 +592,7 @@ describe('LegacyGraphLogsPane', () => {
     };
   }
 
-  test('opens a percentage room on demand and hides the main view in single mode', async () => {
+  test('opens a fixed-width room on demand and hides the main view in single mode', async () => {
     const closes: number[] = [];
     const onCloseRoom = (): void => {
       closes.push(1);
@@ -642,24 +642,21 @@ describe('LegacyGraphLogsPane', () => {
     expect(viewPanel).not.toBeNull();
     expect(roomPanel).not.toBeNull();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
-    expect(
-      viewPanel?.getAttribute('data-panel-size') ?? viewPanel?.getAttribute('style') ?? ''
-    ).toMatch(/60/);
-    expect(
-      roomPanel?.getAttribute('data-panel-size') ?? roomPanel?.getAttribute('style') ?? ''
-    ).toMatch(/40/);
-    // The right panel's content wrapper is a shrinkable overflow boundary —
-    // without it a long transcript stretches the document below the fixed run
-    // shell. react-resizable-panels puts className/style on the wrapper inside
-    // the #legacy-run-room panel element, and the inline overflow must win over
-    // the library's default `overflow: auto` so the transcript scroller stays
-    // the sole vertical scroll owner.
-    const roomContent = roomPanel?.firstElementChild as HTMLElement | null;
-    const roomContentClass = roomContent?.getAttribute('class') ?? '';
-    expect(roomContentClass).toContain('min-h-0');
-    expect(roomContentClass).toContain('overflow-hidden');
-    expect(roomContent?.style.overflow).toBe('hidden');
+    // The approved node panel is a fixed width, not a user-resizable share of
+    // the window, so it carries no drag handle.
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect((roomPanel as HTMLElement).style.width).toBe('460px');
+    expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
+    // The panel is a shrinkable overflow boundary — without it a long
+    // transcript stretches the document below the fixed run shell.
+    const roomPanelClass = roomPanel?.getAttribute('class') ?? '';
+    expect(roomPanelClass).toContain('min-h-0');
+    expect(roomPanelClass).toContain('overflow-hidden');
+    // A flex child defaults to min-width:auto, which lets its content (a long
+    // unwrapped tool row) grow the column past the viewport and push the
+    // fixed-width room off screen. min-w-0 caps the view pane at the space
+    // the flex layout actually gives it.
+    expect((viewPanel as HTMLElement).className).toContain('min-w-0');
 
     await act(async () => {
       root.render(
@@ -682,6 +679,7 @@ describe('LegacyGraphLogsPane', () => {
     const mainView = host.querySelector('#legacy-run-view');
     expect(mainView).toBe(viewPanel);
     expect((mainView as HTMLElement).hidden).toBe(true);
+    expect((mainView as HTMLElement).classList.contains('hidden')).toBe(true);
     const back = Array.from(host.querySelectorAll('button')).find(candidate =>
       (candidate.textContent ?? '').includes('Back')
     );
@@ -712,6 +710,7 @@ describe('LegacyGraphLogsPane', () => {
     const closedMain = host.querySelector('#legacy-run-view');
     expect(closedMain).not.toBeNull();
     expect((closedMain as HTMLElement).hidden).toBe(false);
+    expect((closedMain as HTMLElement).classList.contains('flex')).toBe(true);
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
   });
 

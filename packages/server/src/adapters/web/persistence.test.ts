@@ -276,6 +276,23 @@ describe('MessagePersistence', () => {
       expect(metadata?.toolCalls?.[0]?.duration).toBe(250);
     });
 
+    test('should persist the provider-reported outcome and exit code', async () => {
+      persistence.setConversationDbId('conv-1', 'db-uuid-1');
+      persistence.appendText('conv-1', 'running tests');
+      persistence.appendToolCall('conv-1', { name: 'bash', input: { command: 'npm test' } });
+      persistence.appendToolResult('conv-1', 'bash', 'fail', 90, {
+        toolOutcome: 'error',
+        exitCode: 1,
+      });
+      await persistence.flush('conv-1');
+
+      const metadata = mockAddMessage.mock.calls[0][3] as {
+        toolCalls?: { outcome?: string; exitCode?: number }[];
+      };
+      expect(metadata?.toolCalls?.[0]?.outcome).toBe('error');
+      expect(metadata?.toolCalls?.[0]?.exitCode).toBe(1);
+    });
+
     test('should persist empty-string output (not undefined)', async () => {
       persistence.setConversationDbId('conv-1', 'db-uuid-1');
       persistence.appendText('conv-1', 'running tool');
