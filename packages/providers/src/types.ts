@@ -852,6 +852,21 @@ export interface ProviderCapabilities {
    *  - `false`          — no turn interrupt; operators get queue-guidance only.
    */
   interrupt: 'native' | 'stream-abort' | false;
+  /**
+   * Whether a verified adapter transport can deliver one queued operator
+   * message into the CURRENT active turn without ending it (steering
+   * per-item "Send now" while generating). `false` until a provider's own
+   * story proves the transport against its production adapter path — an
+   * unverified provider must never advertise this as `true`.
+   */
+  softInjection: boolean;
+  /**
+   * Whether the provider can return a verified acknowledgement, correlated by
+   * the caller-stamped message id, that it accepted a specific steered
+   * message. `false` until a provider's own story proves the echo — text and
+   * timestamps are never a substitute for this evidence.
+   */
+  deliveryAck: boolean;
 }
 
 /**

@@ -6,24 +6,22 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 
 import {
   buildExecutionHeader,
+  capExecutionOptions,
+  computeRunOfTotal,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
   resolveFinishedIterationView,
   type ExecutionHeaderModel,
   type ExecutionRow,
+  type RunOfTotal,
 } from '@/lib/execution-room-model';
-import { clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
+import { CONSOLE_ROOM_WIDTH_PX } from '@/lib/room-split-layout';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
 
 import type { RunEvent } from '../primitives/event';
 import type { Message } from '../primitives/message';
 import type { Run } from '../primitives/run';
-import {
-  ConsolePanel,
-  ConsolePanelGroup,
-  ConsolePanelSeparator,
-} from '../primitives/console-resizable';
 import type {
   AskAnswerBody,
   NodeExecution,
@@ -42,6 +40,7 @@ import type { AskActionStateByRequest } from './ask/ask-answer-controller';
 import type { AskDraft, AskDraftByRequest } from './ask/parse-ask-envelope';
 import { ArtifactPanel } from './ArtifactPanel';
 import { ConsoleNodeRoom } from './ConsoleNodeRoom';
+import { FilesChangedPanel } from './FilesChangedPanel';
 import { RunGraphPanel } from './RunGraphPanel';
 import { RunStream } from './RunStream';
 import type { ConsoleLogEntry } from './inspect/build-console-log-entries';
@@ -54,7 +53,7 @@ import type { ConsoleExecutionHeaderOption } from './inspect/ConsoleRoomHeader';
 import { isInspectRunLive } from './inspect/inspect-status';
 import { resolveRoomKind } from './inspect/resolve-room-kind';
 
-export type ConsoleInspectView = 'log' | 'graph' | 'artifacts';
+export type ConsoleInspectView = 'log' | 'graph' | 'artifacts' | 'files-changed';
 
 export interface ConsoleInspectPaneProps {
   view: ConsoleInspectView;
@@ -79,8 +78,6 @@ export interface ConsoleInspectPaneProps {
   logScrollRef: RefObject<HTMLDivElement | null>;
   onSelectNode: (nodeId: string, rowId?: string) => void;
   onCloseRoom: () => void;
-  roomRatio?: number;
-  onRoomRatioChange?: (ratio: number) => void;
   splitMode?: ContainerSplitMode;
   loadDefinition: (workflowName: string, cwd: string) => Promise<DagNode[]>;
   loadMessages: (
@@ -156,9 +153,14 @@ function executionOptionsForNode(
   events: readonly WorkflowEvent[],
   runStartedAt: string
 ): ConsoleExecutionHeaderOption[] {
+  const forNode = entries
+    .filter(entry => entry.row.nodeId === nodeId)
+    .map(entry => ({ id: entry.row.id, order: entry.row.order }));
+  const capped = capExecutionOptions(forNode);
+  const cappedIds = new Set(capped.map(row => row.id));
   const options: ConsoleExecutionHeaderOption[] = [];
   for (const entry of entries) {
-    if (entry.row.nodeId !== nodeId) continue;
+    if (entry.row.nodeId !== nodeId || !cappedIds.has(entry.row.id)) continue;
     options.push({
       rowId: entry.row.id,
       label: buildExecutionHeader({
@@ -169,6 +171,23 @@ function executionOptionsForNode(
     });
   }
   return options;
+}
+
+/** Uncapped execution total for the node — the header's "of N" caption reads
+ * the real count even past the selector's own eight-option ceiling. */
+function executionCountForNode(entries: readonly ConsoleLogEntry[], nodeId: string): number {
+  return entries.reduce((count, entry) => (entry.row.nodeId === nodeId ? count + 1 : count), 0);
+}
+
+function runOfTotalForNode(
+  entries: readonly ConsoleLogEntry[],
+  nodeId: string,
+  selectedRowId: string
+): RunOfTotal | null {
+  const forNode = entries
+    .filter(entry => entry.row.nodeId === nodeId)
+    .map(entry => ({ id: entry.row.id, status: entry.row.status, selection: entry.row.selection }));
+  return computeRunOfTotal(forNode, selectedRowId);
 }
 
 export function ConsoleInspectPane({
@@ -194,8 +213,6 @@ export function ConsoleInspectPane({
   logScrollRef,
   onSelectNode,
   onCloseRoom,
-  roomRatio = 40,
-  onRoomRatioChange,
   splitMode,
   loadDefinition,
   loadMessages,
@@ -232,8 +249,6 @@ export function ConsoleInspectPane({
       entry => entry.row.nodeId === selectedRow.nodeId && entry.row.order > selectedRow.order
     );
   const roomOpen = selectedNodeId !== null;
-  const ratio = clampRoomRatio(roomRatio);
-  const sizes = roomPanelSizes(ratio);
   const selectedNodeState =
     selectedRow === null
       ? undefined
@@ -266,6 +281,12 @@ export function ConsoleInspectPane({
     selectedNodeId === null
       ? []
       : executionOptionsForNode(logEntries, selectedNodeId, rawEvents, run.startedAt);
+  const executionCount =
+    selectedNodeId === null ? 0 : executionCountForNode(logEntries, selectedNodeId);
+  const runOfTotal =
+    selectedNodeId === null || selectedRow === null
+      ? null
+      : runOfTotalForNode(logEntries, selectedNodeId, selectedRow.id);
 
   const mainPane: ReactElement =
     view === 'log' ? (
@@ -332,6 +353,8 @@ export function ConsoleInspectPane({
           }}
         />
       </div>
+    ) : view === 'files-changed' ? (
+      <FilesChangedPanel runId={run.id} />
     ) : (
       <ArtifactPanel runId={run.id} />
     );
@@ -364,6 +387,8 @@ export function ConsoleInspectPane({
           onSubmitAsk={onSubmitAsk}
           headerModel={headerModel}
           headerOptions={headerOptions}
+          executionCount={executionCount}
+          runOfTotal={runOfTotal}
           onSelectRow={(rowId: string): void => {
             onSelectNode(selectedNodeId, rowId);
           }}
@@ -383,61 +408,41 @@ export function ConsoleInspectPane({
       </div>
     );
 
-  const handleLayoutChanged = (layout: Record<string, number>): void => {
-    if (mode !== 'split') return;
-    const roomSize = layout['console-run-room'];
-    if (typeof roomSize !== 'number') return;
-    onRoomRatioChange?.(clampRoomRatio(roomSize));
-  };
-
   return (
     <div
       ref={paneRef}
       data-testid="console-inspect-pane"
       className="flex min-h-0 min-w-0 flex-1 flex-col"
     >
-      <ConsolePanelGroup
-        orientation="horizontal"
-        className="min-h-0 flex-1"
-        defaultLayout={
-          mode === 'single'
-            ? roomOpen
-              ? { 'console-run-view': 0, 'console-run-room': 100 }
-              : { 'console-run-view': 100 }
-            : roomOpen
-              ? {
-                  'console-run-view': 100 - ratio,
-                  'console-run-room': ratio,
-                }
-              : { 'console-run-view': 100 }
-        }
-        onLayoutChanged={handleLayoutChanged}
-      >
-        <ConsolePanel
+      <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
+        <div
           id="console-run-view"
-          className="flex min-h-0 flex-col"
-          hidden={mode === 'single' && roomOpen}
-          defaultSize={
-            mode === 'single' && roomOpen ? '0%' : roomOpen ? sizes.view.defaultSize : '100%'
+          // The `hidden` attribute alone does not hide a `.flex` element:
+          // Tailwind preflight gives `[hidden]` zero specificity, so the
+          // display utility must change as well.
+          className={
+            mode === 'single' && roomOpen
+              ? 'hidden min-h-0 min-w-0 flex-1 flex-col'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col'
           }
-          minSize={mode === 'single' && roomOpen ? '0%' : sizes.view.minSize}
+          hidden={mode === 'single' && roomOpen}
         >
           {mainPane}
-        </ConsolePanel>
+        </div>
         {roomOpen ? (
-          <>
-            {mode === 'split' ? <ConsolePanelSeparator aria-label="Resize node room" /> : null}
-            <ConsolePanel
-              id="console-run-room"
-              defaultSize={mode === 'single' ? '100%' : sizes.room.defaultSize}
-              minSize={mode === 'single' ? '100%' : sizes.room.minSize}
-              maxSize={mode === 'single' ? '100%' : sizes.room.maxSize}
-            >
-              {roomPane}
-            </ConsolePanel>
-          </>
+          <div
+            id="console-run-room"
+            className="min-h-0 min-w-0"
+            style={
+              mode === 'single'
+                ? { width: '100%' }
+                : { width: CONSOLE_ROOM_WIDTH_PX, flexShrink: 0 }
+            }
+          >
+            {roomPane}
+          </div>
         ) : null}
-      </ConsolePanelGroup>
+      </div>
     </div>
   );
 }

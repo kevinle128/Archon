@@ -13,7 +13,9 @@ import * as workflowEventOutboxDb from '../db/workflow-event-outbox';
 import * as workflowNodeSessionDb from '../db/workflow-node-sessions';
 import * as workflowNodeMessageDb from '../db/workflow-node-messages';
 import * as workflowPendingInteractionDb from '../db/workflow-pending-interactions';
+import * as workflowSteeringDb from '../db/workflow-steering';
 import * as workflowCheckpointDb from '../db/workflow-checkpoints';
+import * as workflowNodeExecutionEvidenceDb from '../db/workflow-node-execution-evidence';
 import * as codebaseDb from '../db/codebases';
 import * as envVarDb from '../db/env-vars';
 import { resolveEventRoute, type NotRoutableReason } from '../events/binding-router';
@@ -429,6 +431,10 @@ export function createWorkflowStore(): IWorkflowStore {
     enqueueExternalWorkflowEvent,
     upsertWorkflowNodeCheckpoint: workflowCheckpointDb.upsertWorkflowNodeCheckpoint,
     getLatestWorkflowNodeCheckpoint: workflowCheckpointDb.getLatestWorkflowNodeCheckpoint,
+    startWorkflowNodeExecutionEvidence:
+      workflowNodeExecutionEvidenceDb.startWorkflowNodeExecutionEvidence,
+    completeWorkflowNodeExecutionEvidence:
+      workflowNodeExecutionEvidenceDb.completeWorkflowNodeExecutionEvidence,
     getDagResumeSnapshot: workflowEventDb.getDagResumeSnapshot,
     getCodebase: codebaseDb.getCodebase,
     getCodebaseEnvVars: envVarDb.getCodebaseEnvVars,
@@ -443,6 +449,25 @@ export function createWorkflowStore(): IWorkflowStore {
       workflowPendingInteractionDb.listPendingInteractions(workflowRunId),
     resolvePendingInteraction: input =>
       workflowPendingInteractionDb.resolvePendingInteraction(input),
+    getSteeringDraft: key => workflowSteeringDb.getSteeringDraft(key),
+    upsertSteeringDraft: input => workflowSteeringDb.upsertSteeringDraft(input),
+    clearSteeringDraft: key => workflowSteeringDb.clearSteeringDraft(key),
+    getSteeringNodeSettings: (workflowRunId, nodeId) =>
+      workflowSteeringDb.getSteeringNodeSettings(workflowRunId, nodeId),
+    upsertSteeringNodeSettings: input => workflowSteeringDb.upsertSteeringNodeSettings(input),
+    enqueueSteeringMessage: input => workflowSteeringDb.enqueueSteeringMessage(input),
+    withdrawSteeringMessage: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.withdrawSteeringMessage(workflowRunId, nodeId, messageId),
+    listSteeringQueue: (workflowRunId, nodeId) =>
+      workflowSteeringDb.listSteeringQueue(workflowRunId, nodeId),
+    claimSteeringQueue: (workflowRunId, nodeId, limit) =>
+      workflowSteeringDb.claimSteeringQueue(workflowRunId, nodeId, limit),
+    markSteeringMessagesSent: (workflowRunId, nodeId, messageIds) =>
+      workflowSteeringDb.markSteeringMessagesSent(workflowRunId, nodeId, messageIds),
+    claimSteeringMessageForSoftInjection: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.claimSteeringMessageForSoftInjection(workflowRunId, nodeId, messageId),
+    reconcileNeverSentSteeringMessages: (workflowRunId, nodeId) =>
+      workflowSteeringDb.reconcileNeverSentSteeringMessages(workflowRunId, nodeId),
   };
 }
 

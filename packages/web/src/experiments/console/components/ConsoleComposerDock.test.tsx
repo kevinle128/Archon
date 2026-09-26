@@ -189,6 +189,10 @@ describe('ConsoleComposerDock', () => {
       nodeTerminal: boolean;
       nodeExecutionKey: string | null;
       idleAwaitExpired: boolean;
+      recoveryRequired: boolean;
+      softInjectionAvailable: boolean;
+      onSendQueuedMessageNow: (messageId: string) => void;
+      autoSendEnabled: boolean;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -217,6 +221,10 @@ describe('ConsoleComposerDock', () => {
           nodeTerminal: overrides.nodeTerminal,
           nodeExecutionKey: overrides.nodeExecutionKey,
           idleAwaitExpired: overrides.idleAwaitExpired,
+          recoveryRequired: overrides.recoveryRequired,
+          softInjectionAvailable: overrides.softInjectionAvailable,
+          onSendQueuedMessageNow: overrides.onSendQueuedMessageNow,
+          autoSendEnabled: overrides.autoSendEnabled,
         })
       );
     });
@@ -327,6 +335,21 @@ describe('ConsoleComposerDock', () => {
     expect(button.className).toContain('motion-reduce:transition-none');
   });
 
+  test('an explicit recovery-required signal renders a read-only restart band, no controls', async () => {
+    await renderDock({ recoveryRequired: true });
+    expect(host.textContent).toContain(
+      'restored after server restart · Resume the workflow to continue'
+    );
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelectorAll('button')).toHaveLength(0);
+    expect(host.querySelector('[role="alert"]')).not.toBeNull();
+  });
+
+  test('recovery-required wins over live and terminal checks', async () => {
+    await renderDock({ recoveryRequired: true, live: false, rowStatus: 'completed' });
+    expect(host.textContent).toContain('restored after server restart');
+  });
+
   test.each(['pending', 'completed', 'failed', 'skipped'] as const)(
     'row status %s renders no dock',
     async rowStatus => {
@@ -391,7 +414,7 @@ describe('ConsoleComposerDock', () => {
     const dockWell = field().parentElement;
     const bandSection = list?.closest('section');
     expect(dockWell?.previousElementSibling).toBe(bandSection);
-    const scroller = bandSection?.querySelector('div');
+    const scroller = list?.parentElement;
     expect(scroller?.className).toContain('max-h-[33vh]');
     expect(scroller?.className).toContain('overflow-y-auto');
   });
@@ -1264,7 +1287,8 @@ describe('ConsoleComposerDock', () => {
     expect(band?.textContent ?? '').not.toContain('this tab only');
     expect(band?.className).toContain('bg-surface-elevated');
     expect(band?.className).toContain('border-t');
-    const scroller = band?.querySelector('div');
+    expect(band?.textContent).toContain('saved to server');
+    const scroller = list?.parentElement;
     expect(scroller?.className).toContain('max-h-[33vh]');
     expect(scroller?.className).toContain('overflow-y-auto');
     const dockWell = field().parentElement;
@@ -1277,6 +1301,98 @@ describe('ConsoleComposerDock', () => {
     expect(calls).toHaveLength(0);
     expect(withdrawCalls).toHaveLength(0);
   });
+
+  test('per-item Send now appears only while generating on a soft-injection provider', async () => {
+    const ctrl = controllableRead();
+    const sendNowCalls: string[] = [];
+    await renderDock({
+      subState: 'generating',
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+      softInjectionAvailable: true,
+      onSendQueuedMessageNow: (messageId): void => {
+        sendNowCalls.push(messageId);
+      },
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+
+    const item = host.querySelector('li[data-message-id="id-a"]');
+    if (item === null) throw new Error('missing queued item');
+    const sendNow = [...item.querySelectorAll('button')].find(
+      button => (button.textContent ?? '').trim() === 'Send now'
+    );
+    if (sendNow === undefined) throw new Error('missing per-item Send now control');
+    expect(sendNow.getAttribute('aria-label')).toBe('Send now · alpha');
+
+    await act(async () => {
+      sendNow.click();
+    });
+    expect(sendNowCalls).toEqual(['id-a']);
+  });
+
+  test('per-item Send now is absent without the capability flag', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'generating',
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+      onSendQueuedMessageNow: (): void => undefined,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    const item = host.querySelector('li[data-message-id="id-a"]');
+    expect(
+      [...(item?.querySelectorAll('button') ?? [])].some(
+        button => (button.textContent ?? '').trim() === 'Send now'
+      )
+    ).toBe(false);
+  });
+
+  test('per-item Send now is absent while idle-after-interrupt even with the capability', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+      softInjectionAvailable: true,
+      onSendQueuedMessageNow: (): void => undefined,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    const item = host.querySelector('li[data-message-id="id-a"]');
+    expect(
+      [...(item?.querySelectorAll('button') ?? [])].some(
+        button => (button.textContent ?? '').trim() === 'Send now'
+      )
+    ).toBe(false);
+  });
+
+  test('the queue band always states server persistence, and Auto-send on only when confirmed', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ subState: 'generating', pollIntervalMs: 60_000, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    const band = host.querySelector('ul[aria-label="Queued messages, 1"]')?.closest('section');
+    expect(band?.textContent).toContain('saved to server');
+    expect(band?.textContent).not.toContain('Auto-send on');
+  });
+
+  test('Auto-send on renders as a read-only indicator with the confirmed capability', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      subState: 'generating',
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+      autoSendEnabled: true,
+    });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    const band = host.querySelector('ul[aria-label="Queued messages, 1"]')?.closest('section');
+    expect(band?.textContent).toContain('saved to server · Auto-send on');
+    // Read-only: no control anywhere in the band carries the indicator text.
+    expect(
+      [...(band?.querySelectorAll('button') ?? [])].some(button =>
+        (button.textContent ?? '').includes('Auto-send')
+      )
+    ).toBe(false);
+  });
+
   test('permanent 409 read stops further reads leaving UI unchanged', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;

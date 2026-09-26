@@ -36,6 +36,7 @@ import {
   createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  sendNowItemAccessibleName,
   finishedIterationDisclosure,
   focusTargetAfterSnapshot,
   goToIterationLabel,
@@ -60,6 +61,7 @@ import {
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   saveSteeringDraft,
+  savedToServerLine,
   sendNowButtonAccessibleName,
   startQueuePolling,
   steeringAgentMode,
@@ -68,7 +70,9 @@ import {
   steeringDraftStorageKey,
   syncProjectedSubState,
   STEERING_DELETE_LABEL,
+  STEERING_SEND_NOW_ITEM_LABEL,
   STEERING_DETACHED_DISCLOSURE,
+  STEERING_RECOVERY_DISCLOSURE,
   STEERING_IDLE_AWAIT_DISCLOSURE,
   STEERING_INTERRUPT_DISCLOSURE,
   STEERING_INTERRUPT_FAILED_MESSAGE,
@@ -187,6 +191,32 @@ export interface ComposerDockProps {
    * Default false.
    */
   idleAwaitExpired?: boolean;
+  /**
+   * True when the server has confirmed the live provider process was lost to
+   * a restart (CAP-14). Absent/false leaves today's visibility table; no
+   * caller derives this today — it is wired once the backend reports it.
+   */
+  recoveryRequired?: boolean;
+  /**
+   * True only when the active provider has verified soft injection (CAP-12):
+   * its transport can accept a queued message mid-turn without interrupting.
+   * Absent/false omits the per-item Send now control entirely — a
+   * queue-only provider must never draw a disabled one. No caller sets this
+   * today; the provider registry does not expose the capability yet.
+   */
+  softInjectionAvailable?: boolean;
+  /**
+   * Delivers exactly one queued message into the active turn without
+   * invoking Stop (CAP-12). Required alongside `softInjectionAvailable` —
+   * the control renders only when both are present.
+   */
+  onSendQueuedMessageNow?: (messageId: string) => void;
+  /**
+   * True when the durable Auto-send setting (CAP-15) is confirmed on. The
+   * indicator is read-only and reports state only. Default false; no caller
+   * derives this today — the durable setting itself is not built.
+   */
+  autoSendEnabled?: boolean;
 }
 
 const FIELD_CLASSES = cn(
@@ -236,6 +266,10 @@ export function ComposerDock({
   nodeTerminal = false,
   nodeExecutionKey = null,
   idleAwaitExpired = false,
+  recoveryRequired = false,
+  softInjectionAvailable = false,
+  onSendQueuedMessageNow,
+  autoSendEnabled = false,
 }: ComposerDockProps): React.ReactElement | null {
   const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
   const storageKey = steeringDraftStorageKey(runId, nodeId);
@@ -291,6 +325,7 @@ export function ComposerDock({
     finishedIteration: usableFinishedIteration,
     neverSent: dock.neverSent,
     nodeTerminal,
+    recoveryRequired,
   });
 
   // Attempt reset + observation marking run in layout before passive async
@@ -667,6 +702,54 @@ export function ComposerDock({
 
   if (mode === 'hidden') return null;
 
+  if (mode === 'recovery-required') {
+    return (
+      <section
+        aria-labelledby={bandHeaderId}
+        className="flex-none border-t border-border bg-surface-elevated"
+      >
+        {dock.sent.length === 0 ? null : (
+          <>
+            <div className="flex items-baseline gap-2 px-[10px] pt-[6px]">
+              <h3
+                id={bandHeaderId}
+                className="flex-none text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+              >
+                {queueBandHeader(dock.sent.length)}
+              </h3>
+              <span className="ml-auto flex-none text-[10px] text-text-secondary">
+                {savedToServerLine(autoSendEnabled)}
+              </span>
+            </div>
+            <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+              <ul aria-label={queueListLabel(dock.sent.length)}>
+                {dock.sent.map(receipt => (
+                  <li
+                    key={receipt.messageId}
+                    data-message-id={receipt.messageId}
+                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                  >
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {receipt.message}
+                    </span>
+                    <span className="flex-none">sent</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
+        )}
+        <p
+          role="alert"
+          tabIndex={-1}
+          className="border-t border-border px-[10px] py-[8px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
+        >
+          {STEERING_RECOVERY_DISCLOSURE}
+        </p>
+      </section>
+    );
+  }
+
   if (mode === 'detached') {
     return (
       <div className="flex-none border-t border-border bg-surface-elevated px-[10px] py-[8px]">
@@ -802,6 +885,10 @@ export function ComposerDock({
       : (dock.notice ?? (dock.sent.length > 0 ? queuedCountPhrase(dock.sent.length) : ''));
   const showStop = agentMode === 'generating' || agentMode === 'interrupting';
   const stopping = agentMode === 'interrupting';
+  // Per-item Send now is honest only while the turn genuinely accepts a
+  // mid-turn message: generating, on a provider with proven soft injection.
+  const canSendItemNow =
+    softInjectionAvailable && agentMode === 'generating' && onSendQueuedMessageNow !== undefined;
 
   return (
     <>
@@ -810,12 +897,17 @@ export function ComposerDock({
           aria-labelledby={bandHeaderId}
           className="flex-none border-t border-border bg-surface-elevated"
         >
-          <h3
-            id={bandHeaderId}
-            className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
-          >
-            {idle ? willSendBandHeader(dock.sent.length) : queueBandHeader(dock.sent.length)}
-          </h3>
+          <div className="flex items-baseline gap-2 px-[10px] pt-[6px]">
+            <h3
+              id={bandHeaderId}
+              className="flex-none text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+            >
+              {idle ? willSendBandHeader(dock.sent.length) : queueBandHeader(dock.sent.length)}
+            </h3>
+            <span className="ml-auto flex-none text-[10px] text-text-secondary">
+              {savedToServerLine(autoSendEnabled)}
+            </span>
+          </div>
           <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
             <ul
               aria-label={
@@ -832,6 +924,22 @@ export function ComposerDock({
                     {receipt.message}
                   </span>
                   <span className="flex-none">sent</span>
+                  {canSendItemNow ? (
+                    <button
+                      type="button"
+                      aria-label={sendNowItemAccessibleName(receipt.message)}
+                      onClick={(): void => {
+                        onSendQueuedMessageNow?.(receipt.messageId);
+                      }}
+                      className={cn(
+                        'min-h-[24px] flex-none whitespace-nowrap rounded-md border border-border px-[7px] font-sans text-[10.5px]',
+                        'text-text-secondary hover:border-border-bright hover:text-text-primary',
+                        'focus-visible:outline-2 focus-visible:outline-accent-bright focus-visible:-outline-offset-2'
+                      )}
+                    >
+                      {STEERING_SEND_NOW_ITEM_LABEL}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     ref={(el): void => {

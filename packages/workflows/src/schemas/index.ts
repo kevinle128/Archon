@@ -255,3 +255,6 @@ export type { WorkflowDefinition as DagWorkflow } from './workflow';
 export * from './node-message';
 export * from './node-execution';
 export * from './pending-interaction';
+
+// Durable steering records (drafts, guidance queue, per-node settings)
+export * from './steering';

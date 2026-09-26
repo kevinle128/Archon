@@ -1999,12 +1999,6 @@ describe('workflows database', () => {
 
       test('discards live and parked in-process handles after the transaction commits', async () => {
         const live = getSteeringRegistry().register('workflow-run-123', 'node-a');
-        live.enqueue({
-          messageId: 'm-1',
-          message: 'queued guidance',
-          operatorUserId: 'op-1',
-          receivedAt: new Date().toISOString(),
-        });
         const parked = getSteeringRegistry().register('workflow-run-123', 'node-b');
         parked.park();
         mockQuery.mockResolvedValueOnce(createQueryResult([], 1));
@@ -2014,8 +2008,10 @@ describe('workflows database', () => {
         expect(result).toEqual({ cancelled: true });
         expect(getSteeringRegistry().get('workflow-run-123', 'node-a')).toBeUndefined();
         expect(getSteeringRegistry().get('workflow-run-123', 'node-b')).toBeUndefined();
-        // Discarded handles are closed and emptied so they can never drain.
-        expect(live.snapshot()).toEqual({ phase: 'closed', queued: [], acceptedCount: 0 });
+        // Discarded handles are closed so they can never accept a new turn.
+        // Durable queue content is reconciled by each node's own terminal
+        // path, not by this registry-level cleanup.
+        expect(live.snapshot()).toEqual({ phase: 'closed', subState: undefined });
       });
 
       test('discards a deliberately stale handle on an idempotent already-terminal cancel', async () => {

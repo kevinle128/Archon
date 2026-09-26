@@ -6,6 +6,7 @@
  * Focus restoration stays the caller's DOM responsibility via openerId.
  */
 import type { components } from './api.generated';
+import { ensureUtc, formatDurationLong } from './format';
 import type { RoomSurface } from './room-split-layout';
 import { IDLE_AWAIT_EXPIRED_ERROR } from './steering-dock';
 
@@ -54,6 +55,8 @@ export interface ExecutionHeaderModel {
   executionLabel: string;
   status: string;
   startedOffsetMs: number | null;
+  /** ISO timestamp the selected execution started, for the header's clock-time segment. */
+  startedAt: string | null;
   durationMs: number | null;
   provider: string | null;
   model: string | null;
@@ -116,9 +119,13 @@ function executionLabel(selection: ExecutionRowSelection): string {
       context.push(`Iteration ${String(selection.iteration)}`);
     }
     if (selection.retryEpoch !== undefined && selection.retryEpoch > 0) {
-      context.push(`Attempt ${String(selection.retryEpoch + 1)}`);
+      context.push(`Run ${String(selection.retryEpoch + 1)}`);
     }
-    return context.length > 0 ? context.join(' · ') : 'Attempt 1';
+    // "Attempt" is banned transcript vocabulary (EXPERIENCE.md); a bare
+    // first occurrence uses the same "Run N" base occurrence-groups.ts
+    // gives every retry heading, so the header and the transcript's own
+    // occurrence label can never disagree.
+    return context.length > 0 ? context.join(' · ') : 'Run 1';
   }
   return 'Execution unknown';
 }
@@ -165,7 +172,119 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
   if (awaiting.length > 0) return latestByOrder(awaiting);
   const running = forNode.filter(row => row.status === 'running');
   if (running.length > 0) return latestByOrder(running);
+  // A skipped row (including a resume's "prior success" marker) carries no
+  // transcript content and a later order than the real work it stands in
+  // for. Prefer the latest row that actually ran unless every row skipped.
+  const ran = forNode.filter(row => row.status !== 'skipped');
+  if (ran.length > 0) return latestByOrder(ran);
   return latestByOrder(forNode);
+}
+
+/** Execution selector ceiling — also the header's "max N" caption. */
+export const EXECUTION_OPTIONS_MAX = 8;
+
+/**
+ * Cap the executions a header selector exposes, keeping the most recent
+ * ones so a long-running loop never grows the control past this ceiling.
+ * Chronological order is preserved among the kept rows.
+ */
+export function capExecutionOptions<T extends { order: number }>(
+  rows: readonly T[],
+  max = EXECUTION_OPTIONS_MAX
+): T[] {
+  if (rows.length <= max) return [...rows];
+  return [...rows].sort((a, b) => a.order - b.order).slice(rows.length - max);
+}
+
+interface LoopAncestryLike {
+  readonly node_id: string;
+  readonly iteration: number;
+}
+
+/** The wire fields `excludeRepresentedLoopContainers` needs, nothing more. */
+export interface LoopContainerCandidate {
+  readonly node_id: string;
+  readonly node_type?: string;
+  readonly retry_epoch?: number;
+  readonly route_activation_seq?: number;
+  readonly loop_ancestry?: readonly LoopAncestryLike[];
+  readonly started_at?: string;
+  readonly ended_at?: string;
+}
+
+function normalizedEpoch(value: number | undefined): number {
+  return value ?? 0;
+}
+
+function ancestryPrefixEquals(
+  left: readonly LoopAncestryLike[],
+  right: readonly LoopAncestryLike[] | undefined
+): boolean {
+  const rightEntries = right ?? [];
+  if (left.length !== rightEntries.length) return false;
+  return left.every(
+    (entry, index) =>
+      entry.node_id === rightEntries[index]?.node_id &&
+      entry.iteration === rightEntries[index]?.iteration
+  );
+}
+
+/** Whether `candidateStartedAt` falls inside the container's own run window. */
+function executionWindowContains(
+  container: LoopContainerCandidate,
+  candidateStartedAt: string
+): boolean {
+  const containerStart =
+    container.started_at !== undefined ? Date.parse(container.started_at) : Number.NaN;
+  const candidateStart = Date.parse(candidateStartedAt);
+  if (!Number.isFinite(containerStart) || !Number.isFinite(candidateStart)) return false;
+  if (candidateStart < containerStart) return false;
+  if (container.ended_at === undefined) return true;
+  const containerEnd = Date.parse(container.ended_at);
+  return !Number.isFinite(containerEnd) || candidateStart <= containerEnd;
+}
+
+/**
+ * A loop node mints one "container" execution for its own top-level
+ * started/failed lifecycle, then a separate execution per iteration nested
+ * inside it (`dag-executor.ts`'s `outerExecutionScope` /
+ * `iterationExecutionScope`). Both share the loop's retry epoch and route
+ * activation and start within the same instant, so a container with no
+ * transcript of its own is the same physical invocation an iteration row
+ * already carries the transcript for — drop it so the Execution list, and its
+ * default selection, land on the iteration instead. A container proven to
+ * own no iteration (the loop failed before iteration 1 started) is never
+ * dropped, so a genuinely distinct execution never disappears.
+ */
+export function excludeRepresentedLoopContainers<T extends LoopContainerCandidate>(
+  executions: readonly T[]
+): T[] {
+  const isContainer = (exec: LoopContainerCandidate): boolean =>
+    exec.node_type === 'loop' &&
+    (exec.loop_ancestry === undefined || exec.loop_ancestry.length === 0);
+
+  const isRepresentedByAnIteration = (container: T): boolean =>
+    executions.some(candidate => {
+      if (candidate.node_id !== container.node_id) return false;
+      const ancestry = candidate.loop_ancestry;
+      if (ancestry === undefined || ancestry.length === 0) return false;
+      if (!ancestryPrefixEquals(ancestry.slice(0, -1), container.loop_ancestry)) return false;
+      if (normalizedEpoch(candidate.retry_epoch) !== normalizedEpoch(container.retry_epoch)) {
+        return false;
+      }
+      if (
+        normalizedEpoch(candidate.route_activation_seq) !==
+        normalizedEpoch(container.route_activation_seq)
+      ) {
+        return false;
+      }
+      return (
+        candidate.started_at !== undefined &&
+        executionWindowContains(container, candidate.started_at)
+      );
+    });
+
+  return executions.filter(exec => !isContainer(exec) || !isRepresentedByAnIteration(exec));
 }
 
 function sameAncestryPrefix(
@@ -304,11 +423,173 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     executionLabel: executionLabel(input.row.selection),
     status: input.row.status,
     startedOffsetMs: startedOffsetMs(input.row, input.runStartedAt),
+    startedAt: input.row.startedAt ?? null,
     durationMs: input.row.durationMs ?? null,
     provider: runtime?.provider || null,
     model: runtime?.model || null,
     unknownScope: input.row.unknownScope ?? true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Room header presentation: node-kind chip, status pill, retry count, and the
+// second header line. Every function here returns semantic data (labels and
+// design-token names) — never a Tailwind class — so Console and Legacy each
+// render it with their own JSX while sharing one source of truth.
+// ---------------------------------------------------------------------------
+
+export interface NodeKindChip {
+  readonly label: string;
+  readonly tone: string;
+}
+
+/** Kinds sharing an existing `--node-*` token; a script folds into bash, a
+ * plannotator gate folds into approval (DESIGN.md precedent) — anything else
+ * has no established color and omits the chip rather than inventing one. */
+const NODE_KIND_TONE: Readonly<Record<string, string>> = {
+  command: 'node-command',
+  prompt: 'node-prompt',
+  bash: 'node-bash',
+  script: 'node-bash',
+  loop: 'node-loop',
+  approval: 'node-approval',
+  plannotator_gate: 'node-approval',
+};
+
+export function nodeKindChip(kind: string | null | undefined): NodeKindChip | null {
+  if (kind === null || kind === undefined) return null;
+  const tone = NODE_KIND_TONE[kind];
+  return tone === undefined ? null : { label: kind, tone };
+}
+
+export interface StatusPill {
+  readonly label: string;
+  /** Design-token name, or null for a neutral (no color) pill. */
+  readonly tone: string | null;
+}
+
+const STATUS_PILL_TONE: Readonly<Record<string, string | null>> = {
+  pending: 'accent',
+  running: 'accent',
+  awaiting: 'warning',
+  completed: 'success',
+  failed: 'error',
+  skipped: null,
+  cancelled: null,
+};
+
+const STATUS_PILL_LABEL: Readonly<Record<string, string>> = {
+  pending: 'Pending',
+  running: 'Running',
+  awaiting: 'Waiting on you',
+  completed: 'Completed',
+  failed: 'Failed',
+  skipped: 'Skipped',
+  cancelled: 'Cancelled',
+};
+
+export function statusPill(status: string): StatusPill {
+  return {
+    label: STATUS_PILL_LABEL[status] ?? status,
+    tone: STATUS_PILL_TONE[status] ?? null,
+  };
+}
+
+export interface RunOfTotal {
+  readonly run: number;
+  readonly total: number;
+}
+
+interface RunFamilyRow {
+  readonly id: string;
+  readonly status: string;
+  readonly selection: ExecutionRowSelection;
+}
+
+/**
+ * Retry position and count for the selected row among sibling rows in the
+ * same iteration and route slot. A resume's `node_skipped_prior_success`
+ * marker can carry a different retry epoch than the real row it stands in
+ * for without being a second run, so skipped rows never count toward the
+ * total. Null when the selection carries no retry identity, or the slot only
+ * ever ran once.
+ */
+export function computeRunOfTotal(
+  rows: readonly RunFamilyRow[],
+  selectedId: string
+): RunOfTotal | null {
+  const selected = rows.find(candidate => candidate.id === selectedId);
+  if (selected?.selection.kind !== 'occurrence') return null;
+  const iteration = selected.selection.iteration ?? null;
+  const route = selected.selection.routeActivationSeq ?? null;
+  const epochs = new Set<number>();
+  for (const candidate of rows) {
+    if (candidate.status === 'skipped') continue;
+    if (candidate.selection.kind !== 'occurrence') continue;
+    if ((candidate.selection.iteration ?? null) !== iteration) continue;
+    if ((candidate.selection.routeActivationSeq ?? null) !== route) continue;
+    epochs.add(candidate.selection.retryEpoch ?? 0);
+  }
+  const selectedEpoch = selected.selection.retryEpoch ?? 0;
+  epochs.add(selectedEpoch);
+  if (epochs.size <= 1) return null;
+  return { run: selectedEpoch + 1, total: epochs.size };
+}
+
+function startedClockLabel(startedAt: string): string | null {
+  const parsed = new Date(ensureUtc(startedAt));
+  if (Number.isNaN(parsed.getTime())) return null;
+  const hours = String(parsed.getHours()).padStart(2, '0');
+  const minutes = String(parsed.getMinutes()).padStart(2, '0');
+  return `started ${hours}:${minutes}`;
+}
+
+export interface HeaderMetaLineInput {
+  readonly startedAt: string | null;
+  readonly status: string;
+  readonly durationMs: number | null;
+  readonly runOfTotal: RunOfTotal | null;
+  readonly provider: string | null;
+  readonly model: string | null;
+  /** Latest terminal execution failed for idle-await expiry. Default false. */
+  readonly idleAwaitExpired?: boolean;
+  /** Set only when viewing a finished iteration while the node runs live
+   * elsewhere; the run count is not meaningful for that stale history view. */
+  readonly iterationPrefix?: number | null;
+}
+
+const LIVE_META_STATUSES: ReadonlySet<string> = new Set(['running', 'awaiting']);
+
+/**
+ * The room header's second line: which iteration this is (only when viewing
+ * finished history), start clock time, live/duration/idle-timeout state,
+ * retry count, provider, and model. Each segment appears only when its own
+ * data exists; the whole line is null when nothing is known yet.
+ */
+export function headerMetaLine(input: HeaderMetaLineInput): string | null {
+  const viewingStaleIteration =
+    input.iterationPrefix !== undefined && input.iterationPrefix !== null;
+  const segments: string[] = [];
+  if (viewingStaleIteration) {
+    segments.push(`iteration ${String(input.iterationPrefix)}`);
+  }
+  if (input.startedAt !== null) {
+    const clock = startedClockLabel(input.startedAt);
+    if (clock !== null) segments.push(clock);
+  }
+  if (input.status === 'failed' && input.idleAwaitExpired === true) {
+    segments.push('failed after idle timeout');
+  } else if (LIVE_META_STATUSES.has(input.status)) {
+    segments.push('running…');
+  } else if (input.durationMs !== null) {
+    segments.push(formatDurationLong(input.durationMs));
+  }
+  if (!viewingStaleIteration && input.runOfTotal !== null) {
+    segments.push(`run ${String(input.runOfTotal.run)} of ${String(input.runOfTotal.total)}`);
+  }
+  if (input.provider !== null) segments.push(input.provider);
+  if (input.model !== null) segments.push(input.model);
+  return segments.length > 0 ? segments.join(' · ') : null;
 }
 
 export function roomOpenerId(surface: RoomSurface, kind: RoomOpenerKind, key: string): string {

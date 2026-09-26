@@ -19,11 +19,18 @@ const ITERATION_TWO: ExecutionHeaderModel = {
   executionLabel: 'Iteration 2',
   status: 'running',
   startedOffsetMs: 1500,
+  startedAt: '2026-09-08T04:52:00.000Z',
   durationMs: 2400,
   provider: 'openai',
   model: 'gpt-5',
   unknownScope: false,
 };
+
+function closeButton(host: Element): Element {
+  const button = host.querySelector('button[aria-label="Close"]');
+  if (button === null) throw new Error('missing Close button');
+  return button;
+}
 
 describe('ConsoleRoomHeader', () => {
   let win: ReturnType<typeof installHappyDom>;
@@ -48,7 +55,7 @@ describe('ConsoleRoomHeader', () => {
     restoreHappyDom();
   });
 
-  test('renders iteration header fields and reports select plus close', async () => {
+  test('renders the node-kind chip, name, status pill, meta line, and execution picker', async () => {
     const selected: string[] = [];
     const closes: number[] = [];
 
@@ -67,16 +74,21 @@ describe('ConsoleRoomHeader', () => {
           onClose: (): void => {
             closes.push(1);
           },
+          kindChip: { label: 'loop', tone: 'node-loop' },
+          executionCount: 3,
+          runOfTotal: { run: 2, total: 2 },
         })
       );
     });
 
     const text = host.textContent ?? '';
+    expect(text).toContain('loop');
     expect(text).toContain('Review');
-    expect(text).toContain('Iteration 2');
-    expect(text).toContain('running');
-    expect(text).toContain('+1.5s');
-    expect(text).toContain('2.4s');
+    expect(text).toContain('Running');
+    expect(text).toContain('started');
+    expect(text).toContain('running…');
+    expect(text).toContain('run 2 of 2');
+    expect(text).toContain('of 3 · max 8');
     expect(text).toContain('openai');
     expect(text).toContain('gpt-5');
     expect(text).not.toContain('—');
@@ -96,25 +108,22 @@ describe('ConsoleRoomHeader', () => {
     });
     expect(selected).toEqual(['iter-1']);
 
-    const close = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Close')
-    );
-    if (close === undefined) {
-      throw new Error('missing Close button');
-    }
     await act(async () => {
-      close.click();
+      closeButton(host).dispatchEvent(
+        new win.Event('click', { bubbles: true }) as unknown as Event
+      );
     });
     expect(closes).toEqual([1]);
   });
 
-  test('omits provider, model, start, and duration when those fields are null', async () => {
+  test('omits the kind chip, meta line, and picker when their own data is absent', async () => {
     await act(async () => {
       root.render(
         createElement(consoleRoomHeader.ConsoleRoomHeader, {
           model: {
             ...ITERATION_TWO,
             status: 'completed',
+            startedAt: null,
             startedOffsetMs: null,
             durationMs: null,
             provider: null,
@@ -124,22 +133,22 @@ describe('ConsoleRoomHeader', () => {
           selectedRowId: 'iter-2',
           onSelectRow: (): void => undefined,
           onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
         })
       );
     });
 
     const text = host.textContent ?? '';
     expect(text).toContain('Review');
-    expect(text).toContain('Iteration 2');
-    expect(text).toContain('completed');
-    expect(text).not.toContain('+');
+    expect(text).toContain('Completed');
     expect(text).not.toContain('openai');
     expect(text).not.toContain('gpt-5');
-    expect(text).not.toContain('1.5s');
-    expect(text).not.toContain('2.4s');
+    expect(text).not.toContain('started');
+    expect(host.querySelector('select[aria-label="Execution"]')).toBeNull();
   });
 
-  test('single mode uses Back as the close label', async () => {
+  test('single mode uses Back as the close accessible name', async () => {
     const closes: number[] = [];
     await act(async () => {
       root.render(
@@ -152,20 +161,45 @@ describe('ConsoleRoomHeader', () => {
             closes.push(1);
           },
           closeLabel: 'Back',
+          kindChip: null,
+          executionCount: 1,
         })
       );
     });
 
-    const back = Array.from(host.querySelectorAll('button')).find(button =>
-      (button.textContent ?? '').includes('Back')
-    );
-    if (back === undefined) {
+    const back = host.querySelector('button[aria-label="Back"]');
+    if (back === null) {
       throw new Error('missing Back button');
     }
-    expect(host.textContent).not.toContain('Close');
+    expect(host.querySelector('button[aria-label="Close"]')).toBeNull();
     await act(async () => {
-      back.click();
+      back.dispatchEvent(new win.Event('click', { bubbles: true }) as unknown as Event);
     });
     expect(closes).toEqual([1]);
+  });
+
+  test('a stale finished iteration reads its own iteration number and drops the run count', async () => {
+    await act(async () => {
+      root.render(
+        createElement(consoleRoomHeader.ConsoleRoomHeader, {
+          model: { ...ITERATION_TWO, status: 'completed' },
+          options: [
+            { rowId: 'iter-1', label: 'Iteration 1' },
+            { rowId: 'iter-2', label: 'Iteration 2' },
+          ],
+          selectedRowId: 'iter-1',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: { label: 'loop', tone: 'node-loop' },
+          executionCount: 3,
+          runOfTotal: { run: 2, total: 2 },
+          iterationPrefix: 1,
+        })
+      );
+    });
+
+    const text = host.textContent ?? '';
+    expect(text).toContain('iteration 1');
+    expect(text).not.toContain('run 2 of 2');
   });
 });

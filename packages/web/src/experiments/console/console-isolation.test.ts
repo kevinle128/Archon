@@ -135,6 +135,9 @@ describe('console NFR4 isolation', () => {
       '@/lib/run-graph/constants',
       '@/lib/api.generated',
       '@/lib/steering-dock',
+      // The latest todo tool row types its folded checklist against the
+      // same phase/item shape the pinned strip renders from.
+      '@/lib/todo-state',
     ]);
     const violations: string[] = [];
     const seen = new Set<string>();

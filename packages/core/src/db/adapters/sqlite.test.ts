@@ -555,6 +555,32 @@ describe('SqliteAdapter', () => {
     });
   });
 
+  describe('workflow node execution evidence schema', () => {
+    test('creates remote_agent_workflow_node_execution_evidence with start/end evidence columns', () => {
+      db = createTestDb();
+      const cols = raw_pragma(currentDbPath, 'remote_agent_workflow_node_execution_evidence');
+      expect(cols).toEqual([
+        'id',
+        'workflow_run_id',
+        'node_id',
+        'retry_epoch',
+        'start_checkpoint_ref',
+        'start_commit_sha',
+        'started_at',
+        'end_checkpoint_ref',
+        'end_commit_sha',
+        'ended_at',
+      ]);
+    });
+
+    test('creates indexes for run and run/node/epoch lookup', () => {
+      db = createTestDb();
+      const indexes = raw_indexes(currentDbPath);
+      expect(indexes).toContain('idx_node_execution_evidence_run');
+      expect(indexes).toContain('idx_node_execution_evidence_run_node_epoch');
+    });
+  });
+
   // ---------------------------------------------------------------------------
   // RED-PHASE SCAFFOLD (EXECUTABLE) — Story 3.1 "Implement Archon Workflow
   // Provider Binding Lifecycle"
@@ -1484,7 +1510,7 @@ describe('SqliteAdapter', () => {
      * suite stayed green. Adjust when the schema legitimately changes size —
      * the failure names the count, so the intended value is never a guess.
      */
-    const MIN_NON_AUTH_COLUMNS = 181;
+    const MIN_NON_AUTH_COLUMNS = 191;
 
     /**
      * Archon table names declared by the Postgres migration. Body-independent

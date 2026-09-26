@@ -31,4 +31,6 @@ export const E2E_FAKE_CAPABILITIES: ProviderCapabilities = {
   containerExec: false,
   askHuman: true,
   interrupt: 'native', // deterministic equivalent so E2E runs exercise the interrupt branch
+  softInjection: false,
+  deliveryAck: false,
 };

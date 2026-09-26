@@ -152,7 +152,14 @@ describe('buildWorkflowDagNodeStates', () => {
   });
 
   describe('resolveWorkflowExecutionBody', () => {
-    const views: WorkflowRunView[] = ['graph', 'logs', 'chat', 'source-control', 'terminal'];
+    const views: WorkflowRunView[] = [
+      'graph',
+      'logs',
+      'chat',
+      'source-control',
+      'files-changed',
+      'terminal',
+    ];
 
     test('every DAG inspect view shares the pane and source control stays separate', () => {
       const expected: Record<WorkflowRunView, WorkflowExecutionBody> = {
@@ -160,6 +167,7 @@ describe('buildWorkflowDagNodeStates', () => {
         logs: 'graph-logs-pane',
         chat: 'graph-logs-pane',
         'source-control': 'source-control',
+        'files-changed': 'files-changed',
         terminal: 'terminal',
       };
       for (const activeView of views) {
@@ -673,8 +681,13 @@ describe('WorkflowExecution room visit', () => {
   }
 
   async function clickNamed(label: string): Promise<HTMLElement> {
-    const button = Array.from(host.querySelectorAll('button')).find(candidate =>
-      (candidate.textContent ?? '').includes(label)
+    // The room header's Close/Back control is an icon button whose accessible
+    // name comes from aria-label, not visible text — check both so callers
+    // can name a button by whichever the room exposes.
+    const button = Array.from(host.querySelectorAll('button')).find(
+      candidate =>
+        (candidate.textContent ?? '').includes(label) ||
+        candidate.getAttribute('aria-label') === label
     );
     if (button === undefined) throw new Error(`missing ${label}`);
     await activate(button);

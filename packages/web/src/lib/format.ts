@@ -30,3 +30,19 @@ export function formatDurationMs(ms: number): string {
   if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
   return `${(ms / 60000).toFixed(1)}m`;
 }
+
+/**
+ * Format a duration in milliseconds the way the room header reports elapsed
+ * time: whole seconds under a minute ("4s", "41.2s" when fractional), then
+ * minutes and zero-padded seconds ("6m 04s", "18m 21s").
+ */
+export function formatDurationLong(ms: number): string {
+  if (ms < 60000) {
+    const seconds = Math.round(ms / 100) / 10;
+    return `${Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1)}s`;
+  }
+  const totalSeconds = Math.round(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes)}m ${String(seconds).padStart(2, '0')}s`;
+}

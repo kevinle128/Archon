@@ -178,6 +178,7 @@ export async function deleteRetryRefsByRunId(
   const prefixes = [
     `refs/archon/checkpoints/${runId}`,
     `refs/archon/retry-safety/${runId}`,
+    `refs/archon/evidence/${runId}`,
   ] as const;
   const refsOutput = await git(repoPath, ['for-each-ref', '--format=%(refname)', ...prefixes]);
   const refs = refsOutput

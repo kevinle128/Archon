@@ -574,6 +574,7 @@ export function NodeTranscriptPane({
         occurrenceGrouping={occurrenceGrouping}
         headingIdPrefix={headingIdPrefix}
         unknownScope={row?.unknownScope ?? false}
+        todos={todos}
         runId={runId}
         isPending={waitingForFirstPage}
         error={pageState.error}
@@ -645,8 +646,8 @@ export function NodeTranscriptPane({
 
   return (
     <RoomRegion nodeId={row.nodeId} scrollable={false}>
-      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {scroller}
+      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {controls}
       <ComposerDock
         key={`steering:run:${runId}|node:${row.nodeId}`}

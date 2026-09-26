@@ -134,6 +134,34 @@ export type { WorkflowNodeMessageRow } from './workflow-node-message';
 export { pendingInteractionSchema, insertPendingInteractionSchema } from './pending-interaction';
 export type { PendingInteraction, InsertPendingInteractionInput } from './pending-interaction';
 
+// Durable steering (drafts, guidance queue, per-node settings)
+export {
+  steeringDraftSchema,
+  steeringDraftKeySchema,
+  upsertSteeringDraftInputSchema,
+  steeringQueueEntrySchema,
+  enqueueSteeringMessageInputSchema,
+  enqueueSteeringMessageResultSchema,
+  steeringNodeSettingsSchema,
+  upsertSteeringNodeSettingsInputSchema,
+  claimedSteeringMessageSchema,
+  STEERING_QUEUE_STATES,
+  STEERING_QUEUE_CLAIMABLE_STATES,
+  STEERING_QUEUE_VISIBLE_STATES,
+} from './workflow-steering';
+export type {
+  SteeringDraft,
+  SteeringDraftKey,
+  UpsertSteeringDraftInput,
+  SteeringQueueEntry,
+  SteeringQueueState,
+  EnqueueSteeringMessageInput,
+  EnqueueSteeringMessageResult,
+  SteeringNodeSettings,
+  UpsertSteeringNodeSettingsInput,
+  ClaimedSteeringMessage,
+} from './workflow-steering';
+
 // UsageReport
 export {
   usageDimensionsSchema,

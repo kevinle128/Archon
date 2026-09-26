@@ -92,7 +92,12 @@ export interface ToolResultEvent extends BaseSSEEvent {
   name: string;
   output: string;
   duration: number;
+  /** Provider-reported outcome. Absent when the provider reports none. */
+  outcome?: ChatToolResultOutcome;
+  exitCode?: number;
 }
+
+export type ChatToolResultOutcome = 'success' | 'error' | 'interrupted' | 'unknown';
 
 // Session metadata
 export interface SessionInfoEvent extends BaseSSEEvent {
@@ -354,6 +359,8 @@ export interface ToolCallDisplay {
   input: Record<string, unknown>;
   output?: string;
   duration?: number;
+  outcome?: ChatToolResultOutcome;
+  exitCode?: number;
   status?: 'cancelled' | 'stopped';
   startedAt: number;
   isExpanded: boolean;

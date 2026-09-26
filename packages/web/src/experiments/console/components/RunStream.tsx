@@ -126,7 +126,9 @@ export function pairToolEvents(events: RunEvent[]): PairedToolCall[] {
       call: {
         name: e.tool || '(unknown)',
         input,
-        durationMs: match?.result?.ok === true ? match.result.durationMs : undefined,
+        durationMs: match?.result?.durationMs,
+        outcome: match?.result?.outcome ?? 'running',
+        exitCode: match?.result?.exitCode ?? undefined,
       },
     });
   }

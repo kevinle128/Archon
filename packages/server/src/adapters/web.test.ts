@@ -45,9 +45,11 @@ function makeAdapter(): {
   } as unknown as SSETransport;
 
   const mockPersistence = {
-    appendToolResult: mock((_id: string, name: string, output: string, duration: number) => {
-      appendToolResultCalls.push([_id, name, output, duration]);
-    }),
+    appendToolResult: mock(
+      (_id: string, name: string, output: string, duration: number, result?: unknown) => {
+        appendToolResultCalls.push([_id, name, output, duration, result]);
+      }
+    ),
     appendToolCall: mock(() => {}),
     appendText: mock(() => {}),
     flush: mock(async () => {}),
@@ -108,6 +110,37 @@ describe('WebAdapter.sendStructuredEvent — tool_result output bounding', () =>
     expect(emitted.length).toBe(1);
     const parsed = JSON.parse(emitted[0]!) as { output: string };
     expect(parsed.output).toBe(smallOutput);
+  });
+
+  test('carries the provider-reported outcome and exit code to SSE and persistence', async () => {
+    const { adapter, emitted, appendToolResultCalls } = makeAdapter();
+
+    await adapter.sendStructuredEvent('conv-1', {
+      type: 'tool_result',
+      toolName: 'bash',
+      toolOutput: 'fail',
+      toolOutcome: 'error',
+      exitCode: 2,
+    });
+
+    const parsed = JSON.parse(emitted[0]!) as { outcome?: string; exitCode?: number };
+    expect(parsed.outcome).toBe('error');
+    expect(parsed.exitCode).toBe(2);
+    expect(appendToolResultCalls[0]![4]).toEqual({ toolOutcome: 'error', exitCode: 2 });
+  });
+
+  test('omits outcome fields from SSE when the provider reports none', async () => {
+    const { adapter, emitted } = makeAdapter();
+
+    await adapter.sendStructuredEvent('conv-1', {
+      type: 'tool_result',
+      toolName: 'bash',
+      toolOutput: 'ok',
+    });
+
+    const parsed = JSON.parse(emitted[0]!) as Record<string, unknown>;
+    expect('outcome' in parsed).toBe(false);
+    expect('exitCode' in parsed).toBe(false);
   });
 
   test('persists full untruncated output to DB regardless of the SSE cap', async () => {

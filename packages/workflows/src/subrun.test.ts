@@ -78,6 +78,7 @@ import type { WorkflowDeps, IWorkflowPlatform, WorkflowConfig } from './deps';
 import type { IWorkflowStore } from './store';
 import type { NodeMessage } from './schemas/node-message';
 import type { PendingInteraction } from './schemas/pending-interaction';
+import type { SteeringNodeSettings } from './schemas/steering';
 import type { ApprovalContext, WorkflowRun } from './schemas/workflow-run';
 import type { WorkflowDefinition } from './schemas/workflow';
 import type {
@@ -109,6 +110,59 @@ class InMemoryStore implements IWorkflowStore {
   private nodeMessageId = 0;
   private pendingInteractions: PendingInteraction[] = [];
   private pendingId = 0;
+  private steeringSettings = new Map<string, SteeringNodeSettings>();
+  private steeringId = 0;
+
+  // Steering is not under test here — the executor's registration call at
+  // node start must not throw, but no test in this file exercises drafts or
+  // a durable queue, so those stay stub no-ops.
+  getSteeringDraft: IWorkflowStore['getSteeringDraft'] = () => Promise.resolve(null);
+  upsertSteeringDraft: IWorkflowStore['upsertSteeringDraft'] = input =>
+    Promise.resolve({ ...input, id: 'draft-1', updated_at: new Date() });
+  clearSteeringDraft: IWorkflowStore['clearSteeringDraft'] = () => Promise.resolve();
+  getSteeringNodeSettings: IWorkflowStore['getSteeringNodeSettings'] = (workflowRunId, nodeId) =>
+    Promise.resolve(this.steeringSettings.get(`${workflowRunId}::${nodeId}`) ?? null);
+  upsertSteeringNodeSettings: IWorkflowStore['upsertSteeringNodeSettings'] = input => {
+    const key = `${input.workflow_run_id}::${input.node_id}`;
+    const current = this.steeringSettings.get(key);
+    const next: SteeringNodeSettings = {
+      id: current?.id ?? `steering-${String(++this.steeringId)}`,
+      workflow_run_id: input.workflow_run_id,
+      node_id: input.node_id,
+      auto_send_enabled: input.auto_send_enabled ?? current?.auto_send_enabled ?? false,
+      updated_by_user_id: input.updated_by_user_id ?? current?.updated_by_user_id ?? null,
+      provider_id: input.provider_id ?? current?.provider_id ?? null,
+      updated_at: new Date(),
+    };
+    this.steeringSettings.set(key, next);
+    return Promise.resolve(next);
+  };
+  enqueueSteeringMessage: IWorkflowStore['enqueueSteeringMessage'] = input =>
+    Promise.resolve({
+      entry: {
+        id: 'queue-1',
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        message_id: input.message_id,
+        message: input.message,
+        operator_user_id: input.operator_user_id,
+        fifo_position: 1,
+        state: input.initial_state,
+        last_error: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+      duplicate: false,
+    });
+  withdrawSteeringMessage: IWorkflowStore['withdrawSteeringMessage'] = () =>
+    Promise.resolve({ removed: false });
+  listSteeringQueue: IWorkflowStore['listSteeringQueue'] = () => Promise.resolve([]);
+  claimSteeringQueue: IWorkflowStore['claimSteeringQueue'] = () => Promise.resolve([]);
+  markSteeringMessagesSent: IWorkflowStore['markSteeringMessagesSent'] = () => Promise.resolve();
+  claimSteeringMessageForSoftInjection: IWorkflowStore['claimSteeringMessageForSoftInjection'] =
+    () => Promise.resolve(null);
+  reconcileNeverSentSteeringMessages: IWorkflowStore['reconcileNeverSentSteeringMessages'] = () =>
+    Promise.resolve({ count: 0 });
 
   private clone(r: WorkflowRun): WorkflowRun {
     return { ...r, metadata: { ...r.metadata } };
