@@ -698,6 +698,326 @@ mock.module('@archon/core/db/workflow-pending-interactions', () => ({
   PendingInteractionValidationError,
 }));
 
+// ---------------------------------------------------------------------------
+// Durable steering store — stateful in-memory model, faithful enough to the
+// real packages/core/src/db/workflow-steering.ts that a test seeds it exactly
+// like the send/withdraw routes would (durable insert), and the queue-read /
+// withdraw routes see exactly what they would against a real database.
+// ---------------------------------------------------------------------------
+
+type MockSteeringQueueEntry = {
+  id: string;
+  workflow_run_id: string;
+  node_id: string;
+  message_id: string;
+  message: string;
+  operator_user_id: string | null;
+  fifo_position: number;
+  state: string;
+  last_error: string | null;
+  created_at: Date;
+  updated_at: Date;
+};
+
+type MockSteeringDraft = {
+  id: string;
+  workflow_run_id: string;
+  node_id: string;
+  operator_user_id: string | null;
+  message: string;
+  updated_at: Date;
+};
+
+type MockSteeringNodeSettings = {
+  id: string;
+  workflow_run_id: string;
+  node_id: string;
+  auto_send_enabled: boolean;
+  updated_by_user_id: string | null;
+  provider_id: string | null;
+  updated_at: Date;
+};
+
+const CLAIMABLE_STEERING_STATES = new Set(['queued', 'awaiting_send_now']);
+const VISIBLE_STEERING_STATES = new Set([
+  'queued',
+  'awaiting_send_now',
+  'dispatching',
+  'sent',
+  'delivered',
+  'delivery_unknown',
+  'never_sent',
+]);
+
+let mockSteeringQueue: MockSteeringQueueEntry[] = [];
+let mockSteeringDrafts: MockSteeringDraft[] = [];
+let mockSteeringSettings: MockSteeringNodeSettings[] = [];
+let mockSteeringNextId = 0;
+
+/** Test-only reset — call from beforeEach alongside getSteeringRegistry().clearForTests(). */
+function resetSteeringStoreMock(): void {
+  mockSteeringQueue = [];
+  mockSteeringDrafts = [];
+  mockSteeringSettings = [];
+  mockSteeringNextId = 0;
+}
+
+/**
+ * Test-only durable seed — inserts exactly like the send route's durable
+ * insert would, without going through the HTTP layer. Tests that also need a
+ * live handle still call `getSteeringRegistry().register(...)` themselves.
+ */
+function seedSteeringQueueEntry(input: {
+  workflow_run_id: string;
+  node_id: string;
+  message_id: string;
+  message: string;
+  operator_user_id?: string | null;
+  state?: string;
+}): MockSteeringQueueEntry {
+  const scopedMax = mockSteeringQueue
+    .filter(e => e.workflow_run_id === input.workflow_run_id && e.node_id === input.node_id)
+    .reduce((max, e) => Math.max(max, e.fifo_position), 0);
+  const entry: MockSteeringQueueEntry = {
+    id: `steer-queue-${String((mockSteeringNextId += 1))}`,
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    message_id: input.message_id,
+    message: input.message,
+    operator_user_id: input.operator_user_id ?? null,
+    fifo_position: scopedMax + 1,
+    state: input.state ?? 'queued',
+    last_error: null,
+    created_at: new Date(),
+    updated_at: new Date(),
+  };
+  mockSteeringQueue.push(entry);
+  return entry;
+}
+
+function toClaimedSteeringMessage(entry: MockSteeringQueueEntry): {
+  message_id: string;
+  message: string;
+  operator_user_id: string | null;
+} {
+  return {
+    message_id: entry.message_id,
+    message: entry.message,
+    operator_user_id: entry.operator_user_id,
+  };
+}
+
+mock.module('@archon/core/db/workflow-steering', () => ({
+  getSteeringDraft: async (key: {
+    workflow_run_id: string;
+    node_id: string;
+    operator_user_id: string | null;
+  }) =>
+    mockSteeringDrafts.find(
+      d =>
+        d.workflow_run_id === key.workflow_run_id &&
+        d.node_id === key.node_id &&
+        d.operator_user_id === key.operator_user_id
+    ) ?? null,
+  upsertSteeringDraft: async (input: {
+    workflow_run_id: string;
+    node_id: string;
+    operator_user_id: string | null;
+    message: string;
+  }) => {
+    const existing = mockSteeringDrafts.find(
+      d =>
+        d.workflow_run_id === input.workflow_run_id &&
+        d.node_id === input.node_id &&
+        d.operator_user_id === input.operator_user_id
+    );
+    if (existing !== undefined) {
+      existing.message = input.message;
+      existing.updated_at = new Date();
+      return existing;
+    }
+    const draft: MockSteeringDraft = {
+      id: `steer-draft-${String((mockSteeringNextId += 1))}`,
+      workflow_run_id: input.workflow_run_id,
+      node_id: input.node_id,
+      operator_user_id: input.operator_user_id,
+      message: input.message,
+      updated_at: new Date(),
+    };
+    mockSteeringDrafts.push(draft);
+    return draft;
+  },
+  clearSteeringDraft: async (key: {
+    workflow_run_id: string;
+    node_id: string;
+    operator_user_id: string | null;
+  }) => {
+    mockSteeringDrafts = mockSteeringDrafts.filter(
+      d =>
+        !(
+          d.workflow_run_id === key.workflow_run_id &&
+          d.node_id === key.node_id &&
+          d.operator_user_id === key.operator_user_id
+        )
+    );
+  },
+  getSteeringNodeSettings: async (workflowRunId: string, nodeId: string) =>
+    mockSteeringSettings.find(s => s.workflow_run_id === workflowRunId && s.node_id === nodeId) ??
+    null,
+  upsertSteeringNodeSettings: async (input: {
+    workflow_run_id: string;
+    node_id: string;
+    auto_send_enabled?: boolean;
+    updated_by_user_id?: string | null;
+    provider_id?: string;
+  }) => {
+    const existing = mockSteeringSettings.find(
+      s => s.workflow_run_id === input.workflow_run_id && s.node_id === input.node_id
+    );
+    if (existing !== undefined) {
+      if (input.auto_send_enabled !== undefined)
+        existing.auto_send_enabled = input.auto_send_enabled;
+      if (input.updated_by_user_id !== undefined)
+        existing.updated_by_user_id = input.updated_by_user_id;
+      if (input.provider_id !== undefined) existing.provider_id = input.provider_id;
+      existing.updated_at = new Date();
+      return existing;
+    }
+    const settings: MockSteeringNodeSettings = {
+      id: `steer-settings-${String((mockSteeringNextId += 1))}`,
+      workflow_run_id: input.workflow_run_id,
+      node_id: input.node_id,
+      auto_send_enabled: input.auto_send_enabled ?? false,
+      updated_by_user_id: input.updated_by_user_id ?? null,
+      provider_id: input.provider_id ?? null,
+      updated_at: new Date(),
+    };
+    mockSteeringSettings.push(settings);
+    return settings;
+  },
+  enqueueSteeringMessage: async (input: {
+    workflow_run_id: string;
+    node_id: string;
+    message_id: string;
+    message: string;
+    operator_user_id: string | null;
+    initial_state: string;
+  }) => {
+    const existing = mockSteeringQueue.find(
+      e =>
+        e.workflow_run_id === input.workflow_run_id &&
+        e.node_id === input.node_id &&
+        e.message_id === input.message_id
+    );
+    if (existing !== undefined) {
+      return { entry: existing, duplicate: true };
+    }
+    const entry = seedSteeringQueueEntry({ ...input, state: input.initial_state });
+    return { entry, duplicate: false };
+  },
+  withdrawSteeringMessage: async (workflowRunId: string, nodeId: string, messageId: string) => {
+    const entry = mockSteeringQueue.find(
+      e =>
+        e.workflow_run_id === workflowRunId &&
+        e.node_id === nodeId &&
+        e.message_id === messageId &&
+        CLAIMABLE_STEERING_STATES.has(e.state)
+    );
+    if (entry === undefined) return { removed: false };
+    entry.state = 'withdrawn';
+    entry.updated_at = new Date();
+    return { removed: true };
+  },
+  listSteeringQueue: async (workflowRunId: string, nodeId: string) =>
+    mockSteeringQueue
+      .filter(
+        e =>
+          e.workflow_run_id === workflowRunId &&
+          e.node_id === nodeId &&
+          VISIBLE_STEERING_STATES.has(e.state)
+      )
+      .sort((a, b) => a.fifo_position - b.fifo_position),
+  claimSteeringQueue: async (workflowRunId: string, nodeId: string, limit: number | 'all') => {
+    const eligible = mockSteeringQueue
+      .filter(
+        e =>
+          e.workflow_run_id === workflowRunId &&
+          e.node_id === nodeId &&
+          CLAIMABLE_STEERING_STATES.has(e.state)
+      )
+      .sort((a, b) => a.fifo_position - b.fifo_position);
+    const claimed = limit === 'all' ? eligible : eligible.slice(0, limit);
+    for (const entry of claimed) {
+      entry.state = 'dispatching';
+      entry.updated_at = new Date();
+    }
+    return claimed.map(toClaimedSteeringMessage);
+  },
+  markSteeringMessagesSent: async (
+    workflowRunId: string,
+    nodeId: string,
+    messageIds: readonly string[]
+  ) => {
+    const ids = new Set(messageIds);
+    for (const entry of mockSteeringQueue) {
+      if (
+        entry.workflow_run_id === workflowRunId &&
+        entry.node_id === nodeId &&
+        ids.has(entry.message_id) &&
+        (entry.state === 'dispatching' || entry.state === 'delivery_unknown')
+      ) {
+        entry.state = 'sent';
+        entry.updated_at = new Date();
+      }
+    }
+  },
+  claimSteeringMessageForSoftInjection: async (
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ) => {
+    const entry = mockSteeringQueue.find(
+      e =>
+        e.workflow_run_id === workflowRunId &&
+        e.node_id === nodeId &&
+        e.message_id === messageId &&
+        CLAIMABLE_STEERING_STATES.has(e.state)
+    );
+    if (entry === undefined) return null;
+    entry.state = 'sent';
+    entry.updated_at = new Date();
+    return toClaimedSteeringMessage(entry);
+  },
+  reconcileNeverSentSteeringMessages: async (workflowRunId: string, nodeId: string) => {
+    let count = 0;
+    for (const entry of mockSteeringQueue) {
+      if (
+        entry.workflow_run_id === workflowRunId &&
+        entry.node_id === nodeId &&
+        (entry.state === 'queued' ||
+          entry.state === 'awaiting_send_now' ||
+          entry.state === 'dispatching')
+      ) {
+        entry.state = 'never_sent';
+        entry.updated_at = new Date();
+        count += 1;
+      }
+    }
+    return { count };
+  },
+  reconcileDispatchingSteeringMessagesOnBoot: async () => {
+    let count = 0;
+    for (const entry of mockSteeringQueue) {
+      if (entry.state === 'dispatching') {
+        entry.state = 'delivery_unknown';
+        entry.updated_at = new Date();
+        count += 1;
+      }
+    }
+    return { count };
+  },
+}));
+
 type MockUserRow = {
   id: string;
   display_name: string | null;
@@ -754,11 +1074,7 @@ mock.module('@archon/core/db/workflow-envs', () => ({
 
 import { registerApiRoutes } from './api';
 import { getSteeringRegistry } from '@archon/workflows/steering-registry';
-import type {
-  NodeSteeringHandle,
-  SteeringHandleSnapshot,
-  SteeringIdleWake,
-} from '@archon/workflows/steering-registry';
+import type { NodeSteeringHandle, SteeringIdleWake } from '@archon/workflows/steering-registry';
 import { getAuth } from '../auth';
 import { keepaliveWorkflowNodeResponseSchema } from './schemas/workflow.schemas';
 
@@ -6609,15 +6925,47 @@ function postNodeSend(
   });
 }
 
+/** Every row for the node regardless of state — used to detect ANY durable mutation. */
+function snapshotSteeringQueueFor(nodeId: string = STEER_NODE_ID): MockSteeringQueueEntry[] {
+  return mockSteeringQueue
+    .filter(e => e.workflow_run_id === STEER_RUN_ID && e.node_id === nodeId)
+    .map(e => ({ ...e }));
+}
+
+/** Only the states a queue-read/withdraw target would ever see — excludes `withdrawn`. */
+function visibleSteeringQueueFor(nodeId: string = STEER_NODE_ID): MockSteeringQueueEntry[] {
+  return snapshotSteeringQueueFor(nodeId).filter(e => e.state !== 'withdrawn');
+}
+
+interface SteeringBeforeSnapshot {
+  phase: string;
+  subState: string | undefined;
+  /** Same array under both names — pre-existing tests read either. */
+  queue: MockSteeringQueueEntry[];
+  queued: MockSteeringQueueEntry[];
+}
+
+function captureSteeringBefore(
+  handle: NodeSteeringHandle,
+  nodeId: string = STEER_NODE_ID
+): SteeringBeforeSnapshot {
+  const queue = snapshotSteeringQueueFor(nodeId);
+  return {
+    phase: handle.snapshot().phase,
+    subState: handle.snapshot().subState,
+    queue,
+    queued: queue,
+  };
+}
+
 /** Rejections must leave the queue, transcript, and run state untouched. */
 function expectNoSteeringMutation(
   handle: NodeSteeringHandle,
-  before: SteeringHandleSnapshot
+  before: SteeringBeforeSnapshot,
+  nodeId: string = STEER_NODE_ID
 ): void {
-  const after = handle.snapshot();
-  expect(after.phase).toBe(before.phase);
-  expect(after.acceptedCount).toBe(before.acceptedCount);
-  expect(after.queued).toEqual(before.queued);
+  expect(handle.snapshot().phase).toBe(before.phase);
+  expect(snapshotSteeringQueueFor(nodeId)).toEqual(before.queue);
   expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   expect(mockAddMessage).not.toHaveBeenCalled();
   expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
@@ -6648,24 +6996,26 @@ function deleteNodeQueue(
   });
 }
 
-/** Queues an item directly on the handle — the registry state a DELETE targets. */
+/** Durably seeds an entry exactly like the send route's insert would — the state a DELETE targets. */
 function queueSteerItem(
-  handle: NodeSteeringHandle,
+  _handle: NodeSteeringHandle,
   messageId: string,
-  text = 'queued guidance'
+  text = 'queued guidance',
+  nodeId: string = STEER_NODE_ID
 ): void {
-  const result = handle.enqueue({
-    messageId,
+  seedSteeringQueueEntry({
+    workflow_run_id: STEER_RUN_ID,
+    node_id: nodeId,
+    message_id: messageId,
     message: text,
-    operatorUserId: STEER_STARTER_ID,
-    receivedAt: NOW,
+    operator_user_id: STEER_STARTER_ID,
   });
-  if (!result.ok) throw new Error('test setup: enqueue refused');
 }
 
 describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance', () => {
   beforeEach(() => {
     getSteeringRegistry().clearForTests();
+    resetSteeringStoreMock();
     mockGetWorkflowRun.mockReset();
     mockListWorkflowEvents.mockReset();
     mockListPendingInteractions.mockReset();
@@ -6695,11 +7045,11 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       message_id: STEER_MESSAGE_ID,
       state: 'queued',
     });
-    const queued = handle.snapshot().queued;
+    const queued = snapshotSteeringQueueFor();
     expect(queued).toHaveLength(1);
-    expect(queued[0]?.operatorUserId).toBe(STEER_STARTER_ID);
+    expect(queued[0]?.operator_user_id).toBe(STEER_STARTER_ID);
     expect(queued[0]?.message).toBe('steer the node');
-    expect(queued[0]?.messageId).toBe(STEER_MESSAGE_ID);
+    expect(queued[0]?.message_id).toBe(STEER_MESSAGE_ID);
   });
 
   test('returns 200 for another authenticated member identity', async () => {
@@ -6718,7 +7068,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload(), { 'X-Archon-User': 'member-other' });
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued[0]?.operatorUserId).toBe('member-other');
+    expect(snapshotSteeringQueueFor()[0]?.operator_user_id).toBe('member-other');
   });
 
   test('returns 200 for an admin identity that does not own the run', async () => {
@@ -6727,7 +7077,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload(), { 'X-Archon-User': 'user-admin-9' });
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued[0]?.operatorUserId).toBe('user-admin-9');
+    expect(snapshotSteeringQueueFor()[0]?.operator_user_id).toBe('user-admin-9');
   });
 
   test('returns 200 with a null operator id on an identity-less install', async () => {
@@ -6736,7 +7086,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload());
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued[0]?.operatorUserId).toBeNull();
+    expect(snapshotSteeringQueueFor()[0]?.operator_user_id).toBeNull();
   });
 
   test('returns nested 401 before body validation for a gated unauthenticated caller', async () => {
@@ -6776,7 +7126,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   test('returns nested 400 for a blank-only message', async () => {
     const handle = liveSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload({ message: '   \n\t  ' }));
 
@@ -6787,7 +7137,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   test('returns nested 400 for a missing field', async () => {
     const handle = liveSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, { message_id: STEER_MESSAGE_ID, intent: 'queue' });
 
@@ -6798,7 +7148,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   test('returns nested 400 for unknown strict keys', async () => {
     const handle = liveSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload({ extra: 'nope' }));
 
@@ -6808,7 +7158,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   test('returns nested 400 for malformed JSON', async () => {
     const handle = liveSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, '{malformed json body');
 
@@ -6819,7 +7169,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   test('returns nested 400 for an invalid message_id', async () => {
     const handle = liveSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload({ message_id: 'not-a-uuid' }));
 
@@ -6829,7 +7179,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   test('returns nested 400 for an invalid intent', async () => {
     const handle = liveSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload({ intent: 'later' }));
 
@@ -6844,7 +7194,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload({ message: padded }));
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued[0]?.message).toBe(padded);
+    expect(snapshotSteeringQueueFor()[0]?.message).toBe(padded);
   });
 
   // -- Target/status matrix ---------------------------------------------------
@@ -6874,7 +7224,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload());
 
@@ -6889,7 +7239,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
       mockListWorkflowEvents.mockResolvedValue([steerEvent(eventType, nodeId)]);
       const handle = getSteeringRegistry().register(STEER_RUN_ID, nodeId);
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
 
       const res = await postNodeSend(app, sendPayload(), {}, STEER_RUN_ID, nodeId);
 
@@ -6901,7 +7251,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
   test('returns 409 for a closed handle', async () => {
     const handle = liveSetup();
     handle.close();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload());
 
@@ -6939,7 +7289,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
         resolved_by: null,
       },
     ]);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeSend(app, sendPayload());
 
@@ -6955,7 +7305,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload());
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued).toHaveLength(1);
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
   });
 
   test("returns 200 state 'queued' for intent send_now on a live generating handle", async () => {
@@ -6969,7 +7319,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       message_id: STEER_MESSAGE_ID,
       state: 'queued',
     });
-    expect(handle.snapshot().queued).toHaveLength(1);
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
   });
 
   // -- Idempotency and races --------------------------------------------------
@@ -6985,8 +7335,8 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       const res = await postNodeSend(app, sendPayload({ message_id: id, message: text }));
       expect(res.status).toBe(200);
     }
-    const queued = handle.snapshot().queued;
-    expect(queued.map(m => m.messageId)).toEqual([
+    const queued = snapshotSteeringQueueFor();
+    expect(queued.map(m => m.message_id)).toEqual([
       STEER_MESSAGE_ID,
       STEER_MESSAGE_ID_2,
       STEER_MESSAGE_ID_3,
@@ -7066,8 +7416,8 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       });
 
       // B reached synchronous accept() while A is still held at identity resolution.
-      expect(handle.snapshot().queued.map(m => m.messageId)).toEqual([B1, B2]);
-      expect(handle.snapshot().queued.map(m => m.operatorUserId)).toEqual([OP_B, OP_B]);
+      expect(snapshotSteeringQueueFor().map(m => m.message_id)).toEqual([B1, B2]);
+      expect(snapshotSteeringQueueFor().map(m => m.operator_user_id)).toEqual([OP_B, OP_B]);
 
       releaseA();
       const a1Res = await a1Promise;
@@ -7088,31 +7438,48 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
         state: 'queued',
       });
 
-      const queued = handle.snapshot().queued;
-      expect(queued.map(m => m.messageId)).toEqual([B1, B2, A1, A2]);
-      expect(queued.map(m => m.operatorUserId)).toEqual([OP_B, OP_B, OP_A, OP_A]);
+      const queued = snapshotSteeringQueueFor();
+      expect(queued.map(m => m.message_id)).toEqual([B1, B2, A1, A2]);
+      expect(queued.map(m => m.operator_user_id)).toEqual([OP_B, OP_B, OP_A, OP_A]);
       expect(queued.map(m => m.message)).toEqual(['from-b-1', 'from-b-2', 'from-a-1', 'from-a-2']);
-      expect(new Set(queued.map(m => m.messageId)).size).toBe(4);
-      expect(queued.filter(m => m.operatorUserId === OP_B).map(m => m.messageId)).toEqual([B1, B2]);
-      expect(queued.filter(m => m.operatorUserId === OP_A).map(m => m.messageId)).toEqual([A1, A2]);
+      expect(new Set(queued.map(m => m.message_id)).size).toBe(4);
+      expect(queued.filter(m => m.operator_user_id === OP_B).map(m => m.message_id)).toEqual([
+        B1,
+        B2,
+      ]);
+      expect(queued.filter(m => m.operator_user_id === OP_A).map(m => m.message_id)).toEqual([
+        A1,
+        A2,
+      ]);
 
       const queueRes = await getNodeQueue(app);
       expect(queueRes.status).toBe(200);
       const queueBody = (await queueRes.json()) as {
         success: boolean;
+        execution_state: string;
+        auto_send: boolean;
+        capabilities: { soft_injection: boolean; delivery_ack: boolean };
         queued: Array<Record<string, unknown>>;
       };
       expect(queueBody).toEqual({
         success: true,
+        execution_state: 'live',
+        auto_send: false,
+        capabilities: { soft_injection: false, delivery_ack: false },
         queued: [
-          { message_id: B1, message: 'from-b-1' },
-          { message_id: B2, message: 'from-b-2' },
-          { message_id: A1, message: 'from-a-1' },
-          { message_id: A2, message: 'from-a-2' },
+          { message_id: B1, message: 'from-b-1', operator_user_id: OP_B, state: 'queued' },
+          { message_id: B2, message: 'from-b-2', operator_user_id: OP_B, state: 'queued' },
+          { message_id: A1, message: 'from-a-1', operator_user_id: OP_A, state: 'queued' },
+          { message_id: A2, message: 'from-a-2', operator_user_id: OP_A, state: 'queued' },
         ],
       });
       for (const row of queueBody.queued) {
-        expect(Object.keys(row).sort()).toEqual(['message', 'message_id']);
+        expect(Object.keys(row).sort()).toEqual([
+          'message',
+          'message_id',
+          'operator_user_id',
+          'state',
+        ]);
       }
     } finally {
       // Do not leave the held app request running if an earlier assertion fails.
@@ -7122,8 +7489,8 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     }
   });
 
-  test('replays the original receipt for a duplicate id before and after drain', async () => {
-    const handle = liveSetup();
+  test('replays the original receipt for a duplicate id before and after the executor claims it', async () => {
+    liveSetup();
     const { app } = makeApp();
 
     const res1 = await postNodeSend(app, sendPayload());
@@ -7133,15 +7500,18 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res2 = await postNodeSend(app, sendPayload());
     expect(res2.status).toBe(200);
     expect(await res2.json()).toEqual(firstBody);
-    expect(handle.snapshot().queued).toHaveLength(1);
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
 
-    handle.drain();
-    expect(handle.snapshot().queued).toHaveLength(0);
+    // Simulate the executor claiming this entry for the next turn — the row
+    // stays durable (unlike the old in-memory drain, which removed it).
+    const claimed = mockSteeringQueue.find(entry => entry.message_id === STEER_MESSAGE_ID);
+    if (claimed !== undefined) claimed.state = 'dispatching';
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
 
     const res3 = await postNodeSend(app, sendPayload());
     expect(res3.status).toBe(200);
-    expect(await res3.json()).toEqual(firstBody);
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(await res3.json()).toEqual({ ...firstBody, state: 'dispatching' });
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
   });
 
   test('does not overwrite the original text for a changed-prose duplicate', async () => {
@@ -7156,7 +7526,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
       message_id: STEER_MESSAGE_ID,
       state: 'queued',
     });
-    const queued = handle.snapshot().queued;
+    const queued = snapshotSteeringQueueFor();
     expect(queued).toHaveLength(1);
     expect(queued[0]?.message).toBe('first text');
   });
@@ -7171,13 +7541,11 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res2 = await postNodeSend(app, sendPayload());
     expect(res2.status).toBe(200);
     expect(await res2.json()).toEqual(firstBody);
-    expect(handle.snapshot().queued).toHaveLength(1);
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
   });
 
   test('returns 409 when the run turns terminal between lookup and final re-read', async () => {
     liveSetup();
-    const handle = getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID);
-    const before = handle?.snapshot();
     mockGetWorkflowRun.mockReset();
     mockGetWorkflowRun
       .mockResolvedValueOnce(mockSteerableRun())
@@ -7186,10 +7554,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload());
 
     await expectSteeringError(res, 409, 'node_finished');
-    expect(handle?.snapshot().queued).toHaveLength(0);
-    expect(before && handle ? handle.snapshot().acceptedCount : 0).toBe(
-      before?.acceptedCount ?? -1
-    );
+    expect(snapshotSteeringQueueFor()).toHaveLength(0);
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   });
 
@@ -7208,7 +7573,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
     const res = await postNodeSend(app, sendPayload());
 
     await expectSteeringError(res, 409, 'node_finished');
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(snapshotSteeringQueueFor()).toHaveLength(0);
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   });
 });
@@ -7273,6 +7638,7 @@ function idleInterruptibleSetup(nodeId: string = STEER_NODE_ID): InterruptibleSe
 
 function resetSteeringMocks(): void {
   getSteeringRegistry().clearForTests();
+  resetSteeringStoreMock();
   mockGetWorkflowRun.mockReset();
   mockListWorkflowEvents.mockReset();
   mockListPendingInteractions.mockReset();
@@ -7329,8 +7695,9 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
     const resPromise = postNodeInterrupt(app);
 
     await waitUntil(() => controller.signal.aborted);
-    // Natural empty end — the executor's last gate seals the live handle.
-    expect(handle.closeIfEmpty()).toBe(true);
+    // Natural empty end — the executor's last gate seals the live handle
+    // once its durable claim finds nothing.
+    handle.close();
     const res = await resPromise;
 
     await expectSteeringError(res, 409, 'node_finished');
@@ -7450,7 +7817,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
     const { handle, aborts } = liveInterruptibleSetup();
     mockGetWorkflowRun.mockReset();
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeInterrupt(app);
 
@@ -7462,7 +7829,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
   test('returns 409 for a terminal node even with a stale live handle', async () => {
     const { handle, aborts } = liveInterruptibleSetup();
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_completed', STEER_NODE_ID)]);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeInterrupt(app);
 
@@ -7474,7 +7841,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
   test('returns 409 for a closed handle', async () => {
     const { handle, aborts } = liveInterruptibleSetup();
     handle.close();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeInterrupt(app);
 
@@ -7513,7 +7880,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
         resolved_by: null,
       },
     ]);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeInterrupt(app);
 
@@ -7526,7 +7893,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeInterrupt(app);
 
@@ -7558,7 +7925,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
       // empty-end gate sealed the handle during the await — interrupt() then
       // resolves node_finished instead of a stale success.
       .mockImplementationOnce(async () => {
-        expect(handle.closeIfEmpty()).toBe(true);
+        handle.close();
         return mockSteerableRun();
       });
     const { app } = makeApp();
@@ -7673,14 +8040,14 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
     // Generating (mid-turn)
     {
       const { handle, aborts } = liveInterruptibleSetup('gen');
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, 'gen');
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ success: true });
       expect(aborts()).toBe(0);
       expect(handle.snapshot().phase).toBe(before.phase);
       expect(handle.snapshot().subState).toBe(before.subState);
-      expect(handle.snapshot().queued).toEqual(before.queued);
+      expect(snapshotSteeringQueueFor()).toEqual(before.queued);
       expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
       expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
       getSteeringRegistry().clearForTests();
@@ -7697,13 +8064,13 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
       });
       const token = handle.beginTurn(new AbortController());
       handle.settleTurn(token, 'generating');
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, 'between');
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ success: true });
       expect(handle.snapshot().phase).toBe(before.phase);
       expect(handle.snapshot().subState).toBe('generating');
-      expect(handle.snapshot().queued).toEqual(before.queued);
+      expect(snapshotSteeringQueueFor()).toEqual(before.queued);
       getSteeringRegistry().clearForTests();
     }
 
@@ -7712,7 +8079,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
       mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
       mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'queueonly')]);
       const handle = getSteeringRegistry().register(STEER_RUN_ID, 'queueonly');
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const res = await postNodeKeepalive(app, {}, STEER_RUN_ID, 'queueonly');
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ success: true });
@@ -7739,11 +8106,12 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
 
     const wake = await idleWait;
     expect(wake.kind).toBe('send_now');
-    if (wake.kind === 'send_now') {
-      expect(wake.messages.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID]);
-    }
-    expect(handle.snapshot().subState).toBe('generating');
-    expect(handle.snapshot().queued).toHaveLength(0);
+    // The wake is content-free — the executor claims the durable store to
+    // learn what to send; sub-state stays idle-after-interrupt until an
+    // actual turn begins, which this route-only test never does.
+    expect(handle.snapshot().subState).toBe('idle-after-interrupt');
+    expect(snapshotSteeringQueueFor().map(m => m.message_id)).toEqual([STEER_MESSAGE_ID]);
+    expect(snapshotSteeringQueueFor()[0]?.state).toBe('awaiting_send_now');
   });
 
   // T3.4 Steering actor grant
@@ -7810,7 +8178,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
       const { handle } = liveInterruptibleSetup();
       mockGetWorkflowRun.mockReset();
       mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const { app } = makeApp();
       await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
       expectNoSteeringMutation(handle, before);
@@ -7821,7 +8189,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
     {
       const { handle } = liveInterruptibleSetup();
       mockListWorkflowEvents.mockResolvedValue([steerEvent('node_completed', STEER_NODE_ID)]);
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const { app } = makeApp();
       await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
       expectNoSteeringMutation(handle, before);
@@ -7832,7 +8200,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
     {
       const { handle } = liveInterruptibleSetup();
       handle.close();
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const { app } = makeApp();
       await expectSteeringError(await postNodeKeepalive(app), 409, 'node_finished');
       expectNoSteeringMutation(handle, before);
@@ -7871,7 +8239,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
           resolved_by: null,
         },
       ]);
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
       const { app } = makeApp();
       await expectSteeringError(await postNodeKeepalive(app), 422, 'not_steerable_here');
       expectNoSteeringMutation(handle, before);
@@ -7963,7 +8331,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
   // T3.11 No persistence / content
   test('T3.11 writes no durable row and does not log operator prose', async () => {
     const { handle } = idleInterruptibleSetup();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await postNodeKeepalive(app);
 
@@ -7974,7 +8342,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive', () => {
     expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
     // Snapshot may differ only by timer generation internals — queue/phase stay.
     expect(handle.snapshot().phase).toBe(before.phase);
-    expect(handle.snapshot().queued).toEqual(before.queued);
+    expect(snapshotSteeringQueueFor()).toEqual(before.queued);
     expect(handle.snapshot().acceptedCount).toBe(before.acceptedCount);
   });
 });
@@ -8006,7 +8374,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — intent on idle 
     await new Promise(resolve => setTimeout(resolve, 10));
     expect(woke).toBe(false);
     expect(handle.snapshot().subState).toBe('idle-after-interrupt');
-    expect(handle.snapshot().queued.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID]);
+    expect(snapshotSteeringQueueFor().map(m => m.message_id)).toEqual([STEER_MESSAGE_ID]);
   });
 
   test("intent 'send_now' while idle returns awaiting_send_now and wakes once old-then-new", async () => {
@@ -8036,19 +8404,25 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — intent on idle 
 
     const wake = await idleWait;
     expect(wake.kind).toBe('send_now');
-    if (wake.kind === 'send_now') {
-      expect(wake.messages.map(m => m.messageId)).toEqual([
-        STEER_MESSAGE_ID,
-        STEER_MESSAGE_ID_2,
-        STEER_MESSAGE_ID_3,
-      ]);
-      expect(wake.messages.map(m => m.message)).toEqual(['steer the node', 'second', 'third']);
-    }
-    expect(handle.snapshot().subState).toBe('generating');
-    expect(handle.snapshot().queued).toHaveLength(0);
+    // The wake is content-free — the durable store is what the executor
+    // would claim from; sub-state stays idle-after-interrupt until an
+    // actual turn begins, which this route-only test never does.
+    expect(handle.snapshot().subState).toBe('idle-after-interrupt');
+    const queued = snapshotSteeringQueueFor();
+    expect(queued.map(m => m.message_id)).toEqual([
+      STEER_MESSAGE_ID,
+      STEER_MESSAGE_ID_2,
+      STEER_MESSAGE_ID_3,
+    ]);
+    expect(queued.map(m => m.message)).toEqual(['steer the node', 'second', 'third']);
+    expect(queued.map(m => m.state)).toEqual([
+      'awaiting_send_now',
+      'awaiting_send_now',
+      'awaiting_send_now',
+    ]);
   });
 
-  test('duplicate send_now replays the original receipt without a second drain', async () => {
+  test('duplicate send_now replays the original receipt without a second wake', async () => {
     const { handle, idleWait } = idleInterruptibleSetup();
     const { app } = makeApp();
     const res1 = await postNodeSend(app, sendPayload({ intent: 'send_now' }));
@@ -8060,8 +8434,8 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — intent on idle 
     const res2 = await postNodeSend(app, sendPayload({ intent: 'send_now' }));
     expect(res2.status).toBe(200);
     expect(await res2.json()).toEqual(firstBody);
-    // No second drain — nothing re-enqueued, nothing re-released.
-    expect(handle.snapshot().queued).toHaveLength(0);
+    // No second entry — the durable store still shows exactly one row.
+    expect(snapshotSteeringQueueFor()).toHaveLength(1);
   });
 
   test("send during interrupting returns 'queued' and stays pending for explicit Send now", async () => {
@@ -8082,7 +8456,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — intent on idle 
     // Interruption wins → idle; the queued item waits for explicit Send now.
     const idleWait = handle.enterIdle(token);
     expect((await interruptPromise).status).toBe(200);
-    expect(handle.snapshot().queued.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID]);
+    expect(snapshotSteeringQueueFor().map(m => m.message_id)).toEqual([STEER_MESSAGE_ID]);
 
     const res = await postNodeSend(
       app,
@@ -8090,11 +8464,11 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — intent on idle 
     );
     expect(((await res.json()) as { state: string }).state).toBe('awaiting_send_now');
     const wake = await idleWait;
-    if (wake.kind === 'send_now') {
-      expect(wake.messages.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID, STEER_MESSAGE_ID_2]);
-    } else {
-      throw new Error('expected send_now wake');
-    }
+    expect(wake.kind).toBe('send_now');
+    expect(snapshotSteeringQueueFor().map(m => m.message_id)).toEqual([
+      STEER_MESSAGE_ID,
+      STEER_MESSAGE_ID_2,
+    ]);
   });
 });
 
@@ -8175,6 +8549,7 @@ describe('GET /api/workflows/runs/:runId — steeringSubState projection', () =>
 describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — withdraw queued guidance', () => {
   beforeEach(() => {
     getSteeringRegistry().clearForTests();
+    resetSteeringStoreMock();
     mockGetWorkflowRun.mockReset();
     mockListWorkflowEvents.mockReset();
     mockListPendingInteractions.mockReset();
@@ -8194,12 +8569,10 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
   /** Rejections must leave the queue, transcript, and run state untouched. */
   function expectNoSteeringMutation(
     handle: NodeSteeringHandle,
-    before: SteeringHandleSnapshot
+    before: { phase: string; queue: MockSteeringQueueEntry[] }
   ): void {
-    const after = handle.snapshot();
-    expect(after.phase).toBe(before.phase);
-    expect(after.acceptedCount).toBe(before.acceptedCount);
-    expect(after.queued).toEqual(before.queued);
+    expect(handle.snapshot().phase).toBe(before.phase);
+    expect(snapshotSteeringQueueFor()).toEqual(before.queue);
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
     expect(mockAddMessage).not.toHaveBeenCalled();
     expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
@@ -8229,9 +8602,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
-    expect(handle.snapshot().queued).toHaveLength(0);
-    // Accepted-id memory is preserved — only the pending item was removed.
-    expect(handle.snapshot().acceptedCount).toBe(1);
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
   test('returns 200 for another authenticated member identity', async () => {
@@ -8253,7 +8624,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     });
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
   test('returns 200 for an admin identity that does not own the run', async () => {
@@ -8265,7 +8636,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     });
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
   test('returns 200 on an identity-less install', async () => {
@@ -8275,7 +8646,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
   test('returns nested 401 before path validation for a gated unauthenticated caller', async () => {
@@ -8318,7 +8689,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
   test('returns nested 400 for a non-UUID path messageId', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, 'not-a-uuid', {
       'X-Archon-User': STEER_STARTER_ID,
@@ -8341,13 +8712,14 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   });
 
-  test('returns 404 for an unknown node (no projection, no handle)', async () => {
+  test('returns 200 idempotent no-op for an unknown node (no projection, no handle)', async () => {
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'other-node')]);
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
-    await expectSteeringError(res, 404, 'not_found');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
     expect(getSteeringRegistry().get(STEER_RUN_ID, STEER_NODE_ID)).toBeUndefined();
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   });
@@ -8357,7 +8729,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
@@ -8373,7 +8745,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
       mockListWorkflowEvents.mockResolvedValue([steerEvent(eventType, nodeId)]);
       const handle = getSteeringRegistry().register(STEER_RUN_ID, nodeId);
       queueSteerItem(handle, STEER_MESSAGE_ID);
-      const before = handle.snapshot();
+      const before = captureSteeringBefore(handle);
 
       const res = await deleteNodeQueue(app, STEER_MESSAGE_ID, {}, STEER_RUN_ID, nodeId);
 
@@ -8382,25 +8754,26 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     }
   });
 
-  test('returns 409 for a closed handle', async () => {
+  test('returns 200 for a closed handle — withdraw manages durable guidance, not the live process', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
     handle.close();
-    const before = handle.snapshot();
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
-    await expectSteeringError(res, 409, 'node_finished');
-    expectNoSteeringMutation(handle, before);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
-  test('returns 422 for a running node with no handle (detached)', async () => {
+  test('returns 200 idempotent no-op for a never-seen id on a running node with no handle (detached)', async () => {
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
-    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
   });
 
@@ -8413,7 +8786,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
     expect(res.status).toBe(200);
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
   test('returns 200 for a parked AskHuman handle and removes only that item', async () => {
@@ -8442,16 +8815,14 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
     expect(res.status).toBe(200);
-    const snap = handle.snapshot();
-    expect(snap.phase).toBe('parked');
-    expect(snap.queued.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID_2]);
-    expect(snap.acceptedCount).toBe(2);
+    expect(handle.snapshot().phase).toBe('parked');
+    expect(visibleSteeringQueueFor().map(m => m.message_id)).toEqual([STEER_MESSAGE_ID_2]);
   });
 
   test('returns 404 when the run disappears on the final re-read', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     mockGetWorkflowRun.mockReset();
     mockGetWorkflowRun.mockResolvedValueOnce(mockSteerableRun()).mockResolvedValueOnce(null);
     const { app } = makeApp();
@@ -8464,7 +8835,7 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
   test('returns 409 when the run turns terminal between lookup and final re-read', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     mockGetWorkflowRun.mockReset();
     mockGetWorkflowRun
       .mockResolvedValueOnce(mockSteerableRun())
@@ -8476,15 +8847,15 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     expectNoSteeringMutation(handle, before);
   });
 
-  test('returns 409 when the handle closes during the final run read', async () => {
+  test('succeeds even when the handle closes during the final run read — durable, not live-process-gated', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
     mockGetWorkflowRun.mockReset();
     mockGetWorkflowRun
       .mockResolvedValueOnce(mockSteerableRun())
       // The final status re-read still reports running, but the executor's
-      // teardown gate closed the handle during the await.
+      // teardown gate closed the handle during the await — withdraw manages
+      // the durable queue and does not care.
       .mockImplementationOnce(async () => {
         handle.close();
         return mockSteerableRun();
@@ -8492,18 +8863,15 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
 
-    await expectSteeringError(res, 409, 'node_finished');
-    // The post-await phase recheck refused before withdraw() could mutate:
-    // the item remains queued on the now-closed handle.
-    expect(handle.snapshot().queued).toHaveLength(1);
-    expect(handle.snapshot().acceptedCount).toBe(before.acceptedCount);
-    expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
+    expect(visibleSteeringQueueFor()).toHaveLength(0);
   });
 
   test('returns nested 500 when the event store throws', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     mockListWorkflowEvents.mockRejectedValue(new Error('event store down'));
     const { app } = makeApp();
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
@@ -8520,33 +8888,33 @@ describe('DELETE /api/workflows/runs/:runId/nodes/:nodeId/queue/:messageId — w
     queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
     const { app } = makeApp();
 
-    // Live queued id — removed, siblings preserved, accepted memory intact.
+    // Live queued id — removed, sibling preserved.
     const res = await deleteNodeQueue(app, STEER_MESSAGE_ID);
     expect(res.status).toBe(200);
     // Exact wire shape: only `success` and `message_id` — no `removed` leak.
     expect(await res.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
-    expect(handle.snapshot().queued.map(m => m.messageId)).toEqual([STEER_MESSAGE_ID_2]);
-    expect(handle.snapshot().acceptedCount).toBe(2);
+    expect(visibleSteeringQueueFor().map(m => m.message_id)).toEqual([STEER_MESSAGE_ID_2]);
 
     // Repeat — identical receipt, still mutation-free.
     const repeat = await deleteNodeQueue(app, STEER_MESSAGE_ID);
     expect(repeat.status).toBe(200);
     expect(await repeat.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID });
-    expect(handle.snapshot().queued).toHaveLength(1);
+    expect(visibleSteeringQueueFor()).toHaveLength(1);
 
-    // Already-drained id — identical receipt.
-    handle.drain();
+    // Already-claimed (dispatching) id — identical receipt, not withdrawable.
+    const claimedEntry = mockSteeringQueue.find(entry => entry.message_id === STEER_MESSAGE_ID_2);
+    if (claimedEntry !== undefined) claimedEntry.state = 'dispatching';
     const drained = await deleteNodeQueue(app, STEER_MESSAGE_ID_2);
     expect(drained.status).toBe(200);
     expect(await drained.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID_2 });
-    expect(handle.snapshot().queued).toHaveLength(0);
+    expect(visibleSteeringQueueFor().map(m => m.message_id)).toEqual([STEER_MESSAGE_ID_2]);
+    expect(visibleSteeringQueueFor()[0]?.state).toBe('dispatching');
 
     // Never-seen valid UUID — identical receipt echoing the requested id.
     const neverSeen = await deleteNodeQueue(app, STEER_MESSAGE_ID_3);
     expect(neverSeen.status).toBe(200);
     expect(await neverSeen.json()).toEqual({ success: true, message_id: STEER_MESSAGE_ID_3 });
-    expect(handle.snapshot().queued).toHaveLength(0);
-    expect(handle.snapshot().acceptedCount).toBe(2);
+    expect(visibleSteeringQueueFor()).toHaveLength(1);
   });
 });
 
@@ -8569,6 +8937,7 @@ function getNodeQueue(
 describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot', () => {
   beforeEach(() => {
     getSteeringRegistry().clearForTests();
+    resetSteeringStoreMock();
     mockGetWorkflowRun.mockReset();
     mockListWorkflowEvents.mockReset();
     mockListPendingInteractions.mockReset();
@@ -8589,12 +8958,10 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
   /** Reads must leave the queue, transcript, and run state untouched. */
   function expectNoSteeringMutation(
     handle: NodeSteeringHandle,
-    before: SteeringHandleSnapshot
+    before: { phase: string; queue: MockSteeringQueueEntry[] }
   ): void {
-    const after = handle.snapshot();
-    expect(after.phase).toBe(before.phase);
-    expect(after.acceptedCount).toBe(before.acceptedCount);
-    expect(after.queued).toEqual(before.queued);
+    expect(handle.snapshot().phase).toBe(before.phase);
+    expect(snapshotSteeringQueueFor()).toEqual(before.queue);
     expect(mockCreateWorkflowEvent).not.toHaveBeenCalled();
     expect(mockAddMessage).not.toHaveBeenCalled();
     expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
@@ -8618,19 +8985,32 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID, 'first');
     queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await getNodeQueue(app);
 
     expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    // Exact wire shape: only message_id + message — no operator attribution,
-    // no received_at, no accepted-id count, no handle phase.
+    // Exact wire shape: durable delivery state, operator attribution, and
+    // node-level auto-send/capability data alongside the FIFO rows.
     expect(await res.json()).toEqual({
       success: true,
+      execution_state: 'live',
+      auto_send: false,
+      capabilities: { soft_injection: false, delivery_ack: false },
       queued: [
-        { message_id: STEER_MESSAGE_ID, message: 'first' },
-        { message_id: STEER_MESSAGE_ID_2, message: 'second' },
+        {
+          message_id: STEER_MESSAGE_ID,
+          message: 'first',
+          operator_user_id: STEER_STARTER_ID,
+          state: 'queued',
+        },
+        {
+          message_id: STEER_MESSAGE_ID_2,
+          message: 'second',
+          operator_user_id: STEER_STARTER_ID,
+          state: 'queued',
+        },
       ],
     });
     expectNoSteeringMutation(handle, before);
@@ -8642,7 +9022,13 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     const res = await getNodeQueue(app);
 
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true, queued: [] });
+    expect(await res.json()).toEqual({
+      success: true,
+      execution_state: 'live',
+      auto_send: false,
+      capabilities: { soft_injection: false, delivery_ack: false },
+      queued: [],
+    });
   });
 
   test('returns retained rows for a parked handle without changing its phase', async () => {
@@ -8650,45 +9036,63 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     queueSteerItem(handle, STEER_MESSAGE_ID, 'first');
     queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
     handle.park();
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     const { app } = makeApp();
     const res = await getNodeQueue(app);
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       success: true,
+      execution_state: 'live',
+      auto_send: false,
+      capabilities: { soft_injection: false, delivery_ack: false },
       queued: [
-        { message_id: STEER_MESSAGE_ID, message: 'first' },
-        { message_id: STEER_MESSAGE_ID_2, message: 'second' },
+        {
+          message_id: STEER_MESSAGE_ID,
+          message: 'first',
+          operator_user_id: STEER_STARTER_ID,
+          state: 'queued',
+        },
+        {
+          message_id: STEER_MESSAGE_ID_2,
+          message: 'second',
+          operator_user_id: STEER_STARTER_ID,
+          state: 'queued',
+        },
       ],
     });
     expect(handle.snapshot().phase).toBe('parked');
     expectNoSteeringMutation(handle, before);
   });
 
-  test('omits withdrawn and drained rows; accepted-id memory never reaches the wire', async () => {
+  test('omits withdrawn rows but keeps claimed (dispatching) ones visible', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID, 'first');
     queueSteerItem(handle, STEER_MESSAGE_ID_2, 'second');
     queueSteerItem(handle, STEER_MESSAGE_ID_3, 'third');
-    handle.withdraw(STEER_MESSAGE_ID);
+    const withdrawnEntry = mockSteeringQueue.find(entry => entry.message_id === STEER_MESSAGE_ID);
+    if (withdrawnEntry !== undefined) withdrawnEntry.state = 'withdrawn';
     const { app } = makeApp();
 
     const res = await getNodeQueue(app);
-    expect(await res.json()).toEqual({
-      success: true,
-      queued: [
-        { message_id: STEER_MESSAGE_ID_2, message: 'second' },
-        { message_id: STEER_MESSAGE_ID_3, message: 'third' },
-      ],
-    });
+    const body = (await res.json()) as { queued: Array<{ message_id: string; state: string }> };
+    expect(body.queued.map(q => q.message_id)).toEqual([STEER_MESSAGE_ID_2, STEER_MESSAGE_ID_3]);
 
-    handle.drain();
-    const drained = await getNodeQueue(app);
-    expect(await drained.json()).toEqual({ success: true, queued: [] });
-    // Accepted-id memory still counts the three enqueues, but that number is
-    // registry-internal — the wire shape above has no field carrying it.
-    expect(handle.snapshot().acceptedCount).toBe(3);
+    // The executor's claim durably moves an entry to `dispatching` — unlike
+    // the old in-memory drain, the durable row stays visible, just with a
+    // different state.
+    for (const entry of mockSteeringQueue) {
+      if (entry.state === 'queued') entry.state = 'dispatching';
+    }
+    const claimed = await getNodeQueue(app);
+    const claimedBody = (await claimed.json()) as {
+      queued: Array<{ message_id: string; state: string }>;
+    };
+    expect(claimedBody.queued.map(q => q.message_id)).toEqual([
+      STEER_MESSAGE_ID_2,
+      STEER_MESSAGE_ID_3,
+    ]);
+    expect(claimedBody.queued.every(q => q.state === 'dispatching')).toBe(true);
   });
 
   // -- Hot-path cost ----------------------------------------------------------
@@ -8742,22 +9146,25 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     expect(mockGetWorkflowRun).toHaveBeenCalledTimes(1);
   });
 
-  test('returns 409 for a terminal run even with a stale queued handle', async () => {
+  test('returns 200 finished for a terminal run, keeping the durable content readable', async () => {
     mockGetWorkflowRun.mockResolvedValue(mockSteerableRun({ status: 'completed' }));
     mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
     const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID);
     queueSteerItem(handle, STEER_MESSAGE_ID);
-    const before = handle.snapshot();
     const { app } = makeApp();
     const res = await getNodeQueue(app);
 
-    await expectSteeringError(res, 409, 'node_finished');
+    expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expectNoSteeringMutation(handle, before);
+    const body = (await res.json()) as { execution_state: string; queued: unknown[] };
+    expect(body.execution_state).toBe('finished');
+    expect(body.queued).toHaveLength(1);
+    // Hot path: a live handle short-circuits the event read even though the
+    // run itself is terminal.
     expect(mockListWorkflowEvents).not.toHaveBeenCalled();
   });
 
-  test('returns 409 for each terminal projected node state when no handle exists', async () => {
+  test('returns 200 finished for each terminal projected node state when no handle exists', async () => {
     const { app } = makeApp();
     for (const eventType of ['node_completed', 'node_failed', 'node_skipped']) {
       const nodeId = `node-${eventType}`;
@@ -8766,22 +9173,25 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
 
       const res = await getNodeQueue(app, {}, STEER_RUN_ID, nodeId);
 
-      await expectSteeringError(res, 409, 'node_finished');
+      expect(res.status).toBe(200);
       expect(res.headers.get('cache-control')).toBe('no-store');
+      const body = (await res.json()) as { execution_state: string };
+      expect(body.execution_state).toBe('finished');
     }
   });
 
-  test('returns 409 for a closed handle without reading events', async () => {
+  test('returns 200 finished for a closed handle without reading events', async () => {
     const handle = liveSetup();
     queueSteerItem(handle, STEER_MESSAGE_ID);
     handle.close();
-    const before = handle.snapshot();
     const { app } = makeApp();
     const res = await getNodeQueue(app);
 
-    await expectSteeringError(res, 409, 'node_finished');
+    expect(res.status).toBe(200);
     expect(res.headers.get('cache-control')).toBe('no-store');
-    expectNoSteeringMutation(handle, before);
+    const body = (await res.json()) as { execution_state: string; queued: unknown[] };
+    expect(body.execution_state).toBe('finished');
+    expect(body.queued).toHaveLength(1);
     expect(mockListWorkflowEvents).not.toHaveBeenCalled();
   });
 
@@ -8901,7 +9311,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     const handle = liveSetup();
     const sentinel = 'sentinel-queue-text-do-not-log';
     queueSteerItem(handle, STEER_MESSAGE_ID, sentinel);
-    const before = handle.snapshot();
+    const before = captureSteeringBefore(handle);
     mockGetWorkflowRun.mockRejectedValue(new Error('run store down'));
     const { app } = makeApp();
     const res = await getNodeQueue(app);

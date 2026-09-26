@@ -512,20 +512,24 @@ export async function reconcileNeverSentSteeringMessages(
 }
 
 /**
- * Boot-time-only sweep: every entry still `dispatching` when the process
- * starts was claimed by a process that no longer exists (a live claim never
- * outlives the process holding it), so its delivery outcome is unknowable.
- * Never resent automatically. Safe to call repeatedly; idempotent.
+ * Marks every entry still `dispatching` as `delivery_unknown` — its outcome
+ * is unknowable once the process holding the claim is gone. Never resent
+ * automatically. Safe to call repeatedly; idempotent.
  *
- * Scans across every run rather than one (runId, nodeId) pair. That is safe
- * only because of two properties this install model guarantees: queue rows
- * are written exclusively through the server's own steering routes (no
- * external writer can hold a claim), and single-tenant-per-install means
- * exactly one server process ever owns this database at a time — so "the
- * process that isn't running right now" is unambiguous at boot, unlike the
- * general case of guessing whether other-owned work is orphaned or still
- * active (see the "No Autonomous Lifecycle Mutation Across Process
- * Boundaries" rule this codebase otherwise follows).
+ * NOT called at server boot. A `dispatching` row is not safely attributable
+ * to "the crashed server" alone: the CLI drives the same executor against
+ * the same database (single-tenant-per-install means one install, not one
+ * writer process — the CLI and the server can hold live claims at the same
+ * time). A table-wide sweep at server startup could therefore reclassify a
+ * row a live CLI run still owns, which is exactly the case the "No
+ * Autonomous Lifecycle Mutation Across Process Boundaries" rule forbids:
+ * mutating non-terminal state owned by a party this process cannot verify
+ * is gone. The client gets the same honesty without that risk by combining
+ * the queue read's `execution_state: 'recovery_required'` with a `queued`
+ * item's own `dispatching` state — both are truthful, unmutated reads.
+ * Exported as an explicit utility for a future operator-triggered action
+ * (a one-click "resolve ambiguous claims" per the same rule), not for an
+ * automatic hook.
  */
 export async function reconcileDispatchingSteeringMessagesOnBoot(): Promise<{ count: number }> {
   const dialect = getDialect();
