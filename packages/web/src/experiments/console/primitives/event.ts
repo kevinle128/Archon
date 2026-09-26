@@ -6,6 +6,7 @@
  * rows AND from SSE events. The shape is deliberately flatter than the raw
  * event schema so EventStream rendering can switch on `kind` only.
  */
+import type { ToolOutcome } from '@/lib/tool-presentation';
 
 export type RunEventKind =
   | 'text'
@@ -34,7 +35,12 @@ export interface ToolCallEvent extends RunEventBase {
   tool: string;
   argsSummary: string;
   args: unknown;
-  result: { ok: true; durationMs: number } | { ok: false; message: string } | null;
+  /** `null` while the call is still running; the shared outcome carries the proven completion state. */
+  result: {
+    outcome: Exclude<ToolOutcome, 'running'>;
+    durationMs: number;
+    exitCode: number | null;
+  } | null;
 }
 
 export interface ArtifactEvent extends RunEventBase {
@@ -129,6 +135,20 @@ function readNumberOrNull(obj: Record<string, unknown>, key: string): number | n
 }
 
 /**
+ * Persisted `tool_outcome` (`success | error | interrupted | unknown`) →
+ * the shared `ToolOutcome` union read by every tool-presentation surface.
+ * A `tool_completed` row written before `tool_outcome` existed carries no
+ * such field — its silence means the call finished without a proven error,
+ * so it degrades to `succeeded` rather than to `unknown`.
+ */
+function toolCompletedOutcome(raw: string | null): Exclude<ToolOutcome, 'running'> {
+  if (raw === 'error') return 'failed';
+  if (raw === 'interrupted') return 'interrupted';
+  if (raw === 'unknown') return 'unknown';
+  return 'succeeded';
+}
+
+/**
  * DB node-event `event_type` → UI transition. Listed explicitly (rather than
  * string-slicing `node_<x>`) because `node_skipped_prior_success` — emitted on
  * resume for already-completed nodes — doesn't fit that shape, and both skip
@@ -186,9 +206,10 @@ export function toRunEvent(raw: RawWorkflowEvent): RunEvent {
   }
 
   if (et === 'tool_called' || et === 'tool_completed') {
-    // Server writes snake_case fields (tool_name, tool_input, duration_ms);
-    // the start event carries the input, the completed event carries only
-    // the duration. RunStream pairs them by step + order to fill durationMs.
+    // Server writes snake_case fields (tool_name, tool_input, duration_ms,
+    // tool_outcome, exit_code); the start event carries the input, the
+    // completed event carries the proven outcome. RunStream pairs them by
+    // step + order to fill durationMs/outcome/exitCode.
     const toolName = readString(data, 'tool_name');
     const toolInput = data.tool_input;
     const argsSummary = readString(data, 'argsSummary');
@@ -201,7 +222,11 @@ export function toRunEvent(raw: RawWorkflowEvent): RunEvent {
       result:
         et === 'tool_called'
           ? null
-          : { ok: true, durationMs: readNumberOrNull(data, 'duration_ms') ?? 0 },
+          : {
+              outcome: toolCompletedOutcome(readStringOrNull(data, 'tool_outcome')),
+              durationMs: readNumberOrNull(data, 'duration_ms') ?? 0,
+              exitCode: readNumberOrNull(data, 'exit_code'),
+            },
     };
   }
 

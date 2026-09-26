@@ -133,12 +133,45 @@ describe('toRunEvent — tool calls (regression guard)', () => {
     expect(e.result).toBeNull();
   });
 
-  test('tool_completed reads duration_ms into the result', () => {
+  test('tool_completed reads duration_ms into the result, defaulting to succeeded when tool_outcome is absent', () => {
     const e = toRunEvent(
       raw({ event_type: 'tool_completed', data: { tool_name: 'Bash', duration_ms: 667 } })
     );
     if (e.kind !== 'tool_call') throw new Error('unreachable');
-    expect(e.result).toEqual({ ok: true, durationMs: 667 });
+    expect(e.result).toEqual({ outcome: 'succeeded', durationMs: 667, exitCode: null });
+  });
+
+  test('tool_completed maps a persisted error outcome and exit code to failed', () => {
+    const e = toRunEvent(
+      raw({
+        event_type: 'tool_completed',
+        data: { tool_name: 'Bash', duration_ms: 42, tool_outcome: 'error', exit_code: 1 },
+      })
+    );
+    if (e.kind !== 'tool_call') throw new Error('unreachable');
+    expect(e.result).toEqual({ outcome: 'failed', durationMs: 42, exitCode: 1 });
+  });
+
+  test('tool_completed maps a persisted interrupted outcome', () => {
+    const e = toRunEvent(
+      raw({
+        event_type: 'tool_completed',
+        data: { tool_name: 'Bash', duration_ms: 10, tool_outcome: 'interrupted' },
+      })
+    );
+    if (e.kind !== 'tool_call') throw new Error('unreachable');
+    expect(e.result).toEqual({ outcome: 'interrupted', durationMs: 10, exitCode: null });
+  });
+
+  test('tool_completed maps a persisted unknown outcome', () => {
+    const e = toRunEvent(
+      raw({
+        event_type: 'tool_completed',
+        data: { tool_name: 'Bash', duration_ms: 10, tool_outcome: 'unknown' },
+      })
+    );
+    if (e.kind !== 'tool_call') throw new Error('unreachable');
+    expect(e.result).toEqual({ outcome: 'unknown', durationMs: 10, exitCode: null });
   });
 });
 
