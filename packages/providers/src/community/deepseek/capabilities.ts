@@ -23,4 +23,6 @@ export const DEEPSEEK_CAPABILITIES = {
   containerExec: false,
   askHuman: false,
   interrupt: false,
+  softInjection: false,
+  deliveryAck: false,
 } as const satisfies ProviderCapabilities;

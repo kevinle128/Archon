@@ -132,6 +132,13 @@ import { expandWorkflowIncludes } from './include-expander';
 import { OutputRefError } from './output-ref';
 import type { WorkflowDeps, IWorkflowPlatform, WorkflowConfig } from './deps';
 import type { IWorkflowStore, WorkflowEventData } from './store';
+import type {
+  SteeringDraft,
+  SteeringNodeSettings,
+  SteeringQueueEntry,
+  SteeringQueueState,
+} from './schemas/steering';
+import { STEERING_QUEUE_CLAIMABLE_STATES, STEERING_QUEUE_VISIBLE_STATES } from './schemas/steering';
 import { buildAiProfile } from './model-validation';
 import {
   AskHumanNoStarterError,
@@ -143,10 +150,213 @@ import { applyEnvOverlay } from './env-overlay';
 
 // --- Mock helpers ---
 
+/**
+ * Faithful in-memory model of the durable steering store for tests: FIFO
+ * position, message_id idempotency, and claim/state transitions mirror
+ * packages/core/src/db/workflow-steering.ts closely enough that a test can
+ * seed the queue exactly like the send route would (durable insert) and the
+ * executor's claim sees exactly what it would see against a real database.
+ * Every mutation is synchronous inside the async function body, so a call
+ * site between an async generator's `yield`s does not need to `await` it for
+ * the mutation to be visible immediately.
+ */
+function createMockSteeringStore(): Pick<
+  IWorkflowStore,
+  | 'getSteeringDraft'
+  | 'upsertSteeringDraft'
+  | 'clearSteeringDraft'
+  | 'getSteeringNodeSettings'
+  | 'upsertSteeringNodeSettings'
+  | 'enqueueSteeringMessage'
+  | 'withdrawSteeringMessage'
+  | 'listSteeringQueue'
+  | 'claimSteeringQueue'
+  | 'markSteeringMessagesSent'
+  | 'claimSteeringMessageForSoftInjection'
+  | 'reconcileNeverSentSteeringMessages'
+> {
+  const drafts = new Map<string, SteeringDraft>();
+  const settings = new Map<string, SteeringNodeSettings>();
+  const queue: SteeringQueueEntry[] = [];
+  let nextId = 0;
+  const freshId = (prefix: string): string => `${prefix}-${String((nextId += 1))}`;
+  const draftKey = (runId: string, nodeId: string, userId: string | null): string =>
+    `${runId}::${nodeId}::${userId ?? ''}`;
+  const settingsKey = (runId: string, nodeId: string): string => `${runId}::${nodeId}`;
+
+  const claimable = new Set<SteeringQueueState>(STEERING_QUEUE_CLAIMABLE_STATES);
+  const visible = new Set<SteeringQueueState>(STEERING_QUEUE_VISIBLE_STATES);
+
+  return {
+    getSteeringDraft: async key =>
+      drafts.get(draftKey(key.workflow_run_id, key.node_id, key.operator_user_id)) ?? null,
+    upsertSteeringDraft: async input => {
+      const key = draftKey(input.workflow_run_id, input.node_id, input.operator_user_id);
+      const draft: SteeringDraft = {
+        id: drafts.get(key)?.id ?? freshId('draft'),
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        operator_user_id: input.operator_user_id,
+        message: input.message,
+        updated_at: new Date(),
+      };
+      drafts.set(key, draft);
+      return draft;
+    },
+    clearSteeringDraft: async key => {
+      drafts.delete(draftKey(key.workflow_run_id, key.node_id, key.operator_user_id));
+    },
+    getSteeringNodeSettings: async (workflowRunId, nodeId) =>
+      settings.get(settingsKey(workflowRunId, nodeId)) ?? null,
+    upsertSteeringNodeSettings: async input => {
+      const key = settingsKey(input.workflow_run_id, input.node_id);
+      const current = settings.get(key);
+      const next: SteeringNodeSettings = {
+        id: current?.id ?? freshId('settings'),
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        auto_send_enabled: input.auto_send_enabled ?? current?.auto_send_enabled ?? false,
+        updated_by_user_id: input.updated_by_user_id ?? current?.updated_by_user_id ?? null,
+        provider_id: input.provider_id ?? current?.provider_id ?? null,
+        updated_at: new Date(),
+      };
+      settings.set(key, next);
+      return next;
+    },
+    enqueueSteeringMessage: async input => {
+      const existing = queue.find(
+        entry =>
+          entry.workflow_run_id === input.workflow_run_id &&
+          entry.node_id === input.node_id &&
+          entry.message_id === input.message_id
+      );
+      if (existing !== undefined) {
+        return { entry: existing, duplicate: true };
+      }
+      const scopedMax = queue
+        .filter(
+          entry =>
+            entry.workflow_run_id === input.workflow_run_id && entry.node_id === input.node_id
+        )
+        .reduce((max, entry) => Math.max(max, entry.fifo_position), 0);
+      const entry: SteeringQueueEntry = {
+        id: freshId('queue'),
+        workflow_run_id: input.workflow_run_id,
+        node_id: input.node_id,
+        message_id: input.message_id,
+        message: input.message,
+        operator_user_id: input.operator_user_id,
+        fifo_position: scopedMax + 1,
+        state: input.initial_state,
+        last_error: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      };
+      queue.push(entry);
+      return { entry, duplicate: false };
+    },
+    withdrawSteeringMessage: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          claimable.has(item.state)
+      );
+      if (entry === undefined) return { removed: false };
+      entry.state = 'withdrawn';
+      entry.updated_at = new Date();
+      return { removed: true };
+    },
+    listSteeringQueue: async (workflowRunId, nodeId) =>
+      queue
+        .filter(
+          entry =>
+            entry.workflow_run_id === workflowRunId &&
+            entry.node_id === nodeId &&
+            visible.has(entry.state)
+        )
+        .sort((a, b) => a.fifo_position - b.fifo_position),
+    claimSteeringQueue: async (workflowRunId, nodeId, limit) => {
+      const eligible = queue
+        .filter(
+          entry =>
+            entry.workflow_run_id === workflowRunId &&
+            entry.node_id === nodeId &&
+            claimable.has(entry.state)
+        )
+        .sort((a, b) => a.fifo_position - b.fifo_position);
+      const claimed = limit === 'all' ? eligible : eligible.slice(0, limit);
+      const now = new Date();
+      for (const entry of claimed) {
+        entry.state = 'dispatching';
+        entry.updated_at = now;
+      }
+      return claimed.map(entry => ({
+        message_id: entry.message_id,
+        message: entry.message,
+        operator_user_id: entry.operator_user_id,
+      }));
+    },
+    markSteeringMessagesSent: async (workflowRunId, nodeId, messageIds) => {
+      const ids = new Set(messageIds);
+      const now = new Date();
+      for (const entry of queue) {
+        if (
+          entry.workflow_run_id === workflowRunId &&
+          entry.node_id === nodeId &&
+          ids.has(entry.message_id) &&
+          (entry.state === 'dispatching' || entry.state === 'delivery_unknown')
+        ) {
+          entry.state = 'sent';
+          entry.updated_at = now;
+        }
+      }
+    },
+    claimSteeringMessageForSoftInjection: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          claimable.has(item.state)
+      );
+      if (entry === undefined) return null;
+      entry.state = 'sent';
+      entry.updated_at = new Date();
+      return {
+        message_id: entry.message_id,
+        message: entry.message,
+        operator_user_id: entry.operator_user_id,
+      };
+    },
+    reconcileNeverSentSteeringMessages: async (workflowRunId, nodeId) => {
+      const now = new Date();
+      let count = 0;
+      for (const entry of queue) {
+        if (
+          entry.workflow_run_id === workflowRunId &&
+          entry.node_id === nodeId &&
+          (entry.state === 'queued' ||
+            entry.state === 'awaiting_send_now' ||
+            entry.state === 'dispatching')
+        ) {
+          entry.state = 'never_sent';
+          entry.updated_at = now;
+          count += 1;
+        }
+      }
+      return { count };
+    },
+  };
+}
+
 function createMockStore(): IWorkflowStore {
   let nodeMessageSeq = 0;
   const nodeMessages: Awaited<ReturnType<IWorkflowStore['appendNodeMessage']>>[] = [];
+  const steeringStore = createMockSteeringStore();
   return {
+    ...steeringStore,
     createWorkflowRun: mock(() =>
       Promise.resolve({
         id: 'mock-run-id',
@@ -26560,20 +26770,30 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     return handle;
   }
 
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'queue'` — never wakes an idle handle. `initial_state` mirrors
+   * the live handle's current sub-state at insert time.
+   */
   function enqueue(
+    store: IWorkflowStore,
     runId: string,
     stepName: string,
     messageId: string,
     message: string,
     operatorUserId: string | null = 'op-1'
   ): void {
-    const result = liveHandle(runId, stepName).enqueue({
-      messageId,
+    const handle = liveHandle(runId, stepName);
+    const initialState =
+      handle.steeringSubState() === 'idle-after-interrupt' ? 'awaiting_send_now' : 'queued';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
       message,
-      operatorUserId,
-      receivedAt: new Date().toISOString(),
+      operator_user_id: operatorUserId,
+      initial_state: initialState,
     });
-    if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
   }
 
   type SteeringNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
@@ -26649,10 +26869,10 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'a1', 'a1', 'op-a');
-        enqueue(RUN_ID, 'review', 'b1', 'b1', 'op-b');
-        enqueue(RUN_ID, 'review', 'a2', 'a2', 'op-a');
-        enqueue(RUN_ID, 'review', 'b2', 'b2', 'op-b');
+        enqueue(store, RUN_ID, 'review', 'a1', 'a1', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'b1', 'b1', 'op-b');
+        enqueue(store, RUN_ID, 'review', 'a2', 'a2', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'b2', 'b2', 'op-b');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 'sess-turn-1' };
         return;
@@ -26713,7 +26933,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'more work');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'more work');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 's-1', tokens: { input: 10, output: 5 }, cost: 0.01 };
         return;
@@ -26744,7 +26964,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'more work');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'more work');
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 's-1', tokens: { input: 10, output: 5 } };
         return;
@@ -26783,10 +27003,8 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
   });
 
   it('fails before draining when the settled turn returns no session id', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'stranded guidance');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'stranded guidance');
       yield { type: 'assistant', content: 'output' };
       yield { type: 'result' };
     });
@@ -26795,15 +27013,16 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('no session id');
-    // The queue was left intact — never drained into a dead end.
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    // The entry was left intact, never drained into a dead end — terminal
+    // reconciliation then preserves it as a read-only never_sent record.
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on empty output', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'result', sessionId: 's-1' };
     });
     const store = createMockStore();
@@ -26811,14 +27030,14 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('produced no assistant output');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on a provider error', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'assistant', content: 'partial' };
       throw new Error('provider exploded');
     });
@@ -26827,17 +27046,17 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toBe('provider exploded');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on cancel', async () => {
     let streaming = false;
-    let handleRef: NodeSteeringHandle | undefined;
     const store = createMockStore();
     store.getWorkflowRunStatus = mock(async () => (streaming ? 'cancelled' : 'running'));
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       streaming = true;
       yield { type: 'assistant', content: 'partial' };
       yield { type: 'result', sessionId: 's-1' };
@@ -26846,14 +27065,14 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toBe('Cancelled by user');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on credit exhaustion', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'assistant', content: 'credit balance exhausted' };
       yield { type: 'result', sessionId: 's-1' };
     });
@@ -26862,14 +27081,14 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('Credit exhaustion');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('never drains on idle timeout', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'undrained');
+      enqueue(store, RUN_ID, 'review', 'm-1', 'undrained');
       yield { type: 'assistant', content: 'partial work' };
       await new Promise(() => {}); // hang — the idle watchdog owns the exit
     });
@@ -26877,10 +27096,12 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     await invokeDag(store, [{ id: 'review', prompt: 'do work', idle_timeout: 50 }]);
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
-  it('parks on AskHuman, refuses sends while parked, and the resumed execution inherits the queue', async () => {
+  it('parks on AskHuman, and the resumed execution inherits the durable queue', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* (
       _prompt: string,
@@ -26891,7 +27112,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
       calls++;
       if (calls === 1) {
         // Guidance queued mid-turn survives the park on the same handle.
-        enqueue(RUN_ID, 'review', 'm-1', 'pre-park guidance');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'pre-park guidance');
         const ask = options?.nativeTools?.find(tool => tool.name === 'AskHuman');
         if (!ask) throw new Error('AskHuman was not injected');
         await ask.handler(
@@ -26906,17 +27127,13 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     const store = createMockStore();
     await invokeDag(store, [{ id: 'review', prompt: 'ask something' }]);
 
-    // Paused pending: the handle is parked and refuses new sends.
+    // Paused pending: the handle is parked. Whether a route refuses a new
+    // send while parked is server route policy now that content lives in
+    // the durable store, not a registry-level concern — covered by the
+    // server's own route tests.
     const parked = getSteeringRegistry().get(RUN_ID, 'review');
     expect(parked).toBeDefined();
     expect(parked!.snapshot().phase).toBe('parked');
-    const refused = parked!.enqueue({
-      messageId: 'm-2',
-      message: 'too late',
-      operatorUserId: 'op-1',
-      receivedAt: new Date().toISOString(),
-    });
-    expect(refused).toEqual({ ok: false, reason: 'not_live' });
 
     // Resume: the same run re-enters the node; register() revives the parked
     // handle with its retained queue, and the boundary drains it into a
@@ -26933,7 +27150,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'classify', 'm-1', 'steer the verdict');
+        enqueue(store, RUN_ID, 'classify', 'm-1', 'steer the verdict');
         yield { type: 'result', sessionId: 's-1', structuredOutput: { verdict: 'ok' } };
         return;
       }
@@ -26979,8 +27196,8 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-a', 'adjust course a', 'op-a');
-        enqueue(RUN_ID, 'my-loop', 'm-b', 'adjust course b', 'op-b');
+        enqueue(store, RUN_ID, 'my-loop', 'm-a', 'adjust course a', 'op-a');
+        enqueue(store, RUN_ID, 'my-loop', 'm-b', 'adjust course b', 'op-b');
         yield { type: 'assistant', content: 'iteration one work' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -27023,18 +27240,16 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
   it('fails without draining when the latest loop guidance turn omits a session id', async () => {
     let calls = 0;
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'first follow-up');
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'first follow-up');
         yield { type: 'assistant', content: 'iteration work' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
       }
       if (calls === 2) {
-        handleRef = liveHandle(RUN_ID, 'my-loop');
-        enqueue(RUN_ID, 'my-loop', 'm-2', 'second follow-up');
+        enqueue(store, RUN_ID, 'my-loop', 'm-2', 'second follow-up');
         yield { type: 'assistant', content: 'first follow-up result' };
         yield { type: 'result' };
         return;
@@ -27052,9 +27267,13 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
     expect(nodeFailedError(store, 'my-loop')).toContain('no session id');
-    expect(handleRef!.snapshot().queued.map(message => message.message)).toEqual([
-      'second follow-up',
-    ]);
+    // 'first follow-up' was claimed and delivered in turn 2; 'second
+    // follow-up' was claimed for a turn 3 that never got a session id to
+    // resume, so it is preserved as never_sent rather than silently lost.
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'my-loop');
+    expect(queueAfter.map(entry => entry.message)).toEqual(['first follow-up', 'second follow-up']);
+    expect(queueAfter[0]?.state).toBe('sent');
+    expect(queueAfter[1]?.state).toBe('never_sent');
   });
 
   it('lets pending guidance win a completion boundary in a loop', async () => {
@@ -27062,7 +27281,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'one more thing');
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'one more thing');
         yield { type: 'assistant', content: 'done <promise>COMPLETE</promise>' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -27089,7 +27308,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'my-loop', 'm-1', 'last word');
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'last word');
         yield { type: 'assistant', content: 'work without signal' };
         yield { type: 'result', sessionId: 'loop-sess-1' };
         return;
@@ -27121,7 +27340,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
       if (calls === 1) {
         sawNamespaced = getSteeringRegistry().get(RUN_ID, 'grp.body');
         sawBare = getSteeringRegistry().get(RUN_ID, 'body');
-        enqueue(RUN_ID, 'grp.body', 'm-1', 'guided');
+        enqueue(store, RUN_ID, 'grp.body', 'm-1', 'guided');
         yield { type: 'assistant', content: 'body output COMPLETE' };
         yield { type: 'result', sessionId: 'sess-body-1' };
         return;
@@ -27159,7 +27378,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-null', 'anonymous steer', null);
+        enqueue(store, RUN_ID, 'review', 'm-null', 'anonymous steer', null);
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27182,9 +27401,9 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'one');
-        enqueue(RUN_ID, 'review', 'm-2', 'two');
-        enqueue(RUN_ID, 'review', 'm-3', 'three');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'one');
+        enqueue(store, RUN_ID, 'review', 'm-2', 'two');
+        enqueue(store, RUN_ID, 'review', 'm-3', 'three');
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27217,7 +27436,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'never written');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'never written');
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27246,7 +27465,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'held note');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'held note');
         yield { type: 'assistant', content: 'prior' };
         yield { type: 'result', sessionId: 's-1' };
         return;
@@ -27322,30 +27541,29 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return handle;
   }
 
-  function steeringMessage(
-    messageId: string,
-    message: string,
-    operatorUserId: string | null = 'op-1'
-  ) {
-    return {
-      messageId,
-      message,
-      operatorUserId,
-      receivedAt: new Date().toISOString(),
-    };
-  }
-
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'queue'` — never wakes an idle handle.
+   */
   function enqueue(
+    store: IWorkflowStore,
     runId: string,
     stepName: string,
     messageId: string,
     message: string,
     operatorUserId: string | null = 'op-1'
   ): void {
-    const result = liveHandle(runId, stepName).enqueue(
-      steeringMessage(messageId, message, operatorUserId)
-    );
-    if (!result.ok) throw new Error(`enqueue refused: ${result.reason}`);
+    const handle = liveHandle(runId, stepName);
+    const initialState =
+      handle.steeringSubState() === 'idle-after-interrupt' ? 'awaiting_send_now' : 'queued';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
+      message,
+      operator_user_id: operatorUserId,
+      initial_state: initialState,
+    });
   }
 
   type InterruptNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
@@ -27362,18 +27580,32 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     return row.kind === 'text' && row.metadata?.origin === 'operator';
   }
 
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'send_now'` — wakes an idle handle for a non-blank message,
+   * exactly like `NodeSteeringHandle.wakeForSendNow()`'s real caller.
+   */
   function sendNow(
+    store: IWorkflowStore,
     runId: string,
     stepName: string,
     messageId: string,
     message: string,
     operatorUserId: string | null = 'op-1'
   ): void {
-    const result = liveHandle(runId, stepName).accept(
-      steeringMessage(messageId, message, operatorUserId),
-      'send_now'
-    );
-    if (!result.ok) throw new Error(`send_now refused: ${result.reason}`);
+    const handle = liveHandle(runId, stepName);
+    const idle = handle.steeringSubState() === 'idle-after-interrupt';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
+      message,
+      operator_user_id: operatorUserId,
+      initial_state: idle ? 'awaiting_send_now' : 'queued',
+    });
+    if (idle && message.trim() !== '') {
+      handle.wakeForSendNow();
+    }
   }
 
   /** Poll until the handle projects the idle sub-state (or give up loudly). */
@@ -27492,7 +27724,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const store = createMockStore();
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
-    const idle = await awaitIdle(RUN_ID, 'review');
+    await awaitIdle(RUN_ID, 'review');
     expect(await interruptOutcome).toBe('idle-after-interrupt');
     // One committed 'interrupted' status row precedes the idle projection.
     const states = await transcriptStates(store, RUN_ID, 'review');
@@ -27502,10 +27734,10 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     // Two queue-intent rows land as awaiting_send_now; send_now drains all
     // three in receipt order into ONE redirect turn.
-    enqueue(RUN_ID, 'review', 'm-old-1', 'old note one', 'op-a');
-    enqueue(RUN_ID, 'review', 'm-old-2', 'old note two', 'op-a');
-    expect(idle.snapshot().queued.length).toBe(2);
-    sendNow(RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
+    enqueue(store, RUN_ID, 'review', 'm-old-1', 'old note one', 'op-a');
+    enqueue(store, RUN_ID, 'review', 'm-old-2', 'old note two', 'op-a');
+    expect(await store.listSteeringQueue(RUN_ID, 'review')).toHaveLength(2);
+    sendNow(store, RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27566,7 +27798,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     await awaitIdle(RUN_ID, 'review');
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27600,7 +27832,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     await awaitIdle(RUN_ID, 'review');
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27643,7 +27875,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
       if (calls === 1) {
-        enqueue(RUN_ID, 'review', 'm-1', 'queued steer');
+        enqueue(store, RUN_ID, 'review', 'm-1', 'queued steer');
         interruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
         yield { type: 'assistant', content: 'turn one' };
         yield { type: 'result', sessionId: 'sess-1' };
@@ -27741,7 +27973,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     await awaitIdle(RUN_ID, 'classify');
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
-    sendNow(RUN_ID, 'classify', 'm-1', 'retry properly');
+    sendNow(store, RUN_ID, 'classify', 'm-1', 'retry properly');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -27803,7 +28035,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const outcomes = toolCompletedOutcomes(store);
     expect(outcomes.get('tool-done')).toEqual(['success']);
     expect(outcomes.get('tool-open')).toEqual(['interrupted']);
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     expect(storedEventTypes(store)).toContain('node_completed');
@@ -27851,7 +28083,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       call => call[1] as string
     );
     expect(sent.some(text => text.includes('background agent task'))).toBe(false);
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
     expect(storedEventTypes(store)).toContain('node_completed');
   });
@@ -27878,7 +28110,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
     await awaitIdle(RUN_ID, 'review');
-    sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
     await run;
 
     const completedCall = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.find(
@@ -27890,11 +28122,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   });
 
   it('interrupt without a session id fails explicitly instead of losing resumability', async () => {
-    let handleRef: NodeSteeringHandle | undefined;
     mockSendQueryDag.mockImplementation(async function* () {
-      handleRef = liveHandle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'stranded');
-      void handleRef.interrupt();
+      enqueue(store, RUN_ID, 'review', 'm-1', 'stranded');
+      void liveHandle(RUN_ID, 'review').interrupt();
       yield { type: 'assistant', content: 'partial' };
       yield { type: 'result', terminalReason: 'aborted_streaming' };
     });
@@ -27903,7 +28133,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     expect(mockSendQueryDag.mock.calls.length).toBe(1);
     expect(nodeFailedError(store, 'review')).toContain('no session id');
-    expect(handleRef!.snapshot().queued.length).toBe(1);
+    const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queueAfter).toHaveLength(1);
+    expect(queueAfter[0]?.state).toBe('never_sent');
   });
 
   it('interrupt twice uses a fresh token and controller per turn with no stale-flag contamination', async () => {
@@ -27929,10 +28161,17 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     await awaitIdle(RUN_ID, 'review');
     expect(await outcomes[0]).toBe('idle-after-interrupt');
-    sendNow(RUN_ID, 'review', 'm-1', 'first redirect');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'first redirect');
+    // Sub-state stays idle-after-interrupt across the claim round-trip until
+    // the redirected turn actually begins — wait for that turn's own
+    // interrupt() call (outcomes[1]) before polling idle again, so this
+    // doesn't observe the still-settling first redirect as the second one.
+    for (let i = 0; i < 2000 && outcomes.length < 2; i++) {
+      await Bun.sleep(1);
+    }
     await awaitIdle(RUN_ID, 'review');
     expect(await outcomes[1]).toBe('idle-after-interrupt');
-    sendNow(RUN_ID, 'review', 'm-2', 'second redirect');
+    sendNow(store, RUN_ID, 'review', 'm-2', 'second redirect');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(3);
@@ -27996,7 +28235,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     await awaitIdle(RUN_ID, 'my-loop');
     const states = await transcriptStates(store, RUN_ID, 'my-loop');
     expect(states).toContain('interrupted');
-    sendNow(RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28060,7 +28299,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     ]);
 
     await awaitIdle(RUN_ID, 'my-loop');
-    sendNow(RUN_ID, 'my-loop', 'm-1', 'redirect');
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(3);
@@ -28099,7 +28338,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
 
     const idle = await awaitIdle(RUN_ID, 'grp.body');
     expect(idle.steeringSubState()).toBe('idle-after-interrupt');
-    sendNow(RUN_ID, 'grp.body', 'm-1', 'redirect the body');
+    sendNow(store, RUN_ID, 'grp.body', 'm-1', 'redirect the body');
     await run;
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28237,7 +28476,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
       const idle = await awaitIdle(RUN_ID, 'review');
-      sendNow(RUN_ID, 'review', 'm-1', 'carry on');
+      sendNow(store, RUN_ID, 'review', 'm-1', 'carry on');
       // Stale expiry after send_now must be inert.
       idle.expireIdleForTests();
       await run;
@@ -28517,18 +28756,21 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
 
       const idle = await awaitIdle(RUN_ID, 'review');
-      enqueue(RUN_ID, 'review', 'm-1', 'held one');
-      enqueue(RUN_ID, 'review', 'm-2', 'held two');
-      expect(idle.snapshot().queued.length).toBe(2);
+      enqueue(store, RUN_ID, 'review', 'm-1', 'held one');
+      enqueue(store, RUN_ID, 'review', 'm-2', 'held two');
+      expect(await store.listSteeringQueue(RUN_ID, 'review')).toHaveLength(2);
       idle.expireIdleForTests();
       await run;
 
       expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
-      const unconsumed = mockLogFn.mock.calls.filter(
-        call => call[1] === 'dag.steering_queue_unconsumed'
+      const neverSent = mockLogFn.mock.calls.filter(
+        call => call[1] === 'dag.steering_queue_never_sent'
       );
-      expect(unconsumed.length).toBeGreaterThanOrEqual(1);
-      expect((unconsumed[0]![0] as { queuedCount: number }).queuedCount).toBe(2);
+      expect(neverSent.length).toBeGreaterThanOrEqual(1);
+      expect((neverSent[0]![0] as { neverSentCount: number }).neverSentCount).toBe(2);
+      const queueAfter = await store.listSteeringQueue(RUN_ID, 'review');
+      expect(queueAfter).toHaveLength(2);
+      expect(queueAfter.every(entry => entry.state === 'never_sent')).toBe(true);
       const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(
         isOperatorTextRow
       );
@@ -28679,7 +28921,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
         { runId: DEEPSEEK_RUN, assistant: 'deepseek' }
       );
 
-      const idle = await awaitIdle(DEEPSEEK_RUN, 'review');
+      await awaitIdle(DEEPSEEK_RUN, 'review');
       expect(await interruptOutcome).toBe('idle-after-interrupt');
       const states = await transcriptStates(store, DEEPSEEK_RUN, 'review');
       expect(states.filter(s => s === 'interrupted').length).toBe(1);
@@ -28689,9 +28931,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       // Interrupted pass must not have re-asked structured output.
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
 
-      enqueue(DEEPSEEK_RUN, 'review', 'm-old', 'older guidance');
-      expect(idle.snapshot().queued.length).toBe(1);
-      sendNow(DEEPSEEK_RUN, 'review', 'm-new', 'new instruction');
+      enqueue(store, DEEPSEEK_RUN, 'review', 'm-old', 'older guidance');
+      expect(await store.listSteeringQueue(DEEPSEEK_RUN, 'review')).toHaveLength(1);
+      sendNow(store, DEEPSEEK_RUN, 'review', 'm-new', 'new instruction');
       await run;
 
       expect(mockSendQueryDag.mock.calls.length).toBe(2);
@@ -28775,7 +29017,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       await awaitIdle(DEEPSEEK_RUN, 'my-loop');
       const states = await transcriptStates(store, DEEPSEEK_RUN, 'my-loop');
       expect(states).toContain('interrupted');
-      sendNow(DEEPSEEK_RUN, 'my-loop', 'm-1', 'redirect the loop');
+      sendNow(store, DEEPSEEK_RUN, 'my-loop', 'm-1', 'redirect the loop');
       await run;
 
       expect(mockSendQueryDag.mock.calls.length).toBe(2);

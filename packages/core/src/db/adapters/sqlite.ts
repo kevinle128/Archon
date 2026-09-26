@@ -1132,6 +1132,56 @@ export class SqliteAdapter implements IDatabase {
         CONSTRAINT uq_pending_interactions_run_tool_use
           UNIQUE (workflow_run_id, tool_use_id)
       );
+
+      -- Steering drafts (per-author composer draft, per node)
+      CREATE TABLE IF NOT EXISTS remote_agent_steering_drafts (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        operator_user_id TEXT NOT NULL DEFAULT '',
+        message TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_steering_drafts_run_node_operator
+          UNIQUE (workflow_run_id, node_id, operator_user_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_steering_drafts_run_node
+        ON remote_agent_steering_drafts(workflow_run_id, node_id);
+
+      -- Steering queue entries (durable node-scoped guidance queue)
+      CREATE TABLE IF NOT EXISTS remote_agent_steering_queue_entries (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        message TEXT NOT NULL,
+        operator_user_id TEXT NOT NULL DEFAULT '',
+        fifo_position INTEGER NOT NULL CHECK (fifo_position >= 1),
+        state TEXT NOT NULL DEFAULT 'queued',
+        last_error TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_steering_queue_run_node_message
+          UNIQUE (workflow_run_id, node_id, message_id),
+        CONSTRAINT uq_steering_queue_run_node_position
+          UNIQUE (workflow_run_id, node_id, fifo_position)
+      );
+      CREATE INDEX IF NOT EXISTS idx_steering_queue_run_node_position
+        ON remote_agent_steering_queue_entries(workflow_run_id, node_id, fifo_position);
+      CREATE INDEX IF NOT EXISTS idx_steering_queue_state
+        ON remote_agent_steering_queue_entries(state);
+
+      -- Steering node settings (durable per-node auto-send + provider)
+      CREATE TABLE IF NOT EXISTS remote_agent_steering_node_settings (
+        id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+        workflow_run_id TEXT NOT NULL REFERENCES remote_agent_workflow_runs(id) ON DELETE CASCADE,
+        node_id TEXT NOT NULL,
+        auto_send_enabled INTEGER NOT NULL DEFAULT 0,
+        updated_by_user_id TEXT,
+        provider_id TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CONSTRAINT uq_steering_node_settings_run_node
+          UNIQUE (workflow_run_id, node_id)
+      );
     `);
     getLog().info('db.sqlite_schema_initialized');
   }

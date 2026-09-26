@@ -23,4 +23,6 @@ export const OMP_CAPABILITIES: ProviderCapabilities = {
   containerExec: false,
   askHuman: false,
   interrupt: false,
+  softInjection: false,
+  deliveryAck: false,
 };
