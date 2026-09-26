@@ -655,7 +655,7 @@ describe('bundled-defaults', () => {
       expect(content).toContain('model: grok-4.6');
       expect(content).toContain('skills:');
       expect(content).toContain('select-verify-archon-targets');
-      expect(content).toContain('Follow select-verify-archon-targets.');
+      expect(content).toContain('Follow select-verify-archon-targets');
       expect(content).toContain('id: begin-verify');
       expect(content).toContain('id: finalize-change');
       expect(content).toContain('id: prepare-verify');
@@ -669,7 +669,8 @@ describe('bundled-defaults', () => {
       expect(content).toContain('id: verify-blocked');
       expect(content).toContain('provider: codex');
       expect(content).toContain('model: gpt-6-sol');
-      expect(content).toContain('.agents/skills/verify-archon/bin/verify-archon');
+      expect(content).toContain('.agents/skills/verify-archon/bin/verify.ts');
+      expect(content).not.toContain('gate.head_sha');
       expect(content).not.toContain('.cursor/skills/verify-archon');
       expect(content).toContain('verify-feature-gate.ts normalize');
       expect(content).toContain('verify-feature-gate.ts prove');
