@@ -241,18 +241,20 @@ truthful, unmutated reads, no sweep required.
 
 ## Tests
 
-- `packages/core/src/db/workflow-steering.test.ts` — 22 tests against a real
+- `packages/core/src/db/workflow-steering.test.ts` — 21 tests against a real
   `SqliteAdapter(':memory:')` (only the `./connection` module is redirected
   to it; the store code under test is the real implementation), covering
   FIFO position assignment under concurrency, `message_id` idempotency,
   claim/CAS state transitions, terminal reconciliation, and cascade delete.
 - `packages/workflows/src/steering-registry.test.ts`, `dag-executor.test.ts`,
   `subrun.test.ts`, `node-transcript.test.ts` — rewritten for the trimmed
-  registry and durable-store wiring.
+  registry and durable-store wiring. These are the tests that exercise the
+  Stop → `idle-after-interrupt` → Send-now-continues-same-session leg; the
+  manual live run below did not reach that leg (see Manual verification).
 - `packages/server/src/routes/api.workflow-runs.test.ts` — full route-level
   coverage via a real `OpenAPIHono` app with a stateful `mock.module` for
   the DB layer only; business logic in `api.ts` runs for real. Added in
-  this phase: 9 tests for the draft routes, 5 for auto-send, and 3 targeted
+  this phase: 8 tests for the draft routes, 6 for auto-send, and 3 targeted
   regression tests for the classification fix (a genuine post-restart
   `provider_id`-stamped row correctly reads `recovery_required`; a
   settings-only row on a never-run node correctly reads `not_found`; a
@@ -261,11 +263,12 @@ truthful, unmutated reads, no sweep required.
 - `packages/providers/*` — 5 provider capability test files updated for the
   two new `ProviderCapabilities` fields.
 
-Full-monorepo `bun run test`: **0 failures** across every package (verified
-twice — once before the classification fix, once after — by grepping every
-` fail$` line in the log for anything other than `0 fail`). Per-package
-`bun run test` for `core`, `server`, `workflows`, and `providers`
-individually: 0 failures each.
+Full-monorepo `bun run test`: **0 failures** across every package, run to
+completion after every change in this report including the classification
+fix and the web client additions (grepped every ` fail$` line in the log —
+none read anything but `0 fail`; exit code 0). Also run per-package for
+`core`, `server`, `workflows`, and `providers` individually along the way:
+0 failures each time.
 
 ## Validate
 
@@ -281,6 +284,12 @@ phase's ownership:
 
 - `packages/web/src/components/workflows/ComposerDock.tsx` (+ its `.test.tsx`)
 - `packages/web/src/experiments/console/components/ConsoleComposerDock.tsx` (+ its `.test.tsx`)
+
+This is a **type-only** break, not a runtime one: `cd packages/web && bun run
+test` (types stripped) is fully green — 657 + 53 + 1118 pass, 0 fail, across
+every file including both of the above. The fixtures' object literals are
+missing fields the widened type now requires; nothing in the fixtures'
+actual runtime values contradicts the new contract.
 
 The widened Stop/queue wire contract this phase implements — the queue
 item's `state` enum growing from `queued | awaiting_send_now` to the full
@@ -359,6 +368,28 @@ correctly returned 409 `recovery_required`, while `PUT .../draft` and
 `PUT .../auto-send` — which never require a live handle — both still
 succeeded during that same recovery-required window, exactly as designed.
 
+**Not reached live: Stop → idle-after-interrupt → Send-now-continues.** The
+90-second `delayMs` window on the first live run closed during the time
+spent reasoning and issuing follow-up curl commands between tool calls,
+before an interrupt could be sent — the node claimed its queue and finished
+naturally first (which is itself the useful, unplanned proof of natural-
+turn-boundary delivery described above). This specific leg was not
+re-attempted live; it is covered by the automated
+`steering-registry.test.ts`/`dag-executor.test.ts` suites (0 failures) and
+was not re-tried given the task's own framing of the full live Claude-style
+flow as optional.
+
+**Side effect the scratch setup did not prevent:** two of my own actions
+against the isolated server fired real outbound AI calls billed to the
+copied real credentials — the first (unbound-conversation) run attempt fell
+back to routing through the configured default assistant (Codex) rather
+than running the named workflow, and every new conversation triggers a
+background title-generation call on the same assistant. Both calls failed
+fast with a 400 (`reasoning.effort 'minimal'` incompatible with a requested
+tool) and were not retried, so the cost is minimal, but the isolated
+`ARCHON_HOME`/database did not isolate outbound network calls — only local
+state.
+
 All scratch processes and the workflow/conversation/codebase test fixtures
 created for this verification live only in the scratchpad directory and the
 scratch copy of the database; nothing was written to the real
@@ -403,3 +434,13 @@ awaiting_send_now` only).
   `ADD COLUMN` — none needed here since these are new tables — would have
   carried a `DEFAULT`), so an upgrade run is expected to pass, but only CI's
   real-baseline run can confirm it.
+- Likely dead branch, not fixed (outside this report's edit budget, flagged
+  instead): the queue-read handler's `entry.state === 'withdrawn' ?
+'delivery_unknown' : entry.state` mapping in `api.ts` operates only on
+  rows `listSteeringQueue` already returned, and that function's own SQL
+  filters `withdrawn` out via `STEERING_QUEUE_VISIBLE_STATES` before this
+  code ever sees a row — so the `withdrawn` branch cannot currently fire. A
+  future reader should either delete the dead branch or, if a path is ever
+  added that lets a withdrawn row reach this code, confirm `delivery_unknown`
+  (rather than a dedicated `withdrawn` wire value) is still the intended
+  label for it.
