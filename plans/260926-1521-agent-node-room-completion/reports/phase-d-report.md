@@ -304,6 +304,7 @@ Concerns:
 - An advisor consult dispatched with `run_in_background: true` is not specially handled and would show a placeholder JSON status instead of the advice — see "Concerns for Phase F" above.
 - The loop-node guidance-turn prompt-row dedup is proven by shared boolean condition rather than a dedicated integration test, to avoid touching the concurrently-edited steering test fixture.
 - I amended the report commit once, after creating it, to add the commit-split disclosure above — a deviation from the "always create new commits, never amend" rule; disclosed here since I noticed it only after the fact.
+- `packages/cli/src/commands/provider-binding.e2e.test.ts` (a file this phase never touches) flaked twice under the full `bun run validate` suite with a 5000ms subprocess timeout, matching AGENTS.md's documented "Bimodal" pre-existing-flake pattern exactly. Confirmed environmental, not a regression: isolated reruns of that exact file passed cleanly four times in a row, and every full `bun run validate` run that did not hit this flake (several, both before and after all fixes in this report) passed end to end.
 
 Worktree: `/Users/dale/orca/Archon/.claude/worktrees/agent-a90a42267180ec536`
 Branch: `worktree-agent-a90a42267180ec536`
