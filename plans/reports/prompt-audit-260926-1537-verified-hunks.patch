@@ -1,0 +1,516 @@
+--- a/packages/core/src/orchestrator/manage-run-tool.ts
++++ b/packages/core/src/orchestrator/manage-run-tool.ts
+@@ -134,7 +134,9 @@
+   '  reject   — reject a paused human gate. Params: runId, message=reason, confirm=true.',
+   '',
+   'Destructive actions (cancel/abandon/approve/reject) need confirm=true; call once',
+-  'without it to preview, confirm with the user, then call again with confirm=true.',
++  'without it to preview, then call again with confirm=true once the user has confirmed.',
++  'For approve/reject, an unambiguous decision already in the user’s message is that',
++  'confirmation; for cancel/abandon, ask the user first.',
+ ].join('\n');
+ 
+ const HELP_BY_ACTION: Record<Exclude<Action, 'help'>, string> = {
+@@ -340,10 +342,11 @@
+         ? ' This gate has completionSignaled=true and your args would FINALIZE the node from the already-computed output (no re-run).'
+         : ' This gate has completionSignaled=true and your message would run ANOTHER iteration (pass accept:true or drop the message to finalize instead).';
+     }
+-    return (
+-      `⚠️ This will ${action} ${subject}.${effect} ` +
+-      'Confirm with the user, then call manage_run again with confirm: true to proceed.'
+-    );
++    const confirmation = GATE_ACTIONS.has(action)
++      ? 'If the user’s message already states this decision unambiguously, that is the ' +
++        'confirmation; otherwise ask them first. Then call manage_run again with confirm: true to proceed.'
++      : 'Confirm with the user, then call manage_run again with confirm: true to proceed.';
++    return `⚠️ This will ${action} ${subject}.${effect} ${confirmation}`;
+   }
+ 
+   log.info({ runId: run.id, action }, 'manage_run.write_requested');
+--- a/packages/core/src/orchestrator/manage-run-tool.ts
++++ b/packages/core/src/orchestrator/manage-run-tool.ts
+@@ -149,9 +149,9 @@
+   abandon:
+     'abandon — discard a paused/failed (non-terminal) run. Required: runId, confirm=true. Irreversible: the run becomes cancelled.',
+   approve:
+-    'approve — approve a paused human gate; the run then continues on its own (no separate resume). Required: runId, confirm=true. Optional: accept, message. On an interactive loop whose gate shows completionSignaled=true: NO message (or accept=true) FINALIZES the node from the already-computed output without re-running; message=<feedback> runs another iteration with it. On other gates, message is just a comment recorded with the approval — pass the user’s own words, since a gate with capture_response reads it as the node’s output. Only paused runs with an approval gate.',
++    'approve — approve a paused human gate. The reply says whether the run continues from here or must be resumed separately (container runs resume only from the CLI). Required: runId, confirm=true. Optional: accept, message. On an interactive loop whose gate shows completionSignaled=true: NO message (or accept=true) FINALIZES the node from the already-computed output without re-running; message=<feedback> runs another iteration with it. On other gates, message is just a comment recorded with the approval — pass the user’s own words, since a gate with capture_response reads it as the node’s output. Only paused runs with an approval gate.',
+   reject:
+-    'reject — reject a paused human gate. Required: runId, confirm=true. Recommended: message (the reason, in the user’s own words). If the gate has an on-reject prompt the run reworks and continues on its own; otherwise it is cancelled and nothing further runs.',
++    'reject — reject a paused human gate. Required: runId, confirm=true. Recommended: message (the reason, in the user’s own words). If the gate has an on-reject prompt the run reworks with that reason, and the reply says whether it continues from here or must be resumed separately; otherwise it is cancelled and nothing further runs.',
+ };
+ 
+ /**
+--- a/packages/workflows/src/ask-human.ts
++++ b/packages/workflows/src/ask-human.ts
+@@ -33,11 +33,29 @@
+       items: {
+         type: 'object',
+         properties: {
+-          id: { type: 'string' },
+-          prompt: { type: 'string' },
+-          selection: { type: 'string', enum: ['single', 'multi'] },
+-          options: { type: 'array', items: { type: 'string' } },
+-          allowOther: { type: 'boolean' },
++          id: {
++            type: 'string',
++            description:
++              'Short identifier, unique within this call. Each answer comes back keyed by this id (questionId).',
++          },
++          prompt: { type: 'string', description: 'The question text shown to the human.' },
++          selection: {
++            type: 'string',
++            enum: ['single', 'multi'],
++            description:
++              "'single': the answer is one string. 'multi': the answer is an array of strings.",
++          },
++          options: {
++            type: 'array',
++            items: { type: 'string' },
++            description:
++              'Choices the human picks from. May be empty for a free-text question when allowOther is true.',
++          },
++          allowOther: {
++            type: 'boolean',
++            description:
++              'When true, the human may type a value that is not in options (with empty options, the answer is free text).',
++          },
+         },
+         required: ['id', 'prompt', 'selection', 'options', 'allowOther'],
+       },
+@@ -53,7 +71,10 @@
+ type AskHumanHandlerInput = z.infer<typeof askHumanHandlerInputSchema>;
+ 
+ const ASK_HUMAN_DESCRIPTION =
+-  'Ask a human operator one or more structured questions. Call this tool instead of asking in prose. Wait after calling; do not guess the answer.';
++  'Ask the human operator of this workflow run one or more structured questions when the task needs a decision or information only they have. ' +
++  'Calling it pauses the run and ends your current turn. ' +
++  'When the run resumes, you receive the answers as a list of { questionId, value } items (value is a string, or an array for multi-select), or a notice that the operator declined. ' +
++  'Use it instead of asking in prose, because only this tool pauses the run for an answer; a question written in prose does not stop the run.';
+ 
+ function errorMessage(error: unknown): string {
+   return error instanceof Error ? error.message : String(error);
+--- a/packages/core/src/orchestrator/orchestrator-agent.ts
++++ b/packages/core/src/orchestrator/orchestrator-agent.ts
+@@ -1608,7 +1608,7 @@
+ 
+   const fileSuffix =
+     attachedFiles && attachedFiles.length > 0
+-      ? '\n\n---\n\n## Attached Files\n\nThe user has uploaded the following files. Use your file reading tools (Read, View) to access them:\n\n' +
++      ? '\n\n---\n\n## Attached Files\n\nThe user has uploaded the following files. Read them from these paths:\n\n' +
+         attachedFiles
+           .map(f => `- ${f.name} (${f.mimeType}, ${String(f.size)} bytes): ${f.path}`)
+           .join('\n')
+--- a/packages/core/src/orchestrator/prompt-builder.ts
++++ b/packages/core/src/orchestrator/prompt-builder.ts
+@@ -250,7 +250,7 @@
+ ## Project Setup
+ 
+ When a user asks to add a new project:
+-1. Clone the repository into ~/.archon/workspaces/:
++1. Clone the repository into ~/.archon/workspaces/{owner}/{repo}/source, unless the user names a different location:
+    git clone https://github.com/{owner}/{repo} ~/.archon/workspaces/{owner}/{repo}/source
+ 2. Register it by emitting this command on its own line:
+    /register-project {project-name} {path-to-source}
+@@ -262,9 +262,7 @@
+    /update-project {project-name} {new-path}
+ 
+ To remove a registered project:
+-   /remove-project {project-name}
+-
+-IMPORTANT: Always clone into ~/.archon/workspaces/{owner}/{repo}/source unless the user specifies a different location.`;
++   /remove-project {project-name}`;
+ }
+ 
+ /**
+--- a/packages/providers/src/community/pi/provider.ts
++++ b/packages/providers/src/community/pi/provider.ts
+@@ -277,11 +277,7 @@
+  */
+ export const ARCHON_PI_ANTHROPIC_OAUTH_SYSTEM_PROMPT = `You are an expert coding assistant. You help users by reading files, executing commands, editing code, and writing new files.
+ 
+-Use the available tools to accomplish the task:
+-- read: examine file contents instead of cat/sed
+-- bash: run shell commands (ls, grep, find, build, test)
+-- edit: make precise, minimal text replacements; each match must be unique
+-- write: create new files or fully rewrite existing ones
++Use the available tools to accomplish the task. When a dedicated file tool is available, use it to read or edit files instead of shell commands such as cat or sed.
+ 
+ Guidelines:
+ - Prefer reading files before editing them.
+--- a/.archon/workflows/defaults/archon-architect.yaml
++++ b/.archon/workflows/defaults/archon-architect.yaml
+@@ -167,14 +167,14 @@
+ 
+       - Follow the plan exactly — do not add extra improvements you notice along the way
+       - Each change must preserve existing behavior (refactor only, no feature changes)
+-      - After each file edit, you'll be prompted to validate — follow those instructions
++      - After each file edit, a hook asks you to justify the simplification; the validate phase runs the full check suite
+       - If a change turns out to be harder than expected, skip it and move on
+       - Commit each logical change separately with a clear commit message
+ 
+       ## Instructions
+ 
+       1. Work through the plan items in order
+-      2. For each item: read the file, make the change, follow the post-edit checklist
++      2. For each item: read the file and make the change
+       3. After all changes, do a final `git diff --stat` to verify scope
+     depends_on: [plan]
+     context: fresh
+@@ -192,10 +192,8 @@
+         - matcher: "Write|Edit"
+           response:
+             systemMessage: >
+-              You just modified a file. Do these things NOW before moving on:
+-              1. Run the type checker to verify your change compiles
+-              2. Re-read the file you changed — is it ACTUALLY simpler, or did you just move complexity around?
+-              3. State in ONE sentence why this change reduces complexity. If you cannot justify it, revert it.
++              You just modified a file. State in one sentence why this change reduces
++              complexity rather than moving it elsewhere; if you cannot justify it, revert it.
+         - matcher: "Read"
+           response:
+             hookSpecificOutput:
+--- a/.archon/workflows/defaults/archon-architect.yaml
++++ b/.archon/workflows/defaults/archon-architect.yaml
+@@ -276,12 +276,6 @@
+     depends_on: [validate]
+     context: fresh
+     hooks:
+-      PostToolUse:
+-        - matcher: "Write|Edit"
+-          response:
+-            systemMessage: >
+-              You just made a fix. Run the specific failing validation check NOW
+-              to verify your fix works. Do not batch fixes — verify each one.
+       PreToolUse:
+         - matcher: "Write|Edit"
+           response:
+--- a/.archon/workflows/defaults/archon-refactor-safely.yaml
++++ b/.archon/workflows/defaults/archon-refactor-safely.yaml
+@@ -4,7 +4,7 @@
+   Triggers: "refactor", "refactor safely", "split this file", "extract module", "break up",
+             "decompose", "safe refactor", "split file", "extract into modules".
+   Does: Scans refactoring scope -> analyzes impact (read-only) -> plans ordered task list ->
+-        executes with type-check hooks after every edit -> validates full suite ->
++        executes with a type-check per task -> validates full suite ->
+         verifies behavior preservation (read-only) -> creates PR with before/after comparison.
+   NOT for: Bug fixes (use archon-fix-github-issue), feature development (use archon-feature-development),
+            general architecture sweeps (use archon-architect), PR reviews.
+@@ -12,7 +12,7 @@
+   Key safety features:
+   - Analysis and verification nodes are read-only (denied_tools: [Write, Edit, Bash])
+   - PreToolUse hooks check if each edit is in the plan
+-  - PostToolUse hooks force type-check after every file change
++  - Each plan task is type-checked before its commit
+   - Behavior verification confirms no logic changes after refactoring
+ 
+ provider: claude
+@@ -219,7 +219,7 @@
+ 
+       - **Follow the plan exactly** — do not add extra improvements or cleanups
+       - **One task at a time** — complete each task fully before starting the next
+-      - **Type-check after every file change** — you'll be prompted to do this after each edit
++      - **Type-check each task before committing it** — never commit code that does not compile
+       - **Preserve all behavior** — refactoring means moving code, not changing it
+       - **Preserve the public API** — if the original file exported something, it must still be
+         importable from the same path (use re-exports in the original file if needed)
+@@ -234,7 +234,7 @@
+       4. Update the source file to remove the moved code and add imports from the new file
+       5. Update the original file's exports to re-export from the new module (API preservation)
+       6. Use Grep to find and update ALL import sites across the codebase
+-      7. Run `bun run type-check` to verify (you'll be reminded by hooks)
++      7. Run `bun run type-check`; fix any error before committing
+       8. Commit ONLY the files you edited for this task — never `git add -A`. Stage by name, then commit:
+          ```bash
+          git add path/to/file1 path/to/file2 ...
+@@ -264,15 +264,6 @@
+                 AND not a file that imports from the target, explain why you're touching it.
+                 Unplanned changes increase risk.
+       PostToolUse:
+-        - matcher: "Write|Edit"
+-          response:
+-            systemMessage: >
+-              You just modified a file. STOP and do these things NOW before making any
+-              other changes:
+-              1. Run `bun run type-check` to verify the change compiles
+-              2. If type-check fails, fix the error immediately
+-              3. Verify you preserved the exact same behavior — no logic changes, only structural moves
+-              Only proceed to the next change after type-check passes.
+         - matcher: "Bash"
+           response:
+             hookSpecificOutput:
+--- a/.archon/workflows/defaults/archon-refactor-safely.yaml
++++ b/.archon/workflows/defaults/archon-refactor-safely.yaml
+@@ -359,12 +359,6 @@
+     depends_on: [validate]
+     context: fresh
+     hooks:
+-      PostToolUse:
+-        - matcher: "Write|Edit"
+-          response:
+-            systemMessage: >
+-              You just made a fix. Run the specific failing validation check NOW
+-              to verify your fix works. Do not batch fixes — verify each one.
+       PreToolUse:
+         - matcher: "Write|Edit"
+           response:
+--- a/.archon/workflows/defaults/archon-piv-loop.yaml
++++ b/.archon/workflows/defaults/archon-piv-loop.yaml
+@@ -479,7 +479,6 @@
+         1. Read the file you're about to change (if it exists)
+         2. Read the pattern file referenced in the plan
+         3. Make changes following the plan EXACTLY
+-        4. Type-check after each file: `bun run type-check 2>&1 || true`
+ 
+         ---
+ 
+@@ -649,7 +648,6 @@
+         1. Read the relevant files
+         2. Understand each issue
+         3. Make the fixes
+-        4. Type-check after each change
+ 
+         ## Step 3: Full Validation
+ 
+--- a/.archon/workflows/defaults/archon-ralph-dag.yaml
++++ b/.archon/workflows/defaults/archon-ralph-dag.yaml
+@@ -255,13 +255,6 @@
+ 
+         Note all coding standards, patterns, and rules. Follow them exactly.
+ 
+-        **PHASE_0_CHECKPOINT:**
+-        - [ ] PRD directory identified
+-        - [ ] progress.txt read (or noted as absent)
+-        - [ ] prd.json read — know which stories pass/fail
+-        - [ ] prd.md read — understand requirements
+-        - [ ] CLAUDE.md rules noted
+-
+         ---
+ 
+         ## Phase 1: SELECT — Pick Next Story
+@@ -301,11 +294,6 @@
+         ```bash
+         bun run cli workflow event emit --run-id $WORKFLOW_ID --type ralph_story_started --data '{"story_id":"{story-id}","title":"{story-title}"}' || true
+         ```
+-
+-        **PHASE_1_CHECKPOINT:**
+-        - [ ] Eligible story found (or all complete / all blocked)
+-        - [ ] Acceptance criteria understood
+-        - [ ] Dependencies verified as complete
+ 
+         ---
+ 
+@@ -355,12 +343,6 @@
+         3. Re-run type-check
+         4. Do NOT proceed to the next file until types pass
+ 
+-        **PHASE_2_CHECKPOINT:**
+-        - [ ] Only the selected story was implemented
+-        - [ ] Types compile after each file change
+-        - [ ] Tests written/updated as needed
+-        - [ ] No unrelated changes
+-
+         ---
+ 
+         ## Phase 3: VALIDATE — Full Verification
+@@ -414,13 +396,6 @@
+ 
+         If a criterion is NOT met, go back to Phase 2 and fix it.
+ 
+-        **PHASE_3_CHECKPOINT:**
+-        - [ ] Type-check passes
+-        - [ ] Lint passes (0 errors, 0 warnings)
+-        - [ ] All tests pass
+-        - [ ] Format is clean
+-        - [ ] Every acceptance criterion verified
+-
+         ---
+ 
+         ## Phase 4: COMMIT — Save Changes
+@@ -466,11 +441,6 @@
+         - Body: list the actual changes made
+         - Do NOT include AI attribution
+ 
+-        **PHASE_4_CHECKPOINT:**
+-        - [ ] Only expected files committed
+-        - [ ] Commit message is clear and accurate
+-        - [ ] Working directory is clean after commit
+-
+         ---
+ 
+         ## Phase 5: TRACK — Update Progress Files
+@@ -531,11 +501,6 @@
+         ```
+ 
+         If the `## Codebase Patterns` section doesn't exist yet, create it at the top of the file.
+-
+-        **PHASE_5_CHECKPOINT:**
+-        - [ ] prd.json updated with `passes: true`
+-        - [ ] progress.txt appended with iteration details
+-        - [ ] Codebase patterns updated (if applicable)
+ 
+         ---
+ 
+--- a/.archon/workflows/defaults/archon-piv-loop.yaml
++++ b/.archon/workflows/defaults/archon-piv-loop.yaml
+@@ -153,15 +153,11 @@
+         Then tell the user: "I have a clear picture. Say **ready** and I'll create
+         the structured implementation plan, or share any final thoughts."
+ 
+-        **CRITICAL — READ THIS CAREFULLY**:
+-        - NEVER output <promise>PLAN_READY</promise> unless the user's LATEST message contains
+-          an EXPLICIT phrase like "ready", "create the plan", "let's go", "proceed", or "I'm done".
+-        - If the user asked a question → do NOT emit the signal. Answer the question.
+-        - If the user gave feedback or requested changes → do NOT emit the signal. Address it.
+-        - If the user said "also check X" or "one more thing" → do NOT emit the signal. Explore it.
+-        - If you are unsure whether the user is approving → do NOT emit the signal. Ask them.
+-        - The ONLY correct time to emit the signal is when the user's message CLEARLY means
+-          "stop exploring, I'm ready for you to create the plan."
++        Emitting <promise>PLAN_READY</promise> ends exploration and starts plan creation,
++        so emit it only when the user's latest message clearly means "stop exploring, create
++        the plan" (for example "ready", "proceed", "let's go"). A question, feedback, or a
++        request to look at something else is not that signal: answer or explore it instead,
++        and ask if you cannot tell.
+       until: PLAN_READY
+       max_iterations: 15
+       interactive: true
+@@ -331,9 +327,9 @@
+           - Adjust testing strategy if needed
+           - Re-verify file paths and patterns after changes
+ 
+-        **CRITICAL**: NEVER emit <promise>PLAN_APPROVED</promise> unless the user's latest
+-        message EXPLICITLY says "approved", "looks good", "ship it", or similar approval.
+-        Questions, feedback, and requests for changes are NOT approval.
++        Emitting <promise>PLAN_APPROVED</promise> starts implementation, so emit it only when
++        the user's latest message approves the plan. Questions, feedback, and change requests
++        are not approval.
+ 
+         ## Step 3: Show Changes
+ 
+@@ -642,8 +638,8 @@
+         - Output: "Implementation approved!"
+         - Signal: <promise>VALIDATED</promise>
+ 
+-        **CRITICAL**: NEVER emit <promise>VALIDATED</promise> unless the user's latest
+-        message EXPLICITLY says "approved", "looks good", "ship it", or similar approval.
++        Emitting <promise>VALIDATED</promise> finalizes the run, so emit it only when the
++        user's latest message approves the implementation.
+ 
+         **If the user provided specific feedback:**
+         1. Read the relevant files
+--- a/.archon/workflows/defaults/archon-interactive-prd.yaml
++++ b/.archon/workflows/defaults/archon-interactive-prd.yaml
+@@ -124,8 +124,8 @@
+       **Foundation answers**: $foundation-gate.output
+       **Deep dive answers**: $deepdive-gate.output
+ 
+-      **CRITICAL**: Explore the codebase by READING actual files. Do not guess or assume.
+-      For every claim you make about the codebase, cite the exact file and line.
++      Base every claim about the codebase on files you have read, and cite the exact
++      file and line, because the PRD's Technical Approach is built from these claims.
+ 
+       1. **What already exists** that partially solves this problem?
+          - Read existing API endpoints, DB queries, UI components
+--- a/.archon/workflows/defaults/archon-adversarial-dev.yaml
++++ b/.archon/workflows/defaults/archon-adversarial-dev.yaml
+@@ -54,9 +54,6 @@
+ 
+       Be specific and opinionated. The more concrete the spec (exact API paths, specific color codes,
+       named libraries), the better the generator can build and the evaluator can test.
+-
+-      IMPORTANT: Write the spec to `$ARTIFACTS_DIR/spec.md` using the Write tool. Do NOT just output
+-      it as conversation text.
+     allowed_tools: [Read, Write, Glob, Grep]
+ 
+   # ─── Phase 2: Workspace Initialization ───────────────────────────────
+--- a/.archon/workflows/defaults/archon-adversarial-dev.yaml
++++ b/.archon/workflows/defaults/archon-adversarial-dev.yaml
+@@ -202,8 +202,7 @@
+         Read the feedback CAREFULLY. Every failed criterion must be addressed.
+         - If scores were close (5-6) and trending up: REFINE your approach
+         - If scores were low (1-4) or the approach is fundamentally broken: PIVOT to a new strategy
+-        - Address EVERY feedback item — the evaluator WILL check
+-        - Re-verify each fix by running the code before committing
++        - Address every feedback item; the evaluator re-scores each one
+ 
+         **Build rules:**
+         - All code goes in `$ARTIFACTS_DIR/app/`
+--- a/.archon/workflows/defaults/archon-adversarial-dev.yaml
++++ b/.archon/workflows/defaults/archon-adversarial-dev.yaml
+@@ -225,12 +225,10 @@
+         You are an ADVERSARIAL QA agent. Your mandate is to BREAK what the generator built.
+         You are not helpful. You are not generous. You are an attacker.
+ 
+-        **CRITICAL CONSTRAINTS:**
+-        - You are READ-ONLY for source code. NEVER use Write or Edit on files in `$ARTIFACTS_DIR/app/`.
+-        - You MAY use Bash to run the app, curl endpoints, run test scripts, check behavior.
+-        - You MUST kill any background processes (servers, watchers) you start BEFORE finishing.
+-          Use: `pkill -f "node\|bun\|python\|npm" 2>/dev/null || true`
+-        - You MUST score EVERY criterion in the contract. No skipping.
++        **Constraints:**
++        - Do not edit files in `$ARTIFACTS_DIR/app/`: the evaluator judges the generator's code, so a fix made here would hide the failure.
++        - Use Bash to run the app, curl endpoints, run test scripts, and check behavior.
++        - Score every criterion in the contract; an unscored criterion cannot pass.
+ 
+         **Scoring guidelines:**
+         - **9-10**: Exceptional. Works perfectly including edge cases the contract didn't mention.
+@@ -282,10 +280,9 @@
+         - If `retry` < `maxRetries`: set `"phase": "building"`, increment `"retry"` by 1
+         - If `retry` >= `maxRetries`: set `"phase": "failed"`, set `"status": "failed"`
+ 
+-        **IMPORTANT**: Kill all background processes before finishing:
+-        ```bash
+-        pkill -f "node|bun|python|npm|next|vite|webpack" 2>/dev/null || true
+-        ```
++        Before finishing, stop every background process (server, watcher) you started: record
++        its PID (`$!`) when you start it and `kill` that PID, so the next iteration finds its
++        ports free without killing unrelated processes.
+ 
+         ---
+ 
+--- a/.archon/workflows/defaults/archon-superpower-feature-verify-loop.yml
++++ b/.archon/workflows/defaults/archon-superpower-feature-verify-loop.yml
+@@ -72,7 +72,6 @@
+       Override the skill's default plan location: write only
+       $ARTIFACTS_DIR/superpowers/plans/YYYY-MM-DD-<feature>.md.
+       Return its absolute path. Do not commit planning artifacts.
+-      Return only JSON.
+     output_format:
+       type: object
+       required:
+--- a/.archon/workflows/defaults/archon-architect.yaml
++++ b/.archon/workflows/defaults/archon-architect.yaml
+@@ -92,7 +92,8 @@
+ 
+       ## Output
+ 
+-      Write a structured assessment to $ARTIFACTS_DIR/architecture-assessment.md with:
++      Return a structured assessment as your response (the plan node reads it as
++      `$analyze.output`) with:
+       - Executive summary (3-5 sentences)
+       - Top findings ranked by impact
+       - For each finding: file, what's wrong, why it matters, estimated effort
+diff --git a/.archon/workflows/defaults/archon-ralph-dag.yaml b/.archon/workflows/defaults/archon-ralph-dag.yaml
+index 7cf71299..639926bd 100644
+--- a/.archon/workflows/defaults/archon-ralph-dag.yaml
++++ b/.archon/workflows/defaults/archon-ralph-dag.yaml
+@@ -330,19 +330,6 @@ nodes:
+         only as a separate `chore(unblock):` commit, and NEVER by editing or
+         weakening the acceptance criteria.
+ 
+-        ### 2.3 Verify Types After Each File
+-
+-        After modifying each file, run:
+-        ```bash
+-        bun run type-check
+-        ```
+-
+-        **If types fail:**
+-        1. Read the error carefully
+-        2. Fix the type issue in your code
+-        3. Re-run type-check
+-        4. Do NOT proceed to the next file until types pass
+-
+         ---
+ 
+         ## Phase 3: VALIDATE — Full Verification

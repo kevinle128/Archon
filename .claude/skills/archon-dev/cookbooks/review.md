@@ -78,13 +78,13 @@ Read the full files being changed (not just the diff) — context matters. Check
 
 ## Phase 3: REVIEW — Deploy Parallel Agents
 
-Launch 2-4 review agents in parallel using the Agent tool:
+Size the review to the change. For a large diff, or one that touches more than one package, launch the agents below in parallel. For a small diff inside one package, review it yourself against the same checks.
 
 ### Agent 1: Correctness & Logic (`code-reviewer`)
-**Always launch.** Write a detailed prompt describing the specific changes, files affected, and what to look for. Ask it to check correctness, logic bugs, edge cases, error handling, and adherence to CLAUDE.md conventions.
+**Launch for large or cross-package diffs.** Write a detailed prompt describing the specific changes, files affected, and what to look for. Ask it to check correctness, logic bugs, edge cases, error handling, and adherence to CLAUDE.md conventions.
 
 ### Agent 2: Silent Failures & Error Handling (`silent-failure-hunter`)
-**Always launch.** Write a detailed prompt describing the changed files. Ask it to hunt for swallowed errors, inappropriate fallbacks, missing error propagation.
+**Launch for large or cross-package diffs, or any diff that changes error handling.** Write a detailed prompt describing the changed files. Ask it to hunt for swallowed errors, inappropriate fallbacks, missing error propagation.
 
 ### Agent 3: Test Coverage (`pr-test-analyzer`)
 **Launch if code changes (not just docs/config).** Describe what functionality changed and ask it to evaluate behavioral coverage gaps.
@@ -99,13 +99,14 @@ Launch 2-4 review agents in parallel using the Agent tool:
 After all agents return:
 
 1. **Deduplicate** findings across agents
-2. **Check against implementation report** — documented deviations are intentional, not issues
-3. **Categorize** by severity:
+2. **Filter by confidence** — act on `code-reviewer` findings scored 80 or above. Read its lower-confidence findings and keep one only when you confirm it in the code yourself
+3. **Check against implementation report** — documented deviations are intentional, not issues
+4. **Categorize** by severity:
    - **Critical** (must fix): Bugs, security issues, data loss risks
    - **High** (should fix): Logic errors, missing error handling, type safety violations
    - **Medium** (consider): Pattern inconsistencies, undocumented deviations, missing edge cases
    - **Low** (nit): Style preferences, minor optimizations
-4. **Verify** top findings yourself — read the actual code to confirm
+5. **Verify** top findings yourself — read the actual code to confirm
 
 ---
 
