@@ -1,4 +1,4 @@
-import { useId, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useId, useMemo, useState, type ReactElement } from 'react';
 import { formatRelativeToBaseline, formatClock } from '../lib/format';
 import { useStreamContext } from '../lib/stream-context';
 import type { InlineToolCall } from '../primitives/message';
@@ -187,7 +187,15 @@ export function ToolCallItem({ call, timestamp }: ToolCallItemProps): ReactEleme
     [call.name, call.input, call.output, call.outcome, call.exitCode, call.durationMs]
   );
   const [open, setOpen] = useState(presentation.initialOpen);
+  const [touched, setTouched] = useState(false);
   const [rawOpen, setRawOpen] = useState(false);
+
+  // A call polled in while still running later resolves to failed on the
+  // same mounted row. An untouched row opens once when that happens; nothing
+  // this effect does ever auto-closes a row the reader left open.
+  useEffect(() => {
+    if (!open && !touched && presentation.initialOpen) setOpen(true);
+  }, [open, touched, presentation.initialOpen]);
 
   const body: ToolBody | null = useMemo(() => {
     if (!open || rawOpen) return null;
@@ -207,6 +215,7 @@ export function ToolCallItem({ call, timestamp }: ToolCallItemProps): ReactEleme
         type="button"
         aria-expanded={open}
         onClick={(): void => {
+          setTouched(true);
           setOpen(value => !value);
         }}
         className="flex w-full items-center gap-3 text-left"
