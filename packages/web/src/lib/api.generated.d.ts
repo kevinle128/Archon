@@ -5828,8 +5828,12 @@ export interface components {
                 stream_id?: string;
                 message_id?: string;
                 /** @enum {string} */
-                origin?: "operator";
+                origin?: "operator" | "thinking" | "prompt" | "advisor";
                 operator_user_id?: string | null;
+                actor_user_id?: string | null;
+                /** @enum {string} */
+                prompt_source?: "node_prompt" | "command_file" | "reask";
+                advisor_model?: string;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5869,8 +5873,12 @@ export interface components {
                 stream_id?: string;
                 message_id?: string;
                 /** @enum {string} */
-                origin?: "operator";
+                origin?: "operator" | "thinking" | "prompt" | "advisor";
                 operator_user_id?: string | null;
+                actor_user_id?: string | null;
+                /** @enum {string} */
+                prompt_source?: "node_prompt" | "command_file" | "reask";
+                advisor_model?: string;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
@@ -5912,8 +5920,12 @@ export interface components {
                 stream_id?: string;
                 message_id?: string;
                 /** @enum {string} */
-                origin?: "operator";
+                origin?: "operator" | "thinking" | "prompt" | "advisor";
                 operator_user_id?: string | null;
+                actor_user_id?: string | null;
+                /** @enum {string} */
+                prompt_source?: "node_prompt" | "command_file" | "reask";
+                advisor_model?: string;
                 block_id?: string;
                 /** @enum {string} */
                 text_mode?: "complete" | "delta" | "snapshot";
