@@ -1124,9 +1124,6 @@ export function ConsoleNodeRoom({
         body
       ) : (
         <RoomRegion nodeId={nodeId} allowOutsetFocus={showTodoStrip}>
-          {showTodoStrip ? (
-            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
-          ) : null}
           <div
             ref={scrollRef}
             data-testid="console-node-room-scroll"
@@ -1137,6 +1134,9 @@ export function ConsoleNodeRoom({
           >
             {body}
           </div>
+          {showTodoStrip ? (
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+          ) : null}
           {controls}
           {agentActive && row !== null ? (
             <ConsoleComposerDock

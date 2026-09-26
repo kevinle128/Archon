@@ -57,7 +57,6 @@ import {
   type RoomVisitState,
 } from '@/lib/execution-room-model';
 import { nodeMessageScopeKey } from '@/lib/node-message-pages';
-import { readRoomRatio, writeRoomRatio } from '@/lib/room-split-layout';
 import { foldNodeRuns } from '../primitives/event';
 import type { Message } from '../primitives/message';
 import type { Project } from '../primitives/project';
@@ -174,9 +173,6 @@ export function RunDetailPage(): ReactElement {
   const [view, setView] = useState<DetailView>(() => readView());
   const [streamNodeFilter, setStreamNodeFilter] = useState<string>(() => readNodeFilter());
   const [room, setRoom] = useState<RoomVisitState>(() => resetRoomVisit(runId ?? ''));
-  const [roomRatio, setRoomRatio] = useState(() =>
-    typeof window === 'undefined' ? 40 : readRoomRatio('console', window.localStorage)
-  );
   const [askDrafts, setAskDrafts] = useState<AskDraftByRequest>({});
   const [askActions, setAskActions] = useState<{
     runId: string | undefined;
@@ -471,13 +467,6 @@ export function RunDetailPage(): ReactElement {
     roomOpenerToRestoreRef.current = room.selection?.openerId ?? null;
     setRoom(closeRoom);
   }, [room.selection?.openerId]);
-
-  const onRoomRatioChange = useCallback((ratio: number): void => {
-    setRoomRatio(ratio);
-    if (typeof window !== 'undefined') {
-      writeRoomRatio('console', ratio, window.localStorage);
-    }
-  }, []);
 
   // Auto-scroll to bottom on new content IF user is already near the bottom.
   const lastBottomRef = useRef(true);
@@ -786,8 +775,6 @@ export function RunDetailPage(): ReactElement {
                   );
                 }}
                 onCloseRoom={onCloseRoom}
-                roomRatio={roomRatio}
-                onRoomRatioChange={onRoomRatioChange}
                 loadDefinition={skill.getWorkflowDagNodes}
                 loadMessages={skill.getNodeMessages}
                 loadMessage={skill.getNodeMessage}

@@ -40,6 +40,7 @@ import {
 import {
   applyRoomDeepLink,
   buildExecutionHeader,
+  capExecutionOptions,
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
@@ -777,16 +778,16 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const headerOptions =
     selectedExecutionRow === null
       ? []
-      : executionRows
-          .filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId)
-          .map(candidate => ({
-            rowId: candidate.id,
-            label: buildExecutionHeader({
-              row: candidate,
-              events: queryData?.events ?? [],
-              runStartedAt: runStartedAtIso,
-            }).executionLabel,
-          }));
+      : capExecutionOptions(
+          executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId)
+        ).map(candidate => ({
+          rowId: candidate.id,
+          label: buildExecutionHeader({
+            row: candidate,
+            events: queryData?.events ?? [],
+            runStartedAt: runStartedAtIso,
+          }).executionLabel,
+        }));
   const handleSelectExecution = useCallback(
     (rowId: string): void => {
       const next = executionRows.find(candidate => candidate.id === rowId);

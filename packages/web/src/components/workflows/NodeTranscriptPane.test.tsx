@@ -1211,7 +1211,7 @@ describe('NodeTranscriptPane', () => {
     return button;
   }
 
-  test('mounts the folded todo strip ahead of the scroller inside one room region', async () => {
+  test('mounts the folded todo strip below the scroller inside one room region', async () => {
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1232,8 +1232,8 @@ describe('NodeTranscriptPane', () => {
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing scroller');
     // The strip and the scroller are siblings inside the single region.
-    expect(region.firstElementChild).toBe(strip);
-    expect(strip?.nextElementSibling).toBe(scroller);
+    expect(region.firstElementChild).toBe(scroller);
+    expect(scroller.nextElementSibling).toBe(strip);
     expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
     // The scroller owns scrolling; the region does not scroll.
     const scrollerClass = scroller.getAttribute('class') ?? '';

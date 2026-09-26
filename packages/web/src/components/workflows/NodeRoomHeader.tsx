@@ -61,20 +61,22 @@ export function NodeRoomHeader({
           {model.nodeLabel}
         </div>
         <div className="shrink-0 text-xs text-text-secondary">{model.executionLabel}</div>
-        <select
-          aria-label="Execution"
-          className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
-          value={selectedRowId}
-          onChange={(event): void => {
-            onSelectRow(event.currentTarget.value);
-          }}
-        >
-          {options.map(option => (
-            <option key={option.rowId} value={option.rowId}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        {options.length > 1 ? (
+          <select
+            aria-label="Execution"
+            className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
+            value={selectedRowId}
+            onChange={(event): void => {
+              onSelectRow(event.currentTarget.value);
+            }}
+          >
+            {options.map(option => (
+              <option key={option.rowId} value={option.rowId}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <span className={cn('rounded-full px-2 py-0.5 text-xs', statusClass)}>
           {headerStatusLabel(model.status)}
         </span>

@@ -592,7 +592,7 @@ describe('LegacyGraphLogsPane', () => {
     };
   }
 
-  test('opens a percentage room on demand and hides the main view in single mode', async () => {
+  test('opens a fixed-width room on demand and hides the main view in single mode', async () => {
     const closes: number[] = [];
     const onCloseRoom = (): void => {
       closes.push(1);
@@ -642,24 +642,16 @@ describe('LegacyGraphLogsPane', () => {
     expect(viewPanel).not.toBeNull();
     expect(roomPanel).not.toBeNull();
     expect(host.querySelector('[data-testid="legacy-node-room"]')).not.toBeNull();
-    expect(host.querySelector('[role="separator"]')).not.toBeNull();
-    expect(
-      viewPanel?.getAttribute('data-panel-size') ?? viewPanel?.getAttribute('style') ?? ''
-    ).toMatch(/60/);
-    expect(
-      roomPanel?.getAttribute('data-panel-size') ?? roomPanel?.getAttribute('style') ?? ''
-    ).toMatch(/40/);
-    // The right panel's content wrapper is a shrinkable overflow boundary —
-    // without it a long transcript stretches the document below the fixed run
-    // shell. react-resizable-panels puts className/style on the wrapper inside
-    // the #legacy-run-room panel element, and the inline overflow must win over
-    // the library's default `overflow: auto` so the transcript scroller stays
-    // the sole vertical scroll owner.
-    const roomContent = roomPanel?.firstElementChild as HTMLElement | null;
-    const roomContentClass = roomContent?.getAttribute('class') ?? '';
-    expect(roomContentClass).toContain('min-h-0');
-    expect(roomContentClass).toContain('overflow-hidden');
-    expect(roomContent?.style.overflow).toBe('hidden');
+    // The approved node panel is a fixed width, not a user-resizable share of
+    // the window, so it carries no drag handle.
+    expect(host.querySelector('[role="separator"]')).toBeNull();
+    expect((roomPanel as HTMLElement).style.width).toBe('460px');
+    expect((roomPanel as HTMLElement).style.flexShrink).toBe('0');
+    // The panel is a shrinkable overflow boundary — without it a long
+    // transcript stretches the document below the fixed run shell.
+    const roomPanelClass = roomPanel?.getAttribute('class') ?? '';
+    expect(roomPanelClass).toContain('min-h-0');
+    expect(roomPanelClass).toContain('overflow-hidden');
 
     await act(async () => {
       root.render(
