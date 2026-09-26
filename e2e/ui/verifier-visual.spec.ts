@@ -27,31 +27,37 @@ const queueMessages = ['wrong suite — use -p archon-workflows', 'and skip the 
 const transcriptStates = new Set(['assistant-report', 'runtime-graph']);
 
 interface QueueAnatomy {
-  headerButton: boolean;
-  expanded: boolean;
-  caret: boolean;
-  ordinals: string[];
-  firstMarked: boolean;
-  humanTextUsesSans: boolean;
+  headerLabel: boolean;
+  listPresent: boolean;
+  messages: string[];
+  humanTextUsesMono: boolean;
   sentStatuses: number;
 }
 
 async function queueAnatomy(section: Locator): Promise<QueueAnatomy> {
   return section.evaluate((element, messages) => {
-    const header = element.querySelector('button[aria-expanded]');
+    // Current dock: always-open section with h3 header + ul list (no collapsible button).
+    const header = element.querySelector('h3');
     const list = element.querySelector('[role="list"], ul');
     const rows = list === null ? [] : Array.from(list.children);
-    const firstMessage = Array.from(rows[0]?.querySelectorAll('span') ?? []).find(
-      child => child.textContent?.trim() === messages[0]
-    );
+    const rowTexts = rows.map(row => {
+      const message = Array.from(row.querySelectorAll('span')).find(child => {
+        const text = child.textContent?.trim() ?? '';
+        return text.length > 0 && text.toLowerCase() !== 'sent';
+      });
+      return message?.textContent?.trim() ?? '';
+    });
+    const firstMessage = Array.from(rows[0]?.querySelectorAll('span') ?? []).find(child => {
+      const text = child.textContent?.trim() ?? '';
+      return text === messages[0];
+    });
     const font = firstMessage === undefined ? '' : getComputedStyle(firstMessage).fontFamily;
     return {
-      headerButton: header !== null,
-      expanded: header?.getAttribute('aria-expanded') === 'true',
-      caret: header?.textContent?.includes('▾') ?? false,
-      ordinals: rows.map(row => row.firstElementChild?.textContent?.trim() ?? ''),
-      firstMarked: rows[0] !== undefined && getComputedStyle(rows[0]).boxShadow !== 'none',
-      humanTextUsesSans: /Inter|sans-serif/i.test(font) && !/JetBrains Mono|monospace/i.test(font),
+      headerLabel:
+        header !== null && (header.textContent?.toLowerCase().includes('queued') ?? false),
+      listPresent: list !== null,
+      messages: rowTexts,
+      humanTextUsesMono: /JetBrains Mono|monospace/i.test(font),
       sentStatuses: rows.reduce(
         (count, row) =>
           count +
@@ -135,7 +141,9 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
             }
             const list = room.getByRole('list', { name: /^Queued messages/ });
             await expect(list.getByRole('listitem')).toHaveCount(queueMessages.length);
-            actual = list.locator('xpath=../..');
+            // Queue band root is the section that owns the list.
+            actual = list.locator('xpath=ancestor::section[1]');
+            await expect(actual.locator('h3')).toBeVisible();
             queueFacts = await queueAnatomy(actual);
           } else if (state === 'runtime-graph') {
             if (surface === 'console') {
@@ -162,21 +170,28 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
                   : HITL_INSPECT_NODE;
             room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
             if (viewport.width === 1440) {
+              const expected = surface === 'console' ? 520 : 460;
               const panel = page.locator(`#${surface}-run-room`);
-              const metrics = await panel.evaluate(el => ({
-                width: el.getBoundingClientRect().width,
-                group: el.parentElement!.getBoundingClientRect().width,
-              }));
-              const width = (await room.boundingBox())!.width;
-              const ratio = ((460 + metrics.width - width) / metrics.group) * 100;
-              await page.evaluate(
-                ({ key, ratio }): void => {
-                  localStorage.setItem(key, String(ratio));
-                },
-                { key: `archon.run-room.ratio.${surface}`, ratio }
+              await expect(panel, `${surface} outer room panel`).toBeVisible();
+              const panelBox = await panel.boundingBox();
+              expect(panelBox, `${surface} outer room bounding box`).toBeTruthy();
+              const outerWidth = panelBox?.width ?? 0;
+              expect(outerWidth, `${surface} outer room width must be non-zero`).toBeGreaterThan(0);
+              expect(
+                Math.abs(outerWidth - expected),
+                `outer #${surface}-run-room ${String(outerWidth)} must be ${String(expected)}±1`
+              ).toBeLessThanOrEqual(1);
+              const regionBox = await room.boundingBox();
+              expect(regionBox, `${surface} room region bounding box`).toBeTruthy();
+              const regionWidth = regionBox?.width ?? 0;
+              expect(regionWidth, `${surface} room region width must be non-zero`).toBeGreaterThan(
+                0
               );
-              room = await openRoom(page, surface, runId, node, node.split('.').at(-1) ?? node);
-              expect(Math.abs((await room.boundingBox())!.width - 460)).toBeLessThanOrEqual(2);
+              // Region may sit inset inside the outer panel; stay within outer ±2.
+              expect(
+                Math.abs(regionWidth - outerWidth),
+                `region ${String(regionWidth)} stays near outer ${String(outerWidth)}`
+              ).toBeLessThanOrEqual(2);
             }
             // Enter keyboard modality before setting the capture's focus target.
             // Legacy reaches the room by pointer, which suppresses :focus-visible.
@@ -291,13 +306,11 @@ test('[V:verify.visual-captures] Matched current reference and real run captures
           );
           if (queueFacts !== null) {
             expect(queueFacts).toEqual({
-              headerButton: true,
-              expanded: true,
-              caret: true,
-              ordinals: ['1', '2'],
-              firstMarked: true,
-              humanTextUsesSans: true,
-              sentStatuses: 0,
+              headerLabel: true,
+              listPresent: true,
+              messages: [...queueMessages],
+              humanTextUsesMono: true,
+              sentStatuses: queueMessages.length,
             });
           }
         }

@@ -645,9 +645,9 @@ export function NodeTranscriptPane({
 
   return (
     <RoomRegion nodeId={row.nodeId} scrollable={false}>
-      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       {scroller}
       {controls}
+      {todos.length > 0 ? <TodoStrip key={resolvedScopeKey} phases={todos} /> : null}
       <ComposerDock
         key={`steering:run:${runId}|node:${row.nodeId}`}
         runId={runId}

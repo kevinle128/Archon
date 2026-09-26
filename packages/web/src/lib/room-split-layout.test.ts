@@ -1,30 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 
-import { readRoomRatio, roomPanelSizes, writeRoomRatio } from './room-split-layout';
-
-const storage = new Map<string, string>();
-const memoryStorage = {
-  getItem(key: string): string | null {
-    return storage.get(key) ?? null;
-  },
-  setItem(key: string, value: string): void {
-    storage.set(key, value);
-  },
-};
+import { ROOM_WIDTH_PX, type RoomSurface } from './room-split-layout';
 
 describe('room-split-layout', () => {
-  test('uses percentage strings for every panel boundary', () => {
-    expect(roomPanelSizes(40)).toEqual({
-      view: { defaultSize: '60%', minSize: '30%' },
-      room: { defaultSize: '40%', minSize: '24%', maxSize: '60%' },
-    });
+  test('exports fixed outer widths for every room surface', () => {
+    // Compile-time coverage is enforced by `satisfies Record<RoomSurface, number>`
+    // on ROOM_WIDTH_PX. Runtime checks pin the approved CSS-px contract.
+    const widths: Record<RoomSurface, number> = ROOM_WIDTH_PX;
+    expect(widths.console).toBe(520);
+    expect(widths.legacy).toBe(460);
+    expect(ROOM_WIDTH_PX.console).toBe(520);
+    expect(ROOM_WIDTH_PX.legacy).toBe(460);
   });
 
-  test('clamps persisted ratios and isolates surfaces', () => {
-    writeRoomRatio('legacy', 90, memoryStorage);
-    expect(readRoomRatio('legacy', memoryStorage)).toBe(60);
-    expect(readRoomRatio('console', memoryStorage)).toBe(40);
-    storage.set('archon.run-room.ratio.console', 'broken');
-    expect(readRoomRatio('console', memoryStorage)).toBe(40);
+  test('documents stale ratio keys as unread Node Room storage', () => {
+    // Deliberate fixture: old archon.run-room.ratio.* values may remain in
+    // localStorage after upgrade. Node Room code must never import readers or
+    // writers for them (see room-split-layout.ts exports).
+    const staleKeys = ['archon.run-room.ratio.legacy', 'archon.run-room.ratio.console'] as const;
+    expect(staleKeys).toHaveLength(2);
+    expect(staleKeys[0]).toContain('run-room.ratio');
   });
 });

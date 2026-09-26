@@ -1,0 +1,1205 @@
+{
+  "runId": "7f94ee3091064fa62a061a1401250833",
+  "cases": [
+    {
+      "id": "console-1440-row-closed",
+      "surface": "console",
+      "state": "row-closed",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
+      "actual_geometry": {
+        "x": 933,
+        "y": 230.375,
+        "width": 495,
+        "height": 28.5
+      },
+      "room_geometry": {
+        "x": 921,
+        "y": 155,
+        "width": 519,
+        "height": 755
+      },
+      "reference_geometry": {
+        "x": 852,
+        "y": 322.875,
+        "width": 495,
+        "height": 25
+      },
+      "images": [
+        {
+          "path": "console-1440-row-closed-actual-region.png",
+          "sha256": "2ac80fa5ab018d6c86ef679979d0f9f4ca969f181f538fd152019b6cc26485b7"
+        },
+        {
+          "path": "console-1440-row-closed-actual-context.png",
+          "sha256": "e78f3e19594b9d8afe612487bc4497694f374c3e70399a23cfaa2ee13ed88f3b"
+        },
+        {
+          "path": "console-1440-row-closed-reference-region.png",
+          "sha256": "1de4ad63d92d63ebd5151db171f1363b539443a00c2ae552bd31dc877269c1b0"
+        },
+        {
+          "path": "console-1440-row-closed-reference-context.png",
+          "sha256": "8cc8c4bdfe8c97358704ef5d5b0283e71d83ff26968546f4722864d797d02a94"
+        }
+      ]
+    },
+    {
+      "id": "console-1440-raw-open",
+      "surface": "console",
+      "state": "raw-open",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
+      "actual_geometry": {
+        "x": 933,
+        "y": 230.375,
+        "width": 495,
+        "height": 199.25
+      },
+      "room_geometry": {
+        "x": 921,
+        "y": 155,
+        "width": 519,
+        "height": 755
+      },
+      "reference_geometry": {
+        "x": 45,
+        "y": 688.484375,
+        "width": 495,
+        "height": 195.75
+      },
+      "images": [
+        {
+          "path": "console-1440-raw-open-actual-region.png",
+          "sha256": "8d49864268c770eb14d550e688b299e5607d645bb0e2f8d4d7f48dda083b694e"
+        },
+        {
+          "path": "console-1440-raw-open-actual-context.png",
+          "sha256": "e9b6f40d5ca197d3b3fb0bc6a502d69cf5a41d2641e9c9f8aab5f829bd5e481c"
+        },
+        {
+          "path": "console-1440-raw-open-reference-region.png",
+          "sha256": "90db3688e0490a1f178ed235687f67f2d6a664b6542a2186f7f3c96440c611f5"
+        },
+        {
+          "path": "console-1440-raw-open-reference-context.png",
+          "sha256": "9d05ac0f448ad8514791e88002b9a14fb0fed2a78c25005048ea90bd89e87e37"
+        }
+      ]
+    },
+    {
+      "id": "console-1440-ask-pending",
+      "surface": "console",
+      "state": "ask-pending",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/console.html",
+      "actual_geometry": {
+        "x": 933,
+        "y": 236.375,
+        "width": 495,
+        "height": 280
+      },
+      "room_geometry": {
+        "x": 921,
+        "y": 155,
+        "width": 519,
+        "height": 755
+      },
+      "reference_geometry": {
+        "x": 48,
+        "y": 596.5,
+        "width": 495,
+        "height": 315
+      },
+      "images": [
+        {
+          "path": "console-1440-ask-pending-actual-region.png",
+          "sha256": "2385979c4f9568df7aed0449d1769b10eb2691c2f0f60dea7a3e7990aa2e9569"
+        },
+        {
+          "path": "console-1440-ask-pending-actual-context.png",
+          "sha256": "a349abad322c4861f035a5023ee9ddcf95716cd319c48e8f88df26c73e2c3566"
+        },
+        {
+          "path": "console-1440-ask-pending-reference-region.png",
+          "sha256": "a9584bbde0c23c2a84ea27a69293f3e3e3e89f071656b1503ef6277bc5454b83"
+        },
+        {
+          "path": "console-1440-ask-pending-reference-context.png",
+          "sha256": "e8ead723552d5eb488ee3ba02a61a71c5e623c4a5c8a5424d87c67ae515812ef"
+        }
+      ]
+    },
+    {
+      "id": "console-1440-assistant-report",
+      "surface": "console",
+      "state": "assistant-report",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
+      "actual_geometry": {
+        "x": 935,
+        "y": 161,
+        "width": 491,
+        "height": 19.375
+      },
+      "room_geometry": {
+        "x": 921,
+        "y": 117,
+        "width": 519,
+        "height": 722.5
+      },
+      "reference_geometry": {
+        "x": 854,
+        "y": 447.875,
+        "width": 491,
+        "height": 56.25
+      },
+      "images": [
+        {
+          "path": "console-1440-assistant-report-actual-region.png",
+          "sha256": "af7a6add049aa97bb1613600c030e93383be2174bb881fc32c90de7d36ed416b"
+        },
+        {
+          "path": "console-1440-assistant-report-actual-context.png",
+          "sha256": "ce49e015c763f2a9bc4dd33c6c1df9860af4e6da2cc40327ab72fe2328222e49"
+        },
+        {
+          "path": "console-1440-assistant-report-reference-region.png",
+          "sha256": "01ce98cbca4ed6de8d54faee7cda7b9f84aad13b1329ee466fc0dafe133e1dfc"
+        },
+        {
+          "path": "console-1440-assistant-report-reference-context.png",
+          "sha256": "074a5a9611c3ded579b177b49b8142d8c27b41b28e91f5a79931ebd8fcecc9ac"
+        }
+      ]
+    },
+    {
+      "id": "console-1440-runtime-graph",
+      "surface": "console",
+      "state": "runtime-graph",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/console.html",
+      "actual_geometry": {
+        "x": 280,
+        "y": 101.5,
+        "width": 1160,
+        "height": 738
+      },
+      "reference_geometry": {
+        "x": 0,
+        "y": 120,
+        "width": 1160,
+        "height": 826
+      },
+      "images": [
+        {
+          "path": "console-1440-runtime-graph-actual-region.png",
+          "sha256": "d61539d0f3afb4a4e599885e561ec0456bb264aceb63b09ee4e561f20d7355ad"
+        },
+        {
+          "path": "console-1440-runtime-graph-actual-context.png",
+          "sha256": "4f29372b55d4483a09e5acf3f27cab60e2999c5c99a7c7651be5c4c3574a97e5"
+        },
+        {
+          "path": "console-1440-runtime-graph-reference-region.png",
+          "sha256": "006c16d4baa9de9ffed4b9b310b52b71e3656cae91c3d3b3ec485ea1986731d8"
+        },
+        {
+          "path": "console-1440-runtime-graph-reference-context.png",
+          "sha256": "08ee81bb49ffd5d170c032c4fb1d97e34ac82f73f10192f6c6f29e72ae08e9f8"
+        }
+      ]
+    },
+    {
+      "id": "console-1440-queue-waiting",
+      "surface": "console",
+      "state": "queue-waiting",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "actual_geometry": {
+        "x": 921,
+        "y": 663.5,
+        "width": 519,
+        "height": 84
+      },
+      "room_geometry": {
+        "x": 921,
+        "y": 188.5,
+        "width": 519,
+        "height": 677
+      },
+      "reference_geometry": {
+        "x": 840,
+        "y": 711,
+        "width": 519,
+        "height": 91
+      },
+      "images": [
+        {
+          "path": "console-1440-queue-waiting-actual-region.png",
+          "sha256": "d6401b80efd90354d5748b8b8e19a683358862403f7c113149e6ed88cf516adf"
+        },
+        {
+          "path": "console-1440-queue-waiting-actual-context.png",
+          "sha256": "33f096ec809c14dc3869e849a3d9e0d2fffec5b34cc77f9a744d1a4bf3b8a949"
+        },
+        {
+          "path": "console-1440-queue-waiting-reference-region.png",
+          "sha256": "14b9855a4311b1d11bbafc12047553164afdcca5060771a073acc37087606258"
+        },
+        {
+          "path": "console-1440-queue-waiting-reference-context.png",
+          "sha256": "926add41d5944370fb32f0487fd559dd56a3d9845966a7c32c18be8d34222d6a"
+        }
+      ]
+    },
+    {
+      "id": "console-390-row-closed",
+      "surface": "console",
+      "state": "row-closed",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
+      "actual_geometry": {
+        "x": 13,
+        "y": 305.875,
+        "width": 365,
+        "height": 28.5
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 230.5,
+        "width": 389,
+        "height": 523.5
+      },
+      "reference_geometry": {
+        "x": 852,
+        "y": 322.875,
+        "width": 365,
+        "height": 25
+      },
+      "images": [
+        {
+          "path": "console-390-row-closed-actual-region.png",
+          "sha256": "89e5adcf76368d0ae431b2c72a0541d712da92e2fe04f6401cf44bf95eb38df2"
+        },
+        {
+          "path": "console-390-row-closed-actual-context.png",
+          "sha256": "9615286b88d2a8c1ae9bd080a679f341c9c2d3451a954db591c1b48a529f9953"
+        },
+        {
+          "path": "console-390-row-closed-reference-region.png",
+          "sha256": "17bf0c0bc8a95ea498b4db7d906b4c0fdf36b8b180d65c61fa3d1ce02e3c854a"
+        },
+        {
+          "path": "console-390-row-closed-reference-context.png",
+          "sha256": "b12c01b55cbbf8846f5672b50dd100133ab08cf0caeff9735ea8ac5ce3844703"
+        }
+      ]
+    },
+    {
+      "id": "console-390-raw-open",
+      "surface": "console",
+      "state": "raw-open",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
+      "actual_geometry": {
+        "x": 13,
+        "y": 305.875,
+        "width": 365,
+        "height": 199.25
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 230.5,
+        "width": 389,
+        "height": 523.5
+      },
+      "reference_geometry": {
+        "x": 45,
+        "y": 653.484375,
+        "width": 365,
+        "height": 230.25
+      },
+      "images": [
+        {
+          "path": "console-390-raw-open-actual-region.png",
+          "sha256": "f08fefbc73b3b166a8c9e1c7e59967733b146fb2697c68c05bd4033e53fb34fa"
+        },
+        {
+          "path": "console-390-raw-open-actual-context.png",
+          "sha256": "c7d4d4e15b6e32d5ed23814acca829436756ecb6d19a0d4447293790f102e774"
+        },
+        {
+          "path": "console-390-raw-open-reference-region.png",
+          "sha256": "a0a7d86db2be1defab8d2f255ae36a19811cd05c8dc5d07ffc8cb20e1e0aeffa"
+        },
+        {
+          "path": "console-390-raw-open-reference-context.png",
+          "sha256": "56ecbd4ac6b4318dccc102fd9c5bb53463b7a8ac44fc78bd7a77c22a1615adc4"
+        }
+      ]
+    },
+    {
+      "id": "console-390-ask-pending",
+      "surface": "console",
+      "state": "ask-pending",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/console.html",
+      "actual_geometry": {
+        "x": 13,
+        "y": 311.875,
+        "width": 365,
+        "height": 280
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 230.5,
+        "width": 389,
+        "height": 523.5
+      },
+      "reference_geometry": {
+        "x": 48,
+        "y": 596.5,
+        "width": 365,
+        "height": 315
+      },
+      "images": [
+        {
+          "path": "console-390-ask-pending-actual-region.png",
+          "sha256": "3ea6e53df5984728ebff49978fa09f0ee4ec4bb5d66e7c1b507f69341dbe1aad"
+        },
+        {
+          "path": "console-390-ask-pending-actual-context.png",
+          "sha256": "9d0617a4a372ac5c687d48abc70f6a0a905ab24746dc97e7d63a604465f5a415"
+        },
+        {
+          "path": "console-390-ask-pending-reference-region.png",
+          "sha256": "6a520f0195d15e6c4c78abfb2d7c13179010ad568cd3b294711e1d98dce4e720"
+        },
+        {
+          "path": "console-390-ask-pending-reference-context.png",
+          "sha256": "1ea9d92fe06f21d73a4587579298b73522adb9a8e9458cfd4ad401e13edb1bca"
+        }
+      ]
+    },
+    {
+      "id": "console-390-assistant-report",
+      "surface": "console",
+      "state": "assistant-report",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-console-node-room.html",
+      "actual_geometry": {
+        "x": 15,
+        "y": 265.5,
+        "width": 361,
+        "height": 19.375
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 221.5,
+        "width": 389,
+        "height": 462
+      },
+      "reference_geometry": {
+        "x": 854,
+        "y": 447.875,
+        "width": 361,
+        "height": 56.25
+      },
+      "images": [
+        {
+          "path": "console-390-assistant-report-actual-region.png",
+          "sha256": "1e45afe656de4232c6af126f9971be5459dd2d39b06742516e46d1d841508d1e"
+        },
+        {
+          "path": "console-390-assistant-report-actual-context.png",
+          "sha256": "5ab2507613deb4a111edb45c5b170101770e2251062df9e8e6a1f8c409b4e089"
+        },
+        {
+          "path": "console-390-assistant-report-reference-region.png",
+          "sha256": "bc5f8c2b7323291dcb3b70b8ed2d1bdcc0543101582e619836da5db4f18f2e9e"
+        },
+        {
+          "path": "console-390-assistant-report-reference-context.png",
+          "sha256": "153b202556b4158dd3bf4d1241d97db45963ebe2a274361bfd73e1c27e419e9e"
+        }
+      ]
+    },
+    {
+      "id": "console-390-runtime-graph",
+      "surface": "console",
+      "state": "runtime-graph",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/console.html",
+      "actual_geometry": {
+        "x": 0,
+        "y": 156.5,
+        "width": 390,
+        "height": 527
+      },
+      "reference_geometry": {
+        "x": 0,
+        "y": 120,
+        "width": 390,
+        "height": 826
+      },
+      "images": [
+        {
+          "path": "console-390-runtime-graph-actual-region.png",
+          "sha256": "46ce86a327a1d76bceb646602fd7bc0dfdb9c9dd128bdcf21c272dc323624b4e"
+        },
+        {
+          "path": "console-390-runtime-graph-actual-context.png",
+          "sha256": "5360b7bd0906a48bd1558b1048699b939919aa540572eb5dac1a85272bee3bb1"
+        },
+        {
+          "path": "console-390-runtime-graph-reference-region.png",
+          "sha256": "ac714d9944d6f3c37a2e1ba3ddc9b69b4f4b54266a51a2205c90f9abe38995dd"
+        },
+        {
+          "path": "console-390-runtime-graph-reference-context.png",
+          "sha256": "e0cad049f0e6250aa74ed4b8aa381a48e37217b7cae46b16de516a943d87a3c1"
+        }
+      ]
+    },
+    {
+      "id": "console-390-queue-waiting",
+      "surface": "console",
+      "state": "queue-waiting",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "claude-design/design_handoff_node_room_transcript_steering/Console Node Room.dc.html",
+      "actual_geometry": {
+        "x": 1,
+        "y": 507.5,
+        "width": 389,
+        "height": 84
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 218.5,
+        "width": 389,
+        "height": 491
+      },
+      "reference_geometry": {
+        "x": 840,
+        "y": 711,
+        "width": 389,
+        "height": 91
+      },
+      "images": [
+        {
+          "path": "console-390-queue-waiting-actual-region.png",
+          "sha256": "fa5e9ffc9e32f1616f201cc4b889d7d24b03c5e197bab3b2fd40bc07ea783a41"
+        },
+        {
+          "path": "console-390-queue-waiting-actual-context.png",
+          "sha256": "16fe6c17397c435d4da000894621e2b644ae18a8267a920a66e8ea91802fe230"
+        },
+        {
+          "path": "console-390-queue-waiting-reference-region.png",
+          "sha256": "abcc8c835760bcdb1257a03a6cc1b6c004093b2a27b0f39d11bfc46736fe5645"
+        },
+        {
+          "path": "console-390-queue-waiting-reference-context.png",
+          "sha256": "18bfd466de6df4165ac340aaf18688ed1597b9741b046b58aae38dbdee422dd3"
+        }
+      ]
+    },
+    {
+      "id": "legacy-1440-row-closed",
+      "surface": "legacy",
+      "state": "row-closed",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
+      "actual_geometry": {
+        "x": 993,
+        "y": 320.375,
+        "width": 435,
+        "height": 28.5
+      },
+      "room_geometry": {
+        "x": 981,
+        "y": 211,
+        "width": 459,
+        "height": 789
+      },
+      "reference_geometry": {
+        "x": 912,
+        "y": 335.875,
+        "width": 435,
+        "height": 25
+      },
+      "images": [
+        {
+          "path": "legacy-1440-row-closed-actual-region.png",
+          "sha256": "b5cd53a844618919b126cb1e86a84d7538c5a80dcccbf96fbd2a160c054e74ee"
+        },
+        {
+          "path": "legacy-1440-row-closed-actual-context.png",
+          "sha256": "4108a95e5cf3229586ec064047f223882421601f0945946580a962868a30425d"
+        },
+        {
+          "path": "legacy-1440-row-closed-reference-region.png",
+          "sha256": "5851e3fc200f5ce070ced379ab8885e4336aefcd13c0c37ffd8a5be08beecb54"
+        },
+        {
+          "path": "legacy-1440-row-closed-reference-context.png",
+          "sha256": "f3bc35bee25cb5078a3f058fb0bd38c599befde4839b6e52f147114ab10de4ef"
+        }
+      ]
+    },
+    {
+      "id": "legacy-1440-raw-open",
+      "surface": "legacy",
+      "state": "raw-open",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
+      "actual_geometry": {
+        "x": 993,
+        "y": 320.375,
+        "width": 435,
+        "height": 199.25
+      },
+      "room_geometry": {
+        "x": 981,
+        "y": 211,
+        "width": 459,
+        "height": 789
+      },
+      "reference_geometry": {
+        "x": 45,
+        "y": 671.484375,
+        "width": 435,
+        "height": 213
+      },
+      "images": [
+        {
+          "path": "legacy-1440-raw-open-actual-region.png",
+          "sha256": "3074f555058d8ce000d3aadbf9156cd8e3519bb0061130688e04b1b30e589968"
+        },
+        {
+          "path": "legacy-1440-raw-open-actual-context.png",
+          "sha256": "d565377ff46ae4f23076beea500d5e482a35e248889f51a8caf85e356923bf3d"
+        },
+        {
+          "path": "legacy-1440-raw-open-reference-region.png",
+          "sha256": "dc65329a547a67b0a18087db2afcdba7010acaedb9696653e945da56a8d94735"
+        },
+        {
+          "path": "legacy-1440-raw-open-reference-context.png",
+          "sha256": "6696d25823a52cdf06920e62915259ea6ea9f70ff7609d17dd7df261f2f42d90"
+        }
+      ]
+    },
+    {
+      "id": "legacy-1440-ask-pending",
+      "surface": "legacy",
+      "state": "ask-pending",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/index.html",
+      "actual_geometry": {
+        "x": 993,
+        "y": 360.375,
+        "width": 435,
+        "height": 318
+      },
+      "room_geometry": {
+        "x": 981,
+        "y": 211,
+        "width": 459,
+        "height": 789
+      },
+      "reference_geometry": {
+        "x": 16,
+        "y": 263,
+        "width": 435,
+        "height": 315
+      },
+      "images": [
+        {
+          "path": "legacy-1440-ask-pending-actual-region.png",
+          "sha256": "fd329cf4ab5a3894a138cfec7924e35b55010be363a45b301937fbbe24f764ce"
+        },
+        {
+          "path": "legacy-1440-ask-pending-actual-context.png",
+          "sha256": "25df824c173f672458ea707ea4c375c8c0790dd7aef10a34cdd0a21bc7dbc278"
+        },
+        {
+          "path": "legacy-1440-ask-pending-reference-region.png",
+          "sha256": "ba37fa212567c345f0c1cddefe382abdb35659da8e150f5e223f56e5786c8106"
+        },
+        {
+          "path": "legacy-1440-ask-pending-reference-context.png",
+          "sha256": "41fb4117d9741b956394eb2b4eea323cba48f1659d98c2cbc2e8ba1cc3af2d45"
+        }
+      ]
+    },
+    {
+      "id": "legacy-1440-assistant-report",
+      "surface": "legacy",
+      "state": "assistant-report",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
+      "actual_geometry": {
+        "x": 995,
+        "y": 249,
+        "width": 431,
+        "height": 19.375
+      },
+      "room_geometry": {
+        "x": 981,
+        "y": 205,
+        "width": 459,
+        "height": 795
+      },
+      "reference_geometry": {
+        "x": 914,
+        "y": 691.25,
+        "width": 431,
+        "height": 56.25
+      },
+      "images": [
+        {
+          "path": "legacy-1440-assistant-report-actual-region.png",
+          "sha256": "6f6dafaa38cab9efaae1200cafc70410011fd2135c32ea3878f3b5f1c4629703"
+        },
+        {
+          "path": "legacy-1440-assistant-report-actual-context.png",
+          "sha256": "93dc5c9a8e0322c43a0718283dae9c47a474263943ed49f3e8e0864aadc7dccd"
+        },
+        {
+          "path": "legacy-1440-assistant-report-reference-region.png",
+          "sha256": "a2a2e6263308dcc01890ccbe6b7d67907ac5c83cbe6c075673b82355f9775189"
+        },
+        {
+          "path": "legacy-1440-assistant-report-reference-context.png",
+          "sha256": "f7cf3ff5f19b8247f5e835017fe3f54eb88c6188ac328d280cd1c0c1e16465ae"
+        }
+      ]
+    },
+    {
+      "id": "legacy-1440-runtime-graph",
+      "surface": "legacy",
+      "state": "runtime-graph",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/index.html",
+      "actual_geometry": {
+        "x": 0,
+        "y": 145,
+        "width": 1440,
+        "height": 855
+      },
+      "reference_geometry": {
+        "x": 0,
+        "y": 100,
+        "width": 1440,
+        "height": 900
+      },
+      "images": [
+        {
+          "path": "legacy-1440-runtime-graph-actual-region.png",
+          "sha256": "ef1a33a2a118b44d9ed84c3f53e4363bf6d25fc60d77dad28a8716214d095713"
+        },
+        {
+          "path": "legacy-1440-runtime-graph-actual-context.png",
+          "sha256": "b78d181b2afb5b621e4fef95a93f27033302337116080b6ab5d8359346230d04"
+        },
+        {
+          "path": "legacy-1440-runtime-graph-reference-region.png",
+          "sha256": "1476a601c516661e4cdb52a69c8acc96b7c31e78a752b6ca7e76df730c259ec5"
+        },
+        {
+          "path": "legacy-1440-runtime-graph-reference-context.png",
+          "sha256": "c897a825d5899edeab4e76b8179d10d6bf0610f1d14508406a7f4d740901147b"
+        }
+      ]
+    },
+    {
+      "id": "legacy-1440-queue-waiting",
+      "surface": "legacy",
+      "state": "queue-waiting",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "actual_geometry": {
+        "x": 981,
+        "y": 799,
+        "width": 459,
+        "height": 84
+      },
+      "room_geometry": {
+        "x": 981,
+        "y": 205,
+        "width": 459,
+        "height": 795
+      },
+      "reference_geometry": {
+        "x": 900,
+        "y": 710,
+        "width": 459,
+        "height": 92
+      },
+      "images": [
+        {
+          "path": "legacy-1440-queue-waiting-actual-region.png",
+          "sha256": "b73f43de848e1f0d47bf3985f5cf27d819ce66895bbd3671ee956f177fdeb217"
+        },
+        {
+          "path": "legacy-1440-queue-waiting-actual-context.png",
+          "sha256": "23dc58e4837dcf4f243aae4e4dd4448a826731d3f5c9f01be2a375f94861b1ba"
+        },
+        {
+          "path": "legacy-1440-queue-waiting-reference-region.png",
+          "sha256": "07edc7220fd118b4fba81560a0492b4788a2501a0912f00ba2678710c07b1ade"
+        },
+        {
+          "path": "legacy-1440-queue-waiting-reference-context.png",
+          "sha256": "e25455ac4cddbb16b8094a1dc5154c818388e742fd13b7a89e2380232a76d1e5"
+        }
+      ]
+    },
+    {
+      "id": "legacy-390-row-closed",
+      "surface": "legacy",
+      "state": "row-closed",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
+      "actual_geometry": {
+        "x": 13,
+        "y": 366.375,
+        "width": 365,
+        "height": 28.5
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 257,
+        "width": 389,
+        "height": 587
+      },
+      "reference_geometry": {
+        "x": 912,
+        "y": 335.875,
+        "width": 365,
+        "height": 25
+      },
+      "images": [
+        {
+          "path": "legacy-390-row-closed-actual-region.png",
+          "sha256": "6cd70b83fd0005a7a8f00d14d823ac7f8f47c8ef51a36a0dd369c42e00839ee8"
+        },
+        {
+          "path": "legacy-390-row-closed-actual-context.png",
+          "sha256": "151fcfebe4d1a1e59ee801879140330d45d124561a60ae84b66c225d798b8338"
+        },
+        {
+          "path": "legacy-390-row-closed-reference-region.png",
+          "sha256": "700f89bb59d5151154687b3ffe2dbee16e29594ac3f3ead008720e6c58502c4e"
+        },
+        {
+          "path": "legacy-390-row-closed-reference-context.png",
+          "sha256": "fe94e98186fcaf531ceb09dabba381558be667b57b3ec4bd47ee7b8762472a39"
+        }
+      ]
+    },
+    {
+      "id": "legacy-390-raw-open",
+      "surface": "legacy",
+      "state": "raw-open",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-transcript-states.html",
+      "actual_geometry": {
+        "x": 13,
+        "y": 366.375,
+        "width": 365,
+        "height": 199.25
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 257,
+        "width": 389,
+        "height": 587
+      },
+      "reference_geometry": {
+        "x": 45,
+        "y": 653.484375,
+        "width": 365,
+        "height": 230.25
+      },
+      "images": [
+        {
+          "path": "legacy-390-raw-open-actual-region.png",
+          "sha256": "501fb050367cba99f27315c720fafc924ef4e5549de6ebd70f63413586ee8b57"
+        },
+        {
+          "path": "legacy-390-raw-open-actual-context.png",
+          "sha256": "0e25b3f553e76af101f926fba5d788977d2953192c15f5049ca01294db0fa914"
+        },
+        {
+          "path": "legacy-390-raw-open-reference-region.png",
+          "sha256": "a0a7d86db2be1defab8d2f255ae36a19811cd05c8dc5d07ffc8cb20e1e0aeffa"
+        },
+        {
+          "path": "legacy-390-raw-open-reference-context.png",
+          "sha256": "63a9e565f91ae266fef14f4a41965e6563384a2de3d40789577a548b558b7a1e"
+        }
+      ]
+    },
+    {
+      "id": "legacy-390-ask-pending",
+      "surface": "legacy",
+      "state": "ask-pending",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/index.html",
+      "actual_geometry": {
+        "x": 13,
+        "y": 388.375,
+        "width": 365,
+        "height": 318
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 257,
+        "width": 389,
+        "height": 587
+      },
+      "reference_geometry": {
+        "x": 16,
+        "y": 263,
+        "width": 365,
+        "height": 315
+      },
+      "images": [
+        {
+          "path": "legacy-390-ask-pending-actual-region.png",
+          "sha256": "01c11c131701a19bc4fdb1b139f623f90b6aaf6635c7e2d502fd6a5207ac2c4a"
+        },
+        {
+          "path": "legacy-390-ask-pending-actual-context.png",
+          "sha256": "53da8bc13505acc40382a86fd814bafc095c643947ff1a4ccea0d5a73f262897"
+        },
+        {
+          "path": "legacy-390-ask-pending-reference-region.png",
+          "sha256": "bb4bc47c240c3fd1ea2e76493cff6a23b4685ddf1f72b2cb4609dc769df10862"
+        },
+        {
+          "path": "legacy-390-ask-pending-reference-context.png",
+          "sha256": "f4792f4becca643e274ff928dda7f7804156bcb7bab87e516c2967ab28ceebc9"
+        }
+      ]
+    },
+    {
+      "id": "legacy-390-assistant-report",
+      "surface": "legacy",
+      "state": "assistant-report",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/mockups/key-legacy-node-room.html",
+      "actual_geometry": {
+        "x": 15,
+        "y": 283,
+        "width": 361,
+        "height": 19.375
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 239,
+        "width": 389,
+        "height": 605
+      },
+      "reference_geometry": {
+        "x": 914,
+        "y": 672.25,
+        "width": 361,
+        "height": 75.625
+      },
+      "images": [
+        {
+          "path": "legacy-390-assistant-report-actual-region.png",
+          "sha256": "0c1e53cef7a2d6246e715792862cea53ecf4a028d4f42d29af120c571bc00ef0"
+        },
+        {
+          "path": "legacy-390-assistant-report-actual-context.png",
+          "sha256": "2f2af709d1c71509c8f4b36263ca33489953bb75c8d89fb650e67c95cc08b792"
+        },
+        {
+          "path": "legacy-390-assistant-report-reference-region.png",
+          "sha256": "38739936128767a532d67bcff89b06ab93e9ac8696be330f57ad4c5129755eee"
+        },
+        {
+          "path": "legacy-390-assistant-report-reference-context.png",
+          "sha256": "ef7fefc66357f83f6774bb1bb8bc434dbd92ba778cf08a27ee3410c285f0f342"
+        }
+      ]
+    },
+    {
+      "id": "legacy-390-runtime-graph",
+      "surface": "legacy",
+      "state": "runtime-graph",
+      "runId": "e2ae7586ba9aecd40aa1d8a6a1c523d4",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/index.html",
+      "actual_geometry": {
+        "x": 0,
+        "y": 175,
+        "width": 390,
+        "height": 669
+      },
+      "reference_geometry": {
+        "x": 0,
+        "y": 100,
+        "width": 390,
+        "height": 900
+      },
+      "images": [
+        {
+          "path": "legacy-390-runtime-graph-actual-region.png",
+          "sha256": "b4e1b93f67ced8be3bf9b1cf7fbca6a80d3200f0532ff328c58572bcdd1c76a9"
+        },
+        {
+          "path": "legacy-390-runtime-graph-actual-context.png",
+          "sha256": "5a0e65ecc7c6a28c47736e647c23820aaa035918c68cd0ad927e9ebd58e71964"
+        },
+        {
+          "path": "legacy-390-runtime-graph-reference-region.png",
+          "sha256": "99c0e64cb0345c9957ea6225a8de1fe17ee6945dff547b1bce284b8b89e912e1"
+        },
+        {
+          "path": "legacy-390-runtime-graph-reference-context.png",
+          "sha256": "006b6219e2593fee540205fd82487fcf9e2fcac9473d8aefbbc25dd9afd41544"
+        }
+      ]
+    },
+    {
+      "id": "legacy-390-queue-waiting",
+      "surface": "legacy",
+      "state": "queue-waiting",
+      "runId": "7f94ee3091064fa62a061a1401250833",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "reference_viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "source": "claude-design/design_handoff_node_room_transcript_steering/Legacy Node Room.dc.html",
+      "actual_geometry": {
+        "x": 1,
+        "y": 643,
+        "width": 389,
+        "height": 84
+      },
+      "room_geometry": {
+        "x": 1,
+        "y": 239,
+        "width": 389,
+        "height": 605
+      },
+      "reference_geometry": {
+        "x": 900,
+        "y": 710,
+        "width": 389,
+        "height": 92
+      },
+      "images": [
+        {
+          "path": "legacy-390-queue-waiting-actual-region.png",
+          "sha256": "94b0970c1a0eb48f0b1b14b1ccf3d8fef8c27a4bf12c53c6243c09d9a4bdb6b3"
+        },
+        {
+          "path": "legacy-390-queue-waiting-actual-context.png",
+          "sha256": "69da86c53f684d5fa7250299c95d73196c04318b5e36777755fb8c901237f860"
+        },
+        {
+          "path": "legacy-390-queue-waiting-reference-region.png",
+          "sha256": "e0e1b44fd5564e8cfdb6804492280fb31c5bbef8c3e2fb0cd8d169b72a67ae94"
+        },
+        {
+          "path": "legacy-390-queue-waiting-reference-context.png",
+          "sha256": "440ce098f0a8d0e946708bf20d53e55bd6cf679083cf11b325150bb9eaed9012"
+        }
+      ]
+    }
+  ]
+}

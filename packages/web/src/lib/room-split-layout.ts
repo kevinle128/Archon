@@ -1,57 +1,14 @@
+/** Percentage string accepted by shared resizable panel primitives. */
 export type PanelPercent = `${number}%`;
+
+/** Surfaces that own a Node Room outer width. */
 export type RoomSurface = 'legacy' | 'console';
 
-export const ROOM_SPLIT = {
-  defaultRoomRatio: 40,
-  minRoomRatio: 24,
-  maxRoomRatio: 60,
-  minViewRatio: 30,
-} as const;
-
-export interface RoomPanelSizes {
-  view: { defaultSize: PanelPercent; minSize: PanelPercent };
-  room: { defaultSize: PanelPercent; minSize: PanelPercent; maxSize: PanelPercent };
-}
-
-function percent(value: number): PanelPercent {
-  return `${value}%`;
-}
-
-export function clampRoomRatio(value: number): number {
-  if (!Number.isFinite(value)) return ROOM_SPLIT.defaultRoomRatio;
-  return Math.min(ROOM_SPLIT.maxRoomRatio, Math.max(ROOM_SPLIT.minRoomRatio, value));
-}
-
-export function roomPanelSizes(roomRatio: number): RoomPanelSizes {
-  const room = clampRoomRatio(roomRatio);
-  return {
-    view: {
-      defaultSize: percent(100 - room),
-      minSize: percent(ROOM_SPLIT.minViewRatio),
-    },
-    room: {
-      defaultSize: percent(room),
-      minSize: percent(ROOM_SPLIT.minRoomRatio),
-      maxSize: percent(ROOM_SPLIT.maxRoomRatio),
-    },
-  };
-}
-
-function storageKey(surface: RoomSurface): string {
-  return 'archon.run-room.ratio.' + surface;
-}
-
-export function readRoomRatio(surface: RoomSurface, storage: Pick<Storage, 'getItem'>): number {
-  const raw = storage.getItem(storageKey(surface));
-  if (raw === null) return ROOM_SPLIT.defaultRoomRatio;
-  const value = Number(raw);
-  return Number.isFinite(value) ? clampRoomRatio(value) : ROOM_SPLIT.defaultRoomRatio;
-}
-
-export function writeRoomRatio(
-  surface: RoomSurface,
-  value: number,
-  storage: Pick<Storage, 'setItem'>
-): void {
-  storage.setItem(storageKey(surface), String(clampRoomRatio(value)));
-}
+/**
+ * Fixed outer Node Room widths in CSS pixels.
+ * Split owners read these values directly; old ratio keys are never read or written.
+ */
+export const ROOM_WIDTH_PX = {
+  console: 520,
+  legacy: 460,
+} as const satisfies Record<RoomSurface, number>;

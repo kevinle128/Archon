@@ -17,17 +17,18 @@ import { T } from '../lib/playwright/timeouts';
  * `_bmad-output/specs/spec-workflow-run-view-hitl/ux-mockup/` and record the
  * verdict in `plans/reports/acceptance-260908-story-5-6.md`.
  *
- * Product room size is asserted against the percentage contract only.
- * Mockup fixed-pixel widths are not used as product sizing assertions.
+ * Product room size is the fixed outer panel width (Console 520 / Legacy 460
+ * CSS px in split mode). Historical mockup captures are retained for review;
+ * mockup fixed-pixel layouts are not treated as authoritative product geometry.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CAPTURE_DIR = join(
   REPO_ROOT,
   'plans',
-  '260907-1454-workflow-run-hitl-mockup-alignment',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
-  'captures'
+  'evidence'
 );
 const MOCKUP_CONSOLE = join(
   REPO_ROOT,
@@ -57,7 +58,16 @@ function panelLocator(page: Page, id: string): Locator {
   return page.locator(`[data-panel-id="${id}"], #${id}`).first();
 }
 
-async function measureProductRatio(
+const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
+const ROOM_MIN_WIDTH_PX = 240;
+
+/**
+ * Outer Node Room panel width when both the run view and room are visible
+ * (split mode). Returns null when either panel is missing/hidden — callers
+ * then treat the layout as single-mode room fill.
+ */
+async function measureOuterRoomWidth(
   page: Page,
   surface: 'console' | 'legacy'
 ): Promise<number | null> {
@@ -67,12 +77,61 @@ async function measureProductRatio(
   const room = panelLocator(page, roomId);
   if ((await view.count()) === 0 || (await room.count()) === 0) return null;
   if (!(await view.isVisible()) || !(await room.isVisible())) return null;
-  const viewBox = await view.boundingBox();
   const roomBox = await room.boundingBox();
-  if (viewBox === null || roomBox === null) return null;
-  const total = viewBox.width + roomBox.width;
-  if (total <= 0) return null;
-  return roomBox.width / total;
+  if (roomBox === null || roomBox.width <= 0) return null;
+  return roomBox.width;
+}
+
+/**
+ * Split mode: fixed outer width Console 520 / Legacy 460 ±1.
+ * Single mode (room visible, view hidden): room fills available width (>240
+ * and roughly the full container).
+ */
+async function expectProductRoomGeometry(page: Page, surface: 'console' | 'legacy'): Promise<void> {
+  const roomId = surface === 'console' ? 'console-run-room' : 'legacy-run-room';
+  const viewId = surface === 'console' ? 'console-run-view' : 'legacy-run-view';
+  const splitWidth = await measureOuterRoomWidth(page, surface);
+  if (splitWidth !== null) {
+    const expected = ROOM_WIDTH_PX[surface];
+    expect(
+      Math.abs(splitWidth - expected),
+      `${surface} outer room ${String(splitWidth)}px must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+    ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
+    return;
+  }
+
+  // Single mode: room fills available width (view hidden or absent).
+  const room = panelLocator(page, roomId);
+  await expect(room, `${roomId} must be visible in single mode`).toBeVisible({ timeout: T.medium });
+  const roomBox = await room.boundingBox();
+  expect(roomBox, `${roomId} bounding box`).toBeTruthy();
+  const width = roomBox?.width ?? 0;
+  expect(width, `${surface} single-mode room width must be non-zero`).toBeGreaterThan(0);
+  expect(width, `${surface} single-mode room fills container`).toBeGreaterThan(ROOM_MIN_WIDTH_PX);
+
+  const view = panelLocator(page, viewId);
+  const viewVisible = (await view.count()) > 0 && (await view.isVisible().catch(() => false));
+  expect(viewVisible, `${surface} single-mode expects run view hidden`).toBe(false);
+
+  const available = await page.evaluate(id => {
+    const el = document.querySelector(`#${id}, [data-panel-id="${id}"]`);
+    if (!(el instanceof HTMLElement)) return 0;
+    const parent = el.parentElement;
+    if (parent instanceof HTMLElement) {
+      const cs = getComputedStyle(parent);
+      const pad =
+        (Number.parseFloat(cs.paddingLeft) || 0) + (Number.parseFloat(cs.paddingRight) || 0);
+      return Math.max(0, parent.getBoundingClientRect().width - pad);
+    }
+    return window.innerWidth;
+  }, roomId);
+  if (available > 0) {
+    // Roughly full available: allow chrome/margins but reject a collapsed pane.
+    expect(
+      width,
+      `${surface} single-mode room ${String(width)}px should fill ~available ${String(available)}px`
+    ).toBeGreaterThan(available * 0.7);
+  }
 }
 
 async function captureAtTwoHundredPercentZoom(
@@ -125,11 +184,7 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Console and Legacy vs canonical
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await expect(page.getByText(/e2e-hitl-run/i).first()).toBeVisible();
     await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
-    const ratio = await measureProductRatio(page, 'console');
-    if (ratio !== null) {
-      expect(ratio).toBeGreaterThanOrEqual(0.24);
-      expect(ratio).toBeLessThanOrEqual(0.6);
-    }
+    await expectProductRoomGeometry(page, 'console');
     await page.screenshot({
       path: join(CAPTURE_DIR, 'console-actual-' + viewport.name + '.png'),
       fullPage: true,
@@ -152,11 +207,7 @@ test('[P1] [V:hitl.visual-captures] HITL visual: Console and Legacy vs canonical
   for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await expect(page.getByRole('region', { name: `${HITL_INSPECT_NODE} room` })).toBeVisible();
-    const ratio = await measureProductRatio(page, 'legacy');
-    if (ratio !== null) {
-      expect(ratio).toBeGreaterThanOrEqual(0.24);
-      expect(ratio).toBeLessThanOrEqual(0.6);
-    }
+    await expectProductRoomGeometry(page, 'legacy');
     await page.screenshot({
       path: join(CAPTURE_DIR, 'legacy-actual-' + viewport.name + '.png'),
       fullPage: true,

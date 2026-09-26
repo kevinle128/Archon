@@ -5,11 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import {
-  PercentResizablePanel,
-  ResizableHandle,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
-import {
   getWorkflowNodeMessages,
   type AskAnswerBody,
   type ConversationResponse,
@@ -30,9 +25,10 @@ import {
   roomOpenerId,
   type ExecutionHeaderModel,
 } from '@/lib/execution-room-model';
-import { clampRoomRatio, roomPanelSizes } from '@/lib/room-split-layout';
+import { ROOM_WIDTH_PX } from '@/lib/room-split-layout';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { useContainerSplitMode, type ContainerSplitMode } from '@/lib/use-container-split-mode';
+import { cn } from '@/lib/utils';
 
 import { AskCard, InvalidAskCard } from './AskCard';
 import type { AskActionStateByRequest } from './ask-answer-controller';
@@ -50,7 +46,6 @@ import { resolveRoomKind } from './resolve-room-kind';
 import { resolveTimelineRoomRow } from './resolve-timeline-room-row';
 import { parseAskEnvelope, type AskDraft, type AskDraftByRequest } from './parse-ask-envelope';
 import { RunChatComposer } from './RunChatComposer';
-import { useStackedViewport } from './source-control/use-stacked-viewport';
 
 export interface LegacyGraphLogsPaneProps {
   activeView: 'graph' | 'logs' | 'chat';
@@ -68,8 +63,6 @@ export interface LegacyGraphLogsPaneProps {
     rememberExplicit: boolean
   ) => void;
   onCloseRoom: () => void;
-  roomRatio: number;
-  onRoomRatioChange: (ratio: number) => void;
   splitMode?: ContainerSplitMode;
   runId: string;
   runStartedAt: string;
@@ -194,8 +187,6 @@ export function LegacyGraphLogsPane({
   lastExplicitRowByNode = {},
   onOpenRoom,
   onCloseRoom,
-  roomRatio,
-  onRoomRatioChange,
   splitMode: splitModeOverride,
   runId,
   runStartedAt,
@@ -229,7 +220,6 @@ export function LegacyGraphLogsPane({
   askDrafts,
   onAskDraftChange,
 }: LegacyGraphLogsPaneProps): React.ReactElement {
-  const stacked = useStackedViewport();
   const paneRef = useRef<HTMLDivElement>(null);
   const measuredMode = useContainerSplitMode(paneRef);
   const mode = splitModeOverride ?? measuredMode;
@@ -247,7 +237,6 @@ export function LegacyGraphLogsPane({
   const [chatSendError, setChatSendError] = useState<string | null>(null);
   const sendGeneration = useRef(0);
   const previousRunId = useRef(runId);
-  const sizes = roomPanelSizes(roomRatio);
   const explicitSelectedRow =
     selectedLogRowId === null
       ? null
@@ -551,59 +540,37 @@ export function LegacyGraphLogsPane({
     </div>
   );
 
-  const handleLayoutChanged = (layout: Record<string, number>): void => {
-    if (mode !== 'split') return;
-    const roomSize = layout['legacy-run-room'];
-    if (typeof roomSize !== 'number') return;
-    onRoomRatioChange(clampRoomRatio(roomSize));
-  };
+  const hideMainView = mode === 'single' && roomOpen;
 
   return (
     <div ref={paneRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <ResizablePanelGroup
-        orientation={mode === 'split' && stacked ? 'vertical' : 'horizontal'}
-        className="min-h-0 flex-1"
-        defaultLayout={
-          mode === 'single'
-            ? roomOpen
-              ? { 'legacy-run-view': 0, 'legacy-run-room': 100 }
-              : { 'legacy-run-view': 100 }
-            : roomOpen
-              ? {
-                  'legacy-run-view': 100 - clampRoomRatio(roomRatio),
-                  'legacy-run-room': clampRoomRatio(roomRatio),
-                }
-              : { 'legacy-run-view': 100 }
-        }
-        onLayoutChanged={handleLayoutChanged}
-      >
-        <PercentResizablePanel
+      <div className="flex min-h-0 min-w-0 flex-1 flex-row">
+        <div
           id="legacy-run-view"
-          className="flex min-h-0 flex-col"
-          hidden={mode === 'single' && roomOpen}
-          defaultSize={
-            mode === 'single' && roomOpen ? '0%' : roomOpen ? sizes.view.defaultSize : '100%'
-          }
-          minSize={mode === 'single' && roomOpen ? '0%' : sizes.view.minSize}
+          className={cn(
+            'min-h-0 min-w-0 flex-col',
+            hideMainView ? 'hidden' : 'flex min-w-0 flex-1'
+          )}
         >
           {wrappedLeft}
-        </PercentResizablePanel>
+        </div>
         {roomOpen ? (
-          <>
-            {mode === 'split' ? <ResizableHandle withHandle aria-label="Resize node room" /> : null}
-            <PercentResizablePanel
-              id="legacy-run-room"
-              className="min-h-0 min-w-0 overflow-hidden"
-              style={{ overflow: 'hidden' }}
-              defaultSize={mode === 'single' ? '100%' : sizes.room.defaultSize}
-              minSize={mode === 'single' ? '100%' : sizes.room.minSize}
-              maxSize={mode === 'single' ? '100%' : sizes.room.maxSize}
-            >
-              {roomPane}
-            </PercentResizablePanel>
-          </>
+          <div
+            id="legacy-run-room"
+            className={cn(
+              'flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-border',
+              mode === 'single' ? 'min-w-0 w-full flex-1' : 'shrink-0'
+            )}
+            style={
+              mode === 'split'
+                ? { width: `${String(ROOM_WIDTH_PX.legacy)}px`, overflow: 'hidden' }
+                : { overflow: 'hidden' }
+            }
+          >
+            {roomPane}
+          </div>
         ) : null}
-      </ResizablePanelGroup>
+      </div>
     </div>
   );
 }

@@ -30,20 +30,26 @@ import {
 import { T } from '../lib/playwright/timeouts';
 
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
-const LEGACY_RATIO_VIEWPORT = { width: 1024, height: 900 } as const;
+/** Geometry-neutral viewport used for Legacy layout checks (mode from measured container). */
+const LEGACY_GEOMETRY_VIEWPORT = { width: 1024, height: 900 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
-const DEFAULT_RATIO_MIN = 0.38;
-const DEFAULT_RATIO_MAX = 0.42;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
 const WIDTH_TOLERANCE_PX = 2;
-const RELOAD_RATIO_TOLERANCE = 0.02;
+const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
 
-/** Story 1.2 evidence directory — the Console long-payload Raw capture lands here. */
+/** Current Node Room anatomy evidence directory for the long-payload Raw capture. */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const STORY_12_EVIDENCE_DIR =
+const ROOM_ANATOMY_EVIDENCE_DIR =
   env.ARCHON_VERIFY_EVIDENCE ??
-  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
+  join(
+    REPO_ROOT,
+    'plans',
+    '260925-2145-issue-266-console-legacy-room-anatomy',
+    'reports',
+    'evidence'
+  );
 
 async function pageWaitStarter(
   browser: Parameters<typeof createIdentityContext>[0],
@@ -70,14 +76,46 @@ async function boxWidth(locator: Locator, label: string): Promise<number> {
   return box?.width ?? 0;
 }
 
-async function roomRatio(page: Page, surface: 'console' | 'legacy'): Promise<number> {
-  const viewId = surface === 'console' ? 'console-run-view' : 'legacy-run-view';
+async function outerRoomWidth(page: Page, surface: 'console' | 'legacy'): Promise<number> {
   const roomId = surface === 'console' ? 'console-run-room' : 'legacy-run-room';
-  const viewWidth = await boxWidth(panelLocator(page, viewId), viewId);
-  const roomWidth = await boxWidth(panelLocator(page, roomId), roomId);
-  const total = viewWidth + roomWidth;
-  expect(total, `${surface} split total width`).toBeGreaterThan(0);
-  return roomWidth / total;
+  return boxWidth(panelLocator(page, roomId), roomId);
+}
+
+/** True when the main run view is mounted and visible beside the room (split mode). */
+async function isSplitMode(page: Page, surface: 'console' | 'legacy'): Promise<boolean> {
+  const viewId = surface === 'console' ? 'console-run-view' : 'legacy-run-view';
+  const view = panelLocator(page, viewId);
+  if ((await view.count()) === 0) return false;
+  return view.isVisible();
+}
+
+/**
+ * Asserts the fixed outer Node Room width in split mode (Console 520 / Legacy 460 ±1),
+ * or that the room fills available width in single mode. Always asserts no resize separator.
+ */
+async function expectOuterRoomGeometry(
+  page: Page,
+  surface: 'console' | 'legacy'
+): Promise<{ width: number; mode: 'split' | 'single' }> {
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  const width = await outerRoomWidth(page, surface);
+  expect(width, `${surface} outer room width must be measurable`).toBeGreaterThan(0);
+  const split = await isSplitMode(page, surface);
+  if (split) {
+    const expected = ROOM_WIDTH_PX[surface];
+    expect(
+      Math.abs(width - expected),
+      `${surface} outer room ${String(width)}px must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+    ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
+    return { width, mode: 'split' };
+  }
+  // Single mode: room fills the container without a fixed 520/460 contract.
+  expect(width, `${surface} single-mode room fills container`).toBeGreaterThan(ROOM_MIN_WIDTH_PX);
+  return { width, mode: 'single' };
+}
+
+async function ratioKeyValue(page: Page, surface: 'console' | 'legacy'): Promise<string | null> {
+  return page.evaluate(key => window.localStorage.getItem(key), `archon.run-room.ratio.${surface}`);
 }
 
 async function waitForRunTitle(page: Page, workflowName: string): Promise<void> {
@@ -212,16 +250,15 @@ test('[P1] [V:hitl.console-room-layout] Console room opens, closes, and releases
   await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
   await waitForRoom(page, HITL_INSPECT_NODE);
-  const ratio = await roomRatio(page, 'console');
-  expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
-  expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
+  const geometry = await expectOuterRoomGeometry(page, 'console');
+  expect(geometry.mode).toBe('split');
 });
 
-test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage sized', async ({
+test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and fixed-width in split mode', async ({
   page,
   archon,
 }) => {
-  await page.setViewportSize(LEGACY_RATIO_VIEWPORT);
+  await page.setViewportSize(LEGACY_GEOMETRY_VIEWPORT);
   const started = await archon.runHitlWorkflow();
   await openLegacyRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
@@ -231,9 +268,11 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage si
   expect(width, 'Legacy room must be wide enough to read tool output').toBeGreaterThan(
     ROOM_MIN_WIDTH_PX
   );
-  const ratio = await roomRatio(page, 'legacy');
-  expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
-  expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
+  const geometry = await expectOuterRoomGeometry(page, 'legacy');
+  // Mode is measured from the actual container at 1024×900 (split only when ≥60rem).
+  if (geometry.mode === 'split') {
+    expect(geometry.width).toBeGreaterThanOrEqual(ROOM_WIDTH_PX.legacy - OUTER_WIDTH_TOLERANCE_PX);
+  }
   const row = room.locator('details[data-tool-id]').first();
   // The collapsed summary names the file family; the Story 1.3 body/Raw swap
   // contract is identical on both surfaces.
@@ -609,33 +648,93 @@ test('[P1] [V:hitl.room-deeplink] Deep-link re-entry and focus restoration work'
   await waitForRoom(page, HITL_INSPECT_NODE);
 });
 
-test('[P1] [V:hitl.room-ratio] Reload restores the chosen ratio', async ({ page, archon }) => {
+test('[P1] [V:hitl.room-fixed-width] Fixed outer width ignores stale ratio keys and has no separator', async ({
+  page,
+  archon,
+}) => {
   await page.setViewportSize(SPLIT_VIEWPORT);
+  // Seed obsolete ratio keys before the room mounts so any leftover reader would
+  // still pick them up — the fixed-width owners must leave them unread/unwritten.
+  await page.addInitScript(() => {
+    window.localStorage.setItem('archon.run-room.ratio.console', '60');
+    window.localStorage.setItem('archon.run-room.ratio.legacy', '24');
+  });
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
   await waitForRoom(page, HITL_INSPECT_NODE);
-  const separator = page.getByRole('separator', { name: 'Resize node room' });
-  const before = await roomRatio(page, 'console');
-  const box = await separator.boundingBox();
-  expect(box).toBeTruthy();
-  if (!box) throw new Error('missing separator');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x - 120, box.y + box.height / 2, { steps: 8 });
-  await page.mouse.up();
-  const stored = await roomRatio(page, 'console');
-  expect(stored).toBeGreaterThan(before + 0.02);
-  expect(stored).toBeGreaterThanOrEqual(0.24);
-  expect(stored).toBeLessThanOrEqual(0.6);
+
+  const beforeKey = await ratioKeyValue(page, 'console');
+  expect(beforeKey).toBe('60');
+  const openGeometry = await expectOuterRoomGeometry(page, 'console');
+  expect(openGeometry.mode).toBe('split');
+  expect(openGeometry.width).toBeGreaterThanOrEqual(
+    ROOM_WIDTH_PX.console - OUTER_WIDTH_TOLERANCE_PX
+  );
+  expect(await ratioKeyValue(page, 'console'), 'open must not rewrite ratio key').toBe('60');
+
+  // Content rerender (re-open same node) keeps the fixed outer width.
+  await page.getByRole('button', { name: 'Close' }).click();
+  await openConsoleLogRow(page, HITL_INSPECT_NODE);
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const rerenderGeometry = await expectOuterRoomGeometry(page, 'console');
+  expect(Math.abs(rerenderGeometry.width - openGeometry.width)).toBeLessThanOrEqual(
+    OUTER_WIDTH_TOLERANCE_PX
+  );
+  expect(await ratioKeyValue(page, 'console'), 'rerender must not rewrite ratio key').toBe('60');
 
   await page.reload();
   await waitForRunTitle(page, 'e2e-hitl-run');
+  expect(await ratioKeyValue(page, 'console'), 'reload keeps seeded stale key').toBe('60');
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
   await waitForRoom(page, HITL_INSPECT_NODE);
-  const restored = await roomRatio(page, 'console');
-  expect(Math.abs(restored - stored)).toBeLessThanOrEqual(RELOAD_RATIO_TOLERANCE);
+  const reloaded = await expectOuterRoomGeometry(page, 'console');
+  expect(reloaded.mode).toBe('split');
+  expect(Math.abs(reloaded.width - ROOM_WIDTH_PX.console)).toBeLessThanOrEqual(
+    OUTER_WIDTH_TOLERANCE_PX
+  );
+  expect(await ratioKeyValue(page, 'console'), 'reload open must not rewrite ratio key').toBe('60');
+  expect(await ratioKeyValue(page, 'legacy'), 'legacy key stays seeded and unread').toBe('24');
+});
+
+test('[P1] [V:hitl.room-fixed-width-container] Split-mode outer widths stay fixed as wide containers change', async ({
+  page,
+  archon,
+}) => {
+  const started = await archon.runHitlWorkflow();
+
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  await openRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-run');
+  await openConsoleLogRow(page, HITL_INSPECT_NODE);
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const consoleInitial = await expectOuterRoomGeometry(page, 'console');
+  expect(consoleInitial.mode).toBe('split');
+
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const consoleResized = await expectOuterRoomGeometry(page, 'console');
+  expect(consoleResized.mode).toBe('split');
+  expect(Math.abs(consoleResized.width - consoleInitial.width)).toBeLessThanOrEqual(
+    OUTER_WIDTH_TOLERANCE_PX
+  );
+
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  await openLegacyRunDetail(page, started.runId);
+  await waitForRunTitle(page, 'e2e-hitl-run');
+  await openLegacyLogRow(page, HITL_INSPECT_NODE);
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const legacyInitial = await expectOuterRoomGeometry(page, 'legacy');
+  expect(legacyInitial.mode).toBe('split');
+
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await waitForRoom(page, HITL_INSPECT_NODE);
+  const legacyResized = await expectOuterRoomGeometry(page, 'legacy');
+  expect(legacyResized.mode).toBe('split');
+  expect(Math.abs(legacyResized.width - legacyInitial.width)).toBeLessThanOrEqual(
+    OUTER_WIDTH_TOLERANCE_PX
+  );
 });
 
 test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundary', async ({
@@ -726,9 +825,9 @@ test('[P1] [V:hitl.history-complete] Complete history renders every distinct too
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
   );
   expect(pageOverflow, 'page has no horizontal scroll with long Raw open').toBeLessThanOrEqual(1);
-  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
   const rawShot = await rawPanel.screenshot({
-    path: join(STORY_12_EVIDENCE_DIR, 'console-long-raw-open.png'),
+    path: join(ROOM_ANATOMY_EVIDENCE_DIR, 'console-long-raw-open.png'),
   });
   await testInfo.attach('console-long-raw-open.png', {
     body: rawShot,
@@ -973,9 +1072,9 @@ test('[P1] [V:transcript-display.legacy-scroll-desktop] Legacy long-history room
   await pressScrollerEdge(scroller, 'End');
   await expectDocumentContained(page, 'keyboard transcript scroll');
 
-  // Applicable controls survive: header close and the resize handle.
+  // Applicable controls survive: header close; no Node Room resize separator.
   await expect(page.getByRole('button', { name: 'Close' })).toBeVisible();
-  await expect(page.getByRole('separator', { name: 'Resize node room' })).toBeVisible();
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
 });
 
 test('[P1] [V:transcript-display.legacy-scroll-narrow] Legacy narrow room keeps the document fixed', async ({

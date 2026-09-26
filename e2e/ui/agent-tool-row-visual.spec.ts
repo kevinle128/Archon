@@ -22,8 +22,8 @@ import { T } from '../lib/playwright/timeouts';
  * and plans/260918-0834-issue-176-tool-family-bodies/reports/implementation-evidence.md.
  * The gallery tests run on deterministic route-fulfilled transcript fixtures —
  * labeled as such in their attachments — not fake-provider claims.
- * Captures go to the Playwright output dir via testInfo; the Story 1.2 Raw
- * captures are also written to the supplement's reports/evidence/ directory.
+ * Captures go to the Playwright output dir via testInfo; Raw captures are also
+ * written to the current Node Room anatomy plan's reports/evidence/ directory.
  */
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -35,17 +35,27 @@ const MOCKUP_DIR = join(
   'ux-Archon-agent-node-room-2026-09-09',
   'mockups'
 );
-const STORY_12_EVIDENCE_DIR =
+const ROOM_ANATOMY_EVIDENCE_DIR =
   env.ARCHON_VERIFY_EVIDENCE ??
-  join(REPO_ROOT, 'plans', '260918-1038-issue-175-raw-payload-toggle', 'reports', 'evidence');
+  join(
+    REPO_ROOT,
+    'plans',
+    '260925-2145-issue-266-console-legacy-room-anatomy',
+    'reports',
+    'evidence'
+  );
 
 type Surface = 'console' | 'legacy';
 
 const ROW = 'details[data-tool-id]';
 const SUMMARY = `${ROW} > summary`;
 const ROOM_NAME = `${HITL_INSPECT_NODE} room`;
-const TARGET_ROOM_WIDTH = 460;
-const ROOM_TOLERANCE_PX = 2;
+const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
+/** Non-outer geometry tolerance (Raw flush, mockup panels). */
+const WIDTH_TOLERANCE_PX = 2;
+/** Historical mockup HTML panels are authored/forced at 460px. */
+const MOCKUP_PANEL_WIDTH = 460;
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const SWEEP_VIEWPORTS = [
   { name: '1440x1000', width: 1440, height: 1000 },
@@ -203,44 +213,23 @@ async function routeGalleryTranscript(page: Page, runId: string): Promise<void> 
     });
   });
 }
-// Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
-
 /**
- * Sizes the room region to `TARGET_ROOM_WIDTH ± ROOM_TOLERANCE_PX` through the
- * production ratio path: measure the resizable group, write the exact room
- * ratio the panels need into the persisted split key, and remount so
- * `readRoomRatio` applies it. The measured region width — not the ratio — is
- * what gets asserted.
+ * Measures the outer Node Room panel (`#console-run-room` / `#legacy-run-room`)
+ * against the fixed-width contract in split mode. Fails on missing/zero boxes.
  */
-async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
+async function expectOuterOrRegionWidth(page: Page, surface: Surface): Promise<number> {
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((TARGET_ROOM_WIDTH + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
-  const room = await openToolRoom(page, surface, runId);
-  const width = (await room.boundingBox())?.width ?? 0;
+  await expect(panel, `${surface} outer room panel`).toBeVisible({ timeout: T.medium });
+  const box = await panel.boundingBox();
+  expect(box, `${surface} outer room bounding box`).toBeTruthy();
+  const width = box?.width ?? 0;
+  expect(width, `${surface} outer room width must be non-zero`).toBeGreaterThan(0);
+  const expected = ROOM_WIDTH_PX[surface];
   expect(
-    Math.abs(width - TARGET_ROOM_WIDTH),
-    `measured room width ${String(width)} must land within ${String(TARGET_ROOM_WIDTH)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    Math.abs(width - expected),
+    `outer #${ROOM_PANEL_ID[surface]} ${String(width)} must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+  ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
   return width;
 }
 
@@ -640,8 +629,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(axName).not.toContain('✓');
     if (axClosed.expanded !== null) expect(axClosed.expanded).toBe(false);
 
-    const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    await expectOuterOrRegionWidth(page, surface);
     await expectSummaryOneLine(summary);
 
     // Transcript list padding is the canonical 10px/12px on both surfaces.
@@ -905,13 +893,14 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(row).toHaveJSProperty('open', false);
     expect(await summary.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
 
+    const fixedLabel = String(ROOM_WIDTH_PX[surface]);
     const rowShot = await row.screenshot();
-    await testInfo.attach(`${surface}-tool-row-460.png`, {
+    await testInfo.attach(`${surface}-tool-row-${fixedLabel}.png`, {
       body: rowShot,
       contentType: 'image/png',
     });
     const roomShot = await room.screenshot();
-    await testInfo.attach(`${surface}-room-460.png`, {
+    await testInfo.attach(`${surface}-room-${fixedLabel}.png`, {
       body: roomShot,
       contentType: 'image/png',
     });
@@ -920,29 +909,29 @@ for (const surface of ['console', 'legacy'] as const) {
       fullPage: true,
     });
 
-    // Story 1.2 evidence: closed and open Raw at the canonical 460px panel,
-    // plus a desktop context shot, written to the supplement's evidence dir.
-    mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+    // Closed and open Raw at the fixed outer room width, plus a desktop context
+    // shot, are written to the current plan's evidence directory.
+    mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
     await summary.press('Enter');
     await expect(row).toHaveJSProperty('open', true);
     const closedRowShot = await row.screenshot({
-      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-closed-460.png`),
+      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-closed-${fixedLabel}.png`),
     });
-    await testInfo.attach(`${surface}-raw-closed-460.png`, {
+    await testInfo.attach(`${surface}-raw-closed-${fixedLabel}.png`, {
       body: closedRowShot,
       contentType: 'image/png',
     });
     await rawToggle.click();
     await expect(row.locator('pre')).toBeVisible({ timeout: T.medium });
     const openRowShot = await row.screenshot({
-      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-460.png`),
+      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-open-${fixedLabel}.png`),
     });
-    await testInfo.attach(`${surface}-raw-open-460.png`, {
+    await testInfo.attach(`${surface}-raw-open-${fixedLabel}.png`, {
       body: openRowShot,
       contentType: 'image/png',
     });
     await page.screenshot({
-      path: join(STORY_12_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
+      path: join(ROOM_ANATOMY_EVIDENCE_DIR, `${surface}-raw-open-1440.png`),
       fullPage: true,
     });
   });
@@ -1010,8 +999,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await routeGalleryTranscript(page, started.runId);
     let room = await openToolRoom(page, surface, started.runId);
     await expect(room.locator(ROW)).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
-    const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    const width = await expectOuterOrRegionWidth(page, surface);
     room = roomRegion(page);
     const rows = room.locator(ROW);
     await expect(rows).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
@@ -1096,7 +1084,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(unreadable).toHaveCount(1);
     await expect(unreadable).toContainText('output unreadable — open Raw');
 
-    // --- 460px body-bar geometry on every row: one line, Raw at far right. ---
+    // --- Fixed-width body-bar geometry on every row: one line, Raw at far right. ---
     for (let i = 0; i < GALLERY_TOOLS.length; i++) {
       const row = rowAt(i);
       const bar = row.locator(':scope > div > div').first();
@@ -1109,7 +1097,7 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(
         Math.abs(rawBox.x + rawBox.width - (barBox.x + barBox.width)),
         `row ${String(i)} Raw is flush right`
-      ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+      ).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
       expect(rawBox.height, `row ${String(i)} Raw is a 24px target`).toBeGreaterThanOrEqual(24);
       const barFits = await bar
         .locator('span')
@@ -1238,7 +1226,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await measureBody('matches path text', matches, matches.locator('.text-node-command').first());
 
     const roomShot = await room.screenshot();
-    await testInfo.attach(`${surface}-body-gallery-460.png`, {
+    await testInfo.attach(`${surface}-body-gallery-${String(ROOM_WIDTH_PX[surface])}.png`, {
       body: roomShot,
       contentType: 'image/png',
     });
@@ -1345,9 +1333,9 @@ test('[P1] [V:hitl.tool-row-contrast] HITL tool-row tones resolve to ≥4.5:1 on
     };
     evidence[surface] = surfaceEvidence;
   }
-  mkdirSync(STORY_12_EVIDENCE_DIR, { recursive: true });
+  mkdirSync(ROOM_ANATOMY_EVIDENCE_DIR, { recursive: true });
   writeFileSync(
-    join(STORY_12_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
+    join(ROOM_ANATOMY_EVIDENCE_DIR, 'raw-toggle-contrast.json'),
     `${JSON.stringify(rawEvidence, null, 2)}\n`
   );
   await testInfo.attach('raw-toggle-contrast.json', {
@@ -1380,9 +1368,9 @@ test('[P1] [V:hitl.tool-row-mockups] HITL tool-row mockups measured at 460px sha
     const panelBox = await panel.boundingBox();
     expect(panelBox).toBeTruthy();
     expect(
-      Math.abs((panelBox?.width ?? 0) - TARGET_ROOM_WIDTH),
-      `${mockup.file} panel must measure ${String(TARGET_ROOM_WIDTH)}px`
-    ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+      Math.abs((panelBox?.width ?? 0) - MOCKUP_PANEL_WIDTH),
+      `${mockup.file} panel must measure ${String(MOCKUP_PANEL_WIDTH)}px`
+    ).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
     const mockRow = panel.locator('.tcall').first();
     const mockSummary = mockRow.locator('summary').first();
     await expect(mockSummary).toBeVisible();

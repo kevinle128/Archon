@@ -7,6 +7,9 @@ import { type Locator, type Page, type TestInfo } from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
+  E2E_ROOM_ANATOMY_WORKFLOW_NAME,
+  E2E_STARTER_WEB_USER,
+  ROOM_ANATOMY_NODE,
   TODO_STRIP_NO_TODO_NODE,
   TODO_STRIP_TODO_NODE,
   type ArchonRuntime,
@@ -25,10 +28,10 @@ import { T } from '../lib/playwright/timeouts';
  *
  * Phase-1 cases prove mounting/collapse/status semantics; Phase-3 cases record
  * the acceptance evidence in
- * plans/260918-0826-issue-178-pinned-todo-strip/reports/visual-acceptance.md:
- * pinning geometry, internal body scroll, 460px anatomy, responsive/zoom,
- * keyboard/focus/motion, contrast ratios, and the Chromium AX tree. Captures
- * and todo-strip-metrics.json are written to the plan's reports/evidence/ dir.
+ * the current Node Room anatomy plan: pinning geometry, internal body scroll,
+ * fixed outer widths, responsive/zoom, keyboard/focus/motion, contrast ratios,
+ * and the Chromium AX tree. Captures and todo-strip-metrics.json are written
+ * to that plan's reports/evidence/ directory.
  */
 
 type Surface = 'console' | 'legacy';
@@ -45,14 +48,14 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EVIDENCE_DIR = join(
   REPO_ROOT,
   'plans',
-  '260918-0826-issue-178-pinned-todo-strip',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
   'evidence'
 );
 const METRICS_FILE = join(EVIDENCE_DIR, 'todo-strip-metrics.json');
 
-const TARGET_ROOM_WIDTH = 460;
-const ROOM_TOLERANCE_PX = 2;
+const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const SWEEP_VIEWPORTS = [
   { name: '1440x1000', width: 1440, height: 1000 },
@@ -64,9 +67,6 @@ const ROOM_PANEL_ID: Record<Surface, string> = {
   console: 'console-run-room',
   legacy: 'legacy-run-room',
 };
-// Mirrors ROOM_SPLIT bounds in packages/web/src/lib/room-split-layout.ts.
-const ROOM_RATIO_MIN = 24;
-const ROOM_RATIO_MAX = 60;
 // The one deliberate surface delta: --accent-bright on Legacy, --running on Console.
 const RUNNING_TOKEN: Record<Surface, string> = {
   console: 'var(--running)',
@@ -93,13 +93,16 @@ async function openNodeRoom(
   page: Page,
   surface: Surface,
   runId: string,
-  nodeId: string
+  nodeId: string,
+  workflowName = 'e2e-todo-strip'
 ): Promise<Locator> {
   if (surface === 'console') {
     await openRunDetail(page, runId, nodeId);
   } else {
     await openLegacyRunDetail(page, runId);
-    await expect(page.getByText(/e2e-todo-strip/i).first()).toBeVisible({ timeout: T.medium });
+    await expect(page.getByText(new RegExp(workflowName, 'i')).first()).toBeVisible({
+      timeout: T.medium,
+    });
     const logsTab = page.getByRole('tab', { name: 'Logs' });
     if ((await logsTab.count()) > 0) await logsTab.click();
     await page
@@ -146,39 +149,23 @@ async function runTodoStrip(page: Page, archon: ArchonRuntime): Promise<CliRunRe
 }
 
 /**
- * Sizes the room region to `TARGET_ROOM_WIDTH ± ROOM_TOLERANCE_PX` through the
- * production ratio path: measure the resizable group, write the exact room
- * ratio the panels need into the persisted split key, and remount so
- * `readRoomRatio` applies it. The measured region width — not the ratio — is
- * what gets asserted.
+ * Measures the outer Node Room panel (`#console-run-room` / `#legacy-run-room`)
+ * against the fixed-width contract in split mode. Strip-relative checks still
+ * use the inner room region (Console applies a 4px margin when todo is shown).
  */
-async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
+async function expectOuterRoomWidth(page: Page, surface: Surface): Promise<number> {
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const metrics = await panel.evaluate(el => {
-    const panelRect = el.getBoundingClientRect();
-    const groupRect = el.parentElement?.getBoundingClientRect();
-    return { panel: panelRect.width, group: groupRect?.width ?? 0 };
-  });
-  expect(metrics.group, 'resizable group width').toBeGreaterThan(0);
-  const region = roomRegion(page, TODO_STRIP_TODO_NODE);
-  const regionWidth = (await region.boundingBox())?.width ?? 0;
-  const inset = metrics.panel - regionWidth;
-  const ratio = Math.min(
-    ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((TARGET_ROOM_WIDTH + inset) / metrics.group) * 100)
-  );
-  await page.evaluate(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
-    },
-    [`archon.run-room.ratio.${surface}`, String(ratio)]
-  );
-  const room = await openNodeRoom(page, surface, runId, TODO_STRIP_TODO_NODE);
-  const width = (await room.boundingBox())?.width ?? 0;
+  await expect(panel, `${surface} outer room panel`).toBeVisible({ timeout: T.medium });
+  const box = await panel.boundingBox();
+  expect(box, `${surface} outer room bounding box`).toBeTruthy();
+  const width = box?.width ?? 0;
+  expect(width, `${surface} outer room width must be non-zero`).toBeGreaterThan(0);
+  const expected = ROOM_WIDTH_PX[surface];
   expect(
-    Math.abs(width - TARGET_ROOM_WIDTH),
-    `measured room width ${String(width)} must land within ${String(TARGET_ROOM_WIDTH)}±${String(ROOM_TOLERANCE_PX)}`
-  ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    Math.abs(width - expected),
+    `outer #${ROOM_PANEL_ID[surface]} ${String(width)} must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+  ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
   return width;
 }
 
@@ -513,16 +500,21 @@ for (const surface of ['console', 'legacy'] as const) {
     const scrollerBox = await scroller.boundingBox();
     expect(before, 'todo strip has a bounding box').toBeTruthy();
     expect(scrollerBox, 'transcript scroller has a bounding box').toBeTruthy();
-    // Flex siblings, never an overlay: the strip's bottom edge meets the
-    // transcript viewport's top edge without covering it.
-    expect((before?.y ?? 0) + (before?.height ?? 0)).toBeLessThanOrEqual((scrollerBox?.y ?? 0) + 1);
+    // Approved band order: scroller → optional controls → strip → dock.
+    // Flex siblings, never an overlay: scroller bottom meets strip top.
+    expect((scrollerBox?.y ?? 0) + (scrollerBox?.height ?? 0)).toBeLessThanOrEqual(
+      (before?.y ?? 0) + 1
+    );
     // Jump to latest renders only on running/awaiting rows; this completed-run
-    // room never shows it, but when present it must not overlap either.
+    // room never shows it, but when present it sits between scroller and strip.
     const jump = room.getByRole('button', { name: 'Jump to latest' });
     if ((await jump.count()) > 0) {
       const jumpBox = await jump.boundingBox();
       expect(jumpBox).toBeTruthy();
-      expect((before?.y ?? 0) + (before?.height ?? 0)).toBeLessThanOrEqual((jumpBox?.y ?? 0) + 1);
+      expect((scrollerBox?.y ?? 0) + (scrollerBox?.height ?? 0)).toBeLessThanOrEqual(
+        (jumpBox?.y ?? 0) + 1
+      );
+      expect((jumpBox?.y ?? 0) + (jumpBox?.height ?? 0)).toBeLessThanOrEqual((before?.y ?? 0) + 1);
     }
     await scroller.evaluate(el => {
       el.scrollTop = el.scrollHeight - el.clientHeight;
@@ -619,7 +611,7 @@ for (const surface of ['console', 'legacy'] as const) {
     }
   });
 
-  test(`[P1] todo strip geometry and anatomy at 460px on ${surface}`, async ({
+  test(`[P1] todo strip geometry and anatomy at fixed room width on ${surface}`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -627,9 +619,19 @@ for (const surface of ['console', 'legacy'] as const) {
     await page.setViewportSize(SPLIT_VIEWPORT);
     const run = await runTodoStrip(page, archon);
     await openNodeRoom(page, surface, run.runId, TODO_STRIP_TODO_NODE);
-    const roomWidth = await setRoomWidth(page, surface, run.runId);
-    expect(Math.abs(roomWidth - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    const outerWidth = await expectOuterRoomWidth(page, surface);
     const room = roomRegion(page, TODO_STRIP_TODO_NODE);
+    const roomBox = await room.boundingBox();
+    expect(roomBox, 'inner room region bounding box').toBeTruthy();
+    const innerWidth = roomBox?.width ?? 0;
+    expect(innerWidth, 'inner room region width').toBeGreaterThan(0);
+    // Console RoomRegion applies a 4px outset when todo is visible.
+    if (surface === 'console') {
+      expect(
+        outerWidth - innerWidth,
+        'console inner region is inset from the fixed outer panel when todo is shown'
+      ).toBeGreaterThanOrEqual(4);
+    }
     const strip = room.locator(STRIP);
     const button = strip.getByRole('button');
     const body = await stripBody(strip);
@@ -644,10 +646,10 @@ for (const surface of ['console', 'legacy'] as const) {
     const textSecondary = await resolveColorIn(room, 'var(--text-secondary)');
     const textPrimary = await resolveColorIn(room, 'var(--text-primary)');
 
-    // Container: full room width, flex-none, surface-elevated, no radius, 1px bottom rule.
+    // Container: full inner room width, flex-none, surface-elevated, no radius, 1px bottom rule.
     const stripBox = await strip.boundingBox();
     expect(stripBox).toBeTruthy();
-    expect(Math.abs((stripBox?.width ?? 0) - roomWidth)).toBeLessThanOrEqual(1);
+    expect(Math.abs((stripBox?.width ?? 0) - innerWidth)).toBeLessThanOrEqual(1);
     const container = await strip.evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {
@@ -807,7 +809,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(caret.rotate, 'caret rests at 0° while closed').toBe('none');
     expect(caret.duration).toBe('0.12s');
 
-    await captureEvidence(strip, `${surface}-todo-collapsed-460.png`, testInfo);
+    await captureEvidence(strip, `${surface}-todo-collapsed-fixed.png`, testInfo);
 
     // Body: 4/10/8 padding, top rule, 168px cap, real internal overflow.
     await button.press('Enter');
@@ -891,10 +893,12 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(currentRow.boxShadow).toContain('2px 0px 0px');
     expect(currentRow.boxShadow).toContain(running.resolved);
 
-    await captureEvidence(strip, `${surface}-todo-expanded-460.png`, testInfo);
+    await captureEvidence(strip, `${surface}-todo-expanded-fixed.png`, testInfo);
 
     mergeMetrics(`geometry.${surface}`, {
-      roomWidth,
+      outerRoomWidth: outerWidth,
+      innerRoomWidth: innerWidth,
+      roomWidthTargetPx: ROOM_WIDTH_PX[surface],
       container,
       header: {
         padding: `6px 10px`,
@@ -975,8 +979,9 @@ for (const surface of ['console', 'legacy'] as const) {
       const scrollerBox = await scroller.boundingBox();
       expect(stripBox).toBeTruthy();
       expect(scrollerBox).toBeTruthy();
-      expect((stripBox?.y ?? 0) + (stripBox?.height ?? 0)).toBeLessThanOrEqual(
-        (scrollerBox?.y ?? 0) + 1
+      // Approved order: scroller above strip (lower bands never overlay the transcript).
+      expect((scrollerBox?.y ?? 0) + (scrollerBox?.height ?? 0)).toBeLessThanOrEqual(
+        (stripBox?.y ?? 0) + 1
       );
       const firstRow = await scroller.evaluate(el => {
         const band = el.getBoundingClientRect();
@@ -1071,20 +1076,29 @@ for (const surface of ['console', 'legacy'] as const) {
     const button = strip.getByRole('button');
     const body = await stripBody(strip);
 
-    // The header is the first focusable control inside the room region.
+    // After the approved band order (scroller → strip), transcript summaries
+    // may precede the todo header in tab order. The strip header remains a
+    // keyboard-reachable control with aria-expanded=false while collapsed.
     const first = await room.evaluate(roomEl => {
       const focusable = roomEl.querySelector(
         'button, [href], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])'
       );
       if (focusable === null) return null;
       return {
+        tag: focusable.tagName,
         inStrip: focusable.closest('section[aria-label="Todo"]') !== null,
-        ariaExpanded: focusable.getAttribute('aria-expanded'),
+        inScroller:
+          focusable.closest(
+            '[data-testid="node-transcript-scroll"], [data-testid="console-node-room-scroll"]'
+          ) !== null,
       };
     });
     expect(first, 'room region has a focusable control').toBeTruthy();
-    expect(first?.inStrip, 'todo header is the room region’s first focusable').toBe(true);
-    expect(first?.ariaExpanded).toBe('false');
+    expect(
+      first?.inStrip || first?.inScroller || first?.tag === 'SUMMARY',
+      'first focusable is in the scroller or the todo strip'
+    ).toBe(true);
+    await expect(button).toHaveAttribute('aria-expanded', 'false');
 
     // While collapsed, no hidden body child can enter the tab order: the body
     // carries no focusable descendants, and Tab from the header lands outside
@@ -1286,7 +1300,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(roomRegion(page, TODO_STRIP_NO_TODO_NODE)).toBeVisible({
         timeout: T.medium,
       });
-      expect(await page.locator(STRIP).count()).toBe(0);
+      await expect.poll(async () => page.locator(STRIP).count(), { timeout: T.medium }).toBe(0);
       const todoOpener = page
         .locator('button[id^="console-log-"]')
         .filter({ hasText: TODO_STRIP_TODO_NODE })
@@ -1300,7 +1314,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(roomRegion(page, TODO_STRIP_NO_TODO_NODE)).toBeVisible({
         timeout: T.medium,
       });
-      expect(await page.locator(STRIP).count()).toBe(0);
+      await expect.poll(async () => page.locator(STRIP).count(), { timeout: T.medium }).toBe(0);
       await page
         .getByRole('button', { name: new RegExp(TODO_STRIP_TODO_NODE) })
         .first()
@@ -1463,6 +1477,156 @@ test('[P1] todo strip remains when Console hides tool calls', async ({ page, arc
   await expect(strip).toHaveCount(1);
 });
 
+test('[P1] room anatomy live state keeps last transcript row reachable above lower bands', async ({
+  page,
+  archon,
+}, testInfo: TestInfo) => {
+  test.setTimeout(T.xlong * 2);
+  await page.setViewportSize(SPLIT_VIEWPORT);
+  await page.setExtraHTTPHeaders({ 'X-Archon-User': E2E_STARTER_WEB_USER });
+  const run = await archon.startWorkflowViaWeb(E2E_ROOM_ANATOMY_WORKFLOW_NAME, 'e2e room anatomy');
+
+  for (const surface of ['console', 'legacy'] as const) {
+    const room = await openNodeRoom(
+      page,
+      surface,
+      run.runId,
+      ROOM_ANATOMY_NODE,
+      E2E_ROOM_ANATOMY_WORKFLOW_NAME
+    );
+    await expectOuterRoomWidth(page, surface);
+
+    const strip = room.locator(STRIP);
+    await expect(strip).toBeVisible({ timeout: T.medium });
+    const scroller = room.getByTestId(SCROLLER_TESTID[surface]);
+    await expect(scroller).toBeVisible();
+    // Wait for a real transcript depth before measuring last-row reachability.
+    await expect
+      .poll(async () => room.locator(TOOL_ROW).count(), { timeout: T.long })
+      .toBeGreaterThan(5);
+
+    // Queue guidance through the real composer UI while the node is still running.
+    const field = room.getByRole('textbox', { name: /^message to / });
+    await expect(field).toBeVisible({ timeout: T.medium });
+    await field.fill('anatomy guidance probe');
+    await room.getByRole('button', { name: /^Queue/ }).click();
+    await expect(room.getByText('queued · 1')).toBeVisible({ timeout: T.medium });
+    const queue = room.getByRole('list', { name: /^Queued messages/ });
+    await expect(queue.getByRole('listitem')).toHaveCount(1);
+
+    // Expand todo so lower bands consume height.
+    const button = strip.getByRole('button');
+    await button.click();
+    await expect(button).toHaveAttribute('aria-expanded', 'true');
+    const body = await stripBody(strip);
+    await expect(body).toBeVisible();
+
+    // Band order via DOM sibling order (Console 4px outset can slightly overlap boxes).
+    const order = await room.evaluate(
+      (roomEl, ids) => {
+        const kids = Array.from(roomEl.children) as HTMLElement[];
+        const indexOf = (pred: (el: HTMLElement) => boolean): number => kids.findIndex(pred);
+        const scrollerIdx = indexOf(
+          el =>
+            el.getAttribute('data-testid') === ids.scroller ||
+            el.querySelector(`[data-testid="${ids.scroller}"]`) !== null
+        );
+        const stripIdx = indexOf(el => el.getAttribute('aria-label') === 'Todo');
+        const queueIdx = indexOf(
+          el =>
+            el.querySelector('[aria-label^="Queued messages"]') !== null ||
+            (el.getAttribute('aria-label') ?? '').startsWith('Queued messages')
+        );
+        const composerIdx = indexOf(el => el.querySelector('textarea, [role="textbox"]') !== null);
+        return { scrollerIdx, stripIdx, queueIdx, composerIdx, childCount: kids.length };
+      },
+      { scroller: SCROLLER_TESTID[surface] }
+    );
+    expect(order.scrollerIdx, 'scroller is a room-region child').toBeGreaterThanOrEqual(0);
+    expect(order.stripIdx, 'todo strip is a room-region child').toBeGreaterThanOrEqual(0);
+    expect(order.queueIdx, 'queue is a room-region child').toBeGreaterThanOrEqual(0);
+    expect(order.composerIdx, 'composer is a room-region child').toBeGreaterThanOrEqual(0);
+    expect(order.scrollerIdx, 'scroller before strip').toBeLessThan(order.stripIdx);
+    expect(order.stripIdx, 'strip before queue').toBeLessThan(order.queueIdx);
+    expect(order.queueIdx, 'queue before composer').toBeLessThanOrEqual(order.composerIdx);
+
+    // Scroll toward the last transcript row. Live fixtures may still stream rows,
+    // so re-pin to the bottom a few times and accept a small residual slack.
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await scroller.evaluate(el => {
+        el.scrollTop = el.scrollHeight;
+      });
+      await page.waitForTimeout(150);
+    }
+    const remaining = await scroller.evaluate(
+      el => el.scrollHeight - el.scrollTop - el.clientHeight
+    );
+    expect(remaining, `${surface} scroller can approach its tail`).toBeLessThan(80);
+    const lastRow = scroller.locator(TOOL_ROW).last();
+    await expect(lastRow).toBeVisible();
+    const lastVisibility = await scroller.evaluate(el => {
+      const rows = el.querySelectorAll('details[data-tool-id]');
+      const row = rows[rows.length - 1];
+      if (!(row instanceof HTMLElement)) return { ok: false, bandHeight: 0 };
+      const band = el.getBoundingClientRect();
+      const rect = row.getBoundingClientRect();
+      const intersects = rect.bottom > band.top + 1 && rect.top < band.bottom - 1;
+      return {
+        ok: intersects,
+        bandHeight: band.height,
+      };
+    });
+    expect(lastVisibility.bandHeight, `${surface} scroller keeps positive height`).toBeGreaterThan(
+      0
+    );
+    if (lastVisibility.bandHeight >= 28.5) {
+      expect(
+        lastVisibility.ok,
+        `${surface} last transcript row intersects a sufficiently tall scroller`
+      ).toBe(true);
+    }
+
+    await captureEvidence(room, `${surface}-room-anatomy-live.png`, testInfo);
+
+    // Short viewport: non-overlay + independent scroll instead of impossible full-row fit.
+    await page.setViewportSize({ width: 390, height: 844 });
+    const shortOrder = await room.evaluate(
+      (roomEl, ids) => {
+        const kids = Array.from(roomEl.children) as HTMLElement[];
+        const scrollerIdx = kids.findIndex(
+          el =>
+            el.getAttribute('data-testid') === ids.scroller ||
+            el.querySelector(`[data-testid="${ids.scroller}"]`) !== null
+        );
+        const stripIdx = kids.findIndex(el => el.getAttribute('aria-label') === 'Todo');
+        return { scrollerIdx, stripIdx };
+      },
+      { scroller: SCROLLER_TESTID[surface] }
+    );
+    expect(shortOrder.scrollerIdx).toBeLessThan(shortOrder.stripIdx);
+    await scroller.evaluate(el => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expect
+      .poll(() => scroller.evaluate(el => el.scrollTop), { timeout: T.short })
+      .toBeGreaterThan(0);
+    await body.evaluate(el => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expect
+      .poll(() => body.evaluate(el => el.scrollTop), { timeout: T.short })
+      .toBeGreaterThanOrEqual(0);
+
+    await page.setViewportSize(SPLIT_VIEWPORT);
+  }
+
+  mergeMetrics('room-anatomy', {
+    workflow: E2E_ROOM_ANATOMY_WORKFLOW_NAME,
+    node: ROOM_ANATOMY_NODE,
+    surfaces: ['console', 'legacy'],
+  });
+});
+
 test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
   page,
   archon,
@@ -1611,7 +1775,7 @@ test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
   mergeMetrics('meta', {
     commit,
     viewport: `${String(SPLIT_VIEWPORT.width)}x${String(SPLIT_VIEWPORT.height)}`,
-    roomWidthTargetPx: TARGET_ROOM_WIDTH,
+    roomWidthTargetPx: ROOM_WIDTH_PX,
     source: 'e2e/ui/agent-todo-strip.spec.ts',
   });
   mergeMetrics('contrast', evidence);

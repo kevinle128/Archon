@@ -39,7 +39,7 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "89cf15455fe4491f5a03a050264839184deebec0f9ea895e662705cc559ad32b"
+      "sha256": "cf4bc516b30f244f840c0f27be89e3adb6d4ff757bdf108c52eed92ecc9d29bc"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
@@ -83,11 +83,11 @@
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
-      "sha256": "6cbef294819fe38ac308d41c9c85dbbb4216626abb9babe0596ecd974d4b18cc"
+      "sha256": "ea93a6cdc75fc86f08c787da685a91031ca71d021daed40877db1e993cfb6f89"
     },
     {
       "path": "packages/web/src/index.css",
-      "sha256": "d91dd61ff791a67718c5654450c1095058b9259a1f78b22670c892840a636b92"
+      "sha256": "9cb507a956a0ba72f3f13f2cbd48283458f661bd9f7d5e6e5e5c4cc8b15af76a"
     },
     {
       "path": "packages/web/src/experiments/console/theme.css",

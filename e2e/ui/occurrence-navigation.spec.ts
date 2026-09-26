@@ -60,18 +60,18 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EVIDENCE_DIR = join(
   REPO_ROOT,
   'plans',
-  '260918-1711-issue-180-navigate-occurrences-and-loop-iterations',
+  '260925-2145-issue-266-console-legacy-room-anatomy',
   'reports',
   'evidence'
 );
 
-// Room width is `roomRatio`% of the split container (default 40). Legacy's
-// container is the viewport (1150 × 0.4 = 460); Console subtracts the ~280px
-// project rail (1430 → ~1150 container → ~460). Asserted within ±8px and the
-// measured value is recorded in the artifact name/report.
+// Console outer 520 / Legacy outer 460 CSS px in split mode (±1).
+// Measured value is recorded in the artifact name/report.
 const CONSOLE_WIDE_VIEWPORT = { width: 1430, height: 560 } as const;
 const LEGACY_WIDE_VIEWPORT = { width: 1150, height: 560 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
+const ROOM_WIDTH_PX = { console: 520, legacy: 460 } as const;
+const OUTER_WIDTH_TOLERANCE_PX = 1;
 const ROOM_PANEL_ID: Record<'console' | 'legacy', string> = {
   console: 'console-run-room',
   legacy: 'legacy-run-room',
@@ -422,12 +422,16 @@ async function expectNoLiveRegion(scroller: Locator): Promise<void> {
 
 async function measuredRoomWidth(page: Page, surface: 'console' | 'legacy'): Promise<number> {
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
-  const box = (await panel.count()) > 0 ? await panel.boundingBox() : null;
-  const measured = box ?? (await roomRegion(page).boundingBox());
-  expect(measured, `${surface} room width`).toBeTruthy();
-  const width = measured?.width ?? 0;
-  expect(width, `${surface} room ≈460px authoritative width`).toBeGreaterThanOrEqual(452);
-  expect(width, `${surface} room ≈460px authoritative width`).toBeLessThanOrEqual(468);
+  await expect(panel, `${surface} outer room panel`).toBeVisible({ timeout: T.medium });
+  const box = await panel.boundingBox();
+  expect(box, `${surface} outer room bounding box`).toBeTruthy();
+  const width = box?.width ?? 0;
+  expect(width, `${surface} outer room width must be non-zero`).toBeGreaterThan(0);
+  const expected = ROOM_WIDTH_PX[surface];
+  expect(
+    Math.abs(width - expected),
+    `outer #${ROOM_PANEL_ID[surface]} ${String(width)} must be ${String(expected)}±${String(OUTER_WIDTH_TOLERANCE_PX)}`
+  ).toBeLessThanOrEqual(OUTER_WIDTH_TOLERANCE_PX);
   return width;
 }
 

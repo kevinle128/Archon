@@ -1165,8 +1165,9 @@ describe('LegacyNodeRoom dispatcher', () => {
     const strip = host.querySelector('section[aria-label="Todo"]');
     const scroller = host.querySelector('[data-testid="node-transcript-scroll"]');
     if (scroller === null) throw new Error('missing transcript scroller');
-    expect(region.firstElementChild).toBe(strip);
-    expect(strip?.nextElementSibling).toBe(scroller);
+    // Approved order: scroller first; todo follows as a room-region sibling.
+    expect(region.firstElementChild).toBe(scroller);
+    expect(scroller.nextElementSibling).toBe(strip);
     expect(scroller.getAttribute('class')).toContain('overflow-y-auto');
     expect(scroller.querySelectorAll('[role="region"]')).toHaveLength(0);
     expect(strip?.textContent).toContain('0/4');
