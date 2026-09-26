@@ -679,6 +679,7 @@ describe('LegacyGraphLogsPane', () => {
     const mainView = host.querySelector('#legacy-run-view');
     expect(mainView).toBe(viewPanel);
     expect((mainView as HTMLElement).hidden).toBe(true);
+    expect((mainView as HTMLElement).classList.contains('hidden')).toBe(true);
     const back = Array.from(host.querySelectorAll('button')).find(candidate =>
       (candidate.textContent ?? '').includes('Back')
     );
@@ -709,6 +710,7 @@ describe('LegacyGraphLogsPane', () => {
     const closedMain = host.querySelector('#legacy-run-view');
     expect(closedMain).not.toBeNull();
     expect((closedMain as HTMLElement).hidden).toBe(false);
+    expect((closedMain as HTMLElement).classList.contains('flex')).toBe(true);
     expect(host.querySelector('[data-testid="legacy-node-room"]')).toBeNull();
   });
 

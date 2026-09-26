@@ -775,6 +775,9 @@ describe('ConsoleInspectPane', () => {
     const main = requireHtmlElement(host.querySelector('#console-run-view'), 'main pane');
     expect(main).toBe(splitMain);
     expect(main.hasAttribute('hidden')).toBe(true);
+    // A display utility beats `[hidden]` in Tailwind, so the class must hide it too.
+    expect(main.classList.contains('hidden')).toBe(true);
+    expect(main.classList.contains('flex')).toBe(false);
     expect(host.textContent).toContain('Log header');
     expect(host.querySelector('[role="separator"]')).toBeNull();
 

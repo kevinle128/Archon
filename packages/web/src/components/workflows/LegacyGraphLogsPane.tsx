@@ -613,7 +613,14 @@ export function LegacyGraphLogsPane({
       <div className="flex min-h-0 flex-1" style={{ overflow: 'hidden' }}>
         <div
           id="legacy-run-view"
-          className="flex min-h-0 min-w-0 flex-1 flex-col"
+          // The `hidden` attribute alone does not hide a `.flex` element:
+          // Tailwind preflight gives `[hidden]` zero specificity, so the
+          // display utility must change as well.
+          className={
+            mode === 'single' && roomOpen
+              ? 'hidden min-h-0 min-w-0 flex-1 flex-col'
+              : 'flex min-h-0 min-w-0 flex-1 flex-col'
+          }
           hidden={mode === 'single' && roomOpen}
         >
           {wrappedLeft}
