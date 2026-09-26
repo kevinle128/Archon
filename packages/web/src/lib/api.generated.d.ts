@@ -2551,8 +2551,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Queue operator guidance for a running workflow node
-         * @description Accepts operator guidance for a live in-process agent node without interrupting the current provider turn. Queued messages drain at the next natural provider-turn boundary on the same provider session; `intent: "send_now"` queues identically until an idle-after-interrupt state exists. Idempotent on `message_id` — a duplicate replays the original receipt. Rejections leave the run, queue, and transcript unchanged.
+         * Persist operator guidance for a running workflow node
+         * @description Durably inserts operator guidance for a live in-process agent node without interrupting the current provider turn — commits before it's acknowledged. Queued messages claim at the next natural provider-turn boundary on the same provider session; `intent: "send_now"` additionally wakes an idle-after-interrupt handle. `queued_message_id` instead selects an existing durable entry for per-item Send now (soft injection into the active turn); honored only when the live provider capability proves soft injection, else 409 `soft_injection_unavailable`. Idempotent on `message_id` — a duplicate replays the original receipt. Rejections leave the run, queue, and transcript unchanged.
          */
         post: {
             parameters: {
@@ -2570,7 +2570,7 @@ export interface paths {
                 };
             };
             responses: {
-                /** @description Guidance accepted onto the steering queue */
+                /** @description Guidance committed to the durable queue */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2615,7 +2615,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description Node no longer running */
+                /** @description Node finished, recovery required, or soft injection unavailable */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -2624,7 +2624,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description No live steering session in this process */
+                /** @description Node was never steerable */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -2652,7 +2652,7 @@ export interface paths {
         put?: never;
         /**
          * Interrupt the current provider turn of a running workflow node
-         * @description Stops the live provider turn of an interrupt-capable in-process agent node without cancelling the run. The request awaits the engine classification and returns the ACTUAL settled sub-state: `idle-after-interrupt` (the turn stopped and the node awaits Send now on the same provider session) or `generating` (the turn already ended naturally or queued guidance drained it before Stop took effect). Terminal outcomes map to the steering error shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.
+         * @description Stops the live provider turn of an interrupt-capable in-process agent node without cancelling the run. The request awaits the engine classification and returns the ACTUAL settled sub-state: `idle-after-interrupt` (the turn stopped and the node awaits Send now on the same provider session) or `generating` (the turn already ended naturally or queued guidance drained it before Stop took effect). Terminal outcomes map to the steering error shape — 409 `node_finished` (terminal) or 409 `recovery_required` (a durable non-terminal node with no live handle after a server restart), 422 `not_steerable_here` (never a steerable node). Has no request body.
          */
         post: {
             parameters: {
@@ -2702,7 +2702,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description Node no longer running */
+                /** @description Node finished or recovery required */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -2711,7 +2711,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description No live steering session in this process */
+                /** @description Node was never steerable */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -2748,7 +2748,7 @@ export interface paths {
         put?: never;
         /**
          * Re-arm the idle-await inactivity timer for a running workflow node
-         * @description Bodyless authenticated keepalive for an in-process steering handle. Re-arms the idle-await inactivity timer only when the handle is live and idle-after-interrupt with a pending waiter; other live handle states are a successful no-op. Never resolves idle-await, never writes a durable row, and never sends operator prose. Terminal outcomes map to the steering error shape — 409 `node_finished`, 422 `not_steerable_here`. Has no request body.
+         * @description Bodyless authenticated keepalive for an in-process steering handle. Re-arms the idle-await inactivity timer only when the handle is live and idle-after-interrupt with a pending waiter; other live handle states are a successful no-op. Never resolves idle-await, never writes a durable row, and never sends operator prose. Terminal outcomes map to the steering error shape — 409 `node_finished` (terminal) or 409 `recovery_required` (a durable non-terminal node with no live handle), 422 `not_steerable_here` (never a steerable node). Has no request body.
          */
         post: {
             parameters: {
@@ -2798,7 +2798,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description Node no longer running */
+                /** @description Node finished or recovery required */
                 409: {
                     headers: {
                         [name: string]: unknown;
@@ -2807,7 +2807,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description No live steering session in this process */
+                /** @description Node was never steerable */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -2844,8 +2844,8 @@ export interface paths {
         put?: never;
         post?: never;
         /**
-         * Withdraw a queued guidance message from a running workflow node
-         * @description Removes one still-pending operator message from the node's in-process steering queue. Bodyless; idempotent on `messageId` — a repeat, already-drained, or never-seen id returns the same success receipt. Rejections leave the run, queue, and transcript unchanged.
+         * Withdraw a queued guidance message from a workflow node
+         * @description Removes one still-claimable entry from the node's durable queue. Manages durable guidance rather than the live provider process, so it works during `recovery_required` too — a restored node without a live handle can still have its queue edited. Bodyless; idempotent on `messageId` — a repeat, already-claimed, or never-seen id returns the same success receipt. Rejections leave the run, queue, and transcript unchanged.
          */
         delete: {
             parameters: {
@@ -2860,7 +2860,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Message withdrawn or already absent from the queue */
+                /** @description Message withdrawn or already unclaimable */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -2914,15 +2914,6 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description No live steering session in this process */
-                422: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SteeringError"];
-                    };
-                };
                 /** @description Server error */
                 500: {
                     headers: {
@@ -2947,8 +2938,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read a running workflow node's queued guidance snapshot
-         * @description Returns the node's in-process steering queue — only still-pending operator messages, in receipt order. Bodyless and mutation-free: no request body, no query parameters, and the read never changes the run, queue, or transcript. Every outcome carries `Cache-Control: no-store`. Live and parked handles read normally; a closed handle or terminal run/node is 409, and a known non-terminal node with no in-process handle is 422.
+         * Read a running workflow node's durable guidance queue
+         * @description Returns the node's durable queue in server FIFO order, including delivery state, the durable auto-send setting, and provider capability data. Bodyless and mutation-free: no request body, no query parameters, and the read never changes the run, queue, or transcript. Every outcome carries `Cache-Control: no-store`. `execution_state` is `live` with a live in-process handle, `recovery_required` for a durable non-terminal node with no live handle (a server restart), or `finished` for a terminal run/node — never a 409 for a terminal node, since its durable content (including `never_sent` records) must stay readable.
          */
         get: {
             parameters: {
@@ -2962,7 +2953,7 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Still-pending queued guidance in receipt order */
+                /** @description Durable guidance queue in server FIFO order */
                 200: {
                     headers: {
                         [name: string]: unknown;
@@ -3007,16 +2998,7 @@ export interface paths {
                         "application/json": components["schemas"]["SteeringError"];
                     };
                 };
-                /** @description Node no longer running */
-                409: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["SteeringError"];
-                    };
-                };
-                /** @description No live steering session in this process */
+                /** @description Node was never steerable */
                 422: {
                     headers: {
                         [name: string]: unknown;
@@ -3037,6 +3019,339 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the acting operator's server-side composer draft
+         * @description Returns the acting operator's own draft (private to them) for this node, plus the node durable auto-send setting shared by every permitted observer. `draft` is `null` when the operator has never saved one, or after it was cleared or sent. Available on a terminal node too — a saved draft is never discarded.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description The operator's draft and the node's auto-send setting */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringDraftResponse"];
+                    };
+                };
+                /** @description Malformed or schema-invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        /**
+         * Upsert the acting operator's server-side composer draft
+         * @description Persists the draft for this operator, run, and node after a debounced composer change. Another operator can never read or overwrite it. An empty string is accepted and stored verbatim — clearing is the idempotent DELETE route, not a second shape here.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PutSteeringDraftBody"];
+                };
+            };
+            responses: {
+                /** @description Draft committed — the saved draft and current auto-send setting */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringDraftResponse"];
+                    };
+                };
+                /** @description Malformed or schema-invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        /**
+         * Clear the acting operator's server-side composer draft
+         * @description Idempotent: clearing an already-cleared or never-saved draft is still a 200. Later reads never restore the cleared text.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Draft cleared (or already absent) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ClearSteeringDraftResponse"];
+                    };
+                };
+                /** @description Malformed or schema-invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/workflows/runs/{runId}/nodes/{nodeId}/auto-send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Persist the node's durable auto-send setting
+         * @description Durable per-node setting (not per-user): once set, every permitted observer of the node sees the same value. When enabled, the executor claims exactly one durable FIFO entry after each natural agent reply; an interrupted turn never auto-sends. Disabling it never withdraws or discards any queued entry.
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    runId: string;
+                    nodeId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PutAutoSendBody"];
+                };
+            };
+            responses: {
+                /** @description Auto-send setting committed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PutAutoSendResponse"];
+                    };
+                };
+                /** @description Malformed or schema-invalid request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Authentication required */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Forbidden */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Unknown run */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Node no longer running */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+                /** @description Server error */
+                500: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SteeringError"];
+                    };
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -5676,7 +5991,7 @@ export interface components {
             /** Format: uuid */
             message_id: string;
             /** @enum {string} */
-            state: "queued" | "awaiting_send_now";
+            state: "queued" | "awaiting_send_now" | "dispatching" | "sent" | "delivered" | "delivery_unknown";
         };
         SteeringError: {
             /** @enum {boolean} */
@@ -5692,6 +6007,8 @@ export interface components {
             message_id: string;
             /** @enum {string} */
             intent: "queue" | "send_now";
+            /** Format: uuid */
+            queued_message_id?: string;
         };
         InterruptWorkflowNodeResponse: {
             /** @enum {boolean} */
@@ -5712,12 +6029,48 @@ export interface components {
         ReadWorkflowNodeQueueResponse: {
             /** @enum {boolean} */
             success: true;
+            /** @enum {string} */
+            execution_state: "live" | "recovery_required" | "finished";
+            auto_send: boolean;
+            capabilities: components["schemas"]["SteeringCapabilities"];
             queued: components["schemas"]["QueuedGuidanceMessage"][];
+        };
+        SteeringCapabilities: {
+            soft_injection: boolean;
+            delivery_ack: boolean;
         };
         QueuedGuidanceMessage: {
             /** Format: uuid */
             message_id: string;
             message: string;
+            operator_user_id: string | null;
+            /** @enum {string} */
+            state: "queued" | "awaiting_send_now" | "dispatching" | "sent" | "delivered" | "delivery_unknown" | "never_sent";
+        };
+        SteeringDraftResponse: {
+            /** @enum {boolean} */
+            success: true;
+            draft: components["schemas"]["SteeringDraftSummary"];
+            auto_send: boolean;
+        };
+        SteeringDraftSummary: {
+            message: string;
+            updated_at: string;
+        } | null;
+        PutSteeringDraftBody: {
+            message: string;
+        };
+        ClearSteeringDraftResponse: {
+            /** @enum {boolean} */
+            success: true;
+        };
+        PutAutoSendResponse: {
+            /** @enum {boolean} */
+            success: true;
+            enabled: boolean;
+        };
+        PutAutoSendBody: {
+            enabled: boolean;
         };
         ResetWorkflowNodeSessionsResponse: {
             success: boolean;

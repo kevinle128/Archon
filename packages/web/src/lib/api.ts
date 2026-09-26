@@ -888,6 +888,111 @@ export async function readNodeGuidanceQueue(
   }
 }
 
+export type SteeringDraftResponse = components['schemas']['SteeringDraftResponse'];
+export type PutSteeringDraftBody = components['schemas']['PutSteeringDraftBody'];
+export type ClearSteeringDraftResponse = components['schemas']['ClearSteeringDraftResponse'];
+export type PutAutoSendBody = components['schemas']['PutAutoSendBody'];
+export type PutAutoSendResponse = components['schemas']['PutAutoSendResponse'];
+
+function nodeDraftUrl(runId: string, nodeId: string): string {
+  return (
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/draft'
+  );
+}
+
+/**
+ * GET /api/workflows/runs/:runId/nodes/:nodeId/draft — the acting operator's
+ * own composer draft plus the node's shared auto-send setting. Bodyless GET,
+ * no auto-retry; failures normalize through the same SteeringRequestError
+ * surface as the send/interrupt/queue helpers.
+ */
+export async function readNodeDraft(
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+): Promise<SteeringDraftResponse> {
+  try {
+    return await fetchJSON<SteeringDraftResponse>(nodeDraftUrl(runId, nodeId), {
+      method: 'GET',
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * PUT /api/workflows/runs/:runId/nodes/:nodeId/draft — upsert the acting
+ * operator's own composer draft after a debounced change. No auto-retry;
+ * failures normalize through SteeringRequestError.
+ */
+export async function saveNodeDraft(
+  runId: string,
+  nodeId: string,
+  body: PutSteeringDraftBody
+): Promise<SteeringDraftResponse> {
+  try {
+    return await fetchJSON<SteeringDraftResponse>(nodeDraftUrl(runId, nodeId), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft — clear the acting
+ * operator's own composer draft. Idempotent on an already-cleared or
+ * never-saved draft. No auto-retry; failures normalize through
+ * SteeringRequestError.
+ */
+export async function clearNodeDraft(
+  runId: string,
+  nodeId: string
+): Promise<ClearSteeringDraftResponse> {
+  try {
+    return await fetchJSON<ClearSteeringDraftResponse>(nodeDraftUrl(runId, nodeId), {
+      method: 'DELETE',
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * PUT /api/workflows/runs/:runId/nodes/:nodeId/auto-send — persist the
+ * node's durable, shared (not per-operator) auto-send setting. No
+ * auto-retry; failures normalize through SteeringRequestError (409
+ * `node_finished` once the run has ended).
+ */
+export async function setNodeAutoSend(
+  runId: string,
+  nodeId: string,
+  body: PutAutoSendBody
+): Promise<PutAutoSendResponse> {
+  const url =
+    '/api/workflows/runs/' +
+    encodeURIComponent(runId) +
+    '/nodes/' +
+    encodeURIComponent(nodeId) +
+    '/auto-send';
+  try {
+    return await fetchJSON<PutAutoSendResponse>(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
 export async function getWorkflowRunByWorker(
   workerPlatformId: string
 ): Promise<components['schemas']['WorkflowRunByWorkerResponse'] | null> {
