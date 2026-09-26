@@ -74,6 +74,41 @@ export interface LatestWorkflowNodeCheckpointQuery {
   retry_epoch?: number;
 }
 
+/**
+ * One row of git evidence bracketing a single node execution attempt. A node
+ * can execute more than once within a run (a loop body, a reactivated route
+ * target, a retried node) — each attempt gets its own row rather than sharing
+ * a key, so no attempt's evidence is ever overwritten by another.
+ */
+export interface WorkflowNodeExecutionEvidence {
+  id: string;
+  workflow_run_id: string;
+  node_id: string;
+  retry_epoch: number;
+  start_checkpoint_ref: string;
+  start_commit_sha: string;
+  started_at: Date | string;
+  end_checkpoint_ref: string | null;
+  end_commit_sha: string | null;
+  ended_at: Date | string | null;
+}
+
+/**
+ * `id` is minted by the caller (not the database) because it is also used to
+ * namespace the start/end git refs, which must exist before the database row
+ * does.
+ */
+export type WorkflowNodeExecutionEvidenceStartInput = Omit<
+  WorkflowNodeExecutionEvidence,
+  'started_at' | 'end_checkpoint_ref' | 'end_commit_sha' | 'ended_at'
+>;
+
+export interface WorkflowNodeExecutionEvidenceEndInput {
+  id: string;
+  end_checkpoint_ref: string;
+  end_commit_sha: string;
+}
+
 export interface WorkflowRetryContext {
   targetNodeId: string;
   retryEpoch: number;
@@ -432,6 +467,19 @@ export interface IWorkflowStore
   getLatestWorkflowNodeCheckpoint?(
     query: LatestWorkflowNodeCheckpointQuery
   ): Promise<WorkflowNodeCheckpoint | null>;
+
+  /**
+   * Record the start of one node execution's git evidence. Optional, mirroring
+   * the checkpoint methods above; core's real store adapter implements it now.
+   * Returns the generated row id, later passed to
+   * `completeWorkflowNodeExecutionEvidence` to fill in end evidence.
+   */
+  startWorkflowNodeExecutionEvidence?(
+    data: WorkflowNodeExecutionEvidenceStartInput
+  ): Promise<WorkflowNodeExecutionEvidence>;
+  completeWorkflowNodeExecutionEvidence?(
+    data: WorkflowNodeExecutionEvidenceEndInput
+  ): Promise<void>;
 
   // Per-codebase env vars for workflow node injection
   getCodebaseEnvVars(codebaseId: string): Promise<Record<string, string>>;
