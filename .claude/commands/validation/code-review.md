@@ -78,7 +78,7 @@ For each changed or new file, analyze for:
 - Confirm type errors by checking actual TypeScript definitions
 - Validate security concerns with context
 - Ensure flagged patterns are actually violations, not false positives
-- **High-confidence only (80+)** — do not flag style preferences or pre-existing issues
+- Give each issue a confidence score (0-100). Put issues below 80 in a separate "Lower-confidence" list so the reader can skip them; do not flag style preferences or pre-existing issues
 
 ### 5. Output
 

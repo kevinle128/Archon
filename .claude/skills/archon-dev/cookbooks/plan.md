@@ -69,10 +69,10 @@ So that {benefit/value}
 
 ## Phase 2: EXPLORE — Deep Codebase Intelligence
 
-Launch 2-3 agents in parallel using the Agent tool:
+Size the exploration to the change. For a large change, or one that touches more than one package, launch the agents below in parallel. For a small change inside one package, read the code yourself and fill the same sections from what you read.
 
 ### Agent 1: Codebase Explorer (`Explore`)
-**Always launch.** Write a detailed prompt asking it to find:
+**Launch for large or cross-package changes.** Write a detailed prompt asking it to find:
 - Similar features already implemented with file:line references
 - Naming conventions with actual examples
 - Error handling and logging patterns
@@ -82,7 +82,7 @@ Launch 2-3 agents in parallel using the Agent tool:
 Request actual code snippets — these become the "Patterns to Mirror" section.
 
 ### Agent 2: Codebase Analyst (`codebase-analyst`)
-**Always launch.** Write a detailed prompt asking it to:
+**Launch for large or cross-package changes.** Write a detailed prompt asking it to:
 - Map the blast radius — all files that would need to change
 - Trace data flow through related components
 - Identify entry points and integration contracts
