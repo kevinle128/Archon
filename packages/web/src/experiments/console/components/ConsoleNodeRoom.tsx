@@ -958,6 +958,7 @@ export function ConsoleNodeRoom({
         showToolCalls={showToolCalls}
         showSystem={showSystem}
         unknownScope={row.unknownScope === true}
+        todos={agentHistory.todos}
         onLoadFullOutput={async (item): Promise<unknown> => {
           const message = await loadMessage(run.id, row.nodeId, item.messageId);
           return message.kind === 'tool' ? message.payload.output : undefined;

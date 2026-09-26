@@ -1276,6 +1276,47 @@ describe('NodeTranscriptPane', () => {
     }
   });
 
+  test('only the latest todo row exposes the folded checklist inline', async () => {
+    await act(async () => {
+      renderPane({
+        row: REVIEW_ROW,
+        runStatus: 'completed',
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...TODO_MESSAGES],
+        }),
+      });
+    });
+    await flushUntil(host, 'todo strip', () => stripSection() !== null);
+
+    const todoRows = Array.from(host.querySelectorAll('details[data-tool-id]'));
+    expect(todoRows).toHaveLength(4);
+    const [earliest, , , latest] = todoRows;
+    if (earliest === undefined || latest === undefined) {
+      throw new Error('missing todo rows');
+    }
+
+    function rowSummaryOf(row: Element): HTMLElement {
+      const summary = row.querySelector('summary');
+      if (!(summary instanceof HTMLElement)) throw new Error('missing row summary');
+      return summary;
+    }
+
+    await act(async () => {
+      rowSummaryOf(earliest).click();
+      rowSummaryOf(latest).click();
+    });
+
+    expect(earliest.querySelector('[data-testid="todo-list"], ul')).toBeNull();
+    const latestChecklists = latest.querySelectorAll('ul');
+    if (latestChecklists.length === 0)
+      throw new Error('missing inline checklist on the latest row');
+    expect(latest.textContent).toContain('Map the message path');
+    expect(latest.textContent).toContain('· blocked: CI has one build job');
+    expect(latest.textContent).toContain('· dropped');
+    const headings = Array.from(latest.querySelectorAll('h3')).map(h => h.textContent);
+    expect(headings).toEqual(['Research', 'Implement']);
+  });
+
   test('renders no strip when the transcript has no foldable todo state', async () => {
     await act(async () => {
       renderPane({

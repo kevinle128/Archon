@@ -574,6 +574,7 @@ export function NodeTranscriptPane({
         occurrenceGrouping={occurrenceGrouping}
         headingIdPrefix={headingIdPrefix}
         unknownScope={row?.unknownScope ?? false}
+        todos={todos}
         runId={runId}
         isPending={waitingForFirstPage}
         error={pageState.error}
