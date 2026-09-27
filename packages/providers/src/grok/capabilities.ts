@@ -18,38 +18,57 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false,
   askHuman: false,
-  // Verified false against the real binary. No transport is currently
-  // wired at all — the shipped adapter uses `--single` (one-shot argv
-  // prompt, no stdin/no ACP), which cannot Stop or resume mid-turn by
-  // construction. The alternative real transport, `grok agent stdio`
-  // (ACP), was re-gated on grok 1.0.41 (up from 1.0.30/1.0.34 at the prior
-  // spikes): GROK_SPIKE_ONLY=B7,B9 (spike:interrupt:grok) still finds
-  // descendantsAliveAfterExit true for both the owned-tree mid-tool Stop
-  // and node-Cancel tree-termination gates — the same process-tree reaping
-  // failure the original round-2 spike found, unchanged across two binary
-  // versions. Text-only Stop/resume/fork passed in the original spike;
-  // mid-tool Stop did not, and a capability is not advertised on a partial
-  // pass.
+  // Still false, but the underlying mechanism is now proven, not just
+  // blocked: the shipped adapter uses `--single` (one-shot argv prompt,
+  // `stdin: 'ignore'`) — there is no channel to send anything on mid-turn,
+  // so the OS-level SIGTERM/SIGKILL path in `interrupt-resume-spike.ts`
+  // (B7/B9) reliably finds surviving descendants (owned-tree mid-tool Stop
+  // and node-Cancel both fail on grok 1.0.41/1.0.42). The alternative real
+  // transport, `grok agent stdio` (ACP), has an in-band `session/cancel`
+  // notification that asks the agent to stop its OWN turn instead of being
+  // killed from outside: `session-cancel-spike.ts` ran this against a
+  // fingerprinted, confirmed-alive tool-process descendant and got a clean
+  // reap 6/6 (3 trials each on 1.0.41 and 1.0.42) in 16-27ms, every time,
+  // with `stopReason: "cancelled"`. Session continuation after cancel also
+  // passed 6/6, both same-process (`session/prompt` again on the identical
+  // connection) and cross-process (`session/load` from a brand-new spawn
+  // with no `--resume` flag, the shape Archon's per-call `sendQuery()`
+  // would actually need) — the model recalled a planted token both ways.
+  // This is a stronger, cleaner result than OMP's RPC-mode finding (whose
+  // abort ack was not reliably acknowledged): Grok's is fully green. Still
+  // `false` because adopting it means swapping `--single` for `agent
+  // stdio` project-wide, not toggling a flag — every `buildGrokArgs()` CLI
+  // flag (`--tools`/`--disallowed-tools`, `--json-schema`,
+  // `--system-prompt-override`/`--rules`, `--agents`, `--session-id`/
+  // `--fork-session`, `--permission-mode`) would need an ACP-protocol
+  // equivalent re-verified one by one, exactly the kind of transport
+  // migration this same phase scoped as its own follow-up story for OMP's
+  // RPC mode rather than a rushed leg of this one.
   interrupt: false,
   interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   // Verified false: gated behind `interrupt !== false` regardless. Also
   // independently disproven on its own terms — see deliveryAck below.
   softInjection: false,
-  // Verified false against the real binary (acp-handshake-spike.ts): a
-  // generic ACP client (`initialize` -> `session/new` -> `session/prompt`)
-  // reaches a live mid-turn session. `x.ai/interject` (the exact literal
-  // recovered from the binary by the earlier scout) returns JSON-RPC
-  // -32601 "Method not found" — wrong name. Every OTHER server-emitted
-  // notification in the same session uses an `_x.ai/...` (underscored)
-  // namespace; retrying as `_x.ai/interject` gets -32602 "Invalid params"
-  // instead of -32601, proving the METHOD is recognized under that name.
-  // Two param shapes were tried (`{sessionId, message}` and `{sessionId,
-  // prompt: ContentBlock[]}`, matching `session/prompt`) — both rejected
-  // the same way. The exact required shape is unresolved; a live client is
-  // reachable but this spike could not complete a successful call within
-  // its time-box. This narrows but does not fully resolve whether the
-  // method is reachable by an arbitrary ACP client at all — a follow-up
-  // spike with more param-shape guesses (or captured traffic from grok's
-  // own pager) is the next step, not a dead end.
+  // Verified false against the real binary. `interject-param-spike.ts`
+  // resolved the param shape a prior scout left open: `_x.ai/interject`
+  // (underscored; the unprefixed `x.ai/interject` is still -32601 Method
+  // not found) takes `{sessionId, text: string}` — a flat string field, not
+  // the `ContentBlock[]` shape `session/prompt` uses. Six guesses nesting
+  // the message under `content`/`prompt` all failed identically with
+  // `-32602 invalid params: missing field \`text\`` (captured via the
+  // JSON-RPC error's own `data`, not just its code) until the flat shape
+  // was tried, which returned a genuine result. But a successful ack alone
+  // is not soft injection: `interject-mechanism-spike.ts` ran the same
+  // discriminator the OMP RPC `steer` finding used — two sequential shell
+  // tool calls, interject sent in the gap between the first call's result
+  // and the second call's dispatch, instructing the model to skip the
+  // second one — and the second call ran anyway
+  // (`secondCallRanAnyway: true`). The interject content is not consulted
+  // before the model's already-planned next tool call, matching OMP's
+  // `followUp` semantics (CAP-8 Queue) rather than CAP-12 mid-turn
+  // injection. `deliveryAck` is unrelated: nothing resembling Claude's
+  // `--replay-user-messages` echo-back was found for Grok on either
+  // transport, so there is no acknowledgement channel to wire regardless
+  // of `interrupt`/`softInjection`.
   deliveryAck: false,
 };
