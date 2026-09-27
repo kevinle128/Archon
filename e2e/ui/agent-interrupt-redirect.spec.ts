@@ -647,6 +647,11 @@ for (const surface of ['console', 'legacy'] as const) {
     const interrupts = trackPosts(page, interruptPathname(run.runId, QUEUE_GUIDANCE_NODE));
     const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
     const field = guidanceField(room);
+    // Set once the interrupted tool settles below; re-checked while the
+    // redirect turn is live to prove the room keeps that row visible instead
+    // of dropping it once a later turn starts (the whole point of one
+    // occurrence spanning every turn of a steered node).
+    let interruptedToolId: string | null = null;
 
     await test.step('generating dock: tool call in flight, Stop + Queue render', async () => {
       const toolRow = room.locator('[data-tool-id]').first();
@@ -722,6 +727,8 @@ for (const surface of ['console', 'legacy'] as const) {
         timeout: T.medium,
       });
       await expect(toolRow.locator('summary')).toContainText('⚠');
+      interruptedToolId = await toolRow.getAttribute('data-tool-id');
+      expect(interruptedToolId).not.toBeNull();
       await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'idle-after-interrupt');
       const state = await getNodeState(page, run.runId, QUEUE_GUIDANCE_NODE);
       expect(state?.status, 'interrupt never cancels the node').toBe('running');
@@ -779,9 +786,15 @@ for (const surface of ['console', 'legacy'] as const) {
     });
 
     await test.step('same-session redirect completes with three operator rows before the echo', async () => {
-      // Attempt-scoped rooms drop the interrupted attempt's tool card as soon as
-      // the redirect turn starts, so interrupted->operator DOM adjacency is
-      // proven via API seq (below). Live DOM proves operators precede the echo.
+      // The redirect turn is one execution continuing on the interrupted
+      // turn's own occurrence — the interrupted tool card must stay visible
+      // alongside the operator rows WHILE the node is still running (Stop
+      // still up here), never dropped once the redirect turn starts.
+      expect(interruptedToolId).not.toBeNull();
+      await expect(
+        room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
+      ).toContainText('⚠');
+      await expect(stopButton(room)).toBeVisible();
       await expect(room.locator('[data-operator-row]')).toHaveCount(3, { timeout: T.xlong });
       await expect(room.getByText(/resumed echo: first/).first()).toBeVisible({
         timeout: T.xlong,
@@ -854,7 +867,13 @@ for (const surface of ['console', 'legacy'] as const) {
       const resumedAttempt = resumed!.metadata?.execution?.attempt_id;
       const interruptedAttempt = interrupted!.metadata?.execution?.attempt_id;
       expect(typeof resumedAttempt).toBe('string');
-      expect(resumedAttempt).not.toBe(interruptedAttempt);
+      // The redirect turn is the SAME execution as the interrupted one — one
+      // occurrence and attempt spanning both, so the room never has to
+      // choose which turn's rows to show.
+      expect(resumedAttempt).toBe(interruptedAttempt);
+      expect(resumed!.metadata?.execution?.occurrence_id).toBe(
+        interrupted!.metadata?.execution?.occurrence_id
+      );
       for (const row of operatorRows) {
         expect(row.metadata?.execution?.attempt_id).toBe(resumedAttempt);
       }
@@ -1213,7 +1232,10 @@ for (const surface of ['console', 'legacy'] as const) {
     );
     const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
     const field = guidanceField(room);
-    await expect(room.locator('[data-tool-id]').first()).toBeVisible({ timeout: T.medium });
+    const initialToolRow = room.locator('[data-tool-id]').first();
+    await expect(initialToolRow).toBeVisible({ timeout: T.medium });
+    const interruptedToolId = await initialToolRow.getAttribute('data-tool-id');
+    expect(interruptedToolId).not.toBeNull();
     await expect(stopButton(room)).toBeVisible({ timeout: T.medium });
 
     await field.fill(MULTILINE_FIRST);
@@ -1337,6 +1359,13 @@ for (const surface of ['console', 'legacy'] as const) {
       await sendNow.click();
       expect((await sendNowResponse).status()).toBe(200);
       await expect(stopButton(room)).toBeVisible();
+      // The redirect turn continues the interrupted turn's own occurrence —
+      // its tool card must stay visible, with Stop still up, proving the
+      // room keeps the full transcript live rather than swapping to only
+      // the new turn's rows.
+      await expect(
+        room.locator(`[data-tool-id="${interruptedToolId}"]`).locator('summary')
+      ).toContainText('⚠');
       await captureEvidence(room, `us-005-${surface}-460-generating-again.png`, testInfo);
       const afterGrow = await lastRowVisibility(room, surface);
       expect(afterGrow, 'last transcript row reachable after dock shrink').toBe('ok');

@@ -3555,11 +3555,13 @@ async function executeNodeInternal(
     turns: while (true) {
       if (turnIsGuidance) {
         // A guidance turn never inherits stale ask-resume state, never forks
-        // the session, and writes transcript rows under a fresh attempt of the
-        // SAME node occurrence — no extra node_started or steering events.
+        // the session, and writes its transcript rows under the SAME
+        // occurrence and attempt as turn 1 — a steered node is one execution
+        // with several provider turns on one live session, so the room must
+        // keep projecting every turn's rows together. No extra node_started
+        // or steering events are emitted either.
         delete nodeOptionsWithAbort.resumeInteractions;
         nodeOptionsWithAbort.forkSession = false;
-        executionScope = newTranscriptAttempt(executionScope);
         // Prompt bytes stay the drained join; retain messages for the stream seam.
         turnPrompt = turnGuidanceMessages.map(item => item.message).join('\n\n');
       }
@@ -6457,11 +6459,10 @@ async function executeLoopNodeInner(
 
     turns: while (true) {
       // A guidance turn is another provider turn inside the same iteration —
-      // rotate only the transcript attempt scope (node occurrence preserved)
-      // so its rows don't collide with the prior turn's, exactly like the
-      // re-ask path does per attempt. No extra lifecycle events are emitted.
+      // it keeps the iteration's occurrence AND attempt scope unchanged, so
+      // the room keeps projecting every turn's rows together as one
+      // execution. No extra lifecycle events are emitted.
       if (turnIsGuidance) {
-        iterationExecutionScope = newTranscriptAttempt(iterationExecutionScope);
         turnGuidancePrompt = turnGuidanceMessages.map(item => item.message).join('\n\n');
       }
       // Operator receipt only on guidance attempt zero — re-asks must not duplicate.
