@@ -600,6 +600,13 @@ export function ComposerDock({
     );
     return (): void => {
       controller.abort();
+      // Synchronous, not inside the rejection handler above: StrictMode's
+      // dev-only double-invoke runs this cleanup, then the setup again, with
+      // the SAME ref instance, before the aborted fetch's rejection ever
+      // resolves — leaving the flag `true` here would make the second
+      // invocation see "already fetched" and skip its own (unaborted) fetch,
+      // permanently losing this node's terminal hydration for the mount.
+      terminalFetchedRef.current = false;
     };
   }, [nodeTerminal, runId, nodeId, readQueue]);
 
