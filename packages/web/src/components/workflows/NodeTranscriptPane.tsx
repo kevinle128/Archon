@@ -552,7 +552,11 @@ export function NodeTranscriptPane({
       ref={scrollRef}
       data-testid="node-transcript-scroll"
       tabIndex={-1}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-y-contain"
+      // The todo strip below stays flex-none at its full content height, so an
+      // expanded strip on a very short room can squeeze this flex-1 sibling
+      // toward zero. A tiny floor keeps the scroller present rather than
+      // fully collapsed, while it still absorbs almost all of the squeeze.
+      className="flex min-h-[4px] flex-1 flex-col overflow-y-auto overscroll-y-contain"
       style={{ overflowWrap: 'anywhere' }}
       onScroll={handleScroll}
     >
