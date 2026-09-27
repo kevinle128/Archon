@@ -968,7 +968,7 @@ function buildBaseClaudeOptions(
         ? { advisorModel: assistantDefaults.advisorModel }
         : {}),
     },
-    hooks: buildToolCaptureHooks(toolResultQueue),
+    hooks: buildToolCaptureHooks(toolResultQueue, requestOptions?.interruptSignal),
     stderr: (data: string): void => {
       const output = data.trim();
       if (!output) return;
@@ -1000,7 +1000,10 @@ function buildBaseClaudeOptions(
  * Build SDK hooks that capture tool use results into a shared queue.
  * The queue is drained during stream normalization.
  */
-function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hooks'] {
+function buildToolCaptureHooks(
+  toolResultQueue: ToolResultEntry[],
+  interruptSignal: AbortSignal | undefined
+): Options['hooks'] {
   return {
     PostToolUse: [
       {
@@ -1045,7 +1048,19 @@ function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hoo
                 getLog().debug({ input }, 'claude.post_tool_use_failure_no_error_field');
               }
               const errorText = rawError ?? 'tool failed';
-              const isInterrupt = (input as { is_interrupt?: boolean }).is_interrupt === true;
+              // The SDK's own `is_interrupt` flag is the primary signal, but
+              // it is not the only proof available: the operator's interrupt
+              // signal is already aborted by the time some cut-off tools'
+              // failures reach this hook, even when the SDK reports them as
+              // a plain error with no `is_interrupt` flag (observed live —
+              // the SDK's own "the user doesn't want to proceed" text on a
+              // call the operator's Stop actually caused). Persisting this
+              // as `'interrupted'` here, once, is what lets the web fold
+              // trust the persisted outcome directly instead of guessing
+              // from row adjacency after the fact.
+              const isInterrupt =
+                (input as { is_interrupt?: boolean }).is_interrupt === true ||
+                interruptSignal?.aborted === true;
               const prefix = isInterrupt ? '⚠️ Interrupted' : '❌ Error';
               toolResultQueue.push({
                 toolName,

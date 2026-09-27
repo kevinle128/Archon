@@ -28,9 +28,9 @@ export interface AgentHistoryInput {
    * (or a restart left it durable with no live process). A finished
    * execution can never write a late `tool_completed` for a call still
    * showing `running`, so that call settles to `unknown` here — the same
-   * verdict `settledToolOutcome` already gives an ambiguous interrupt —
-   * rather than the presenter claiming a process is still active. Default
-   * false.
+   * fallback `pendingToolOutcome` already gives a still-open call with no
+   * matching event at all — rather than the presenter claiming a process is
+   * still active. Default false.
    */
   nodeTerminal?: boolean;
   /**
@@ -450,30 +450,26 @@ function runningElapsed(
 }
 
 /**
- * The outcome the executor actually settled a still-open tool call with, read
- * from its matching `tool_completed` event's `tool_outcome` field. A provider
- * that cannot tie an interrupt marker to a specific tool call settles that
- * field `'unknown'` rather than `'interrupted'` — this lets the fold below
- * respect that distinction without knowing which provider produced it. A
- * recorded `'success'` is protected the same way: the tool call actually
- * finished before the turn's interrupt landed, proven by its own completion
- * event, so relabelling it `'interrupted'` would claim a finished side effect
- * did not finish. Every other recorded value (`'error'`, an ambiguous or
- * missing match) defaults to `'interrupted'`, matching every row recorded
- * before this distinction existed — a provider that records its own stopped
- * tool as `'error'` with interrupt evidence keeps the interrupted glyph.
- * Accepted boundary: a recorded `'error'` is unproven either way — it could
- * be the interrupt evidence above, or a genuine failure that happened to be
- * the last thing recorded before Stop landed — and every provider (Codex
- * included) resolves that ambiguity the same way, toward the interrupted
- * glyph, because the alternative silently turns real interrupt evidence into
- * a plain failure.
+ * The outcome for a tool call still open in its own rows (no result row),
+ * trusting only its matching `tool_completed` event's `tool_outcome` field —
+ * never inferred from row adjacency to an `interrupted` status message. A
+ * provider that ties an interrupt marker to the exact tool call records
+ * `'interrupted'` itself (Claude's SDK, once it classifies a cut-off tool as
+ * interrupted rather than a generic error); a provider that cannot only ever
+ * records `'success'`, `'error'`, or `'unknown'` for this event, so `'error'`
+ * here is a genuine, proven failure and reads `'failed'`, never `'interrupted'`
+ * — Codex has no channel to prove interruption on a specific tool call, and
+ * this function never manufactures one for it. No matching event at all (the
+ * call never settled — most commonly a hard restart before any turn-ending
+ * message could settle it) falls back to `'unknown'` once the execution is
+ * terminal, or stays `'running'` while it might still resolve.
  */
-function settledToolOutcome(
+function pendingToolOutcome(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
-  toolUseId: string
-): 'succeeded' | 'interrupted' | 'unknown' {
+  toolUseId: string,
+  nodeTerminal: boolean
+): ToolOutcome {
   const matches: unknown[] = [];
   for (const workflowEvent of events) {
     if (workflowEvent.event_type !== 'tool_completed') continue;
@@ -483,10 +479,21 @@ function settledToolOutcome(
     if (data.tool_call_id !== toolUseId) continue;
     matches.push(data.tool_outcome);
   }
-  if (matches.length !== 1) return 'interrupted';
-  if (matches[0] === 'unknown') return 'unknown';
-  if (matches[0] === 'success') return 'succeeded';
-  return 'interrupted';
+  if (matches.length === 1) {
+    switch (matches[0]) {
+      case 'success':
+        return 'succeeded';
+      case 'error':
+        return 'failed';
+      case 'interrupted':
+        return 'interrupted';
+      case 'unknown':
+        return 'unknown';
+      default:
+        break;
+    }
+  }
+  return nodeTerminal ? 'unknown' : 'running';
 }
 
 export function toolRuntime(
@@ -519,24 +526,36 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
     const item = projected[index];
     if (item === undefined) continue;
     if (item.kind === 'tool-card') {
+      // A card with its own result row is always trusted as recorded —
+      // never overridden by an adjacent `interrupted` status row, which
+      // proves only that Stop landed somewhere in this turn, not that it
+      // caused this specific call's outcome. Only a still-open call (no
+      // result row at all) has no outcome of its own to trust, so only it
+      // looks to its matching `tool_completed` event.
+      const settledOutcome = item.pending
+        ? pendingToolOutcome(
+            input.events,
+            input.nodeId,
+            toolUseIdFrom(item),
+            input.nodeTerminal === true
+          )
+        : undefined;
+      const toolItem = toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome);
+      items.push(toolItem);
+      // Consume the adjacent status row only when this call's own final,
+      // trusted outcome IS the interrupted glyph — whether that came from
+      // the settlement above or, for a card with its own result row,
+      // straight from its recorded outcome (`toolItem.outcome`, already
+      // resolved) — because a redundant lifecycle line would only repeat a
+      // fact the glyph already states. Every other settlement leaves the
+      // row visible as its own lifecycle item, since none of them carry the
+      // interruption fact on their own.
       const next = projected[index + 1];
-      const interrupted =
+      const nextIsInterruptStatus =
         next?.kind === 'message' &&
         next.message.kind === 'status' &&
         next.message.payload.state === 'interrupted';
-      const settledOutcome = interrupted
-        ? settledToolOutcome(input.events, input.nodeId, toolUseIdFrom(item))
-        : item.pending && input.nodeTerminal === true
-          ? 'unknown'
-          : undefined;
-      items.push(toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome));
-      // Consume the status row only when it proved the interrupted outcome —
-      // that reads as this row's own glyph. Otherwise the row still recorded
-      // that Stop landed here and stays visible as its own lifecycle item:
-      // an 'unknown' tool glyph carries no interruption fact on its own, and
-      // a 'succeeded' glyph must not silently absorb an unrelated interrupt
-      // that landed after the call had already finished.
-      if (settledOutcome === 'interrupted') index++;
+      if (nextIsInterruptStatus && toolItem.outcome === 'interrupted') index++;
       continue;
     }
     const message = item.message;
