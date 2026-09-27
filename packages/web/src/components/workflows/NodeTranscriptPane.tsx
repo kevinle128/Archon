@@ -112,6 +112,13 @@ export interface NodeTranscriptPaneProps {
   nodeExecutionKey?: string | null;
   /** Forwarded to the composer dock; see its own doc comment. */
   onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /**
+   * Server-reported restart recovery for the selected row (owned by the
+   * parent room, which reads it from the dock's own `onExecutionStateChange`
+   * report) — a still-open tool call settles the same way a terminal row's
+   * does, since no live process backs either. Default false.
+   */
+  recoveryRequired?: boolean;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -150,6 +157,7 @@ export function NodeTranscriptPane({
   nodeExecutionKey = null,
   onSelectLiveRow,
   onExecutionStateChange,
+  recoveryRequired = false,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -325,6 +333,12 @@ export function NodeTranscriptPane({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
+  // A restart-recovery row stays 'running' in its own lifecycle status — the
+  // server durably reports the process is gone, not the row's own status —
+  // so a still-open tool call there needs the same settle rule as a genuinely
+  // terminal row: no live process can ever complete it.
+  const noLiveProcessForRow =
+    (rowStatus !== 'running' && rowStatus !== 'awaiting') || recoveryRequired;
   const agentHistory: AgentHistory =
     row === null
       ? { items: [], todos: [] }
@@ -334,7 +348,7 @@ export function NodeTranscriptPane({
           nodeId: row.nodeId,
           outputFormat: outputFormat ?? undefined,
           nowMs,
-          nodeTerminal: rowStatus !== 'running' && rowStatus !== 'awaiting',
+          nodeTerminal: noLiveProcessForRow,
         });
   const items = agentHistory.items;
   const occurrenceGrouping = groupByOccurrence(items);

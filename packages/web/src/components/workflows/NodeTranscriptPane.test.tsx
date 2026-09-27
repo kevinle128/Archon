@@ -407,6 +407,7 @@ describe('NodeTranscriptPane', () => {
     onSelectLiveRow?: (liveRowId: string) => void;
     nodeTerminal?: boolean;
     nodeExecutionKey?: string | null;
+    recoveryRequired?: boolean;
   }): void {
     const row = args.row;
     const selection =
@@ -447,6 +448,7 @@ describe('NodeTranscriptPane', () => {
           onSelectLiveRow: args.onSelectLiveRow,
           nodeTerminal: args.nodeTerminal,
           nodeExecutionKey: args.nodeExecutionKey,
+          recoveryRequired: args.recoveryRequired,
         })
       )
     );
@@ -474,6 +476,30 @@ describe('NodeTranscriptPane', () => {
     expect(calls).toEqual([['run-1', 'review']]);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
+  });
+
+  test('a still-open tool call settles once restart recovery is reported, even though the row status stays running', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [
+        {
+          id: 'm1',
+          seq: 1,
+          kind: 'tool',
+          payload: { name: 'sleep 120', id: 'call-1', input: {} },
+          created_at: CREATED_AT,
+        },
+      ],
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, loadMessages, recoveryRequired: true });
+    });
+    await flushUntil(host, 'settled row', () => (host.textContent ?? '').includes('sleep 120'));
+    // Recovery is reported without the row's own status ever leaving
+    // 'running' — the still-open call settles to unknown (glyph –) anyway,
+    // since no live process backs it either way, and never renders the
+    // running glyph (◐).
+    expect(host.textContent).toContain('–');
+    expect(host.textContent).not.toContain('◐');
   });
 
   test('unwraps an exact one-string envelope only when the definition schema is supplied', async () => {

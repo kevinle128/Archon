@@ -243,6 +243,7 @@ export function LegacyNodeRoom({
             nodeExecutionKey={nodeExecutionKey}
             onSelectLiveRow={onSelectRow}
             onExecutionStateChange={setDockExecutionState}
+            recoveryRequired={dockExecutionState === 'recovery_required'}
           />
         );
         break;
