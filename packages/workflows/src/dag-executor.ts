@@ -3801,6 +3801,15 @@ async function executeNodeInternal(
         // outcome precedes the interrupt request's resolution (the UI reads it
         // before rendering the idle dock).
         await recordNodeStatus('interrupted');
+        // An observing tab (steering happened from a different one) has no
+        // other live signal that the turn just settled idle-after-interrupt
+        // when no tool call was open — emit one so it refetches promptly
+        // instead of waiting on an unrelated event or the safety-net poll.
+        getWorkflowEventEmitter().emit({
+          type: 'node_turn_interrupted',
+          runId: workflowRun.id,
+          nodeId: node.id,
+        });
         let wake = await raceIdleWake(
           deps,
           workflowRun.id,
@@ -7527,6 +7536,15 @@ async function executeLoopNodeInner(
         // ONE 'interrupted' status row — awaited so the committed transcript
         // outcome precedes the interrupt request's resolution.
         await recordLoopStatus(iterationExecutionScope, 'interrupted', String(i));
+        // An observing tab (steering happened from a different one) has no
+        // other live signal that the turn just settled idle-after-interrupt
+        // when no tool call was open — emit one so it refetches promptly
+        // instead of waiting on an unrelated event or the safety-net poll.
+        getWorkflowEventEmitter().emit({
+          type: 'node_turn_interrupted',
+          runId: workflowRun.id,
+          nodeId: node.id,
+        });
         let wake = await raceIdleWake(
           deps,
           workflowRun.id,
