@@ -119,6 +119,17 @@ export const FILE_EDIT_BARE_NODE = 'file-edit-bare';
 export const E2E_QUEUE_GUIDANCE_WORKFLOW_NAME = 'e2e-queue-guidance';
 export const E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME = 'e2e-queue-guidance-loop';
 export const QUEUE_GUIDANCE_NODE = 'steer-me';
+/**
+ * Marker name the `e2e-queue-guidance` fixture's `steer-me` node watches for
+ * (its scenario directive's `releaseSignal`). Writing the file this resolves
+ * to ends that node's bounded wait immediately instead of the full delay —
+ * `@archon/e2e` is deliberately not a bun workspace member (see
+ * `package.json`), so this mirrors `e2eFakeReleaseSignalPath` in
+ * `packages/providers/src/e2e-fake/provider.ts` rather than importing it.
+ */
+export function queueGuidanceDrainReleasePath(home: string): string {
+  return join(home, 'e2e-fake-release', 'queue-guidance-drain');
+}
 export const QUEUE_GUIDANCE_LOOP_NODE = 'steer-loop';
 export const E2E_QUEUE_GUIDANCE_PAIR_WORKFLOW_NAME = 'e2e-queue-guidance-pair';
 export const QUEUE_GUIDANCE_PAIR_NODE_A = 'steer-a';

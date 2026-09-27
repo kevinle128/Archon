@@ -1,4 +1,8 @@
 import { describe, expect, spyOn, test } from 'bun:test';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 import { AskHumanAwaitingError, type MessageChunk, type NativeTool } from '../types';
 import { E2E_FAKE_CAPABILITIES } from './capabilities';
@@ -28,6 +32,7 @@ import {
   E2E_FAKE_WRITE_INPUT,
   E2E_FAKE_WRITE_OUTPUT,
   E2E_FAKE_WRITE_TOOL_NAME,
+  e2eFakeReleaseSignalPath,
   E2eFakeProvider,
 } from './provider';
 
@@ -792,6 +797,68 @@ describe('E2eFakeProvider interruptible scenario', () => {
       throw new Error('unexpected chunk shape');
     }
     expect(toolResult.toolCallId).toBe(toolCall.toolCallId);
+  });
+
+  test('releaseSignal ends the bounded wait early and consumes its own marker', async () => {
+    const previousHome = process.env.ARCHON_HOME;
+    const home = mkdtempSync(join(tmpdir(), 'e2e-fake-release-test-'));
+    process.env.ARCHON_HOME = home;
+    try {
+      const releaseSignal = `unit-${randomUUID()}`;
+      const releasePath = e2eFakeReleaseSignalPath(releaseSignal);
+      const started = Date.now();
+      const it = provider.sendQuery(
+        interruptiblePrompt({ delayMs: 30_000, releaseSignal }),
+        '/tmp'
+      );
+      await it.next(); // assistant
+      await it.next(); // tool call emitted; generator paused before the wait
+      expect(existsSync(releasePath)).toBe(false);
+      mkdirSync(dirname(releasePath), { recursive: true });
+      writeFileSync(releasePath, '');
+      const chunks: MessageChunk[] = [];
+      for (let step = await it.next(); step.done !== true; step = await it.next()) {
+        chunks.push(step.value);
+      }
+      // Ends via the marker, nowhere near the 30s ceiling.
+      expect(Date.now() - started).toBeLessThan(5_000);
+      expect(existsSync(releasePath), 'the wait removes the marker it consumed').toBe(false);
+      const toolResult = chunks[0];
+      const result = chunks[1];
+      if (toolResult.type !== 'tool_result' || result.type !== 'result') {
+        throw new Error('unexpected chunk shape');
+      }
+      expect(toolResult.toolOutcome).toBe('success');
+      expect(toolResult.toolOutput).toBe(E2E_FAKE_TOOL_OUTPUT);
+      expect(result.isError).toBeUndefined();
+    } finally {
+      if (previousHome === undefined) delete process.env.ARCHON_HOME;
+      else process.env.ARCHON_HOME = previousHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('a releaseSignal that never arrives still waits out the full delayMs ceiling', async () => {
+    const previousHome = process.env.ARCHON_HOME;
+    const home = mkdtempSync(join(tmpdir(), 'e2e-fake-release-test-'));
+    process.env.ARCHON_HOME = home;
+    try {
+      const started = Date.now();
+      await collect(
+        provider.sendQuery(
+          interruptiblePrompt({ delayMs: 200, releaseSignal: `unit-unused-${randomUUID()}` }),
+          '/tmp'
+        )
+      );
+      // A small tolerance below the requested delay absorbs 1ms clock
+      // granularity — this only needs to prove the wait ran out the ceiling
+      // rather than resolving near-instantly like the sibling test above.
+      expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+    } finally {
+      if (previousHome === undefined) delete process.env.ARCHON_HOME;
+      else process.env.ARCHON_HOME = previousHome;
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
   test('node abort wins over turn interrupt and throws Query aborted', async () => {

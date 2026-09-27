@@ -187,10 +187,3 @@ Summary: All twelve round-2 findings and all nine round-1 findings are fixed. Th
 2. Story 10.3 stays as written. Per SPEC, the operator row the executor writes is the delivery receipt, so a Codex message the agent answered stays `sent` and is not `Never sent`.
 
 The `qa3-fixes` follow-up work owns the fixes.
-
-## Decisions on the open questions (2026-09-28)
-
-1. The interrupted-status fold protects only a recorded `success`. A tool that finished successfully is never re-labelled interrupted; a tool the provider recorded as `error` with interrupt evidence keeps the interrupted presentation.
-2. Story 10.3 is unchanged. The executor-written operator transcript row is the delivery receipt (SPEC: "The delivered operator transcript row remains the audit receipt"), so a message the agent answered stays `sent` and never becomes `Never sent`, on every provider including Codex.
-
-Fixes are owned by the `qa3-fixes` follow-up work.
