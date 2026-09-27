@@ -41,7 +41,6 @@
     "spike:interrupt:codex": "bun src/codex/interrupt-resume-spike.ts",
     "spike:interrupt:grok": "bun src/grok/interrupt-resume-spike.ts",
     "spike:acp:grok": "bun src/grok/acp-handshake-spike.ts",
-    "spike:interrupt:omp": "bun src/community/omp/interrupt-resume-spike.ts",
     "spike:rpc:omp": "bun src/community/omp/rpc-mode-spike.ts",
     "spike:deepseek:acp": "bun src/community/deepseek/acp-handshake-spike.ts",
     "spike:interrupt:deepseek": "bun src/community/deepseek/interrupt-resume-spike.ts",
