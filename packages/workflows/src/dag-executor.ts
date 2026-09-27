@@ -108,6 +108,7 @@ import type { WorkflowErrorClass, WorkflowNodeType } from '@archon/paths';
 import { getWorkflowEventEmitter, type LoopProgress } from './event-emitter';
 import {
   getSteeringRegistry,
+  createSoftInjectionController,
   type NodeSteeringHandle,
   type SteeringIdleWake,
 } from './steering-registry';
@@ -625,6 +626,29 @@ async function markSteeringMessagesDelivered(
     getLog().warn(
       { err: err as Error, workflowRunId, nodeId: stepName },
       'dag.steering_mark_sent_failed'
+    );
+  }
+}
+
+/**
+ * `sent` -> `delivered` once the live provider turn echoes a verified
+ * acknowledgement for this exact caller-stamped message id (CAP-13).
+ * Best-effort and content-free: a write failure here degrades only the
+ * durable delivery-state projection, never the turn itself, and a missing or
+ * already-advanced id is a store-side no-op rather than an error.
+ */
+async function markSteeringMessageDelivered(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  stepName: string,
+  messageId: string
+): Promise<void> {
+  try {
+    await deps.store.markSteeringMessageDelivered(workflowRunId, stepName, messageId);
+  } catch (err) {
+    getLog().warn(
+      { err: err as Error, workflowRunId, nodeId: stepName },
+      'dag.steering_mark_delivered_failed'
     );
   }
 }
@@ -2551,14 +2575,23 @@ async function executeNodeInternal(
       delete passOptions.resumeInteractions;
       executionScope = newTranscriptAttempt(executionScope);
     }
+    // Delivery ack (CAP-13): only when this pass's prompt is a SINGLE durable
+    // operator message — a combined multi-message prompt has no honest
+    // single id to attribute a provider echo to. Reask passes carry no
+    // `operatorReceipt` of their own, so this is naturally pass-zero-only.
+    if (operatorReceipt?.messages.length === 1) {
+      passOptions.operatorMessageId = operatorReceipt.messages[0].message_id;
+    }
     // Fresh interrupt controller per provider pass (#183) — never reused across
     // re-asks or guidance turns. beginTurn registers immediately before
     // sendQuery so interrupt() can only ever abort a live query of this token.
     if (interruptibleHandle !== undefined && passTurn !== undefined) {
       const controller = new AbortController();
       passTurn.controller = controller;
-      passTurn.token = interruptibleHandle.beginTurn(controller);
+      const softInjection = createSoftInjectionController();
+      passTurn.token = interruptibleHandle.beginTurn(controller, softInjection);
       passOptions.interruptSignal = controller.signal;
+      passOptions.softInjection = softInjection.channel;
     }
     try {
       let sawStreamChunk = false;
@@ -3264,6 +3297,8 @@ async function executeNodeInternal(
                 'workflow_event_persist_failed'
               );
             });
+        } else if (msg.type === 'operator_delivery_ack') {
+          await markSteeringMessageDelivered(deps, workflowRun.id, stepName, msg.messageId);
         }
         // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
       }
@@ -6568,13 +6603,22 @@ async function executeLoopNodeInner(
             },
           };
 
+          // Delivery ack (CAP-13): only when this pass's prompt is a SINGLE
+          // durable operator message and it is the guidance turn's first
+          // (non-reask) pass — mirrors runStreamPass in executeNodeInternal.
+          if (passReaskAttempt === 0 && pendingOperatorReceipt?.messages.length === 1) {
+            iterationOptions.operatorMessageId = pendingOperatorReceipt.messages[0].message_id;
+          }
+
           // Fresh interrupt controller per provider pass (#183) — never reused
           // across attempts or turns. beginTurn registers immediately before
           // sendQuery so interrupt() can only ever abort a live query.
           if (interruptibleHandle !== undefined) {
             turnInterruptController = new AbortController();
-            turnToken = interruptibleHandle.beginTurn(turnInterruptController);
+            const softInjection = createSoftInjectionController();
+            turnToken = interruptibleHandle.beginTurn(turnInterruptController, softInjection);
             iterationOptions.interruptSignal = turnInterruptController.signal;
+            iterationOptions.softInjection = softInjection.channel;
           }
 
           // Reask attempts start a FRESH session (mirrors runStreamPass in
@@ -7054,6 +7098,8 @@ async function executeLoopNodeInner(
               if (platform.sendStructuredEvent) {
                 await platform.sendStructuredEvent(conversationId, msg);
               }
+            } else if (msg.type === 'operator_delivery_ack') {
+              await markSteeringMessageDelivered(deps, workflowRun.id, stepName, msg.messageId);
             }
             // rate_limit chunks: already log.warn'd in claude.ts; not surfaced to SSE per design
           }

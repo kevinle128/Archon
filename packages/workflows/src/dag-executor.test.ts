@@ -174,6 +174,7 @@ function createMockSteeringStore(): Pick<
   | 'listSteeringQueue'
   | 'claimSteeringQueue'
   | 'markSteeringMessagesSent'
+  | 'markSteeringMessageDelivered'
   | 'claimSteeringMessageForSoftInjection'
   | 'reconcileNeverSentSteeringMessages'
 > {
@@ -314,6 +315,18 @@ function createMockSteeringStore(): Pick<
           entry.updated_at = now;
         }
       }
+    },
+    markSteeringMessageDelivered: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          item.state === 'sent'
+      );
+      if (entry === undefined) return;
+      entry.state = 'delivered';
+      entry.updated_at = new Date();
     },
     claimSteeringMessageForSoftInjection: async (workflowRunId, nodeId, messageId) => {
       const entry = queue.find(
@@ -2310,6 +2323,129 @@ describe('executeDagWorkflow -- tool restrictions', () => {
     const messages = sendMessage.mock.calls.map((call: unknown[]) => call[1] as string);
     const warning = messages.find(m => m.includes('hooks') && m.includes('codex'));
     expect(warning).toBeDefined();
+  });
+});
+
+describe('executeDagWorkflow -- operator delivery acknowledgement (CAP-13)', () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `dag-ack-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  it('advances a sent queue entry to delivered when the provider stream echoes its message id', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    await mockDeps.store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: 'review',
+      message_id: 'ack-1',
+      message: 'redirect the plan',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    // Claim straight to `sent` — the same durable shape a soft-injected or
+    // boundary-delivered message is in while awaiting acknowledgement.
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'ack-1');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'ack-1' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun(runId);
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-delivery-ack',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'ack-1')?.state).toBe('delivered');
+  });
+
+  it('never advances an id it did not echo', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    await mockDeps.store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: 'review',
+      message_id: 'other-msg',
+      message: 'unrelated',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'other-msg');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'never-queued-id' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun(runId);
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-delivery-ack-mismatch',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'other-msg')?.state).toBe('sent');
   });
 });
 
@@ -27001,6 +27137,49 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(causedAttempt).toBeDefined();
     expect(operatorRows.every(r => r.metadata.execution?.attempt_id === causedAttempt)).toBe(true);
     expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
+  });
+
+  it('stamps operatorMessageId when the guidance turn delivers exactly one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'solo-1', 'redirect the plan', 'op-a');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBe('solo-1');
+  });
+
+  it('omits operatorMessageId when a guidance turn combines more than one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'combo-1', 'first', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'combo-2', 'second', 'op-b');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBeUndefined();
   });
 
   it('flushes batch output once per settled turn and folds usage across turns', async () => {

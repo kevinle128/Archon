@@ -59,7 +59,7 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
 | AskHuman mid-turn questions | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅⁴ |
 | Turn interrupt (operator Stop) | **native** | **stream-abort** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **stream-abort** | ❌ |
 | Soft injection (per-item Send now while generating) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Delivery acknowledgement (message-id echo) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Delivery acknowledgement (message-id echo) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ## Caveats
 

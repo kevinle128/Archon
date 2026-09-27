@@ -31,7 +31,9 @@ const {
   listSteeringQueue,
   claimSteeringQueue,
   markSteeringMessagesSent,
+  markSteeringMessageDelivered,
   claimSteeringMessageForSoftInjection,
+  revertSteeringSoftInjectionClaim,
   reconcileNeverSentSteeringMessages,
 } = await import('./workflow-steering');
 
@@ -417,6 +419,90 @@ describe('steering queue: claim', () => {
     });
     await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1');
     expect(await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1')).toBeNull();
+  });
+});
+
+describe('markSteeringMessageDelivered', () => {
+  test('advances sent to delivered for the matching id only', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'first',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-2',
+      message: 'second',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1');
+    await markSteeringMessageDelivered('run-1', 'review', 'm-1');
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows.find(r => r.message_id === 'm-1')?.state).toBe('delivered');
+    expect(rows.find(r => r.message_id === 'm-2')?.state).toBe('queued');
+  });
+
+  test('is a silent no-op for an unknown id or an id not currently sent', async () => {
+    await expect(
+      markSteeringMessageDelivered('run-1', 'review', 'never-existed')
+    ).resolves.toBeUndefined();
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-queued',
+      message: 'still queued',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await markSteeringMessageDelivered('run-1', 'review', 'm-queued');
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows.find(r => r.message_id === 'm-queued')?.state).toBe('queued');
+  });
+});
+
+describe('revertSteeringSoftInjectionClaim', () => {
+  test('reverts a sent claim back to queued', async () => {
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-1',
+      message: 'first',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    const claimed = await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1');
+    expect(claimed?.message_id).toBe('m-1');
+    await revertSteeringSoftInjectionClaim('run-1', 'review', 'm-1');
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows.find(r => r.message_id === 'm-1')?.state).toBe('queued');
+    // Reverted entry is claimable again — the queue is genuinely unchanged.
+    expect((await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-1'))?.message_id).toBe(
+      'm-1'
+    );
+  });
+
+  test('is a silent no-op for an unknown id or an id already advanced past sent', async () => {
+    await expect(
+      revertSteeringSoftInjectionClaim('run-1', 'review', 'never-existed')
+    ).resolves.toBeUndefined();
+    await enqueueSteeringMessage({
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      message_id: 'm-delivered',
+      message: 'already delivered',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await claimSteeringMessageForSoftInjection('run-1', 'review', 'm-delivered');
+    await markSteeringMessageDelivered('run-1', 'review', 'm-delivered');
+    await revertSteeringSoftInjectionClaim('run-1', 'review', 'm-delivered');
+    const rows = await listSteeringQueue('run-1', 'review');
+    expect(rows.find(r => r.message_id === 'm-delivered')?.state).toBe('delivered');
   });
 });
 
