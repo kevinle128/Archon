@@ -363,7 +363,7 @@ async function queueGeometryFacts(room: Locator): Promise<{
   maxHeight: string;
   overflowY: string;
   bandText: string;
-  hasThisTabOnlyInBand: boolean;
+  hasSavedForYouInBand: boolean;
   hasSurfaceElevatedBand: boolean;
   bandImmediatelyBeforeComposer: boolean;
   bandIsFullBleed: boolean;
@@ -383,7 +383,7 @@ async function queueGeometryFacts(room: Locator): Promise<{
       maxHeight: style?.maxHeight ?? '',
       overflowY: style?.overflowY ?? '',
       bandText,
-      hasThisTabOnlyInBand: /this tab only/i.test(bandText),
+      hasSavedForYouInBand: /saved for you/i.test(bandText),
       hasSurfaceElevatedBand: bandClass.includes('bg-surface-elevated'),
       bandImmediatelyBeforeComposer:
         composer !== null && composer.querySelector('textarea') !== null,
@@ -416,7 +416,7 @@ async function assertQueueVisualContract(
   const geometry = await queueGeometryFacts(room);
   expect(geometry.hasMaxH33vh, `queue wrapper keeps max-h-[33vh] ${context}`).toBe(true);
   expect(geometry.overflowY, `queue wrapper scrolls vertically ${context}`).toMatch(/auto|scroll/);
-  expect(geometry.hasThisTabOnlyInBand, `queue band has no this-tab-only copy ${context}`).toBe(
+  expect(geometry.hasSavedForYouInBand, `queue band has no saved-for-you copy ${context}`).toBe(
     false
   );
   expect(geometry.hasSurfaceElevatedBand, `queue band keeps surface-elevated ${context}`).toBe(
@@ -428,8 +428,8 @@ async function assertQueueVisualContract(
   ).toBe(true);
   expect(geometry.bandIsFullBleed, `queue band stays full-bleed ${context}`).toBe(true);
 
-  // Composer hint still owns the tab-only copy.
-  await expect(room.getByText(/this tab only/i)).toBeVisible();
+  // Composer hint still owns the saved-for-you copy.
+  await expect(room.getByText(/saved for you/i)).toBeVisible();
 
   for (let i = 0; i < expectedCount; i += 1) {
     const row = items.nth(i);

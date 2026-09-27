@@ -60,7 +60,7 @@ const SCROLLER_TESTID: Record<Surface, string> = {
 const ASK_BLOCKED_REASON = "answer the agent's question first";
 const DETACHED_DISCLOSURE =
   'not steerable here · this run was started detached, so its live session is not in this process';
-const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 const FIRST_CORRECTION = 'first correction';
 const SECOND_CORRECTION = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>second correction';
 const GUIDANCE_ECHO_TEXT = '[e2e-fake] resumed echo: first correction\n\nsecond correction';

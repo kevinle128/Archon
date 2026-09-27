@@ -68,7 +68,7 @@ const SCROLLER_TESTID: Record<Surface, string> = {
 
 const INTERRUPT_DISCLOSURE =
   'stopped after the last completed tool call · files already written stay written';
-const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 const AGENT_INTERRUPTING = 'agent interrupting';
 const AGENT_IDLE = 'agent idle · Send now delivers';
 const AGENT_GENERATING = 'agent generating';
