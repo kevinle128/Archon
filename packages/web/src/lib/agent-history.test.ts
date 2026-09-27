@@ -2,7 +2,13 @@ import { describe, expect, test } from 'bun:test';
 
 import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
-import { buildAgentHistory, toolRuntime, type AgentHistoryItem } from './agent-history';
+import {
+  buildAgentHistory,
+  promptActorLabel,
+  promptSourceLabel,
+  toolRuntime,
+  type AgentHistoryItem,
+} from './agent-history';
 import { toolRawPayloadJson } from './tool-presentation';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
@@ -156,6 +162,32 @@ describe('toolRuntime', () => {
         'tool-1'
       )
     ).toEqual({ durationMs: null });
+  });
+});
+
+describe('promptActorLabel', () => {
+  test('is the resolved display name, trimmed, for a real actor', () => {
+    expect(promptActorLabel('user-1', '  Kevin  ')).toBe('Kevin');
+  });
+
+  test('falls back to a neutral label, never the raw id, when no name resolved', () => {
+    expect(promptActorLabel('user-1', null)).toBe('unknown user');
+    expect(promptActorLabel('5dea152bfc00', null)).not.toContain('5dea152b');
+  });
+
+  test('is "run" only when there is no actor at all', () => {
+    expect(promptActorLabel(null, null)).toBe('run');
+  });
+});
+
+describe('promptSourceLabel', () => {
+  test('is null for node_prompt, so the row never repeats its own "prompt" label', () => {
+    expect(promptSourceLabel('node_prompt')).toBeNull();
+  });
+
+  test('names the reason for command_file and reask', () => {
+    expect(promptSourceLabel('command_file')).toBe('command');
+    expect(promptSourceLabel('reask')).toBe('retry');
   });
 });
 
@@ -1258,13 +1290,22 @@ describe('buildAgentHistory', () => {
       extras: {
         actorUserId?: string | null;
         source?: 'node_prompt' | 'command_file' | 'reask';
+        actorDisplayName?: string | null;
       } = {}
-    ): NodeMessageRow {
-      return textRow(id, seq, body, {
-        origin: 'prompt',
-        actor_user_id: extras.actorUserId === undefined ? 'user-starter-1' : extras.actorUserId,
-        prompt_source: extras.source ?? 'node_prompt',
-      });
+    ): Extract<NodeMessageRow, { kind: 'text' }> {
+      return {
+        id,
+        seq,
+        kind: 'text',
+        payload: { text: body },
+        created_at: CREATED_AT,
+        metadata: {
+          origin: 'prompt',
+          actor_user_id: extras.actorUserId === undefined ? 'user-starter-1' : extras.actorUserId,
+          prompt_source: extras.source ?? 'node_prompt',
+        },
+        ...('actorDisplayName' in extras ? { prompt_display_name: extras.actorDisplayName } : {}),
+      };
     }
 
     function advisorRow(
@@ -1298,7 +1339,7 @@ describe('buildAgentHistory', () => {
       ]);
     });
 
-    test('projects the triggering prompt with its actor and source, unedited', () => {
+    test('projects the triggering prompt with its actor, resolved display name, and source, unedited', () => {
       const { items } = buildAgentHistory({
         nodeId: NODE_ID,
         nowMs: NOW_MS,
@@ -1306,6 +1347,7 @@ describe('buildAgentHistory', () => {
         rows: [
           promptRow('prompt-1', 1, '  Review this PR for regressions.  ', {
             actorUserId: 'user-starter-1',
+            actorDisplayName: 'Kevin',
             source: 'command_file',
           }),
         ],
@@ -1318,10 +1360,21 @@ describe('buildAgentHistory', () => {
           role: 'prompt',
           text: '  Review this PR for regressions.  ',
           actorUserId: 'user-starter-1',
+          actorDisplayName: 'Kevin',
           source: 'command_file',
           execution: null,
         },
       ]);
+    });
+
+    test('keeps a null display name when the server sent none for a real actor', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [promptRow('prompt-noname', 1, 'go', { actorUserId: 'user-starter-1' })],
+      });
+      expect(items[0]).toMatchObject({ actorUserId: 'user-starter-1', actorDisplayName: null });
     });
 
     test('keeps a null actor and defaults a missing source to node_prompt', () => {

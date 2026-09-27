@@ -3840,6 +3840,74 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/messages', () => {
     expect(mockGetUserDisplayNamesByIds).toHaveBeenCalledTimes(1);
   });
 
+  test('resolves a prompt row’s actor to a display name, sharing the operator lookup', async () => {
+    mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
+    mockListNodeMessages.mockImplementationOnce(async () => [
+      {
+        id: 'msg-prompt-named',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 1,
+        kind: 'text',
+        payload: { text: 'Review this PR' },
+        created_at: '2026-01-01T00:00:00.000Z',
+        metadata: {
+          origin: 'prompt',
+          actor_user_id: 'user-starter-1',
+          prompt_source: 'node_prompt',
+        },
+      },
+      {
+        id: 'msg-prompt-unresolved',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 2,
+        kind: 'text',
+        payload: { text: 'go' },
+        created_at: '2026-01-01T00:00:01.000Z',
+        metadata: {
+          origin: 'prompt',
+          actor_user_id: 'user-gone',
+          prompt_source: 'node_prompt',
+        },
+      },
+      {
+        id: 'msg-prompt-no-actor',
+        workflow_run_id: 'run-uuid-1',
+        node_id: 'plan',
+        seq: 3,
+        kind: 'text',
+        payload: { text: 'retry' },
+        created_at: '2026-01-01T00:00:02.000Z',
+        metadata: {
+          origin: 'prompt',
+          actor_user_id: null,
+          prompt_source: 'reask',
+        },
+      },
+    ]);
+    mockGetUserDisplayNamesByIds.mockImplementationOnce(async ids => {
+      expect([...ids].sort()).toEqual(['user-gone', 'user-starter-1']);
+      return [{ id: 'user-starter-1', display_name: 'Kevin' }];
+    });
+
+    const { app } = makeApp();
+    const response = await app.request('/api/workflows/runs/run-uuid-1/nodes/plan/messages');
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      messages: Array<{ prompt_display_name?: string | null }>;
+    };
+    // A real actor with a stored name resolves to it; a real actor id with
+    // no stored name gets the neutral fallback, never the raw id; no actor
+    // at all stays null.
+    expect(body.messages.map(row => row.prompt_display_name)).toEqual([
+      'Kevin',
+      'unknown user',
+      null,
+    ]);
+    expect(mockGetUserDisplayNamesByIds).toHaveBeenCalledTimes(1);
+  });
+
   test('batches two distinct sender ids across three operator rows once', async () => {
     mockGetWorkflowRun.mockImplementationOnce(async () => MOCK_RUNNING_RUN);
     mockListNodeMessages.mockImplementationOnce(async () => [
@@ -4046,7 +4114,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/messages', () => {
     expect(body.messages.map(row => row.operator_display_name)).toEqual(['user-fai', 'user-fai']);
 
     expect(mockApiLogWarn).toHaveBeenCalledTimes(1);
-    expect(mockApiLogWarn.mock.calls[0]?.[1]).toBe('workflow_node_operator_names_lookup_failed');
+    expect(mockApiLogWarn.mock.calls[0]?.[1]).toBe('workflow_node_actor_names_lookup_failed');
     expect(mockApiLogWarn.mock.calls[0]?.[0]).toEqual({
       runId: 'run-uuid-1',
       nodeId: 'plan',

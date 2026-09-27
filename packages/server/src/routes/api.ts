@@ -6386,6 +6386,15 @@ export function registerApiRoutes(
     return typeof senderId === 'string' ? senderId : null;
   }
 
+  function isPromptTextRow(row: NodeMessage): boolean {
+    return row.kind === 'text' && row.metadata?.origin === 'prompt';
+  }
+
+  function promptActorId(row: NodeMessage): string | null {
+    const actorId = row.metadata?.actor_user_id;
+    return typeof actorId === 'string' ? actorId : null;
+  }
+
   function resolveOperatorDisplayName(
     senderId: string | null,
     nameById: ReadonlyMap<string, string | null>
@@ -6403,17 +6412,38 @@ export function registerApiRoutes(
     return senderId.slice(0, 8);
   }
 
-  async function buildOperatorDisplayNameById(
+  /** Fallback for a real actor id whose display name did not resolve — never the raw id (see resolveOperatorDisplayName's own comment for why operator rows keep their existing id-slice fallback instead). */
+  const UNRESOLVED_PROMPT_ACTOR_LABEL = 'unknown user';
+
+  function resolvePromptDisplayName(
+    actorId: string | null,
+    nameById: ReadonlyMap<string, string | null>
+  ): string | null {
+    if (actorId === null) {
+      return null;
+    }
+    const storedName = nameById.get(actorId);
+    if (typeof storedName === 'string') {
+      const trimmed = storedName.trim();
+      if (trimmed.length > 0) {
+        return trimmed;
+      }
+    }
+    return UNRESOLVED_PROMPT_ACTOR_LABEL;
+  }
+
+  async function buildActorDisplayNameById(
     rows: readonly NodeMessage[],
     context: { runId: string; nodeId: string }
   ): Promise<ReadonlyMap<string, string | null>> {
     const senderIds: string[] = [];
     const seen = new Set<string>();
     for (const row of rows) {
-      if (!isOperatorTextRow(row)) {
-        continue;
-      }
-      const senderId = operatorSenderId(row);
+      const senderId = isOperatorTextRow(row)
+        ? operatorSenderId(row)
+        : isPromptTextRow(row)
+          ? promptActorId(row)
+          : null;
       if (senderId === null || seen.has(senderId)) {
         continue;
       }
@@ -6443,7 +6473,7 @@ export function registerApiRoutes(
           distinctSenderCount: senderIds.length,
           errorType: error instanceof Error ? error.name : typeof error,
         },
-        'workflow_node_operator_names_lookup_failed'
+        'workflow_node_actor_names_lookup_failed'
       );
       const map = new Map<string, string | null>();
       for (const senderId of senderIds) {
@@ -6456,7 +6486,7 @@ export function registerApiRoutes(
   function toWorkflowNodeMessageResponse(
     row: NodeMessage,
     truncateOutput: boolean,
-    operatorDisplayNameById: ReadonlyMap<string, string | null> = new Map()
+    actorDisplayNameById: ReadonlyMap<string, string | null> = new Map()
   ): z.infer<typeof workflowNodeMessageResponseSchema> {
     const createdAt = toISOString(row.created_at);
     if (row.kind === 'tool') {
@@ -6503,8 +6533,14 @@ export function registerApiRoutes(
           ...base,
           operator_display_name: resolveOperatorDisplayName(
             operatorSenderId(row),
-            operatorDisplayNameById
+            actorDisplayNameById
           ),
+        };
+      }
+      if (row.metadata?.origin === 'prompt') {
+        return {
+          ...base,
+          prompt_display_name: resolvePromptDisplayName(promptActorId(row), actorDisplayNameById),
         };
       }
       return base;
@@ -6534,13 +6570,13 @@ export function registerApiRoutes(
       if (!run) return apiError(c, 404, 'Workflow run not found');
       if (!cursorMode) {
         const rows = await workflowNodeMessageDb.listNodeMessages(runId, nodeId);
-        const operatorDisplayNameById = await buildOperatorDisplayNameById(rows, {
+        const actorDisplayNameById = await buildActorDisplayNameById(rows, {
           runId,
           nodeId,
         });
         return c.json({
           messages: rows.map(row =>
-            toWorkflowNodeMessageResponse(row, false, operatorDisplayNameById)
+            toWorkflowNodeMessageResponse(row, false, actorDisplayNameById)
           ),
         });
       }
@@ -6559,14 +6595,12 @@ export function registerApiRoutes(
       const hasMore = rows.length > limit;
       const page = hasMore ? rows.slice(0, limit) : rows;
       const last = page[page.length - 1];
-      const operatorDisplayNameById = await buildOperatorDisplayNameById(page, {
+      const actorDisplayNameById = await buildActorDisplayNameById(page, {
         runId,
         nodeId,
       });
       return c.json({
-        messages: page.map(row =>
-          toWorkflowNodeMessageResponse(row, true, operatorDisplayNameById)
-        ),
+        messages: page.map(row => toWorkflowNodeMessageResponse(row, true, actorDisplayNameById)),
         ...(last !== undefined ? { nextCursor: String(last.seq) } : {}),
         hasMore,
         highWatermark,
@@ -6593,11 +6627,11 @@ export function registerApiRoutes(
       if (!run) return apiError(c, 404, 'Workflow run not found');
       const row = await workflowNodeMessageDb.getNodeMessage(runId, nodeId, messageId);
       if (!row) return apiError(c, 404, 'Workflow node message not found');
-      const operatorDisplayNameById = await buildOperatorDisplayNameById([row], {
+      const actorDisplayNameById = await buildActorDisplayNameById([row], {
         runId,
         nodeId,
       });
-      return c.json(toWorkflowNodeMessageResponse(row, false, operatorDisplayNameById));
+      return c.json(toWorkflowNodeMessageResponse(row, false, actorDisplayNameById));
     } catch (error) {
       getLog().error(
         {

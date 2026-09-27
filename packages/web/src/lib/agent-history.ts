@@ -71,6 +71,8 @@ export type AgentHistoryItem =
       role: 'prompt';
       text: string;
       actorUserId: string | null;
+      /** Display name resolved server-side from `actorUserId`; null when there is no actor. */
+      actorDisplayName: string | null;
       source: 'node_prompt' | 'command_file' | 'reask';
       execution: TranscriptExecution | null;
     }
@@ -115,9 +117,21 @@ export interface AgentHistory {
   todos: TodoPhase[];
 }
 
-/** Shared label text for a `prompt` item's label line, read by both node room shells. */
-export function promptActorLabel(actorUserId: string | null): string {
-  return actorUserId !== null ? actorUserId.slice(0, 8) : 'run';
+/**
+ * Shared label text for a `prompt` item's label line, read by both node room
+ * shells. Never a raw id fragment: `actorDisplayName` is resolved
+ * server-side (a real display name, or the neutral `unknown user` fallback
+ * — never the id itself) from the same user lookup the operator label
+ * already uses; the local fallback here only covers older data that
+ * predates the field.
+ */
+export function promptActorLabel(
+  actorUserId: string | null,
+  actorDisplayName: string | null
+): string {
+  if (actorUserId === null) return 'run';
+  const trimmed = actorDisplayName?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : 'unknown user';
 }
 
 const PROMPT_SOURCE_LABEL: Record<Extract<AgentHistoryItem, { kind: 'prompt' }>['source'], string> =
@@ -127,11 +141,16 @@ const PROMPT_SOURCE_LABEL: Record<Extract<AgentHistoryItem, { kind: 'prompt' }>[
     reask: 'retry',
   };
 
-/** Shared label text for a `prompt` item's source, read by both node room shells. */
+/**
+ * Shared label text for a `prompt` item's source, read by both node room
+ * shells, or null for `node_prompt` — the row's own `prompt ·` label already
+ * says that, so the source segment would repeat the word for no added
+ * information. `command_file` and `reask` still carry it (`command`/`retry`).
+ */
 export function promptSourceLabel(
   source: Extract<AgentHistoryItem, { kind: 'prompt' }>['source']
-): string {
-  return PROMPT_SOURCE_LABEL[source];
+): string | null {
+  return source === 'node_prompt' ? null : PROMPT_SOURCE_LABEL[source];
 }
 
 type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
@@ -495,6 +514,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         role: 'prompt',
         text: message.payload.text,
         actorUserId: message.metadata.actor_user_id ?? null,
+        actorDisplayName: message.prompt_display_name ?? null,
         source: message.metadata.prompt_source ?? 'node_prompt',
         execution: message.metadata.execution ?? null,
       });

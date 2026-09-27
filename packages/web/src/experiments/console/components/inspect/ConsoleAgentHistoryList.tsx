@@ -317,7 +317,8 @@ function PromptHistory({
         style={{ margin: '10px 2px 3px' }}
       >
         <span data-prompt-label="">
-          prompt · {promptActorLabel(item.actorUserId)} · {promptSourceLabel(item.source)}
+          prompt · {promptActorLabel(item.actorUserId, item.actorDisplayName)}
+          {promptSourceLabel(item.source) !== null ? ` · ${promptSourceLabel(item.source)}` : ''}
         </span>
       </div>
       <div
