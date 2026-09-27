@@ -23,7 +23,10 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] agent-interrupt-redirect e2e 11/11 merged. Note: agent-withdraw-guidance.spec.ts ~566 may be stale (422 vs recovery) — check in final gate
 - [ ] Final gate: full e2e UI suite green after all merges
 
-- [ ] QA round 2 after fixes: per-item Send now + Auto-send label (needs soft-inject/auto-send provider), delivery states, multi-run headers, populated Files changed tab
+- [x] QA round 2 report (visual-qa-2): 1 blocker, 2 major, 7 minor, 2 cosmetic; round-1 fixes hold
+- [ ] QA2 engine fixes (steered turns keep attempt identity, rejected retry side effects, blank Send now drains queue, blocked Claude tool ◐, Files changed after retry) — agent qa2-engine
+- [ ] QA2 web fixes (delivered state, run N of M, loop max caption, actor name, Codex body bar, wrapper in body, TaskCreate/TaskUpdate todos, header cosmetics, placeholder) — agent qa2-web
+- [ ] QA round 3 after QA2 fixes
 
 ## Background processes started by this session
 
