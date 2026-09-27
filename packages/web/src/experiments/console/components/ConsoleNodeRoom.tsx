@@ -1121,7 +1121,11 @@ export function ConsoleNodeRoom({
             ref={scrollRef}
             data-testid="console-node-room-scroll"
             tabIndex={-1}
-            className="min-h-0 flex-1 overflow-y-auto"
+            // The todo strip below stays flex-none at its full content height, so an
+            // expanded strip on a very short room can squeeze this flex-1 sibling
+            // toward zero. A tiny floor keeps the scroller present rather than
+            // fully collapsed, while it still absorbs almost all of the squeeze.
+            className="min-h-[4px] flex-1 overflow-y-auto"
             style={{ overflowWrap: 'anywhere' }}
             onScroll={handleScroll}
           >

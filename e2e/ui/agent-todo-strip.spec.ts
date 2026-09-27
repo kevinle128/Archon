@@ -1014,17 +1014,14 @@ for (const surface of ['console', 'legacy'] as const) {
         };
       });
       const bandHeight = firstRow.bandBottom - firstRow.bandTop;
-      // Flexbox (`flex-1 min-h-0`) can legitimately shrink the scroller to
-      // exactly 0 under extreme squeeze (only Legacy reaches it here,
-      // reproduced deterministically across repeated runs, so it is a real
-      // squeeze outcome, not a flake). A negative value would still fail
-      // this and indicate a real geometry bug; the surviving invariant is
-      // the one below — no row is ever covered by the strip, never that the
-      // scroller keeps positive height.
-      expect(
-        bandHeight,
-        `transcript scroller never reports negative height at ${label}`
-      ).toBeGreaterThanOrEqual(0);
+      // The scroller carries a small min-height floor precisely so this never
+      // reaches zero, even when the expanded strip below squeezes it hard
+      // (e.g. 200% zoom on a short viewport) — the strip stays flex-none at
+      // its full content height and the scroller absorbs nearly all of the
+      // squeeze, but never the very last few pixels.
+      expect(bandHeight, `transcript scroller keeps a positive height at ${label}`).toBeGreaterThan(
+        0
+      );
       // A fixture row needs ~28.5px of band to be visible at all; when the
       // expanded strip squeezes the transcript below that (e.g. 200% zoom on
       // a short viewport), non-overlap above is the surviving invariant — the
