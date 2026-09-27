@@ -1035,6 +1035,55 @@ describe('ClaudeProvider', () => {
       });
     });
 
+    test('yields displayable thinking as its own chunk', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: {
+            content: [{ type: 'thinking', thinking: 'weighing two approaches' }],
+          },
+        };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+      expect(chunks).toEqual([{ type: 'thinking', content: 'weighing two approaches' }]);
+    });
+
+    test('drops a thinking block whose text is empty (display not requested)', async () => {
+      // Proven empirically: Settings.showThinkingSummaries unset returns the
+      // block with an EMPTY `thinking` field, not an absent block.
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: { content: [{ type: 'thinking', thinking: '' }] },
+        };
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] } };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+      expect(chunks).toEqual([{ type: 'assistant', content: 'answer', textMode: 'complete' }]);
+    });
+
+    test('drops a redacted_thinking block entirely — never displayable', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: { content: [{ type: 'redacted_thinking', data: 'ENCRYPTED_BLOB' }] },
+        };
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'answer' }] } };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+      expect(chunks).toEqual([{ type: 'assistant', content: 'answer', textMode: 'complete' }]);
+      expect(JSON.stringify(chunks)).not.toContain('ENCRYPTED_BLOB');
+    });
+
     test('enriches and logs error on SDK failure', async () => {
       const error = new Error('API connection failed');
       mockQuery.mockImplementation(async function* () {
@@ -1302,6 +1351,42 @@ describe('ClaudeProvider', () => {
       expect(mockQuery).toHaveBeenCalledTimes(1);
       const callArgs = mockQuery.mock.calls[0][0] as { options: Record<string, unknown> };
       expect(callArgs.options.settingSources).toEqual(['project', 'user']);
+    });
+
+    test('always requests thinking summaries, with no advisorModel by default', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'test-session' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/tmp')) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as {
+        options: { settings?: { showThinkingSummaries?: boolean; advisorModel?: string } };
+      };
+      expect(callArgs.options.settings?.showThinkingSummaries).toBe(true);
+      expect(callArgs.options.settings?.advisorModel).toBeUndefined();
+    });
+
+    test('forwards advisorModel from assistantConfig into settings', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'test-session' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/tmp', undefined, {
+        assistantConfig: { advisorModel: 'claude-opus-4-8' },
+      })) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as {
+        options: { settings?: { showThinkingSummaries?: boolean; advisorModel?: string } };
+      };
+      expect(callArgs.options.settings).toEqual({
+        showThinkingSummaries: true,
+        advisorModel: 'claude-opus-4-8',
+      });
     });
 
     test('defaults settingSources to project + user when not provided', async () => {
@@ -2170,6 +2255,248 @@ describe('sendQuery decomposition behaviors', () => {
       toolOutcome: 'success',
       outputState: 'full',
     });
+  });
+
+  test('an advisor-tagged subagent dispatch also yields an advisor notification', async () => {
+    // Empirically observed shape: Claude Code's advisorModel setting resolves
+    // to an ordinary Task/Agent dispatch with `subagent_type: 'advisor'`, not
+    // the raw Messages API's server_tool_use block. Its eventual tool_result
+    // (delivered the same way any other tool result is, via the PostToolUse
+    // hook queue) becomes the advisor notification.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'advisor-call-1',
+              input: { subagent_type: 'advisor', description: 'consult', prompt: 'help' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'advisor-call-1',
+        tool_response: 'use a channel-based shutdown pattern',
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      assistantConfig: { advisorModel: 'claude-opus-4-8' },
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toContainEqual({
+      type: 'tool',
+      toolName: 'Agent',
+      toolInput: { subagent_type: 'advisor', description: 'consult', prompt: 'help' },
+      toolCallId: 'advisor-call-1',
+    });
+    expect(chunks).toContainEqual({
+      type: 'advisor',
+      content: 'use a channel-based shutdown pattern',
+      advisorModel: 'claude-opus-4-8',
+    });
+  });
+
+  test('reads the report text out of an AgentToolCompletedOutput envelope', async () => {
+    // Empirically observed real-world shape: the hook-captured tool_response
+    // is JSON-serialized AgentToolCompletedOutput, not plain prose.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'advisor-call-2',
+              input: { subagent_type: 'advisor' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'advisor-call-2',
+        tool_response: JSON.stringify({
+          status: 'completed',
+          agentId: 'afb44f8a751ce4231',
+          agentType: 'advisor',
+          content: [{ type: 'text', text: 'Your reasoning is correct.' }],
+        }),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    const advisorChunk = chunks.find(chunk => chunk.type === 'advisor');
+    expect(advisorChunk).toEqual({ type: 'advisor', content: 'Your reasoning is correct.' });
+    // The ordinary tool_result row still carries the full raw envelope behind
+    // its own Raw toggle; only the advisor notification strips it.
+    expect(JSON.stringify(advisorChunk)).not.toContain('agentId');
+  });
+
+  test('falls back to the raw string when the envelope has no readable content', async () => {
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'advisor-call-3',
+              input: { subagent_type: 'advisor' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'advisor-call-3',
+        tool_response: JSON.stringify({ status: 'completed', content: [] }),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'advisor',
+      content: JSON.stringify({ status: 'completed', content: [] }),
+    });
+  });
+
+  test('a non-advisor subagent dispatch never yields an advisor notification', async () => {
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              name: 'Agent',
+              id: 'reviewer-call-1',
+              input: { subagent_type: 'code-reviewer' },
+            },
+          ],
+        },
+      };
+      const successHook = args.options.hooks?.PostToolUse?.[0]?.hooks?.[0];
+      await successHook?.({
+        tool_name: 'Agent',
+        tool_use_id: 'reviewer-call-1',
+        tool_response: 'looks fine',
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks.some(chunk => chunk.type === 'advisor')).toBe(false);
+  });
+
+  test('the raw Messages API advisor_tool_result block yields an advisor notification', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            { type: 'server_tool_use', id: 'srvtoolu-1', name: 'advisor', input: {} },
+            {
+              type: 'advisor_tool_result',
+              tool_use_id: 'srvtoolu-1',
+              content: { type: 'advisor_result', text: 'use a worker pool' },
+            },
+          ],
+        },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      assistantConfig: { advisorModel: 'claude-opus-4-8' },
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      { type: 'advisor', content: 'use a worker pool', advisorModel: 'claude-opus-4-8' },
+    ]);
+  });
+
+  test('a redacted advisor_tool_result reports that the answer is not readable', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'advisor_tool_result',
+              tool_use_id: 'srvtoolu-2',
+              content: { type: 'advisor_redacted_result', encrypted_content: 'BLOB' },
+            },
+          ],
+        },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]?.type).toBe('advisor');
+    expect((chunks[0] as { content: string }).content).toContain('encrypted');
+    expect(JSON.stringify(chunks)).not.toContain('BLOB');
+  });
+
+  test('an advisor_tool_result error reports the error code, not a fabricated answer', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'advisor_tool_result',
+              tool_use_id: 'srvtoolu-3',
+              content: { type: 'advisor_tool_result_error', error_code: 'overloaded' },
+            },
+          ],
+        },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toHaveLength(1);
+    expect((chunks[0] as { content: string }).content).toContain('overloaded');
   });
 
   test('PostToolUse hook handles circular reference without crashing', async () => {
