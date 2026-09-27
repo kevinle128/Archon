@@ -3544,7 +3544,7 @@ async function executeNodeInternal(
           reaskAttempt,
           passTurn,
           reaskAttempt === 0 ? pendingOperatorReceipt : undefined,
-          turnIsGuidance ? (turnGuidanceMessages[0]?.operatorUserId ?? null) : undefined
+          turnIsGuidance ? (turnGuidanceMessages[0]?.operator_user_id ?? null) : undefined
         );
         lastPassToken = passTurn.token;
         if (nodeCostUsd !== undefined) {
@@ -6633,7 +6633,7 @@ async function executeLoopNodeInner(
               scope: iterationExecutionScope,
               text: finalPrompt,
               actorUserId: turnIsGuidance
-                ? (turnGuidanceMessages[0]?.operatorUserId ?? null)
+                ? (turnGuidanceMessages[0]?.operator_user_id ?? null)
                 : (workflowRun.user_id ?? null),
               source:
                 reaskAttempt > 0
