@@ -9,6 +9,7 @@ import {
   chooseExecutionForNode,
   closeRoom,
   computeRunOfTotal,
+  disambiguateExecutionOptions,
   excludeRepresentedLoopContainers,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
@@ -691,6 +692,63 @@ describe('statusPill', () => {
     expect(statusPill('skipped')).toEqual({ label: 'Skipped', tone: null });
     expect(statusPill('cancelled')).toEqual({ label: 'Cancelled', tone: null });
   });
+
+  test('a recovery-required signal overrides a still-running row to an explicit warning pill', () => {
+    expect(statusPill('running', true)).toEqual({ label: 'Recovery required', tone: 'warning' });
+    expect(statusPill('awaiting', true)).toEqual({ label: 'Recovery required', tone: 'warning' });
+  });
+
+  test('recoveryRequired defaults to false, leaving the ordinary pill untouched', () => {
+    expect(statusPill('running')).toEqual({ label: 'Running', tone: 'accent' });
+  });
+});
+
+describe('disambiguateExecutionOptions', () => {
+  test('appends the live-status word only to the option whose row is running or awaiting', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'completed' },
+        { id: 'b', label: 'Iteration 2', status: 'running' },
+      ])
+    ).toEqual([
+      { id: 'a', label: 'Iteration 1' },
+      { id: 'b', label: 'Iteration 2 · running' },
+    ]);
+  });
+
+  test('numbers a later option whose text still collides after the status word', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'failed' },
+        { id: 'b', label: 'Iteration 1', status: 'failed' },
+      ])
+    ).toEqual([
+      { id: 'a', label: 'Iteration 1' },
+      { id: 'b', label: 'Iteration 1 · Run 2' },
+    ]);
+  });
+
+  test('a third collision keeps counting rather than repeating Run 2', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'failed' },
+        { id: 'b', label: 'Iteration 1', status: 'failed' },
+        { id: 'c', label: 'Iteration 1', status: 'failed' },
+      ]).map(option => option.label)
+    ).toEqual(['Iteration 1', 'Iteration 1 · Run 2', 'Iteration 1 · Run 3']);
+  });
+
+  test('distinct labels never gain a Run suffix', () => {
+    expect(
+      disambiguateExecutionOptions([
+        { id: 'a', label: 'Iteration 1', status: 'completed' },
+        { id: 'b', label: 'Iteration 2', status: 'completed' },
+      ])
+    ).toEqual([
+      { id: 'a', label: 'Iteration 1' },
+      { id: 'b', label: 'Iteration 2' },
+    ]);
+  });
 });
 
 describe('computeRunOfTotal', () => {
@@ -821,6 +879,20 @@ describe('headerMetaLine', () => {
     ).toBeNull();
   });
 
+  test('a recovery-required signal reports the restart, never running…, for a non-terminal row', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+        recoveryRequired: true,
+      })
+    ).toBe(`started ${startedHours()}:52 · restored after server restart · omp · claude-opus-5`);
+  });
+
   test('prefixes the iteration and drops the run count while viewing finished history', () => {
     expect(
       headerMetaLine({
@@ -937,6 +1009,30 @@ describe('buildExecutionHeader', () => {
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
     ).toBe('Execution unknown');
+  });
+
+  test("nodeLabel strips the log stream's ×N/#N execution suffix; a bare label passes through", () => {
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'loop-row', status: 'completed', order: 0, label: 'implement ×3' }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).nodeLabel
+    ).toBe('implement');
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'route-row', status: 'completed', order: 0, label: 'router #2' }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).nodeLabel
+    ).toBe('router');
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'plain-row', status: 'completed', order: 0, label: 'implement' }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).nodeLabel
+    ).toBe('implement');
   });
 
   test('a bare first occurrence reads "Run 1", never the banned "Attempt" wording', () => {

@@ -31,6 +31,7 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import { projectTerminalTodoState } from '@/lib/todo-state';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import { AskCard, InvalidAskCard } from './AskCard';
@@ -339,7 +340,10 @@ export function NodeTranscriptPane({
   useEffect(() => {
     if (navTarget !== null && !navTargetIsRendered) setNavTarget(null);
   }, [navTarget, navTargetIsRendered]);
-  const todos = agentHistory.todos;
+  // The strip and the latest todo row's inline checklist share this one
+  // terminal-projected fold — a terminal node never keeps showing an
+  // `in_progress` item as still running (todo-fold-contract.md).
+  const todos = projectTerminalTodoState(agentHistory.todos, rowStatus);
   const visibleAsks =
     row === null
       ? []

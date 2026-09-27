@@ -402,6 +402,62 @@ export function projectTodoState(inputs: readonly unknown[]): TodoPhase[] {
     .map(phase => ({ phase: phase.phase, items: phase.items.map(cloneItem) }));
 }
 
+/** Node lifecycle statuses that reach the checklist's terminal projection. */
+export type TodoTerminalOutcome = 'completed' | 'interrupted';
+
+const TODO_TERMINAL_OUTCOME_BY_NODE_STATUS: Readonly<Record<string, TodoTerminalOutcome>> = {
+  completed: 'completed',
+  failed: 'interrupted',
+  cancelled: 'interrupted',
+};
+
+/**
+ * The node lifecycle status a checklist reads to pick its terminal outcome,
+ * or null while the node is still `pending`/`running`/`awaiting`/`skipped` —
+ * the raw folded state renders unprojected in every one of those.
+ */
+export function todoTerminalOutcome(nodeStatus: string): TodoTerminalOutcome | null {
+  return TODO_TERMINAL_OUTCOME_BY_NODE_STATUS[nodeStatus] ?? null;
+}
+
+/**
+ * A single item's terminal projection. A completed node finished the plan it
+ * declared, so every item still short of `completed` reads as done — this
+ * never applies to `abandoned`, which is already the agent's own terminal
+ * claim about that item, not a claim this projection gets to overrule. An
+ * interrupted node proved nothing about work still in flight, so only the
+ * `in_progress` item — the one the strip would otherwise show mid-run forever
+ * — steps back to `pending`; every other status already recorded the
+ * agent's own verdict and stays exactly as folded.
+ */
+function projectTerminalItem(itemValue: TodoItem, outcome: TodoTerminalOutcome): TodoItem {
+  if (outcome === 'completed') {
+    if (itemValue.status === 'completed' || itemValue.status === 'abandoned') return itemValue;
+    return { content: itemValue.content, status: 'completed' };
+  }
+  return itemValue.status === 'in_progress'
+    ? { content: itemValue.content, status: 'pending' }
+    : itemValue;
+}
+
+/**
+ * Presentation-only terminal fold: never rewrites the persisted todo events
+ * `projectTodoState` already committed, only the phases a renderer is about
+ * to draw for a node that has reached a terminal lifecycle status. Returns
+ * the input unchanged while the node is still live.
+ */
+export function projectTerminalTodoState(
+  phases: readonly TodoPhase[],
+  nodeStatus: string
+): readonly TodoPhase[] {
+  const outcome = todoTerminalOutcome(nodeStatus);
+  if (outcome === null) return phases;
+  return phases.map(phase => ({
+    phase: phase.phase,
+    items: phase.items.map(item => projectTerminalItem(item, outcome)),
+  }));
+}
+
 /**
  * Flatten phases into headline data: completed count, total, and the
  * representative item — first in-progress, else first blocked, else last

@@ -34,6 +34,7 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import { projectTerminalTodoState } from '@/lib/todo-state';
 
 import type { Run } from '../primitives/run';
 import type {
@@ -727,7 +728,11 @@ export function ConsoleNodeRoom({
           nowMs,
         });
   const items = agentHistory.items;
-  const showTodoStrip = agentActive && agentHistory.todos.length > 0;
+  // The strip and the latest todo row's inline checklist share this one
+  // terminal-projected fold — a terminal node never keeps showing an
+  // `in_progress` item as still running (todo-fold-contract.md).
+  const projectedTodos = projectTerminalTodoState(agentHistory.todos, rowStatus);
+  const showTodoStrip = agentActive && projectedTodos.length > 0;
   const visibleAsks =
     row !== null && resolution?.kind === 'agent'
       ? selectVisibleNodeAskInteractions({
@@ -920,7 +925,7 @@ export function ConsoleNodeRoom({
         showToolCalls={showToolCalls}
         showSystem={showSystem}
         unknownScope={row.unknownScope === true}
-        todos={agentHistory.todos}
+        todos={projectedTodos}
         onLoadFullOutput={async (item): Promise<unknown> => {
           const message = await loadMessage(run.id, row.nodeId, item.messageId);
           return message.kind === 'tool' ? message.payload.output : undefined;
@@ -1103,7 +1108,7 @@ export function ConsoleNodeRoom({
             {body}
           </div>
           {showTodoStrip ? (
-            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={projectedTodos} />
           ) : null}
           {controls}
           {agentActive && row !== null ? (
