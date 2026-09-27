@@ -454,15 +454,20 @@ function runningElapsed(
  * from its matching `tool_completed` event's `tool_outcome` field. A provider
  * that cannot tie an interrupt marker to a specific tool call settles that
  * field `'unknown'` rather than `'interrupted'` — this lets the fold below
- * respect that distinction without knowing which provider produced it.
- * Ambiguous data (no match, or more than one) defaults to `'interrupted'`,
- * matching every row recorded before this distinction existed.
+ * respect that distinction without knowing which provider produced it. A
+ * recorded `'success'` is protected the same way: the tool call actually
+ * finished before the turn's interrupt landed, proven by its own completion
+ * event, so relabelling it `'interrupted'` would claim a finished side effect
+ * did not finish. Every other recorded value (`'error'`, an ambiguous or
+ * missing match) defaults to `'interrupted'`, matching every row recorded
+ * before this distinction existed — a provider that records its own stopped
+ * tool as `'error'` with interrupt evidence keeps the interrupted glyph.
  */
 function settledToolOutcome(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
   toolUseId: string
-): 'interrupted' | 'unknown' {
+): 'succeeded' | 'interrupted' | 'unknown' {
   const matches: unknown[] = [];
   for (const workflowEvent of events) {
     if (workflowEvent.event_type !== 'tool_completed') continue;
@@ -472,7 +477,10 @@ function settledToolOutcome(
     if (data.tool_call_id !== toolUseId) continue;
     matches.push(data.tool_outcome);
   }
-  return matches.length === 1 && matches[0] === 'unknown' ? 'unknown' : 'interrupted';
+  if (matches.length !== 1) return 'interrupted';
+  if (matches[0] === 'unknown') return 'unknown';
+  if (matches[0] === 'success') return 'succeeded';
+  return 'interrupted';
 }
 
 export function toolRuntime(
@@ -518,8 +526,10 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
       items.push(toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome));
       // Consume the status row only when it proved the interrupted outcome —
       // that reads as this row's own glyph. Otherwise the row still recorded
-      // that Stop landed here and stays visible as its own lifecycle item,
-      // since an 'unknown' tool glyph does not carry that fact on its own.
+      // that Stop landed here and stays visible as its own lifecycle item:
+      // an 'unknown' tool glyph carries no interruption fact on its own, and
+      // a 'succeeded' glyph must not silently absorb an unrelated interrupt
+      // that landed after the call had already finished.
       if (settledOutcome === 'interrupted') index++;
       continue;
     }

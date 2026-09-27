@@ -793,6 +793,66 @@ describe('buildAgentHistory', () => {
     expect(settled.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
   });
 
+  test.each([
+    ['omp', 'success', 'succeeded'],
+    ['grok', 'success', 'succeeded'],
+    ['codex', 'success', 'succeeded'],
+    ['claude', 'error', 'interrupted'],
+    ['codex', 'error', 'interrupted'],
+  ] as const)(
+    '%s: a tool call recorded %j by its own completion event settles to %j when Stop lands right after it',
+    (_provider, recordedOutcome, expectedOutcome) => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [
+          event({
+            id: 'evt-1',
+            eventType: 'tool_completed',
+            stepName: NODE_ID,
+            data: { tool_call_id: 'finished-before-stop', tool_outcome: recordedOutcome },
+          }),
+        ],
+        rows: [
+          toolRow({
+            id: 'call-finished',
+            seq: 1,
+            name: 'Bash',
+            toolUseId: 'finished-before-stop',
+            input: { cmd: 'sleep 25 && echo done' },
+            metadata: { tool_phase: 'call' },
+          }),
+          toolRow({
+            id: 'result-finished',
+            seq: 2,
+            name: 'Bash',
+            toolUseId: 'finished-before-stop',
+            output: 'done',
+            metadata: { tool_phase: 'result', outcome: recordedOutcome },
+          }),
+          statusRow('s-interrupt', 3, 'interrupted'),
+        ],
+      });
+      const [settled] = items;
+      expect(settled).toMatchObject({ id: 'call-finished', outcome: expectedOutcome });
+      if (expectedOutcome === 'succeeded') {
+        // The call actually finished before Stop landed — it must not
+        // silently absorb the unrelated interrupt marker. The status row
+        // stays visible as its own lifecycle item, the same treatment an
+        // 'unknown' settlement already gets.
+        expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+      } else {
+        // A recorded 'error' still folds to the interrupted presentation
+        // for every provider — the fold cannot tell a provider's own
+        // stopped-tool error (which needs this to reach '⚠') apart from an
+        // unrelated failure that happened to land next to Stop, and treating
+        // every recorded outcome the same way would turn the former into a
+        // plain failure instead.
+        expect(kinds(items)).toEqual(['tool']);
+      }
+    }
+  );
+
   test('a still-open tool call settles to unknown when the execution is terminal', () => {
     const { items } = buildAgentHistory({
       nodeId: NODE_ID,
