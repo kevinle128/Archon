@@ -3,7 +3,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 
-import { type Locator, type Page, type Request, type Route, type TestInfo } from '@playwright/test';
+import {
+  type APIRequestContext,
+  type Locator,
+  type Page,
+  type Request,
+  type Route,
+  type TestInfo,
+} from '@playwright/test';
 
 import { test, expect } from '../lib/playwright/suite';
 import {
@@ -93,6 +100,48 @@ function sendPathname(runId: string, nodeId: string): string {
 
 function interruptPathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/interrupt`;
+}
+
+function draftPathname(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/draft`;
+}
+
+function queuePathname(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue`;
+}
+
+interface DraftSnapshot {
+  message: string;
+  updated_at: string;
+}
+
+/**
+ * Reads the acting operator's own server-persisted composer draft. Scoped by
+ * the request context's identity header — a different identity's GET on the
+ * same run/node never sees this one.
+ */
+async function readDraft(
+  request: APIRequestContext,
+  runId: string,
+  nodeId: string
+): Promise<DraftSnapshot | null> {
+  const res = await request.get(draftPathname(runId, nodeId), {
+    headers: { 'Cache-Control': 'no-store' },
+  });
+  expect(res.status(), `GET draft ${runId}/${nodeId}`).toBe(200);
+  const body = (await res.json()) as { success?: boolean; draft?: DraftSnapshot | null };
+  expect(body.success, 'draft read success flag').toBe(true);
+  return body.draft ?? null;
+}
+
+/** Waits for the composer's debounced draft PUT to reach the server. */
+async function waitForDraftSaved(page: Page, runId: string, nodeId: string): Promise<void> {
+  await page.waitForResponse(
+    res =>
+      res.request().method() === 'PUT' &&
+      new URL(res.url()).pathname === draftPathname(runId, nodeId) &&
+      res.ok()
+  );
 }
 
 /** Counts POSTs to a node route so no-request guards are provable. */
@@ -1019,7 +1068,15 @@ for (const surface of ['console', 'legacy'] as const) {
     await field.fill('first');
     await queueButton(room).click();
     await expect(room.getByText('queued · 1')).toBeVisible();
+
+    const draftSaved = waitForDraftSaved(page, run.runId, QUEUE_GUIDANCE_NODE);
     await field.fill('kept draft');
+    // Wait for the debounced PUT to land, then read it back before the 422
+    // even fires — a precondition that fails loudly on an identity mismatch
+    // rather than surfacing as an ambiguous "draft missing" later.
+    await draftSaved;
+    const draftBefore = await readDraft(page.request, run.runId, QUEUE_GUIDANCE_NODE);
+    expect(draftBefore?.message, 'the draft reaches the server before the 422').toBe('kept draft');
 
     await page.route('**/interrupt', async route => {
       await route.fulfill({
@@ -1036,15 +1093,11 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(disclosure).toContainText(DETACHED_DISCLOSURE, { timeout: T.medium });
     await expect(field).toHaveCount(0);
 
-    const stored = await page.evaluate(
-      key => sessionStorage.getItem(key),
-      `archon:steering-draft:${run.runId}:${QUEUE_GUIDANCE_NODE}`
-    );
-    const record = JSON.parse(stored ?? '{}') as {
-      draft?: string;
-      pendingRetry?: { messageId?: string; message?: string };
-    };
-    expect(record.draft, 'the typed draft survives the 422').toBe('kept draft');
+    // The 422 replaces the dock with the detached disclosure — the field
+    // (and any never-sent-draft display) leaves the DOM, so the server draft
+    // is the only remaining proof that the typed text survives the 422.
+    const draftAfter = await readDraft(page.request, run.runId, QUEUE_GUIDANCE_NODE);
+    expect(draftAfter?.message, 'the typed draft survives the 422').toBe('kept draft');
     await page.unroute('**/interrupt');
     // Let the natural delay finish so the run leaves no live process; the
     // queued item still drains at the boundary.
@@ -1138,10 +1191,13 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(order.group, '×1 group header exists').toBeGreaterThanOrEqual(0);
       expect(order.echo).toBeGreaterThan(order.group);
       expect(order.done).toBeGreaterThan(order.echo);
-      expect(
-        order.text.match(/steer-loop ×/g)?.length ?? 0,
-        'exactly one iteration group for steer-loop'
-      ).toBe(1);
+      // Scoped to the log stream list only: the open room's own header
+      // legitimately repeats the same "steer-loop ×1" label alongside it, so
+      // counting across the whole page would double-count one iteration
+      // instead of catching a genuine second one.
+      await expect(
+        page.getByTestId('console-run-log-scroll').getByRole('button', { name: /steer-loop ×/ })
+      ).toHaveCount(1);
     }
   });
 
@@ -1351,7 +1407,7 @@ for (const surface of ['console', 'legacy'] as const) {
   });
 }
 
-test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 idle idempotent, awaiting_send_now, drain-once, 404, 409, 422', async ({
+test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 idle idempotent, awaiting_send_now, drain-once, 404, 409 finished, 409 recovery', async ({
   page,
   archon,
 }) => {
@@ -1371,9 +1427,10 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   await waitForNodeStarted(page, run.runId, QUEUE_GUIDANCE_NODE);
   await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'generating');
 
+  const queuedOneId = randomUUID();
   const queued = await post(run.runId, QUEUE_GUIDANCE_NODE, {
     message: 'route queued one',
-    message_id: randomUUID(),
+    message_id: queuedOneId,
     intent: 'queue',
   });
   expect(queued.status).toBe(200);
@@ -1389,9 +1446,10 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   expect(await again.json()).toEqual({ success: true, sub_state: 'idle-after-interrupt' });
 
   // Queueing while idle records the receipt without waking the turn.
+  const queuedTwoId = randomUUID();
   const idleQueued = await post(run.runId, QUEUE_GUIDANCE_NODE, {
     message: 'route queued two',
-    message_id: randomUUID(),
+    message_id: queuedTwoId,
     intent: 'queue',
   });
   expect(idleQueued.status).toBe(200);
@@ -1418,6 +1476,13 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   await waitForSubState(page, run.runId, QUEUE_GUIDANCE_NODE, 'generating');
 
   // A replayed send_now is idempotent — the accepted id never drains twice.
+  // The contract's replay guarantee is "the current receipt", not a frozen
+  // one: by now the drain has claimed the message into the active turn, so
+  // its state has legitimately advanced past `awaiting_send_now`. The fake
+  // provider's `delayMs` blocks every emission (including the first stream
+  // chunk that would mark it `sent`) until the full delay elapses, so
+  // `dispatching` — claimed, not yet delivered — is the deterministic state
+  // at this point.
   const replay = await post(run.runId, QUEUE_GUIDANCE_NODE, {
     message: sendNowMessage,
     message_id: sendNowId,
@@ -1427,8 +1492,22 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
   expect(await replay.json()).toEqual({
     success: true,
     message_id: sendNowId,
-    state: 'awaiting_send_now',
+    state: 'dispatching',
   });
+
+  // Stronger proof the replay never inserted a second queue entry: the
+  // durable queue still holds exactly the three original ids, in FIFO order.
+  const queueAfterReplay = await archon.starterFetch(queuePathname(run.runId, QUEUE_GUIDANCE_NODE));
+  expect(queueAfterReplay.status).toBe(200);
+  const queueAfterReplayBody = (await queueAfterReplay.json()) as {
+    success: boolean;
+    queued: { message_id: string }[];
+  };
+  expect(queueAfterReplayBody.queued.map(entry => entry.message_id)).toEqual([
+    queuedOneId,
+    queuedTwoId,
+    sendNowId,
+  ]);
 
   const unknown = await interrupt(run.runId, 'ghost-node');
   expect(unknown.status).toBe(404);
@@ -1437,15 +1516,21 @@ test('[P1] [V:steer.interrupt-routes] interrupt and redirect route ladder: 200 i
     error: { code: 'not_found' },
   });
 
+  // A CLI-detached run registers its own live handle in its own process and
+  // durably stamps `provider_id` on the node's steering settings row. From
+  // this server's perspective that row looks identical to a crashed process
+  // that once held a live handle — the classifier cannot tell "alive in
+  // another process" from "orphaned by a crash", so it asks for the explicit
+  // Resume action (409 `recovery_required`) rather than guessing.
   const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_WORKFLOW_NAME);
   const detachedRunId = await detached.runId;
   await archon.waitForRunStatus(detachedRunId, 'running', T.long);
   await waitForNodeStarted(page, detachedRunId, QUEUE_GUIDANCE_NODE);
   const detachedInterrupt = await interrupt(detachedRunId, QUEUE_GUIDANCE_NODE);
-  expect(detachedInterrupt.status).toBe(422);
+  expect(detachedInterrupt.status).toBe(409);
   expect(await detachedInterrupt.json()).toMatchObject({
     success: false,
-    error: { code: 'not_steerable_here' },
+    error: { code: 'recovery_required' },
   });
 
   await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
