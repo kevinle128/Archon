@@ -22,7 +22,28 @@ export const OMP_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false,
   askHuman: false,
+  // Verified false against the real binary (spike:interrupt:omp, omp/18.1.21,
+  // re-confirmed 2026-09-27): the shipped `--mode json` + SIGTERM path
+  // cannot resume a freshly-interrupted session from disk — both the
+  // assistant-text and active-tool conformance cases failed resume this
+  // run (a prior run passed active-tool; this run did not, so the failure
+  // is not even consistent across runs). `--mode rpc` looks like the real
+  // fix (spike:rpc:omp: an in-band `{type:"abort"}` never kills the
+  // process, and a same-pid redirect afterward correctly proved it kept
+  // turn 1's context) but the abort command's own acknowledgement did not
+  // reliably echo back by id across repeated runs, and porting the
+  // provider's whole turn loop, event parser, and usage tracker to RPC
+  // framing is a dedicated story, not provable here. See the phase-f1
+  // report for the full spike evidence.
   interrupt: false,
+  // Verified false: RPC `steer` sent in the documented "between tool calls"
+  // gap did not change the model's already-planned next tool call — the
+  // second call still ran unchanged, and the steer content was appended as
+  // a queued follow-up turn after the original plan finished (`followUp`
+  // semantics, not mid-turn injection). Gated behind `interrupt` regardless
+  // (softInjection requires interrupt !== false).
   softInjection: false,
+  // Verified false: no built or spiked transport surfaces a provider
+  // acknowledgement correlated to a caller-stamped message id.
   deliveryAck: false,
 };
