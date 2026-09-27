@@ -11,9 +11,11 @@ per-item soft injection, auto-send). Nothing pushed.
 1. `feeb81f3` fix(web): adopt durable steering wire contract in both Node Room shells
 2. `1af5c54b` Merge branch 'develop-2' into worktree-agent-a8316a854c5280f28 (Phases D, F1, F2 — no conflicts)
 3. `8d5764ba` fix(web): correct stale draft-persistence hint and delete control glyph
+4. `3be1debb` fix(e2e): sync steering hint/queue-band assertions with saved-for-you copy — carries this report and its evidence
+5. a small follow-up commit correcting this section's own SHA list once `3be1debb` existed
 
-SHAs are recorded in `develop-2/tasks/b-ui-sha.txt` (oldest first: `feeb81f3`
-then `8d5764ba`) for the coordinator to cherry-pick or merge.
+SHAs are recorded in `develop-2/tasks/b-ui-sha.txt`, oldest first, for the
+coordinator to cherry-pick or merge.
 
 ## Goal 1 — unblock the team (type-check + tests green)
 
