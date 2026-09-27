@@ -633,6 +633,43 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         item.kind === 'tool' && item.presentation.family === 'todo'
     )
     .sort((left, right) => left.seq - right.seq)
-    .map(item => item.input);
+    .map(todoFoldInput);
   return { items, todos: projectTodoState(todoInputs) };
+}
+
+/**
+ * The record `projectTodoState` folds for one todo-family tool call. A
+ * `TaskCreate` call's input never carries the id the tool assigns to it —
+ * only its *output* does (`{ task: { id } }`) — so this merges that id onto
+ * the input under the same `taskId` key `TaskUpdate` already sends,
+ * giving every Task-family call one identity field regardless of which
+ * side of the call carried it. A call whose output has not landed yet
+ * (still live) folds exactly as sent, with no fabricated id, and is
+ * skipped until the id is known.
+ */
+function todoFoldInput(item: Extract<AgentHistoryItem, { kind: 'tool' }>): unknown {
+  const input = asRecord(item.input);
+  if (input === null || typeof input.taskId === 'string' || typeof input.subject !== 'string') {
+    return item.input;
+  }
+  const output = asRecord(item.output);
+  const parsedOutput =
+    output !== null
+      ? output
+      : typeof item.output === 'string'
+        ? parseJsonRecord(item.output)
+        : null;
+  const assignedId = asRecord(parsedOutput?.task)?.id;
+  return typeof assignedId === 'string' && assignedId.length > 0
+    ? { ...input, taskId: assignedId }
+    : item.input;
+}
+
+/** `JSON.parse` that never throws; non-string or unparseable input yields null. */
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
 }

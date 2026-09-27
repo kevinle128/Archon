@@ -204,6 +204,8 @@ const FAMILY_ALIASES: Record<string, ToolFamily> = {
   todo: 'todo',
   todowrite: 'todo',
   plan: 'todo',
+  taskcreate: 'todo',
+  taskupdate: 'todo',
   task: 'task',
   agent: 'task',
   subagent: 'task',

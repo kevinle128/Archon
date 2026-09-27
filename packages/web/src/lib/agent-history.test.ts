@@ -1619,6 +1619,65 @@ describe('buildAgentHistory', () => {
     ]);
   });
 
+  test('TaskCreate folds by the id its own output assigns, then TaskUpdate advances it by that id', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-create',
+          seq: 1,
+          name: 'TaskCreate',
+          toolUseId: 'tc-1',
+          input: { subject: 'Scout the routes', description: 'Map the send/interrupt path' },
+          // The real SDK sends the output as a JSON-encoded string, not an object.
+          output: '{"task":{"id":"1","subject":"Scout the routes"}}',
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-update',
+          seq: 2,
+          name: 'TaskUpdate',
+          toolUseId: 'tu-1',
+          input: { taskId: '1', status: 'in_progress' },
+          output: '{"success":true,"taskId":"1","updatedFields":["status"]}',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool', 'tool']);
+    expect(items.map(item => (item.kind === 'tool' ? item.presentation.family : null))).toEqual([
+      'todo',
+      'todo',
+    ]);
+    expect(todos).toEqual([
+      {
+        phase: 'Tasks',
+        items: [{ content: 'Scout the routes', status: 'in_progress', id: '1' }],
+      },
+    ]);
+  });
+
+  test('a still-live TaskCreate (no output yet) never folds a blank row', () => {
+    const { todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-create',
+          seq: 1,
+          name: 'TaskCreate',
+          toolUseId: 'tc-1',
+          input: { subject: 'Scout the routes', description: 'still running' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(todos).toEqual([]);
+  });
+
   test('non-todo tools carrying op-shaped inputs and lifecycle rows do not fold', () => {
     const { items, todos } = buildAgentHistory({
       nodeId: NODE_ID,
