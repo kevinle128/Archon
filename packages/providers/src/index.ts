@@ -151,9 +151,9 @@ export {
   buildOmpArgs,
   parseOmpConfig,
   registerOmpProvider,
-  type OmpProcess,
+  type OmpRpcProcess,
   type OmpProviderDefaults,
-  type OmpSpawner,
+  type OmpRpcSpawner,
 } from './community/omp';
 export {
   resolveOmpBinaryPath,

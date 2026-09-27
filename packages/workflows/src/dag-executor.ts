@@ -3082,6 +3082,16 @@ async function executeNodeInternal(
         } else if (msg.type === 'background_tasks') {
           // Level signal (REPLACE semantics): swap the live set for the payload.
           backgroundTasks.update(msg.tasks);
+        } else if (msg.type === 'turn_not_interruptible') {
+          // Provider-reported per-turn downgrade: this turn cannot honor an
+          // operator Stop even though the resolved provider is otherwise
+          // interruptible. Flag the CURRENT pass's token so its projected
+          // sub-state hides Stop and a racing interrupt() settles immediately
+          // instead of aborting a controller nothing reads.
+          if (interruptibleHandle !== undefined && passTurn?.token !== undefined) {
+            interruptibleHandle.markTurnNotInterruptible(passTurn.token);
+          }
+          getLog().debug({ nodeId: node.id, reason: msg.reason }, 'dag.turn_interrupt_unavailable');
         } else if (msg.type === 'system' && msg.content) {
           // Providers yield system chunks for user-actionable issues (missing env
           // vars, Haiku+MCP, structured output failures, etc.). MCP-failure
@@ -6966,6 +6976,18 @@ async function executeLoopNodeInner(
             } else if (msg.type === 'background_tasks') {
               // Level signal (REPLACE semantics): swap the live set for the payload.
               backgroundTasks.update(msg.tasks);
+            } else if (msg.type === 'turn_not_interruptible') {
+              // Provider-reported per-turn downgrade (mirrors the standard
+              // AI-node path above): flag the current iteration's turn token
+              // so its projected sub-state hides Stop and a racing
+              // interrupt() settles immediately instead of waiting.
+              if (interruptibleHandle !== undefined && turnToken !== undefined) {
+                interruptibleHandle.markTurnNotInterruptible(turnToken);
+              }
+              getLog().debug(
+                { nodeId: node.id, iteration: i, reason: msg.reason },
+                'loop_node.turn_interrupt_unavailable'
+              );
             } else if (msg.type === 'tool' && msg.toolName) {
               const now = Date.now();
               const toolCallId = msg.toolCallId ?? `anonymous-${String(++anonymousToolSequence)}`;

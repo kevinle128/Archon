@@ -18,34 +18,40 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false,
   askHuman: false,
-  // Still false, but the underlying mechanism is now proven, not just
-  // blocked: the shipped adapter uses `--single` (one-shot argv prompt,
-  // `stdin: 'ignore'`) — there is no channel to send anything on mid-turn,
-  // so the OS-level SIGTERM/SIGKILL path in `interrupt-resume-spike.ts`
-  // (B7/B9) reliably finds surviving descendants (owned-tree mid-tool Stop
-  // and node-Cancel both fail on grok 1.0.41/1.0.42). The alternative real
-  // transport, `grok agent stdio` (ACP), has an in-band `session/cancel`
-  // notification that asks the agent to stop its OWN turn instead of being
-  // killed from outside: `session-cancel-spike.ts` ran this against a
-  // fingerprinted, confirmed-alive tool-process descendant and got a clean
-  // reap 6/6 (3 trials each on 1.0.41 and 1.0.42) in 16-27ms, every time,
-  // with `stopReason: "cancelled"`. Session continuation after cancel also
-  // passed 6/6, both same-process (`session/prompt` again on the identical
-  // connection) and cross-process (`session/load` from a brand-new spawn
-  // with no `--resume` flag, the shape Archon's per-call `sendQuery()`
-  // would actually need) — the model recalled a planted token both ways.
-  // This is a stronger, cleaner result than OMP's RPC-mode finding (whose
-  // abort ack was not reliably acknowledged): Grok's is fully green. Still
-  // `false` because adopting it means swapping `--single` for `agent
-  // stdio` project-wide, not toggling a flag — every `buildGrokArgs()` CLI
-  // flag (`--tools`/`--disallowed-tools`, `--json-schema`,
-  // `--system-prompt-override`/`--rules`, `--agents`, `--session-id`/
-  // `--fork-session`, `--permission-mode`) would need an ACP-protocol
-  // equivalent re-verified one by one, exactly the kind of transport
-  // migration this same phase scoped as its own follow-up story for OMP's
-  // RPC mode rather than a rushed leg of this one.
-  interrupt: false,
-  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
+  // `sendQuery()` now defaults to `grok agent stdio` (ACP) instead of
+  // `--single`, specifically to make this true: the shipped `--single`
+  // transport (one-shot argv prompt, `stdin: 'ignore'`) has no channel to
+  // send anything on mid-turn, so the OS-level SIGTERM/SIGKILL path in
+  // `interrupt-resume-spike.ts` (B7/B9) reliably finds surviving
+  // descendants. ACP's in-band `session/cancel` notification asks the agent
+  // to stop its OWN turn instead: `session-cancel-spike.ts` ran this
+  // against a fingerprinted, confirmed-alive tool-process descendant and
+  // got a clean reap 6/6 (3 trials each on grok 1.0.41 and the 1.0.42
+  // alpha) in 16-27ms, every time, with `stopReason: "cancelled"`. Session
+  // continuation after cancel also passed 6/6, both same-process and
+  // cross-process (`session/resume` from a brand-new spawn — the shape
+  // Archon's per-call `sendQuery()` needs) — the model recalled a planted
+  // token both ways. Not `'native'`: `runGrokAcpTurn` spawns a fresh
+  // process per call and closes the session on every turn end, so a
+  // redirect after Stop is a cold `session/resume`, not a kept-warm
+  // connection — same posture as the DeepSeek ACP client.
+  //
+  // Not every `buildGrokArgs()` CLI flag has a verified ACP equivalent
+  // (`--tools`/`--disallowed-tools`, `--json-schema`,
+  // `--system-prompt-override`/`--rules`, `--agents`, `--fork-session`,
+  // and any `--permission-mode` beyond the default all had no proof found
+  // live — see `selectGrokTransport()` in `provider.ts` for the exact
+  // evidence per flag). Those node configs still run on `--single`, losing
+  // Stop for that one turn only; this flag cannot vary per turn, so
+  // `sendQuery()` reports the downgrade with a typed `turn_not_interruptible`
+  // chunk instead (see `selectGrokTransport()`'s doc comment).
+  interrupt: 'stream-abort',
+  // ACP's `tool_call_update` has no distinct cancelled status either (same
+  // as DeepSeek): a tool cut short by `session/cancel` observed live never
+  // received ANY terminal update at all, so the fallback settles it
+  // `'unknown'` (`closeOutstandingGrokAcpTools`) rather than a guessed
+  // `'interrupted'` — there is no per-tool marker to remap from.
+  interruptedToolStatus: false,
   // Verified false: gated behind `interrupt !== false` regardless. Also
   // independently disproven on its own terms — see deliveryAck below.
   softInjection: false,

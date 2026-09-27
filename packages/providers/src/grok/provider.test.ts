@@ -1,6 +1,29 @@
 import { describe, expect, test } from 'bun:test';
 
-import { buildGrokArgs, GrokProvider, type GrokProcess, type GrokSpawner } from './provider';
+import type { GrokAcpProcessInput } from './acp-client';
+import {
+  buildGrokArgs,
+  GrokProvider,
+  selectGrokTransport,
+  type GrokAcpTurnRunner,
+  type GrokProcess,
+  type GrokSpawner,
+} from './provider';
+import { parseGrokConfig } from './config';
+import type { MessageChunk, SendQueryOptions } from '../types';
+import { STREAM_ABORTED_TERMINAL_REASON } from '../types';
+
+/**
+ * Forces `selectGrokTransport()` to pick the legacy `--single` transport —
+ * `output_format` has no verified ACP equivalent (see `selectGrokTransport`'s
+ * own doc comment). Every `GrokProvider` behavioral test below that exercises
+ * the `--single`/streaming-json plumbing (NDJSON reassembly, exit codes,
+ * stderr/exit races, process kill on Cancel) merges this in so it keeps
+ * hitting that code path now that ACP is the default.
+ */
+const FORCE_SINGLE_TRANSPORT: SendQueryOptions = {
+  outputFormat: { type: 'json_schema', schema: { type: 'object' } },
+};
 
 function stream(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -167,7 +190,88 @@ describe('buildGrokArgs', () => {
   });
 });
 
-describe('GrokProvider', () => {
+describe('selectGrokTransport', () => {
+  test('defaults to ACP when no node config needs an unverified flag', () => {
+    expect(selectGrokTransport({ config: {} })).toEqual({ kind: 'acp' });
+    expect(selectGrokTransport({ config: { permissionMode: 'bypassPermissions' } })).toEqual({
+      kind: 'acp',
+    });
+  });
+
+  test('falls back for structured output (--json-schema)', () => {
+    const selection = selectGrokTransport({
+      config: {},
+      requestOptions: { outputFormat: { type: 'json_schema', schema: { type: 'object' } } },
+    });
+    expect(selection.kind).toBe('single');
+  });
+
+  test('falls back for inline sub-agent definitions (--agents)', () => {
+    const selection = selectGrokTransport({
+      config: {},
+      requestOptions: {
+        nodeConfig: { agents: { reviewer: { description: 'Review', prompt: 'Review carefully' } } },
+      },
+    });
+    expect(selection.kind).toBe('single');
+  });
+
+  test('an empty agents map does not force a fallback', () => {
+    expect(
+      selectGrokTransport({ config: {}, requestOptions: { nodeConfig: { agents: {} } } })
+    ).toEqual({ kind: 'acp' });
+  });
+
+  test('falls back for allowed_tools, including an empty array', () => {
+    expect(
+      selectGrokTransport({
+        config: {},
+        requestOptions: { nodeConfig: { allowed_tools: ['read_file'] } },
+      }).kind
+    ).toBe('single');
+    expect(
+      selectGrokTransport({ config: {}, requestOptions: { nodeConfig: { allowed_tools: [] } } })
+        .kind
+    ).toBe('single');
+  });
+
+  test('falls back for a non-empty denied_tools but not an empty one', () => {
+    expect(
+      selectGrokTransport({
+        config: {},
+        requestOptions: { nodeConfig: { denied_tools: ['run_terminal_cmd'] } },
+      }).kind
+    ).toBe('single');
+    expect(
+      selectGrokTransport({ config: {}, requestOptions: { nodeConfig: { denied_tools: [] } } })
+    ).toEqual({ kind: 'acp' });
+  });
+
+  test('falls back for a system prompt override, from either field', () => {
+    expect(
+      selectGrokTransport({ config: {}, requestOptions: { systemPrompt: 'be terse' } }).kind
+    ).toBe('single');
+    expect(
+      selectGrokTransport({
+        config: {},
+        requestOptions: { nodeConfig: { systemPrompt: 'be terse' } },
+      }).kind
+    ).toBe('single');
+  });
+
+  test('falls back for forkSession', () => {
+    expect(selectGrokTransport({ config: {}, requestOptions: { forkSession: true } }).kind).toBe(
+      'single'
+    );
+  });
+
+  test('falls back for any permission mode other than bypassPermissions', () => {
+    expect(selectGrokTransport({ config: { permissionMode: 'plan' } }).kind).toBe('single');
+    expect(selectGrokTransport({ config: { permissionMode: 'acceptEdits' } }).kind).toBe('single');
+  });
+});
+
+describe('GrokProvider --single fallback transport', () => {
   test('streams fragmented NDJSON, injects env, and returns the concrete session', async () => {
     let spawnedCommand: string[] = [];
     let spawnedEnv: Record<string, string> = {};
@@ -181,12 +285,22 @@ describe('GrokProvider', () => {
     };
     const provider = new GrokProvider({ spawn, resolveBinary: async () => '/bin/grok' });
 
-    await expect(
-      collect(provider, ['hello', '/repo', undefined, { env: { XAI_API_KEY: 'managed' } }])
-    ).resolves.toEqual([
+    const chunks = await collect(provider, [
+      'hello',
+      '/repo',
+      undefined,
+      { env: { XAI_API_KEY: 'managed' }, ...FORCE_SINGLE_TRANSPORT },
+    ]);
+    expect(chunks).toEqual([
+      { type: 'turn_not_interruptible', reason: expect.stringContaining('--json-schema') },
+      { type: 'system', content: expect.stringContaining('legacy --single transport') },
       { type: 'assistant', content: 'hello' },
       { type: 'result', sessionId: 'session-1', stopReason: 'end_turn' },
     ]);
+    // ⚠️-prefixed so the dag-executor's generic system-chunk forwarding
+    // actually delivers this to the operator (an unprefixed notice is
+    // dropped at debug level — see dag.system_message_unhandled).
+    expect((chunks[1] as { content: string }).content.startsWith('⚠️')).toBe(true);
     expect(spawnedCommand[0]).toBe('/bin/grok');
     expect(spawnedEnv.XAI_API_KEY).toBe('managed');
   });
@@ -196,7 +310,12 @@ describe('GrokProvider', () => {
       spawn: () => processFor([], 'not authenticated', 1),
       resolveBinary: async () => '/bin/grok',
     });
-    const chunks = await collect(provider, ['hello', '/repo', 'old-session']);
+    const chunks = await collect(provider, [
+      'hello',
+      '/repo',
+      'old-session',
+      FORCE_SINGLE_TRANSPORT,
+    ]);
     expect(chunks).toContainEqual({
       type: 'system',
       content: expect.stringContaining('grok login'),
@@ -214,7 +333,7 @@ describe('GrokProvider', () => {
       spawn: () => processWithStderrReject(usageTerminalLines('usage-stderr')),
       resolveBinary: async () => '/bin/grok',
     });
-    const chunks = await collect(provider, ['hello', '/repo']);
+    const chunks = await collect(provider, ['hello', '/repo', undefined, FORCE_SINGLE_TRANSPORT]);
     const results = chunks.filter(
       (chunk): chunk is Record<string, unknown> =>
         typeof chunk === 'object' && chunk !== null && 'type' in chunk && chunk.type === 'result'
@@ -248,7 +367,7 @@ describe('GrokProvider', () => {
       spawn: () => processWithExitReject(usageTerminalLines('usage-exit')),
       resolveBinary: async () => '/bin/grok',
     });
-    const chunks = await collect(provider, ['hello', '/repo']);
+    const chunks = await collect(provider, ['hello', '/repo', undefined, FORCE_SINGLE_TRANSPORT]);
     const results = chunks.filter(
       (chunk): chunk is Record<string, unknown> =>
         typeof chunk === 'object' && chunk !== null && 'type' in chunk && chunk.type === 'result'
@@ -279,7 +398,7 @@ describe('GrokProvider', () => {
       spawn: () => processWithStdoutFailAfter(usageTerminalLines('usage-stdout').join('')),
       resolveBinary: async () => '/bin/grok',
     });
-    const chunks = await collect(provider, ['hello', '/repo']);
+    const chunks = await collect(provider, ['hello', '/repo', undefined, FORCE_SINGLE_TRANSPORT]);
     const results = chunks.filter(
       (chunk): chunk is Record<string, unknown> =>
         typeof chunk === 'object' && chunk !== null && 'type' in chunk && chunk.type === 'result'
@@ -310,7 +429,9 @@ describe('GrokProvider', () => {
       spawn: () => processWithStderrReject([]),
       resolveBinary: async () => '/bin/grok',
     });
-    await expect(collect(provider, ['hello', '/repo'])).rejects.toThrow('stderr read failed');
+    await expect(
+      collect(provider, ['hello', '/repo', undefined, FORCE_SINGLE_TRANSPORT])
+    ).rejects.toThrow('stderr read failed');
   });
 
   test('keeps nonzero exit subtype and message when usage was observed', async () => {
@@ -318,7 +439,12 @@ describe('GrokProvider', () => {
       spawn: () => processFor(usageTerminalLines('usage-nonzero'), 'not authenticated', 1),
       resolveBinary: async () => '/bin/grok',
     });
-    const chunks = await collect(provider, ['hello', '/repo', 'old-session']);
+    const chunks = await collect(provider, [
+      'hello',
+      '/repo',
+      'old-session',
+      FORCE_SINGLE_TRANSPORT,
+    ]);
     expect(chunks).toContainEqual({
       type: 'system',
       content: expect.stringContaining('grok login'),
@@ -347,35 +473,222 @@ describe('GrokProvider', () => {
     const signals: (NodeJS.Signals | undefined)[] = [];
     let resolveExit: ((value: number) => void) | undefined;
     let closeStdout: (() => void) | undefined;
+    let spawned = false;
     const exited = new Promise<number>(resolve => {
       resolveExit = resolve;
     });
-    const spawn: GrokSpawner = () => ({
-      stdout: new ReadableStream({
-        start(controller): void {
-          closeStdout = (): void => controller.close();
+    const spawn: GrokSpawner = () => {
+      spawned = true;
+      return {
+        stdout: new ReadableStream({
+          start(controller): void {
+            closeStdout = (): void => controller.close();
+          },
+        }),
+        stderr: stream([]),
+        exited,
+        kill: signal => {
+          signals.push(signal);
+          closeStdout?.();
+          resolveExit?.(143);
         },
-      }),
-      stderr: stream([]),
-      exited,
-      kill: signal => {
-        signals.push(signal);
-        closeStdout?.();
-        resolveExit?.(143);
-      },
-    });
+      };
+    };
     const controller = new AbortController();
     const provider = new GrokProvider({ spawn, resolveBinary: async () => '/bin/grok' });
     const result = collect(provider, [
       'hello',
       '/repo',
       undefined,
-      { abortSignal: controller.signal },
+      { abortSignal: controller.signal, ...FORCE_SINGLE_TRANSPORT },
     ]);
-    await Promise.resolve();
+    // Wait until the process is actually spawned (and its abort listener
+    // attached) before aborting — the fallback notice `system` chunk this
+    // path yields first adds an await point ahead of that, so a fixed
+    // number of microtask ticks is no longer a reliable proxy.
+    await new Promise<void>(resolve => {
+      const check = (): void => (spawned ? resolve() : setTimeout(check, 0));
+      check();
+    });
     controller.abort();
 
     await expect(result).rejects.toThrow('Query aborted');
     expect(signals).toContain('SIGTERM');
+  });
+
+  test('emits the typed turn_not_interruptible signal before any other chunk, for every fallback reason', async () => {
+    const fallbackRequestOptions: SendQueryOptions[] = [
+      { outputFormat: { type: 'json_schema', schema: { type: 'object' } } },
+      {
+        nodeConfig: { agents: { reviewer: { description: 'Review', prompt: 'Review carefully' } } },
+      },
+      { nodeConfig: { allowed_tools: ['read_file'] } },
+      { nodeConfig: { denied_tools: ['run_terminal_cmd'] } },
+      { systemPrompt: 'be terse' },
+      { forkSession: true },
+      { assistantConfig: { permissionMode: 'plan' } },
+    ];
+    for (const requestOptions of fallbackRequestOptions) {
+      const config = parseGrokConfig(requestOptions.assistantConfig ?? {});
+      const expectedReason = selectGrokTransport({ config, requestOptions });
+      if (expectedReason.kind !== 'single') {
+        throw new Error('test fixture must select the --single transport');
+      }
+      const provider = new GrokProvider({
+        spawn: () => processFor(['{"type":"end","stopReason":"end_turn","sessionId":"s"}\n']),
+        resolveBinary: async () => '/bin/grok',
+      });
+      const chunks = await collect(provider, ['hello', '/repo', undefined, requestOptions]);
+      expect(chunks[0]).toEqual({
+        type: 'turn_not_interruptible',
+        reason: expectedReason.reason,
+      });
+      expect(chunks[1]).toMatchObject({ type: 'system' });
+    }
+  });
+});
+
+describe('GrokProvider ACP transport (default)', () => {
+  function fakeAcpRunner(
+    chunks: MessageChunk[],
+    captured: { input?: GrokAcpProcessInput }
+  ): GrokAcpTurnRunner {
+    return (input => {
+      captured.input = input;
+      return (async function* (): AsyncGenerator<MessageChunk> {
+        for (const chunk of chunks) yield chunk;
+      })();
+    }) as GrokAcpTurnRunner;
+  }
+
+  test('a default request runs the ACP transport with no fallback notice', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/opt/grok/bin/grok',
+      runAcpTurn: fakeAcpRunner(
+        [{ type: 'result', sessionId: 'sess-1', stopReason: 'end_turn' }],
+        captured
+      ),
+    });
+    const chunks = await collect(provider, ['hello', '/repo']);
+    expect(chunks).toEqual([{ type: 'result', sessionId: 'sess-1', stopReason: 'end_turn' }]);
+    expect(captured.input).toMatchObject({
+      binaryPath: '/opt/grok/bin/grok',
+      cwd: '/repo',
+      prompt: 'hello',
+      resumeSessionId: undefined,
+    });
+  });
+
+  test('threads model, effort, resumeSessionId, and both signals into the ACP process input', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/bin/grok',
+      runAcpTurn: fakeAcpRunner(
+        [{ type: 'result', sessionId: 'sess-resumed', stopReason: 'end_turn' }],
+        captured
+      ),
+    });
+    const abortController = new AbortController();
+    const interruptController = new AbortController();
+    await collect(provider, [
+      'redirect',
+      '/repo',
+      'sess-prior',
+      {
+        model: 'grok-4.7',
+        nodeConfig: { effort: 'high' },
+        abortSignal: abortController.signal,
+        interruptSignal: interruptController.signal,
+      },
+    ]);
+    expect(captured.input).toMatchObject({
+      cwd: '/repo',
+      prompt: 'redirect',
+      resumeSessionId: 'sess-prior',
+      model: 'grok-4.7',
+      effort: 'high',
+      abortSignal: abortController.signal,
+      interruptSignal: interruptController.signal,
+    });
+  });
+
+  test('a node config needing the fallback transport never reaches runAcpTurn', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    let singleSpawned = false;
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/bin/grok',
+      spawn: () => {
+        singleSpawned = true;
+        return processFor(['{"type":"end","stopReason":"end_turn","sessionId":"s"}\n']);
+      },
+      runAcpTurn: fakeAcpRunner([], captured),
+    });
+    const chunks = await collect(provider, ['hello', '/repo', undefined, FORCE_SINGLE_TRANSPORT]);
+    expect(captured.input).toBeUndefined();
+    expect(singleSpawned).toBe(true);
+    const signal = chunks[0] as { type: string; reason: string };
+    expect(signal.type).toBe('turn_not_interruptible');
+    expect(signal.reason).toContain('--json-schema');
+    const notice = chunks[1] as { type: string; content: string };
+    expect(notice.type).toBe('system');
+    expect(notice.content).toContain('legacy --single transport');
+    expect(notice.content).toContain('--json-schema');
+  });
+
+  test('a stream-abort marker from the ACP runner passes through unchanged', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/bin/grok',
+      runAcpTurn: fakeAcpRunner(
+        [
+          {
+            type: 'result',
+            sessionId: 'sess-interrupted',
+            terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+            isError: true,
+            errorSubtype: STREAM_ABORTED_TERMINAL_REASON,
+          },
+        ],
+        captured
+      ),
+    });
+    const chunks = await collect(provider, ['hello', '/repo']);
+    expect(chunks).toEqual([
+      {
+        type: 'result',
+        sessionId: 'sess-interrupted',
+        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+        isError: true,
+        errorSubtype: STREAM_ABORTED_TERMINAL_REASON,
+      },
+    ]);
+  });
+
+  test('a node-cancel throw from the ACP runner propagates as Query aborted', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/bin/grok',
+      runAcpTurn: (input => {
+        captured.input = input;
+        // eslint-disable-next-line require-yield -- simulates driveGrokAcpTurn's node-cancel throw, which never yields a chunk first
+        return (async function* (): AsyncGenerator<MessageChunk> {
+          throw new Error('Query aborted');
+        })();
+      }) as GrokAcpTurnRunner,
+    });
+    await expect(collect(provider, ['hello', '/repo'])).rejects.toThrow('Query aborted');
+  });
+
+  test('rejects an impossible non-persistent resume before ever calling runAcpTurn', async () => {
+    const captured: { input?: GrokAcpProcessInput } = {};
+    const provider = new GrokProvider({
+      resolveBinary: async () => '/bin/grok',
+      runAcpTurn: fakeAcpRunner([], captured),
+    });
+    await expect(
+      collect(provider, ['hello', '/repo', 'old-session', { persistSession: false }])
+    ).rejects.toThrow('persistSession is false');
+    expect(captured.input).toBeUndefined();
   });
 });

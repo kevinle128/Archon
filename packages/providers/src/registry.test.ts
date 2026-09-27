@@ -206,7 +206,7 @@ describe('registry', () => {
       expect(capable).toEqual(['claude']);
     });
 
-    test('Codex and DeepSeek advertise stream-abort; OMP does not yet', () => {
+    test('Codex, DeepSeek, Grok, and OMP advertise stream-abort', () => {
       registerCommunityProviders();
       const streamAbort = getProviderInfoList()
         .filter(info => info.capabilities.interrupt === 'stream-abort')
@@ -214,9 +214,11 @@ describe('registry', () => {
         .sort();
       // Codex Stop is verified against the real SDK (interrupt-resume-spike.ts
       // plus a live mid-tool run). DeepSeek Stop is verified against the real
-      // DSH acp binary on a live subscription. OMP flips after its own
-      // real-binary gate.
-      expect(streamAbort).toEqual(['codex', 'deepseek']);
+      // DSH acp binary on a live subscription. Grok Stop is verified against
+      // the real grok binary's ACP transport (session-cancel-spike.ts plus a
+      // live mid-tool run). OMP Stop is verified against the real `--mode rpc`
+      // binary (in-band abort, mid-text and mid-tool, same-process redirect).
+      expect(streamAbort).toEqual(['codex', 'deepseek', 'grok', 'omp']);
     });
 
     test('throws UnknownProviderError for unknown type', () => {

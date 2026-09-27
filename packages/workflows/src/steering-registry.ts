@@ -33,6 +33,17 @@
  * ('generating' | 'idle-after-interrupt') exists only on live interruptible
  * handles; queue-only providers never expose one.
  *
+ * Turn-scoped interrupt downgrade: a provider whose capability is otherwise
+ * interruptible can still run ONE turn on a fallback transport with no
+ * interrupt hook (e.g. Grok's `--single` path). `markTurnNotInterruptible()`
+ * lets the executor record that report against the CURRENT turn only; while
+ * it holds, `steeringSubState()` projects `undefined` (no Stop control) and
+ * `interrupt()` settles `not_steerable_here` immediately instead of aborting
+ * a controller nothing reads or waiting on the turn's natural end. The flag
+ * lives on the turn object beginTurn() creates, so the next beginTurn() call
+ * starts clean — a later turn is interruptible again unless it reports the
+ * same downgrade itself.
+ *
  * Idle-await inactivity (#192 / Story 2.12): while a live interruptible handle
  * sits in `idle-after-interrupt`, one process-local timer bounds how long the
  * executor may wait for a redirect. Expiry resolves the SAME idle waiter as
@@ -228,6 +239,13 @@ interface ActiveTurn {
   pendingInterrupt: PendingInterrupt | undefined;
   /** Undefined for a queue-only provider or a provider without the capability. */
   softInjection: SoftInjectionController | undefined;
+  /**
+   * Set by `markTurnNotInterruptible()` when the provider reports THIS turn
+   * cannot honor an operator Stop despite the handle's provider-wide
+   * capability. Turn-scoped: a fresh `ActiveTurn` from the next `beginTurn()`
+   * always starts with this `false`.
+   */
+  interruptUnavailable: boolean;
 }
 
 export class NodeSteeringHandle {
@@ -267,9 +285,14 @@ export class NodeSteeringHandle {
   /**
    * Projected sub-state for reporting (route/UI): only live interruptible
    * handles project one; queue-only and non-live handles return `undefined`.
+   * Also `undefined` while the current turn is flagged
+   * `interruptUnavailable` — a control this specific turn cannot honor is
+   * never shown, even though the handle is otherwise interruptible.
    */
   steeringSubState(): SteeringSubState | undefined {
-    return this.interruptible && this.phase === 'live' ? this.subState : undefined;
+    if (!this.interruptible || this.phase !== 'live') return undefined;
+    if (this.currentTurn?.interruptUnavailable === true) return undefined;
+    return this.subState;
   }
 
   /**
@@ -298,9 +321,37 @@ export class NodeSteeringHandle {
       operatorInterrupted: false,
       pendingInterrupt: undefined,
       softInjection,
+      interruptUnavailable: false,
     };
     this.subState = 'generating';
     return token;
+  }
+
+  /**
+   * Record a provider report that the CURRENT live turn cannot honor an
+   * operator Stop (e.g. a fallback transport with no interrupt hook), even
+   * though this handle's provider capability is otherwise interruptible.
+   * Stale or already-settled tokens are a no-op — the flag is meaningless
+   * once its turn is gone, and the next `beginTurn()` always starts a fresh
+   * turn with the flag clear.
+   *
+   * Handles the race where `interrupt()` already landed on this turn before
+   * the provider's report arrived: that call aborted a controller nothing
+   * reads (inert) and is still waiting on the turn's eventual natural
+   * settlement — exactly the hang this feature exists to prevent. Clear the
+   * stale operator-interrupt flag (a later abort-marked-result check must
+   * never attribute this turn's end to an operator Stop that the provider
+   * never honored) and resolve the waiting caller with the truthful outcome
+   * right now instead of leaving it pending.
+   */
+  markTurnNotInterruptible(token: number): void {
+    const turn = this.currentTurn;
+    if (turn?.token !== token || turn.settled) return;
+    turn.interruptUnavailable = true;
+    if (turn.operatorInterrupted) {
+      turn.operatorInterrupted = false;
+      turn.pendingInterrupt?.resolve('not_steerable_here');
+    }
   }
 
   /**
@@ -368,7 +419,10 @@ export class NodeSteeringHandle {
    * repeated calls share one settlement promise resolved by the executor's
    * classification. After `endTurnStream` the call waits for classification
    * without touching the dead controller. With no live turn the call resolves
-   * immediately to the handle's truthful projection.
+   * immediately to the handle's truthful projection. A turn flagged
+   * `interruptUnavailable` also resolves immediately as `not_steerable_here`
+   * — never aborting a controller the provider does not read and never
+   * waiting on the turn's natural end.
    */
   interrupt(): Promise<InterruptSettlement> {
     if (!this.interruptible || this.phase === 'parked') {
@@ -385,6 +439,9 @@ export class NodeSteeringHandle {
       // Live but between turns (synchronous drain/boundary window) — the node
       // is generating; there is no live controller to abort.
       return Promise.resolve('generating');
+    }
+    if (turn.interruptUnavailable) {
+      return Promise.resolve('not_steerable_here');
     }
     const pending = this.ensurePendingInterrupt(turn);
     if (!turn.operatorInterrupted) {
