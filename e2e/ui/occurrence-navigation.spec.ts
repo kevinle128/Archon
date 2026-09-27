@@ -420,14 +420,27 @@ async function expectNoLiveRegion(scroller: Locator): Promise<void> {
   await expect(scroller.locator('[aria-live], [role="status"], [role="alert"]')).toHaveCount(0);
 }
 
+// Design reference widths: both rooms are fixed pixel widths with no drag
+// handle (`packages/web/src/lib/room-split-layout.ts`) — 520px Console,
+// 460px Legacy.
+const AUTHORITATIVE_ROOM_WIDTH: Record<'console' | 'legacy', number> = {
+  console: 520,
+  legacy: 460,
+};
+
 async function measuredRoomWidth(page: Page, surface: 'console' | 'legacy'): Promise<number> {
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
   const box = (await panel.count()) > 0 ? await panel.boundingBox() : null;
   const measured = box ?? (await roomRegion(page).boundingBox());
   expect(measured, `${surface} room width`).toBeTruthy();
   const width = measured?.width ?? 0;
-  expect(width, `${surface} room ≈460px authoritative width`).toBeGreaterThanOrEqual(452);
-  expect(width, `${surface} room ≈460px authoritative width`).toBeLessThanOrEqual(468);
+  const target = AUTHORITATIVE_ROOM_WIDTH[surface];
+  expect(width, `${surface} room ≈${String(target)}px authoritative width`).toBeGreaterThanOrEqual(
+    target - 8
+  );
+  expect(width, `${surface} room ≈${String(target)}px authoritative width`).toBeLessThanOrEqual(
+    target + 8
+  );
   return width;
 }
 

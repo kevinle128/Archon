@@ -39,11 +39,11 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "89cf15455fe4491f5a03a050264839184deebec0f9ea895e662705cc559ad32b"
+      "sha256": "cf4bc516b30f244f840c0f27be89e3adb6d4ff757bdf108c52eed92ecc9d29bc"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
-      "sha256": "cf8f391c502c42717e4ee3fb1205bf2e4fca502b939ed82cbe40c8964bbecb1a"
+      "sha256": "52db1623b8d3c181a508cc1cb13b9dd72388657792fc3603bbca373d9fd973f6"
     },
     {
       "path": "_bmad-output/planning-artifacts/ux-designs/ux-Archon-agent-node-room-2026-09-09/DESIGN.md",
@@ -140,8 +140,8 @@
       "states": [
         "queue-waiting"
       ],
-      "source": "claude-design/design_handoff_node_room_transcript_steering/README.md#queue-band--restructured",
-      "expected": "A full-width waiting queue band has an interactive expanded header with caret and count, one-based ordinals, a visible next-item inset marker, and sans-serif human message text. A waiting row does not show the transcript-delivery word sent. Ignore provider-specific per-item Send now controls."
+      "source": "claude-design/design_handoff_node_room_transcript_steering/README.md#durable-draft-and-queue-behavior",
+      "expected": "A full-width waiting queue band has an interactive expanded header with caret and count, one-based ordinals, a visible next-item inset marker, and monospace human message text. A waiting row does not show the transcript-delivery word sent. Ignore provider-specific per-item Send now controls."
     },
     {
       "id": "layout-and-focus",

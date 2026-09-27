@@ -32,10 +32,11 @@ import { T } from '../lib/playwright/timeouts';
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const LEGACY_RATIO_VIEWPORT = { width: 1024, height: 900 } as const;
 const NARROW_VIEWPORT = { width: 390, height: 844 } as const;
-const DEFAULT_RATIO_MIN = 0.38;
-const DEFAULT_RATIO_MAX = 0.42;
+// Both rooms are fixed pixel widths with no drag handle
+// (`packages/web/src/lib/room-split-layout.ts`) — 520px Console, 460px
+// Legacy. There is no user-adjustable ratio to persist anymore.
+const FIXED_ROOM_WIDTH: Record<'console' | 'legacy', number> = { console: 520, legacy: 460 };
 const WIDTH_TOLERANCE_PX = 2;
-const RELOAD_RATIO_TOLERANCE = 0.02;
 const ROOM_MIN_WIDTH_PX = 240;
 const DRAFT_OTHER = 'shared-ask-draft';
 
@@ -68,16 +69,6 @@ async function boxWidth(locator: Locator, label: string): Promise<number> {
   const box = await locator.boundingBox();
   expect(box, `${label} bounding box`).toBeTruthy();
   return box?.width ?? 0;
-}
-
-async function roomRatio(page: Page, surface: 'console' | 'legacy'): Promise<number> {
-  const viewId = surface === 'console' ? 'console-run-view' : 'legacy-run-view';
-  const roomId = surface === 'console' ? 'console-run-room' : 'legacy-run-room';
-  const viewWidth = await boxWidth(panelLocator(page, viewId), viewId);
-  const roomWidth = await boxWidth(panelLocator(page, roomId), roomId);
-  const total = viewWidth + roomWidth;
-  expect(total, `${surface} split total width`).toBeGreaterThan(0);
-  return roomWidth / total;
 }
 
 async function waitForRunTitle(page: Page, workflowName: string): Promise<void> {
@@ -211,13 +202,17 @@ test('[P1] [V:hitl.console-room-layout] Console room opens, closes, and releases
   await expect(panelLocator(page, 'console-run-room')).toHaveCount(0);
   await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const ratio = await roomRatio(page, 'console');
-  expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
-  expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
+  const reopened = await waitForRoom(page, HITL_INSPECT_NODE);
+  // The room is a fixed pixel width with no drag handle — no separator ever
+  // renders, open or closed.
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  const reopenedWidth = await boxWidth(reopened, 'Console room after reopening');
+  expect(Math.abs(reopenedWidth - FIXED_ROOM_WIDTH.console)).toBeLessThanOrEqual(
+    WIDTH_TOLERANCE_PX
+  );
 });
 
-test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage sized', async ({
+test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and fixed width', async ({
   page,
   archon,
 }) => {
@@ -231,9 +226,7 @@ test('[P1] [V:hitl.legacy-room-layout] Legacy room is readable and percentage si
   expect(width, 'Legacy room must be wide enough to read tool output').toBeGreaterThan(
     ROOM_MIN_WIDTH_PX
   );
-  const ratio = await roomRatio(page, 'legacy');
-  expect(ratio).toBeGreaterThanOrEqual(DEFAULT_RATIO_MIN);
-  expect(ratio).toBeLessThanOrEqual(DEFAULT_RATIO_MAX);
+  expect(Math.abs(width - FIXED_ROOM_WIDTH.legacy)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
   const row = room.locator('details[data-tool-id]').first();
   // The collapsed summary names the file family; the Story 1.3 body/Raw swap
   // contract is identical on both surfaces.
@@ -609,33 +602,31 @@ test('[P1] [V:hitl.room-deeplink] Deep-link re-entry and focus restoration work'
   await waitForRoom(page, HITL_INSPECT_NODE);
 });
 
-test('[P1] [V:hitl.room-ratio] Reload restores the chosen ratio', async ({ page, archon }) => {
+test('[P1] [V:hitl.room-width-reload] Reload keeps the fixed room width', async ({
+  page,
+  archon,
+}) => {
+  // The room panel has no drag handle or user-adjustable ratio to persist
+  // (packages/web/src/lib/room-split-layout.ts, CONSOLE_ROOM_WIDTH_PX) — the
+  // surviving proof is that a reload never corrupts the fixed width, and no
+  // separator ever appears for a user to try dragging.
   await page.setViewportSize(SPLIT_VIEWPORT);
   const started = await archon.runHitlWorkflow();
   await openRunDetail(page, started.runId);
   await waitForRunTitle(page, 'e2e-hitl-run');
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const separator = page.getByRole('separator', { name: 'Resize node room' });
-  const before = await roomRatio(page, 'console');
-  const box = await separator.boundingBox();
-  expect(box).toBeTruthy();
-  if (!box) throw new Error('missing separator');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(box.x - 120, box.y + box.height / 2, { steps: 8 });
-  await page.mouse.up();
-  const stored = await roomRatio(page, 'console');
-  expect(stored).toBeGreaterThan(before + 0.02);
-  expect(stored).toBeGreaterThanOrEqual(0.24);
-  expect(stored).toBeLessThanOrEqual(0.6);
+  const room = await waitForRoom(page, HITL_INSPECT_NODE);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  const before = await boxWidth(room, 'Console room before reload');
+  expect(Math.abs(before - FIXED_ROOM_WIDTH.console)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
 
   await page.reload();
   await waitForRunTitle(page, 'e2e-hitl-run');
   await openConsoleLogRow(page, HITL_INSPECT_NODE);
-  await waitForRoom(page, HITL_INSPECT_NODE);
-  const restored = await roomRatio(page, 'console');
-  expect(Math.abs(restored - stored)).toBeLessThanOrEqual(RELOAD_RATIO_TOLERANCE);
+  const reopened = await waitForRoom(page, HITL_INSPECT_NODE);
+  await expect(page.getByRole('separator', { name: 'Resize node room' })).toHaveCount(0);
+  const after = await boxWidth(reopened, 'Console room after reload');
+  expect(Math.abs(after - FIXED_ROOM_WIDTH.console)).toBeLessThanOrEqual(WIDTH_TOLERANCE_PX);
 });
 
 test('[P1] [V:hitl.history-pagination] Complete history crosses a cursor boundary', async ({
@@ -973,9 +964,9 @@ test('[P1] [V:transcript-display.legacy-scroll-desktop] Legacy long-history room
   await pressScrollerEdge(scroller, 'End');
   await expectDocumentContained(page, 'keyboard transcript scroll');
 
-  // Applicable controls survive: header close and the resize handle.
+  // Applicable controls survive: header close. The room has no resize
+  // handle — it is a fixed pixel width with no drag handle.
   await expect(page.getByRole('button', { name: 'Close' })).toBeVisible();
-  await expect(page.getByRole('separator', { name: 'Resize node room' })).toBeVisible();
 });
 
 test('[P1] [V:transcript-display.legacy-scroll-narrow] Legacy narrow room keeps the document fixed', async ({
