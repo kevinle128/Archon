@@ -925,16 +925,19 @@ describe('todoTerminalOutcome', () => {
     expect(todoTerminalOutcome('completed')).toBe('completed');
   });
 
-  test('failed and cancelled map to the interrupted outcome', () => {
+  test('failed, cancelled, and skipped map to the interrupted outcome', () => {
     expect(todoTerminalOutcome('failed')).toBe('interrupted');
+    // `LogRow['status']` folds a cancelled row into `skipped`
+    // (build-log-rows.ts), so both must resolve the same way — `cancelled`
+    // for a caller holding the run-level status instead.
     expect(todoTerminalOutcome('cancelled')).toBe('interrupted');
+    expect(todoTerminalOutcome('skipped')).toBe('interrupted');
   });
 
-  test('pending, running, awaiting, and skipped are not terminal', () => {
+  test('pending, running, and awaiting are not terminal', () => {
     expect(todoTerminalOutcome('pending')).toBeNull();
     expect(todoTerminalOutcome('running')).toBeNull();
     expect(todoTerminalOutcome('awaiting')).toBeNull();
-    expect(todoTerminalOutcome('skipped')).toBeNull();
   });
 });
 

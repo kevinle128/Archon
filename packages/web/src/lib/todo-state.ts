@@ -408,7 +408,12 @@ export type TodoTerminalOutcome = 'completed' | 'interrupted';
 const TODO_TERMINAL_OUTCOME_BY_NODE_STATUS: Readonly<Record<string, TodoTerminalOutcome>> = {
   completed: 'completed',
   failed: 'interrupted',
+  // `LogRow['status']` folds a cancelled execution into `skipped`
+  // (`statusFromNodeExecution` in build-log-rows.ts) — a cancelled row's own
+  // status is never literally `'cancelled'`. `cancelled` stays mapped too
+  // for a caller holding the run-level status instead of the row's.
   cancelled: 'interrupted',
+  skipped: 'interrupted',
 };
 
 /**
