@@ -414,11 +414,63 @@ describe('NodeRoom', () => {
     const markers = markup.match(/data-last-row=""/g) ?? [];
     expect(markers).toHaveLength(1);
     expect(markup).toContain('data-last-row="" tabindex="-1"');
-    // The marker sits on the last item's wrapper — after the tool row.
+    // The default fixture ends with a trailing `lifecycle` row (a terminal
+    // status notice) after the tool row; the marker must skip past it and
+    // sit on the tool row's own wrapper instead — see the regression tests
+    // below for why.
     const markerAt = markup.indexOf('data-last-row');
-    expect(markerAt).toBeGreaterThan(markup.indexOf('data-tool-id="tool-use-1"'));
+    expect(markerAt).toBeLessThan(markup.indexOf('data-tool-id="tool-use-1"'));
     const unmarked = renderRoom({ items: [] });
     expect(unmarked).not.toContain('data-last-row');
+  });
+
+  test('skips a trailing lifecycle row when choosing the focus target', () => {
+    // A status notice (e.g. a terminal node-failure message) can arrive
+    // after the composer has already anchored focus on the preceding
+    // substantive row. If that trailing row silently took over the
+    // `data-last-row` marker, the previously focused element would lose its
+    // tabIndex and the browser would blur it with nothing left to refocus
+    // (steer.idle-await-queued-legacy). The marker must stay on the last
+    // non-lifecycle row instead.
+    const items: AgentHistoryItem[] = [
+      assistantItem('asst-1', 1, 'first'),
+      toolItem(),
+      lifecycleItem('life-1', 2, 'failed', 'interrupted by operator, no redirect received'),
+    ];
+    const markup = renderRoom({ items });
+    const markers = markup.match(/data-last-row=""/g) ?? [];
+    expect(markers).toHaveLength(1);
+    expect(markup.indexOf('data-last-row')).toBeLessThan(
+      markup.indexOf('data-tool-id="tool-use-1"')
+    );
+    expect(markup.indexOf('data-last-row')).toBeGreaterThan(markup.indexOf('first'));
+  });
+
+  test('marks no row when every item is a lifecycle row', () => {
+    // No substantive row exists to anchor on. Leaving the marker unset
+    // (rather than falling back to the true last lifecycle row) matches
+    // the Console history list's behavior for the same case; the dock's
+    // own focus fallback then targets the transcript scroller, one of the
+    // steering dock's other accepted focus destinations.
+    const items: AgentHistoryItem[] = [
+      lifecycleItem('life-1', 1, 'started'),
+      lifecycleItem('life-2', 2, 'failed'),
+    ];
+    const markup = renderRoom({ items });
+    expect(markup).not.toContain('data-last-row');
+  });
+
+  test('anchors on a trailing lifecycle row that carries attached content', () => {
+    const items: AgentHistoryItem[] = [
+      assistantItem('asst-1', 1, 'first'),
+      lifecycleItem('life-1', 2, 'failed'),
+    ];
+    const renderAfterItem = (item: AgentHistoryItem): React.ReactNode =>
+      item.id === 'life-1' ? 'attached-card' : null;
+    const markup = renderRoom({ items, renderAfterItem });
+    const markers = markup.match(/data-last-row=""/g) ?? [];
+    expect(markers).toHaveLength(1);
+    expect(markup.indexOf('data-last-row')).toBeGreaterThan(markup.indexOf('first'));
   });
 });
 

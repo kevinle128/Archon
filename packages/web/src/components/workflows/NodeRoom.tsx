@@ -1188,8 +1188,25 @@ export function NodeRoom({
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
   // Only the actual last rendered history item is programmatically focusable
-  // (the steering dock's Stop-removal focus target); it never joins Tab order.
-  const lastItemId = items.length === 0 ? null : items[items.length - 1].id;
+  // (the steering dock's Stop-removal focus target); it never joins Tab
+  // order. A trailing lifecycle/status row (e.g. the terminal node-failure
+  // notice) must not become that anchor on its own: it can arrive after
+  // focus already landed on the preceding substantive row, and moving the
+  // marker off a focused element strips its tabIndex, which forces the
+  // browser to blur it with nothing left to receive focus. Console's
+  // history list keeps the same anchor by hiding lifecycle rows behind a
+  // toggle; Legacy renders every row unconditionally, so it skips lifecycle
+  // rows when choosing the anchor instead, unless one carries its own
+  // attached content.
+  let lastItemId: string | null = null;
+  for (const item of items) {
+    if (item.kind !== 'lifecycle') {
+      lastItemId = item.id;
+      continue;
+    }
+    const after = renderAfterItem?.(item);
+    if (after !== undefined && after !== null) lastItemId = item.id;
+  }
   const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
     item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
   const lastRowRing = (item: AgentHistoryItem): string | undefined =>
