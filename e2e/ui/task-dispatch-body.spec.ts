@@ -129,14 +129,27 @@ async function storedToolRow(
   return row;
 }
 
-/** The open-row body bar's own text — the leaf div whose text is the composed bar. */
+/**
+ * The open-row body bar's own text — the leaf span whose text is the composed
+ * bar. The body renders one commit after the native `<details>` toggle (the
+ * row's `open` boolean flips on the native toggle event; React's own
+ * controlled re-render that mounts the body follows in the next commit), so
+ * a single synchronous evaluate right after `toHaveJSProperty('open', true)`
+ * can observe the row mid-toggle with no body mounted yet. Poll instead of
+ * reading once, matching Playwright's guidance for asserting on content that
+ * mounts asynchronously.
+ */
 async function bodyBarText(row: Locator): Promise<string> {
-  return row.evaluate(el => {
-    const leaf = Array.from(el.querySelectorAll('div')).find(
-      div => div.children.length === 0 && (div.textContent ?? '').trimStart().startsWith('task ·')
-    );
-    return leaf?.textContent?.trim() ?? '';
-  });
+  const read = (): Promise<string> =>
+    row.evaluate(el => {
+      const leaf = Array.from(el.querySelectorAll('div, span')).find(
+        node =>
+          node.children.length === 0 && (node.textContent ?? '').trimStart().startsWith('task ·')
+      );
+      return leaf?.textContent?.trim() ?? '';
+    });
+  await expect.poll(read, { timeout: T.medium }).not.toBe('');
+  return read();
 }
 
 /**
@@ -591,7 +604,14 @@ for (const surface of ['console', 'legacy'] as const) {
         marginTop: cs?.marginTop ?? '',
         summaryMinHeight: sCs?.minHeight ?? '',
         summaryFontSize: sCs?.fontSize ?? '',
-        chevronWidth: chevron instanceof HTMLElement ? chevron.getBoundingClientRect().width : 0,
+        // The card is open at measurement time, so its own chevron carries
+        // `group-open/subtask:rotate-90`. getBoundingClientRect() reports the
+        // post-transform, axis-swapped bounding box — a 90° rotation reports
+        // the glyph's (font-metric-dependent, sub-pixel) rendered HEIGHT as
+        // "width", not the declared box width. getComputedStyle().width
+        // reads the CSS box model directly and is unaffected by the
+        // transform, matching the declared `w-[9px]` utility exactly.
+        chevronWidth: cCs?.width ?? '',
         chevronFontSize: cCs?.fontSize ?? '',
         chevronTransitionDuration: cCs?.transitionDuration ?? '',
         chevronTransitionProperty: cCs?.transitionProperty ?? '',
@@ -607,7 +627,7 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(cardGeometry.marginTop, 'card 5px top margin').toBe('5px');
     expect(cardGeometry.summaryMinHeight, 'card summary >=24px').toBe('24px');
     expect(cardGeometry.summaryFontSize, 'card summary 11.5px mono').toBe('11.5px');
-    expect(cardGeometry.chevronWidth, 'card chevron 9px column').toBe(9);
+    expect(cardGeometry.chevronWidth, 'card chevron 9px column').toBe('9px');
     expect(cardGeometry.chevronFontSize, 'card chevron 10px type').toBe('10px');
     expect(cardGeometry.chevronTransitionDuration, 'card chevron 120ms').toBe('0.12s');
     expect(cardGeometry.chevronTransitionProperty).toContain('transform');
