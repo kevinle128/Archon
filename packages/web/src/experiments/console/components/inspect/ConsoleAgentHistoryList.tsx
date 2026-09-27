@@ -1018,8 +1018,11 @@ function ToolHistory({
         <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {presentation.bodyBarText}
+              {presentation.bodyBar.label}
             </span>
+            {presentation.bodyBar.badges.length > 0 ? (
+              <span className="shrink-0 whitespace-nowrap">{presentation.bodyBar.badges}</span>
+            ) : null}
             <button
               type="button"
               aria-expanded={rawOpen}

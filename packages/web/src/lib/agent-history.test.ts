@@ -1052,7 +1052,10 @@ describe('buildAgentHistory', () => {
       ],
     });
     expect(tool.presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
-    expect(tool.presentation.bodyBarText).toBe('task · batch · 2 subtasks · 40ms');
+    expect(tool.presentation.bodyBar).toEqual({
+      label: 'task · batch · 2 subtasks',
+      badges: '40ms',
+    });
     expect(tool.presentation.badges).toContainEqual({
       kind: 'count',
       text: '2 subagents',

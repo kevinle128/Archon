@@ -732,20 +732,23 @@ describe('NodeRoom tool rows', () => {
     expect(body).toContain('border-l-2');
     expect(body).toContain('pl-2.5');
 
-    // The bar opens with the family, then the facts, then the Raw toggle.
+    // The bar opens with the truncatable label, then the pinned badges, then the Raw toggle.
     const bar =
-      /<div class="([^"]*)"[^>]*><span class="([^"]*)"[^>]*>([^<]*)<\/span><button([^>]*)>/.exec(
+      /<div class="([^"]*)"[^>]*><span class="([^"]*)"[^>]*>([^<]*)<\/span><span class="([^"]*)"[^>]*>([^<]*)<\/span><button([^>]*)>/.exec(
         body
       );
-    expect(bar?.[3]).toBe('file · exit 2 · truncated · 1.5s');
+    expect(bar?.[3]).toBe('file');
+    expect(bar?.[5]).toBe('exit 2 · truncated · 1.5s');
     expect(bar?.[1]).toContain('text-[10.5px]');
     expect(bar?.[1]).toContain('font-mono');
     expect(bar?.[1]).toContain('text-text-secondary');
     expect(bar?.[2]).toContain('min-w-0');
     expect(bar?.[2]).toContain('whitespace-nowrap');
     expect(bar?.[2]).toContain('overflow-hidden');
-    expect(bar?.[4]).toContain('aria-expanded="false"');
-    expect(bar?.[4]).toContain('type="button"');
+    expect(bar?.[4]).toContain('shrink-0');
+    expect(bar?.[4]).toContain('whitespace-nowrap');
+    expect(bar?.[6]).toContain('aria-expanded="false"');
+    expect(bar?.[6]).toContain('type="button"');
 
     // Exactly one Raw control: native button, closed by default, 24px target.
     const raw = /<button([^>]*)>Raw[\s\S]*?<\/button>/.exec(body);
@@ -1555,10 +1558,12 @@ describe('NodeRoom tool bodies', () => {
       expect(removed).toContain('var(--error)');
       // The bar keeps the facts and drops the diff badges — no repeated counts.
       const body = bodyOf(markup, 't-edit');
-      const bar = /<span class="[^"]*whitespace-nowrap[^"]*"[^>]*>([^<]*)<\/span>/.exec(body);
-      expect(bar?.[1]).toBe('file · 1 hunk · replace_all: false · 1.5s');
-      expect(bar?.[1]).not.toContain('+2');
-      expect(bar?.[1]).not.toContain('−2');
+      const label = /<span class="[^"]*overflow-hidden[^"]*"[^>]*>([^<]*)<\/span>/.exec(body);
+      const badges = /<span class="shrink-0[^"]*"[^>]*>([^<]*)<\/span>/.exec(body);
+      expect(label?.[1]).toBe('file · 1 hunk · replace_all: false');
+      expect(badges?.[1]).toBe('1.5s');
+      expect(label?.[1]).not.toContain('+2');
+      expect(label?.[1]).not.toContain('−2');
     });
 
     test('a failed row keeps the table and adds its normalized output in a second inset box', () => {
@@ -1613,7 +1618,8 @@ describe('NodeRoom tool bodies', () => {
       // It sits between hunk one's last line and hunk two's first line.
       expect(body.indexOf('>line 9<')).toBeLessThan(body.indexOf('@@ -12,9 +12,9 @@'));
       expect(body.indexOf('@@ -12,9 +12,9 @@')).toBeLessThan(body.indexOf('>line 12<'));
-      expect(body).toContain('file · 2 hunks · 1.5s');
+      expect(body).toContain('file · 2 hunks');
+      expect(body).toContain('>1.5s<');
     });
 
     test('identical sides render the no-changes note with no table or diff badges', () => {
@@ -1634,7 +1640,8 @@ describe('NodeRoom tool bodies', () => {
       expect(body).toContain('text-node-command">same.ts<');
       expect(body).toContain('>no changes<');
       expect(body).not.toContain('tool-diff');
-      expect(body).toContain('file · no changes · 1.5s');
+      expect(body).toContain('file · no changes');
+      expect(body).toContain('>1.5s<');
       const summary = summaryMarkup(rowMarkup(markup, 't-same'));
       expect(summary).not.toContain('>+');
       expect(summary).not.toContain('>−');
@@ -1670,7 +1677,7 @@ describe('NodeRoom tool bodies', () => {
       expect(write).toContain('text-node-command">w.ts<');
       expect(write).toContain('written');
       expect(write).not.toContain('tool-diff');
-      expect(write).toContain('file · truncated · 1.5s');
+      expect(write).toContain('>truncated · 1.5s<');
       // Bare Edit input: the family label stands in for the path, preview shown.
       const naked = bodyOf(markup, 't-naked');
       expect(naked).toContain('text-node-command">Edit<');
@@ -1681,7 +1688,7 @@ describe('NodeRoom tool bodies', () => {
       expect(huge).toContain('text-node-command">big.ts<');
       expect(huge).toContain('done');
       expect(huge).not.toContain('tool-diff');
-      expect(huge).toContain('file · truncated · 1.5s');
+      expect(huge).toContain('>truncated · 1.5s<');
       // None of the three rows earns a hunk fact or a diff badge.
       for (const id of ['t-write', 't-naked', 't-huge']) {
         const body = bodyOf(markup, id);
