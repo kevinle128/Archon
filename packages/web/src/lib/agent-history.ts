@@ -462,6 +462,12 @@ function runningElapsed(
  * missing match) defaults to `'interrupted'`, matching every row recorded
  * before this distinction existed — a provider that records its own stopped
  * tool as `'error'` with interrupt evidence keeps the interrupted glyph.
+ * Accepted boundary: a recorded `'error'` is unproven either way — it could
+ * be the interrupt evidence above, or a genuine failure that happened to be
+ * the last thing recorded before Stop landed — and every provider (Codex
+ * included) resolves that ambiguity the same way, toward the interrupted
+ * glyph, because the alternative silently turns real interrupt evidence into
+ * a plain failure.
  */
 function settledToolOutcome(
   events: readonly components['schemas']['WorkflowEvent'][],
