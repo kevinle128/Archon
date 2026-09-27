@@ -42,6 +42,7 @@ import {
   applyRoomDeepLink,
   buildExecutionHeader,
   capExecutionOptions,
+  selectableExecutionRows,
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
@@ -782,7 +783,10 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const executionRowsForSelectedNode =
     selectedExecutionRow === null
       ? []
-      : executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId);
+      : selectableExecutionRows(
+          executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId),
+          selectedExecutionRow.id
+        );
   const headerOptions =
     selectedExecutionRow === null
       ? []
