@@ -106,6 +106,51 @@ describe('node message metadata compatibility', () => {
     ).toBe(false);
   });
 
+  test('accepts thinking origin with no other fields', () => {
+    expect(nodeTranscriptMetadataSchema.parse({ origin: 'thinking' })).toEqual({
+      origin: 'thinking',
+    });
+  });
+
+  test('accepts prompt origin with actor, source, and a null actor', () => {
+    expect(
+      nodeTranscriptMetadataSchema.parse({
+        origin: 'prompt',
+        actor_user_id: 'user-starter-1',
+        prompt_source: 'command_file',
+      })
+    ).toEqual({
+      origin: 'prompt',
+      actor_user_id: 'user-starter-1',
+      prompt_source: 'command_file',
+    });
+    expect(
+      nodeTranscriptMetadataSchema.parse({
+        origin: 'prompt',
+        actor_user_id: null,
+        prompt_source: 'reask',
+      }).actor_user_id
+    ).toBeNull();
+  });
+
+  test('rejects an unsupported prompt_source value', () => {
+    expect(
+      nodeTranscriptMetadataSchema.safeParse({
+        origin: 'prompt',
+        prompt_source: 'operator_message',
+      }).success
+    ).toBe(false);
+  });
+
+  test('accepts advisor origin with and without a known model', () => {
+    expect(
+      nodeTranscriptMetadataSchema.parse({ origin: 'advisor', advisor_model: 'claude-opus-4-8' })
+    ).toEqual({ origin: 'advisor', advisor_model: 'claude-opus-4-8' });
+    expect(nodeTranscriptMetadataSchema.parse({ origin: 'advisor' })).toEqual({
+      origin: 'advisor',
+    });
+  });
+
   test('still rejects unknown sibling keys under .strict()', () => {
     expect(
       nodeTranscriptMetadataSchema.safeParse({

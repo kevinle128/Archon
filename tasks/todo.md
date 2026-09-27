@@ -11,9 +11,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [ ] B-UI — wire steering API into both shells; fix 6 web type errors — agent phase-b-ui (worktree)
 - [x] C1 — 4.2–4.4 merged (a281aaf3). Chat outcome plumbing fixed by me
 - [ ] F2 — 4.1, 8.4, 10.4 Codex + 8.6 DeepSeek — agent phase-f2-providers (worktree)
-- [ ] D — Thinking / prompt / advisor rows (6.1–6.3); advisor = Claude SDK advisor tool — agent phase-d-context (worktree)
+- [x] D — 6.1–6.3 merged (453f4065) + post-merge field fix (4092b2e8). Open: non-Claude thinking delta folding (see phase-d-report) → F1/F2
 - [x] E — 5.1, 5.2 merged (d25f185a). check:schema-upgrades OK on develop-2 after E merge; rerun after B and D merge
-- [ ] F1 — 8.3 Claude, 8.5 Grok, 8.7 OMP, 8.8 — agent phase-f1-providers (worktree); Epic 9 out of scope
+- [ ] F1 — 8.3 Claude, 8.5 Grok, 8.7 OMP, 8.8 — agent phase-f1-providers (worktree); re-testing Claude soft inject with priority:'next' + replay ack; Epic 9 out of scope
 
 ## Background processes started by this session
 

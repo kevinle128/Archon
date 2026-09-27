@@ -24471,7 +24471,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
   it.each([
     { kind: 'command', node: { id: 'agent', command: 'my-cmd' } },
     { kind: 'prompt', node: { id: 'agent', prompt: 'Inspect a.ts' } },
-  ])('records $kind stream as started, text, tool, text, completed', async ({ node }) => {
+  ])('records $kind stream as started, prompt, text, tool, text, completed', async ({ node }) => {
     mockSendQueryDag.mockImplementation(function* () {
       yield { type: 'assistant', content: 'Reading file.' };
       yield {
@@ -24496,6 +24496,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
 
     expect(transcriptTimeline(rows)).toEqual([
       'started',
+      'text', // the prompt row
       'text',
       'tool',
       'tool',
@@ -24538,9 +24539,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Inspect a.ts' }]);
     const rows = await store.listNodeMessages(workflowRun.id, 'agent');
 
-    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'tool', 'completed']);
-    expect(rows.filter(row => row.kind === 'text')).toHaveLength(1);
-    expect(rows.find(row => row.kind === 'text')?.payload).toEqual({ text: 'Reading file.' });
+    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'text', 'tool', 'completed']);
+    const textRows = rows.filter(row => row.kind === 'text');
+    expect(textRows).toHaveLength(2);
+    expect(textRows.find(row => row.metadata?.origin !== 'prompt')?.payload).toEqual({
+      text: 'Reading file.',
+    });
   });
 
   it('records started then failed with the command-load error', async () => {
@@ -24629,7 +24633,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const store = createMockStore();
     const workflowRun = await runNodes(store, [{ id: 'agent', command: 'my-cmd' }]);
     const rows = await store.listNodeMessages(workflowRun.id, 'agent');
-    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'completed']);
+    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'text', 'completed']);
     expect(
       rows.filter(row => row.kind === 'status' && row.payload.state === 'completed')
     ).toHaveLength(1);
@@ -24691,10 +24695,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'tool',
       'iteration_completed',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'completed',
@@ -24714,7 +24720,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(
       iterationCompletes.map(row => (row.kind === 'status' ? row.payload.detail : undefined))
     ).toEqual(['1', '2']);
-    const textRows = rows.filter(row => row.kind === 'text');
+    const textRows = rows.filter(row => row.kind === 'text' && row.metadata?.origin !== 'prompt');
     expect(textRows[0]?.payload).toEqual({ text: 'First pass.' });
     expect(textRows[1]?.payload).toEqual({ text: 'Second pass.' });
     expect(rows.find(row => row.kind === 'tool')?.payload).toEqual({
@@ -24740,10 +24746,11 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'iteration_failed',
       'failed',
     ]);
-    expect(rows[2]?.kind === 'status' ? rows[2].payload.detail : undefined).toBe('1');
+    expect(rows[3]?.kind === 'status' ? rows[3].payload.detail : undefined).toBe('1');
   });
 
   it('closes an in-flight iteration when structured output validation fails', async () => {
@@ -24772,6 +24779,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_failed',
       'failed',
@@ -24805,6 +24813,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
       expect(transcriptTimeline(rows)).toEqual([
         'started',
         'iteration_started',
+        'text', // the iteration's prompt row
         'text',
         'iteration_failed',
         'failed',
@@ -24878,9 +24887,11 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'failed',
@@ -24913,6 +24924,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
     ]);
@@ -24940,7 +24952,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     ]);
     expect(await store.listNodeMessages(workflowRun.id, 'grp')).toEqual([]);
     const bodyRows = await store.listNodeMessages(workflowRun.id, 'grp.body');
-    expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'completed']);
+    expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'text', 'completed']);
   });
 
   it('persists provider-declared text_mode on direct node text rows and leaves untagged text untagged', async () => {
@@ -24953,9 +24965,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
 
     const store = createMockStore();
     const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Hi' }]);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.payload)).toEqual([{ text: 'Hi' }]);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
 
     expect(textRows.map(row => row.payload)).toEqual([
       { text: 'Hel' },
@@ -25000,9 +25015,20 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'classify')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'classify')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    // The reask pass gets its own prompt row carrying the exact augmented text
+    // the model actually saw — never a duplicate of the first pass's prompt.
+    expect(promptRows).toHaveLength(2);
+    expect(promptRows[0]?.payload).toEqual({ text: 'Classify.' });
+    expect(promptRows[0]?.metadata?.prompt_source).toBe('node_prompt');
+    expect(promptRows[1]?.metadata?.prompt_source).toBe('reask');
+    expect((promptRows[1]?.payload as { text: string }).text).toContain('Classify.');
+    expect((promptRows[1]?.payload as { text: string }).text).not.toBe('Classify.');
+
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
     expect(textRows[1]?.metadata?.text_mode).toBe('delta');
@@ -25010,6 +25036,9 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const secondScope = textRows[1]?.metadata?.execution;
     expect(firstScope?.occurrence_id).toBe(secondScope?.occurrence_id);
     expect(firstScope?.attempt_id).not.toBe(secondScope?.attempt_id);
+    // Each prompt row shares its pass's attempt scope with that pass's assistant text.
+    expect(promptRows[0]?.metadata?.execution?.attempt_id).toBe(firstScope?.attempt_id);
+    expect(promptRows[1]?.metadata?.execution?.attempt_id).toBe(secondScope?.attempt_id);
   });
 
   it('persists provider-declared text_mode on loop node text rows', async () => {
@@ -25026,10 +25055,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const workflowRun = await runNodes(store, [
       { id: 'refine', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
     ]);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
 
+    expect(allTextRows).toHaveLength(2);
     expect(textRows).toHaveLength(1);
     expect(textRows[0]?.payload).toEqual({ text: 'Iterated.' });
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
@@ -25071,9 +25102,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.metadata?.prompt_source)).toEqual(['node_prompt', 'reask']);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
     expect(textRows[1]?.metadata?.text_mode).toBe('delta');
@@ -25119,9 +25153,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.metadata?.prompt_source)).toEqual(['node_prompt', 'reask']);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([
       { text: 'prose pass' },
       { text: 'fixed pass' },
@@ -26191,6 +26228,42 @@ describe('executeDagWorkflow -- AskHuman resume re-entry', () => {
         declined: false,
       },
     ]);
+  });
+
+  it('records no prompt row on an AskHuman-resume pass — the provider substitutes the human answers for the node prompt', async () => {
+    // The Claude provider swaps attemptPrompt for the mapped answers
+    // internally (buildClaudeAskResumePrompt); attemptPrompt itself is text
+    // the model never sees on this pass, so persisting it as a prompt row
+    // would misattribute the turn.
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_1' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [{ id: 'review', command: 'my-cmd' }]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
+  it('records no prompt row on a loop node AskHuman-resume pass either', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok <promise>DONE</promise>' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_loop' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [
+      { id: 'review', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
+    ]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
   });
 
   it('maps decline to declined payload', async () => {
@@ -29026,6 +29099,229 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(storedEventTypes(store)).toContain('node_completed');
       expect(storedEventTypes(store)).not.toContain('node_failed');
       expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'my-loop')).toBeUndefined();
+    });
+  });
+});
+
+describe('executeDagWorkflow -- thinking, prompt, and advisor transcript rows', () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `dag-agent-context-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(join(testDir, '.archon', 'commands'), { recursive: true });
+    await writeFile(
+      join(testDir, '.archon', 'commands', 'my-cmd.md'),
+      'Command prompt body for $USER_MESSAGE'
+    );
+
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  function textRowsByOrigin(
+    store: IWorkflowStore,
+    runId: string,
+    nodeId: string
+  ): Promise<Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>> {
+    return store.listNodeMessages(runId, nodeId).then(rows => rows.filter(r => r.kind === 'text'));
+  }
+
+  it('persists an inline prompt as a node_prompt row attributed to the run starter', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-node-prompt', { user_id: 'user-starter-1' });
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'prompt-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-node-prompt', 'my-node');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow).toMatchObject({
+      payload: { text: 'Say hello.' },
+      metadata: { origin: 'prompt', actor_user_id: 'user-starter-1', prompt_source: 'node_prompt' },
+    });
+    // Exactly one prompt row for a single-turn node — no reask, no duplicate.
+    expect(rows.filter(r => r.metadata?.origin === 'prompt')).toHaveLength(1);
+  });
+
+  it('persists a command-file turn as a command_file row', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-command-prompt');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'command-prompt-test-dag', nodes: [node('my-cmd')] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-command-prompt', 'my-cmd');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow?.metadata).toMatchObject({ prompt_source: 'command_file' });
+  });
+
+  it('persists a null actor when the run has no attributed starter', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-null-actor', { user_id: null });
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-3' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'null-actor-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-null-actor', 'my-node');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow?.metadata?.actor_user_id).toBeNull();
+  });
+
+  it('persists displayable thinking as its own row, in order, never joining $node.output', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-thinking');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'thinking', content: 'weighing two approaches' };
+      yield { type: 'assistant', content: 'final answer' };
+      yield { type: 'result', sessionId: 'sess-4' };
+    });
+
+    const result = await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'thinking-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-thinking', 'my-node');
+    const kinds = rows.map(r => r.metadata?.origin ?? 'assistant');
+    expect(kinds).toEqual(['prompt', 'thinking', 'assistant']);
+    const thinkingRow = rows.find(r => r.metadata?.origin === 'thinking');
+    expect(thinkingRow?.payload).toEqual({ text: 'weighing two approaches' });
+    // Thinking never joins the node's $node.output — only the assistant text does.
+    expect(result).toBe('final answer');
+  });
+
+  it('persists an advisor notification with the configured advisor model', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-advisor');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield {
+        type: 'advisor',
+        content: 'use a channel-based shutdown',
+        advisorModel: 'claude-opus-4-8',
+      };
+      yield { type: 'assistant', content: 'final answer' };
+      yield { type: 'result', sessionId: 'sess-5' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'advisor-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-advisor', 'my-node');
+    const advisorRow = rows.find(r => r.metadata?.origin === 'advisor');
+    expect(advisorRow).toMatchObject({
+      payload: { text: 'use a channel-based shutdown' },
+      metadata: { origin: 'advisor', advisor_model: 'claude-opus-4-8' },
     });
   });
 });

@@ -1105,6 +1105,163 @@ describe('buildAgentHistory', () => {
     });
   });
 
+  describe('thinking, prompt, and advisor rows', () => {
+    function thinkingRow(id: string, seq: number, body: string): NodeMessageRow {
+      return textRow(id, seq, body, { origin: 'thinking' });
+    }
+
+    function promptRow(
+      id: string,
+      seq: number,
+      body: string,
+      extras: {
+        actorUserId?: string | null;
+        source?: 'node_prompt' | 'command_file' | 'reask';
+      } = {}
+    ): NodeMessageRow {
+      return textRow(id, seq, body, {
+        origin: 'prompt',
+        actor_user_id: extras.actorUserId === undefined ? 'user-starter-1' : extras.actorUserId,
+        prompt_source: extras.source ?? 'node_prompt',
+      });
+    }
+
+    function advisorRow(
+      id: string,
+      seq: number,
+      body: string,
+      advisorModel?: string
+    ): NodeMessageRow {
+      return textRow(id, seq, body, {
+        origin: 'advisor',
+        ...(advisorModel === undefined ? {} : { advisor_model: advisorModel }),
+      });
+    }
+
+    test('projects displayable thinking as a distinct role, verbatim', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [thinkingRow('think-1', 1, 'weighing two approaches before acting')],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'thinking',
+          id: 'think-1',
+          seq: 1,
+          role: 'thinking',
+          text: 'weighing two approaches before acting',
+          execution: null,
+        },
+      ]);
+    });
+
+    test('projects the triggering prompt with its actor and source, unedited', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          promptRow('prompt-1', 1, '  Review this PR for regressions.  ', {
+            actorUserId: 'user-starter-1',
+            source: 'command_file',
+          }),
+        ],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'prompt',
+          id: 'prompt-1',
+          seq: 1,
+          role: 'prompt',
+          text: '  Review this PR for regressions.  ',
+          actorUserId: 'user-starter-1',
+          source: 'command_file',
+          execution: null,
+        },
+      ]);
+    });
+
+    test('keeps a null actor and defaults a missing source to node_prompt', () => {
+      const row = textRow('prompt-2', 1, 'go', { origin: 'prompt', actor_user_id: null });
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [row],
+      });
+      expect(items[0]).toMatchObject({
+        kind: 'prompt',
+        actorUserId: null,
+        source: 'node_prompt',
+      });
+    });
+
+    test('projects an advisor notification with its configured model', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [advisorRow('advisor-1', 1, 'use a channel-based shutdown', 'claude-opus-4-8')],
+      });
+      expect(items).toEqual([
+        {
+          kind: 'advisor',
+          id: 'advisor-1',
+          seq: 1,
+          role: 'advisor',
+          text: 'use a channel-based shutdown',
+          advisorModel: 'claude-opus-4-8',
+          execution: null,
+        },
+      ]);
+    });
+
+    test('projects an advisor notification with no model when Archon did not configure one', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [advisorRow('advisor-2', 1, 'consider retries')],
+      });
+      expect(items[0]).toMatchObject({ kind: 'advisor', advisorModel: null });
+    });
+
+    test('keeps thinking, prompt, advisor, and assistant rows in server sequence order', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          promptRow('p-1', 1, 'do the task'),
+          thinkingRow('t-1', 2, 'thinking first'),
+          advisorRow('a-1', 3, 'advice here', 'claude-opus-4-8'),
+          textRow('as-1', 4, 'done'),
+        ],
+      });
+      expect(kinds(items)).toEqual(['prompt', 'thinking', 'advisor', 'assistant']);
+      expect(items.map(item => item.seq)).toEqual([1, 2, 3, 4]);
+    });
+
+    test('never renders an unrecognized origin as agent text', () => {
+      const row = textRow('unknown-1', 1, 'looks like agent prose but is not', {
+        // A value outside the schema's enum — simulates an older client
+        // reading a row written by a newer, unrecognized origin.
+        origin: 'assistant' as never,
+      });
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [row],
+      });
+      expect(items).toHaveLength(1);
+      expect(items[0]?.kind).not.toBe('assistant');
+      expect(items[0]).toMatchObject({ kind: 'lifecycle', state: 'unrecognized-origin' });
+    });
+  });
+
   test('returns empty todos when no tool resolves to the todo family', () => {
     const { items, todos } = buildAgentHistory({
       nodeId: NODE_ID,

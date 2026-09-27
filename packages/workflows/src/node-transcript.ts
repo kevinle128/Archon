@@ -7,7 +7,7 @@
  */
 import { createLogger } from '@archon/paths';
 import type { AppendNodeMessageInput } from './schemas/node-message';
-import type { TranscriptExecutionScope } from './schemas/node-execution';
+import type { PromptTranscriptSource, TranscriptExecutionScope } from './schemas/node-execution';
 import type { IWorkflowNodeMessageStore } from './store';
 import type { ClaimedSteeringMessage } from './schemas/steering';
 import { transcriptMetadata } from './transcript-execution-scope';
@@ -88,4 +88,84 @@ export async function appendOperatorTranscript(
       }),
     });
   }
+}
+
+/**
+ * Append displayable provider thinking as a `thinking`-origin text row.
+ * Callers must pass only content the provider explicitly marked safe to
+ * show — hidden or redacted reasoning is never a valid input here.
+ */
+export async function appendThinkingTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    text: string;
+  }
+): Promise<void> {
+  await appendNodeTranscript(store, {
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    kind: 'text',
+    payload: { text: input.text },
+    metadata: transcriptMetadata(input.scope, { origin: 'thinking' }),
+  });
+}
+
+/**
+ * Append the exact text that triggered one agent turn as a `prompt`-origin
+ * text row. Callers must skip this for a redirect turn's first pass — that
+ * text is already persisted as the caused operator row; see
+ * `promptTranscriptSourceSchema` for the cases this covers.
+ */
+export async function appendPromptTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    text: string;
+    actorUserId: string | null;
+    source: PromptTranscriptSource;
+  }
+): Promise<void> {
+  await appendNodeTranscript(store, {
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    kind: 'text',
+    payload: { text: input.text },
+    metadata: transcriptMetadata(input.scope, {
+      origin: 'prompt',
+      actor_user_id: input.actorUserId,
+      prompt_source: input.source,
+    }),
+  });
+}
+
+/**
+ * Append one advisor notification as an `advisor`-origin text row.
+ * `advisorModel` is the model Archon configured (`assistants.claude.advisorModel`),
+ * omitted when Archon did not set it and the provider does not echo it back.
+ */
+export async function appendAdvisorTranscript(
+  store: IWorkflowNodeMessageStore,
+  input: {
+    workflow_run_id: string;
+    node_id: string;
+    scope: TranscriptExecutionScope;
+    text: string;
+    advisorModel?: string;
+  }
+): Promise<void> {
+  await appendNodeTranscript(store, {
+    workflow_run_id: input.workflow_run_id,
+    node_id: input.node_id,
+    kind: 'text',
+    payload: { text: input.text },
+    metadata: transcriptMetadata(input.scope, {
+      origin: 'advisor',
+      ...(input.advisorModel !== undefined ? { advisor_model: input.advisorModel } : {}),
+    }),
+  });
 }
