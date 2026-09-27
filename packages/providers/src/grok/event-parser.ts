@@ -28,6 +28,17 @@ function serialize(value: unknown): string {
   }
 }
 
+/**
+ * Grok's own shape for "this command moved to the background, it has not
+ * finished" — classifying a structured payload Grok itself defines, not
+ * reconstructing intent from prose (the command's actual output is free-form
+ * text this shape never appears in by coincidence).
+ */
+function isBackgroundTaskStarted(rawOutput: unknown): boolean {
+  const record = asObject(rawOutput);
+  return record?.type === 'BackgroundTaskStarted';
+}
+
 export class GrokEventParser {
   private readonly activeTools = new Map<string, string>();
   /**
@@ -312,6 +323,13 @@ export class GrokEventParser {
     if (!toolCallId) throw new Error('Grok CLI emitted a tool update without toolCallId.');
     const status = stringField(event.status);
     if (status !== 'completed' && status !== 'failed') return [];
+    // Grok reports moving a command to the background as `status:
+    // 'completed'` with a `BackgroundTaskStarted` payload — the command
+    // itself is still running, so this is not a real completion. The call
+    // stays open until a later update (if Grok ever sends one) or the turn
+    // ends, when closeOutstandingTools settles it 'unknown' rather than a
+    // guessed outcome.
+    if (status === 'completed' && isBackgroundTaskStarted(event.rawOutput)) return [];
     const toolName = this.activeTools.get(toolCallId);
     if (!toolName) throw new Error(`Grok CLI updated unknown tool call '${toolCallId}'.`);
     this.activeTools.delete(toolCallId);

@@ -70,6 +70,18 @@ function flattenToolContent(content: readonly ToolCallContent[] | null | undefin
     .join('');
 }
 
+/**
+ * Grok's own shape for "this command moved to the background, it has not
+ * finished" — classifying a structured payload Grok itself defines, not
+ * reconstructing intent from prose (the command's actual output is free-form
+ * text this shape never appears in by coincidence).
+ */
+function isBackgroundTaskStarted(rawOutput: unknown): boolean {
+  return (
+    isPlainObject(rawOutput) && (rawOutput as { type?: unknown }).type === 'BackgroundTaskStarted'
+  );
+}
+
 function toolOutputFromUpdate(update: {
   rawOutput?: unknown;
   content?: readonly ToolCallContent[] | null;
@@ -148,7 +160,16 @@ export function mapGrokAcpSessionUpdate(
       const stored = state.tools.get(update.toolCallId);
       const name = rememberedName(update, stored);
       const input = update.rawInput !== undefined ? asToolInput(update.rawInput) : stored?.input;
-      const terminal = update.status === 'completed' || update.status === 'failed';
+      // Grok reports moving a command to the background as `status:
+      // 'completed'` with a `BackgroundTaskStarted` payload — the command
+      // itself is still running, so this is not a real completion. Treated
+      // like any other non-terminal update: the call stays open until a
+      // later update (if Grok ever sends one) or the turn ends, when
+      // closeOutstandingGrokAcpTools settles it 'unknown' rather than a
+      // guessed outcome.
+      const terminal =
+        (update.status === 'completed' || update.status === 'failed') &&
+        !isBackgroundTaskStarted(update.rawOutput);
       if (!terminal) {
         state.tools.set(update.toolCallId, {
           name,

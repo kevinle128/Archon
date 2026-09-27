@@ -135,6 +135,56 @@ describe('GrokEventParser', () => {
       first?.type === 'thinking' ? first.blockId : undefined
     );
   });
+
+  test('a completed status carrying a BackgroundTaskStarted payload is not a real completion', () => {
+    const parser = new GrokEventParser();
+    parser.consumeLine(
+      '{"type":"tool_call","toolCallId":"call-bg","toolName":"run_terminal_command"}'
+    );
+    // No tool_result yet — the command is still running, not succeeded.
+    expect(
+      parser.consumeLine(
+        '{"type":"tool_call_update","toolCallId":"call-bg","status":"completed","rawOutput":{"type":"BackgroundTaskStarted","status":"running"}}'
+      )
+    ).toEqual([]);
+    // The call stays open: turn end settles it 'unknown', never a guessed
+    // outcome, and never twice (draining is idempotent).
+    expect(parser.closeOutstandingTools()).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'run_terminal_command',
+        toolCallId: 'call-bg',
+        toolOutput: 'Grok ended before reporting a tool result.',
+        toolOutcome: 'unknown',
+        outputState: 'unknown',
+      },
+    ]);
+    expect(parser.closeOutstandingTools()).toEqual([]);
+  });
+
+  test('a later real completion after a backgrounded update still settles the call', () => {
+    const parser = new GrokEventParser();
+    parser.consumeLine(
+      '{"type":"tool_call","toolCallId":"call-bg2","toolName":"run_terminal_command"}'
+    );
+    parser.consumeLine(
+      '{"type":"tool_call_update","toolCallId":"call-bg2","status":"completed","rawOutput":{"type":"BackgroundTaskStarted","status":"running"}}'
+    );
+    expect(
+      parser.consumeLine(
+        '{"type":"tool_call_update","toolCallId":"call-bg2","status":"completed","rawOutput":{"lines":3}}'
+      )
+    ).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'run_terminal_command',
+        toolCallId: 'call-bg2',
+        toolOutput: '{"lines":3}',
+        toolOutcome: 'success',
+        outputState: 'full',
+      },
+    ]);
+  });
 });
 
 describe('usageBreakdown normalization (US-002)', () => {

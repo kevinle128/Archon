@@ -153,6 +153,67 @@ describe('mapGrokAcpSessionUpdate', () => {
     ]);
   });
 
+  test('a completed status carrying a BackgroundTaskStarted payload is not a real completion', () => {
+    const state = createGrokAcpEventState();
+    mapGrokAcpSessionUpdate(
+      { sessionUpdate: 'tool_call', toolCallId: 'call-bg', title: 'run_terminal_command' },
+      state
+    );
+    const backgrounded: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-bg',
+      status: 'completed',
+      rawOutput: { type: 'BackgroundTaskStarted', status: 'running' },
+    };
+    // No tool_result yet — the command is still running, not succeeded.
+    expect(mapGrokAcpSessionUpdate(backgrounded, state)).toEqual([]);
+    // The call stays open: turn end settles it 'unknown', never a guessed
+    // outcome, and never twice (draining is idempotent).
+    expect(closeOutstandingGrokAcpTools(state)).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'run_terminal_command',
+        toolCallId: 'call-bg',
+        toolOutput: 'Grok ended before reporting a tool result.',
+        toolOutcome: 'unknown',
+        outputState: 'unknown',
+      },
+    ]);
+    expect(closeOutstandingGrokAcpTools(state)).toEqual([]);
+  });
+
+  test('a later real completion after a backgrounded update still settles the call', () => {
+    const state = createGrokAcpEventState();
+    mapGrokAcpSessionUpdate(
+      { sessionUpdate: 'tool_call', toolCallId: 'call-bg2', title: 'run_terminal_command' },
+      state
+    );
+    mapGrokAcpSessionUpdate(
+      {
+        sessionUpdate: 'tool_call_update',
+        toolCallId: 'call-bg2',
+        status: 'completed',
+        rawOutput: { type: 'BackgroundTaskStarted', status: 'running' },
+      },
+      state
+    );
+    const finished: SessionUpdate = {
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'call-bg2',
+      status: 'completed',
+      rawOutput: { exit_code: 0, output_for_prompt: 'done\n' },
+    };
+    expect(mapGrokAcpSessionUpdate(finished, state)).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'run_terminal_command',
+        toolCallId: 'call-bg2',
+        toolOutput: JSON.stringify({ exit_code: 0, output_for_prompt: 'done\n' }),
+        toolOutcome: 'success',
+      },
+    ]);
+  });
+
   test('tool_call_update falls back to the tool_call title when name is absent everywhere', () => {
     const state = createGrokAcpEventState();
     // No prior tool_call seen for this id (e.g. delivered out of order) and this
