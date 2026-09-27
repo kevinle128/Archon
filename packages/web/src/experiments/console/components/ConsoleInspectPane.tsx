@@ -13,6 +13,7 @@ import {
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
+  loopMaxIterationsForNode,
   resolveFinishedIterationView,
   type ExecutionHeaderModel,
   type ExecutionRow,
@@ -156,10 +157,13 @@ function executionOptionsForNode(
   runStartedAt: string,
   selectedRowId?: string
 ): ConsoleExecutionHeaderOption[] {
-  const forNode = selectableExecutionRows(
-    entries.filter(entry => entry.row.nodeId === nodeId).map(entry => entry.row),
-    selectedRowId
-  ).map(row => ({ id: row.id, order: row.order }));
+  const nodeRows = entries
+    .filter(entry => entry.row.nodeId === nodeId)
+    .map(entry => toExecutionRow(entry.row));
+  const forNode = selectableExecutionRows(nodeRows, selectedRowId).map(row => ({
+    id: row.id,
+    order: row.order,
+  }));
   const capped = capExecutionOptions(forNode);
   const cappedIds = new Set(capped.map(row => row.id));
   const rawOptions: { id: string; label: string; status: string }[] = [];
@@ -171,6 +175,7 @@ function executionOptionsForNode(
         row: toExecutionRow(entry.row),
         events,
         runStartedAt,
+        siblingRows: nodeRows,
       }).executionLabel,
       status: entry.row.status,
     });
@@ -279,6 +284,10 @@ export function ConsoleInspectPane({
     selectedNodeId === null ? false : hasIdleAwaitExpiredEvidence(nodeExecutions, selectedNodeId);
   const nodeExecutionKey =
     selectedNodeId === null ? null : latestNodeExecutionKey(rawEvents, selectedNodeId);
+  const selectedDefinitionNode =
+    selectedRow === null
+      ? undefined
+      : definitionNodes.find(candidate => candidate.id === selectedRow.nodeId);
   const headerModel: ExecutionHeaderModel | null =
     selectedRow === null
       ? null
@@ -286,6 +295,10 @@ export function ConsoleInspectPane({
           row: toExecutionRow(selectedRow),
           events: rawEvents,
           runStartedAt: run.startedAt,
+          siblingRows: logEntries
+            .filter(entry => entry.row.nodeId === selectedRow.nodeId)
+            .map(entry => toExecutionRow(entry.row)),
+          loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
         });
   const headerOptions =
     selectedNodeId === null

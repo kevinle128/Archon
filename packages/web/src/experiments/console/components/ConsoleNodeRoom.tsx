@@ -15,6 +15,7 @@ import {
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
   buildExecutionHeader,
+  loopMaxIterationsForNode,
   nodeKindChip,
   type ExecutionHeaderModel,
   type FinishedIterationView,
@@ -703,6 +704,7 @@ export function ConsoleNodeRoom({
           },
           events,
           runStartedAt: run.startedAt,
+          loopMaxIterations: loopMaxIterationsForNode(resolution?.definitionNode),
         }));
   const computedOptions: readonly ConsoleExecutionHeaderOption[] =
     headerOptions ??

@@ -8,7 +8,6 @@
 import type { CSSProperties, ReactElement } from 'react';
 
 import {
-  EXECUTION_OPTIONS_MAX,
   headerMetaLine,
   statusPill,
   type ExecutionHeaderModel,
@@ -30,7 +29,7 @@ export interface ConsoleRoomHeaderProps {
   closeLabel?: 'Close' | 'Back';
   /** Node-kind chip for line 1, or null when the kind has no established token. */
   kindChip: NodeKindChip | null;
-  /** Uncapped execution total for this node, for the "of N · max 8" caption. */
+  /** Uncapped execution total for this node, for the "of N" (and, on a loop, "· max N") caption. */
   executionCount: number;
   /** Retry position/count for the selected row, or null when it never retried. */
   runOfTotal?: RunOfTotal | null;
@@ -174,7 +173,10 @@ export function ConsoleRoomHeader({
                   ))}
                 </select>
                 <span className="shrink-0 text-[11px] text-text-secondary">
-                  of {executionCount} · max {EXECUTION_OPTIONS_MAX}
+                  of {executionCount}
+                  {model.loopMaxIterations !== null
+                    ? ` · max ${String(model.loopMaxIterations)}`
+                    : ''}
                 </span>
               </>
             ) : null}
