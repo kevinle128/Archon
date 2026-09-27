@@ -44,7 +44,14 @@ type Surface = 'console' | 'legacy';
 const ROW = 'details[data-tool-id]';
 const SUMMARY = `${ROW} > summary`;
 const ROOM_NAME = `${HITL_INSPECT_NODE} room`;
-const TARGET_ROOM_WIDTH = 460;
+// Both rooms are fixed pixel widths with no drag handle (520px Console,
+// 460px Legacy, `packages/web/src/lib/room-split-layout.ts`) — the
+// ratio-write path `setRoomWidth` still performs is inert on both surfaces;
+// the measured width always lands on the fixed value regardless of ratio.
+const APP_ROOM_WIDTH: Record<Surface, number> = { console: 520, legacy: 460 };
+// The static-mockup test below (Story 1.1) forces a fixed 460px panel width
+// regardless of surface — it predates the Console/Legacy width split.
+const MOCKUP_PANEL_WIDTH = 460;
 const ROOM_TOLERANCE_PX = 2;
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const SWEEP_VIEWPORTS = [
@@ -208,13 +215,15 @@ const ROOM_RATIO_MIN = 24;
 const ROOM_RATIO_MAX = 60;
 
 /**
- * Sizes the room region to `TARGET_ROOM_WIDTH ± ROOM_TOLERANCE_PX` through the
- * production ratio path: measure the resizable group, write the exact room
- * ratio the panels need into the persisted split key, and remount so
- * `readRoomRatio` applies it. The measured region width — not the ratio — is
- * what gets asserted.
+ * Sizes the room region to `APP_ROOM_WIDTH[surface] ± ROOM_TOLERANCE_PX`.
+ * Both rooms are fixed pixel widths with no drag handle, so the ratio this
+ * writes into the persisted split key is inert on both surfaces — the
+ * measured region width always lands on the fixed value; the write is
+ * harmless legacy plumbing kept for a minimal diff against this file's
+ * pre-fixed-width shape.
  */
 async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
+  const target = APP_ROOM_WIDTH[surface];
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
   const metrics = await panel.evaluate(el => {
     const panelRect = el.getBoundingClientRect();
@@ -227,7 +236,7 @@ async function setRoomWidth(page: Page, surface: Surface, runId: string): Promis
   const inset = metrics.panel - regionWidth;
   const ratio = Math.min(
     ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((TARGET_ROOM_WIDTH + inset) / metrics.group) * 100)
+    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
   );
   await page.evaluate(
     ([key, value]) => {
@@ -238,8 +247,8 @@ async function setRoomWidth(page: Page, surface: Surface, runId: string): Promis
   const room = await openToolRoom(page, surface, runId);
   const width = (await room.boundingBox())?.width ?? 0;
   expect(
-    Math.abs(width - TARGET_ROOM_WIDTH),
-    `measured room width ${String(width)} must land within ${String(TARGET_ROOM_WIDTH)}±${String(ROOM_TOLERANCE_PX)}`
+    Math.abs(width - target),
+    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
   ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
   return width;
 }
@@ -641,7 +650,7 @@ for (const surface of ['console', 'legacy'] as const) {
     if (axClosed.expanded !== null) expect(axClosed.expanded).toBe(false);
 
     const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    expect(Math.abs(width - APP_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     await expectSummaryOneLine(summary);
 
     // Transcript list padding is the canonical 10px/12px on both surfaces.
@@ -1011,7 +1020,7 @@ for (const surface of ['console', 'legacy'] as const) {
     let room = await openToolRoom(page, surface, started.runId);
     await expect(room.locator(ROW)).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
     const width = await setRoomWidth(page, surface, started.runId);
-    expect(Math.abs(width - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    expect(Math.abs(width - APP_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     room = roomRegion(page);
     const rows = room.locator(ROW);
     await expect(rows).toHaveCount(GALLERY_TOOLS.length, { timeout: T.medium });
@@ -1380,8 +1389,8 @@ test('[P1] [V:hitl.tool-row-mockups] HITL tool-row mockups measured at 460px sha
     const panelBox = await panel.boundingBox();
     expect(panelBox).toBeTruthy();
     expect(
-      Math.abs((panelBox?.width ?? 0) - TARGET_ROOM_WIDTH),
-      `${mockup.file} panel must measure ${String(TARGET_ROOM_WIDTH)}px`
+      Math.abs((panelBox?.width ?? 0) - MOCKUP_PANEL_WIDTH),
+      `${mockup.file} panel must measure ${String(MOCKUP_PANEL_WIDTH)}px`
     ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     const mockRow = panel.locator('.tcall').first();
     const mockSummary = mockRow.locator('summary').first();
