@@ -6,18 +6,23 @@ import type { Root } from 'react-dom/client';
 import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
 import { SteeringRequestError, type SteeringSubState } from '@/lib/steering-dock';
 import type {
+  ClearNodeDraft,
   InterruptNode,
   KeepaliveNode,
+  ReadNodeDraft,
   ReadNodeGuidanceQueue,
+  SaveNodeDraft,
   SendNodeGuidance,
   WithdrawNodeGuidance,
 } from './ConsoleComposerDock';
 import type {
+  ClearSteeringDraftResponse,
   InterruptWorkflowNodeResponse,
   KeepaliveWorkflowNodeResponse,
   ReadWorkflowNodeQueueResponse,
   SendWorkflowNodeBody,
   SendWorkflowNodeResponse,
+  SteeringDraftResponse,
   WithdrawWorkflowNodeResponse,
 } from '../skills/runs';
 
@@ -107,6 +112,9 @@ describe('ConsoleComposerDock', () => {
   let nextKeepalive: KeepaliveNode;
   const readCalls: { runId: string; nodeId: string; signal?: AbortSignal }[] = [];
   let nextRead: ReadNodeGuidanceQueue;
+  let nextReadDraft: ReadNodeDraft;
+  let nextSaveDraft: SaveNodeDraft;
+  let nextClearDraft: ClearNodeDraft;
 
   beforeEach(async () => {
     win = installHappyDom();
@@ -146,6 +154,16 @@ describe('ConsoleComposerDock', () => {
       readCalls.push({ runId, nodeId, signal: options?.signal });
       return deferred<ReadWorkflowNodeQueueResponse>().promise;
     };
+    // Default: a never-settling draft read (field starts empty, matching the
+    // old sessionStorage-empty default) and no-op save/clear.
+    nextReadDraft = async (): Promise<SteeringDraftResponse> =>
+      deferred<SteeringDraftResponse>().promise;
+    nextSaveDraft = async (_runId, _nodeId, body): Promise<SteeringDraftResponse> => ({
+      success: true,
+      draft: { message: body.message, updated_at: '2026-09-26T00:00:00.000Z' },
+      auto_send: false,
+    });
+    nextClearDraft = async (): Promise<ClearSteeringDraftResponse> => ({ success: true });
   });
 
   afterEach(async () => {
@@ -180,19 +198,17 @@ describe('ConsoleComposerDock', () => {
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
       readQueue: ReadNodeGuidanceQueue;
+      readDraft: ReadNodeDraft;
+      saveDraft: SaveNodeDraft;
+      clearDraft: ClearNodeDraft;
+      draftSaveDelayMs: number;
       keepalive: KeepaliveNode;
       pollIntervalMs: number;
-      storage: Storage;
       nodeLabel: string;
       focusLastRow: () => void;
-      writtenOperatorMessageIds: ReadonlySet<string> | null;
       nodeTerminal: boolean;
       nodeExecutionKey: string | null;
       idleAwaitExpired: boolean;
-      recoveryRequired: boolean;
-      softInjectionAvailable: boolean;
-      onSendQueuedMessageNow: (messageId: string) => void;
-      autoSendEnabled: boolean;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -213,18 +229,16 @@ describe('ConsoleComposerDock', () => {
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
           readQueue: overrides.readQueue ?? nextRead,
+          readDraft: overrides.readDraft ?? nextReadDraft,
+          saveDraft: overrides.saveDraft ?? nextSaveDraft,
+          clearDraft: overrides.clearDraft ?? nextClearDraft,
+          draftSaveDelayMs: overrides.draftSaveDelayMs ?? 60_000,
           keepalive: overrides.keepalive ?? nextKeepalive,
           pollIntervalMs: overrides.pollIntervalMs ?? 60_000,
-          storage: overrides.storage,
           focusLastRow: overrides.focusLastRow,
-          writtenOperatorMessageIds: overrides.writtenOperatorMessageIds,
           nodeTerminal: overrides.nodeTerminal,
           nodeExecutionKey: overrides.nodeExecutionKey,
           idleAwaitExpired: overrides.idleAwaitExpired,
-          recoveryRequired: overrides.recoveryRequired,
-          softInjectionAvailable: overrides.softInjectionAvailable,
-          onSendQueuedMessageNow: overrides.onSendQueuedMessageNow,
-          autoSendEnabled: overrides.autoSendEnabled,
         })
       );
     });
@@ -335,8 +349,10 @@ describe('ConsoleComposerDock', () => {
     expect(button.className).toContain('motion-reduce:transition-none');
   });
 
-  test('an explicit recovery-required signal renders a read-only restart band, no controls', async () => {
-    await renderDock({ recoveryRequired: true });
+  test('a server-confirmed recovery_required queue read renders a read-only restart band, no controls', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
     expect(host.textContent).toContain(
       'restored after server restart · Resume the workflow to continue'
     );
@@ -345,9 +361,14 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
   });
 
-  test('recovery-required wins over live and terminal checks', async () => {
-    await renderDock({ recoveryRequired: true, live: false, rowStatus: 'completed' });
+  test('recovery-required survives a queue re-read while the composer stays mounted', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 1 });
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('textarea')).not.toBeNull();
+    await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
     expect(host.textContent).toContain('restored after server restart');
+    expect(host.querySelector('textarea')).toBeNull();
   });
 
   test.each(['pending', 'completed', 'failed', 'skipped'] as const)(
@@ -364,7 +385,7 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('textarea')).toBeNull();
   });
 
-  test('accepted send shows one ordered receipt with visible sent word', async () => {
+  test('accepted send shows one ordered receipt with no per-item status word while queued', async () => {
     await renderDock();
     await setDraft('wrong suite — use -p archon-workflows');
     await clickQueue();
@@ -385,7 +406,7 @@ describe('ConsoleComposerDock', () => {
     const items = [...(list?.querySelectorAll('li') ?? [])];
     expect(items).toHaveLength(1);
     expect(items[0].textContent).toContain('wrong suite — use -p archon-workflows');
-    expect(items[0].textContent).toContain('sent');
+    expect(items[0].textContent).not.toContain('sent');
     const band = list?.closest('section');
     expect(band?.textContent ?? '').not.toContain('this tab only');
 
@@ -501,8 +522,6 @@ describe('ConsoleComposerDock', () => {
 
     expect(field().value).toBe('next message');
     expect(host.querySelector('li')?.textContent).toContain('first');
-    const stored = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
-    expect(JSON.parse(stored ?? '{}')).toMatchObject({ draft: 'next message' });
   });
 
   test('editing the draft after a failure mints a new id', async () => {
@@ -577,23 +596,36 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('textarea')).toBeNull();
     expect(host.querySelector('button')).toBeNull();
     expect(host.querySelector('ul')).toBeNull();
-
-    const stored = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
-    expect(stored).not.toBeNull();
-    const parsed = JSON.parse(stored ?? '{}') as { draft?: string; pendingRetry?: unknown };
-    expect(parsed.draft).toBe('kept for later');
-    expect(parsed.pendingRetry).not.toBeNull();
   });
 
-  test('hydrates a persisted draft and clears storage after a success', async () => {
-    win.sessionStorage.setItem(
-      'archon:steering-draft:run-1:grp.body',
-      JSON.stringify({ draft: 'from storage', pendingRetry: null })
-    );
-    await renderDock();
-    expect(field().value).toBe('from storage');
+  test('hydrates a server draft and clears it on a successful send', async () => {
+    let cleared = 0;
+    const draft = draftReader('from server');
+    const clear = clearDraftSpy(() => {
+      cleared++;
+    });
+    await renderDock({ readDraft: draft.read, clearDraft: clear.clear });
+    await draft.settle();
+    expect(field().value).toBe('from server');
     await clickQueue();
-    expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBeNull();
+    expect(cleared).toBe(1);
+  });
+
+  test('typing debounces a server draft save', async () => {
+    const saved: string[] = [];
+    const save = saveDraftSpy(message => {
+      saved.push(message);
+    });
+    const draft = draftReader(null);
+    await renderDock({ readDraft: draft.read, saveDraft: save.save, draftSaveDelayMs: 5 });
+    await draft.settle();
+    await setDraft('typed text');
+    expect(saved).toHaveLength(0);
+    await act(async () => {
+      await new Promise(resolve => setTimeout(resolve, 30));
+    });
+    await flush();
+    expect(saved).toEqual(['typed text']);
   });
 
   function buttonByText(text: string): HTMLButtonElement {
@@ -914,9 +946,82 @@ describe('ConsoleComposerDock', () => {
     });
     await flush();
   }
-  function okQueue(rows: { message_id: string; message: string }[]): ReadWorkflowNodeQueueResponse {
-    return { success: true, queued: rows };
+  function okQueue(
+    rows: {
+      message_id: string;
+      message: string;
+      operator_user_id?: string | null;
+      state?: ReadWorkflowNodeQueueResponse['queued'][number]['state'];
+    }[],
+    overrides?: Partial<Omit<ReadWorkflowNodeQueueResponse, 'success' | 'queued'>>
+  ): ReadWorkflowNodeQueueResponse {
+    return {
+      success: true,
+      execution_state: overrides?.execution_state ?? 'live',
+      auto_send: overrides?.auto_send ?? false,
+      capabilities: overrides?.capabilities ?? { soft_injection: false, delivery_ack: false },
+      queued: rows.map(row => ({
+        message_id: row.message_id,
+        message: row.message,
+        operator_user_id: row.operator_user_id ?? null,
+        state: row.state ?? 'queued',
+      })),
+    };
   }
+
+  /**
+   * A controllable `readDraft` mock: returns a never-settling promise until
+   * `settle()` resolves it with the given draft text (or null for none).
+   */
+  function draftReader(message: string | null): {
+    read: ReadNodeDraft;
+    settle: () => Promise<void>;
+  } {
+    const pending: ReturnType<typeof deferred<SteeringDraftResponse>>[] = [];
+    const read: ReadNodeDraft = async () => {
+      const d = deferred<SteeringDraftResponse>();
+      pending.push(d);
+      return d.promise;
+    };
+    return {
+      read,
+      settle: async (): Promise<void> => {
+        await waitForPending({ pendingCount: () => pending.length });
+        const d = pending.shift();
+        d?.resolve({
+          success: true,
+          draft: message === null ? null : { message, updated_at: '2026-09-26T00:00:00.000Z' },
+          auto_send: false,
+        });
+        await flush();
+      },
+    };
+  }
+
+  /** A `clearDraft`-shaped spy that resolves immediately and records calls. */
+  function clearDraftSpy(onCall: () => void): { clear: ClearNodeDraft } {
+    return {
+      clear: async (): Promise<ClearSteeringDraftResponse> => {
+        onCall();
+        return { success: true };
+      },
+    };
+  }
+
+  /** A `saveDraft`-shaped spy that resolves immediately and records calls. */
+  function saveDraftSpy(onCall: (message: string) => void): { save: SaveNodeDraft } {
+    return {
+      save: async (_runId, _nodeId, body): Promise<SteeringDraftResponse> => {
+        onCall(body.message);
+        return {
+          success: true,
+          draft: { message: body.message, updated_at: '2026-09-26T00:00:00.000Z' },
+          auto_send: false,
+        };
+      },
+    };
+  }
+
   function controllableRead(): {
     read: ReadNodeGuidanceQueue;
     resolveNext: (value: ReadWorkflowNodeQueueResponse) => void;
@@ -1281,7 +1386,7 @@ describe('ConsoleComposerDock', () => {
     expect(items[0].getAttribute('data-message-id')).toBe('id-a');
     expect(items[1].getAttribute('data-message-id')).toBe('id-b');
     expect(items[0].textContent).toContain('alpha');
-    expect(items[0].textContent).toContain('sent');
+    expect(items[0].textContent).not.toContain('sent');
     expect(items[1].textContent).toContain('beta');
     const band = list?.closest('section');
     expect(band?.textContent ?? '').not.toContain('this tab only');
@@ -1304,17 +1409,13 @@ describe('ConsoleComposerDock', () => {
 
   test('per-item Send now appears only while generating on a soft-injection provider', async () => {
     const ctrl = controllableRead();
-    const sendNowCalls: string[] = [];
-    await renderDock({
-      subState: 'generating',
-      pollIntervalMs: 60_000,
-      readQueue: ctrl.read,
-      softInjectionAvailable: true,
-      onSendQueuedMessageNow: (messageId): void => {
-        sendNowCalls.push(messageId);
-      },
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    await renderDock({ subState: 'generating', pollIntervalMs: 60_000, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha' }], {
+        capabilities: { soft_injection: true, delivery_ack: false },
+      })
+    );
 
     const item = host.querySelector('li[data-message-id="id-a"]');
     if (item === null) throw new Error('missing queued item');
@@ -1327,17 +1428,15 @@ describe('ConsoleComposerDock', () => {
     await act(async () => {
       sendNow.click();
     });
-    expect(sendNowCalls).toEqual(['id-a']);
+    await flush();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.body.intent).toBe('send_now');
+    expect(calls[0]?.body.queued_message_id).toBe('id-a');
   });
 
   test('per-item Send now is absent without the capability flag', async () => {
     const ctrl = controllableRead();
-    await renderDock({
-      subState: 'generating',
-      pollIntervalMs: 60_000,
-      readQueue: ctrl.read,
-      onSendQueuedMessageNow: (): void => undefined,
-    });
+    await renderDock({ subState: 'generating', pollIntervalMs: 60_000, readQueue: ctrl.read });
     await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
     const item = host.querySelector('li[data-message-id="id-a"]');
     expect(
@@ -1353,10 +1452,13 @@ describe('ConsoleComposerDock', () => {
       subState: 'idle-after-interrupt',
       pollIntervalMs: 60_000,
       readQueue: ctrl.read,
-      softInjectionAvailable: true,
-      onSendQueuedMessageNow: (): void => undefined,
     });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha' }], {
+        capabilities: { soft_injection: true, delivery_ack: false },
+      })
+    );
     const item = host.querySelector('li[data-message-id="id-a"]');
     expect(
       [...(item?.querySelectorAll('button') ?? [])].some(
@@ -1376,13 +1478,11 @@ describe('ConsoleComposerDock', () => {
 
   test('Auto-send on renders as a read-only indicator with the confirmed capability', async () => {
     const ctrl = controllableRead();
-    await renderDock({
-      subState: 'generating',
-      pollIntervalMs: 60_000,
-      readQueue: ctrl.read,
-      autoSendEnabled: true,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
+    await renderDock({ subState: 'generating', pollIntervalMs: 60_000, readQueue: ctrl.read });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha' }], { auto_send: true })
+    );
     const band = host.querySelector('ul[aria-label="Queued messages, 1"]')?.closest('section');
     expect(band?.textContent).toContain('saved to server · Auto-send on');
     // Read-only: no control anywhere in the band carries the indicator text.
@@ -1436,7 +1536,7 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('li')?.getAttribute('data-message-id')).toBe('id-b');
     expect(withdrawCalls).toHaveLength(0);
   });
-  test('remote snapshot leaves draft, pending retry, and sessionStorage byte-for-byte unchanged', async () => {
+  test('a remote snapshot leaves the draft field and pending retry untouched', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
     const failingSend: SendNodeGuidance = async (runId, nodeId, body) => {
@@ -1447,15 +1547,9 @@ describe('ConsoleComposerDock', () => {
     await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
     await setDraft('unsent draft · keep me');
     await clickQueue();
-    const before = win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body');
-    expect(before).not.toBeNull();
-    const beforeRecord = JSON.parse(before ?? '{}') as {
-      draft?: string;
-      pendingRetry?: { messageId?: string; message?: string } | null;
-    };
-    expect(beforeRecord.draft).toBe('unsent draft · keep me');
-    expect(beforeRecord.pendingRetry?.message).toBe('unsent draft · keep me');
-    expect(beforeRecord.pendingRetry?.messageId).toBe(calls[0]?.body.message_id);
+    expect(field().value).toBe('unsent draft · keep me');
+    const pendingMessageId = calls[0]?.body.message_id;
+    expect(pendingMessageId).toBeTruthy();
 
     await settleSnapshot(
       ctrl,
@@ -1465,7 +1559,6 @@ describe('ConsoleComposerDock', () => {
       ])
     );
     expect(field().value).toBe('unsent draft · keep me');
-    expect(win.sessionStorage.getItem('archon:steering-draft:run-1:grp.body')).toBe(before);
   });
   test('stale read after local send keeps the local row', async () => {
     const ctrl = controllableRead();
@@ -1620,7 +1713,7 @@ describe('ConsoleComposerDock', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Story 2.10 (#190) — finished-iteration read-only dock.
+  // Finished-iteration read-only dock.
   // ---------------------------------------------------------------------------
 
   const FINISHED = {
@@ -1686,7 +1779,7 @@ describe('ConsoleComposerDock', () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.getAttribute('data-message-id')).toBe('id-a');
     expect(items[1]?.getAttribute('data-message-id')).toBe('id-b');
-    expect(items[0]?.textContent).toContain('sent');
+    expect(items[0]?.textContent).not.toContain('sent');
     expect(deleteButtons()).toHaveLength(0);
     const scroll = list?.parentElement;
     expect(scroll?.className ?? '').toContain('max-h-[33vh]');
@@ -1757,8 +1850,7 @@ describe('ConsoleComposerDock', () => {
   });
 
   test('finished-iteration hides draft and restores it on live return', async () => {
-    const storage = win.sessionStorage;
-    await renderDock({ storage });
+    await renderDock({});
     await setDraft('keep me across finished');
     expect(field().value).toBe('keep me across finished');
 
@@ -1766,11 +1858,10 @@ describe('ConsoleComposerDock', () => {
       rowStatus: 'completed',
       finishedIteration: FINISHED,
       onSelectLiveRow: (): void => undefined,
-      storage,
     });
     expect(host.querySelector('textarea')).toBeNull();
 
-    await renderDock({ storage, rowStatus: 'running' });
+    await renderDock({ rowStatus: 'running' });
     expect(field().value).toBe('keep me across finished');
   });
 
@@ -1864,7 +1955,7 @@ describe('ConsoleComposerDock', () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Story 2.11 (#191) — NEVER SENT finished box (T2.1–T2.18).
+  // Never-sent terminal band: durable server rows, not a client-side ledger.
   // ---------------------------------------------------------------------------
 
   const NEVER_SENT_ALERT = 'node finished · none of this was sent';
@@ -1879,164 +1970,118 @@ describe('ConsoleComposerDock', () => {
     return [...list.querySelectorAll('li')] as unknown as HTMLLIElement[];
   }
 
-  test('T2.1 restores exact unmatched receipts', async () => {
+  test('renders never_sent rows straight from the terminal one-shot queue read', async () => {
     const ctrl = controllableRead();
     await renderDock({
       readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
+      nodeTerminal: true,
+      rowStatus: 'completed',
     });
     await settleSnapshot(
       ctrl,
       okQueue([
-        { message_id: 'id-a', message: 'alpha' },
-        { message_id: 'id-b', message: 'beta' },
+        { message_id: 'id-a', message: 'alpha', state: 'never_sent' },
+        { message_id: 'id-b', message: 'beta', state: 'never_sent' },
       ])
     );
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(['id-a']),
-      pollIntervalMs: 60_000,
-    });
     const list = neverSentList();
-    expect(list?.getAttribute('aria-label')).toBe('Never sent, 1');
+    expect(list?.getAttribute('aria-label')).toBe('Never sent, 2');
     const items = neverSentItems();
-    expect(items).toHaveLength(1);
-    expect(items[0]?.getAttribute('data-message-id')).toBe('id-b');
-    expect(items[0]?.textContent).toBe('beta');
+    expect(items.map(item => item.getAttribute('data-message-id'))).toEqual(['id-a', 'id-b']);
+    expect(items.map(item => item.textContent)).toEqual(['alpha', 'beta']);
     expect(host.textContent).toContain(NEVER_SENT_ALERT);
   });
 
-  test('T2.2 shared receipt survives snapshot omission', async () => {
+  test('a cold mount already terminal reaches the same band with no live session ever observed', async () => {
+    // Durable undelivered content survives a run being opened
+    // well after it finished, not only a session that watched it happen.
     const ctrl = controllableRead();
     await renderDock({
       readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 1,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'remote-a', message: 'from peer' }]));
-    await settleSnapshot(ctrl, okQueue([]));
-    expect(host.querySelector('li')).toBeNull();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 1,
-    });
-    const items = neverSentItems();
-    expect(items).toHaveLength(1);
-    expect(items[0]?.getAttribute('data-message-id')).toBe('remote-a');
-    expect(items[0]?.textContent).toBe('from peer');
-  });
-
-  test('T2.3 all matched hides dock', async () => {
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
+      live: false,
       rowStatus: 'completed',
       nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(['id-a']),
-      pollIntervalMs: 60_000,
     });
-    expect(host.querySelector('textarea')).toBeNull();
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'never_sent' }])
+    );
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
+  });
+
+  test("the operator's own unsent draft folds in as the trailing item", async () => {
+    const ctrl = controllableRead();
+    const draft = draftReader('half-typed line');
+    await renderDock({
+      readQueue: ctrl.read,
+      readDraft: draft.read,
+      nodeTerminal: true,
+      rowStatus: 'completed',
+    });
+    await draft.settle();
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'never_sent' }])
+    );
+    const items = neverSentItems();
+    expect(items).toHaveLength(2);
+    expect(items[0]?.getAttribute('data-message-id')).toBe('id-a');
+    expect(items[1]?.getAttribute('data-message-id')).toBeNull();
+    expect(items[1]?.textContent).toBe('half-typed line');
+  });
+
+  test('a delivery_unknown row survives to the terminal band with its own label', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha', state: 'delivery_unknown' },
+        { message_id: 'id-b', message: 'beta', state: 'never_sent' },
+      ])
+    );
+    const items = neverSentItems();
+    expect(items.map(item => item.getAttribute('data-message-id'))).toEqual(['id-a', 'id-b']);
+    expect(items[0]?.textContent).toBe('alphadelivery unknown');
+    expect(items[1]?.textContent).toBe('beta');
+  });
+
+  test('nothing undelivered and a blank draft renders no dock at all', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha', state: 'sent' }]));
     expect(neverSentList()).toBeNull();
-    expect(host.textContent ?? '').not.toContain(NEVER_SENT_ALERT);
+    expect(host.querySelector('textarea')).toBeNull();
     expect(host.textContent ?? '').toBe('');
   });
 
-  test('T2.4 pending submission is retained', async () => {
-    const pending = deferred<SendWorkflowNodeResponse>();
-    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return pending.promise;
-    };
-    await renderDock({ nodeExecutionKey: 'exec-1', send: hangingSend });
-    await setDraft('pending text');
-    await clickQueue();
-    expect(calls).toHaveLength(1);
-    const pendingId = calls[0]?.body.message_id;
-    expect(pendingId).toBeTruthy();
-    await renderDock({
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-    });
-    const items = neverSentItems();
-    expect(items.some(item => item.getAttribute('data-message-id') === pendingId)).toBe(true);
-    expect(items.some(item => (item.textContent ?? '').includes('pending text'))).toBe(true);
-  });
-
-  test('T2.5 edited field retains both values', async () => {
-    const pending = deferred<SendWorkflowNodeResponse>();
-    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return pending.promise;
-    };
-    await renderDock({ nodeExecutionKey: 'exec-1', send: hangingSend });
-    await setDraft('old');
-    await clickQueue();
-    const pendingId = calls[0]?.body.message_id ?? '';
-    await setDraft('  new  ');
-    await renderDock({
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-    });
-    const items = neverSentItems();
-    expect(items).toHaveLength(2);
-    expect(items[0]?.getAttribute('data-message-id')).toBe(pendingId);
-    expect(items[0]?.textContent).toBe('old');
-    expect(items[1]?.getAttribute('data-message-id')).toBeNull();
-    expect(items[1]?.textContent).toBe('  new  ');
-  });
-
-  test('T2.6 unchanged field is not duplicated', async () => {
-    const pending = deferred<SendWorkflowNodeResponse>();
-    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return pending.promise;
-    };
-    await renderDock({ nodeExecutionKey: 'exec-1', send: hangingSend });
-    await setDraft('same text');
-    await clickQueue();
-    const pendingId = calls[0]?.body.message_id ?? '';
-    expect(field().value).toBe('same text');
-    await renderDock({
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-    });
-    const items = neverSentItems();
-    expect(items).toHaveLength(1);
-    expect(items[0]?.getAttribute('data-message-id')).toBe(pendingId);
-    expect(items[0]?.textContent).toBe('same text');
-  });
-
-  test('T2.7 exact finished anatomy', async () => {
+  test('withdrawing a row before the node finishes keeps it out of the terminal band', async () => {
     const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'only' }]));
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'keep' },
+        { message_id: 'id-b', message: 'drop' },
+      ])
+    );
+    await clickDelete(1);
+    expect(withdrawCalls.some(c => c.messageId === 'id-b')).toBe(true);
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'keep', state: 'never_sent' }])
+    );
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
+  });
+
+  test('exact finished anatomy: heading, alert, and no controls', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'only', state: 'never_sent' }])
+    );
     const heading = host.querySelector('h3');
     expect(heading?.textContent).toBe('never sent · 1');
     expect(heading?.className ?? '').toContain('uppercase');
@@ -2046,7 +2091,6 @@ describe('ConsoleComposerDock', () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.textContent).toBe(NEVER_SENT_ALERT);
     expect(host.querySelector('textarea')).toBeNull();
-    expect(host.querySelector('[role="status"]')).toBeNull();
     expect(deleteButtons()).toHaveLength(0);
     expect(
       [...host.querySelectorAll('button')].some(b => {
@@ -2057,564 +2101,51 @@ describe('ConsoleComposerDock', () => {
     expect(host.textContent ?? '').not.toContain('Cmd/Ctrl+Enter');
   });
 
-  test('T2.8 live/non-event states never reconcile', async () => {
+  test('the terminal fetch runs once per terminal transition, not once per render', async () => {
     const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha' }]));
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: false,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentList()).toBeNull();
-    expect(host.querySelector('textarea')).not.toBeNull();
-
-    // Cancel: run goes non-live while nodeTerminal is true. Observed receipts
-    // still reconcile into finished — live:false alone must not hide recovery.
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      live: false,
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentList()).not.toBeNull();
-    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      rowStatus: 'completed',
-      nodeTerminal: false,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentList()).toBeNull();
-    expect(host.textContent ?? '').toBe('');
-  });
-
-  test('T2.9 blocked is eligible', async () => {
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      rowStatus: 'awaiting',
-      hasPendingAsk: true,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-q', message: 'queued while ask' }]));
-    await renderDock({
-      readQueue: ctrl.read,
-      rowStatus: 'awaiting',
-      hasPendingAsk: true,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    const items = neverSentItems();
-    expect(items).toHaveLength(1);
-    expect(items[0]?.getAttribute('data-message-id')).toBe('id-q');
-  });
-
-  test('T2.10 observer eligibility follows history', async () => {
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      rowStatus: 'completed',
-      finishedIteration: FINISHED,
-      onSelectLiveRow: (): void => undefined,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
     await settleSnapshot(
       ctrl,
-      okQueue([{ message_id: 'id-fi', message: 'seen in finished-iter' }])
+      okQueue([{ message_id: 'id-a', message: 'only', state: 'never_sent' }])
     );
+    const readsSoFar = readCalls.length;
     await renderDock({
       readQueue: ctrl.read,
+      nodeTerminal: true,
       rowStatus: 'completed',
-      finishedIteration: FINISHED,
-      onSelectLiveRow: (): void => undefined,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentItems()[0]?.getAttribute('data-message-id')).toBe('id-fi');
-
-    // Always-detached / never-observed stays ineligible.
-    await renderDock({
-      runId: 'run-detached-only',
-      rowStatus: 'completed',
-      nodeExecutionKey: 'exec-new',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-    });
-    expect(neverSentList()).toBeNull();
-    expect(host.textContent ?? '').toBe('');
-
-    // Observer-then-detached retains ledger.
-    const ctrl2 = controllableRead();
-    const okSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return okReceipt(body.message_id, 'queued');
-    };
-    const detachSend: SendNodeGuidance = async () => {
-      throw new SteeringRequestError(422, 'not_steerable_here', 'No live steering session');
-    };
-    await renderDock({
-      runId: 'run-obs-det',
-      readQueue: ctrl2.read,
-      nodeExecutionKey: 'exec-od',
-      pollIntervalMs: 60_000,
-      send: okSend,
-    });
-    await settleSnapshot(ctrl2, okQueue([{ message_id: 'id-od', message: 'before detach' }]));
-    await renderDock({
-      runId: 'run-obs-det',
-      readQueue: ctrl2.read,
-      nodeExecutionKey: 'exec-od',
-      pollIntervalMs: 60_000,
-      send: detachSend,
-    });
-    await setDraft('trigger detach');
-    await clickQueue();
-    expect(host.textContent).toContain(DETACHED);
-    await renderDock({
-      runId: 'run-obs-det',
-      readQueue: ctrl2.read,
-      nodeExecutionKey: 'exec-od',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-      send: detachSend,
-    });
-    expect(neverSentItems().some(i => i.getAttribute('data-message-id') === 'id-od')).toBe(true);
-  });
-
-  test('T2.11 own withdraw stays withdrawn', async () => {
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(
-      ctrl,
-      okQueue([
-        { message_id: 'id-a', message: 'keep' },
-        { message_id: 'id-b', message: 'drop' },
-      ])
-    );
-    await clickDelete(1);
-    expect(withdrawCalls.some(c => c.messageId === 'id-b')).toBe(true);
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    const ids = neverSentItems().map(i => i.getAttribute('data-message-id'));
-    expect(ids).toEqual(['id-a']);
-  });
-
-  test('T2.12 strict-mode/rerender is idempotent', async () => {
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'once' }]));
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    const alert = host.querySelector('[role="alert"]');
-    expect(alert?.textContent).toBe(NEVER_SENT_ALERT);
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
       nodeLabel: 'implement-renamed',
     });
-    const alert2 = host.querySelector('[role="alert"]');
-    expect(alert2).toBe(alert);
+    expect(readCalls).toHaveLength(readsSoFar);
     expect(neverSentItems()).toHaveLength(1);
-    expect([...host.querySelectorAll('[role="alert"]')]).toHaveLength(1);
   });
 
-  test('T2.13 focus exits removed controls safely', async () => {
+  test('focus moves off a removed control when the node finishes', async () => {
     const focused: string[] = [];
     const focusLastRow = (): void => {
       focused.push('last-row');
     };
     const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      focusLastRow,
-      pollIntervalMs: 60_000,
-    });
+    await renderDock({ readQueue: ctrl.read, focusLastRow, pollIntervalMs: 60_000 });
     await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'focus me out' }]));
     await act(async () => {
       field().focus();
     });
     await renderDock({
       readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
       nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      focusLastRow,
-      pollIntervalMs: 60_000,
-    });
-    expect(focused).toContain('last-row');
-    const box = neverSentList();
-    expect(box).not.toBeNull();
-
-    focused.length = 0;
-    const ctrl2 = controllableRead();
-    await renderDock({
-      runId: 'run-go',
-      readQueue: ctrl2.read,
       rowStatus: 'completed',
-      finishedIteration: FINISHED,
-      onSelectLiveRow: (): void => undefined,
-      nodeExecutionKey: 'exec-go',
       focusLastRow,
-      pollIntervalMs: 60_000,
     });
-    await settleSnapshot(ctrl2, okQueue([{ message_id: 'id-g', message: 'from go' }]));
-    const go = [...host.querySelectorAll('button')].find(b =>
-      (b.textContent ?? '').includes('Go to iteration')
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'focus me out', state: 'never_sent' }])
     );
-    await act(async () => {
-      go?.focus();
-    });
-    await renderDock({
-      runId: 'run-go',
-      readQueue: ctrl2.read,
-      rowStatus: 'completed',
-      finishedIteration: FINISHED,
-      onSelectLiveRow: (): void => undefined,
-      nodeExecutionKey: 'exec-go',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      focusLastRow,
-      pollIntervalMs: 60_000,
-    });
     expect(focused).toContain('last-row');
-  });
-
-  test('T2.14 new execution resets attempt state', async () => {
-    const storage = win.sessionStorage;
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      storage,
-      pollIntervalMs: 60_000,
-    });
-    await setDraft('keep draft');
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-old', message: 'old attempt' }]));
-    const pending = deferred<SendWorkflowNodeResponse>();
-    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return pending.promise;
-    };
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      storage,
-      pollIntervalMs: 60_000,
-      send: hangingSend,
-    });
-    await setDraft('retry seed');
-    await clickQueue();
-    const oldRetryId = calls[0]?.body.message_id ?? '';
-    expect(oldRetryId).toBeTruthy();
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      storage,
-      pollIntervalMs: 60_000,
-      send: hangingSend,
-    });
     expect(neverSentList()).not.toBeNull();
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-2',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      storage,
-      pollIntervalMs: 60_000,
-    });
-
-    const ids = neverSentItems()
-      .map(i => i.getAttribute('data-message-id'))
-      .filter(id => id !== null);
-    expect(ids).not.toContain('id-old');
-    expect(ids).not.toContain(oldRetryId);
-
-    const freshSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return okReceipt(body.message_id, 'queued');
-    };
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-2',
-      nodeTerminal: false,
-      storage,
-      pollIntervalMs: 60_000,
-      send: freshSend,
-    });
-    // Draft text survives the attempt reset.
-    expect(field().value).toBe('retry seed');
-    const key = 'archon:steering-draft:run-1:grp.body';
-    const raw = storage.getItem(key);
-    if (raw !== null) {
-      const parsed = JSON.parse(raw) as { draft?: string; pendingRetry?: unknown };
-      expect(parsed.pendingRetry).toBeNull();
-      expect(parsed.draft).toBe('retry seed');
-    }
-    await setDraft('fresh submit');
-    const before = calls.length;
-    await clickQueue();
-    expect(calls.length).toBe(before + 1);
-    expect(calls[calls.length - 1]?.body.message_id).not.toBe(oldRetryId);
-  });
-
-  test('T2.15 scope and occurrence changes are distinct', async () => {
-    const storage = win.sessionStorage;
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      storage,
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'ledger keep' }]));
-    await setDraft('draft-a');
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      storage,
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentItems()[0]?.getAttribute('data-message-id')).toBe('id-a');
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      storage,
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentItems()[0]?.getAttribute('data-message-id')).toBe('id-a');
-
-    storage.setItem(
-      'archon:steering-draft:run-2:other.node',
-      JSON.stringify({ draft: 'other draft', pendingRetry: null })
-    );
-    await renderDock({
-      runId: 'run-2',
-      nodeId: 'other.node',
-      nodeExecutionKey: 'exec-x',
-      storage,
-      pollIntervalMs: 60_000,
-    });
-    expect(field().value).toBe('other draft');
-    expect(host.textContent ?? '').not.toContain('ledger keep');
-    expect(neverSentList()).toBeNull();
-  });
-
-  test('T2.16 finished box stays stable', async () => {
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 1,
-    });
-    await settleSnapshot(
-      ctrl,
-      okQueue([
-        { message_id: 'id-a', message: 'first' },
-        { message_id: 'id-b', message: 'second' },
-      ])
-    );
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(['id-a']),
-      pollIntervalMs: 1,
-    });
-    const before = neverSentItems().map(i => ({
-      id: i.getAttribute('data-message-id'),
-      text: i.textContent,
-    }));
-    expect(before).toEqual([{ id: 'id-b', text: 'second' }]);
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(['id-a', 'id-extra']),
-      pollIntervalMs: 1,
-    });
-    const after = neverSentItems().map(i => ({
-      id: i.getAttribute('data-message-id'),
-      text: i.textContent,
-    }));
-    expect(after).toEqual(before);
-  });
-
-  test('T2.17 terminal waits for own withdraw', async () => {
-    const ctrl = controllableRead();
-    const withdrawPending = deferred<WithdrawWorkflowNodeResponse>();
-    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
-      withdrawCalls.push({ runId, nodeId, messageId });
-      return withdrawPending.promise;
-    };
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(
-      ctrl,
-      okQueue([
-        { message_id: 'id-a', message: 'A' },
-        { message_id: 'id-b', message: 'B' },
-      ])
-    );
-    await clickDelete(0);
-    expect(withdrawCalls.some(c => c.messageId === 'id-a')).toBe(true);
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentList()).toBeNull();
-
-    await act(async () => {
-      withdrawPending.resolve({ success: true, message_id: 'id-a' });
-    });
-    await flush();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentItems().map(i => i.getAttribute('data-message-id'))).toEqual(['id-b']);
-  });
-
-  test('T2.17b withdraw failure restores A after transient clears', async () => {
-    const ctrl = controllableRead();
-    const withdrawPending = deferred<WithdrawWorkflowNodeResponse>();
-    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
-      withdrawCalls.push({ runId, nodeId, messageId });
-      return withdrawPending.promise;
-    };
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'A' }]));
-    await clickDelete(0);
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentList()).toBeNull();
-    await act(async () => {
-      withdrawPending.reject(new SteeringRequestError(409, 'node_finished', 'still there'));
-    });
-    await flush();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
-    });
-    expect(neverSentItems().map(i => i.getAttribute('data-message-id'))).toEqual(['id-a']);
-  });
-
-  test('T2.18 prior-attempt async work is inert', async () => {
-    const storage = win.sessionStorage;
-    const sendPending = deferred<SendWorkflowNodeResponse>();
-    const hangingSend: SendNodeGuidance = async (runId, nodeId, body) => {
-      calls.push({ runId, nodeId, body });
-      return sendPending.promise;
-    };
-    const ctrl = controllableRead();
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-a',
-      storage,
-      pollIntervalMs: 60_000,
-      send: hangingSend,
-    });
-    await setDraft('attempt-a');
-    await clickQueue();
-    const oldId = calls[0]?.body.message_id ?? '';
-
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-b',
-      storage,
-      pollIntervalMs: 60_000,
-    });
-    expect(field().value).toBe('attempt-a');
-    const key = 'archon:steering-draft:run-1:grp.body';
-    expect(JSON.parse(storage.getItem(key) ?? '{}').pendingRetry).toBeNull();
-
-    await act(async () => {
-      sendPending.resolve(okReceipt(oldId, 'queued'));
-    });
-    await flush();
-    expect(host.textContent ?? '').not.toContain(oldId);
-    const queued = host.querySelector('ul[aria-label^="Queued messages"]');
-    expect(queued).toBeNull();
-    expect(JSON.parse(storage.getItem(key) ?? '{}').pendingRetry).toBeNull();
-    expect(field().value).toBe('attempt-a');
   });
 
   // ---------------------------------------------------------------------------
-  // Story 2.12 (#192) — idle disclosure, keepalive, expiry copy (T4.8–T4.15).
+  // Idle-after-interrupt disclosure, keepalive coalescing, and idle-await expiry copy.
   // ---------------------------------------------------------------------------
 
   const IDLE_DISCLOSURE =
@@ -2623,7 +2154,7 @@ describe('ConsoleComposerDock', () => {
   const STOP_DISCLOSURE =
     'stopped after the last completed tool call · files already written stay written';
 
-  test('T4.8 idle disclosure follows Stop text; other states omit it', async () => {
+  test('idle disclosure follows Stop text; other states omit it', async () => {
     await renderDock({ subState: 'idle-after-interrupt' });
     const text = host.textContent ?? '';
     expect(text).toContain(STOP_DISCLOSURE);
@@ -2639,13 +2170,12 @@ describe('ConsoleComposerDock', () => {
     await renderDock({
       rowStatus: 'completed',
       nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
       nodeExecutionKey: 'exec-1',
     });
     expect(host.textContent ?? '').not.toContain(IDLE_DISCLOSURE);
   });
 
-  test('T4.9 focus plus rapid typing produces one immediate keepalive', async () => {
+  test('focus plus rapid typing produces one immediate keepalive', async () => {
     await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
     expect(keepaliveCalls).toHaveLength(0);
     await act(async () => {
@@ -2661,7 +2191,7 @@ describe('ConsoleComposerDock', () => {
     expect(field().value).toBe('r');
   });
 
-  test('T4.10 Send now excludes keepalive; intent is send_now', async () => {
+  test('Send now excludes keepalive; intent is send_now', async () => {
     await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
     await setDraft('redirect the agent');
     await act(async () => {
@@ -2686,7 +2216,7 @@ describe('ConsoleComposerDock', () => {
     expect(keepaliveCalls).toHaveLength(afterFocus);
   });
 
-  test('T4.11 non-idle focus/typing sends no keepalive', async () => {
+  test('non-idle focus/typing sends no keepalive', async () => {
     await renderDock({ subState: 'generating', nodeExecutionKey: 'exec-1' });
     await act(async () => {
       field().focus();
@@ -2697,14 +2227,13 @@ describe('ConsoleComposerDock', () => {
     await renderDock({
       rowStatus: 'completed',
       nodeTerminal: true,
-      writtenOperatorMessageIds: new Set(),
       nodeExecutionKey: 'exec-1',
     });
     expect(host.querySelector('textarea')).toBeNull();
     expect(keepaliveCalls).toHaveLength(0);
   });
 
-  test('T4.12 rejected keepalive stays eligible without refusal UI', async () => {
+  test('rejected keepalive stays eligible without refusal UI', async () => {
     let rejectNext = true;
     nextKeepalive = async (runId, nodeId): Promise<KeepaliveWorkflowNodeResponse> => {
       keepaliveCalls.push({ runId, nodeId });
@@ -2726,7 +2255,7 @@ describe('ConsoleComposerDock', () => {
     expect(keepaliveCalls).toHaveLength(1);
   });
 
-  test('T4.13 leaving idle or changing attempt key cleans up; new idle sends immediately', async () => {
+  test('leaving idle or changing attempt key cleans up; new idle sends immediately', async () => {
     await renderDock({ subState: 'idle-after-interrupt', nodeExecutionKey: 'exec-1' });
     await act(async () => {
       field().focus();
@@ -2743,55 +2272,49 @@ describe('ConsoleComposerDock', () => {
     expect(keepaliveCalls).toHaveLength(2);
   });
 
-  test('T4.14 cause-specific terminal box uses exact expiry copy', async () => {
+  test('cause-specific terminal box uses exact expiry copy', async () => {
     const ctrl = controllableRead();
-    nextRead = ctrl.read;
     await renderDock({
       readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-b', message: 'beta' }]));
-    await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
+      rowStatus: 'failed',
       nodeTerminal: true,
       idleAwaitExpired: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
     });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-b', message: 'beta', state: 'never_sent' }])
+    );
     expect(neverSentList()?.getAttribute('aria-label')).toBe('Never sent, 1');
     expect(neverSentItems()[0]?.textContent).toBe('beta');
     expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(host.textContent).toContain(EXPIRED_ALERT);
     expect(host.textContent).not.toContain(NEVER_SENT_ALERT);
 
+    const ctrl2 = controllableRead();
     await renderDock({
-      readQueue: ctrl.read,
-      nodeExecutionKey: 'exec-1',
+      nodeId: 'grp.other',
+      readQueue: ctrl2.read,
+      rowStatus: 'completed',
       nodeTerminal: true,
       idleAwaitExpired: false,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
     });
+    await settleSnapshot(
+      ctrl2,
+      okQueue([{ message_id: 'id-c', message: 'gamma', state: 'never_sent' }])
+    );
     expect(host.textContent).toContain(NEVER_SENT_ALERT);
     expect(host.textContent).not.toContain(EXPIRED_ALERT);
   });
 
-  test('T4.15 expired empty terminal renders no dock shell', async () => {
+  test('expired empty terminal renders no dock shell', async () => {
+    const ctrl = controllableRead();
     await renderDock({
-      subState: 'idle-after-interrupt',
-      nodeExecutionKey: 'exec-1',
-      pollIntervalMs: 60_000,
-    });
-    await renderDock({
-      nodeExecutionKey: 'exec-1',
+      readQueue: ctrl.read,
       rowStatus: 'failed',
       nodeTerminal: true,
       idleAwaitExpired: true,
-      writtenOperatorMessageIds: new Set(),
-      pollIntervalMs: 60_000,
     });
+    await settleSnapshot(ctrl, okQueue([]));
     expect(host.querySelector('textarea')).toBeNull();
     expect(neverSentList()).toBeNull();
     expect(host.querySelector('[role="alert"]')).toBeNull();
