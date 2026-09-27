@@ -120,6 +120,11 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function latestByOrder<T extends { order: number }>(rows: readonly T[]): T {
   return rows.reduce((best, row) => (row.order >= best.order ? row : best));
 }
@@ -216,6 +221,21 @@ function eventMatchesSelection(event: WorkflowEvent, row: ExecutionRow): boolean
   }
   const data = asRecord(event.data);
   if (data === null) return false;
+  // A loop iteration's own execution scope (loop_ancestry) is nested under
+  // the loop node's own outer scope — never the same occurrence/attempt
+  // identity as the loop's single node_started row, since the loop node
+  // starts once per retry, never once per iteration. An iteration
+  // selection therefore matches that outer row by retry epoch alone.
+  if (row.selection.kind === 'loop_iteration') {
+    // The live selection carries no retry epoch of its own — there is only
+    // ever one loop execution live at a time, so the caller (which orders
+    // by array position) picks the latest match.
+    return true;
+  }
+  if (row.selection.kind === 'occurrence' && row.selection.iteration !== undefined) {
+    const retryEpoch = numberField(data, 'retry_epoch') ?? 0;
+    return retryEpoch === (row.selection.retryEpoch ?? 0);
+  }
   const occurrenceId = stringField(data, 'occurrence_id');
   if (row.selection.kind === 'occurrence') {
     // Occurrence identity alone decides the match (CAP-6: grouping never

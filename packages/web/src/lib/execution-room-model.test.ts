@@ -62,12 +62,14 @@ function nodeStarted(args: {
   attemptId?: string;
   provider?: string;
   model?: string;
+  retryEpoch?: number;
 }): WorkflowEvent {
   const data: Record<string, unknown> = {};
   if (args.occurrenceId !== undefined) data.occurrence_id = args.occurrenceId;
   if (args.attemptId !== undefined) data.attempt_id = args.attemptId;
   if (args.provider !== undefined) data.provider = args.provider;
   if (args.model !== undefined) data.model = args.model;
+  if (args.retryEpoch !== undefined) data.retry_epoch = args.retryEpoch;
   return {
     id: args.id,
     workflow_run_id: 'run-1',
@@ -1263,6 +1265,77 @@ describe('buildExecutionHeader', () => {
     expect(header.provider).toBe('claude');
     expect(header.model).toBe('sonnet');
     expect(header.unknownScope).toBe(true);
+  });
+
+  test('a live loop iteration reads provider and model from the loop node’s own node_started row', () => {
+    // The loop node's node_started carries its OWN outer occurrence/attempt
+    // identity, never the same as any individual iteration's nested scope —
+    // a live loop_iteration selection has no occurrence identity of its own
+    // to match against, so it must still resolve from that outer row.
+    const selected = row({
+      id: 'loop-live',
+      status: 'running',
+      order: 0,
+      selection: { kind: 'loop_iteration', iteration: 2 },
+      unknownScope: true,
+    });
+    const header = buildExecutionHeader({
+      row: selected,
+      events: [
+        nodeStarted({
+          id: 'loop-start',
+          occurrenceId: 'occ-loop-outer',
+          attemptId: 'att-loop-outer',
+          provider: 'claude',
+          model: 'haiku',
+        }),
+      ],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    expect(header.provider).toBe('claude');
+    expect(header.model).toBe('haiku');
+  });
+
+  test('a retried loop iteration reads provider and model from its own retry epoch’s node_started row', () => {
+    const selected = row({
+      id: 'loop-retried',
+      status: 'completed',
+      order: 0,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'occ-iter-inner',
+        attemptId: 'att-iter-inner',
+        retryEpoch: 1,
+        iteration: 1,
+      },
+      unknownScope: false,
+    });
+    const header = buildExecutionHeader({
+      row: selected,
+      events: [
+        nodeStarted({
+          id: 'loop-start-epoch-0',
+          occurrenceId: 'occ-loop-outer-0',
+          attemptId: 'att-loop-outer-0',
+          provider: 'claude',
+          model: 'haiku',
+          retryEpoch: 0,
+        }),
+        nodeStarted({
+          id: 'loop-start-epoch-1',
+          occurrenceId: 'occ-loop-outer-1',
+          attemptId: 'att-loop-outer-1',
+          provider: 'codex',
+          model: 'gpt-5',
+          retryEpoch: 1,
+        }),
+      ],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    // The selected row is on retry epoch 1, so its provider/model come from
+    // the loop's SECOND start row, never the first retry's.
+    expect(header.provider).toBe('codex');
+    expect(header.model).toBe('gpt-5');
   });
 });
 
