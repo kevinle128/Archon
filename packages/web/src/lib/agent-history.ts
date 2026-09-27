@@ -428,18 +428,15 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         next?.kind === 'message' &&
         next.message.kind === 'status' &&
         next.message.payload.state === 'interrupted';
-      items.push(
-        toToolItem(
-          item,
-          input.events,
-          input.nodeId,
-          input.nowMs,
-          interrupted
-            ? settledToolOutcome(input.events, input.nodeId, toolUseIdFrom(item))
-            : undefined
-        )
-      );
-      if (interrupted) index++;
+      const settledOutcome = interrupted
+        ? settledToolOutcome(input.events, input.nodeId, toolUseIdFrom(item))
+        : undefined;
+      items.push(toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome));
+      // Consume the status row only when it proved the interrupted outcome —
+      // that reads as this row's own glyph. Otherwise the row still recorded
+      // that Stop landed here and stays visible as its own lifecycle item,
+      // since an 'unknown' tool glyph does not carry that fact on its own.
+      if (settledOutcome === 'interrupted') index++;
       continue;
     }
     const message = item.message;

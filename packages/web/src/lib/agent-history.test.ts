@@ -705,11 +705,15 @@ describe('buildAgentHistory', () => {
         statusRow('s-interrupt', 2, 'interrupted'),
       ],
     });
-    expect(kinds(items)).toEqual(['tool']);
-    const [settled] = items;
+    // The status row is NOT consumed: an 'unknown' tool glyph carries no
+    // interruption fact on its own, so the lifecycle row stays visible as
+    // the only readable record that Stop landed here.
+    expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+    const [settled, lifecycle] = items;
     expect(settled).toMatchObject({ id: 'call-np', outcome: 'unknown' });
     if (settled?.kind !== 'tool') throw new Error('expected a tool item');
     expect(settled.presentation).toMatchObject({ glyph: '–', statusLabel: 'unknown' });
+    expect(lifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
   });
 
   test('a pending tool settled interrupted by its recorded event folds to the interrupted glyph', () => {
