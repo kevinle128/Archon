@@ -26,7 +26,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA round 2 report (visual-qa-2): 1 blocker, 2 major, 7 minor, 2 cosmetic; round-1 fixes hold
 - [ ] QA2 engine fixes (steered turns keep attempt identity, rejected retry side effects, blank Send now drains queue, blocked Claude tool ◐, Files changed after retry) — agent qa2-engine
 - [ ] QA2 web fixes (delivered state, run N of M, loop max caption, actor name, Codex body bar, wrapper in body, TaskCreate/TaskUpdate todos, header cosmetics, placeholder) — agent qa2-web
-- [ ] QA round 3 after QA2 fixes
+- [ ] QA round 3 after QA2 fixes; also cover: live `Iteration n · running`, never-sent + 30-min timeout on a real provider, advisor model name, UI Retry button
 
 ## Background processes started by this session
 
