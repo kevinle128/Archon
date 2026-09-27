@@ -34,13 +34,26 @@ interface GroupFacts {
   ancestryPath: string | null;
 }
 
-function factsOf(draft: GroupDraft): GroupFacts {
+/**
+ * A retry epoch that never produced a transcript row (for example a resume
+ * that skipped the node) is not a run. "Run N" counts only the epochs that
+ * appear here, so the heading agrees with the room header's run number.
+ */
+function runNumber(retryEpoch: number, epochs: readonly number[]): number {
+  const index = epochs.indexOf(retryEpoch);
+  return index === -1 ? retryEpoch + 1 : index + 1;
+}
+
+function factsOf(draft: GroupDraft, runEpochs: readonly number[]): GroupFacts {
   const execution = draft.execution;
   const ancestry = execution.loop_ancestry;
   const last = ancestry?.[ancestry.length - 1];
   const retryEpoch = execution.retry_epoch ?? 0;
   return {
-    base: last !== undefined ? `Iteration ${last.iteration}` : `Run ${retryEpoch + 1}`,
+    base:
+      last !== undefined
+        ? `Iteration ${last.iteration}`
+        : `Run ${String(runNumber(retryEpoch, runEpochs))}`,
     iteration: last?.iteration ?? null,
     retryEpoch,
     ancestryPath:
@@ -156,7 +169,14 @@ export function groupByOccurrence(items: readonly AgentHistoryItem[]): Occurrenc
     current = draft;
   }
 
-  const facts = drafts.map(factsOf);
+  const runEpochs = [
+    ...new Set(
+      drafts
+        .filter(draft => (draft.execution.loop_ancestry?.length ?? 0) === 0)
+        .map(draft => draft.execution.retry_epoch ?? 0)
+    ),
+  ].sort((a, b) => a - b);
+  const facts = drafts.map(draft => factsOf(draft, runEpochs));
   const sets = new Map<string, number[]>();
   facts.forEach((factsEntry, index) => {
     const bucket = sets.get(factsEntry.base);
