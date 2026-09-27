@@ -522,9 +522,12 @@ describe('NodeTranscriptPane', () => {
     expect(calls[0]).toEqual(['run-1', 'review']);
     expect(calls.every(call => call[0] === 'run-1' && call[1] === 'review')).toBe(true);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
+    // Iteration 2's own content is visible; iteration 1's is gone. The raw
+    // `iteration_started`/`iteration_failed` lifecycle rows never render —
+    // they are not one of the room's approved row types.
     expect(host.textContent).toContain('Read');
-    expect(host.textContent).toContain('iteration_started');
-    expect(host.textContent).toContain('iteration_failed');
+    expect(host.textContent).not.toContain('iteration_started');
+    expect(host.textContent).not.toContain('iteration_failed');
     expect(host.textContent).not.toContain('first');
   });
 
@@ -771,7 +774,10 @@ describe('NodeTranscriptPane', () => {
         pendingInteractions: [],
       });
     });
-    await flushUntil(host, 'status awaiting', () => (host.textContent ?? '').includes('awaiting'));
+    // 'awaiting' is a raw lifecycle status row, never rendered — 'first' is
+    // this data set's own text row and only appears once it has loaded.
+    await flushUntil(host, 'review row reloaded', () => (host.textContent ?? '').includes('first'));
+    expect(host.textContent).not.toContain('awaiting');
     expect(host.querySelector('form[aria-label="question from agent, 1 questions"]')).toBeNull();
     expect(host.textContent).not.toContain('Ship it?');
   });
