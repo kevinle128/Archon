@@ -527,7 +527,7 @@ describe('withdraw transitions', () => {
   });
 
   test('accessible name starts with the visible label, trims, and names the message', () => {
-    expect(STEERING_DELETE_LABEL).toBe('delete');
+    expect(STEERING_DELETE_LABEL).toBe('✕');
     expect(deleteButtonAccessibleName('keep the padding  ')).toBe('delete · keep the padding');
     expect(deleteButtonAccessibleName('  wrong suite')).toBe('delete · wrong suite');
     expect(deleteButtonAccessibleName('one').startsWith('delete')).toBe(true);
@@ -836,7 +836,7 @@ describe('wording', () => {
   });
 
   test('static copy constants', () => {
-    expect(STEERING_SEND_HINT).toBe('Cmd/Ctrl+Enter to send · this tab only');
+    expect(STEERING_SEND_HINT).toBe('Cmd/Ctrl+Enter to send · saved for you');
     expect(STEERING_DETACHED_DISCLOSURE).toBe(
       'not steerable here · this run was started detached, so its live session is not in this process'
     );

@@ -36,7 +36,7 @@ const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const EVIDENCE_DIR = join(REPO_ROOT, 'plans', 'reports', 'evidence', 'issue-190');
 const NARROW = { width: 460, height: 900 } as const;
 const WIDE = { width: 1440, height: 900 } as const;
-const SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 
 function queuePathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue`;

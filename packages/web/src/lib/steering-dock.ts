@@ -2,8 +2,8 @@
  * Framework-free steering-dock logic shared by the Legacy and Console
  * composer renderers: visibility/blocked predicates, the guarded submit
  * transitions with stable retry ids, the interrupt/Send-now turn model,
- * live queue polling/withdraw reconciliation, sessionStorage draft
- * persistence, and the nested steering error surface both API helpers
+ * live queue polling/withdraw reconciliation, server-persisted draft
+ * save/restore, and the nested steering error surface both API helpers
  * normalize onto.
  */
 import type { FinishedIterationView } from './execution-room-model';
@@ -140,7 +140,7 @@ export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | '
 export const STEERING_ASK_BLOCKED_REASON = "answer the agent's question first";
 export const STEERING_DETACHED_DISCLOSURE =
   'not steerable here · this run was started detached, so its live session is not in this process';
-export const STEERING_SEND_HINT = 'Cmd/Ctrl+Enter to send · this tab only';
+export const STEERING_SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 export const STEERING_SEND_FAILED_MESSAGE = "couldn't send · back in the queue";
 export const STEERING_INTERRUPT_FAILED_MESSAGE = "couldn't interrupt · try again";
 export const STEERING_INTERRUPT_DISCLOSURE =
@@ -746,7 +746,7 @@ export function resolveSendNowItemFailure(
   return { ...state, sendingNowMessageId: null, refusal };
 }
 
-export const STEERING_DELETE_LABEL = 'delete';
+export const STEERING_DELETE_LABEL = '✕';
 /** Visible label for the per-item soft-injection control. */
 export const STEERING_SEND_NOW_ITEM_LABEL = 'Send now';
 

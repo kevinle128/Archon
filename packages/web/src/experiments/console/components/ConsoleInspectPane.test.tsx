@@ -1079,7 +1079,7 @@ describe('ConsoleInspectPane', () => {
     return null;
   }
 
-  test('T3.16 Console wrapper passes exact node terminal inputs; nodeStates never prove terminal', async () => {
+  test('Console wrapper passes exact node terminal inputs; nodeStates never prove terminal', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -1243,7 +1243,7 @@ describe('ConsoleInspectPane', () => {
     }
   });
 
-  test('T3.17 completed occurrence selection stays nonterminal with stable execution key', async () => {
+  test('completed occurrence selection stays nonterminal with stable execution key', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -1369,7 +1369,7 @@ describe('ConsoleInspectPane', () => {
     }
   });
 
-  test('T4.16 idleAwaitExpired reaches selected room including grp.body', async () => {
+  test('idleAwaitExpired reaches selected room including grp.body', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;

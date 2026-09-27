@@ -1622,7 +1622,7 @@ describe('NodeTranscriptPane', () => {
     expect(children.includes(dockWell ?? scroller)).toBe(true);
     expect(children.indexOf(dockWell ?? scroller)).toBeGreaterThan(children.indexOf(scroller));
     expect(scroller.contains(dockWell)).toBe(false);
-    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · saved for you');
     expect(host.textContent).not.toContain('queued ·');
   });
 
