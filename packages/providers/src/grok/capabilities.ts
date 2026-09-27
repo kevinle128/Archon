@@ -31,6 +31,7 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   // mid-tool Stop did not, and a capability is not advertised on a partial
   // pass.
   interrupt: false,
+  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   // Verified false: gated behind `interrupt !== false` regardless. Also
   // independently disproven on its own terms — see deliveryAck below.
   softInjection: false,

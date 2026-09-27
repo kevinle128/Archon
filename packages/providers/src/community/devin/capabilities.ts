@@ -26,6 +26,7 @@ export const DEVIN_CAPABILITIES = {
   containerExec: false,
   askHuman: true,
   interrupt: false,
+  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   softInjection: false,
   deliveryAck: false,
 } as const satisfies ProviderCapabilities;

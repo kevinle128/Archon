@@ -31,6 +31,9 @@ export const E2E_FAKE_CAPABILITIES: ProviderCapabilities = {
   containerExec: false,
   askHuman: true,
   interrupt: 'native', // deterministic equivalent so E2E runs exercise the interrupt branch
+  // Mirrors Claude's proof shape (see provider.ts's own 'interrupted' toolOutcome)
+  // so E2E runs also exercise the tool-level-proof presentation branch.
+  interruptedToolStatus: true,
   softInjection: false,
   deliveryAck: false,
 };

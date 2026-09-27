@@ -682,6 +682,70 @@ describe('buildAgentHistory', () => {
     expect(pendingFolded).toMatchObject({ id: 'call-p', seq: 5, outcome: 'interrupted' });
   });
 
+  test('a pending tool settled unknown by its recorded event folds to unknown, not the interrupted glyph', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'no-proof', tool_outcome: 'unknown' },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-np',
+          seq: 1,
+          name: 'sleep 30',
+          toolUseId: 'no-proof',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 2, 'interrupted'),
+      ],
+    });
+    // The status row is NOT consumed: an 'unknown' tool glyph carries no
+    // interruption fact on its own, so the lifecycle row stays visible as
+    // the only readable record that Stop landed here.
+    expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+    const [settled, lifecycle] = items;
+    expect(settled).toMatchObject({ id: 'call-np', outcome: 'unknown' });
+    if (settled?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(settled.presentation).toMatchObject({ glyph: '–', statusLabel: 'unknown' });
+    expect(lifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+  });
+
+  test('a pending tool settled interrupted by its recorded event folds to the interrupted glyph', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'proven', tool_outcome: 'interrupted' },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-pv',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'proven',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 2, 'interrupted'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool']);
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-pv', outcome: 'interrupted' });
+    if (settled?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(settled.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
+  });
+
   test('does not fold across intervening items, detail text, or non-exact states', () => {
     const { items } = buildAgentHistory({
       nodeId: NODE_ID,

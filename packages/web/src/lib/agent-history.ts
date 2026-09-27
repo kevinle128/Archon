@@ -367,6 +367,32 @@ function runningElapsed(
   return Math.max(0, nowMs - startedAt);
 }
 
+/**
+ * The outcome the executor actually settled a still-open tool call with, read
+ * from its matching `tool_completed` event's `tool_outcome` field. A provider
+ * that cannot tie an interrupt marker to a specific tool call settles that
+ * field `'unknown'` rather than `'interrupted'` — this lets the fold below
+ * respect that distinction without knowing which provider produced it.
+ * Ambiguous data (no match, or more than one) defaults to `'interrupted'`,
+ * matching every row recorded before this distinction existed.
+ */
+function settledToolOutcome(
+  events: readonly components['schemas']['WorkflowEvent'][],
+  nodeId: string,
+  toolUseId: string
+): 'interrupted' | 'unknown' {
+  const matches: unknown[] = [];
+  for (const workflowEvent of events) {
+    if (workflowEvent.event_type !== 'tool_completed') continue;
+    if (workflowEvent.step_name !== nodeId) continue;
+    const data = asRecord(workflowEvent.data);
+    if (data === null) continue;
+    if (data.tool_call_id !== toolUseId) continue;
+    matches.push(data.tool_outcome);
+  }
+  return matches.length === 1 && matches[0] === 'unknown' ? 'unknown' : 'interrupted';
+}
+
 export function toolRuntime(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
@@ -402,16 +428,15 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         next?.kind === 'message' &&
         next.message.kind === 'status' &&
         next.message.payload.state === 'interrupted';
-      items.push(
-        toToolItem(
-          item,
-          input.events,
-          input.nodeId,
-          input.nowMs,
-          interrupted ? 'interrupted' : undefined
-        )
-      );
-      if (interrupted) index++;
+      const settledOutcome = interrupted
+        ? settledToolOutcome(input.events, input.nodeId, toolUseIdFrom(item))
+        : undefined;
+      items.push(toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome));
+      // Consume the status row only when it proved the interrupted outcome —
+      // that reads as this row's own glyph. Otherwise the row still recorded
+      // that Stop landed here and stays visible as its own lifecycle item,
+      // since an 'unknown' tool glyph does not carry that fact on its own.
+      if (settledOutcome === 'interrupted') index++;
       continue;
     }
     const message = item.message;

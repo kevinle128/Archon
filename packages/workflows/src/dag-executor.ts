@@ -418,9 +418,11 @@ function findRunningTool(
 }
 
 /**
- * Settle every still-open tool lifecycle exactly once. Called on a terminal
- * result ('unknown' — the historical close-out) and on an interrupted turn
- * end ('interrupted', #183). Entries the provider already emitted a
+ * Settle every still-open tool lifecycle exactly once. The caller decides the
+ * outcome: a natural terminal result always passes 'unknown' (the historical
+ * close-out), and an interrupted turn end passes 'interrupted' only when the
+ * provider's own status can prove that specific tool call was cut short —
+ * otherwise it also passes 'unknown'. Entries the provider already emitted a
  * tool_result for are gone from the map, so each lifecycle settles once.
  */
 function settleRunningToolsOutcome(
@@ -2926,14 +2928,15 @@ async function executeNodeInternal(
             interruptibleHandle !== undefined &&
             interruptibleHandle.wasOperatorInterrupted(passTurn.token) &&
             isInterruptMarkedResult(msg);
-          // A terminal result closes every outstanding lifecycle — 'interrupted'
-          // for the abort-marked end (a still-open tool was cut off mid-call),
-          // 'unknown' otherwise. Entries the provider already resolved are out
-          // of the map, so no duplicate tool_result rows are written.
+          // A terminal result closes every outstanding lifecycle — the
+          // capability-gated outcome for the abort-marked end (a still-open
+          // tool was cut off mid-call), 'unknown' otherwise. Entries the
+          // provider already resolved are out of the map, so no duplicate
+          // tool_result rows are written.
           settleRunningToolsOutcome(
             deps,
             runningTools,
-            interruptMarked ? 'interrupted' : 'unknown',
+            interruptMarked ? settledInterruptOutcome : 'unknown',
             workflowRun.id,
             stepName,
             node.id,
@@ -3341,8 +3344,9 @@ async function executeNodeInternal(
       // Five-case classification, case 3 (#183): an abort-like throw on a turn
       // the operator interrupted — flag set AND this token's interrupt signal
       // aborted — is an interrupted end, not a node failure. Settle any still-
-      // open tool lifecycles 'interrupted' and swallow; every other throw is a
-      // genuine failure and propagates to the outer catch unchanged.
+      // open tool lifecycles with the capability-gated outcome and swallow;
+      // every other throw is a genuine failure and propagates to the outer
+      // catch unchanged.
       if (
         passTurn?.token !== undefined &&
         interruptibleHandle !== undefined &&
@@ -3354,7 +3358,7 @@ async function executeNodeInternal(
         settleRunningToolsOutcome(
           deps,
           runningTools,
-          'interrupted',
+          settledInterruptOutcome,
           workflowRun.id,
           stepName,
           node.id,
@@ -3465,6 +3469,15 @@ async function executeNodeInternal(
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
   const interruptibleHandle = providerInterruptible ? steeringHandle : undefined;
+  // A still-open tool at turn end can only settle 'interrupted' when the
+  // provider's own event stream ties an interrupt marker to that specific
+  // tool call. A provider that ends a turn by killing its whole stream or
+  // child process has no per-tool signal, so it settles 'unknown' instead of
+  // a guessed proof.
+  const settledInterruptOutcome: 'interrupted' | 'unknown' = getProviderCapabilities(provider)
+    .interruptedToolStatus
+    ? 'interrupted'
+    : 'unknown';
   // Set only while the handle is parked for a live AskHuman pause — the one
   // outcome that intentionally leaves a resumable route target behind for the
   // resumed execution to inherit.
@@ -6248,6 +6261,16 @@ async function executeLoopNodeInner(
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
   const interruptibleHandle = providerInterruptible ? steering.steeringHandle : undefined;
+  // A still-open tool at turn end can only settle 'interrupted' when the
+  // provider's own event stream ties an interrupt marker to that specific
+  // tool call. A provider that ends a turn by killing its whole stream or
+  // child process has no per-tool signal, so it settles 'unknown' instead of
+  // a guessed proof.
+  const settledInterruptOutcome: 'interrupted' | 'unknown' = getProviderCapabilities(
+    workflowProvider
+  ).interruptedToolStatus
+    ? 'interrupted'
+    : 'unknown';
 
   let lastIterationOutput = '';
   let lastIterationStructuredOutput: unknown;
@@ -6787,14 +6810,14 @@ async function executeLoopNodeInner(
                 interruptibleHandle !== undefined &&
                 interruptibleHandle.wasOperatorInterrupted(turnToken) &&
                 isInterruptMarkedResult(msg);
-              // A terminal result closes every outstanding lifecycle —
-              // 'interrupted' on the abort-marked end, 'unknown' otherwise.
-              // Provider-resolved entries are out of the map, so no duplicate
-              // tool_result rows are written.
+              // A terminal result closes every outstanding lifecycle — the
+              // capability-gated outcome on the abort-marked end, 'unknown'
+              // otherwise. Provider-resolved entries are out of the map, so no
+              // duplicate tool_result rows are written.
               settleRunningToolsOutcome(
                 deps,
                 runningTools,
-                interruptMarked ? 'interrupted' : 'unknown',
+                interruptMarked ? settledInterruptOutcome : 'unknown',
                 workflowRun.id,
                 stepName,
                 node.id,
@@ -7167,7 +7190,8 @@ async function executeLoopNodeInner(
           // Five-case classification, case 3 (#183): an abort-like throw on a
           // turn the operator interrupted — flag set AND this token's interrupt
           // signal aborted — is an interrupted end, not an iteration failure.
-          // Settle still-open tools 'interrupted' and break to the idle block.
+          // Settle still-open tools with the capability-gated outcome and
+          // break to the idle block.
           if (
             turnToken !== undefined &&
             interruptibleHandle !== undefined &&
@@ -7179,7 +7203,7 @@ async function executeLoopNodeInner(
             settleRunningToolsOutcome(
               deps,
               runningTools,
-              'interrupted',
+              settledInterruptOutcome,
               workflowRun.id,
               stepName,
               node.id,

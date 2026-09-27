@@ -142,6 +142,7 @@ describe('DEEPSEEK_CAPABILITIES', () => {
       containerExec: false,
       askHuman: false,
       interrupt: 'stream-abort',
+      interruptedToolStatus: false,
       softInjection: false,
       deliveryAck: false,
     });

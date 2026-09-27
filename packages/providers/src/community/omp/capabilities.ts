@@ -36,6 +36,7 @@ export const OMP_CAPABILITIES: ProviderCapabilities = {
   // framing is a substantial migration, not something a conformance spike
   // alone can prove.
   interrupt: false,
+  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   // Verified false: RPC `steer` sent in the documented "between tool calls"
   // gap did not change the model's already-planned next tool call — the
   // second call still ran unchanged, and the steer content was appended as
