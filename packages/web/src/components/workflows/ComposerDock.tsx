@@ -1299,6 +1299,7 @@ export function ComposerDock({
           ref={fieldRef}
           value={draft}
           rows={2}
+          placeholder="Message the agent…"
           onChange={(event): void => {
             userEditedRef.current = true;
             setDraft(event.target.value);

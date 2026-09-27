@@ -137,7 +137,7 @@ export function NodeRoomHeader({
               {kindChip.label}
             </span>
           ) : null}
-          <div className="min-w-[8rem] flex-1 truncate text-sm font-medium text-text-primary">
+          <div className="min-w-0 truncate font-mono text-[13px] font-bold text-text-primary">
             {model.nodeLabel}
           </div>
           <span
