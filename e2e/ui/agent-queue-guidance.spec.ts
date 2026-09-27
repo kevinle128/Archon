@@ -58,8 +58,11 @@ const SCROLLER_TESTID: Record<Surface, string> = {
   legacy: 'node-transcript-scroll',
 };
 const ASK_BLOCKED_REASON = "answer the agent's question first";
-const DETACHED_DISCLOSURE =
-  'not steerable here · this run was started detached, so its live session is not in this process';
+// A CLI-detached run's node has no live handle in this server process, the
+// same durable-node-no-live-handle state a server restart produces
+// (steering-dock.ts STEERING_RECOVERY_DISCLOSURE).
+const STEERING_RECOVERY_DISCLOSURE =
+  'restored after server restart · Resume the workflow to continue';
 const SEND_HINT = 'Cmd/Ctrl+Enter to send · saved for you';
 const FIRST_CORRECTION = 'first correction';
 const SECOND_CORRECTION = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>second correction';
@@ -626,7 +629,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await captureEvidence(room, `us-005-${surface}-ask-blocked.png`, testInfo);
   });
 
-  test(`[P1] [V:steer.detached-${surface}] queue guidance discloses a detached run after a 422 on ${surface}`, async ({
+  test(`[P1] [V:steer.detached-${surface}] queue guidance discloses a CLI-detached run as recovery-required on ${surface}`, async ({
     page,
     archon,
   }, testInfo: TestInfo) => {
@@ -636,44 +639,30 @@ for (const surface of ['console', 'legacy'] as const) {
     await archon.waitForRunStatus(runId, 'running', T.long);
     await waitForNodeStarted(page, runId, QUEUE_GUIDANCE_NODE);
     const room = await openGuidanceRoom(page, surface, runId, QUEUE_GUIDANCE_NODE);
-    const field = guidanceField(room);
-    // No queue read exists yet, so the composer cannot know it is detached;
-    // the 422 response is what discloses it.
-    await expect(field).toBeVisible({ timeout: T.medium });
-    const response = page.waitForResponse(
-      res => new URL(res.url()).pathname === sendPathname(runId, QUEUE_GUIDANCE_NODE)
-    );
-    await field.fill('detach probe');
-    await field.press('Meta+Enter');
-    expect((await response).status()).toBe(422);
-
+    // The CLI process's own executor durably stamped a provider_id for this
+    // node when it registered its live handle; this server process just has
+    // no in-memory handle for it — the durable queue read on mount already
+    // reports execution_state: 'recovery_required' (classifySteeringLifecycle,
+    // api.ts), so the dock renders read-only from the first paint. There is
+    // no field to compose in and nothing to send; a durable draft was never
+    // written for this run, so there is nothing to verify surviving a
+    // refusal (be35cdb2 replaced the sessionStorage-era draft with the
+    // server-persisted one this scenario never touches).
     const disclosure = room.getByRole('alert');
-    await expect(disclosure).toContainText(DETACHED_DISCLOSURE);
-    await expect(field).toHaveCount(0);
+    await expect(disclosure).toContainText(STEERING_RECOVERY_DISCLOSURE);
+    await expect(guidanceField(room)).toHaveCount(0);
+    await expect(queueButton(room)).toHaveCount(0);
     await expect(room.getByText(/^queued ·/)).toHaveCount(0);
 
-    const stored = await page.evaluate(
-      key => sessionStorage.getItem(key),
-      `archon:steering-draft:${runId}:${QUEUE_GUIDANCE_NODE}`
-    );
-    expect(stored, 'draft + retry id persist in sessionStorage after the refusal').toBeTruthy();
-    const record = JSON.parse(stored ?? '{}') as {
-      draft?: string;
-      pendingRetry?: { messageId?: string; message?: string };
-    };
-    expect(record.draft).toBe('detach probe');
-    expect(record.pendingRetry?.message).toBe('detach probe');
-    expect(record.pendingRetry?.messageId).toMatch(/^[0-9a-f-]{36}$/);
-
     const alert = await textContrast(disclosure);
-    expect(alert.ratio, 'detached disclosure text contrast ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
+    expect(alert.ratio, 'recovery disclosure text contrast ≥ 4.5:1').toBeGreaterThanOrEqual(4.5);
     mergeMeasurements(`detached-${surface}`, {
-      disclosure: DETACHED_DISCLOSURE,
+      disclosure: STEERING_RECOVERY_DISCLOSURE,
       textColor: alert.color,
       background: alert.bg,
       contrastRatio: Number(alert.ratio.toFixed(2)),
     });
-    await captureEvidence(room, `us-005-${surface}-detached-422.png`, testInfo);
+    await captureEvidence(room, `us-005-${surface}-detached-recovery-required.png`, testInfo);
   });
 
   test(`[P1] [V:steer.visual-${surface}] queue guidance dock geometry, contrast, and reduced-motion evidence on ${surface}`, async ({
@@ -836,7 +825,7 @@ for (const surface of ['console', 'legacy'] as const) {
   });
 }
 
-test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400 malformed, 404 unknown, 409 finished, 422 detached', async ({
+test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400 malformed, 404 unknown, 409 recovery required, 409 finished', async ({
   page,
   archon,
 }) => {
@@ -893,6 +882,14 @@ test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400
     error: { code: 'not_found' },
   });
 
+  // A CLI-detached run's node DOES have a durably-stamped provider_id (the
+  // CLI process's own executor registered a live handle and wrote it) — the
+  // server process fielding this request just has no in-memory handle for
+  // it, which is exactly recovery_required, not not_steerable_here
+  // (classifySteeringLifecycle, api.ts: not_steerable_here is reserved for a
+  // node that never registered a live handle anywhere). The API never infers
+  // process origin from a missing live handle; the durable stamp is what
+  // makes the distinction honest.
   const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_WORKFLOW_NAME);
   const detachedRunId = await detached.runId;
   await archon.waitForRunStatus(detachedRunId, 'running', T.long);
@@ -902,10 +899,10 @@ test('[P1] [V:steer.route-smoke] queue guidance send route ladder: 200 live, 400
     message_id: randomUUID(),
     intent: 'queue',
   });
-  expect(detachedRes.status).toBe(422);
+  expect(detachedRes.status).toBe(409);
   expect(await detachedRes.json()).toMatchObject({
     success: false,
-    error: { code: 'not_steerable_here' },
+    error: { code: 'recovery_required' },
   });
 
   await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
