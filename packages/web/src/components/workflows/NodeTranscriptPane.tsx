@@ -361,10 +361,19 @@ export function NodeTranscriptPane({
   // approved row types — grouping still sees the full list first so its own
   // `failed` detection (which reads a lifecycle item) is unaffected; only
   // what actually renders is filtered, mirroring Console's System-off default.
+  // A status-only occurrence (e.g. a failed retry, or a nested-loop
+  // disambiguation group, with no model/tool output at all) legitimately has
+  // nothing left once lifecycle rows are stripped — its header is still
+  // load-bearing (it is the only signal that occurrence existed), so groups
+  // are never dropped for going empty here. `groupByOccurrence` never
+  // produces a zero-item group, so this filtering can only ever empty a
+  // group's body, never remove a group that had no content in the first
+  // place.
   const displayItems = items.filter(item => item.kind !== 'lifecycle');
-  const displayGroups = occurrenceGrouping.groups
-    .map(group => ({ ...group, items: group.items.filter(item => item.kind !== 'lifecycle') }))
-    .filter(group => group.items.length > 0);
+  const displayGroups = occurrenceGrouping.groups.map(group => ({
+    ...group,
+    items: group.items.filter(item => item.kind !== 'lifecycle'),
+  }));
   const displayGrouping: OccurrenceGrouping = {
     prefixItems: occurrenceGrouping.prefixItems.filter(item => item.kind !== 'lifecycle'),
     groups: displayGroups,

@@ -21,10 +21,11 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] B-UI merged (7e30d6e7): draft/auto-send/per-item Send now/recovery wired in both shells
 - [x] B-UI follow-ups merged (Legacy focus anchor, queue-convergence e2e on draft API)
 - [x] agent-interrupt-redirect e2e 11/11 merged. Note: agent-withdraw-guidance.spec.ts ~566 may be stale (422 vs recovery) — check in final gate
-- [ ] Final gate: full e2e UI suite green after all merges
+- [x] e2e gate merged: 150 pass / 1 flaky / 4 skipped (baseline 98/53)
+- [ ] e2e residual: Legacy todo strip 0px at 200% zoom (restore strict assertion); withdraw.drain-legacy flake — agent e2e-residual
 
 - [x] QA round 2 report (visual-qa-2): 1 blocker, 2 major, 7 minor, 2 cosmetic; round-1 fixes hold
-- [ ] QA2 engine fixes (steered turns keep attempt identity, rejected retry side effects, blank Send now drains queue, blocked Claude tool ◐, Files changed after retry) — agent qa2-engine
+- [x] QA2 engine fixes merged (steered turns keep attempt identity, rejected retry side effects, blank Send now drains queue, blocked Claude tool ◐, Files changed after retry) — agent qa2-engine
 - [ ] QA2 web fixes (delivered state, run N of M, loop max caption, actor name, Codex body bar, wrapper in body, TaskCreate/TaskUpdate todos, header cosmetics, placeholder) — agent qa2-web
 - [ ] QA round 3 after QA2 fixes; also cover: live `Iteration n · running`, never-sent + 30-min timeout on a real provider, advisor model name, UI Retry button
 

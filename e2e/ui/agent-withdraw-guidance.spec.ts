@@ -258,8 +258,10 @@ async function messageSpanFacts(row: Locator): Promise<{
   whiteSpace: string;
   overflowX: string;
 }> {
+  // The decorative 1-based position number is the row's first span
+  // (aria-hidden); the message-text span is the first non-decorative one.
   const facts = await row
-    .locator('span')
+    .locator('span:not([aria-hidden="true"])')
     .first()
     .evaluate(el => {
       const style = el.ownerDocument.defaultView?.getComputedStyle(el);
@@ -499,7 +501,7 @@ for (const surface of ['console', 'legacy'] as const) {
   });
 }
 
-test('[P1] [V:withdraw.route-ladder] withdraw route ladder: 200 repeat, 200 unknown id, 400 malformed, 404 unknown, 422 detached, 409 finished', async ({
+test('[P1] [V:withdraw.route-ladder] withdraw route ladder: 200 repeat, 200 unknown id, 400 malformed, 200 unknown node, 404 unknown run, 200 detached, 409 finished', async ({
   page,
   archon,
 }) => {
@@ -542,12 +544,13 @@ test('[P1] [V:withdraw.route-ladder] withdraw route ladder: 200 repeat, 200 unkn
     error: { code: 'invalid_request' },
   });
 
-  const unknownNode = await del(run.runId, 'ghost-node', randomUUID());
-  expect(unknownNode.status).toBe(404);
-  expect(await unknownNode.json()).toMatchObject({
-    success: false,
-    error: { code: 'not_found' },
-  });
+  // Withdraw never 404s on the node: an id that was never durably queued on
+  // an unknown node is an idempotent no-op, same as an unknown message id —
+  // only run/node terminal state gates the route (api.ts withdraw handler).
+  const unknownNodeId = randomUUID();
+  const unknownNode = await del(run.runId, 'ghost-node', unknownNodeId);
+  expect(unknownNode.status).toBe(200);
+  expect(await unknownNode.json()).toEqual({ success: true, message_id: unknownNodeId });
 
   const unknownRun = await del(randomUUID(), QUEUE_GUIDANCE_NODE, randomUUID());
   expect(unknownRun.status).toBe(404);
@@ -559,16 +562,18 @@ test('[P1] [V:withdraw.route-ladder] withdraw route ladder: 200 repeat, 200 unkn
   const afterRefusals = (await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_NODE)).length;
   expect(afterRefusals, 'refusal requests mutate no node messages').toBe(beforeRefusals);
 
+  // Withdraw manages durable guidance, not the live provider process — it
+  // works during recovery_required too (steering-api-contract.md
+  // Idempotency), so a CLI-detached run's withdraw is the same idempotent
+  // no-op as any other unclaimed id, never a refusal.
   const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_WORKFLOW_NAME);
   const detachedRunId = await detached.runId;
   await archon.waitForRunStatus(detachedRunId, 'running', T.long);
   await waitForNodeStarted(page, detachedRunId, QUEUE_GUIDANCE_NODE);
-  const detachedRes = await del(detachedRunId, QUEUE_GUIDANCE_NODE, randomUUID());
-  expect(detachedRes.status).toBe(422);
-  expect(await detachedRes.json()).toMatchObject({
-    success: false,
-    error: { code: 'not_steerable_here' },
-  });
+  const detachedMessageId = randomUUID();
+  const detachedRes = await del(detachedRunId, QUEUE_GUIDANCE_NODE, detachedMessageId);
+  expect(detachedRes.status).toBe(200);
+  expect(await detachedRes.json()).toEqual({ success: true, message_id: detachedMessageId });
 
   await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
   const beforeFinished = (await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_NODE)).length;

@@ -520,7 +520,7 @@ describe('workflow retry preparation operation', () => {
     expect(mockResetTrackedFilesToCommit).not.toHaveBeenCalled();
   });
 
-  test('rejects web retry without strategy when HEAD is newer than the checkpoint', async () => {
+  test('rejects web retry without strategy when HEAD is newer than the checkpoint, without claiming or mutating the run', async () => {
     mockFindLatestCheckpointForRetry.mockResolvedValueOnce({
       workflow_run_id: 'run-1',
       node_id: 'b',
@@ -544,18 +544,21 @@ describe('workflow retry preparation operation', () => {
           workflow: makeWorkflow({ mutates_checkout: true }),
         })
       )
-    ).rejects.toMatchObject({ code: 'checkout_strategy_required' });
+    ).rejects.toMatchObject({
+      code: 'checkout_strategy_required',
+      message: expect.stringContaining(
+        'Choose whether to retry from current HEAD or the saved node checkpoint.'
+      ) as string,
+    });
 
+    // A rejected request must be side-effect free: the run is never claimed,
+    // no audit event is written, and its status is never mutated. The
+    // caller can retry the same request with a chosen strategy.
+    expect(mockClaimWorkflowRunForNodeRetry).not.toHaveBeenCalled();
     expect(mockCreateRetrySafetyRef).not.toHaveBeenCalled();
     expect(mockResetTrackedFilesToCommit).not.toHaveBeenCalled();
-    expect(mockUpdateWorkflowRun).toHaveBeenCalledWith('run-1', {
-      status: 'failed',
-      metadata: {
-        retry_setup_error: expect.stringContaining(
-          'Choose whether to retry from current HEAD or the saved node checkpoint.'
-        ) as string,
-      },
-    });
+    expect(mockUpdateWorkflowRun).not.toHaveBeenCalled();
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 
   test('web retry with current strategy skips checkpoint reset', async () => {

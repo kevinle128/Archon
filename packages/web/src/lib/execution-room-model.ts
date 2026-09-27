@@ -217,12 +217,15 @@ function eventMatchesSelection(event: WorkflowEvent, row: ExecutionRow): boolean
   const data = asRecord(event.data);
   if (data === null) return false;
   const occurrenceId = stringField(data, 'occurrence_id');
-  const attemptId = stringField(data, 'attempt_id');
   if (row.selection.kind === 'occurrence') {
-    if (occurrenceId !== row.selection.occurrenceId) return false;
-    const expectedAttempt = row.selection.attemptId ?? null;
-    return attemptId === expectedAttempt;
+    // Occurrence identity alone decides the match (CAP-6: grouping never
+    // keys on attempt_id). A projected execution's attempt can land on a
+    // later provider turn than the one node_started recorded — a re-ask, or
+    // a run captured before guidance turns stopped rotating attempt_id —
+    // and the occurrence never changes across a node's whole life either way.
+    return occurrenceId === row.selection.occurrenceId;
   }
+  const attemptId = stringField(data, 'attempt_id');
   return occurrenceId === null && attemptId === null;
 }
 

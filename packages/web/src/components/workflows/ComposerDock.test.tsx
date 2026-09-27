@@ -1024,13 +1024,46 @@ describe('ComposerDock', () => {
     expect(list?.querySelectorAll('li')).toHaveLength(2);
   });
 
-  test('Send now requires a non-blank draft even when receipts exist', async () => {
+  test('Send now stays disabled on a blank draft with nothing waiting', async () => {
     await renderDock({ subState: 'idle-after-interrupt' });
     const send = sendNowButton();
     expect(send.getAttribute('aria-disabled')).toBe('true');
     await clickSendNow();
     await pressKey({ key: 'Enter', metaKey: true });
     expect(calls).toHaveLength(0);
+  });
+
+  test('Send now with a blank draft delivers everything already waiting (CAP-10)', async () => {
+    nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
+      interruptCalls.push({ runId, nodeId });
+      return idleAck();
+    };
+    withdrawCalls.length = 0;
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return { success: true, message_id: messageId };
+    };
+    readCalls.length = 0;
+    // Default: a never-settling read so existing send/withdraw tests stay
+    // deterministic with no real fetch and no hydration race.
+    nextRead = async (runId, nodeId, options): Promise<ReadWorkflowNodeQueueResponse> => {
+      readCalls.push({ runId, nodeId, signal: options?.signal });
+      return deferred<ReadWorkflowNodeQueueResponse>().promise;
+    };
+    await renderDock({ subState: 'generating' });
+    await setDraft('already queued');
+    await clickQueue();
+    await clickStop();
+    expect(host.textContent).toContain('will send · 1');
+    const send = sendNowButton();
+    expect(send.getAttribute('aria-disabled')).toBeNull();
+    const callsBeforeSendNow = calls.length;
+    await clickSendNow();
+    expect(calls).toHaveLength(callsBeforeSendNow + 1);
+    const sendNowCall = calls[callsBeforeSendNow];
+    expect(sendNowCall?.body.message).toBe('');
+    expect(sendNowCall?.body.intent).toBe('send_now');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
   });
 
   test('Send now posts only the new draft, clears band and draft on success', async () => {

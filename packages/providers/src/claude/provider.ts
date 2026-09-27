@@ -1062,6 +1062,38 @@ function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hoo
         ],
       },
     ],
+    // A denied tool call never runs, so PostToolUse never fires for it — the
+    // executor's runningTools entry would otherwise stay open for the rest of
+    // the turn (`◐ running` with no result row). This hook covers a deny
+    // that goes through canUseTool's own short-circuit (auto-mode classifier,
+    // dontAsk mode, a configured deny rule). It does NOT cover every denial
+    // source — see streamClaudeMessages' `event.type === 'user'` handling for
+    // a built-in CLI guard (e.g. the leading-sleep block) that denies before
+    // canUseTool ever runs and reaches neither this hook nor
+    // SDKPermissionDeniedMessage, only a synthetic is_error tool_result.
+    PermissionDenied: [
+      {
+        hooks: [
+          (async (input: Record<string, unknown>): Promise<{ continue: true }> => {
+            try {
+              const toolName = (input as { tool_name?: string }).tool_name ?? 'unknown';
+              const toolUseId = (input as { tool_use_id?: string }).tool_use_id;
+              const reason = (input as { reason?: string }).reason;
+              toolResultQueue.push({
+                toolName,
+                toolOutput: `⛔ Blocked: ${reason ?? 'denied by a permission hook'}`,
+                ...(toolUseId !== undefined ? { toolCallId: toolUseId } : {}),
+                toolOutcome: 'error',
+                outputState: 'full' as const,
+              });
+            } catch (e) {
+              getLog().error({ err: e, input }, 'claude.permission_denied_hook_error');
+            }
+            return { continue: true };
+          }) as HookCallback,
+        ],
+      },
+    ],
   };
 }
 
@@ -1199,6 +1231,27 @@ function extractAgentDispatchText(toolOutput: string): string {
 }
 
 /**
+ * A Messages API `tool_result` content block's own `content` field is a
+ * string or an array of text/image blocks (never JSON-encoded like a
+ * `tool_response`). Flattens either shape to plain text; a block with no
+ * extractable text (e.g. image-only) contributes nothing.
+ */
+function textFromToolResultContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter(
+      (block): block is { type: 'text'; text: string } =>
+        typeof block === 'object' &&
+        block !== null &&
+        (block as { type?: unknown }).type === 'text' &&
+        typeof (block as { text?: unknown }).text === 'string'
+    )
+    .map(block => block.text)
+    .join('\n\n');
+}
+
+/**
  * Normalize raw Claude SDK events into Archon MessageChunks.
  * Drains the tool result queue between events (populated by SDK hooks).
  */
@@ -1221,11 +1274,26 @@ async function* streamClaudeMessages(
   // eventual tool_result IS the advisor's notification.
   const pendingAdvisorToolUseIds = new Set<string>();
 
+  // Tool name per open tool_use id (from the assistant's own tool_use block),
+  // needed to label a call the hooks below never got a chance to settle.
+  const toolNameByCallId = new Map<string, string>();
+  // Call ids the hook-drain loop has already yielded a tool_result for. A
+  // built-in CLI guard (e.g. the leading-sleep block) denies a call BEFORE
+  // it ever runs: no PostToolUse/PostToolUseFailure/PermissionDenied hook
+  // fires for it (proven empirically — those hooks cover only a call that
+  // reached execution or canUseTool's own deny path), so the ONLY signal
+  // Archon ever sees is a plain Messages API `user` turn carrying an
+  // `is_error: true` tool_result. This set is what tells the `user`-message
+  // handling below whether a call already settled through a hook, so it
+  // never double-yields a result the drain loop already produced.
+  const hookSettledCallIds = new Set<string>();
+
   for await (const msg of events) {
     // Drain tool results captured by hooks before processing the next event
     while (toolResultQueue.length > 0) {
       const tr = toolResultQueue.shift();
       if (tr) {
+        if (tr.toolCallId !== undefined) hookSettledCallIds.add(tr.toolCallId);
         yield {
           type: 'tool_result',
           toolName: tr.toolName,
@@ -1286,6 +1354,7 @@ async function* streamClaudeMessages(
             toolInput: block.input ?? {},
             ...(block.id !== undefined ? { toolCallId: block.id } : {}),
           };
+          if (block.id !== undefined) toolNameByCallId.set(block.id, block.name);
           // Task/Agent dispatch to the advisor consult (see the ContentBlock
           // docstring). The dispatch still renders as an ordinary tool row
           // above; its eventual tool_result also becomes an advisor
@@ -1455,6 +1524,45 @@ async function* streamClaudeMessages(
       const replay = msg as { isReplay?: boolean; uuid?: string };
       if (replay.isReplay === true && typeof replay.uuid === 'string') {
         yield { type: 'operator_delivery_ack', messageId: replay.uuid };
+      }
+      // A call the CLI's own guard denies before it ever reaches execution
+      // (e.g. the leading-sleep block) settles only as a plain Messages API
+      // tool_result on this user turn, with is_error true — no PostToolUse,
+      // PostToolUseFailure, or PermissionDenied hook fires for it (see
+      // buildToolCaptureHooks' PermissionDenied comment). Every OTHER
+      // tool_result the model receives is already covered by a hook whose
+      // drain (above, at the top of this loop) runs strictly before this
+      // branch and records the call id in hookSettledCallIds — so only a
+      // call that hooks never touched reaches this fallback, and a normal
+      // executed call is never double-counted.
+      const userMessage = msg as { message?: { content?: unknown } };
+      const userContent = userMessage.message?.content;
+      if (Array.isArray(userContent)) {
+        for (const block of userContent) {
+          if (
+            typeof block !== 'object' ||
+            block === null ||
+            (block as { type?: unknown }).type !== 'tool_result'
+          ) {
+            continue;
+          }
+          const toolResult = block as {
+            tool_use_id?: unknown;
+            is_error?: unknown;
+            content?: unknown;
+          };
+          if (toolResult.is_error !== true || typeof toolResult.tool_use_id !== 'string') continue;
+          if (hookSettledCallIds.has(toolResult.tool_use_id)) continue;
+          const toolName = toolNameByCallId.get(toolResult.tool_use_id) ?? 'unknown';
+          yield {
+            type: 'tool_result',
+            toolName,
+            toolOutput: textFromToolResultContent(toolResult.content),
+            toolCallId: toolResult.tool_use_id,
+            toolOutcome: 'error',
+            outputState: 'full',
+          };
+        }
       }
     } else if (event.type === 'rate_limit_event') {
       const rateLimitMsg = msg as { rate_limit_info?: Record<string, unknown> };

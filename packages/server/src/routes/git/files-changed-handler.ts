@@ -1,7 +1,7 @@
 import type { Context } from 'hono';
 
 import { listWorkflowNodeExecutionEvidenceForRun } from '@archon/core/db/workflow-node-execution-evidence';
-import { diffCommitRange } from '@archon/git';
+import { diffCommitRange, isCommitAncestorOfHead } from '@archon/git';
 import { createLogger } from '@archon/paths';
 
 import type { FilesChangedResponse } from '../schemas/files-changed.schemas';
@@ -36,7 +36,9 @@ export async function handleFilesChanged(
     }
 
     const evidence = await listWorkflowNodeExecutionEvidenceForRun(runId);
-    const baseline = selectRunBaselineCommit(evidence);
+    const isAncestorOfHead = (commitSha: string): Promise<boolean> =>
+      isCommitAncestorOfHead(gate.workingPath, commitSha);
+    const baseline = await selectRunBaselineCommit(evidence, isAncestorOfHead);
     if (baseline === undefined) {
       // No node execution ever proved a checkout snapshot for this run — there
       // is nothing to compare against, so there is nothing provably changed.
@@ -50,6 +52,7 @@ export async function handleFilesChanged(
       files,
       evidence,
       diffCommitRange: (from, to) => diffCommitRange(gate.workingPath, from, to),
+      isAncestorOfHead,
     });
 
     const body: FilesChangedResponse = { files: attributed };

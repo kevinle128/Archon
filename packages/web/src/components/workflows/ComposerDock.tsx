@@ -772,7 +772,13 @@ export function ComposerDock({
 
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
   const agentMode = steeringAgentMode(dock);
-  const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
+  const canSubmit = canSubmitGuidance({
+    mode,
+    sendInFlight: dock.sendInFlight,
+    draft,
+    agentMode,
+    willSendCount: dock.sent.filter(entry => isQueueItemClaimable(entry.state)).length,
+  });
 
   // One coalescer per idle attempt. Leaving idle / attempt-key change / unmount
   // disposes it so a late result cannot affect a new attempt.

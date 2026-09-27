@@ -667,7 +667,9 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(list).toBeVisible({ timeout: T.long });
     await expect(list).toHaveAttribute('aria-label', 'Never sent, 1');
     const item = list.getByRole('listitem').first();
-    await expect(item).toHaveText(QUEUED_MESSAGE);
+    // The decorative 1-based position number is an aria-hidden sibling span,
+    // excluded from the accessible name but not from raw textContent.
+    await expect(item).toContainText(QUEUED_MESSAGE);
     await expect(item).toHaveAttribute('data-message-id', messageId);
     await expect(neverSentAlert(room)).toHaveCount(1);
     await expect(neverSentAlert(room)).toHaveText(EXPIRED_ALERT);

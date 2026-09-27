@@ -16,15 +16,14 @@ export interface ExecutionInteractionAssignment {
   scopeLimitation: string | null;
 }
 
+// Occurrence-scoped only (CAP-6): an ask raised during one provider turn of
+// a steered node still belongs to the row projecting the whole occurrence,
+// even once that row's own attempt_id has moved on to a later turn.
 function matchesScope(
   scope: NonNullable<PendingInteraction['execution_scope']>,
   row: LogRow
 ): boolean {
-  return (
-    row.selection.kind === 'occurrence' &&
-    scope.occurrence_id === row.selection.occurrenceId &&
-    scope.attempt_id === row.selection.attemptId
-  );
+  return row.selection.kind === 'occurrence' && scope.occurrence_id === row.selection.occurrenceId;
 }
 
 function latestEntryForNode(
