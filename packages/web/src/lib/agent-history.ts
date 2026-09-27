@@ -47,6 +47,33 @@ export type AgentHistoryItem =
       execution: TranscriptExecution | null;
     }
   | {
+      kind: 'thinking';
+      id: string;
+      seq: number;
+      role: 'thinking';
+      text: string;
+      execution: TranscriptExecution | null;
+    }
+  | {
+      kind: 'prompt';
+      id: string;
+      seq: number;
+      role: 'prompt';
+      text: string;
+      actorUserId: string | null;
+      source: 'node_prompt' | 'command_file' | 'reask';
+      execution: TranscriptExecution | null;
+    }
+  | {
+      kind: 'advisor';
+      id: string;
+      seq: number;
+      role: 'advisor';
+      text: string;
+      advisorModel: string | null;
+      execution: TranscriptExecution | null;
+    }
+  | {
       kind: 'tool';
       id: string;
       seq: number;
@@ -76,6 +103,25 @@ export type AgentHistoryItem =
 export interface AgentHistory {
   items: AgentHistoryItem[];
   todos: TodoPhase[];
+}
+
+/** Shared label text for a `prompt` item's label line, read by both node room shells. */
+export function promptActorLabel(actorUserId: string | null): string {
+  return actorUserId !== null ? actorUserId.slice(0, 8) : 'run';
+}
+
+const PROMPT_SOURCE_LABEL: Record<Extract<AgentHistoryItem, { kind: 'prompt' }>['source'], string> =
+  {
+    node_prompt: 'prompt',
+    command_file: 'command',
+    reask: 'retry',
+  };
+
+/** Shared label text for a `prompt` item's source, read by both node room shells. */
+export function promptSourceLabel(
+  source: Extract<AgentHistoryItem, { kind: 'prompt' }>['source']
+): string {
+  return PROMPT_SOURCE_LABEL[source];
 }
 
 type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
@@ -389,6 +435,57 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         operatorDisplayName,
         messageId: message.metadata.message_id ?? null,
         delivery: 'sent',
+        execution: message.metadata.execution ?? null,
+      });
+      continue;
+    }
+    if (message.kind === 'text' && message.metadata?.origin === 'thinking') {
+      items.push({
+        kind: 'thinking',
+        id: message.id,
+        seq: message.seq,
+        role: 'thinking',
+        text: message.payload.text,
+        execution: message.metadata.execution ?? null,
+      });
+      continue;
+    }
+    if (message.kind === 'text' && message.metadata?.origin === 'prompt') {
+      items.push({
+        kind: 'prompt',
+        id: message.id,
+        seq: message.seq,
+        role: 'prompt',
+        text: message.payload.text,
+        actorUserId: message.metadata.actor_user_id ?? null,
+        source: message.metadata.prompt_source ?? 'node_prompt',
+        execution: message.metadata.execution ?? null,
+      });
+      continue;
+    }
+    if (message.kind === 'text' && message.metadata?.origin === 'advisor') {
+      items.push({
+        kind: 'advisor',
+        id: message.id,
+        seq: message.seq,
+        role: 'advisor',
+        text: message.payload.text,
+        advisorModel: message.metadata.advisor_model ?? null,
+        execution: message.metadata.execution ?? null,
+      });
+      continue;
+    }
+    if (message.kind === 'text' && message.metadata?.origin !== undefined) {
+      // A `text` row whose origin is none of the recognized values (older
+      // client reading a newer row, or a corrupt write) must never render as
+      // the agent's own words — it becomes a visible but neutral lifecycle
+      // notice instead of silently turning into assistant prose.
+      items.push({
+        kind: 'lifecycle',
+        id: message.id,
+        seq: message.seq,
+        state: 'unrecognized-origin',
+        detail: null,
         execution: message.metadata.execution ?? null,
       });
       continue;

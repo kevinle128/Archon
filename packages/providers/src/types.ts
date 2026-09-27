@@ -21,6 +21,13 @@ export interface ClaudeProviderDefaults {
    *  Archon builds when `CLAUDE_BIN_PATH` is not set; optional in dev mode
    *  (SDK resolves from node_modules). */
   claudeBinaryPath?: string;
+  /**
+   * Model id for the Claude Code advisor consult (SDK `Settings.advisorModel`).
+   * When set, Archon both enables the consult and knows which model to
+   * attribute an advisor notification to; when unset, a consult triggered by
+   * some other setting source is still shown, without a model identity.
+   */
+  advisorModel?: string;
 }
 
 export interface CodexProviderDefaults {
@@ -329,6 +336,17 @@ export type MessageChunk =
     }
   | { type: 'system'; content: string }
   | { type: 'thinking'; content: string }
+  | {
+      /**
+       * A notification from a consulted advisor model (Claude Code's
+       * `advisorModel` consult). `advisorModel` is the model Archon
+       * configured; omitted when Archon did not set it, so the identity
+       * shown is never guessed from provider text.
+       */
+      type: 'advisor';
+      content: string;
+      advisorModel?: string;
+    }
   | {
       type: 'result';
       sessionId?: string;

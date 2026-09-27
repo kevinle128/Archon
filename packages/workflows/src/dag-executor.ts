@@ -161,8 +161,11 @@ import {
   type SendMessageContext,
 } from './executor-shared';
 import {
+  appendAdvisorTranscript,
   appendNodeTranscript,
   appendOperatorTranscript,
+  appendPromptTranscript,
+  appendThinkingTranscript,
   appendToolResultTranscript,
 } from './node-transcript';
 import { createAskHumanTool } from './ask-human';
@@ -2542,7 +2545,14 @@ async function executeNodeInternal(
     attemptResumeId: string | undefined,
     passReaskAttempt: number,
     passTurn: PassTurn | undefined,
-    operatorReceipt?: PendingOperatorReceipt
+    operatorReceipt?: PendingOperatorReceipt,
+    // Who to attribute this pass's `prompt`-origin row to: the run starter on
+    // an ordinary turn, or the redirecting operator throughout a guidance
+    // turn (including its reask passes, which have no `operatorReceipt` of
+    // their own). Resolved by the caller — `turnIsGuidance` and
+    // `turnGuidanceMessages` are block-scoped inside the turn loop and are
+    // not visible from this closure.
+    passActorUserId?: string | null
   ): Promise<void> => {
     nodeOutputText = '';
     structuredOutput = undefined;
@@ -2590,6 +2600,41 @@ async function executeNodeInternal(
           operatorReceipt.messages
         );
       };
+      // A redirect (guidance) turn's triggering text is the drained operator
+      // message already recorded above — recording it again here under
+      // `prompt` would show the same words twice. An AskHuman-resume pass is
+      // skipped for a different reason: a provider that supports it
+      // substitutes the human's answers for `attemptPrompt` internally
+      // (Claude's `buildClaudeAskResumePrompt`, Devin's
+      // `buildDevinAskResumePrompt`), so `attemptPrompt` is stale text the
+      // model never actually saw — recording it would misattribute the turn.
+      // Every other pass (turn 1, and any reask) gets its exact triggering
+      // text recorded once.
+      let promptRecorded = false;
+      const recordPromptIfNeeded = async (): Promise<void> => {
+        if (
+          promptRecorded ||
+          operatorReceipt !== undefined ||
+          (passOptions.resumeInteractions?.length ?? 0) > 0
+        ) {
+          return;
+        }
+        promptRecorded = true;
+        await appendPromptTranscript(deps.store, {
+          workflow_run_id: workflowRun.id,
+          node_id: stepName,
+          scope: executionScope,
+          text: attemptPrompt,
+          actorUserId:
+            passActorUserId !== undefined ? passActorUserId : (workflowRun.user_id ?? null),
+          source:
+            passReaskAttempt > 0
+              ? 'reask'
+              : node.command !== undefined
+                ? 'command_file'
+                : 'node_prompt',
+        });
+      };
       for await (const msg of withIdleTimeout(
         aiClient.sendQuery(attemptPrompt, cwd, attemptResumeId, passOptions),
         effectiveIdleTimeout,
@@ -2607,6 +2652,7 @@ async function executeNodeInternal(
           // Delivery seam: first successful stream yield records operator rows
           // before any caused-turn chunk enters the transcript (#188).
           await recordOperatorReceiptIfNeeded();
+          await recordPromptIfNeeded();
         }
         const tickNow = Date.now();
         const nodeKey = `${workflowRun.id}:${node.id}`;
@@ -2688,6 +2734,24 @@ async function executeNodeInternal(
             batchMessages.push(msg.content);
           }
           await logAssistant(logDir, workflowRun.id, msg.content);
+        } else if (msg.type === 'thinking' && msg.content) {
+          // Displayable thinking only — never joins $node.output, the platform
+          // stream, or logAssistant. The provider already dropped hidden
+          // reasoning before this chunk existed.
+          await appendThinkingTranscript(deps.store, {
+            workflow_run_id: workflowRun.id,
+            node_id: stepName,
+            scope: executionScope,
+            text: msg.content,
+          });
+        } else if (msg.type === 'advisor' && msg.content) {
+          await appendAdvisorTranscript(deps.store, {
+            workflow_run_id: workflowRun.id,
+            node_id: stepName,
+            scope: executionScope,
+            text: msg.content,
+            ...(msg.advisorModel !== undefined ? { advisorModel: msg.advisorModel } : {}),
+          });
         } else if (msg.type === 'tool' && msg.toolName) {
           const now = Date.now();
           const toolCallId = msg.toolCallId ?? `anonymous-${String(++anonymousToolSequence)}`;
@@ -3230,6 +3294,7 @@ async function executeNodeInternal(
       // Normal empty completion: stream opened and closed without yielding.
       if (!sawStreamChunk) {
         await recordOperatorReceiptIfNeeded();
+        await recordPromptIfNeeded();
       }
 
       // Stream ended with background tasks still live: the SDK subprocess died or
@@ -3506,7 +3571,8 @@ async function executeNodeInternal(
           reaskAttempt === 0 ? turnResumeId : undefined,
           reaskAttempt,
           passTurn,
-          reaskAttempt === 0 ? pendingOperatorReceipt : undefined
+          reaskAttempt === 0 ? pendingOperatorReceipt : undefined,
+          turnIsGuidance ? (turnGuidanceMessages[0]?.operator_user_id ?? null) : undefined
         );
         lastPassToken = passTurn.token;
         if (nodeCostUsd !== undefined) {
@@ -6574,6 +6640,40 @@ async function executeLoopNodeInner(
             );
           };
 
+          // See the AI-node stream loop for why a guidance turn's pass zero,
+          // and an AskHuman-resume pass, are both skipped: a guidance turn's
+          // triggering text is already the operator row above, and a
+          // supporting provider sends the human's answers in place of
+          // `finalPrompt` on an AskHuman-resume pass (the same substitution
+          // the plain AI-node path guards against), so `finalPrompt` is stale
+          // text the model never saw.
+          let promptRecorded = false;
+          const recordPromptIfNeeded = async (): Promise<void> => {
+            if (
+              promptRecorded ||
+              pendingOperatorReceipt !== undefined ||
+              (askResumeThisPass && reaskAttempt === 0 && !turnIsGuidance)
+            ) {
+              return;
+            }
+            promptRecorded = true;
+            await appendPromptTranscript(deps.store, {
+              workflow_run_id: workflowRun.id,
+              node_id: stepName,
+              scope: iterationExecutionScope,
+              text: finalPrompt,
+              actorUserId: turnIsGuidance
+                ? (turnGuidanceMessages[0]?.operator_user_id ?? null)
+                : (workflowRun.user_id ?? null),
+              source:
+                reaskAttempt > 0
+                  ? 'reask'
+                  : typeof loop.command === 'string'
+                    ? 'command_file'
+                    : 'node_prompt',
+            });
+          };
+
           for await (const msg of withIdleTimeout(generator, effectiveIdleTimeout, () => {
             iterationIdleTimedOut = true;
             getLog().warn(
@@ -6585,6 +6685,7 @@ async function executeLoopNodeInner(
             if (!sawStreamChunk) {
               sawStreamChunk = true;
               await recordOperatorReceiptIfNeeded();
+              await recordPromptIfNeeded();
             }
             // Mid-stream cancel/pause check (every CANCEL_CHECK_INTERVAL_MS) —
             // lifted from the AI-node stream loop in executeNodeInternal. Same
@@ -6642,6 +6743,23 @@ async function executeLoopNodeInner(
                 await safeSendMessage(platform, conversationId, cleaned, msgContext);
               }
               await logAssistant(logDir, workflowRun.id, msg.content);
+            } else if (msg.type === 'thinking' && msg.content) {
+              // Displayable thinking only — never joins fullOutput/cleanOutput,
+              // the platform stream, or logAssistant.
+              await appendThinkingTranscript(deps.store, {
+                workflow_run_id: workflowRun.id,
+                node_id: stepName,
+                scope: iterationExecutionScope,
+                text: msg.content,
+              });
+            } else if (msg.type === 'advisor' && msg.content) {
+              await appendAdvisorTranscript(deps.store, {
+                workflow_run_id: workflowRun.id,
+                node_id: stepName,
+                scope: iterationExecutionScope,
+                text: msg.content,
+                ...(msg.advisorModel !== undefined ? { advisorModel: msg.advisorModel } : {}),
+              });
             } else if (msg.type === 'result') {
               // Five-case classification (#183): abort-marked result + this
               // turn's operator-interrupt flag = interrupted end. A natural
@@ -6969,6 +7087,7 @@ async function executeLoopNodeInner(
           }
           if (!sawStreamChunk) {
             await recordOperatorReceiptIfNeeded();
+            await recordPromptIfNeeded();
           }
           foldIterationUsage();
 

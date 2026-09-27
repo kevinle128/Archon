@@ -64,3 +64,18 @@ describe('parseClaudeConfig settingSources', () => {
     expect(parseClaudeConfig({ settingSources: 'project' }).settingSources).toBeUndefined();
   });
 });
+
+describe('parseClaudeConfig advisorModel', () => {
+  test('keeps a non-empty string model id', () => {
+    expect(parseClaudeConfig({ advisorModel: 'claude-opus-4-8' }).advisorModel).toBe(
+      'claude-opus-4-8'
+    );
+  });
+
+  test('leaves advisorModel unset when the key is absent, blank, or not a string', () => {
+    expect(parseClaudeConfig({}).advisorModel).toBeUndefined();
+    expect(parseClaudeConfig({ advisorModel: '' }).advisorModel).toBeUndefined();
+    expect(parseClaudeConfig({ advisorModel: '   ' }).advisorModel).toBeUndefined();
+    expect(parseClaudeConfig({ advisorModel: 42 }).advisorModel).toBeUndefined();
+  });
+});
