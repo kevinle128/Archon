@@ -18,7 +18,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] 8.7 OMP RPC-mode Stop merged (1263b93f); live 3/3 on grok-4.5 + gpt-5.6-sol; validate green
 - [ ] 8.5 Grok: session/cancel proven 6/6 (spikes merged); ACP transport migration — agent grok-acp. Interject = follow-up semantics (softInjection false)
 - [x] B-UI merged (7e30d6e7): draft/auto-send/per-item Send now/recovery wired in both shells
-- [ ] B-UI follow-ups: Legacy focus regression after idle expiry; e2e queue-convergence spec still on sessionStorage — agent bui-followups
+- [x] B-UI follow-ups merged (Legacy focus anchor, queue-convergence e2e on draft API)
+- [ ] e2e agent-interrupt-redirect.spec.ts 4 failures — agent e2e-interrupt
+- [ ] Final gate: full e2e UI suite green after all merges
 
 - [ ] QA round 2 after fixes: per-item Send now + Auto-send label (needs soft-inject/auto-send provider), delivery states, multi-run headers, populated Files changed tab
 
