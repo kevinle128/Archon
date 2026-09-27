@@ -512,12 +512,15 @@ test('[P1] [V:occurrence-nav.console-scopes] Console occurrence requests, sectio
     ]);
     expect(observed.records.length, 'filter toggles must not refetch').toBe(requestsBefore);
 
-    // Occurrence selection sends the exact occurrence+attempt filter and
-    // flattens to one group (single-occurrence flat state).
+    // Occurrence selection sends the occurrence filter alone — CAP-6 forbids
+    // keying the room's transcript on attempt_id, since a steered node's
+    // guidance turns share one occurrence across several attempts and a
+    // client-side attempt filter would drop rows the room must keep visible.
+    // It flattens to one group (single-occurrence flat state).
     await selectExecution(page, OCC_A);
     await expect
       .poll(() =>
-        observed.records.some(record => record.occurrenceId === OCC_A && record.attemptId === ATT_A)
+        observed.records.some(record => record.occurrenceId === OCC_A && record.attemptId === null)
       )
       .toBe(true);
     await expect(room.getByRole('heading')).toHaveCount(0);
@@ -703,12 +706,13 @@ test('[P1] [V:occurrence-nav.legacy] Legacy node room shares the navigator contr
     await expectNoLiveRegion(scroller);
     await shot(page, room, 'legacy-focus-heading.png');
 
-    // Occurrence-scoped row: exact occurrence+attempt filter request, one
-    // group, navigator gone (single-occurrence flat state on Legacy).
+    // Occurrence-scoped row: occurrence filter alone (no attempt_id — see the
+    // console test above), one group, navigator gone (single-occurrence flat
+    // state on Legacy).
     await page.locator(`button[id*="${OCC_A}"]`).click();
     await expect
       .poll(() =>
-        observed.records.some(record => record.occurrenceId === OCC_A && record.attemptId === ATT_A)
+        observed.records.some(record => record.occurrenceId === OCC_A && record.attemptId === null)
       )
       .toBe(true);
     await expect(room.getByRole('heading')).toHaveCount(0);

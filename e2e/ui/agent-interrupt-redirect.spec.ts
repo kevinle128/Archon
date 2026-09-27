@@ -86,6 +86,11 @@ const DETACHED_DISCLOSURE =
 const REDIRECT_SCENARIO = '{"echoPrompt":true,"delayMs":1500}';
 const REDIRECT_TEXT = `<<E2E_SCENARIO>>${REDIRECT_SCENARIO}<</E2E_SCENARIO>>third`;
 const REDIRECT_ECHO = '[e2e-fake] resumed echo: first\n\nsecond\n\nthird';
+// Carries its own echoPrompt directive so the drained guidance turn proves it
+// ran on the resumed session, same pattern as REDIRECT_TEXT above — the
+// directive is stripped before the fake provider echoes it back.
+const BLANK_SEND_NOW_TEXT = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>first';
+const BLANK_SEND_NOW_ECHO = '[e2e-fake] resumed echo: first';
 const MULTILINE_FIRST =
   'line one of operator guidance\n\nline two keeps the breaks\nline three wraps in the narrow room';
 const LOOP_REDIRECT_SCENARIO =
@@ -946,7 +951,7 @@ for (const surface of ['console', 'legacy'] as const) {
     const field = guidanceField(room);
     await expect(room.locator('[data-tool-id]').first()).toBeVisible({ timeout: T.medium });
 
-    await field.fill('first');
+    await field.fill(BLANK_SEND_NOW_TEXT);
     await queueButton(room).click();
     await expect(room.getByText('queued · 1')).toBeVisible();
 
@@ -979,7 +984,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(stopButton(room)).toBeVisible();
     await expect(dockStatus(room)).toContainText(AGENT_GENERATING);
 
-    await expect(room.getByText('[e2e-fake] resumed echo: first').first()).toBeVisible({
+    await expect(room.getByText(BLANK_SEND_NOW_ECHO).first()).toBeVisible({
       timeout: T.xlong,
     });
     await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
@@ -988,7 +993,7 @@ for (const surface of ['console', 'legacy'] as const) {
     const operatorRows = messages.filter(
       message => message.kind === 'text' && message.metadata?.origin === 'operator'
     );
-    expect(operatorRows.map(row => row.payload.text)).toEqual(['first']);
+    expect(operatorRows.map(row => row.payload.text)).toEqual([BLANK_SEND_NOW_TEXT]);
     await captureEvidence(room, `us-004-${surface}-blank-send-now.png`, testInfo);
   });
 
