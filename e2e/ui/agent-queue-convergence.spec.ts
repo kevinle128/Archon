@@ -72,8 +72,8 @@ function queuePathname(runId: string, nodeId: string): string {
   return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/queue`;
 }
 
-function draftStorageKey(runId: string, nodeId: string): string {
-  return `archon:steering-draft:${runId}:${nodeId}`;
+function draftPathname(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/draft`;
 }
 
 function roomRegion(page: Page, nodeId: string): Locator {
@@ -307,8 +307,48 @@ async function activeElementDescriptor(page: Page): Promise<string> {
   });
 }
 
-async function readDraftStorage(page: Page, runId: string, nodeId: string): Promise<string | null> {
-  return page.evaluate(key => sessionStorage.getItem(key), draftStorageKey(runId, nodeId));
+interface DraftSnapshot {
+  message: string;
+  updated_at: string;
+}
+
+/**
+ * Reads the acting operator's own server-persisted composer draft (Story
+ * 7.2). Scoped by the request context's identity header — a different
+ * identity's GET on the same run/node never sees this one.
+ */
+async function readDraft(
+  request: APIRequestContext,
+  runId: string,
+  nodeId: string
+): Promise<DraftSnapshot | null> {
+  const res = await request.get(draftPathname(runId, nodeId), {
+    headers: { 'Cache-Control': 'no-store' },
+  });
+  expect(res.status(), `GET draft ${runId}/${nodeId}`).toBe(200);
+  const body = (await res.json()) as { success?: boolean; draft?: DraftSnapshot | null };
+  expect(body.success, 'draft read success flag').toBe(true);
+  return body.draft ?? null;
+}
+
+/** Waits for the composer's debounced draft PUT to reach the server. */
+async function waitForDraftSaved(page: Page, runId: string, nodeId: string): Promise<void> {
+  await page.waitForResponse(
+    res =>
+      res.request().method() === 'PUT' &&
+      new URL(res.url()).pathname === draftPathname(runId, nodeId) &&
+      res.ok()
+  );
+}
+
+/** Waits for a successful send to clear the acting operator's server draft. */
+async function waitForDraftCleared(page: Page, runId: string, nodeId: string): Promise<void> {
+  await page.waitForResponse(
+    res =>
+      res.request().method() === 'DELETE' &&
+      new URL(res.url()).pathname === draftPathname(runId, nodeId) &&
+      res.ok()
+  );
 }
 
 async function queueGuidance(
@@ -534,25 +574,67 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(fieldB).toBeVisible({ timeout: T.medium });
       await expect(fieldT).toBeVisible({ timeout: T.medium });
 
+      const draftBSaved = waitForDraftSaved(starterB, run.runId, nodeId);
+      const draftTSaved = waitForDraftSaved(teammate, run.runId, nodeId);
       await fieldB.fill(draftAlpha);
       await fieldT.fill(draftBeta);
       await expect(fieldB).toHaveValue(draftAlpha);
       await expect(fieldT).toHaveValue(draftBeta);
+      // Each debounced PUT reaches the server before the queue journey below
+      // starts issuing sends that would otherwise race the same draft rows.
+      await draftBSaved;
+      await draftTSaved;
 
-      const storedAlphaBefore = await readDraftStorage(starterB, run.runId, nodeId);
-      const storedBetaBefore = await readDraftStorage(teammate, run.runId, nodeId);
-      expect(storedAlphaBefore).toBeTruthy();
-      expect(JSON.parse(storedAlphaBefore ?? '{}')).toMatchObject({ draft: draftAlpha });
-      expect(storedBetaBefore).toBeTruthy();
-      expect(JSON.parse(storedBetaBefore ?? '{}')).toMatchObject({ draft: draftBeta });
+      const draftAlphaBefore = await readDraft(starterB.request, run.runId, nodeId);
+      const draftBetaBefore = await readDraft(teammate.request, run.runId, nodeId);
+      expect(draftAlphaBefore?.message, 'starter draft persists server-side').toBe(draftAlpha);
+      expect(draftBetaBefore?.message, 'teammate draft persists server-side').toBe(draftBeta);
+      // Per-author isolation, positive case: starterA is the same operator as
+      // starterB and reads the identical shared draft from a different tab.
+      const draftAlphaFromStarterA = await readDraft(starterA.request, run.runId, nodeId);
+      expect(
+        draftAlphaFromStarterA?.message,
+        'the same operator sees one shared draft across tabs'
+      ).toBe(draftAlpha);
+      // Per-author isolation, negative case: a different operator's GET never
+      // returns the starter's draft.
+      expect(
+        draftBetaBefore?.message,
+        'a different operator never sees the starter draft'
+      ).not.toBe(draftAlpha);
+
+      // Restore after reload: a brand-new tab for the teammate identity
+      // re-hydrates the composer straight from the server draft, proving the
+      // restore survives a fresh mount rather than relying on any per-tab
+      // client cache.
+      const teammateReload = await teammateCtx.newPage();
+      await teammateReload.setViewportSize(NARROW);
+      const roomTReload = await openGuidanceRoom(teammateReload, surface, run.runId, nodeId);
+      await expect(guidanceField(roomTReload)).toHaveValue(draftBeta);
+      await teammateReload.close();
+
       measurements.draftsBefore = {
         starterBField: draftAlpha,
-        starterBStorage: storedAlphaBefore,
+        starterBDraft: draftAlphaBefore,
         teammateField: draftBeta,
-        teammateStorage: storedBetaBefore,
+        teammateDraft: draftBetaBefore,
       };
 
+      const starterDraftCleared = waitForDraftCleared(starterA, run.runId, nodeId);
       const starterId = await queueGuidance(starterA, roomA, run.runId, nodeId, starterText);
+      // Cleared after send: sending from any tab of the same operator clears
+      // that operator's shared server draft for this node.
+      await starterDraftCleared;
+      const draftAlphaAfterStarterSend = await readDraft(starterB.request, run.runId, nodeId);
+      expect(
+        draftAlphaAfterStarterSend,
+        "sending clears the shared draft for that operator's node"
+      ).toBeNull();
+      const draftBetaAfterStarterSend = await readDraft(teammate.request, run.runId, nodeId);
+      expect(
+        draftBetaAfterStarterSend?.message,
+        "a different operator's draft survives an unrelated send"
+      ).toBe(draftBeta);
 
       await expectQueueIds(roomA, [starterId]);
       await expectQueueIds(roomB, [starterId]);
@@ -562,8 +644,6 @@ for (const surface of ['console', 'legacy'] as const) {
 
       await expect(fieldB).toHaveValue(draftAlpha);
       await expect(fieldT).toHaveValue(draftBeta);
-      expect(await readDraftStorage(starterB, run.runId, nodeId)).toBe(storedAlphaBefore);
-      expect(await readDraftStorage(teammate, run.runId, nodeId)).toBe(storedBetaBefore);
 
       // Queue teammate draft from the teammate page (field already holds it).
       const teammateSent = teammate.waitForResponse(
@@ -571,6 +651,7 @@ for (const surface of ['console', 'legacy'] as const) {
           res.request().method() === 'POST' &&
           new URL(res.url()).pathname === sendPathname(run.runId, nodeId)
       );
+      const teammateDraftCleared = waitForDraftCleared(teammate, run.runId, nodeId);
       await fieldT.press('Meta+Enter');
       const teammateResponse = await teammateSent;
       expect(teammateResponse.status()).toBe(200);
@@ -578,6 +659,9 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(teammateBody.message_id).toMatch(/^[0-9a-f-]{36}$/);
       const teammateId = teammateBody.message_id as string;
       expect(teammateId).not.toBe(starterId);
+      // Cleared after send, second case: the teammate's own send clears its
+      // own draft too.
+      await teammateDraftCleared;
 
       const twoRow = [starterId, teammateId];
       await expectQueueIds(roomA, twoRow);
@@ -612,9 +696,11 @@ for (const surface of ['console', 'legacy'] as const) {
       }
 
       await expect(fieldT).toHaveValue('');
-      expect(await readDraftStorage(teammate, run.runId, nodeId)).toBeNull();
+      expect(
+        await readDraft(teammate.request, run.runId, nodeId),
+        "sending clears the teammate's own server draft"
+      ).toBeNull();
       await expect(fieldB).toHaveValue(draftAlpha);
-      expect(await readDraftStorage(starterB, run.runId, nodeId)).toBe(storedAlphaBefore);
 
       const visualTwoA = await assertQueueVisualContract(roomA, 2, `${surface} starterA two-row`);
       const visualTwoB = await assertQueueVisualContract(roomB, 2, `${surface} starterB two-row`);
@@ -734,7 +820,10 @@ for (const surface of ['console', 'legacy'] as const) {
       measurements.activeAfterEmpty = activeAfterEmpty;
 
       await expect(fieldB).toHaveValue(draftAlpha);
-      expect(await readDraftStorage(starterB, run.runId, nodeId)).toBe(storedAlphaBefore);
+      expect(
+        await readDraft(starterB.request, run.runId, nodeId),
+        'unrelated queue withdrawals never resurrect an already-cleared draft'
+      ).toBeNull();
 
       expect(deletesB.count(), 'starterB issued zero DELETEs for entire journey').toBe(0);
 
@@ -746,7 +835,7 @@ for (const surface of ['console', 'legacy'] as const) {
         visual: visualEmpty,
         drafts: {
           starterBField: await fieldB.inputValue(),
-          starterBStorage: await readDraftStorage(starterB, run.runId, nodeId),
+          starterBDraft: await readDraft(starterB.request, run.runId, nodeId),
           teammateField: await fieldT.inputValue(),
         },
         requestCounts: {
