@@ -51,6 +51,36 @@
     }
   },
   {
+    "id": "shell-running-codex-wrapper-bare-c",
+    "name": "bash -c \"bun run validate\"",
+    "input": {},
+    "output": null,
+    "facts": { "outcome": "running" },
+    "expected": {
+      "family": "shell",
+      "label": "shell",
+      "headline": "bun run validate",
+      "headlineKind": "text",
+      "glyph": "◐",
+      "badges": [{ "kind": "state", "text": "running" }]
+    }
+  },
+  {
+    "id": "web-codex-search-marker",
+    "name": "🔍 Searching: https://raw.githubusercontent.com/example/repo",
+    "input": {},
+    "output": null,
+    "facts": { "outcome": "unknown" },
+    "expected": {
+      "family": "web",
+      "label": "web",
+      "headline": "https://raw.githubusercontent.com/example/repo",
+      "headlineKind": "path",
+      "glyph": "–",
+      "badges": [{ "kind": "state", "text": "output unknown" }]
+    }
+  },
+  {
     "id": "file-read",
     "name": "Read",
     "input": { "file_path": "/src/index.ts" },

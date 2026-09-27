@@ -131,7 +131,11 @@ export interface ToolRowPresentation extends ToolPresentation {
 }
 
 const MCP_PREFIX = 'mcp__';
-const SHELL_WRAPPER_PREFIXES = ["/bin/zsh -lc '", "/bin/bash -lc '"] as const;
+const SHELL_WRAPPER_BINARIES = ['/bin/zsh', '/bin/bash', 'zsh', 'bash'] as const;
+const SHELL_WRAPPER_FLAGS = ['-lc', '-c'] as const;
+const SHELL_WRAPPER_QUOTES = ["'", '"'] as const;
+/** The exact literal Codex's web_search tool name carries; see `stripWebSearchMarker`. */
+const WEB_SEARCH_MARKER_PREFIX = '🔍 Searching: ';
 
 const COMMAND_KEYS = ['command', 'cmd', 'script'] as const;
 const PATH_KEYS = [
@@ -339,15 +343,39 @@ function isCommandLikeName(name: string): boolean {
   return /\s/.test(name);
 }
 
-/** Removes only a complete `/bin/zsh -lc '…'` or `/bin/bash -lc '…'` wrapper; incomplete wrappers stay untouched. */
+/**
+ * Removes only a complete `[/bin/]{zsh,bash} {-lc,-c} '…'`/`"…"` wrapper —
+ * either shell, either invocation flag, either quote style, with or without
+ * the absolute `/bin/` prefix. An incomplete wrapper (missing the matching
+ * closing quote) stays untouched.
+ */
 function stripShellWrapper(name: string): string {
-  if (name.length > MAX_HEADLINE_SOURCE_CODE_UNITS || !name.endsWith("'")) return name;
-  for (const prefix of SHELL_WRAPPER_PREFIXES) {
-    if (name.startsWith(prefix) && name.length > prefix.length) {
-      return name.slice(prefix.length, -1);
+  if (name.length > MAX_HEADLINE_SOURCE_CODE_UNITS) return name;
+  for (const binary of SHELL_WRAPPER_BINARIES) {
+    for (const flag of SHELL_WRAPPER_FLAGS) {
+      for (const quote of SHELL_WRAPPER_QUOTES) {
+        const prefix = `${binary} ${flag} ${quote}`;
+        if (name.startsWith(prefix) && name.length > prefix.length && name.endsWith(quote)) {
+          return name.slice(prefix.length, -1);
+        }
+      }
     }
   }
   return name;
+}
+
+/**
+ * Codex's web_search tool sends a name-only call whose whole name is this
+ * exact marker plus the query, and no structured input. Duck-types on that
+ * shape rather than a provider check: the query becomes the headline and the
+ * row joins the web family like any other search/fetch call.
+ */
+function stripWebSearchMarker(name: string): string | null {
+  if (name.length > MAX_HEADLINE_SOURCE_CODE_UNITS || !name.startsWith(WEB_SEARCH_MARKER_PREFIX)) {
+    return null;
+  }
+  const query = name.slice(WEB_SEARCH_MARKER_PREFIX.length);
+  return query.length > 0 ? query : null;
 }
 
 /**
@@ -606,9 +634,14 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
     name.length <= MAX_ALIAS_NAME_CODE_UNITS
       ? (FAMILY_ALIASES[normalizeAlias(name)] ?? null)
       : null;
+  // Codex's name-only convention (no structured input) can arrive as a
+  // missing `input` (record === null) or an empty object ({}) — the same
+  // "no keys" test the shell fallback below already uses.
+  const webSearchQuery = hasKeys(record) ? null : stripWebSearchMarker(name);
   const family =
     alias ??
     (record !== null ? inferFamily(record) : null) ??
+    (webSearchQuery !== null ? 'web' : null) ??
     (isCommandLikeName(name) && !hasKeys(record) ? 'shell' : null) ??
     'generic';
 
@@ -699,7 +732,9 @@ function resolveToolPresentation(input: ToolPresentationInput): ToolPresentation
       break;
     }
     case 'web':
-      headline = boundedString(firstStringField(record, URL_KEYS));
+      headline = hasKeys(record)
+        ? boundedString(firstStringField(record, URL_KEYS))
+        : webSearchQuery;
       headlineKind = 'path';
       break;
     case 'generic': {
