@@ -180,3 +180,17 @@ Summary: All twelve round-2 findings and all nine round-1 findings are fixed. Th
 - **Major, VQ3-1:** a tool that already **completed** is re-labelled `⚠ interrupted` when Stop lands between tools. This is `agent-history.ts` `settledToolOutcome`, and it is the same path that would put `⚠` on a Codex row.
 - **Major, VQ3-2:** Grok transcripts are written one token per row: dozens of `THINKING` rows on ACP, and every word its own `ASSISTANT` row on the structured-output `--single` path. The Grok chunks are missing `textMode`.
 - **Minors:** the loop header omits provider and model; the Console observer tab takes about 17 s to show idle after Stop in another tab; a backgrounded Grok command shows `✓` while still running; a retried single-iteration loop reads `of 2 · max 1`; and a typed `Send now` shows under `QUEUED` while it is `dispatching`.
+
+## Decisions on the open questions (2026-09-28)
+
+1. VQ3-1: only a recorded `success` keeps its outcome when the turn's `interrupted` status follows it. `error`, `unknown` and a missing outcome keep the current interrupt fold.
+2. Story 10.3 stays as written. Per SPEC, the operator row the executor writes is the delivery receipt, so a Codex message the agent answered stays `sent` and is not `Never sent`.
+
+The `qa3-fixes` follow-up work owns the fixes.
+
+## Decisions on the open questions (2026-09-28)
+
+1. The interrupted-status fold protects only a recorded `success`. A tool that finished successfully is never re-labelled interrupted; a tool the provider recorded as `error` with interrupt evidence keeps the interrupted presentation.
+2. Story 10.3 is unchanged. The executor-written operator transcript row is the delivery receipt (SPEC: "The delivered operator transcript row remains the audit receipt"), so a message the agent answered stays `sent` and never becomes `Never sent`, on every provider including Codex.
+
+Fixes are owned by the `qa3-fixes` follow-up work.
