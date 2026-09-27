@@ -22,7 +22,13 @@ export const CODEX_CAPABILITIES: ProviderCapabilities = {
   nativeTools: false,
   containerExec: false, // no in-container spawn path yet (fail-fast source of truth)
   askHuman: false,
-  interrupt: false,
+  // Verified against the real @openai/codex-sdk (interrupt-resume-spike.ts,
+  // plus a live Stop mid-tool against the running server) — a stream-abort
+  // path: the adapter kills its own stream/child and synthesizes the
+  // `stream_aborted` terminal reason. Session resume works via the existing
+  // thread id, so redirect continues on the same thread rather than
+  // silently starting a new one.
+  interrupt: 'stream-abort',
   softInjection: false,
   deliveryAck: false,
 };

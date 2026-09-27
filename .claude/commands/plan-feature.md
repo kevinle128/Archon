@@ -30,7 +30,7 @@ Restate the feature request in your own words. Identify:
 
 ## Phase 2: Codebase Intelligence
 
-Use subagents to perform targeted codebase research in parallel. Spawn separate subagents for:
+For a large feature, or one that touches more than one package, spawn separate subagents in parallel for the areas below. For a small feature inside one package, research these areas yourself.
 
 **Subagent A — Affected package deep-dive:**
 Read all relevant source files in the affected packages. Map the current data flow.

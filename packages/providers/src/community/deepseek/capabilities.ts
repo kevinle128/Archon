@@ -22,7 +22,13 @@ export const DEEPSEEK_CAPABILITIES = {
   nativeTools: false,
   containerExec: false,
   askHuman: false,
-  interrupt: false,
+  // Verified against the real DSH `acp` profile binary on a live subscription
+  // (route alibaba/deepseek-v4.1-flash) — Stop cancels the in-flight prompt
+  // via ACP session/cancel, the node stays active and idles for redirect,
+  // and the next turn resumes the SAME session id via session/resume (a
+  // failed resume would surface as deepseek_resume_failed; it did not).
+  // Not 'native': the session is closed and cold-resumed, not kept warm.
+  interrupt: 'stream-abort',
   softInjection: false,
   deliveryAck: false,
 } as const satisfies ProviderCapabilities;

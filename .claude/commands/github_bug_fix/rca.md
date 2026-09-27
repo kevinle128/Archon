@@ -26,7 +26,7 @@ Extract: title, description, labels, status, comments, reproduction steps.
 
 ### 2. Search Codebase
 
-Use subagents for parallel investigation:
+When the issue may span more than one package, use subagents to investigate in parallel. When it is confined to one package, investigate directly:
 
 **Identify relevant code:**
 - Search for components, functions, and modules mentioned in issue

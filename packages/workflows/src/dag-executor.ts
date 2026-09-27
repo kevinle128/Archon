@@ -44,6 +44,7 @@ import {
   AskHumanAwaitingError,
   AskHumanNoStarterError,
   AskHumanPauseFailedError,
+  STREAM_ABORTED_TERMINAL_REASON,
 } from '@archon/providers/types';
 import type { ContainerRunContext } from './container-context';
 import { WRITEBACK_GATE_NODE_ID } from './container-context';
@@ -459,13 +460,16 @@ function settleRunningToolsOutcome(
 
 /**
  * The ONLY provider terminal reasons that classify a result as an operator
- * interrupt (#183): the Claude SDK's two abort markers. No prefix or prose
- * matching — a result without an abort marker is a natural end even when a
- * Stop raced it (five-case classification, case 1).
+ * interrupt (#183): the Claude SDK's two native abort markers, plus the
+ * shared adapter-synthesized marker a stream-abort provider (Codex, OMP) uses
+ * when it kills its own stream/child rather than calling a native interrupt.
+ * No prefix or prose matching — a result without an abort marker is a
+ * natural end even when a Stop raced it (five-case classification, case 1).
  */
 const INTERRUPT_TERMINAL_REASONS: ReadonlySet<string> = new Set([
   'aborted_streaming',
   'aborted_tools',
+  STREAM_ABORTED_TERMINAL_REASON,
 ]);
 
 function isInterruptTerminalReason(reason: string | undefined): boolean {

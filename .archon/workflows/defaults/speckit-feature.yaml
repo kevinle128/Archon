@@ -38,12 +38,12 @@ nodes:
       read related documents for understand the origin context and purpose,
       save references document to let the next phases know the origin purpose,
       read deeply to understand before writing,
-      don't guess, spawn sub-agents for help
+      don't guess: read the sources the spec depends on
     depends_on:
       - setup
     effort: high
     provider: claude
-    model: "claude-opus-4-8[1M]"
+    model: opus
     # effort: xhigh
     # provider: omp
     # model: "anthropic/claude-opus-4-8"
@@ -433,7 +433,7 @@ nodes:
     # model: "xai-oauth/grok-4.6"
     effort: high
     provider: claude
-    model: "claude-opus-4-8[1M]"
+    model: opus
     context: fresh
 
     skills: [speckit-plan]

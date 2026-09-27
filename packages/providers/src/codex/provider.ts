@@ -9,7 +9,10 @@ import {
   type TurnOptions,
   type TurnCompletedEvent,
   type ThreadStartedEvent,
+  type Thread,
 } from '@openai/codex-sdk';
+import { readFile } from 'node:fs/promises';
+import { isAbsolute, join as joinPath } from 'node:path';
 import type {
   IAgentProvider,
   SendQueryOptions,
@@ -20,6 +23,7 @@ import type {
   CodexProviderDefaults,
   UsageBreakdown,
 } from '../types';
+import { STREAM_ABORTED_TERMINAL_REASON } from '../types';
 import { toUsageBreakdown } from '../usage-breakdown';
 import { parseCodexConfig } from './config';
 import { CODEX_CAPABILITIES } from './capabilities';
@@ -301,6 +305,17 @@ function buildModelAccessMessage(model?: string): string {
 
 const MAX_SUBPROCESS_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 2000;
+/**
+ * Grace window for an operator Stop that races a fresh thread's startup. The
+ * Codex SDK only assigns a new thread's id once its internal event parser
+ * reaches `thread.started` (measured: interrupt-resume-spike.ts) — killing
+ * the child before that line is parsed would lose the only handle the
+ * operator could redirect to. `onOperatorInterrupt` defers the actual abort
+ * until `thread.id` resolves, or applies it unconditionally after this many
+ * ms so Stop can never hang on a thread that never starts. A resumed thread
+ * already knows its id synchronously, so this window never applies to it.
+ */
+export const CODEX_INTERRUPT_THREAD_ID_WAIT_MS = 500;
 const RATE_LIMIT_PATTERNS = ['rate limit', 'too many requests', '429', 'overloaded'];
 const AUTH_PATTERNS = [
   'credit balance',
@@ -469,14 +484,72 @@ function getMcpToolName(item: Record<string, unknown>): string {
 }
 
 /**
+ * Hand-mirrored `FileUpdateChange` shape (the SDK exports `FileChangeItem`
+ * but not its `changes[]` member type). Verified at @openai/codex-sdk
+ * 0.144.5: `{ path: string; kind: 'add' | 'delete' | 'update' }` — no
+ * before/after content, so a diff can never be built from this alone.
+ */
+interface CodexFileUpdateChange {
+  path: string;
+  kind: 'add' | 'delete' | 'update';
+}
+
+/**
+ * Normalizes to the shared presenter's `file` family via Tier-1 name
+ * matching (case-folded, `_`/`-` stripped: `apply_patch` -> `applypatch`).
+ */
+const CODEX_FILE_CHANGE_TOOL_NAME = 'apply_patch';
+
+/** Bound on how much of a changed file's current content becomes preview evidence. */
+const FILE_CHANGE_PREVIEW_MAX_BYTES = 65536;
+
+/**
+ * Read a changed file's current on-disk content as bounded preview evidence
+ * for #4.1. Codex's `file_change` event never carries before/after text, so
+ * this is the only honest, non-fabricated content available; a read failure
+ * (e.g. the file was removed by a later step) yields `undefined` rather than
+ * a thrown error, since the patch itself already succeeded.
+ */
+async function readFileChangePreview(
+  cwd: string,
+  relativePath: string
+): Promise<{ text: string; truncated: boolean } | undefined> {
+  const absolutePath = isAbsolute(relativePath) ? relativePath : joinPath(cwd, relativePath);
+  try {
+    const buffer = await readFile(absolutePath);
+    return {
+      text: buffer.subarray(0, FILE_CHANGE_PREVIEW_MAX_BYTES).toString('utf8'),
+      truncated: buffer.length > FILE_CHANGE_PREVIEW_MAX_BYTES,
+    };
+  } catch (error) {
+    getLog().debug(
+      { relativePath, err: error instanceof Error ? error.message : String(error) },
+      'codex.file_change_preview_unreadable'
+    );
+    return undefined;
+  }
+}
+
+/**
  * Normalize raw Codex SDK events into Archon MessageChunks.
  * Handles structured output normalization (Codex returns JSON inline in text).
+ *
+ * `abortSignal` is the per-attempt controller's signal — the one actually
+ * passed to the SDK as `turnOptions.signal` — used for the existing
+ * proactive between-events checks and caught around the loop. `cancelSignal`
+ * (node-level Cancel) and `interruptSignal` (operator Stop) are the two
+ * EXTERNAL signals that can cause it to abort; `buildInterruptedResult`
+ * reads them to classify which one did, since the SDK throws the same shape
+ * for both (measured: AbortError, "The operation was aborted.").
  */
 async function* streamCodexEvents(
   events: AsyncIterable<Record<string, unknown>>,
   hasOutputFormat: boolean,
   threadId: string | null | undefined,
-  abortSignal?: AbortSignal,
+  abortSignal: AbortSignal | undefined,
+  cancelSignal: AbortSignal | undefined,
+  interruptSignal: AbortSignal | undefined,
+  cwd: string,
   surfaceMcpClientErrors = false,
   requestedModel?: string
 ): AsyncGenerator<MessageChunk> {
@@ -493,7 +566,38 @@ async function* streamCodexEvents(
   // snapshot id (no thread.started fires), so the seeded value stays correct.
   let resolvedThreadId: string | null | undefined = threadId;
 
+  // Operator Stop (#8.4): the current turn's abort is interrupt-caused only
+  // when the interrupt signal — not the node-level cancel signal — is the one
+  // aborted. Cancel dominates whenever both fire (matches the DeepSeek/OMP
+  // adapters). Yielding a marked result instead of throwing means the thread
+  // id survives to the dag-executor's resume path even though Codex never
+  // produces a clean terminal event on abort (measured: always throws).
+  //
+  // `isError`/`errorSubtype` ride alongside `terminalReason` even though the
+  // executor's interrupt check only needs the terminal reason: when the
+  // executor does NOT recognize this turn as operator-interrupted (a stale
+  // or spoofed signal), the same shape must still fail the node loudly
+  // through the ordinary SDK-error path rather than complete on truncated
+  // output. Mirrors the DeepSeek adapter's exact abort triple.
+  const buildInterruptedResult = (): Extract<MessageChunk, { type: 'result' }> | undefined => {
+    if (cancelSignal?.aborted === true) return undefined;
+    if (interruptSignal?.aborted !== true) return undefined;
+    return {
+      type: 'result',
+      ...(resolvedThreadId ? { sessionId: resolvedThreadId } : {}),
+      terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+      isError: true,
+      errorSubtype: STREAM_ABORTED_TERMINAL_REASON,
+    };
+  };
+
   if (abortSignal?.aborted) {
+    const interrupted = buildInterruptedResult();
+    if (interrupted) {
+      getLog().info({ threadId: resolvedThreadId }, 'codex.query_interrupted_before_stream');
+      yield interrupted;
+      return;
+    }
     getLog().info('query_aborted_before_stream');
     throw new Error('Query aborted');
   }
@@ -505,359 +609,415 @@ async function* streamCodexEvents(
   // so reaching the post-loop block can only mean no terminal fired.
   let lastNonMcpError: string | undefined;
 
-  for await (const event of events) {
-    if (abortSignal?.aborted) {
-      getLog().info('query_aborted_between_events');
-      throw new Error('Query aborted');
-    }
-
-    if (event.type === 'thread.started') {
-      // Capture the new thread's id. Its SDK doc comment reads: "The identifier
-      // of the new thread. Can be used to resume the thread later." This is the
-      // only place a new thread's id surfaces. `continue` — the event carries no
-      // user-facing content, only this metadata.
-      const startedThreadId = (event as ThreadStartedEvent).thread_id;
-      if (startedThreadId) {
-        resolvedThreadId = startedThreadId;
-        getLog().info({ threadId: startedThreadId }, 'codex.thread_started');
-      } else {
-        // The SDK types thread_id as a non-empty string, so this should never
-        // fire. If it does, a new thread would surface sessionId: undefined and
-        // the dag-executor would treat the run as session-less — silently
-        // dropping any persist_session continuity. Warn rather than degrade
-        // quietly (CLAUDE.md: Fail Fast + Explicit Errors).
-        getLog().warn({ snapshotThreadId: resolvedThreadId }, 'codex.thread_started_missing_id');
+  try {
+    for await (const event of events) {
+      if (abortSignal?.aborted) {
+        getLog().info('query_aborted_between_events');
+        throw new Error('Query aborted');
       }
-      continue;
-    }
 
-    if (event.type === 'item.started') {
-      const item = event.item as Record<string, unknown>;
-      const itemType = item.type as string;
-      const itemId = item.id as string;
-      getLog().debug({ eventType: event.type, itemType, itemId }, 'item_started');
-
-      let toolName: string | undefined;
-      if (itemType === 'command_execution') {
-        if (typeof item.command === 'string' && item.command.length > 0) {
-          toolName = item.command;
+      if (event.type === 'thread.started') {
+        // Capture the new thread's id. Its SDK doc comment reads: "The identifier
+        // of the new thread. Can be used to resume the thread later." This is the
+        // only place a new thread's id surfaces. `continue` — the event carries no
+        // user-facing content, only this metadata.
+        const startedThreadId = (event as ThreadStartedEvent).thread_id;
+        if (startedThreadId) {
+          resolvedThreadId = startedThreadId;
+          getLog().info({ threadId: startedThreadId }, 'codex.thread_started');
         } else {
-          getLog().warn({ itemId }, 'command_execution_missing_command');
+          // The SDK types thread_id as a non-empty string, so this should never
+          // fire. If it does, a new thread would surface sessionId: undefined and
+          // the dag-executor would treat the run as session-less — silently
+          // dropping any persist_session continuity. Warn rather than degrade
+          // quietly (CLAUDE.md: Fail Fast + Explicit Errors).
+          getLog().warn({ snapshotThreadId: resolvedThreadId }, 'codex.thread_started_missing_id');
         }
-      } else if (itemType === 'web_search') {
-        if (typeof item.query === 'string' && item.query.length > 0) {
-          toolName = `🔍 Searching: ${item.query}`;
-        } else {
-          getLog().debug({ itemId }, 'web_search_missing_query');
-        }
-      } else if (itemType === 'mcp_tool_call') {
-        toolName = getMcpToolName(item);
+        continue;
       }
 
-      if (toolName && itemId && !state.startedToolItemIds.has(itemId)) {
-        state.startedToolItemIds.add(itemId);
-        yield { type: 'tool', toolName, toolCallId: itemId };
-      }
-      continue;
-    }
+      if (event.type === 'item.started') {
+        const item = event.item as Record<string, unknown>;
+        const itemType = item.type as string;
+        const itemId = item.id as string;
+        getLog().debug({ eventType: event.type, itemType, itemId }, 'item_started');
 
-    if (event.type === 'error') {
-      const errorEvent = event as { message: string };
-      getLog().error({ message: errorEvent.message }, 'stream_error');
-      // MCP client errors are non-fatal — Codex retries internally and may
-      // still reach turn.completed. Other errors are captured; whether they
-      // are fatal is decided when the stream terminates: turn.completed
-      // means the SDK recovered, so the captured error is dropped; loop
-      // closure without a terminal means the captured error caused the
-      // stream to abort and is surfaced as the failure cause.
-      const isMcpClientError = errorEvent.message.toLowerCase().includes('mcp client');
-      if (!isMcpClientError) {
-        lastNonMcpError = errorEvent.message;
-      } else if (surfaceMcpClientErrors) {
-        // MCP was explicitly configured for this node — surface MCP client
-        // errors as system warnings so the workflow author can diagnose.
-        yield { type: 'system', content: `⚠️ ${errorEvent.message}` };
-      }
-      continue;
-    }
-
-    if (event.type === 'turn.failed') {
-      const errorObj = (event as { error?: { message?: string } }).error;
-      const errorMessage = errorObj?.message ?? 'Unknown error';
-      getLog().error({ errorMessage }, 'turn_failed');
-      yield {
-        type: 'result',
-        sessionId: resolvedThreadId ?? undefined,
-        isError: true,
-        errorSubtype: 'codex_turn_failed',
-        errors: [errorMessage],
-      };
-      return;
-    }
-
-    if (event.type === 'item.completed') {
-      const item = event.item as Record<string, unknown>;
-      const itemType = item.type as string;
-
-      const logContext: Record<string, unknown> = {
-        eventType: event.type,
-        itemType,
-        itemId: item.id,
-      };
-      if (itemType === 'command_execution' && item.command) {
-        logContext.command = item.command;
-      }
-      getLog().debug(logContext, 'item_completed');
-
-      const itemId = item.id as string;
-      const isToolItem =
-        itemType === 'command_execution' ||
-        itemType === 'web_search' ||
-        itemType === 'mcp_tool_call';
-      if (isToolItem) {
-        if (state.completedToolItemIds.has(itemId)) {
-          getLog().warn({ itemId, itemType }, 'tool_item_duplicate_completion');
-          continue;
-        }
-        state.completedToolItemIds.add(itemId);
-        if (!state.startedToolItemIds.has(itemId)) {
-          getLog().warn({ itemId, itemType }, 'tool_item_completed_without_start');
-        }
-      }
-
-      switch (itemType) {
-        case 'agent_message':
-          if (item.text) {
-            // Multiple agent_message items can arrive in one turn (preamble + answer);
-            // keep only the last — it's the authoritative structured-output candidate.
-            if (hasOutputFormat) accumulatedText = item.text as string;
-            yield { type: 'assistant', content: item.text as string, textMode: 'complete' };
+        let toolName: string | undefined;
+        if (itemType === 'command_execution') {
+          if (typeof item.command === 'string' && item.command.length > 0) {
+            toolName = item.command;
+          } else {
+            getLog().warn({ itemId }, 'command_execution_missing_command');
           }
-          break;
+        } else if (itemType === 'web_search') {
+          if (typeof item.query === 'string' && item.query.length > 0) {
+            toolName = `🔍 Searching: ${item.query}`;
+          } else {
+            getLog().debug({ itemId }, 'web_search_missing_query');
+          }
+        } else if (itemType === 'mcp_tool_call') {
+          toolName = getMcpToolName(item);
+        }
 
-        case 'command_execution':
-          if (item.command) {
-            const cmd = item.command as string;
-            const exitCode = item.exit_code as number | null | undefined;
-            const exitSuffix =
-              exitCode != null && exitCode !== 0 ? `\n[exit code: ${String(exitCode)}]` : '';
-            let toolOutcome: 'success' | 'error' | 'unknown';
-            if (exitCode === 0) {
-              toolOutcome = 'success';
-            } else if (exitCode == null) {
-              toolOutcome = 'unknown';
+        if (toolName && itemId && !state.startedToolItemIds.has(itemId)) {
+          state.startedToolItemIds.add(itemId);
+          yield { type: 'tool', toolName, toolCallId: itemId };
+        }
+        continue;
+      }
+
+      if (event.type === 'error') {
+        const errorEvent = event as { message: string };
+        getLog().error({ message: errorEvent.message }, 'stream_error');
+        // MCP client errors are non-fatal — Codex retries internally and may
+        // still reach turn.completed. Other errors are captured; whether they
+        // are fatal is decided when the stream terminates: turn.completed
+        // means the SDK recovered, so the captured error is dropped; loop
+        // closure without a terminal means the captured error caused the
+        // stream to abort and is surfaced as the failure cause.
+        const isMcpClientError = errorEvent.message.toLowerCase().includes('mcp client');
+        if (!isMcpClientError) {
+          lastNonMcpError = errorEvent.message;
+        } else if (surfaceMcpClientErrors) {
+          // MCP was explicitly configured for this node — surface MCP client
+          // errors as system warnings so the workflow author can diagnose.
+          yield { type: 'system', content: `⚠️ ${errorEvent.message}` };
+        }
+        continue;
+      }
+
+      if (event.type === 'turn.failed') {
+        const errorObj = (event as { error?: { message?: string } }).error;
+        const errorMessage = errorObj?.message ?? 'Unknown error';
+        getLog().error({ errorMessage }, 'turn_failed');
+        yield {
+          type: 'result',
+          sessionId: resolvedThreadId ?? undefined,
+          isError: true,
+          errorSubtype: 'codex_turn_failed',
+          errors: [errorMessage],
+        };
+        return;
+      }
+
+      if (event.type === 'item.completed') {
+        const item = event.item as Record<string, unknown>;
+        const itemType = item.type as string;
+
+        const logContext: Record<string, unknown> = {
+          eventType: event.type,
+          itemType,
+          itemId: item.id,
+        };
+        if (itemType === 'command_execution' && item.command) {
+          logContext.command = item.command;
+        }
+        getLog().debug(logContext, 'item_completed');
+
+        const itemId = item.id as string;
+        const isToolItem =
+          itemType === 'command_execution' ||
+          itemType === 'web_search' ||
+          itemType === 'mcp_tool_call';
+        if (isToolItem) {
+          if (state.completedToolItemIds.has(itemId)) {
+            getLog().warn({ itemId, itemType }, 'tool_item_duplicate_completion');
+            continue;
+          }
+          state.completedToolItemIds.add(itemId);
+          if (!state.startedToolItemIds.has(itemId)) {
+            getLog().warn({ itemId, itemType }, 'tool_item_completed_without_start');
+          }
+        }
+
+        switch (itemType) {
+          case 'agent_message':
+            if (item.text) {
+              // Multiple agent_message items can arrive in one turn (preamble + answer);
+              // keep only the last — it's the authoritative structured-output candidate.
+              if (hasOutputFormat) accumulatedText = item.text as string;
+              yield { type: 'assistant', content: item.text as string, textMode: 'complete' };
+            }
+            break;
+
+          case 'command_execution':
+            if (item.command) {
+              const cmd = item.command as string;
+              const exitCode = item.exit_code as number | null | undefined;
+              const exitSuffix =
+                exitCode != null && exitCode !== 0 ? `\n[exit code: ${String(exitCode)}]` : '';
+              let toolOutcome: 'success' | 'error' | 'unknown';
+              if (exitCode === 0) {
+                toolOutcome = 'success';
+              } else if (exitCode == null) {
+                toolOutcome = 'unknown';
+              } else {
+                toolOutcome = 'error';
+              }
+              yield {
+                type: 'tool_result',
+                toolName: cmd,
+                toolOutput: ((item.aggregated_output as string) ?? '') + exitSuffix,
+                toolCallId: itemId,
+                toolOutcome,
+                ...(exitCode != null ? { exitCode } : {}),
+                outputState: 'full' as const,
+              };
             } else {
-              toolOutcome = 'error';
+              getLog().warn({ itemId: item.id }, 'command_execution_missing_command');
             }
-            yield {
-              type: 'tool_result',
-              toolName: cmd,
-              toolOutput: ((item.aggregated_output as string) ?? '') + exitSuffix,
-              toolCallId: itemId,
-              toolOutcome,
-              ...(exitCode != null ? { exitCode } : {}),
-              outputState: 'full' as const,
-            };
-          } else {
-            getLog().warn({ itemId: item.id }, 'command_execution_missing_command');
-          }
-          break;
+            break;
 
-        case 'reasoning':
-          if (item.text) {
-            yield { type: 'thinking', content: item.text as string };
-          }
-          break;
-
-        case 'web_search':
-          if (item.query) {
-            const searchToolName = `🔍 Searching: ${item.query as string}`;
-            yield {
-              type: 'tool_result',
-              toolName: searchToolName,
-              toolOutput: '',
-              toolCallId: itemId,
-              toolOutcome: 'unknown',
-              outputState: 'missing' as const,
-            };
-          } else {
-            getLog().debug({ itemId: item.id }, 'web_search_missing_query');
-          }
-          break;
-
-        case 'todo_list': {
-          const items = item.items as { text?: string; completed?: boolean }[] | undefined;
-          if (Array.isArray(items) && items.length > 0) {
-            const normalizedItems = items.map(t => ({
-              text: typeof t.text === 'string' ? t.text : '(unnamed task)',
-              completed: t.completed ?? false,
-            }));
-            const signature = JSON.stringify(normalizedItems);
-            if (signature !== state.lastTodoListSignature) {
-              state.lastTodoListSignature = signature;
-              const taskList = normalizedItems
-                .map(t => `${t.completed ? '✅' : '⬜'} ${t.text}`)
-                .join('\n');
-              yield { type: 'system', content: `📋 Tasks:\n${taskList}` };
+          case 'reasoning':
+            if (item.text) {
+              yield { type: 'thinking', content: item.text as string };
             }
-          } else {
-            getLog().debug({ itemId: item.id }, 'todo_list_empty_or_invalid');
+            break;
+
+          case 'web_search':
+            if (item.query) {
+              const searchToolName = `🔍 Searching: ${item.query as string}`;
+              yield {
+                type: 'tool_result',
+                toolName: searchToolName,
+                toolOutput: '',
+                toolCallId: itemId,
+                toolOutcome: 'unknown',
+                outputState: 'missing' as const,
+              };
+            } else {
+              getLog().debug({ itemId: item.id }, 'web_search_missing_query');
+            }
+            break;
+
+          case 'todo_list': {
+            const items = item.items as { text?: string; completed?: boolean }[] | undefined;
+            if (Array.isArray(items) && items.length > 0) {
+              const normalizedItems = items.map(t => ({
+                text: typeof t.text === 'string' ? t.text : '(unnamed task)',
+                completed: t.completed ?? false,
+              }));
+              const signature = JSON.stringify(normalizedItems);
+              if (signature !== state.lastTodoListSignature) {
+                state.lastTodoListSignature = signature;
+                const taskList = normalizedItems
+                  .map(t => `${t.completed ? '✅' : '⬜'} ${t.text}`)
+                  .join('\n');
+                yield { type: 'system', content: `📋 Tasks:\n${taskList}` };
+              }
+            } else {
+              getLog().debug({ itemId: item.id }, 'todo_list_empty_or_invalid');
+            }
+            break;
           }
-          break;
-        }
 
-        case 'file_change': {
-          const statusIcon = (item.status as string) === 'failed' ? '❌' : '✅';
-          const rawError = 'error' in item ? (item as { error?: unknown }).error : undefined;
-          const fileErrorMessage =
-            typeof rawError === 'string'
-              ? rawError
-              : typeof rawError === 'object' && rawError !== null && 'message' in rawError
-                ? String((rawError as { message: unknown }).message)
-                : undefined;
+          case 'file_change': {
+            const changeStatus = item.status as string;
+            const rawError = 'error' in item ? (item as { error?: unknown }).error : undefined;
+            const fileErrorMessage =
+              typeof rawError === 'string'
+                ? rawError
+                : typeof rawError === 'object' && rawError !== null && 'message' in rawError
+                  ? String((rawError as { message: unknown }).message)
+                  : undefined;
 
-          const changes = item.changes as { kind: string; path?: string }[] | undefined;
-          if (Array.isArray(changes) && changes.length > 0) {
-            const changeList = changes
-              .map(c => {
-                const icon = c.kind === 'add' ? '➕' : c.kind === 'delete' ? '➖' : '📝';
-                return `${icon} ${c.path ?? '(unknown file)'}`;
-              })
-              .join('\n');
-            const errorSuffix =
-              (item.status as string) === 'failed' && fileErrorMessage
-                ? `\n${fileErrorMessage}`
-                : '';
-            yield {
-              type: 'system',
-              content: `${statusIcon} File changes:\n${changeList}${errorSuffix}`,
-            };
-          } else if ((item.status as string) === 'failed') {
-            getLog().warn(
-              { itemId: item.id, status: item.status },
-              'file_change_failed_no_changes'
-            );
-            const failMsg = fileErrorMessage
-              ? `❌ File change failed: ${fileErrorMessage}`
-              : '❌ File change failed';
-            yield { type: 'system', content: failMsg };
-          } else {
-            getLog().debug({ itemId: item.id, status: item.status }, 'file_change_no_changes');
-          }
-          break;
-        }
-
-        case 'mcp_tool_call': {
-          const server = item.server as string | undefined;
-          const tool = item.tool as string | undefined;
-          const mcpToolName = getMcpToolName(item);
-
-          if ((item.status as string) === 'failed') {
-            getLog().warn(
-              { server, tool, error: item.error, itemId: item.id },
-              'mcp_tool_call_failed'
-            );
-            const mcpError = item.error as { message?: string } | undefined;
-            const errMsg = mcpError?.message
-              ? `❌ Error: ${mcpError.message}`
-              : '❌ Error: MCP tool failed';
-            yield {
-              type: 'tool_result',
-              toolName: mcpToolName,
-              toolOutput: errMsg,
-              toolCallId: itemId,
-              toolOutcome: 'error',
-              outputState: 'full' as const,
-            };
-          } else {
-            let toolOutput = '';
-            const mcpResult = item.result as { content?: unknown } | undefined;
-            if (mcpResult?.content) {
-              if (Array.isArray(mcpResult.content)) {
-                toolOutput = JSON.stringify(mcpResult.content);
+            const changes = item.changes as CodexFileUpdateChange[] | undefined;
+            if (changeStatus === 'failed') {
+              // Out of scope for #4.1 (successful changes only) — unchanged
+              // formatted-message path so a failed patch stays visible.
+              if (Array.isArray(changes) && changes.length > 0) {
+                const changeList = changes
+                  .map(c => {
+                    const icon = c.kind === 'add' ? '➕' : c.kind === 'delete' ? '➖' : '📝';
+                    return `${icon} ${c.path ?? '(unknown file)'}`;
+                  })
+                  .join('\n');
+                const errorSuffix = fileErrorMessage ? `\n${fileErrorMessage}` : '';
+                yield {
+                  type: 'system',
+                  content: `❌ File changes:\n${changeList}${errorSuffix}`,
+                };
               } else {
                 getLog().warn(
-                  {
-                    itemId: item.id,
-                    server,
-                    tool,
-                    resultType: typeof mcpResult.content,
-                  },
-                  'mcp_tool_call_unexpected_result_shape'
+                  { itemId: item.id, status: item.status },
+                  'file_change_failed_no_changes'
                 );
+                const failMsg = fileErrorMessage
+                  ? `❌ File change failed: ${fileErrorMessage}`
+                  : '❌ File change failed';
+                yield { type: 'system', content: failMsg };
               }
+              break;
             }
+
+            if (!Array.isArray(changes) || changes.length === 0) {
+              getLog().debug({ itemId: item.id, status: item.status }, 'file_change_no_changes');
+              break;
+            }
+
+            // Successful patch: one typed tool/tool_result row per changed
+            // path, in `changes[]` order, so the shared presenter resolves
+            // each to the file family (#4.1). The SDK's own FileUpdateChange
+            // never carries before/after content — only {path, kind} — so a
+            // diff can never be fabricated here; the honest evidence is the
+            // path plus the file's current on-disk content as a bounded
+            // preview.
+            for (let index = 0; index < changes.length; index++) {
+              const change = changes[index];
+              if (!change || typeof change.path !== 'string' || change.path.length === 0) {
+                getLog().warn({ itemId: item.id, index }, 'file_change_entry_missing_path');
+                continue;
+              }
+              const toolCallId = `${item.id}:${String(index)}`;
+              yield {
+                type: 'tool',
+                toolName: CODEX_FILE_CHANGE_TOOL_NAME,
+                toolInput: { path: change.path, kind: change.kind },
+                toolCallId,
+              };
+              const preview =
+                change.kind === 'delete'
+                  ? undefined
+                  : await readFileChangePreview(cwd, change.path);
+              yield {
+                type: 'tool_result',
+                toolName: CODEX_FILE_CHANGE_TOOL_NAME,
+                toolOutput: preview?.text ?? '',
+                toolCallId,
+                toolOutcome: 'success',
+                outputState:
+                  preview === undefined ? 'missing' : preview.truncated ? 'truncated' : 'full',
+              };
+            }
+            break;
+          }
+
+          case 'mcp_tool_call': {
+            const server = item.server as string | undefined;
+            const tool = item.tool as string | undefined;
+            const mcpToolName = getMcpToolName(item);
+
+            if ((item.status as string) === 'failed') {
+              getLog().warn(
+                { server, tool, error: item.error, itemId: item.id },
+                'mcp_tool_call_failed'
+              );
+              const mcpError = item.error as { message?: string } | undefined;
+              const errMsg = mcpError?.message
+                ? `❌ Error: ${mcpError.message}`
+                : '❌ Error: MCP tool failed';
+              yield {
+                type: 'tool_result',
+                toolName: mcpToolName,
+                toolOutput: errMsg,
+                toolCallId: itemId,
+                toolOutcome: 'error',
+                outputState: 'full' as const,
+              };
+            } else {
+              let toolOutput = '';
+              const mcpResult = item.result as { content?: unknown } | undefined;
+              if (mcpResult?.content) {
+                if (Array.isArray(mcpResult.content)) {
+                  toolOutput = JSON.stringify(mcpResult.content);
+                } else {
+                  getLog().warn(
+                    {
+                      itemId: item.id,
+                      server,
+                      tool,
+                      resultType: typeof mcpResult.content,
+                    },
+                    'mcp_tool_call_unexpected_result_shape'
+                  );
+                }
+              }
+              yield {
+                type: 'tool_result',
+                toolName: mcpToolName,
+                toolOutput,
+                toolCallId: itemId,
+                toolOutcome: 'success',
+                outputState: 'full' as const,
+              };
+            }
+            break;
+          }
+        }
+      }
+
+      if (event.type === 'turn.completed') {
+        getLog().debug('turn_completed');
+        const { tokens, usageBreakdown } = extractUsageFromCodexEvent(
+          event as TurnCompletedEvent,
+          requestedModel
+        );
+
+        // Codex returns structured output inline in agent_message text.
+        // Normalize: parse as JSON and put on structuredOutput so the
+        // dag-executor can handle all providers uniformly.
+        let structuredOutput: unknown;
+        if (hasOutputFormat && accumulatedText) {
+          try {
+            structuredOutput = JSON.parse(accumulatedText);
+            getLog().debug('codex.structured_output_parsed');
+          } catch {
+            getLog().warn(
+              { outputPreview: accumulatedText.slice(0, 200) },
+              'codex.structured_output_not_json'
+            );
             yield {
-              type: 'tool_result',
-              toolName: mcpToolName,
-              toolOutput,
-              toolCallId: itemId,
-              toolOutcome: 'success',
-              outputState: 'full' as const,
+              type: 'system',
+              content:
+                '⚠️ Structured output requested but Codex returned non-JSON text. ' +
+                'Downstream $nodeId.output.field references may not evaluate correctly.',
             };
           }
-          break;
         }
+
+        yield {
+          type: 'result',
+          sessionId: resolvedThreadId ?? undefined,
+          tokens,
+          ...(usageBreakdown ? { usageBreakdown } : {}),
+          ...(structuredOutput !== undefined ? { structuredOutput } : {}),
+        };
+        return;
       }
     }
 
-    if (event.type === 'turn.completed') {
-      getLog().debug('turn_completed');
-      const { tokens, usageBreakdown } = extractUsageFromCodexEvent(
-        event as TurnCompletedEvent,
-        requestedModel
-      );
-
-      // Codex returns structured output inline in agent_message text.
-      // Normalize: parse as JSON and put on structuredOutput so the
-      // dag-executor can handle all providers uniformly.
-      let structuredOutput: unknown;
-      if (hasOutputFormat && accumulatedText) {
-        try {
-          structuredOutput = JSON.parse(accumulatedText);
-          getLog().debug('codex.structured_output_parsed');
-        } catch {
-          getLog().warn(
-            { outputPreview: accumulatedText.slice(0, 200) },
-            'codex.structured_output_not_json'
-          );
-          yield {
-            type: 'system',
-            content:
-              '⚠️ Structured output requested but Codex returned non-JSON text. ' +
-              'Downstream $nodeId.output.field references may not evaluate correctly.',
-          };
-        }
-      }
-
-      yield {
-        type: 'result',
-        sessionId: resolvedThreadId ?? undefined,
-        tokens,
-        ...(usageBreakdown ? { usageBreakdown } : {}),
-        ...(structuredOutput !== undefined ? { structuredOutput } : {}),
-      };
+    // Reaching here means the iterator closed without yielding turn.completed
+    // or turn.failed (both branches `return` immediately). Common cause: model
+    // rejected by the API (model not supported, auth refused) before the turn
+    // started. Surface as a fail-stop. The dag-executor's `msg.isError` branch
+    // (dag-executor.ts: throws `Node '<id>' failed: SDK returned <subtype>`)
+    // turns this into a thrown node failure — distinct from the empty-output
+    // guard further down, which returns `{ state: 'failed' }` for AI nodes
+    // that streamed nothing but never raised an isError.
+    const message = lastNonMcpError ?? 'Codex stream closed without turn.completed or turn.failed';
+    getLog().error({ message }, 'stream_incomplete');
+    yield {
+      type: 'result',
+      sessionId: resolvedThreadId ?? undefined,
+      isError: true,
+      errorSubtype: 'codex_stream_incomplete',
+      errors: [message],
+    };
+  } catch (streamError) {
+    // The SDK never produces a clean terminal event on abort — it throws
+    // (measured: AbortError, "The operation was aborted.") whether the cause
+    // was node-level Cancel or an operator Stop. Reclassify only the Stop
+    // case into a marked result so the thread id survives to the
+    // dag-executor's resume path; every other throw (including Cancel)
+    // propagates unchanged.
+    const interrupted = buildInterruptedResult();
+    if (interrupted) {
+      getLog().info({ threadId: resolvedThreadId }, 'codex.query_interrupted');
+      yield interrupted;
       return;
     }
+    throw streamError;
   }
-
-  // Reaching here means the iterator closed without yielding turn.completed
-  // or turn.failed (both branches `return` immediately). Common cause: model
-  // rejected by the API (model not supported, auth refused) before the turn
-  // started. Surface as a fail-stop. The dag-executor's `msg.isError` branch
-  // (dag-executor.ts: throws `Node '<id>' failed: SDK returned <subtype>`)
-  // turns this into a thrown node failure — distinct from the empty-output
-  // guard further down, which returns `{ state: 'failed' }` for AI nodes
-  // that streamed nothing but never raised an isError.
-  const message = lastNonMcpError ?? 'Codex stream closed without turn.completed or turn.failed';
-  getLog().error({ message }, 'stream_incomplete');
-  yield {
-    type: 'result',
-    sessionId: resolvedThreadId ?? undefined,
-    isError: true,
-    errorSubtype: 'codex_stream_incomplete',
-    errors: [message],
-  };
 }
 
 // ─── Error Classification & Retry ────────────────────────────────────────
@@ -906,9 +1066,12 @@ function classifyAndEnrichCodexError(
  */
 export class CodexProvider implements IAgentProvider {
   private readonly retryBaseDelayMs: number;
+  private readonly interruptThreadIdWaitMs: number;
 
-  constructor(options?: { retryBaseDelayMs?: number }) {
+  constructor(options?: { retryBaseDelayMs?: number; interruptThreadIdWaitMs?: number }) {
     this.retryBaseDelayMs = options?.retryBaseDelayMs ?? RETRY_BASE_DELAY_MS;
+    this.interruptThreadIdWaitMs =
+      options?.interruptThreadIdWaitMs ?? CODEX_INTERRUPT_THREAD_ID_WAIT_MS;
   }
 
   private async createCodexClient(
@@ -999,7 +1162,7 @@ export class CodexProvider implements IAgentProvider {
 
     // 2. Create or resume thread
     let sessionResumeFailed = false;
-    let thread;
+    let thread: Thread;
     if (resumeSessionId) {
       getLog().debug({ sessionId: resumeSessionId }, 'resuming_thread');
       try {
@@ -1066,6 +1229,35 @@ export class CodexProvider implements IAgentProvider {
       if (requestOptions?.abortSignal) {
         requestOptions.abortSignal.addEventListener('abort', onCallerAbort, { once: true });
       }
+
+      // Operator Stop (#8.4), mirrored on the same attemptController the SDK
+      // already aborts for node-level Cancel. `thread.id` is a live getter the
+      // SDK updates as soon as its internal parser reaches `thread.started`
+      // (measured: interrupt-resume-spike.ts) — a resumed thread already knows
+      // it synchronously. Aborting before the id is known can kill the child
+      // before that line is ever parsed, losing the only handle the operator
+      // could redirect to, so a fresh-thread Stop defers briefly. The
+      // unconditional abort after the wait means Stop can never hang.
+      let interruptDeferTimer: ReturnType<typeof setTimeout> | undefined;
+      const onOperatorInterrupt = (): void => {
+        if (typeof thread.id === 'string' && thread.id.length > 0) {
+          attemptController.abort();
+          return;
+        }
+        interruptDeferTimer = setTimeout(() => {
+          attemptController.abort();
+        }, this.interruptThreadIdWaitMs);
+      };
+      if (requestOptions?.interruptSignal) {
+        if (requestOptions.interruptSignal.aborted) {
+          onOperatorInterrupt();
+        } else {
+          requestOptions.interruptSignal.addEventListener('abort', onOperatorInterrupt, {
+            once: true,
+          });
+        }
+      }
+
       turnOptions.signal = attemptController.signal;
 
       try {
@@ -1097,6 +1289,9 @@ export class CodexProvider implements IAgentProvider {
                   hasOutputFormat,
                   thread.id,
                   attemptController.signal,
+                  requestOptions?.abortSignal,
+                  requestOptions?.interruptSignal,
+                  cwd,
                   Boolean(requestOptions?.nodeConfig?.mcp),
                   threadOptions.model
                 ),
@@ -1185,6 +1380,12 @@ export class CodexProvider implements IAgentProvider {
       } finally {
         if (requestOptions?.abortSignal) {
           requestOptions.abortSignal.removeEventListener('abort', onCallerAbort);
+        }
+        if (requestOptions?.interruptSignal) {
+          requestOptions.interruptSignal.removeEventListener('abort', onOperatorInterrupt);
+        }
+        if (interruptDeferTimer !== undefined) {
+          clearTimeout(interruptDeferTimer);
         }
         // The per-attempt AbortController is short-lived and goes out of
         // scope at iteration end — no explicit abort() cleanup needed.

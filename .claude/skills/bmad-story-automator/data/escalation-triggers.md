@@ -25,10 +25,11 @@
 ### PREFERENCE Escalations
 **Definition:** Automation COULD proceed either way - user chooses direction.
 
-**Behavior:**
+**Behavior:** decide without waiting for the user, because the automation runs unattended and the stop hook keeps it moving.
 1. Keep marker file (automation still "active")
-2. Present options
-3. Act on selection immediately
+2. Pick the option most likely to finish the stories in order
+3. Log the decision and the reason in the state document and action log, marked `auto-decided (PREFERENCE)`, so the user can review or reverse it later
+4. Continue immediately
 
 **Triggers in this category:**
 - Cannot Parse Session Output (#2)
@@ -41,12 +42,13 @@
 
 When an escalation trigger is hit:
 1. Categorize: CRITICAL or PREFERENCE
-2. If CRITICAL: delete marker, set status to PAUSED
-3. Notify: sound/notification
-4. Present: situation + numbered options
-5. Wait: halt until user responds
-6. Log: record decision in action log
-7. Resume: if CRITICAL, recreate marker, set IN_PROGRESS, continue
+2. If PREFERENCE: follow the PREFERENCE behavior above (decide, log, continue) and skip the steps below
+3. If CRITICAL: delete marker, set status to PAUSED
+4. Notify: sound/notification
+5. Present: situation + numbered options
+6. Wait: halt until user responds
+7. Log: record decision in action log
+8. Resume: recreate marker, set IN_PROGRESS, continue
 
 ---
 

@@ -68,7 +68,7 @@ User-provided instructions are flexible and may apply to:
 
 1. **Coordinate, don't implement** — Spawn sessions, don't write code yourself
 2. **Log everything** — Update state document after every action
-3. **Escalate, don't decide** — When uncertain, ask the user
+3. **Escalate by category** — CRITICAL escalations pause and wait for the user; PREFERENCE escalations are decided and logged without waiting (see `escalation-triggers.md`)
 4. **Use sub-agents for parsing** — Don't bloat context with raw output
 5. **Follow the sequence** — Don't skip or reorder steps
 6. **Sprint-status is truth** — Always sync with sprint-status.yaml
