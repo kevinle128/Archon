@@ -93,6 +93,9 @@ interface RecordedCall {
   params: unknown;
 }
 
+/** Sends a `client.session.update` notification for the active session, as if the agent pushed it. */
+type NotifySessionUpdate = (sessionId: string, update: SessionUpdate) => Promise<void>;
+
 interface FakeDsh {
   app: AgentApp;
   calls: RecordedCall[];
@@ -132,7 +135,7 @@ function createFakeDsh(options?: {
   requestPermission?: boolean;
   onPromptStart?: () => void;
   onPromptSettled?: () => void;
-  onCancel?: () => void;
+  onCancel?: (notify: NotifySessionUpdate) => void | Promise<void>;
 }): FakeDsh {
   const calls: RecordedCall[] = [];
   const permissionResponses: unknown[] = [];
@@ -211,10 +214,13 @@ function createFakeDsh(options?: {
     })
     .onNotification(methods.agent.session.cancel, c => {
       calls.push({ method: methods.agent.session.cancel, params: c.params });
-      options?.onCancel?.();
-      if (options?.resolvePromptHoldOnCancel !== false) {
-        options?.promptHold?.resolve();
-      }
+      const notify: NotifySessionUpdate = (targetSessionId, update) =>
+        c.client.notify(methods.client.session.update, { sessionId: targetSessionId, update });
+      void Promise.resolve(options?.onCancel?.(notify)).then(() => {
+        if (options?.resolvePromptHoldOnCancel !== false) {
+          options?.promptHold?.resolve();
+        }
+      });
     });
 
   return {
@@ -565,6 +571,94 @@ describe('driveDeepseekAcpTurn', () => {
       stopReason: 'aborted',
       isError: true,
       errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('a tool cancelled by operator Stop is reported interrupted, not error', async () => {
+    // Measured live behavior: DSH's ACP transport reports the in-flight tool
+    // as status:'failed' before the abort result settles — there is no
+    // distinct "cancelled" tool status. Story 8.6's conditional bridge
+    // mapping applies here: remap error -> interrupted only when the cause
+    // was an operator Stop.
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      promptHold: hold,
+      sessionId: 'sess-tool-interrupt',
+      promptUpdates: [
+        { sessionUpdate: 'tool_call', toolCallId: 'call-1', title: 'bash', name: 'bash' },
+      ],
+      onCancel: async notify => {
+        await notify('sess-tool-interrupt', {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call-1',
+          status: 'failed',
+        });
+      },
+    });
+    const interrupt = new AbortController();
+    const gen = driveDeepseekAcpTurn(fake.app, baseInput({ interruptSignal: interrupt.signal }));
+    const chunksPromise = collect(gen);
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.prompt)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    interrupt.abort();
+    const chunks = await chunksPromise;
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'bash',
+      toolCallId: 'call-1',
+      toolOutput: '',
+      toolOutcome: 'interrupted',
+    });
+    expect(chunks.find(chunk => chunk.type === 'result')).toEqual({
+      type: 'result',
+      sessionId: 'sess-tool-interrupt',
+      stopReason: 'aborted',
+      isError: true,
+      errorSubtype: 'deepseek_aborted',
+    });
+  });
+
+  test('a tool that fails on node-level Cancel keeps its error outcome (no remap)', async () => {
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      promptHold: hold,
+      sessionId: 'sess-tool-cancel',
+      promptUpdates: [
+        { sessionUpdate: 'tool_call', toolCallId: 'call-2', title: 'bash', name: 'bash' },
+      ],
+      onCancel: async notify => {
+        await notify('sess-tool-cancel', {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call-2',
+          status: 'failed',
+        });
+      },
+    });
+    const nodeCancel = new AbortController();
+    const gen = driveDeepseekAcpTurn(fake.app, baseInput({ abortSignal: nodeCancel.signal }));
+    const chunksPromise = collect(gen);
+    await new Promise<void>(resolve => {
+      const check = (): void => {
+        if (fake.methodsCalled().includes(methods.agent.session.prompt)) resolve();
+        else setTimeout(check, 1);
+      };
+      check();
+    });
+    nodeCancel.abort();
+    const chunks = await chunksPromise;
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'bash',
+      toolCallId: 'call-2',
+      toolOutput: '',
+      toolOutcome: 'error',
     });
   });
 

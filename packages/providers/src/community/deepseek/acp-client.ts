@@ -109,6 +109,26 @@ function requireAgentCapabilities(init: InitializeResponse, mcpServers: McpServe
   }
 }
 
+/**
+ * A tool the ACP agent reports as `failed` while an operator Stop is in
+ * flight almost always failed BECAUSE the session was cancelled, not on its
+ * own — DeepSeek's ACP transport exposes no distinct "cancelled" tool
+ * status. Remap only for this exact cause (never node-level Cancel or
+ * process cleanup) so the transcript records an honest operator-interrupted
+ * tool instead of a misleading generic error. This is the conditional
+ * bridge mapping the interrupt/resume measurement deferred until live
+ * evidence showed a cancelled in-flight tool arriving as ACP `status:
+ * 'failed'` ahead of the abort result (verified: it does).
+ */
+function applyOperatorInterruptToolMapping(
+  chunk: MessageChunk,
+  cause: DeepseekCancellationCause | undefined
+): MessageChunk {
+  if (cause !== 'operator-interrupt') return chunk;
+  if (chunk.type !== 'tool_result' || chunk.toolOutcome !== 'error') return chunk;
+  return { ...chunk, toolOutcome: 'interrupted' };
+}
+
 function abortedResult(sessionId: string): Extract<MessageChunk, { type: 'result' }> {
   return {
     type: 'result',
@@ -314,7 +334,8 @@ export async function* driveDeepseekAcpTurn(
     .onRequest(methods.client.session.requestPermission, () => answerDeepseekPermissionRequest())
     .onNotification(methods.client.session.update, ({ params }) => {
       if (params.sessionId !== activeSessionId) return;
-      for (const chunk of mapDeepseekSessionUpdate(params.update, eventState)) {
+      for (const rawChunk of mapDeepseekSessionUpdate(params.update, eventState)) {
+        const chunk = applyOperatorInterruptToolMapping(rawChunk, cancellationCause);
         if (chunk.type === 'assistant') transcript += chunk.content;
         queue.push(chunk);
       }

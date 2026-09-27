@@ -79,6 +79,7 @@ import {
   registerDeepseekProvider,
   DEVIN_CAPABILITIES,
   DEEPSEEK_CAPABILITIES,
+  CODEX_CAPABILITIES,
   clearRegistry,
   getRegistration,
 } from '@archon/providers';
@@ -143,6 +144,7 @@ import { buildAiProfile } from './model-validation';
 import {
   AskHumanNoStarterError,
   AskHumanPauseFailedError,
+  STREAM_ABORTED_TERMINAL_REASON,
   type SendQueryOptions,
 } from '@archon/providers/types';
 import * as plannotatorGateExecutor from './plannotator-gate-executor';
@@ -27911,7 +27913,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   async function invokeDag(
     store: IWorkflowStore,
     nodes: DagNode[],
-    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' }
+    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' | 'codex' }
   ): Promise<IWorkflowPlatform> {
     const assistant = opts?.assistant ?? 'claude';
     const config =
@@ -29093,17 +29095,17 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   });
 
   /**
-   * DeepSeek interrupt conformance (#187 / US-002).
-   *
-   * Phase 1 spike recorded Block (missing-env), so product
-   * `DEEPSEEK_CAPABILITIES.interrupt` stays `false`. This fixture temporarily
-   * replaces only the registered test capability so it can exercise the
-   * native path without adding a production capability override.
+   * DeepSeek interrupt conformance (#187). Verified against the real DSH
+   * `acp` profile binary on a live subscription: Stop cancels the in-flight
+   * prompt via ACP session/cancel, and the redirect resumes the same
+   * session id via session/resume. `DEEPSEEK_CAPABILITIES.interrupt` is
+   * `'stream-abort'` in production; this fixture exercises the exact abort
+   * triple the adapter emits.
    */
   describe('deepseek conformance', () => {
     const DEEPSEEK_RUN = 'deepseek-interrupt-run';
 
-    /** Exact Phase 1 abort result — no terminalReason. */
+    /** Exact abort result the adapter emits — no terminalReason. */
     function abortedResult(sessionId: string) {
       return {
         type: 'result' as const,
@@ -29114,15 +29116,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       };
     }
 
-    /** Test-local native interrupt; product capability remains false under Block. */
-    const deepseekTestCapabilities = {
-      ...DEEPSEEK_CAPABILITIES,
-      interrupt: 'native' as const,
-    };
-
     beforeEach(() => {
       const registered = getRegistration('deepseek');
-      Reflect.set(registered, 'capabilities', deepseekTestCapabilities);
+      Reflect.set(registered, 'capabilities', DEEPSEEK_CAPABILITIES);
       mockGetAgentProviderDag.mockImplementation(() => ({
         sendQuery: mockSendQueryDag,
         getType: () => 'deepseek',
@@ -29278,6 +29274,177 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(storedEventTypes(store)).toContain('node_completed');
       expect(storedEventTypes(store)).not.toContain('node_failed');
       expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'my-loop')).toBeUndefined();
+    });
+  });
+
+  /**
+   * Codex Stop conformance (#8.4). The adapter yields a `stream_aborted`
+   * `terminalReason` marker (shared with any stream-abort provider) rather
+   * than the DeepSeek triple — proven separately in codex/provider.test.ts.
+   * This block proves the SHARED classification the coordinator required:
+   * `stream_aborted` is interrupted only when a Stop request was actually
+   * accepted; the identical result shape reaching the executor without one
+   * follows the normal SDK-error failure path.
+   */
+  describe('codex conformance', () => {
+    const CODEX_RUN = 'codex-interrupt-run';
+
+    /**
+     * Exact adapter-synthesized abort marker (matches codex/provider.ts's
+     * `buildInterruptedResult`). `isError`/`errorSubtype` ride alongside the
+     * terminal reason so the SAME shape fails loudly through the ordinary
+     * SDK-error path when the executor does not recognize an accepted Stop.
+     */
+    function streamAbortedResult(sessionId: string) {
+      return {
+        type: 'result' as const,
+        sessionId,
+        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+        isError: true as const,
+        errorSubtype: STREAM_ABORTED_TERMINAL_REASON,
+      };
+    }
+
+    /** Test-local stream-abort interrupt; product capability stays whatever it is. */
+    const codexTestCapabilities = {
+      ...CODEX_CAPABILITIES,
+      interrupt: 'stream-abort' as const,
+    };
+
+    beforeEach(() => {
+      const registered = getRegistration('codex');
+      Reflect.set(registered, 'capabilities', codexTestCapabilities);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'codex',
+        getCapabilities: () => CODEX_CAPABILITIES,
+      }));
+    });
+
+    afterEach(() => {
+      const registered = getRegistration('codex');
+      Reflect.set(registered, 'capabilities', CODEX_CAPABILITIES);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'claude',
+        getCapabilities: mockClaudeCapabilities,
+      }));
+    });
+
+    it('direct path: stream_aborted + operator flag idles, drains queue+Send now on same session, one interrupted tool, no re-ask', async () => {
+      let calls = 0;
+      let interruptOutcome: Promise<string> | undefined;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          interruptOutcome = liveHandle(CODEX_RUN, 'review').interrupt() as Promise<string>;
+          yield { type: 'tool', toolName: 'sleep 30', toolCallId: 'codex-tool-open' };
+          // stream_aborted marker with NO structuredOutput — a natural miss
+          // would re-ask; interrupt must skip the re-ask entirely.
+          yield streamAbortedResult('codex-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected' };
+        yield { type: 'result', sessionId: 'codex-sess-2', structuredOutput: { verdict: 'ok' } };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'review',
+            prompt: 'do work',
+            output_format: {
+              type: 'object',
+              properties: { verdict: { type: 'string' } },
+              required: ['verdict'],
+            },
+          },
+        ],
+        { runId: CODEX_RUN, assistant: 'codex' }
+      );
+
+      await awaitIdle(CODEX_RUN, 'review');
+      expect(await interruptOutcome).toBe('idle-after-interrupt');
+      const states = await transcriptStates(store, CODEX_RUN, 'review');
+      expect(states.filter(s => s === 'interrupted').length).toBe(1);
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      // Open tool settled interrupted exactly once — proves 8.4's "persisted
+      // tool row becomes interrupted" independently of glyph presentation.
+      expect(toolCompletedOutcomes(store).get('codex-tool-open')).toEqual(['interrupted']);
+      // Interrupted pass must not have re-asked structured output.
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+
+      enqueue(store, CODEX_RUN, 'review', 'm-old', 'older guidance');
+      expect(await store.listSteeringQueue(CODEX_RUN, 'review')).toHaveLength(1);
+      sendNow(store, CODEX_RUN, 'review', 'm-new', 'new instruction');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('older guidance\n\nnew instruction');
+      // Same thread continues — no silent new conversation.
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('codex-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
+    });
+
+    it('stream_aborted without operator flag follows the normal SDK failure path', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        yield streamAbortedResult('codex-sess-fail');
+      });
+      const store = createMockStore();
+      await invokeDag(store, [{ id: 'review', prompt: 'do work' }], {
+        runId: CODEX_RUN,
+        assistant: 'codex',
+      });
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'review')).toContain(
+        `SDK returned ${STREAM_ABORTED_TERMINAL_REASON}`
+      );
+      expect(storedEventTypes(store)).toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
+    });
+
+    it('AI loop: stream_aborted idles inside iteration; Send now resumes same session without consuming one', async () => {
+      let calls = 0;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          void liveHandle(CODEX_RUN, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'iteration work' };
+          yield streamAbortedResult('codex-loop-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+        yield { type: 'result', sessionId: 'codex-loop-sess-2' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'my-loop',
+            loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+          },
+        ],
+        { runId: CODEX_RUN, assistant: 'codex' }
+      );
+
+      await awaitIdle(CODEX_RUN, 'my-loop');
+      const states = await transcriptStates(store, CODEX_RUN, 'my-loop');
+      expect(states).toContain('interrupted');
+      sendNow(store, CODEX_RUN, 'my-loop', 'm-1', 'redirect the loop');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('redirect the loop');
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('codex-loop-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'my-loop')).toBeUndefined();
     });
   });
 });
