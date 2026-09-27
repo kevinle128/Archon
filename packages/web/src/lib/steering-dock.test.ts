@@ -18,6 +18,7 @@ import {
   neverSentBandHeader,
   neverSentListLabel,
   nextFocusAfterRemoval,
+  pendingQueueCount,
   queueBandHeader,
   queueButtonAccessibleName,
   queueItemStatusLabel,
@@ -833,14 +834,48 @@ describe('isQueueItemClaimable', () => {
 });
 
 describe('queueItemStatusLabel', () => {
-  test('only delivery_unknown renders a label; the rest render nothing', () => {
+  test('delivery_unknown and dispatching render a label; the rest render nothing', () => {
     expect(queueItemStatusLabel('delivery_unknown')).toBe('delivery unknown');
+    expect(queueItemStatusLabel('dispatching')).toBe('sending…');
     expect(queueItemStatusLabel('queued')).toBeNull();
     expect(queueItemStatusLabel('awaiting_send_now')).toBeNull();
-    expect(queueItemStatusLabel('dispatching')).toBeNull();
     expect(queueItemStatusLabel('sent')).toBeNull();
     expect(queueItemStatusLabel('delivered')).toBeNull();
     expect(queueItemStatusLabel('never_sent')).toBeNull();
+  });
+});
+
+describe('pendingQueueCount', () => {
+  function receiptWithState(messageId: string, state: LocalSentReceipt['state']): LocalSentReceipt {
+    return { messageId, message: 'm', state, operatorUserId: null };
+  }
+
+  test('excludes a dispatching entry from the count', () => {
+    expect(
+      pendingQueueCount([
+        receiptWithState('a', 'queued'),
+        receiptWithState('b', 'dispatching'),
+        receiptWithState('c', 'awaiting_send_now'),
+      ])
+    ).toBe(2);
+  });
+
+  test('a lone dispatching entry counts as zero pending, not one', () => {
+    expect(pendingQueueCount([receiptWithState('a', 'dispatching')])).toBe(0);
+  });
+
+  test('counts every other pending state normally', () => {
+    expect(
+      pendingQueueCount([
+        receiptWithState('a', 'queued'),
+        receiptWithState('b', 'awaiting_send_now'),
+        receiptWithState('c', 'delivery_unknown'),
+      ])
+    ).toBe(3);
+  });
+
+  test('is zero for an empty queue', () => {
+    expect(pendingQueueCount([])).toBe(0);
   });
 });
 

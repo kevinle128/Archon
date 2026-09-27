@@ -525,6 +525,33 @@ describe('ConsoleComposerDock', () => {
     expect(items[1]?.className).toContain('text-text-secondary');
   });
 
+  test('a dispatching item shows its own sending label and is not counted as queued', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha', state: 'queued' },
+        { message_id: 'id-b', message: 'beta', state: 'dispatching' },
+      ])
+    );
+    // Two rows total, but only one is genuinely waiting — the header and
+    // button both read the count of what is actually queued, not the
+    // dispatching item that is already in flight (control-states.md lists
+    // queued and dispatching as distinct states).
+    expect(host.textContent).toContain('queued · 1');
+    expect(host.textContent).not.toContain('queued · 2');
+    const list = host.querySelector('ul[aria-label="Queued messages, 1"]');
+    expect(list).not.toBeNull();
+    const items = [...(list?.querySelectorAll('li') ?? [])];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toBe(`1alpha${STEERING_DELETE_LABEL}`);
+    expect(items[1]?.textContent).toContain('beta');
+    expect(items[1]?.textContent).toContain('sending…');
+    // Not claimable while dispatching — no withdraw control on this row.
+    expect(items[1]?.textContent).not.toContain(STEERING_DELETE_LABEL);
+  });
+
   test('the band collapse toggle hides and restores the item list without removing it', async () => {
     await renderDock();
     await setDraft('wrong suite');
