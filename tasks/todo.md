@@ -15,7 +15,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] E — 5.1, 5.2 merged (d25f185a). check:schema-upgrades OK on develop-2 after E merge; rerun after B and D merge
 - [x] F1 merged: Claude deliveryAck=true (replay-user-messages), Claude softInjection=false (disproven incl. priority:'next'); shared soft-injection seam wired
 - [ ] 8.7 OMP Stop via RPC mode — agent omp-rpc
-- [ ] 8.5 Grok Stop / interject — agent grok-stop
+- [ ] 8.5 Grok: session/cancel proven 6/6 (spikes merged); ACP transport migration — agent grok-acp. Interject = follow-up semantics (softInjection false)
 - [ ] B-UI — type fix cherry-picked (be35cdb2, web tsc + tests green); remaining wiring by agent phase-b-ui-2
 
 ## Background processes started by this session
