@@ -2233,6 +2233,63 @@ describe('sendQuery decomposition behaviors', () => {
     ]);
   });
 
+  test('a PermissionDenied hook settles the denied call as a terminal error result', async () => {
+    // A tool the SDK denies (a built-in guard bypassing canUseTool, or any
+    // other deny source) never runs, so PostToolUse never fires for it. The
+    // room must still see a terminal row instead of an open call stuck
+    // `◐ running` for the rest of the turn.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      const deniedHook = args.options.hooks?.PermissionDenied?.[0]?.hooks?.[0];
+      await deniedHook?.({
+        tool_name: 'Bash',
+        tool_use_id: 'denied-id',
+        tool_input: { command: 'sleep 999 &' },
+        reason: 'leading background sleep is blocked',
+      });
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '⛔ Blocked: leading background sleep is blocked',
+      toolCallId: 'denied-id',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a PermissionDenied hook without a reason still settles with a generic message', async () => {
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      const deniedHook = args.options.hooks?.PermissionDenied?.[0]?.hooks?.[0];
+      await deniedHook?.({ tool_name: 'Write', tool_use_id: 'denied-no-reason' });
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Write',
+      toolOutput: '⛔ Blocked: denied by a permission hook',
+      toolCallId: 'denied-no-reason',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
   test('terminal tool result queue drain preserves hook outcome', async () => {
     mockQuery.mockImplementation(async function* (args: {
       options: {

@@ -1062,6 +1062,35 @@ function buildToolCaptureHooks(toolResultQueue: ToolResultEntry[]): Options['hoo
         ],
       },
     ],
+    // A denied tool call never runs, so PostToolUse never fires for it — the
+    // executor's runningTools entry would otherwise stay open for the rest of
+    // the turn (`◐ running` with no result row). This hook fires for every
+    // denial regardless of source (a built-in Claude Code guard bypasses
+    // canUseTool and reaches only here; SDKPermissionDeniedMessage is a
+    // separate system message covering canUseTool's own deny path).
+    PermissionDenied: [
+      {
+        hooks: [
+          (async (input: Record<string, unknown>): Promise<{ continue: true }> => {
+            try {
+              const toolName = (input as { tool_name?: string }).tool_name ?? 'unknown';
+              const toolUseId = (input as { tool_use_id?: string }).tool_use_id;
+              const reason = (input as { reason?: string }).reason;
+              toolResultQueue.push({
+                toolName,
+                toolOutput: `⛔ Blocked: ${reason ?? 'denied by a permission hook'}`,
+                ...(toolUseId !== undefined ? { toolCallId: toolUseId } : {}),
+                toolOutcome: 'error',
+                outputState: 'full' as const,
+              });
+            } catch (e) {
+              getLog().error({ err: e, input }, 'claude.permission_denied_hook_error');
+            }
+            return { continue: true };
+          }) as HookCallback,
+        ],
+      },
+    ],
   };
 }
 
