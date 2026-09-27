@@ -19,7 +19,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [ ] 8.5 Grok: session/cancel proven 6/6 (spikes merged); ACP transport migration — agent grok-acp. Interject = follow-up semantics (softInjection false)
 - [x] B-UI merged (7e30d6e7): draft/auto-send/per-item Send now/recovery wired in both shells
 - [x] B-UI follow-ups merged (Legacy focus anchor, queue-convergence e2e on draft API)
-- [ ] e2e agent-interrupt-redirect.spec.ts 4 failures — agent e2e-interrupt
+- [x] agent-interrupt-redirect e2e 11/11 merged. Note: agent-withdraw-guidance.spec.ts ~566 may be stale (422 vs recovery) — check in final gate
 - [ ] Final gate: full e2e UI suite green after all merges
 
 - [ ] QA round 2 after fixes: per-item Send now + Auto-send label (needs soft-inject/auto-send provider), delivery states, multi-run headers, populated Files changed tab
