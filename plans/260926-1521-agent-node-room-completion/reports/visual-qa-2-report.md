@@ -108,3 +108,11 @@ All were started by me and all are stopped.
 Status: DONE_WITH_CONCERNS
 
 Summary: All nine round-1 findings are fixed. VQ-6 is fixed per contract; the expanded terminal body still differs from the mockup (contract drift), and VQ2-10 covers the body bar. VQ-8 holds on a real Claude interrupt (`⚠ interrupted`), on Codex (`–`, never `⚠`), and on restart recovery. Real-provider runs found one blocker, present in both shells and on all three providers: a guidance turn gets a new `attempt_id`, and the room filters by attempt. While the node runs, the operator's messages and the agent's redirected work never appear. After it finishes, every turn but the last disappears. They also found two majors: the `delivered` state never renders, and a rejected retry request still mutates the run. The minors are `run 3 of 2` numbering, the `max 8` caption, a hook-denied tool stuck `◐`, Files-changed misattribution after a `current` retry, no todo strip for Claude (`TaskCreate` contract gap), the prompt actor shown as an id, and a truncated Codex body bar. The cosmetics are header font and pill placement, and the dock placeholder. Auto-send, the absence of per-item Send now, Stop and focus, and restart recovery all match.
+
+## Decisions on the open questions (2026-09-27)
+
+1. `Send now` with an empty composer while queued items wait delivers the eligible queue entries in server FIFO order as the next turn. `EXPERIENCE.md:272` and SPEC CAP-10 take priority over the e2e assertion that expected it to stay inert.
+2. VQ2-1 is fixed at the root: a steered node is one execution with several provider turns on one live session, so guidance turns keep the execution's attempt identity. The room projection must also group rows that earlier builds wrote under guidance-only attempt ids.
+3. The todo contract adopts Claude Code's `TaskCreate`/`TaskUpdate` payloads, folded into the same `TodoPhase[]` as `TodoWrite`.
+
+Fixes are owned by the `qa2-engine` and `qa2-web` follow-up work.
