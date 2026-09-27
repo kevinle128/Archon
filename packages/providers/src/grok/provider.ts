@@ -11,6 +11,12 @@ import { GROK_CAPABILITIES } from './capabilities';
 import { resolveGrokBinaryPath } from './binary-resolver';
 import { parseGrokConfig, type GrokProviderDefaults } from './config';
 import { GrokEventParser } from './event-parser';
+// Type-only: unlike DeepSeek/Devin (dynamically imported community providers),
+// Grok is built-in and `registry.ts` imports this module statically, so a
+// runtime `import` of `./acp-client` here would eagerly evaluate
+// `@agentclientprotocol/sdk` on every Archon boot even when Grok never runs.
+// The real function is loaded lazily inside `acpQuery()` instead.
+import type { GrokAcpProcessInput, runGrokAcpTurn } from './acp-client';
 
 const MAX_CAPTURE_CHARS = 1_000_000;
 const TERMINATION_GRACE_MS = 5_000;
@@ -153,6 +159,101 @@ export function buildGrokArgs(input: BuildGrokArgsInput): BuildGrokArgsResult {
   return { args, model, effort };
 }
 
+export type GrokTransportSelection =
+  | { readonly kind: 'acp' }
+  | { readonly kind: 'single'; readonly reason: string };
+
+interface SelectGrokTransportInput {
+  config: GrokProviderDefaults;
+  requestOptions?: SendQueryOptions;
+}
+
+/**
+ * Choose which Grok transport a request must use. ACP (`grok agent stdio`)
+ * is the default — it is the only transport that can honor Stop
+ * (`interruptSignal`) — and `--single` is the fallback for the node configs
+ * this migration could not verify an ACP equivalent for. Each reason is a
+ * specific empirical or CLI-surface finding, not a guess:
+ *
+ * - `output_format` (`--json-schema`): no ACP literal exists anywhere in the
+ *   binary's own string table.
+ * - `nodeConfig.agents` (`--agents`): the `_meta.agentProfile` JSON-object
+ *   schema (matched against the binary's own agent-definition field list)
+ *   has no field for inline sub-agent definitions.
+ * - `allowed_tools`/`denied_tools` (`--tools`/`--disallowed-tools`): tried
+ *   twice live via `_meta.agentProfile.{tools,disallowedTools}` on
+ *   `session/new` (with and without the schema's required `name` field) —
+ *   the model still ran a disallowed tool both times.
+ * - `systemPrompt` (`--system-prompt-override`/`--rules`): tried live via a
+ *   top-level `_meta.systemPromptOverride` on `session/new` — the model
+ *   ignored it and answered the prompt normally.
+ * - `forkSession` (`--fork-session`): the agent's `initialize` response never
+ *   advertises a session fork capability.
+ * - a non-default `permissionMode`: `grok agent`'s own CLI surface (distinct
+ *   from the top-level `grok --single` parser) exposes only
+ *   `--always-approve`, no `--permission-mode` flag at all.
+ *
+ * A request routed to `--single` for one of these reasons loses Stop for
+ * THIS turn only — `sendQuery()` emits a `system` chunk naming the reason,
+ * since `capabilities.interrupt` is a provider-wide flag and cannot vary
+ * per turn.
+ */
+export function selectGrokTransport(input: SelectGrokTransportInput): GrokTransportSelection {
+  const { config, requestOptions } = input;
+  if (requestOptions?.outputFormat?.type === 'json_schema') {
+    return {
+      kind: 'single',
+      reason: 'structured output (--json-schema) has no ACP equivalent on grok agent stdio',
+    };
+  }
+  const agents = requestOptions?.nodeConfig?.agents;
+  if (agents && Object.keys(agents).length > 0) {
+    return {
+      kind: 'single',
+      reason: 'inline sub-agent definitions (--agents) have no ACP equivalent on grok agent stdio',
+    };
+  }
+  // Any allowed_tools (including an empty array) is a real restriction
+  // intent, so it always falls back — that lets buildGrokArgs's own "empty
+  // allowed_tools cannot be enforced" guard still fire on the single path.
+  // An empty denied_tools is already a no-op on `--single` too, so it alone
+  // does not force a fallback.
+  const allowedTools = requestOptions?.nodeConfig?.allowed_tools;
+  const deniedTools = requestOptions?.nodeConfig?.denied_tools;
+  if (allowedTools !== undefined || (deniedTools !== undefined && deniedTools.length > 0)) {
+    return {
+      kind: 'single',
+      reason:
+        'tool restrictions (--tools/--disallowed-tools) did not enforce over the ACP agent profile in live verification',
+    };
+  }
+  if (
+    resolveSystemPrompt(
+      requestOptions?.systemPrompt ?? requestOptions?.nodeConfig?.systemPrompt
+    ) !== undefined
+  ) {
+    return {
+      kind: 'single',
+      reason:
+        'system prompt override (--system-prompt-override/--rules) had no observed effect over ACP in live verification',
+    };
+  }
+  if (requestOptions?.forkSession === true) {
+    return {
+      kind: 'single',
+      reason: 'session fork (--fork-session) is not advertised by the Grok ACP agent',
+    };
+  }
+  const permissionMode = config.permissionMode;
+  if (permissionMode !== undefined && permissionMode !== 'bypassPermissions') {
+    return {
+      kind: 'single',
+      reason: `permission mode '${permissionMode}' has no ACP flag equivalent (grok agent only supports --always-approve)`,
+    };
+  }
+  return { kind: 'acp' };
+}
+
 async function readStream(stream: ReadableStream<Uint8Array> | null): Promise<string> {
   if (!stream) return '';
   const reader = stream.getReader();
@@ -244,13 +345,23 @@ function hasAuthoritativeUsage(result: MessageChunk): boolean {
   );
 }
 
+export type GrokAcpTurnRunner = typeof runGrokAcpTurn;
+
 export class GrokProvider implements IAgentProvider {
   private readonly spawn: GrokSpawner;
   private readonly resolveBinary: GrokBinaryResolver;
+  private readonly runAcpTurn: GrokAcpTurnRunner | undefined;
 
-  constructor(options?: { spawn?: GrokSpawner; resolveBinary?: GrokBinaryResolver }) {
+  constructor(options?: {
+    spawn?: GrokSpawner;
+    resolveBinary?: GrokBinaryResolver;
+    runAcpTurn?: GrokAcpTurnRunner;
+  }) {
     this.spawn = options?.spawn ?? defaultSpawner;
     this.resolveBinary = options?.resolveBinary ?? resolveGrokBinaryPath;
+    // Left undefined by default — see the import-site comment above: loaded
+    // lazily in acpQuery() so registering Grok never evaluates the ACP SDK.
+    this.runAcpTurn = options?.runAcpTurn;
   }
 
   getType(): string {
@@ -268,7 +379,69 @@ export class GrokProvider implements IAgentProvider {
     requestOptions?: SendQueryOptions
   ): AsyncGenerator<MessageChunk> {
     if (requestOptions?.abortSignal?.aborted) throw new Error('Query aborted');
+    if (resumeSessionId && requestOptions?.persistSession === false) {
+      throw new Error('Grok cannot resume a session when persistSession is false.');
+    }
     const config = parseGrokConfig(requestOptions?.assistantConfig ?? {});
+    const selection = selectGrokTransport({ config, requestOptions });
+    if (selection.kind === 'single') {
+      yield {
+        type: 'system',
+        content: `Grok is running this turn on the legacy --single transport (${selection.reason}); an interrupt (Stop) request will wait for it to finish naturally rather than ending it early.`,
+      };
+      yield* this.singleQuery(prompt, cwd, resumeSessionId, requestOptions, config);
+      return;
+    }
+    yield* this.acpQuery(prompt, cwd, resumeSessionId, requestOptions, config);
+  }
+
+  private async *acpQuery(
+    prompt: string,
+    cwd: string,
+    resumeSessionId: string | undefined,
+    requestOptions: SendQueryOptions | undefined,
+    config: GrokProviderDefaults
+  ): AsyncGenerator<MessageChunk> {
+    const env = buildProviderEnv(requestOptions?.env);
+    const binaryPath = await this.resolveBinary(config.grokBinaryPath, env);
+    const model = requestOptions?.model ?? config.model;
+    const effort = requestOptions?.nodeConfig?.effort ?? config.modelReasoningEffort;
+    const input: GrokAcpProcessInput = {
+      binaryPath,
+      cwd,
+      prompt,
+      resumeSessionId,
+      ...(model ? { model } : {}),
+      ...(effort ? { effort } : {}),
+      abortSignal: requestOptions?.abortSignal,
+      interruptSignal: requestOptions?.interruptSignal,
+    };
+    getLog().info(
+      { cwd, model, effort, resumed: resumeSessionId !== undefined },
+      'grok.acp_query_started'
+    );
+    const runTurn = this.runAcpTurn ?? (await import('./acp-client')).runGrokAcpTurn;
+    for await (const chunk of runTurn(input)) {
+      if (chunk.type === 'result') {
+        getLog().info({ sessionId: chunk.sessionId }, 'grok.acp_query_completed');
+      }
+      yield chunk;
+    }
+  }
+
+  private async *singleQuery(
+    prompt: string,
+    cwd: string,
+    resumeSessionId: string | undefined,
+    requestOptions: SendQueryOptions | undefined,
+    config: GrokProviderDefaults
+  ): AsyncGenerator<MessageChunk> {
+    // Re-checked here (not just once at the top of sendQuery): the fallback
+    // notice this method's caller yields first is itself an await point, so
+    // an abort racing exactly that gap would otherwise be missed — this
+    // generator's own `abortSignal.addEventListener('abort', ...)` below
+    // only fires on a FUTURE abort, not one already true when attached.
+    if (requestOptions?.abortSignal?.aborted) throw new Error('Query aborted');
     const env = buildProviderEnv(requestOptions?.env);
     const binary = await this.resolveBinary(config.grokBinaryPath, env);
     const { args, model, effort } = buildGrokArgs({
