@@ -61,6 +61,8 @@ export interface ExecutionHeaderModel {
   provider: string | null;
   model: string | null;
   unknownScope: boolean;
+  /** True when the selected execution is one iteration of a loop node. */
+  isLoopIteration: boolean;
 }
 
 export interface ExecutionHeaderInput {
@@ -182,6 +184,21 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
 
 /** Execution selector ceiling — also the header's "max N" caption. */
 export const EXECUTION_OPTIONS_MAX = 8;
+
+/**
+ * Rows a header selector offers for one node. A skipped row (for example a
+ * resume's `node_skipped_prior_success` marker) is not a run, so it is left
+ * out whenever the node has a row that actually ran. The selected row always
+ * stays, so the selector can still show what the room projects.
+ */
+export function selectableExecutionRows<T extends { id: string; status: string }>(
+  rows: readonly T[],
+  selectedId?: string
+): T[] {
+  const ran = rows.filter(row => row.status !== 'skipped');
+  if (ran.length === 0) return [...rows];
+  return rows.filter(row => row.status !== 'skipped' || row.id === selectedId);
+}
 
 /**
  * Cap the executions a header selector exposes, keeping the most recent
@@ -428,6 +445,7 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     provider: runtime?.provider || null,
     model: runtime?.model || null,
     unknownScope: input.row.unknownScope ?? true,
+    isLoopIteration: input.row.selection.kind === 'loop_iteration',
   };
 }
 

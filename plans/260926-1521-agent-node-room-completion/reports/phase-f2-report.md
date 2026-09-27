@@ -427,3 +427,14 @@ the scratch repo, never inside this actual worktree/repo.
   ownership and unimplemented by this report; the backend guarantees it
   needs (provider-neutral `tool_outcome: 'interrupted'` persistence,
   `CODEX_CAPABILITIES.interrupt` as a capability-driven signal) are in place.
+
+## Addendum (2026-09-27, after the interrupted-tool-status change)
+
+The Codex live evidence above records a persisted `tool_outcome: 'interrupted'`
+for the tool that was active at Stop. That value is now intentionally `unknown`
+for Codex. The `interruptedToolStatus` provider capability is `false` for
+Codex, because the Codex SDK never reports an interrupted status for a tool
+call, and the executor settles still-open tools as `unknown` for such
+providers. This follows the newer Epic 10 Story 10.4 rule, which supersedes the
+Story 8.4 wording "the persisted tool row becomes interrupted". The turn-level
+interruption and same-thread continuation evidence for Codex is unchanged.

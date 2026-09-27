@@ -29,6 +29,12 @@ export const DEEPSEEK_CAPABILITIES = {
   // failed resume would surface as deepseek_resume_failed; it did not).
   // Not 'native': the session is closed and cold-resumed, not kept warm.
   interrupt: 'stream-abort',
+  // The executor fallback settles a tool that never received a result as
+  // 'unknown': ACP has no distinct cancelled tool status. A tool that DSH
+  // reports as `failed` during an operator Stop is still remapped to
+  // 'interrupted' by the adapter itself (verified live), so that row keeps
+  // its proven interrupted outcome.
+  interruptedToolStatus: false,
   softInjection: false,
   deliveryAck: false,
 } as const satisfies ProviderCapabilities;

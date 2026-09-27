@@ -68,6 +68,10 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   containerExec: true, // spawns the CLI in-container via spawnClaudeCodeProcess
   askHuman: true,
   interrupt: 'native', // Query.interrupt() over streaming input
+  // The SDK's PostToolUseFailure hook carries `is_interrupt`, tied to the
+  // exact tool_use id that was cut short — a real per-tool proof, not a
+  // guess from turn-level timing.
+  interruptedToolStatus: true,
   // Verified false against the real SDK (spike:softinject:claude, 0.3.209):
   // Query.streamInput() delivers a pushed message only as a NEW queued turn
   // (a second `result` event), never into the turn already streaming — the

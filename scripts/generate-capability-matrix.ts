@@ -68,6 +68,7 @@ const AXES: readonly { key: keyof ProviderCapabilities; label: string }[] = [
   { key: 'containerExec', label: 'Container exec (folder-project container backend)' },
   { key: 'askHuman', label: 'AskHuman mid-turn questions' },
   { key: 'interrupt', label: 'Turn interrupt (operator Stop)' },
+  { key: 'interruptedToolStatus', label: 'Interrupted tool status (per-tool proof)' },
   { key: 'softInjection', label: 'Soft injection (per-item Send now while generating)' },
   { key: 'deliveryAck', label: 'Delivery acknowledgement (message-id echo)' },
 ];
@@ -285,6 +286,9 @@ function buildMarkdown(providers: ProviderInfo[], caveats: ResolvedCaveat[]): st
     '  in-process, keeping the session resumable on the same id — e.g. Claude',
     "  `Query.interrupt()`), `stream-abort` (the turn ends by aborting the provider's",
     '  stream), or ❌ (no turn interrupt; operator guidance queues for the next turn).',
+    '- **Interrupted tool status** — whether the provider ties an interrupt marker to',
+    '  the exact tool call that was cut short. A still-open tool at turn end settles as',
+    '  unknown output rather than a claimed interruption when this is ❌.',
     '',
     'For per-provider field-level notes (YAML syntax, caveats), see the',
     '[AI Assistants guide](/getting-started/ai-assistants/).',

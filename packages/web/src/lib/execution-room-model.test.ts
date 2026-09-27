@@ -28,6 +28,7 @@ import {
   type ExecutionLoopAncestryEntry,
   type ExecutionRow,
   type ExecutionRowSelection,
+  selectableExecutionRows,
 } from './execution-room-model';
 
 /** Local hour for a fixed UTC instant, so header clock-label tests are timezone-agnostic. */
@@ -1792,5 +1793,31 @@ describe('resolveRunDetailRefetchIntervalMs (T3.10–T3.14 core)', () => {
     ).toBe(false);
     expect(resolveRunDetailRefetchIntervalMs('cancelled', [])).toBe(false);
     expect(resolveRunDetailRefetchIntervalMs('cancelled', undefined)).toBe(false);
+  });
+});
+
+describe('selectableExecutionRows', () => {
+  test('drops a skipped resume marker when the node has a row that ran', () => {
+    const rows = [
+      { id: 'ran', status: 'completed' },
+      { id: 'marker', status: 'skipped' },
+    ];
+    expect(selectableExecutionRows(rows).map(row => row.id)).toEqual(['ran']);
+  });
+
+  test('keeps the selected row even when it is skipped', () => {
+    const rows = [
+      { id: 'ran', status: 'completed' },
+      { id: 'marker', status: 'skipped' },
+    ];
+    expect(selectableExecutionRows(rows, 'marker').map(row => row.id)).toEqual(['ran', 'marker']);
+  });
+
+  test('keeps every row when the node only ever skipped', () => {
+    const rows = [
+      { id: 'a', status: 'skipped' },
+      { id: 'b', status: 'skipped' },
+    ];
+    expect(selectableExecutionRows(rows).map(row => row.id)).toEqual(['a', 'b']);
   });
 });

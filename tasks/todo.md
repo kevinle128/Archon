@@ -8,13 +8,15 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] A2 — loop execution dedupe + mockup header merged (f1795a8f); [hidden] vs flex fix (aed984b0)
 - [ ] QA — independent visual QA of every mockup state (8 sub-states × prompt/loop × Console/Legacy) after B-UI
 - [x] B — durable steering + Stop backend merged (b14a0b8a); check:schema-upgrades OK. Live Stop→idle→Send now not yet proven on a real run (B-UI/F1 must prove)
-- [ ] B-UI — wire steering API into both shells; fix 6 web type errors — agent phase-b-ui (worktree)
 - [x] C1 — 4.2–4.4 merged (a281aaf3). Chat outcome plumbing fixed by me
 - [x] F2 — 4.1, 8.4, 8.6 merged; Codex + DeepSeek interrupt=stream-abort proven live (DeepSeek via alibaba/deepseek-v4.1-flash)
-- [ ] 10.4 — capability-driven interrupted tool status (Codex never ⚠) — agent story-10-4
+- [x] 10.4 merged; validate green on develop-2
 - [x] D — 6.1–6.3 merged (453f4065) + post-merge field fix (4092b2e8). Open: non-Claude thinking delta folding (see phase-d-report) → F1/F2
 - [x] E — 5.1, 5.2 merged (d25f185a). check:schema-upgrades OK on develop-2 after E merge; rerun after B and D merge
-- [ ] F1 — 8.3 Claude, 8.5 Grok, 8.7 OMP, 8.8 — agent phase-f1-providers (worktree); re-testing Claude soft inject with priority:'next' + replay ack; Epic 9 out of scope
+- [x] F1 merged: Claude deliveryAck=true (replay-user-messages), Claude softInjection=false (disproven incl. priority:'next'); shared soft-injection seam wired
+- [ ] 8.7 OMP Stop via RPC mode — agent omp-rpc
+- [ ] 8.5 Grok Stop / interject — agent grok-stop
+- [ ] B-UI — type fix cherry-picked (be35cdb2, web tsc + tests green); remaining wiring by agent phase-b-ui-2
 
 ## Background processes started by this session
 

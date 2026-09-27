@@ -150,30 +150,32 @@ export function ConsoleRoomHeader({
         {metaLine !== null ? (
           <div className="truncate text-[11px] text-text-tertiary">{metaLine}</div>
         ) : null}
-        <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <span className="shrink-0 text-xs text-text-secondary">{model.executionLabel}</span>
-          {options.length > 1 ? (
-            <>
-              <select
-                aria-label="Execution"
-                className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
-                value={selectedRowId}
-                onChange={(event): void => {
-                  onSelectRow(event.currentTarget.value);
-                }}
-              >
-                {options.map(option => (
-                  <option key={option.rowId} value={option.rowId}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <span className="shrink-0 text-[11px] text-text-secondary">
-                of {executionCount} · max {EXECUTION_OPTIONS_MAX}
-              </span>
-            </>
-          ) : null}
-        </div>
+        {options.length > 1 || model.isLoopIteration ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="shrink-0 text-xs text-text-secondary">{model.executionLabel}</span>
+            {options.length > 1 ? (
+              <>
+                <select
+                  aria-label="Execution"
+                  className="min-w-0 max-w-[10rem] flex-[0_1_10rem] truncate rounded border border-border bg-surface-elevated px-2 py-0.5 text-xs text-text-primary"
+                  value={selectedRowId}
+                  onChange={(event): void => {
+                    onSelectRow(event.currentTarget.value);
+                  }}
+                >
+                  {options.map(option => (
+                    <option key={option.rowId} value={option.rowId}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <span className="shrink-0 text-[11px] text-text-secondary">
+                  of {executionCount} · max {EXECUTION_OPTIONS_MAX}
+                </span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </header>
   );

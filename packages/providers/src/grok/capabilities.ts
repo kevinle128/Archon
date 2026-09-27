@@ -45,6 +45,7 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   // migration this same phase scoped as its own follow-up story for OMP's
   // RPC mode rather than a rushed leg of this one.
   interrupt: false,
+  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   // Verified false: gated behind `interrupt !== false` regardless. Also
   // independently disproven on its own terms — see deliveryAck below.
   softInjection: false,

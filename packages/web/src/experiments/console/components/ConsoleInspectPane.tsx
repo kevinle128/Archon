@@ -7,6 +7,7 @@ import { useMemo, useRef, type ReactElement, type ReactNode, type RefObject } fr
 import {
   buildExecutionHeader,
   capExecutionOptions,
+  selectableExecutionRows,
   computeRunOfTotal,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
@@ -151,11 +152,13 @@ function executionOptionsForNode(
   entries: readonly ConsoleLogEntry[],
   nodeId: string,
   events: readonly WorkflowEvent[],
-  runStartedAt: string
+  runStartedAt: string,
+  selectedRowId?: string
 ): ConsoleExecutionHeaderOption[] {
-  const forNode = entries
-    .filter(entry => entry.row.nodeId === nodeId)
-    .map(entry => ({ id: entry.row.id, order: entry.row.order }));
+  const forNode = selectableExecutionRows(
+    entries.filter(entry => entry.row.nodeId === nodeId).map(entry => entry.row),
+    selectedRowId
+  ).map(row => ({ id: row.id, order: row.order }));
   const capped = capExecutionOptions(forNode);
   const cappedIds = new Set(capped.map(row => row.id));
   const options: ConsoleExecutionHeaderOption[] = [];
@@ -176,7 +179,9 @@ function executionOptionsForNode(
 /** Uncapped execution total for the node — the header's "of N" caption reads
  * the real count even past the selector's own eight-option ceiling. */
 function executionCountForNode(entries: readonly ConsoleLogEntry[], nodeId: string): number {
-  return entries.reduce((count, entry) => (entry.row.nodeId === nodeId ? count + 1 : count), 0);
+  return selectableExecutionRows(
+    entries.filter(entry => entry.row.nodeId === nodeId).map(entry => entry.row)
+  ).length;
 }
 
 function runOfTotalForNode(
@@ -280,7 +285,13 @@ export function ConsoleInspectPane({
   const headerOptions =
     selectedNodeId === null
       ? []
-      : executionOptionsForNode(logEntries, selectedNodeId, rawEvents, run.startedAt);
+      : executionOptionsForNode(
+          logEntries,
+          selectedNodeId,
+          rawEvents,
+          run.startedAt,
+          selectedRow?.id
+        );
   const executionCount =
     selectedNodeId === null ? 0 : executionCountForNode(logEntries, selectedNodeId);
   const runOfTotal =

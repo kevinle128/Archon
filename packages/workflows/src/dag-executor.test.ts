@@ -28295,6 +28295,33 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(storedEventTypes(store)).toContain('node_completed');
   });
 
+  it('loop node: interrupt settles an outstanding tool interrupted when the provider proves it', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'my-loop').interrupt();
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'loop-tool-open', toolInput: {} };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_tools' };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      { id: 'my-loop', loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 } },
+    ]);
+
+    await awaitIdle(RUN_ID, 'my-loop');
+    // Claude ties its interrupt marker to the exact tool call — settles proven.
+    expect(toolCompletedOutcomes(store).get('loop-tool-open')).toEqual(['interrupted']);
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+    await run;
+
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
   it('interrupt suppresses the live-background-task wait and the incomplete warning', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {
@@ -29174,8 +29201,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       const states = await transcriptStates(store, DEEPSEEK_RUN, 'review');
       expect(states.filter(s => s === 'interrupted').length).toBe(1);
       expect(storedEventTypes(store)).not.toContain('node_failed');
-      // Open tool settled interrupted exactly once.
-      expect(toolCompletedOutcomes(store).get('ds-tool-open')).toEqual(['interrupted']);
+      // No per-tool proof from a stream-abort provider — settles 'unknown'
+      // exactly once, never a guessed 'interrupted'.
+      expect(toolCompletedOutcomes(store).get('ds-tool-open')).toEqual(['unknown']);
       // Interrupted pass must not have re-asked structured output.
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
 
@@ -29369,9 +29397,10 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       const states = await transcriptStates(store, CODEX_RUN, 'review');
       expect(states.filter(s => s === 'interrupted').length).toBe(1);
       expect(storedEventTypes(store)).not.toContain('node_failed');
-      // Open tool settled interrupted exactly once — proves 8.4's "persisted
-      // tool row becomes interrupted" independently of glyph presentation.
-      expect(toolCompletedOutcomes(store).get('codex-tool-open')).toEqual(['interrupted']);
+      // Codex kills its whole stream/child on abort with no per-tool signal,
+      // so the still-open tool settles 'unknown' — proven independently of
+      // turn-level interruption, which the assertions above already cover.
+      expect(toolCompletedOutcomes(store).get('codex-tool-open')).toEqual(['unknown']);
       // Interrupted pass must not have re-asked structured output.
       expect(mockSendQueryDag.mock.calls.length).toBe(1);
 
@@ -29408,13 +29437,13 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
     });
 
-    it('AI loop: stream_aborted idles inside iteration; Send now resumes same session without consuming one', async () => {
+    it('AI loop: stream_aborted idles inside iteration, settles the open tool unknown; Send now resumes same session without consuming one', async () => {
       let calls = 0;
       mockSendQueryDag.mockImplementation(async function* () {
         calls++;
         if (calls === 1) {
           void liveHandle(CODEX_RUN, 'my-loop').interrupt();
-          yield { type: 'assistant', content: 'iteration work' };
+          yield { type: 'tool', toolName: 'sleep 30', toolCallId: 'codex-loop-tool-open' };
           yield streamAbortedResult('codex-loop-sess-1');
           return;
         }
@@ -29436,6 +29465,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       await awaitIdle(CODEX_RUN, 'my-loop');
       const states = await transcriptStates(store, CODEX_RUN, 'my-loop');
       expect(states).toContain('interrupted');
+      // No per-tool proof from a stream-abort provider — settles 'unknown',
+      // never a guessed 'interrupted'.
+      expect(toolCompletedOutcomes(store).get('codex-loop-tool-open')).toEqual(['unknown']);
       sendNow(store, CODEX_RUN, 'my-loop', 'm-1', 'redirect the loop');
       await run;
 
