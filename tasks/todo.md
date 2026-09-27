@@ -6,7 +6,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 
 - [x] A — 3.1, 3.2, 3.3, 10.1 merged (4e84d1c3); overflow regression fixed by me (a9354f7e)
 - [x] A2 — loop execution dedupe + mockup header merged (f1795a8f); [hidden] vs flex fix (aed984b0)
-- [ ] QA — independent visual QA of every mockup state (8 sub-states × prompt/loop × Console/Legacy) after B-UI
+- [ ] QA — independent visual QA (read-only) — agent visual-qa
 - [x] B — durable steering + Stop backend merged (b14a0b8a); check:schema-upgrades OK. Live Stop→idle→Send now not yet proven on a real run (B-UI/F1 must prove)
 - [x] C1 — 4.2–4.4 merged (a281aaf3). Chat outcome plumbing fixed by me
 - [x] F2 — 4.1, 8.4, 8.6 merged; Codex + DeepSeek interrupt=stream-abort proven live (DeepSeek via alibaba/deepseek-v4.1-flash)
@@ -16,7 +16,8 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] F1 merged: Claude deliveryAck=true (replay-user-messages), Claude softInjection=false (disproven incl. priority:'next'); shared soft-injection seam wired
 - [ ] 8.7 OMP Stop via RPC mode — agent omp-rpc
 - [ ] 8.5 Grok: session/cancel proven 6/6 (spikes merged); ACP transport migration — agent grok-acp. Interject = follow-up semantics (softInjection false)
-- [ ] B-UI — type fix cherry-picked (be35cdb2, web tsc + tests green); remaining wiring by agent phase-b-ui-2
+- [x] B-UI merged (7e30d6e7): draft/auto-send/per-item Send now/recovery wired in both shells
+- [ ] B-UI follow-ups: Legacy focus regression after idle expiry; e2e queue-convergence spec still on sessionStorage — agent bui-followups
 
 ## Background processes started by this session
 
