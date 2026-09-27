@@ -8,6 +8,7 @@ import {
   buildExecutionHeader,
   capExecutionOptions,
   selectableExecutionRows,
+  computeLoopIterationCount,
   computeRunOfTotal,
   disambiguateExecutionOptions,
   hasTerminalNodeEvidence,
@@ -186,12 +187,25 @@ function executionOptionsForNode(
   }));
 }
 
-/** Uncapped execution total for the node — the header's "of N" caption reads
- * the real count even past the selector's own eight-option ceiling. */
-function executionCountForNode(entries: readonly ConsoleLogEntry[], nodeId: string): number {
-  return selectableExecutionRows(
+/**
+ * Uncapped execution total for the node — the header's "of N" caption reads
+ * the real count even past the selector's own eight-option ceiling. A loop
+ * node's iteration count is scoped to the selected row's own run instead —
+ * see `computeLoopIterationCount` — so it pairs coherently with the loop's
+ * "· max M" cap rather than counting retry executions against an
+ * iteration-per-run ceiling.
+ */
+function executionCountForNode(
+  entries: readonly ConsoleLogEntry[],
+  nodeId: string,
+  selectedRowId: string | null
+): number {
+  const forNode = selectableExecutionRows(
     entries.filter(entry => entry.row.nodeId === nodeId).map(entry => entry.row)
-  ).length;
+  );
+  const loopIterationCount =
+    selectedRowId === null ? null : computeLoopIterationCount(forNode, selectedRowId);
+  return loopIterationCount ?? forNode.length;
 }
 
 function runOfTotalForNode(
@@ -311,7 +325,9 @@ export function ConsoleInspectPane({
           selectedRow?.id
         );
   const executionCount =
-    selectedNodeId === null ? 0 : executionCountForNode(logEntries, selectedNodeId);
+    selectedNodeId === null
+      ? 0
+      : executionCountForNode(logEntries, selectedNodeId, selectedRow?.id ?? null);
   const runOfTotal =
     selectedNodeId === null || selectedRow === null
       ? null

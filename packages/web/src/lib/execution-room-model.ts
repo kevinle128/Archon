@@ -724,6 +724,41 @@ export function computeRunOfTotal(
   return { run: retryRunNumber(epochs, selectedEpoch), total: epochs.size };
 }
 
+/** The retry epoch an iteration selection belongs to, or null when the
+ * selection is not one iteration of a loop node at all. The legacy
+ * `loop_iteration` kind (pre-occurrence-tracking history) never carries a
+ * retry epoch of its own — there is only ever one such live run at a time,
+ * so every row of that kind belongs to the same run. */
+function iterationRetryEpoch(selection: ExecutionRowSelection): number | null {
+  if (selection.kind === 'loop_iteration') return 0;
+  if (selection.kind === 'occurrence' && selection.iteration !== undefined) {
+    return selection.retryEpoch ?? 0;
+  }
+  return null;
+}
+
+/**
+ * How many iterations belong to the selected row's OWN run (retry epoch) —
+ * the header's "of N" caption pairs this against the loop's configured cap
+ * ("· max M"), so both numbers must describe the same run. Counting every
+ * iteration across every retry instead reads as impossible the moment a
+ * single-iteration loop retries even once ("of 2 · max 1"): "of N" would
+ * count retry executions while "max M" caps iterations per run. Null when
+ * the selected row is not a loop iteration at all, so the caller keeps
+ * using its own generic execution count for every other node kind.
+ */
+export function computeLoopIterationCount(
+  rows: readonly RunFamilyRow[],
+  selectedId: string
+): number | null {
+  const selected = rows.find(candidate => candidate.id === selectedId);
+  if (selected === undefined) return null;
+  const selectedEpoch = iterationRetryEpoch(selected.selection);
+  if (selectedEpoch === null) return null;
+  return rows.filter(candidate => iterationRetryEpoch(candidate.selection) === selectedEpoch)
+    .length;
+}
+
 function startedClockLabel(startedAt: string): string | null {
   const parsed = new Date(ensureUtc(startedAt));
   if (Number.isNaN(parsed.getTime())) return null;

@@ -8,6 +8,7 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeLoopIterationCount,
   computeRunOfTotal,
   disambiguateExecutionOptions,
   excludeRepresentedLoopContainers,
@@ -839,6 +840,92 @@ describe('computeRunOfTotal', () => {
         'loop-iter'
       )
     ).toBeNull();
+  });
+});
+
+describe('computeLoopIterationCount', () => {
+  function occ(
+    id: string,
+    status: string,
+    selection: Extract<ExecutionRowSelection, { kind: 'occurrence' }>
+  ): { id: string; status: string; selection: ExecutionRowSelection } {
+    return { id, status, selection };
+  }
+
+  test('counts only the selected row’s own retry, not every retry of a single-iteration loop', () => {
+    // A max_iterations: 1 loop retried once: two total node executions, but
+    // each is its own one-iteration run — the header's "of N" must read 1,
+    // never 2, or it contradicts "· max 1" (VQ3-6).
+    const rows = [
+      occ('run0-iter1', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('run1-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeLoopIterationCount(rows, 'run1-iter1')).toBe(1);
+    expect(computeLoopIterationCount(rows, 'run0-iter1')).toBe(1);
+  });
+
+  test('counts every iteration of one live, non-retried run', () => {
+    const rows = [
+      occ('iter1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1', iteration: 1 }),
+      occ('iter2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-2', iteration: 2 }),
+      occ('iter3', 'running', { kind: 'occurrence', occurrenceId: 'occ-3', iteration: 3 }),
+    ];
+    expect(computeLoopIterationCount(rows, 'iter3')).toBe(3);
+  });
+
+  test('does not mix iterations from a different run into the count', () => {
+    const rows = [
+      occ('run0-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0a',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('run0-iter2', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0b',
+        iteration: 2,
+        retryEpoch: 0,
+      }),
+      occ('run1-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1a',
+        iteration: 1,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeLoopIterationCount(rows, 'run1-iter1')).toBe(1);
+    expect(computeLoopIterationCount(rows, 'run0-iter2')).toBe(2);
+  });
+
+  test('is null for a non-loop-iteration selection or an unknown row id', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeLoopIterationCount(rows, 'run-1')).toBeNull();
+    expect(computeLoopIterationCount(rows, 'missing')).toBeNull();
+    expect(
+      computeLoopIterationCount(
+        [{ id: 'node-row', status: 'completed', selection: { kind: 'node' } }],
+        'node-row'
+      )
+    ).toBeNull();
+  });
+
+  test('counts every legacy loop_iteration row as one live run (pre-occurrence-tracking history)', () => {
+    const rows = [
+      { id: 'legacy-1', status: 'completed', selection: { kind: 'loop_iteration', iteration: 1 } },
+      { id: 'legacy-2', status: 'running', selection: { kind: 'loop_iteration', iteration: 2 } },
+    ] as const;
+    expect(computeLoopIterationCount(rows, 'legacy-2')).toBe(2);
   });
 });
 
