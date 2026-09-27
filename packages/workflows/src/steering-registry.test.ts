@@ -1,6 +1,7 @@
 import { describe, expect, mock, spyOn, test } from 'bun:test';
 
 import {
+  createSoftInjectionController,
   createSteeringRegistry,
   getSteeringRegistry,
   resolveIdleAwaitInactivityMs,
@@ -11,6 +12,7 @@ import {
   type SteeringIdleWake,
   type SteeringRegistry,
 } from './steering-registry';
+import type { SoftInjectionRequest } from '@archon/providers/types';
 
 // ---------------------------------------------------------------------------
 // Registry construction
@@ -377,6 +379,100 @@ describe('interrupt', () => {
     const pendingClose = natural.interrupt();
     natural.close();
     await expect(pendingClose).resolves.toBe('node_finished');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// softInject — mid-turn delivery channel (CAP-12 per-item Send now)
+// ---------------------------------------------------------------------------
+
+describe('softInject', () => {
+  test('delivers to a registered handler and resolves what the handler resolves', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const channel = createSoftInjectionController();
+    handle.beginTurn(new AbortController(), channel);
+    const received: SoftInjectionRequest[] = [];
+    channel.channel.ready(async request => {
+      received.push(request);
+      return true;
+    });
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'keep going' })).resolves.toBe(
+      'delivered'
+    );
+    expect(received).toEqual([{ messageId: 'msg-1', text: 'keep going' }]);
+  });
+
+  test('resolves not_ready when the handler itself declines', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const channel = createSoftInjectionController();
+    handle.beginTurn(new AbortController(), channel);
+    channel.channel.ready(async () => false);
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'x' })).resolves.toBe('not_ready');
+  });
+
+  test('resolves not_ready when no handler is registered yet', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.beginTurn(new AbortController(), createSoftInjectionController());
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'x' })).resolves.toBe('not_ready');
+  });
+
+  test('resolves no_active_turn with no channel on the turn (e.g. provider without the capability)', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    handle.beginTurn(new AbortController());
+    await expect(handle.softInject({ messageId: 'msg-1', text: 'x' })).resolves.toBe(
+      'no_active_turn'
+    );
+  });
+
+  test('resolves no_active_turn between turns, after Stop settles idle, and once closed', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const token = handle.beginTurn(new AbortController(), createSoftInjectionController());
+    handle.settleTurn(token, 'generating'); // between-turn boundary window
+    await expect(handle.softInject({ messageId: 'a', text: 'x' })).resolves.toBe('no_active_turn');
+
+    const idleToken = handle.beginTurn(new AbortController(), createSoftInjectionController());
+    handle.interrupt();
+    void handle.enterIdle(idleToken);
+    await expect(handle.softInject({ messageId: 'b', text: 'x' })).resolves.toBe('no_active_turn');
+
+    handle.close();
+    await expect(handle.softInject({ messageId: 'c', text: 'x' })).resolves.toBe('no_active_turn');
+  });
+
+  test('resolves no_active_turn on a queue-only (non-interruptible) or parked handle', async () => {
+    const registry = createSteeringRegistry();
+    const queueOnly = registry.register('run-1', 'node-1');
+    await expect(queueOnly.softInject({ messageId: 'a', text: 'x' })).resolves.toBe(
+      'no_active_turn'
+    );
+
+    const parked = registry.register('run-1', 'node-2', { interruptible: true });
+    parked.beginTurn(new AbortController(), createSoftInjectionController());
+    parked.park();
+    await expect(parked.softInject({ messageId: 'b', text: 'x' })).resolves.toBe('no_active_turn');
+  });
+
+  test("a fresh turn never receives a request through a prior turn's stale channel", async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const firstChannel = createSoftInjectionController();
+    const firstToken = handle.beginTurn(new AbortController(), firstChannel);
+    const firstReceived: SoftInjectionRequest[] = [];
+    firstChannel.channel.ready(async request => {
+      firstReceived.push(request);
+      return true;
+    });
+    handle.settleTurn(firstToken, 'generating');
+
+    // Second turn begins with its own fresh channel and no handler registered yet.
+    handle.beginTurn(new AbortController(), createSoftInjectionController());
+    await expect(handle.softInject({ messageId: 'turn-2', text: 'x' })).resolves.toBe('not_ready');
+    expect(firstReceived).toEqual([]); // never routed to the settled turn's handler
   });
 });
 

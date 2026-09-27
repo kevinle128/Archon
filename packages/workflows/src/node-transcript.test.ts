@@ -22,8 +22,14 @@ mock.module('@archon/paths', () => ({
   }),
 }));
 
-const { appendNodeTranscript, appendOperatorTranscript, appendToolResultTranscript } =
-  await import('./node-transcript');
+const {
+  appendAdvisorTranscript,
+  appendNodeTranscript,
+  appendOperatorTranscript,
+  appendPromptTranscript,
+  appendThinkingTranscript,
+  appendToolResultTranscript,
+} = await import('./node-transcript');
 
 beforeEach(() => {
   errorCalls.length = 0;
@@ -199,4 +205,122 @@ test('continues after a rejecting operator append (fail-open)', async () => {
   expect(received[0]?.payload).toEqual({ text: 'second' });
   expect(JSON.stringify(errorCalls)).not.toContain('DO_NOT_LOG_OPERATOR');
   expect(JSON.stringify(errorCalls)).not.toContain('first');
+});
+
+test('appends a thinking-origin row with no other metadata', async () => {
+  const received: AppendNodeMessageInput[] = [];
+  const scope = {
+    occurrence_id: '11111111-1111-4111-8111-111111111111',
+    attempt_id: '22222222-2222-4222-8222-222222222222',
+  };
+  await appendThinkingTranscript(collectingStore(received), {
+    workflow_run_id: 'run-1',
+    node_id: 'review',
+    scope,
+    text: 'considering the two approaches',
+  });
+  expect(received).toEqual([
+    {
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      kind: 'text',
+      payload: { text: 'considering the two approaches' },
+      metadata: { execution: scope, origin: 'thinking' },
+    },
+  ]);
+});
+
+test('appends a prompt-origin row with actor and source', async () => {
+  const received: AppendNodeMessageInput[] = [];
+  const scope = {
+    occurrence_id: '11111111-1111-4111-8111-111111111111',
+    attempt_id: '22222222-2222-4222-8222-222222222222',
+  };
+  await appendPromptTranscript(collectingStore(received), {
+    workflow_run_id: 'run-1',
+    node_id: 'review',
+    scope,
+    text: 'review this PR',
+    actorUserId: 'user-starter-1',
+    source: 'node_prompt',
+  });
+  expect(received).toEqual([
+    {
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      kind: 'text',
+      payload: { text: 'review this PR' },
+      metadata: {
+        execution: scope,
+        origin: 'prompt',
+        actor_user_id: 'user-starter-1',
+        prompt_source: 'node_prompt',
+      },
+    },
+  ]);
+});
+
+test('appends a prompt-origin row with a null actor for an unattributed run', async () => {
+  const received: AppendNodeMessageInput[] = [];
+  const scope = {
+    occurrence_id: '11111111-1111-4111-8111-111111111111',
+    attempt_id: '22222222-2222-4222-8222-222222222222',
+  };
+  await appendPromptTranscript(collectingStore(received), {
+    workflow_run_id: 'run-1',
+    node_id: 'review',
+    scope,
+    text: 'review this PR',
+    actorUserId: null,
+    source: 'reask',
+  });
+  expect(received[0]?.metadata).toEqual({
+    execution: scope,
+    origin: 'prompt',
+    actor_user_id: null,
+    prompt_source: 'reask',
+  });
+});
+
+test('appends an advisor-origin row with a known model', async () => {
+  const received: AppendNodeMessageInput[] = [];
+  const scope = {
+    occurrence_id: '11111111-1111-4111-8111-111111111111',
+    attempt_id: '22222222-2222-4222-8222-222222222222',
+  };
+  await appendAdvisorTranscript(collectingStore(received), {
+    workflow_run_id: 'run-1',
+    node_id: 'review',
+    scope,
+    text: 'consider a channel-based shutdown pattern',
+    advisorModel: 'claude-opus-4-8',
+  });
+  expect(received).toEqual([
+    {
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      kind: 'text',
+      payload: { text: 'consider a channel-based shutdown pattern' },
+      metadata: {
+        execution: scope,
+        origin: 'advisor',
+        advisor_model: 'claude-opus-4-8',
+      },
+    },
+  ]);
+});
+
+test('appends an advisor-origin row with no model when Archon did not configure one', async () => {
+  const received: AppendNodeMessageInput[] = [];
+  const scope = {
+    occurrence_id: '11111111-1111-4111-8111-111111111111',
+    attempt_id: '22222222-2222-4222-8222-222222222222',
+  };
+  await appendAdvisorTranscript(collectingStore(received), {
+    workflow_run_id: 'run-1',
+    node_id: 'review',
+    scope,
+    text: 'consider a channel-based shutdown pattern',
+  });
+  expect(received[0]?.metadata).toEqual({ execution: scope, origin: 'advisor' });
 });

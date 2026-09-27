@@ -347,6 +347,17 @@ export interface IWorkflowSteeringStore {
     messageIds: readonly string[]
   ): Promise<void>;
   /**
+   * `sent` -> `delivered`, once the live provider turn echoes a verified
+   * acknowledgement for this exact caller-stamped message id. A missing or
+   * already-advanced id is a no-op — delivery ack never advances a different
+   * entry and never throws.
+   */
+  markSteeringMessageDelivered(
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ): Promise<void>;
+  /**
    * Claim exactly one still-queued entry by id for soft injection into the
    * active turn (moves it straight to `sent`, skipping `dispatching` — there
    * is no follow-up provider turn to await). Returns `null` when the id is

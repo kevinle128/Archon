@@ -97,15 +97,25 @@ function closeQuery(queryToClose: ClosableQuery | undefined, reason: string): vo
  * query's control channel (interrupt, setPermissionMode, …) alive only while
  * input is streaming, so the provider resolves the gate in every result,
  * error, Cancel, and finally path.
+ *
+ * `uuid`, when provided, stamps the durable operator message id this prompt
+ * delivers (CAP-13 delivery ack) — the CLI echoes it back on the output
+ * stream (`isReplay: true`) only when started with `--replay-user-messages`.
  */
 async function* singleTurnInput(
   text: string,
-  holdOpen: Promise<void>
+  holdOpen: Promise<void>,
+  uuid?: string
 ): AsyncGenerator<SDKUserMessage, void, undefined> {
   yield {
     type: 'user',
     message: { role: 'user', content: text },
     parent_tool_use_id: null,
+    // The durable steering message id is caller-stamped as a UUID (see
+    // steering-api-contract.md); the SDK's `UUID` template-literal type
+    // needs pinning since it is validated at the durable-store boundary,
+    // not by this SDK type.
+    ...(uuid !== undefined ? { uuid: uuid as SDKUserMessage['uuid'] } : {}),
   };
   await holdOpen;
 }
@@ -144,14 +154,35 @@ async function* raceInterruptFailure<T>(
 }
 
 /**
- * Content block type for assistant messages
+ * Content block shapes for assistant messages. Duck-typed rather than
+ * imported from the raw Anthropic SDK's Beta message types — that package is
+ * a peer dependency of the Agent SDK and is not itself installed here.
+ *
+ * `thinking` carries plaintext extended-thinking output. An install that has
+ * not requested thinking summaries returns the block with an EMPTY
+ * `thinking` field (proven empirically: `Settings.showThinkingSummaries`
+ * unset yields `thinking: ''` even with `thinking.type: 'enabled'`) — an
+ * empty field means "not displayable", not "no thinking happened".
+ *
+ * `redacted_thinking` never carries readable text (`data` is an opaque,
+ * encrypted blob) and must never be treated as displayable.
+ *
+ * `server_tool_use` / `advisor_tool_result` are the raw Anthropic Messages
+ * API shape for the hosted advisor tool (`type: 'advisor_20260301'`), per
+ * platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool. Not
+ * empirically observed through the Claude Code CLI's `advisorModel` setting
+ * on this install — see `advisorInputSubagentType` for the path that was.
  */
 interface ContentBlock {
-  type: 'text' | 'tool_use';
+  type: string;
   text?: string;
   name?: string;
   input?: Record<string, unknown>;
   id?: string;
+  thinking?: string;
+  data?: string;
+  content?: { type: string; text?: string; encrypted_content?: string; error_code?: string };
+  tool_use_id?: string;
 }
 
 function normalizeClaudeUsage(usage?: {
@@ -927,6 +958,16 @@ function buildBaseClaudeOptions(
     // Per-node override wins over the assistant-level default; the final
     // fallback stays ['project', 'user'] (the SDK-loading default Archon ships).
     settingSources,
+    settings: {
+      // Without this, a `thinking` content block's `thinking` field arrives
+      // EMPTY (proven empirically) — the API omits displayable text unless
+      // summaries are explicitly requested. Always on: it only affects
+      // whether existing thinking is shown, never whether thinking happens.
+      showThinkingSummaries: true,
+      ...(assistantDefaults.advisorModel !== undefined
+        ? { advisorModel: assistantDefaults.advisorModel }
+        : {}),
+    },
     hooks: buildToolCaptureHooks(toolResultQueue),
     stderr: (data: string): void => {
       const output = data.trim();
@@ -1128,19 +1169,57 @@ function createClaudeAskRuntime(
 // ─── Stream Normalizer ───────────────────────────────────────────────────
 
 /**
+ * The advisor consult's tool result is a Task/Agent dispatch completion.
+ * The SDK's own `AgentToolCompletedOutput` shape carries the subagent's
+ * final report as `content: [{ type: 'text', text }, ...]` (proven
+ * empirically); this reads that text so the notification shows the
+ * advisor's actual words instead of the enclosing JSON envelope. A result
+ * that is not JSON, or does not match this shape, is returned unchanged —
+ * never partially parsed or guessed at.
+ */
+function extractAgentDispatchText(toolOutput: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(toolOutput);
+  } catch {
+    return toolOutput;
+  }
+  const content = (parsed as { content?: unknown })?.content;
+  if (!Array.isArray(content)) return toolOutput;
+  const texts = content
+    .filter(
+      (block): block is { type: 'text'; text: string } =>
+        typeof block === 'object' &&
+        block !== null &&
+        (block as { type?: unknown }).type === 'text' &&
+        typeof (block as { text?: unknown }).text === 'string'
+    )
+    .map(block => block.text);
+  return texts.length > 0 ? texts.join('\n\n') : toolOutput;
+}
+
+/**
  * Normalize raw Claude SDK events into Archon MessageChunks.
  * Drains the tool result queue between events (populated by SDK hooks).
  */
 async function* streamClaudeMessages(
   events: AsyncGenerator,
   toolResultQueue: ToolResultEntry[],
-  sanitizeAskResume = false
+  sanitizeAskResume = false,
+  advisorModel?: string
 ): AsyncGenerator<MessageChunk> {
   // Synthetic error message recorded while waiting for the terminal result to
   // confirm it (#1797). Detection is two-signal: the typed wrapper `error`
   // field on a '<synthetic>' assistant message, then `is_error: true` on the
   // result. See ClaudeApiResultError.
   let pendingSdkError: { code: SDKAssistantMessageError; text: string } | undefined;
+
+  // Tool-use ids of a Task/Agent dispatch whose `subagent_type` is the
+  // advisor consult (empirically observed: Claude Code's `advisorModel`
+  // setting resolves to an ordinary subagent dispatch, not the raw Messages
+  // API's `server_tool_use` block — see the ContentBlock docstring). Its
+  // eventual tool_result IS the advisor's notification.
+  const pendingAdvisorToolUseIds = new Set<string>();
 
   for await (const msg of events) {
     // Drain tool results captured by hooks before processing the next event
@@ -1156,6 +1235,13 @@ async function* streamClaudeMessages(
           ...(tr.truncated !== undefined ? { truncated: tr.truncated } : {}),
           ...(tr.outputState !== undefined ? { outputState: tr.outputState } : {}),
         };
+        if (tr.toolCallId !== undefined && pendingAdvisorToolUseIds.delete(tr.toolCallId)) {
+          yield {
+            type: 'advisor',
+            content: extractAgentDispatchText(tr.toolOutput),
+            ...(advisorModel !== undefined ? { advisorModel } : {}),
+          };
+        }
       }
     }
 
@@ -1200,6 +1286,43 @@ async function* streamClaudeMessages(
             toolInput: block.input ?? {},
             ...(block.id !== undefined ? { toolCallId: block.id } : {}),
           };
+          // Task/Agent dispatch to the advisor consult (see the ContentBlock
+          // docstring). The dispatch still renders as an ordinary tool row
+          // above; its eventual tool_result also becomes an advisor
+          // notification once toolResultQueue delivers it.
+          if (block.input?.subagent_type === 'advisor' && block.id !== undefined) {
+            pendingAdvisorToolUseIds.add(block.id);
+          }
+        } else if (block.type === 'thinking' && block.thinking) {
+          // An empty `thinking` field means the install has not requested
+          // display of this thinking (Settings.showThinkingSummaries unset,
+          // or the block predates the display feature) — never persisted.
+          yield { type: 'thinking', content: block.thinking };
+        } else if (block.type === 'redacted_thinking') {
+          // Opaque encrypted reasoning; never displayable, never logged.
+          getLog().debug({}, 'claude.redacted_thinking_block_skipped');
+        } else if (block.type === 'server_tool_use' && block.name === 'advisor') {
+          // Raw Anthropic Messages API advisor tool (`advisor_20260301`).
+          // Its result block follows in the same content array — nothing to
+          // yield yet.
+          continue;
+        } else if (block.type === 'advisor_tool_result') {
+          const result = block.content;
+          const text =
+            result?.type === 'advisor_result' && typeof result.text === 'string'
+              ? result.text
+              : result?.type === 'advisor_redacted_result'
+                ? 'The advisor responded, but its answer is encrypted and not readable in this session.'
+                : result?.type === 'advisor_tool_result_error'
+                  ? `The advisor could not respond (${result.error_code ?? 'unavailable'}).`
+                  : undefined;
+          if (text !== undefined) {
+            yield {
+              type: 'advisor',
+              content: text,
+              ...(advisorModel !== undefined ? { advisorModel } : {}),
+            };
+          }
         }
       }
     } else if (event.type === 'system') {
@@ -1321,6 +1444,17 @@ async function* streamClaudeMessages(
         };
       } else {
         getLog().debug({ subtype: sysMsg.subtype }, 'claude.system_message_unhandled');
+      }
+    } else if (event.type === 'user') {
+      // With `extraArgs: { 'replay-user-messages': null }` the CLI re-emits
+      // each stdin-delivered user message on stdout (`isReplay: true`) once
+      // accepted — the verified delivery-acknowledgement signal (CAP-13).
+      // Correlation is the caller-stamped `uuid` alone; an id that matches no
+      // pending durable entry is a harmless no-op at the store layer, never
+      // inferred from timing or content.
+      const replay = msg as { isReplay?: boolean; uuid?: string };
+      if (replay.isReplay === true && typeof replay.uuid === 'string') {
+        yield { type: 'operator_delivery_ack', messageId: replay.uuid };
       }
     } else if (event.type === 'rate_limit_event') {
       const rateLimitMsg = msg as { rate_limit_info?: Record<string, unknown> };
@@ -1462,6 +1596,13 @@ async function* streamClaudeMessages(
         ...(tr.truncated !== undefined ? { truncated: tr.truncated } : {}),
         ...(tr.outputState !== undefined ? { outputState: tr.outputState } : {}),
       };
+      if (tr.toolCallId !== undefined && pendingAdvisorToolUseIds.delete(tr.toolCallId)) {
+        yield {
+          type: 'advisor',
+          content: extractAgentDispatchText(tr.toolOutput),
+          ...(advisorModel !== undefined ? { advisorModel } : {}),
+        };
+      }
     }
   }
 }
@@ -1803,7 +1944,14 @@ export class ClaudeProvider implements IAgentProvider {
             const holdOpen = new Promise<void>(resolve => {
               releaseInput = resolve;
             });
-            promptInput = singleTurnInput(queryPrompt, holdOpen);
+            promptInput = singleTurnInput(queryPrompt, holdOpen, requestOptions?.operatorMessageId);
+            if (requestOptions?.operatorMessageId !== undefined) {
+              // `--replay-user-messages` requires the streaming-input path
+              // singleTurnInput already establishes above; CAP-13 delivery
+              // ack is otherwise inert. See the `event.type === 'user'`
+              // branch in streamClaudeMessages for the echo it produces.
+              options.extraArgs = { ...options.extraArgs, 'replay-user-messages': null };
+            }
           }
           const rawEvents = query({ prompt: promptInput, options });
           currentQuery = rawEvents;
@@ -1840,7 +1988,12 @@ export class ClaudeProvider implements IAgentProvider {
           // Fold any usage retained from prior retry attempts into the terminal
           // result so spent tokens remain queryable after recovery.
           for await (const chunk of withResumedOutcome(
-            streamClaudeMessages(interruptibleEvents, toolResultQueue, hasAskResume),
+            streamClaudeMessages(
+              interruptibleEvents,
+              toolResultQueue,
+              hasAskResume,
+              assistantDefaults.advisorModel
+            ),
             resumedOutcome(resumeSessionId, true)
           )) {
             const sanitized =

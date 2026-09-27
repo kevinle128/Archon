@@ -989,6 +989,38 @@ mock.module('@archon/core/db/workflow-steering', () => ({
     entry.updated_at = new Date();
     return toClaimedSteeringMessage(entry);
   },
+  revertSteeringSoftInjectionClaim: async (
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ) => {
+    const entry = mockSteeringQueue.find(
+      e =>
+        e.workflow_run_id === workflowRunId &&
+        e.node_id === nodeId &&
+        e.message_id === messageId &&
+        e.state === 'sent'
+    );
+    if (entry === undefined) return;
+    entry.state = 'queued';
+    entry.updated_at = new Date();
+  },
+  markSteeringMessageDelivered: async (
+    workflowRunId: string,
+    nodeId: string,
+    messageId: string
+  ) => {
+    const entry = mockSteeringQueue.find(
+      e =>
+        e.workflow_run_id === workflowRunId &&
+        e.node_id === nodeId &&
+        e.message_id === messageId &&
+        e.state === 'sent'
+    );
+    if (entry === undefined) return;
+    entry.state = 'delivered';
+    entry.updated_at = new Date();
+  },
   reconcileNeverSentSteeringMessages: async (workflowRunId: string, nodeId: string) => {
     let count = 0;
     for (const entry of mockSteeringQueue) {
@@ -1063,7 +1095,10 @@ mock.module('@archon/core/db/workflow-envs', () => ({
 }));
 
 import { registerApiRoutes } from './api';
-import { getSteeringRegistry } from '@archon/workflows/steering-registry';
+import {
+  createSoftInjectionController,
+  getSteeringRegistry,
+} from '@archon/workflows/steering-registry';
 import type { NodeSteeringHandle, SteeringIdleWake } from '@archon/workflows/steering-registry';
 import { getAuth } from '../auth';
 import { keepaliveWorkflowNodeResponseSchema } from './schemas/workflow.schemas';
@@ -9715,5 +9750,137 @@ describe('steering lifecycle classification — a settings row alone is never pr
     await expectSteeringError(await postNodeSend(app, sendPayload()), 422, 'not_steerable_here');
     const queueRes = await getNodeQueue(app);
     await expectSteeringError(queueRes, 422, 'not_steerable_here');
+  });
+});
+
+// Registered once, real (not mocked): the soft-injection tests below need a
+// provider whose capability actually declares `softInjection: true`, which no
+// built-in provider does yet. Guarded because module-scope registration code
+// in a Bun test file can run more than once in the same process.
+const SOFT_INJECT_TEST_PROVIDER_ID = 'test-steering-soft-inject-provider';
+if (!isRegisteredProvider(SOFT_INJECT_TEST_PROVIDER_ID)) {
+  registerProvider({
+    id: SOFT_INJECT_TEST_PROVIDER_ID,
+    displayName: 'Test Steering Soft-Injection Provider',
+    factory: () => {
+      throw new Error('never instantiated — capability lookup only');
+    },
+    capabilities: {
+      sessionResume: true,
+      mcp: false,
+      hooks: false,
+      skills: false,
+      agents: false,
+      toolRestrictions: false,
+      structuredOutput: false,
+      envInjection: false,
+      costControl: false,
+      effortControl: false,
+      thinkingControl: false,
+      fallbackModel: false,
+      sandbox: false,
+      settingSources: false,
+      nativeTools: false,
+      containerExec: false,
+      askHuman: false,
+      interrupt: 'native',
+      softInjection: true,
+      deliveryAck: false,
+    },
+    builtIn: false,
+    credentials: { kind: 'static', specs: [] },
+  });
+}
+
+describe('POST send with queued_message_id — soft injection into the live turn', () => {
+  beforeEach(resetSteeringMocks);
+
+  /** Live, generating, soft-injection-capable handle with one durable queued entry. */
+  function softInjectableSetup(): {
+    handle: NodeSteeringHandle;
+    channel: ReturnType<typeof createSoftInjectionController>;
+  } {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    mockSteeringSettings.push({
+      id: 'settings-soft-inject',
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      auto_send_enabled: false,
+      updated_by_user_id: null,
+      provider_id: SOFT_INJECT_TEST_PROVIDER_ID,
+      updated_at: new Date(),
+    });
+    seedSteeringQueueEntry({
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      message_id: STEER_MESSAGE_ID,
+      message: 'inject me',
+      operator_user_id: 'op-1',
+      state: 'queued',
+    });
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID, {
+      interruptible: true,
+    });
+    const channel = createSoftInjectionController();
+    handle.beginTurn(new AbortController(), channel);
+    return { handle, channel };
+  }
+
+  test('a registered handler that accepts the request advances the entry to sent', async () => {
+    const { channel } = softInjectableSetup();
+    const received: { messageId: string; text: string }[] = [];
+    channel.channel.ready(async request => {
+      received.push(request);
+      return true;
+    });
+    const { app } = makeApp();
+
+    const res = await postNodeSend(
+      app,
+      sendPayload({ intent: 'send_now', queued_message_id: STEER_MESSAGE_ID })
+    );
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID,
+      state: 'sent',
+    });
+    expect(received).toEqual([{ messageId: STEER_MESSAGE_ID, text: 'inject me' }]);
+    expect(visibleSteeringQueueFor().find(e => e.message_id === STEER_MESSAGE_ID)?.state).toBe(
+      'sent'
+    );
+  });
+
+  test('a declining handler reverts the durable claim so the queue is unchanged', async () => {
+    const { channel } = softInjectableSetup();
+    channel.channel.ready(async () => false);
+    const { app } = makeApp();
+
+    const res = await postNodeSend(
+      app,
+      sendPayload({ intent: 'send_now', queued_message_id: STEER_MESSAGE_ID })
+    );
+
+    await expectSteeringError(res, 409, 'soft_injection_unavailable');
+    expect(visibleSteeringQueueFor().find(e => e.message_id === STEER_MESSAGE_ID)?.state).toBe(
+      'queued'
+    );
+  });
+
+  test('no registered handler (turn not yet ready) reverts the durable claim too', async () => {
+    softInjectableSetup(); // no `channel.channel.ready(...)` call at all
+    const { app } = makeApp();
+
+    const res = await postNodeSend(
+      app,
+      sendPayload({ intent: 'send_now', queued_message_id: STEER_MESSAGE_ID })
+    );
+
+    await expectSteeringError(res, 409, 'soft_injection_unavailable');
+    expect(visibleSteeringQueueFor().find(e => e.message_id === STEER_MESSAGE_ID)?.state).toBe(
+      'queued'
+    );
   });
 });

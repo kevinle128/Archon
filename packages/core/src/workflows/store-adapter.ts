@@ -464,6 +464,8 @@ export function createWorkflowStore(): IWorkflowStore {
       workflowSteeringDb.claimSteeringQueue(workflowRunId, nodeId, limit),
     markSteeringMessagesSent: (workflowRunId, nodeId, messageIds) =>
       workflowSteeringDb.markSteeringMessagesSent(workflowRunId, nodeId, messageIds),
+    markSteeringMessageDelivered: (workflowRunId, nodeId, messageId) =>
+      workflowSteeringDb.markSteeringMessageDelivered(workflowRunId, nodeId, messageId),
     claimSteeringMessageForSoftInjection: (workflowRunId, nodeId, messageId) =>
       workflowSteeringDb.claimSteeringMessageForSoftInjection(workflowRunId, nodeId, messageId),
     reconcileNeverSentSteeringMessages: (workflowRunId, nodeId) =>

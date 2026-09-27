@@ -159,6 +159,8 @@ class InMemoryStore implements IWorkflowStore {
   listSteeringQueue: IWorkflowStore['listSteeringQueue'] = () => Promise.resolve([]);
   claimSteeringQueue: IWorkflowStore['claimSteeringQueue'] = () => Promise.resolve([]);
   markSteeringMessagesSent: IWorkflowStore['markSteeringMessagesSent'] = () => Promise.resolve();
+  markSteeringMessageDelivered: IWorkflowStore['markSteeringMessageDelivered'] = () =>
+    Promise.resolve();
   claimSteeringMessageForSoftInjection: IWorkflowStore['claimSteeringMessageForSoftInjection'] =
     () => Promise.resolve(null);
   reconcileNeverSentSteeringMessages: IWorkflowStore['reconcileNeverSentSteeringMessages'] = () =>

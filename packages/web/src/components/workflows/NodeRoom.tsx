@@ -11,7 +11,7 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
-import type { AgentHistoryItem } from '@/lib/agent-history';
+import { promptActorLabel, promptSourceLabel, type AgentHistoryItem } from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
 import { toHunkData } from '@/lib/git-hunk-adapter';
 import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
@@ -324,6 +324,83 @@ function OperatorHistory({
         data-operator-body=""
         className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
         style={{ margin: '0 2px 6px' }}
+      >
+        {item.text}
+      </div>
+    </div>
+  );
+}
+
+function ThinkingHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'thinking' }>;
+}): React.ReactElement {
+  return (
+    <details data-thinking-row="" style={{ overflowWrap: 'anywhere' }}>
+      <summary
+        className="cursor-pointer text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        thinking
+      </summary>
+      <div
+        data-thinking-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-secondary whitespace-pre-wrap"
+        style={{ margin: '4px 2px 6px' }}
+      >
+        {item.text}
+      </div>
+    </details>
+  );
+}
+
+function PromptHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'prompt' }>;
+}): React.ReactElement {
+  return (
+    <div data-prompt-row="" style={{ overflowWrap: 'anywhere' }}>
+      <div
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+        style={{ margin: '10px 2px 3px' }}
+      >
+        <span data-prompt-label="">
+          prompt · {promptActorLabel(item.actorUserId)} · {promptSourceLabel(item.source)}
+        </span>
+      </div>
+      <div
+        data-prompt-body=""
+        className="font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
+        style={{ margin: '0 2px 6px' }}
+      >
+        {item.text}
+      </div>
+    </div>
+  );
+}
+
+function AdvisorHistory({
+  item,
+}: {
+  item: Extract<AgentHistoryItem, { kind: 'advisor' }>;
+}): React.ReactElement {
+  return (
+    <div
+      data-advisor-row=""
+      className="rounded-[6px] border border-border bg-surface-elevated px-2.5 py-2"
+      style={{ overflowWrap: 'anywhere', margin: '10px 2px 6px' }}
+    >
+      <div
+        data-advisor-label=""
+        className="text-[10px] tracking-[0.07em] uppercase text-text-secondary"
+      >
+        advisor{item.advisorModel !== null ? ` · ${item.advisorModel}` : ''}
+      </div>
+      <div
+        data-advisor-body=""
+        className="mt-1 font-sans text-[12.5px] leading-[1.55] font-normal text-text-primary whitespace-pre-wrap"
       >
         {item.text}
       </div>
@@ -1141,6 +1218,30 @@ export function NodeRoom({
       return (
         <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
           <OperatorHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'thinking') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <ThinkingHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'prompt') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <PromptHistory item={item} />
+          {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
+        </div>
+      );
+    }
+    if (item.kind === 'advisor') {
+      return (
+        <div key={item.id} className={cn('my-1.5', lastRowRing(item))} {...lastRowMarker(item)}>
+          <AdvisorHistory item={item} />
           {renderAfterItem ? <div className="mt-1.5">{renderAfterItem(item)}</div> : null}
         </div>
       );

@@ -79,6 +79,7 @@ import {
   registerDeepseekProvider,
   DEVIN_CAPABILITIES,
   DEEPSEEK_CAPABILITIES,
+  CODEX_CAPABILITIES,
   clearRegistry,
   getRegistration,
 } from '@archon/providers';
@@ -143,6 +144,7 @@ import { buildAiProfile } from './model-validation';
 import {
   AskHumanNoStarterError,
   AskHumanPauseFailedError,
+  STREAM_ABORTED_TERMINAL_REASON,
   type SendQueryOptions,
 } from '@archon/providers/types';
 import * as plannotatorGateExecutor from './plannotator-gate-executor';
@@ -172,6 +174,7 @@ function createMockSteeringStore(): Pick<
   | 'listSteeringQueue'
   | 'claimSteeringQueue'
   | 'markSteeringMessagesSent'
+  | 'markSteeringMessageDelivered'
   | 'claimSteeringMessageForSoftInjection'
   | 'reconcileNeverSentSteeringMessages'
 > {
@@ -312,6 +315,18 @@ function createMockSteeringStore(): Pick<
           entry.updated_at = now;
         }
       }
+    },
+    markSteeringMessageDelivered: async (workflowRunId, nodeId, messageId) => {
+      const entry = queue.find(
+        item =>
+          item.workflow_run_id === workflowRunId &&
+          item.node_id === nodeId &&
+          item.message_id === messageId &&
+          item.state === 'sent'
+      );
+      if (entry === undefined) return;
+      entry.state = 'delivered';
+      entry.updated_at = new Date();
     },
     claimSteeringMessageForSoftInjection: async (workflowRunId, nodeId, messageId) => {
       const entry = queue.find(
@@ -2308,6 +2323,129 @@ describe('executeDagWorkflow -- tool restrictions', () => {
     const messages = sendMessage.mock.calls.map((call: unknown[]) => call[1] as string);
     const warning = messages.find(m => m.includes('hooks') && m.includes('codex'));
     expect(warning).toBeDefined();
+  });
+});
+
+describe('executeDagWorkflow -- operator delivery acknowledgement (CAP-13)', () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(tmpdir(), `dag-ack-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    await mkdir(testDir, { recursive: true });
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  it('advances a sent queue entry to delivered when the provider stream echoes its message id', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    await mockDeps.store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: 'review',
+      message_id: 'ack-1',
+      message: 'redirect the plan',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    // Claim straight to `sent` — the same durable shape a soft-injected or
+    // boundary-delivered message is in while awaiting acknowledgement.
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'ack-1');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'ack-1' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun(runId);
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-delivery-ack',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'ack-1')?.state).toBe('delivered');
+  });
+
+  it('never advances an id it did not echo', async () => {
+    const mockDeps = createMockDeps();
+    const runId = 'dag-test-run-id';
+    await mockDeps.store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: 'review',
+      message_id: 'other-msg',
+      message: 'unrelated',
+      operator_user_id: 'op-1',
+      initial_state: 'queued',
+    });
+    await mockDeps.store.claimSteeringMessageForSoftInjection(runId, 'review', 'other-msg');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'operator_delivery_ack', messageId: 'never-queued-id' };
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'dag-session-id' };
+    });
+
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun(runId);
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      {
+        name: 'dag-delivery-ack-mismatch',
+        nodes: [{ id: 'review', prompt: 'do the thing' }],
+      },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await mockDeps.store.listSteeringQueue(runId, 'review');
+    expect(rows.find(r => r.message_id === 'other-msg')?.state).toBe('sent');
   });
 });
 
@@ -24471,7 +24609,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
   it.each([
     { kind: 'command', node: { id: 'agent', command: 'my-cmd' } },
     { kind: 'prompt', node: { id: 'agent', prompt: 'Inspect a.ts' } },
-  ])('records $kind stream as started, text, tool, text, completed', async ({ node }) => {
+  ])('records $kind stream as started, prompt, text, tool, text, completed', async ({ node }) => {
     mockSendQueryDag.mockImplementation(function* () {
       yield { type: 'assistant', content: 'Reading file.' };
       yield {
@@ -24496,6 +24634,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
 
     expect(transcriptTimeline(rows)).toEqual([
       'started',
+      'text', // the prompt row
       'text',
       'tool',
       'tool',
@@ -24538,9 +24677,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Inspect a.ts' }]);
     const rows = await store.listNodeMessages(workflowRun.id, 'agent');
 
-    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'tool', 'completed']);
-    expect(rows.filter(row => row.kind === 'text')).toHaveLength(1);
-    expect(rows.find(row => row.kind === 'text')?.payload).toEqual({ text: 'Reading file.' });
+    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'text', 'tool', 'completed']);
+    const textRows = rows.filter(row => row.kind === 'text');
+    expect(textRows).toHaveLength(2);
+    expect(textRows.find(row => row.metadata?.origin !== 'prompt')?.payload).toEqual({
+      text: 'Reading file.',
+    });
   });
 
   it('records started then failed with the command-load error', async () => {
@@ -24629,7 +24771,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const store = createMockStore();
     const workflowRun = await runNodes(store, [{ id: 'agent', command: 'my-cmd' }]);
     const rows = await store.listNodeMessages(workflowRun.id, 'agent');
-    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'completed']);
+    expect(transcriptTimeline(rows)).toEqual(['started', 'text', 'text', 'completed']);
     expect(
       rows.filter(row => row.kind === 'status' && row.payload.state === 'completed')
     ).toHaveLength(1);
@@ -24691,10 +24833,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'tool',
       'iteration_completed',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'completed',
@@ -24714,7 +24858,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(
       iterationCompletes.map(row => (row.kind === 'status' ? row.payload.detail : undefined))
     ).toEqual(['1', '2']);
-    const textRows = rows.filter(row => row.kind === 'text');
+    const textRows = rows.filter(row => row.kind === 'text' && row.metadata?.origin !== 'prompt');
     expect(textRows[0]?.payload).toEqual({ text: 'First pass.' });
     expect(textRows[1]?.payload).toEqual({ text: 'Second pass.' });
     expect(rows.find(row => row.kind === 'tool')?.payload).toEqual({
@@ -24740,10 +24884,11 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'iteration_failed',
       'failed',
     ]);
-    expect(rows[2]?.kind === 'status' ? rows[2].payload.detail : undefined).toBe('1');
+    expect(rows[3]?.kind === 'status' ? rows[3].payload.detail : undefined).toBe('1');
   });
 
   it('closes an in-flight iteration when structured output validation fails', async () => {
@@ -24772,6 +24917,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_failed',
       'failed',
@@ -24805,6 +24951,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
       expect(transcriptTimeline(rows)).toEqual([
         'started',
         'iteration_started',
+        'text', // the iteration's prompt row
         'text',
         'iteration_failed',
         'failed',
@@ -24878,9 +25025,11 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
       'failed',
@@ -24913,6 +25062,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     expect(transcriptTimeline(rows)).toEqual([
       'started',
       'iteration_started',
+      'text', // the iteration's prompt row
       'text',
       'iteration_completed',
     ]);
@@ -24940,7 +25090,7 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     ]);
     expect(await store.listNodeMessages(workflowRun.id, 'grp')).toEqual([]);
     const bodyRows = await store.listNodeMessages(workflowRun.id, 'grp.body');
-    expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'completed']);
+    expect(transcriptTimeline(bodyRows)).toEqual(['started', 'text', 'text', 'completed']);
   });
 
   it('persists provider-declared text_mode on direct node text rows and leaves untagged text untagged', async () => {
@@ -24953,9 +25103,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
 
     const store = createMockStore();
     const workflowRun = await runNodes(store, [{ id: 'agent', prompt: 'Hi' }]);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'agent')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.payload)).toEqual([{ text: 'Hi' }]);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
 
     expect(textRows.map(row => row.payload)).toEqual([
       { text: 'Hel' },
@@ -25000,9 +25153,20 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'classify')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'classify')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    // The reask pass gets its own prompt row carrying the exact augmented text
+    // the model actually saw — never a duplicate of the first pass's prompt.
+    expect(promptRows).toHaveLength(2);
+    expect(promptRows[0]?.payload).toEqual({ text: 'Classify.' });
+    expect(promptRows[0]?.metadata?.prompt_source).toBe('node_prompt');
+    expect(promptRows[1]?.metadata?.prompt_source).toBe('reask');
+    expect((promptRows[1]?.payload as { text: string }).text).toContain('Classify.');
+    expect((promptRows[1]?.payload as { text: string }).text).not.toBe('Classify.');
+
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
     expect(textRows[1]?.metadata?.text_mode).toBe('delta');
@@ -25010,6 +25174,9 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const secondScope = textRows[1]?.metadata?.execution;
     expect(firstScope?.occurrence_id).toBe(secondScope?.occurrence_id);
     expect(firstScope?.attempt_id).not.toBe(secondScope?.attempt_id);
+    // Each prompt row shares its pass's attempt scope with that pass's assistant text.
+    expect(promptRows[0]?.metadata?.execution?.attempt_id).toBe(firstScope?.attempt_id);
+    expect(promptRows[1]?.metadata?.execution?.attempt_id).toBe(secondScope?.attempt_id);
   });
 
   it('persists provider-declared text_mode on loop node text rows', async () => {
@@ -25026,10 +25193,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     const workflowRun = await runNodes(store, [
       { id: 'refine', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
     ]);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
 
+    expect(allTextRows).toHaveLength(2);
     expect(textRows).toHaveLength(1);
     expect(textRows[0]?.payload).toEqual({ text: 'Iterated.' });
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
@@ -25071,9 +25240,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.metadata?.prompt_source)).toEqual(['node_prompt', 'reask']);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([{ text: 'bad pass' }, { text: 'good pass' }]);
     expect(textRows[0]?.metadata?.text_mode).toBe('delta');
     expect(textRows[1]?.metadata?.text_mode).toBe('delta');
@@ -25119,9 +25291,12 @@ describe('executeDagWorkflow -- command and prompt transcripts', () => {
     );
 
     expect(mockSendQueryDag.mock.calls.length).toBe(2);
-    const textRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
+    const allTextRows = (await store.listNodeMessages(workflowRun.id, 'refine')).filter(
       row => row.kind === 'text'
     );
+    const promptRows = allTextRows.filter(row => row.metadata?.origin === 'prompt');
+    expect(promptRows.map(row => row.metadata?.prompt_source)).toEqual(['node_prompt', 'reask']);
+    const textRows = allTextRows.filter(row => row.metadata?.origin !== 'prompt');
     expect(textRows.map(row => row.payload)).toEqual([
       { text: 'prose pass' },
       { text: 'fixed pass' },
@@ -26193,6 +26368,42 @@ describe('executeDagWorkflow -- AskHuman resume re-entry', () => {
     ]);
   });
 
+  it('records no prompt row on an AskHuman-resume pass — the provider substitutes the human answers for the node prompt', async () => {
+    // The Claude provider swaps attemptPrompt for the mapped answers
+    // internally (buildClaudeAskResumePrompt); attemptPrompt itself is text
+    // the model never sees on this pass, so persisting it as a prompt row
+    // would misattribute the turn.
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_1' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [{ id: 'review', command: 'my-cmd' }]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
+  it('records no prompt row on a loop node AskHuman-resume pass either', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'ok <promise>DONE</promise>' };
+      yield { type: 'result', sessionId: 'sess-ask' };
+    });
+    const store = createMockStore();
+    const row = makeAnsweredAsk({ node_id: 'review', tool_use_id: 'toolu_loop' });
+    wireAnsweredAsks(store, [row]);
+
+    await invokeDag(store, [
+      { id: 'review', loop: { prompt: 'Iterate.', until: 'DONE', max_iterations: 3 } },
+    ]);
+
+    const rows = await store.listNodeMessages('ask-resume-run', 'review');
+    expect(rows.some(r => r.kind === 'text' && r.metadata?.origin === 'prompt')).toBe(false);
+  });
+
   it('maps decline to declined payload', async () => {
     mockSendQueryDag.mockImplementation(function* () {
       yield { type: 'assistant', content: 'ok' };
@@ -26928,6 +27139,49 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
   });
 
+  it('stamps operatorMessageId when the guidance turn delivers exactly one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'solo-1', 'redirect the plan', 'op-a');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBe('solo-1');
+  });
+
+  it('omits operatorMessageId when a guidance turn combines more than one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'combo-1', 'first', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'combo-2', 'second', 'op-b');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBeUndefined();
+  });
+
   it('flushes batch output once per settled turn and folds usage across turns', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {
@@ -27659,7 +27913,7 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   async function invokeDag(
     store: IWorkflowStore,
     nodes: DagNode[],
-    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' }
+    opts?: { runId?: string; assistant?: 'claude' | 'pi' | 'deepseek' | 'codex' }
   ): Promise<IWorkflowPlatform> {
     const assistant = opts?.assistant ?? 'claude';
     const config =
@@ -28841,17 +29095,17 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
   });
 
   /**
-   * DeepSeek interrupt conformance (#187 / US-002).
-   *
-   * Phase 1 spike recorded Block (missing-env), so product
-   * `DEEPSEEK_CAPABILITIES.interrupt` stays `false`. This fixture temporarily
-   * replaces only the registered test capability so it can exercise the
-   * native path without adding a production capability override.
+   * DeepSeek interrupt conformance (#187). Verified against the real DSH
+   * `acp` profile binary on a live subscription: Stop cancels the in-flight
+   * prompt via ACP session/cancel, and the redirect resumes the same
+   * session id via session/resume. `DEEPSEEK_CAPABILITIES.interrupt` is
+   * `'stream-abort'` in production; this fixture exercises the exact abort
+   * triple the adapter emits.
    */
   describe('deepseek conformance', () => {
     const DEEPSEEK_RUN = 'deepseek-interrupt-run';
 
-    /** Exact Phase 1 abort result — no terminalReason. */
+    /** Exact abort result the adapter emits — no terminalReason. */
     function abortedResult(sessionId: string) {
       return {
         type: 'result' as const,
@@ -28862,15 +29116,9 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       };
     }
 
-    /** Test-local native interrupt; product capability remains false under Block. */
-    const deepseekTestCapabilities = {
-      ...DEEPSEEK_CAPABILITIES,
-      interrupt: 'native' as const,
-    };
-
     beforeEach(() => {
       const registered = getRegistration('deepseek');
-      Reflect.set(registered, 'capabilities', deepseekTestCapabilities);
+      Reflect.set(registered, 'capabilities', DEEPSEEK_CAPABILITIES);
       mockGetAgentProviderDag.mockImplementation(() => ({
         sendQuery: mockSendQueryDag,
         getType: () => 'deepseek',
@@ -29026,6 +29274,400 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
       expect(storedEventTypes(store)).toContain('node_completed');
       expect(storedEventTypes(store)).not.toContain('node_failed');
       expect(getSteeringRegistry().get(DEEPSEEK_RUN, 'my-loop')).toBeUndefined();
+    });
+  });
+
+  /**
+   * Codex Stop conformance (#8.4). The adapter yields a `stream_aborted`
+   * `terminalReason` marker (shared with any stream-abort provider) rather
+   * than the DeepSeek triple — proven separately in codex/provider.test.ts.
+   * This block proves the SHARED classification the coordinator required:
+   * `stream_aborted` is interrupted only when a Stop request was actually
+   * accepted; the identical result shape reaching the executor without one
+   * follows the normal SDK-error failure path.
+   */
+  describe('codex conformance', () => {
+    const CODEX_RUN = 'codex-interrupt-run';
+
+    /**
+     * Exact adapter-synthesized abort marker (matches codex/provider.ts's
+     * `buildInterruptedResult`). `isError`/`errorSubtype` ride alongside the
+     * terminal reason so the SAME shape fails loudly through the ordinary
+     * SDK-error path when the executor does not recognize an accepted Stop.
+     */
+    function streamAbortedResult(sessionId: string) {
+      return {
+        type: 'result' as const,
+        sessionId,
+        terminalReason: STREAM_ABORTED_TERMINAL_REASON,
+        isError: true as const,
+        errorSubtype: STREAM_ABORTED_TERMINAL_REASON,
+      };
+    }
+
+    /** Test-local stream-abort interrupt; product capability stays whatever it is. */
+    const codexTestCapabilities = {
+      ...CODEX_CAPABILITIES,
+      interrupt: 'stream-abort' as const,
+    };
+
+    beforeEach(() => {
+      const registered = getRegistration('codex');
+      Reflect.set(registered, 'capabilities', codexTestCapabilities);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'codex',
+        getCapabilities: () => CODEX_CAPABILITIES,
+      }));
+    });
+
+    afterEach(() => {
+      const registered = getRegistration('codex');
+      Reflect.set(registered, 'capabilities', CODEX_CAPABILITIES);
+      mockGetAgentProviderDag.mockImplementation(() => ({
+        sendQuery: mockSendQueryDag,
+        getType: () => 'claude',
+        getCapabilities: mockClaudeCapabilities,
+      }));
+    });
+
+    it('direct path: stream_aborted + operator flag idles, drains queue+Send now on same session, one interrupted tool, no re-ask', async () => {
+      let calls = 0;
+      let interruptOutcome: Promise<string> | undefined;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          interruptOutcome = liveHandle(CODEX_RUN, 'review').interrupt() as Promise<string>;
+          yield { type: 'tool', toolName: 'sleep 30', toolCallId: 'codex-tool-open' };
+          // stream_aborted marker with NO structuredOutput — a natural miss
+          // would re-ask; interrupt must skip the re-ask entirely.
+          yield streamAbortedResult('codex-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected' };
+        yield { type: 'result', sessionId: 'codex-sess-2', structuredOutput: { verdict: 'ok' } };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'review',
+            prompt: 'do work',
+            output_format: {
+              type: 'object',
+              properties: { verdict: { type: 'string' } },
+              required: ['verdict'],
+            },
+          },
+        ],
+        { runId: CODEX_RUN, assistant: 'codex' }
+      );
+
+      await awaitIdle(CODEX_RUN, 'review');
+      expect(await interruptOutcome).toBe('idle-after-interrupt');
+      const states = await transcriptStates(store, CODEX_RUN, 'review');
+      expect(states.filter(s => s === 'interrupted').length).toBe(1);
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      // Open tool settled interrupted exactly once — proves 8.4's "persisted
+      // tool row becomes interrupted" independently of glyph presentation.
+      expect(toolCompletedOutcomes(store).get('codex-tool-open')).toEqual(['interrupted']);
+      // Interrupted pass must not have re-asked structured output.
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+
+      enqueue(store, CODEX_RUN, 'review', 'm-old', 'older guidance');
+      expect(await store.listSteeringQueue(CODEX_RUN, 'review')).toHaveLength(1);
+      sendNow(store, CODEX_RUN, 'review', 'm-new', 'new instruction');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('older guidance\n\nnew instruction');
+      // Same thread continues — no silent new conversation.
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('codex-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
+    });
+
+    it('stream_aborted without operator flag follows the normal SDK failure path', async () => {
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        yield streamAbortedResult('codex-sess-fail');
+      });
+      const store = createMockStore();
+      await invokeDag(store, [{ id: 'review', prompt: 'do work' }], {
+        runId: CODEX_RUN,
+        assistant: 'codex',
+      });
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(1);
+      expect(nodeFailedError(store, 'review')).toContain(
+        `SDK returned ${STREAM_ABORTED_TERMINAL_REASON}`
+      );
+      expect(storedEventTypes(store)).toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'review')).toBeUndefined();
+    });
+
+    it('AI loop: stream_aborted idles inside iteration; Send now resumes same session without consuming one', async () => {
+      let calls = 0;
+      mockSendQueryDag.mockImplementation(async function* () {
+        calls++;
+        if (calls === 1) {
+          void liveHandle(CODEX_RUN, 'my-loop').interrupt();
+          yield { type: 'assistant', content: 'iteration work' };
+          yield streamAbortedResult('codex-loop-sess-1');
+          return;
+        }
+        yield { type: 'assistant', content: 'redirected. <promise>COMPLETE</promise>' };
+        yield { type: 'result', sessionId: 'codex-loop-sess-2' };
+      });
+      const store = createMockStore();
+      const run = invokeDag(
+        store,
+        [
+          {
+            id: 'my-loop',
+            loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+          },
+        ],
+        { runId: CODEX_RUN, assistant: 'codex' }
+      );
+
+      await awaitIdle(CODEX_RUN, 'my-loop');
+      const states = await transcriptStates(store, CODEX_RUN, 'my-loop');
+      expect(states).toContain('interrupted');
+      sendNow(store, CODEX_RUN, 'my-loop', 'm-1', 'redirect the loop');
+      await run;
+
+      expect(mockSendQueryDag.mock.calls.length).toBe(2);
+      expect(sendQueryArg<string>(1, 0)).toBe('redirect the loop');
+      expect(sendQueryArg<string | undefined>(1, 2)).toBe('codex-loop-sess-1');
+      expect(storedEventTypes(store)).toContain('node_completed');
+      expect(storedEventTypes(store)).not.toContain('node_failed');
+      expect(getSteeringRegistry().get(CODEX_RUN, 'my-loop')).toBeUndefined();
+    });
+  });
+});
+
+describe('executeDagWorkflow -- thinking, prompt, and advisor transcript rows', () => {
+  let testDir: string;
+
+  beforeEach(async () => {
+    testDir = join(
+      tmpdir(),
+      `dag-agent-context-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    await mkdir(join(testDir, '.archon', 'commands'), { recursive: true });
+    await writeFile(
+      join(testDir, '.archon', 'commands', 'my-cmd.md'),
+      'Command prompt body for $USER_MESSAGE'
+    );
+
+    mockSendQueryDag.mockClear();
+    mockGetAgentProviderDag.mockClear();
+    mockGetAgentProviderDag.mockImplementation(() => ({
+      sendQuery: mockSendQueryDag,
+      getType: () => 'claude',
+      getCapabilities: mockClaudeCapabilities,
+    }));
+  });
+
+  afterEach(async () => {
+    try {
+      await rm(testDir, { recursive: true, force: true });
+    } catch {
+      // ignore cleanup errors
+    }
+  });
+
+  function textRowsByOrigin(
+    store: IWorkflowStore,
+    runId: string,
+    nodeId: string
+  ): Promise<Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>> {
+    return store.listNodeMessages(runId, nodeId).then(rows => rows.filter(r => r.kind === 'text'));
+  }
+
+  it('persists an inline prompt as a node_prompt row attributed to the run starter', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-node-prompt', { user_id: 'user-starter-1' });
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'prompt-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-node-prompt', 'my-node');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow).toMatchObject({
+      payload: { text: 'Say hello.' },
+      metadata: { origin: 'prompt', actor_user_id: 'user-starter-1', prompt_source: 'node_prompt' },
+    });
+    // Exactly one prompt row for a single-turn node — no reask, no duplicate.
+    expect(rows.filter(r => r.metadata?.origin === 'prompt')).toHaveLength(1);
+  });
+
+  it('persists a command-file turn as a command_file row', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-command-prompt');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'command-prompt-test-dag', nodes: [node('my-cmd')] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-command-prompt', 'my-cmd');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow?.metadata).toMatchObject({ prompt_source: 'command_file' });
+  });
+
+  it('persists a null actor when the run has no attributed starter', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-null-actor', { user_id: null });
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'sess-3' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'null-actor-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-null-actor', 'my-node');
+    const promptRow = rows.find(r => r.metadata?.origin === 'prompt');
+    expect(promptRow?.metadata?.actor_user_id).toBeNull();
+  });
+
+  it('persists displayable thinking as its own row, in order, never joining $node.output', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-thinking');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'thinking', content: 'weighing two approaches' };
+      yield { type: 'assistant', content: 'final answer' };
+      yield { type: 'result', sessionId: 'sess-4' };
+    });
+
+    const result = await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'thinking-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-thinking', 'my-node');
+    const kinds = rows.map(r => r.metadata?.origin ?? 'assistant');
+    expect(kinds).toEqual(['prompt', 'thinking', 'assistant']);
+    const thinkingRow = rows.find(r => r.metadata?.origin === 'thinking');
+    expect(thinkingRow?.payload).toEqual({ text: 'weighing two approaches' });
+    // Thinking never joins the node's $node.output — only the assistant text does.
+    expect(result).toBe('final answer');
+  });
+
+  it('persists an advisor notification with the configured advisor model', async () => {
+    const mockStore = createMockStore();
+    const mockDeps = createMockDeps(mockStore);
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('run-advisor');
+
+    mockSendQueryDag.mockImplementation(function* () {
+      yield {
+        type: 'advisor',
+        content: 'use a channel-based shutdown',
+        advisorModel: 'claude-opus-4-8',
+      };
+      yield { type: 'assistant', content: 'final answer' };
+      yield { type: 'result', sessionId: 'sess-5' };
+    });
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-dag',
+      testDir,
+      { name: 'advisor-test-dag', nodes: [{ id: 'my-node', prompt: 'Say hello.' }] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'state'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const rows = await textRowsByOrigin(mockStore, 'run-advisor', 'my-node');
+    const advisorRow = rows.find(r => r.metadata?.origin === 'advisor');
+    expect(advisorRow).toMatchObject({
+      payload: { text: 'use a channel-based shutdown' },
+      metadata: { origin: 'advisor', advisor_model: 'claude-opus-4-8' },
     });
   });
 });

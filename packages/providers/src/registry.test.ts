@@ -206,14 +206,17 @@ describe('registry', () => {
       expect(capable).toEqual(['claude']);
     });
 
-    test('no registered provider advertises stream-abort yet', () => {
+    test('Codex and DeepSeek advertise stream-abort; OMP does not yet', () => {
       registerCommunityProviders();
       const streamAbort = getProviderInfoList()
         .filter(info => info.capabilities.interrupt === 'stream-abort')
         .map(info => info.id)
         .sort();
-      // US-003 flips OMP after the real-binary gate; US-002 keeps interrupt false.
-      expect(streamAbort).toEqual([]);
+      // Codex Stop is verified against the real SDK (interrupt-resume-spike.ts
+      // plus a live mid-tool run). DeepSeek Stop is verified against the real
+      // DSH acp binary on a live subscription. OMP flips after its own
+      // real-binary gate.
+      expect(streamAbort).toEqual(['codex', 'deepseek']);
     });
 
     test('throws UnknownProviderError for unknown type', () => {

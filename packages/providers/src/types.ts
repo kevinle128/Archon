@@ -21,6 +21,13 @@ export interface ClaudeProviderDefaults {
    *  Archon builds when `CLAUDE_BIN_PATH` is not set; optional in dev mode
    *  (SDK resolves from node_modules). */
   claudeBinaryPath?: string;
+  /**
+   * Model id for the Claude Code advisor consult (SDK `Settings.advisorModel`).
+   * When set, Archon both enables the consult and knows which model to
+   * attribute an advisor notification to; when unset, a consult triggered by
+   * some other setting source is still shown, without a model identity.
+   */
+  advisorModel?: string;
 }
 
 export interface CodexProviderDefaults {
@@ -330,6 +337,17 @@ export type MessageChunk =
   | { type: 'system'; content: string }
   | { type: 'thinking'; content: string }
   | {
+      /**
+       * A notification from a consulted advisor model (Claude Code's
+       * `advisorModel` consult). `advisorModel` is the model Archon
+       * configured; omitted when Archon did not set it, so the identity
+       * shown is never guessed from provider text.
+       */
+      type: 'advisor';
+      content: string;
+      advisorModel?: string;
+    }
+  | {
       type: 'result';
       sessionId?: string;
       tokens?: TokenUsage;
@@ -465,7 +483,12 @@ export type MessageChunk =
       outcome: 'success' | 'error' | 'cancelled';
       exitCode?: number;
     }
-  | { type: 'workflow_dispatch'; workerConversationId: string; workflowName: string };
+  | { type: 'workflow_dispatch'; workerConversationId: string; workflowName: string }
+  // Provider-verified acknowledgement that a specific caller-stamped operator
+  // message (soft-injected or delivered at a natural turn boundary) was
+  // accepted by the live turn (CAP-13). Correlation is by `messageId` alone —
+  // never inferred from provider text or timing. Emitted at most once per id.
+  | { type: 'operator_delivery_ack'; messageId: string };
 
 /**
  * System prompt input accepted by all providers. Mirrors the Claude Agent SDK
@@ -595,6 +618,39 @@ export interface AgentTraceContext {
 }
 
 /**
+ * One operator-authored message offered to a live provider turn without
+ * invoking Stop (CAP-12 per-item "Send now"). `messageId` is the durable
+ * caller-stamped id used for delivery correlation — never inferred from
+ * `text` content or timing.
+ */
+export interface SoftInjectionRequest {
+  readonly messageId: string;
+  readonly text: string;
+}
+
+/**
+ * Turn-scoped mid-generation delivery channel (operator per-item "Send now"
+ * without Stop). Symmetric with `interruptSignal`/`AbortSignal`: the executor
+ * owns the writable controller and hands the adapter only this read-only
+ * view through `AgentRequestOptions.softInjection`. A provider whose
+ * `capabilities.softInjection` is `true` calls `ready()` once its live turn
+ * can accept a message (e.g. once its streaming-input handle exists); a
+ * provider without the capability never calls it, exactly like a provider
+ * that ignores `interruptSignal`.
+ */
+export interface SoftInjectionChannel {
+  /**
+   * Registers the handler that attempts delivery into the live turn.
+   * `handler` resolves to whether THIS turn's live transport actually
+   * accepted the request — never inferred from provider text or timing.
+   * Returns an unregister function; the adapter MUST call it once the turn
+   * can no longer accept injections (stream ended or closing), so a stale
+   * handler is never left registered against a dead turn.
+   */
+  ready(handler: (request: SoftInjectionRequest) => Promise<boolean>): () => void;
+}
+
+/**
  * Universal request options accepted by all providers.
  * Provider-specific fields go through `nodeConfig` and `assistantConfig` in SendQueryOptions.
  */
@@ -613,6 +669,27 @@ export interface AgentRequestOptions {
    * capability ignore it.
    */
   interruptSignal?: AbortSignal;
+  /**
+   * Mid-turn soft-injection channel (operator "Send now" on one queued item
+   * without Stop, CAP-12): providers declaring `capabilities.softInjection
+   * === true` register a delivery handler on it while their live turn can
+   * accept one. An accepted injection never ends the turn and never emits a
+   * steering-owned turn-start event. Always present on an interruptible
+   * handle's turn; a provider without the capability must ignore it, exactly
+   * like a provider that ignores `interruptSignal`.
+   */
+  softInjection?: SoftInjectionChannel;
+  /**
+   * Caller-stamped durable message id for the single operator-guidance
+   * message this turn's `prompt` delivers (CAP-13 delivery acknowledgement).
+   * Set only when exactly one durable queue entry is being delivered as this
+   * turn's prompt — a combined multi-message prompt omits it, since one
+   * provider acknowledgement cannot honestly attribute to more than one id.
+   * A provider with `capabilities.deliveryAck === true` stamps it onto the
+   * outgoing message and emits `operator_delivery_ack` when the provider
+   * echoes it back; a provider without the capability ignores it.
+   */
+  operatorMessageId?: string;
   systemPrompt?: SystemPromptInput;
   outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
   env?: Record<string, string>;

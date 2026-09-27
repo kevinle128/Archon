@@ -102,7 +102,7 @@ describe('CodexProvider', () => {
         nativeTools: false,
         containerExec: false,
         askHuman: false,
-        interrupt: false,
+        interrupt: 'stream-abort',
         softInjection: false,
         deliveryAck: false,
       });
@@ -631,12 +631,13 @@ describe('CodexProvider', () => {
       });
     });
 
-    test('yields file change summary for file_change items', async () => {
+    test('successful file_change yields one tool/tool_result pair per path, in order (#4.1)', async () => {
       mockRunStreamed.mockResolvedValue({
         events: (async function* () {
           yield {
             type: 'item.completed',
             item: {
+              id: 'fc-1',
               type: 'file_change',
               status: 'completed',
               changes: [
@@ -655,10 +656,80 @@ describe('CodexProvider', () => {
         chunks.push(chunk);
       }
 
-      expect(chunks[0]).toEqual({
-        type: 'system',
-        content: '\u2705 File changes:\n\u2795 src/new.ts\n\u{1F4DD} src/app.ts\n\u2796 src/old.ts',
-      });
+      // No summary system chunk on the success path \u2014 the structured rows
+      // below are the readable evidence.
+      expect(chunks.filter(c => c.type === 'system')).toHaveLength(0);
+
+      const toolChunks = chunks.filter(c => c.type === 'tool');
+      const resultChunks = chunks.filter(c => c.type === 'tool_result');
+      expect(toolChunks).toEqual([
+        {
+          type: 'tool',
+          toolName: 'apply_patch',
+          toolInput: { path: 'src/new.ts', kind: 'add' },
+          toolCallId: 'fc-1:0',
+        },
+        {
+          type: 'tool',
+          toolName: 'apply_patch',
+          toolInput: { path: 'src/app.ts', kind: 'update' },
+          toolCallId: 'fc-1:1',
+        },
+        {
+          type: 'tool',
+          toolName: 'apply_patch',
+          toolInput: { path: 'src/old.ts', kind: 'delete' },
+          toolCallId: 'fc-1:2',
+        },
+      ]);
+      // Non-existent files in this fixture's cwd \u2014 a real event, honestly
+      // reported as unreadable rather than a fabricated preview.
+      for (const r of resultChunks) {
+        expect(r).toMatchObject({ type: 'tool_result', toolOutcome: 'success', toolOutput: '' });
+      }
+      expect(resultChunks.map(r => (r as { outputState?: string }).outputState)).toEqual([
+        'missing',
+        'missing',
+        'missing',
+      ]);
+      // A deleted path is never read back \u2014 there is nothing left to preview.
+    });
+
+    test("successful file_change reads the changed file's current content as bounded preview evidence", async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'codex-file-change-'));
+      try {
+        await writeFile(join(dir, 'touched.ts'), 'export const x = 1;\n');
+        mockRunStreamed.mockResolvedValue({
+          events: (async function* () {
+            yield {
+              type: 'item.completed',
+              item: {
+                id: 'fc-2',
+                type: 'file_change',
+                status: 'completed',
+                changes: [{ kind: 'update', path: 'touched.ts' }],
+              },
+            };
+            yield { type: 'turn.completed', usage: defaultUsage };
+          })(),
+        });
+
+        const chunks = [];
+        for await (const chunk of client.sendQuery('test', dir)) {
+          chunks.push(chunk);
+        }
+
+        const result = chunks.find(c => c.type === 'tool_result');
+        expect(result).toMatchObject({
+          type: 'tool_result',
+          toolName: 'apply_patch',
+          toolOutput: 'export const x = 1;\n',
+          toolOutcome: 'success',
+          outputState: 'full',
+        });
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
     });
 
     test('yields failed file change with error message', async () => {
@@ -2662,6 +2733,247 @@ describe('sendQuery decomposition behaviors', () => {
       process.removeListener('uncaughtException', handler);
     }
   }, 5_000);
+});
+
+describe('operator interrupt (Stop, #8.4)', () => {
+  let client: CodexProvider;
+
+  beforeEach(() => {
+    resetCodexSingleton();
+    client = new CodexProvider({ retryBaseDelayMs: 1, interruptThreadIdWaitMs: 20 });
+    mockStartThread.mockClear();
+    mockResumeThread.mockClear();
+    mockRunStreamed.mockClear();
+    mockLogger.info.mockClear();
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    mockLogger.debug.mockClear();
+    mockStartThread.mockReturnValue(createMockThread('new-thread-id'));
+    mockResumeThread.mockReturnValue(createMockThread('resumed-thread-id'));
+  });
+
+  test('mid-generation interrupt yields a stream_aborted result instead of throwing', async () => {
+    const interruptController = new AbortController();
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'partial', id: '1' },
+        };
+        interruptController.abort();
+        // Mirrors the measured SDK behavior: aborting the turn signal throws
+        // rather than closing cleanly.
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    const result = chunks.at(-1);
+    expect(result).toEqual({
+      type: 'result',
+      sessionId: 'new-thread-id',
+      terminalReason: 'stream_aborted',
+      isError: true,
+      errorSubtype: 'stream_aborted',
+    });
+  });
+
+  test('mid-tool interrupt still surfaces the sessionId for resumption', async () => {
+    const interruptController = new AbortController();
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 30', id: 't1' },
+        };
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some(c => c.type === 'tool' && c.toolCallId === 't1')).toBe(true);
+    const result = chunks.at(-1);
+    expect(result).toMatchObject({
+      type: 'result',
+      sessionId: 'new-thread-id',
+      terminalReason: 'stream_aborted',
+    });
+  });
+
+  test('a resumed thread already knows its id, so the interrupted result resumes the same session', async () => {
+    const interruptController = new AbortController();
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'redirected', id: '1' },
+        };
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', 'resumed-thread-id', {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'result',
+      sessionId: 'resumed-thread-id',
+      terminalReason: 'stream_aborted',
+    });
+    // Same-thread continuation: resumeThread was used, never a fresh startThread.
+    expect(mockResumeThread).toHaveBeenCalledWith('resumed-thread-id', expect.anything());
+    expect(mockStartThread).not.toHaveBeenCalled();
+  });
+
+  test('node-level Cancel dominates when it races an operator interrupt', async () => {
+    const cancelController = new AbortController();
+    const interruptController = new AbortController();
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.completed',
+          item: { type: 'agent_message', text: 'partial', id: '1' },
+        };
+        interruptController.abort();
+        cancelController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const consumeGenerator = async (): Promise<void> => {
+      for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+        abortSignal: cancelController.signal,
+        interruptSignal: interruptController.signal,
+      })) {
+        // consume
+      }
+    };
+
+    await expect(consumeGenerator()).rejects.toThrow('Query aborted');
+  });
+
+  test('an interrupted turn never retries even though the throw looks abort-shaped', async () => {
+    const interruptController = new AbortController();
+    mockRunStreamed.mockImplementation(() =>
+      Promise.resolve({
+        events: (async function* () {
+          interruptController.abort();
+          throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+        })(),
+      })
+    );
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(mockRunStreamed).toHaveBeenCalledTimes(1);
+    expect(chunks.at(-1)).toMatchObject({ terminalReason: 'stream_aborted' });
+  });
+
+  test('an interrupt before thread.started defers the abort until the id is retained', async () => {
+    const fakeThread: { id: string | null; runStreamed: typeof mockRunStreamed } = {
+      id: null,
+      runStreamed: mockRunStreamed,
+    };
+    mockStartThread.mockReturnValue(fakeThread);
+    const interruptController = new AbortController();
+
+    mockRunStreamed.mockImplementation((_prompt, opts: { signal?: AbortSignal }) => {
+      return Promise.resolve({
+        events: (async function* () {
+          // Operator intent arrives before the SDK has assigned an id.
+          interruptController.abort();
+          // The provider must NOT have aborted the per-attempt signal yet —
+          // it defers until the id is known.
+          expect(opts.signal?.aborted).toBe(false);
+          // Simulate the SDK's own internal assignment on `thread.started`
+          // (a live getter in the real SDK, mutated before the event yields).
+          fakeThread.id = 'late-thread-id';
+          yield { type: 'thread.started', thread_id: 'late-thread-id' };
+          // The deferred abort now fires because the id is known; the next
+          // await naturally lands after the timer's abort() call.
+          await new Promise(resolve => setTimeout(resolve, 40));
+          throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+        })(),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toEqual({
+      type: 'result',
+      sessionId: 'late-thread-id',
+      terminalReason: 'stream_aborted',
+      isError: true,
+      errorSubtype: 'stream_aborted',
+    });
+  });
+
+  test('an interrupt that fires before any thread id is ever retained still applies after the wait', async () => {
+    const fakeThread: { id: string | null; runStreamed: typeof mockRunStreamed } = {
+      id: null,
+      runStreamed: mockRunStreamed,
+    };
+    mockStartThread.mockReturnValue(fakeThread);
+    const interruptController = new AbortController();
+
+    mockRunStreamed.mockImplementation((_prompt, opts: { signal?: AbortSignal }) => {
+      return Promise.resolve({
+        events: (async function* () {
+          interruptController.abort();
+          // Wait past the injected defer window without ever assigning an id
+          // (pathological: the thread never starts). The abort must still
+          // apply so Stop cannot hang.
+          await new Promise(resolve => setTimeout(resolve, 60));
+          if (opts.signal?.aborted) {
+            throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+          }
+        })(),
+      });
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toEqual({
+      type: 'result',
+      terminalReason: 'stream_aborted',
+      isError: true,
+      errorSubtype: 'stream_aborted',
+    });
+  });
 });
 
 describe('usageBreakdown normalization (US-002)', () => {
