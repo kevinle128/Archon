@@ -320,7 +320,7 @@ describe('ConsoleComposerDock', () => {
     const label = host.querySelector('label[for]');
     expect(label?.textContent).toBe('message to implement');
     expect(label?.getAttribute('for')).toBe(field().id);
-    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · this tab only');
+    expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · saved for you');
     const button = queueButton();
     expect(button.textContent?.trim()).toBe('Queue');
     expect(button.getAttribute('aria-keyshortcuts')).toBe('Meta+Enter Control+Enter');
@@ -408,7 +408,7 @@ describe('ConsoleComposerDock', () => {
     expect(items[0].textContent).toContain('wrong suite — use -p archon-workflows');
     expect(items[0].textContent).not.toContain('sent');
     const band = list?.closest('section');
-    expect(band?.textContent ?? '').not.toContain('this tab only');
+    expect(band?.textContent ?? '').not.toContain('saved for you');
 
     expect(field().value).toBe('');
     expect((win.document.activeElement as unknown) === field()).toBe(true);
@@ -936,8 +936,8 @@ describe('ConsoleComposerDock', () => {
   });
 
   function deleteButtons(): HTMLButtonElement[] {
-    return [...host.querySelectorAll('button')].filter(
-      button => (button.textContent ?? '').trim() === 'delete'
+    return [...host.querySelectorAll('button')].filter(button =>
+      (button.getAttribute('aria-label') ?? '').startsWith('delete · ')
     ) as unknown as HTMLButtonElement[];
   }
   async function clickDelete(index: number): Promise<void> {
@@ -1275,7 +1275,7 @@ describe('ConsoleComposerDock', () => {
     const buttons = deleteButtons();
     expect(buttons).toHaveLength(2);
     for (const button of buttons) {
-      expect(button.textContent?.trim()).toBe('delete');
+      expect(button.textContent?.trim()).toBe('✕');
       expect(button.getAttribute('type')).toBe('button');
       expect(button.className).toContain('min-h-[24px]');
       expect(button.className).toContain('min-w-[24px]');
@@ -1389,7 +1389,7 @@ describe('ConsoleComposerDock', () => {
     expect(items[0].textContent).not.toContain('sent');
     expect(items[1].textContent).toContain('beta');
     const band = list?.closest('section');
-    expect(band?.textContent ?? '').not.toContain('this tab only');
+    expect(band?.textContent ?? '').not.toContain('saved for you');
     expect(band?.className).toContain('bg-surface-elevated');
     expect(band?.className).toContain('border-t');
     expect(band?.textContent).toContain('saved to server');
