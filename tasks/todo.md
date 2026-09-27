@@ -23,7 +23,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] agent-interrupt-redirect e2e 11/11 merged. Note: agent-withdraw-guidance.spec.ts ~566 may be stale (422 vs recovery) — check in final gate
 - [x] e2e gate merged: 150 pass / 1 flaky / 4 skipped (baseline 98/53)
 - [x] e2e residual merged: scroller min-height floor, strict todo assertion restored, withdraw drain deterministic (40/40)
-- [ ] 7 new e2e failures after QA2 merges (interrupt-redirect blank Send now, queue-guidance attempt check, occurrence-navigation, verifier-visual) — agent e2e-new-failures
+- [x] e2e UI suite 153 pass / 0 fail / 4 skipped (merged)
 
 - [x] QA round 2 report (visual-qa-2): 1 blocker, 2 major, 7 minor, 2 cosmetic; round-1 fixes hold
 - [x] QA2 engine fixes merged (steered turns keep attempt identity, rejected retry side effects, blank Send now drains queue, blocked Claude tool ◐, Files changed after retry) — agent qa2-engine
