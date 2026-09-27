@@ -7,7 +7,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] A — 3.1, 3.2, 3.3, 10.1 merged (4e84d1c3); overflow regression fixed by me (a9354f7e)
 - [x] A2 — loop execution dedupe + mockup header merged (f1795a8f); [hidden] vs flex fix (aed984b0)
 - [x] QA report committed (f34387f4): 2 major, 6 minor, 2 cosmetic
-- [ ] VQ fixes (+ VQ-5 queue numbering/accent/chevron, VQ-9 loop title suffix; todo terminal styling, loop selector labels, Legacy status rows, recovery pill, Codex wrappers + web search, stale ◐ rows, e2e 520px) — agent vq-fixes
+- [x] VQ fixes merged (VQ-1..VQ-9)
 - [x] B — durable steering + Stop backend merged (b14a0b8a); check:schema-upgrades OK. Live Stop→idle→Send now not yet proven on a real run (B-UI/F1 must prove)
 - [x] C1 — 4.2–4.4 merged (a281aaf3). Chat outcome plumbing fixed by me
 - [x] F2 — 4.1, 8.4, 8.6 merged; Codex + DeepSeek interrupt=stream-abort proven live (DeepSeek via alibaba/deepseek-v4.1-flash)
