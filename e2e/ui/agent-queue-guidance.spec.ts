@@ -435,7 +435,7 @@ for (const surface of ['console', 'legacy'] as const) {
       expect(operatorRows[0]!.metadata?.execution?.attempt_id).toBe(causedAttempt);
       expect(operatorRows[1]!.metadata?.execution?.attempt_id).toBe(causedAttempt);
 
-      const priorAttempt = messages
+      const priorRow = messages
         .filter(
           message =>
             message.kind === 'text' &&
@@ -443,11 +443,20 @@ for (const surface of ['console', 'legacy'] as const) {
             message.seq < operatorRows[0]!.seq &&
             typeof message.metadata?.execution?.attempt_id === 'string'
         )
-        .at(-1)?.metadata?.execution?.attempt_id;
-      if (priorAttempt !== undefined) {
-        expect(priorAttempt, 'operator rows use the caused attempt, not the prior turn').not.toBe(
-          causedAttempt
-        );
+        .at(-1);
+      if (priorRow !== undefined) {
+        // A steered node is one execution with several provider turns on one
+        // live session: the turn that opened the node and the guidance turn
+        // it steers into share the same occurrence and attempt, so the room
+        // keeps projecting every turn's rows together while the node runs.
+        expect(
+          priorRow.metadata?.execution?.attempt_id,
+          'the drained guidance turn keeps the attempt that opened the node'
+        ).toBe(causedAttempt);
+        expect(
+          priorRow.metadata?.execution?.occurrence_id,
+          'the drained guidance turn keeps the occurrence that opened the node'
+        ).toBe(echoRow!.metadata?.execution?.occurrence_id);
       }
 
       const detail = await getRunDetail(page, run.runId);
