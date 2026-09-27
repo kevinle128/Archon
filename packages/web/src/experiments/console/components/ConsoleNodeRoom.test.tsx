@@ -974,7 +974,10 @@ describe('ConsoleNodeRoom', () => {
     expect(host.textContent).toContain('negative');
     expect(host.textContent).toContain('fix');
     expect(host.textContent).toContain('$review.output.approved == true');
-    expect(host.textContent).toContain('#2');
+    // The room header title states the bare node name only, dropping the log
+    // stream's own `#N` execution suffix — the decision body's own
+    // "Execution" field (asserted above via its other fields) already
+    // carries that number.
     expect(host.textContent).not.toContain('done');
 
     await act(async () => {
