@@ -213,6 +213,51 @@ export function capExecutionOptions<T extends { order: number }>(
   return [...rows].sort((a, b) => a.order - b.order).slice(rows.length - max);
 }
 
+export interface ExecutionOptionInput {
+  readonly id: string;
+  readonly label: string;
+  readonly status: string;
+}
+
+export interface ExecutionOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** The live-status word a header selector option carries, mirroring `Iteration 3 · running`. */
+const EXECUTION_OPTION_LIVE_WORD: Readonly<Record<string, string>> = {
+  running: 'running',
+  awaiting: 'awaiting',
+};
+
+/**
+ * A header selector must never offer two options an operator cannot tell
+ * apart. Two independent signals close that gap over `options`, given in the
+ * caller's chronological order:
+ *
+ * - the row currently backed by a live process states so (`Iteration 3 ·
+ *   running`), matching the approved mockup;
+ * - if the text still collides after that — two finished executions of the
+ *   same iteration/route slot the engine never distinguished by retry epoch,
+ *   as a workflow resume can produce — a later duplicate gains a numbered
+ *   `· Run N` suffix so no two options ever render identical text.
+ */
+export function disambiguateExecutionOptions(
+  options: readonly ExecutionOptionInput[]
+): ExecutionOption[] {
+  const seen = new Map<string, number>();
+  return options.map(option => {
+    const liveWord = EXECUTION_OPTION_LIVE_WORD[option.status];
+    const base = liveWord === undefined ? option.label : `${option.label} · ${liveWord}`;
+    const occurrence = (seen.get(base) ?? 0) + 1;
+    seen.set(base, occurrence);
+    return {
+      id: option.id,
+      label: occurrence === 1 ? base : `${base} · Run ${String(occurrence)}`,
+    };
+  });
+}
+
 interface LoopAncestryLike {
   readonly node_id: string;
   readonly iteration: number;
@@ -432,11 +477,24 @@ export function runtimeForSelection(
   return { provider: provider ?? '', model: model ?? '' };
 }
 
+/**
+ * `row.label` carries the log stream's own `×N`/`#N` execution suffix
+ * (`labelForExecution` in `build-log-rows.ts`) — useful for scanning a list
+ * of many rows, but the room header already states which execution is
+ * selected through its own Execution selector, so repeating the suffix in
+ * the title is redundant. Strips exactly that trailing suffix; a bare label
+ * with no suffix passes through unchanged.
+ */
+function bareNodeLabel(label: string): string {
+  const match = /^(.+) (?:×|#)\d+$/.exec(label);
+  return match?.[1] ?? label;
+}
+
 export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHeaderModel {
   const runtime = runtimeForSelection(input.events, input.row);
   return {
     nodeId: input.row.nodeId,
-    nodeLabel: input.row.label,
+    nodeLabel: bareNodeLabel(input.row.label),
     executionLabel: executionLabel(input.row.selection),
     status: input.row.status,
     startedOffsetMs: startedOffsetMs(input.row, input.runStartedAt),
@@ -506,7 +564,15 @@ const STATUS_PILL_LABEL: Readonly<Record<string, string>> = {
   cancelled: 'Cancelled',
 };
 
-export function statusPill(status: string): StatusPill {
+/**
+ * A restart-recovery signal overrides the row's own lifecycle-status pill:
+ * the row is still non-terminal (`running`/`awaiting`), but no live provider
+ * process backs it, so `Running` would claim a process that no longer
+ * exists. The server tells the client this explicitly (`execution_state` on
+ * the steering queue read) — it is never guessed from a timer.
+ */
+export function statusPill(status: string, recoveryRequired = false): StatusPill {
+  if (recoveryRequired) return { label: 'Recovery required', tone: 'warning' };
   return {
     label: STATUS_PILL_LABEL[status] ?? status,
     tone: STATUS_PILL_TONE[status] ?? null,
@@ -574,7 +640,12 @@ export interface HeaderMetaLineInput {
   /** Set only when viewing a finished iteration while the node runs live
    * elsewhere; the run count is not meaningful for that stale history view. */
   readonly iterationPrefix?: number | null;
+  /** Server-reported restart recovery — see `statusPill`. Default false. */
+  readonly recoveryRequired?: boolean;
 }
+
+/** The live segment a restart-recovery meta line reports instead of `running…`. */
+const RECOVERY_REQUIRED_META_SEGMENT = 'restored after server restart';
 
 const LIVE_META_STATUSES: ReadonlySet<string> = new Set(['running', 'awaiting']);
 
@@ -595,7 +666,9 @@ export function headerMetaLine(input: HeaderMetaLineInput): string | null {
     const clock = startedClockLabel(input.startedAt);
     if (clock !== null) segments.push(clock);
   }
-  if (input.status === 'failed' && input.idleAwaitExpired === true) {
+  if (input.recoveryRequired === true) {
+    segments.push(RECOVERY_REQUIRED_META_SEGMENT);
+  } else if (input.status === 'failed' && input.idleAwaitExpired === true) {
     segments.push('failed after idle timeout');
   } else if (LIVE_META_STATUSES.has(input.status)) {
     segments.push('running…');

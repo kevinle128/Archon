@@ -148,4 +148,27 @@ describe('NodeRoomHeader', () => {
     expect(text).not.toContain('started');
     expect(host.querySelector('select[aria-label="Execution"]')).toBeNull();
   });
+
+  test('a recovery-required signal overrides the pill and drops the running… meta segment', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: ITERATION_TWO,
+          options: [{ rowId: 'iter-2', label: 'Iteration 2' }],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+          recoveryRequired: true,
+        })
+      );
+    });
+
+    const text = host.textContent ?? '';
+    expect(text).toContain('Recovery required');
+    expect(text).toContain('restored after server restart');
+    expect(text).not.toContain('running…');
+    expect(text).not.toContain('Running');
+  });
 });

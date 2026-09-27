@@ -208,6 +208,30 @@ describe('input-key inference', () => {
     }
   });
 
+  test('a name-only Codex web_search marker resolves to web, headlined by the query alone', () => {
+    const presentation = call('🔍 Searching: https://raw.githubusercontent.com/example/repo');
+    expect(presentation.family).toBe('web');
+    expect(presentation.label).toBe('web');
+    expect(presentation.headline).toBe('https://raw.githubusercontent.com/example/repo');
+    expect(presentation.headlineKind).toBe('path');
+  });
+
+  test('the marker still resolves with the empty-object wire convention for "no input"', () => {
+    const presentation = call('🔍 Searching: https://example.com', {});
+    expect(presentation.family).toBe('web');
+    expect(presentation.headline).toBe('https://example.com');
+  });
+
+  test('the web_search marker with no query left over does not resolve to web', () => {
+    const presentation = call('🔍 Searching: ');
+    expect(presentation.family).not.toBe('web');
+  });
+
+  test('a structured input never gets duck-typed by the web_search marker', () => {
+    const presentation = call('🔍 Searching: https://example.com', { command: 'ls' });
+    expect(presentation.family).toBe('shell');
+  });
+
   test('before/after pairs resolve to file', () => {
     for (const [before, after] of [
       ['old_string', 'new_string'],
@@ -288,6 +312,26 @@ describe('codex name-only shell path', () => {
     const name = "/bin/zsh -lc 'ls -la";
     const presentation = call(name);
     expect(presentation.headline).toBe(name);
+  });
+
+  test('the bare binary name (no /bin/ prefix) is stripped', () => {
+    expect(call("zsh -lc 'ls -la /tmp'").headline).toBe('ls -la /tmp');
+    expect(call("bash -lc 'bun test foo'").headline).toBe('bun test foo');
+  });
+
+  test('the -c flag (no login shell) is stripped like -lc', () => {
+    expect(call("/bin/bash -c 'bun run validate'").headline).toBe('bun run validate');
+    expect(call("bash -c 'bun run validate'").headline).toBe('bun run validate');
+  });
+
+  test('a double-quoted wrapper is stripped like the single-quoted form', () => {
+    expect(call('/bin/zsh -lc "rg -n foo"').headline).toBe('rg -n foo');
+    expect(call('bash -c "bun run validate"').headline).toBe('bun run validate');
+  });
+
+  test('mismatched quote styles are not stripped', () => {
+    const name = `/bin/zsh -lc 'rg -n foo"`;
+    expect(call(name).headline).toBe(name);
   });
 
   test('overlong multiline name resolves to shell', () => {

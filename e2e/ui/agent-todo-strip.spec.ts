@@ -51,7 +51,12 @@ const EVIDENCE_DIR = join(
 );
 const METRICS_FILE = join(EVIDENCE_DIR, 'todo-strip-metrics.json');
 
-const TARGET_ROOM_WIDTH = 460;
+// Legacy's room region is the fixed 460px panel itself. Console's panel is a
+// fixed 520px width (`CONSOLE_ROOM_WIDTH_PX`), but the region inside it gets
+// a 4px outset margin on each side while the todo strip is visible
+// (`allowOutsetFocus` in ConsoleNodeRoom) — every test in this file shows the
+// strip, so the measured region is consistently 520 − 8 = 512.
+const TARGET_ROOM_WIDTH: Record<Surface, number> = { console: 512, legacy: 460 };
 const ROOM_TOLERANCE_PX = 2;
 const SPLIT_VIEWPORT = { width: 1440, height: 1000 } as const;
 const SWEEP_VIEWPORTS = [
@@ -153,6 +158,7 @@ async function runTodoStrip(page: Page, archon: ArchonRuntime): Promise<CliRunRe
  * what gets asserted.
  */
 async function setRoomWidth(page: Page, surface: Surface, runId: string): Promise<number> {
+  const target = TARGET_ROOM_WIDTH[surface];
   const panel = page.locator(`#${ROOM_PANEL_ID[surface]}`);
   const metrics = await panel.evaluate(el => {
     const panelRect = el.getBoundingClientRect();
@@ -165,7 +171,7 @@ async function setRoomWidth(page: Page, surface: Surface, runId: string): Promis
   const inset = metrics.panel - regionWidth;
   const ratio = Math.min(
     ROOM_RATIO_MAX,
-    Math.max(ROOM_RATIO_MIN, ((TARGET_ROOM_WIDTH + inset) / metrics.group) * 100)
+    Math.max(ROOM_RATIO_MIN, ((target + inset) / metrics.group) * 100)
   );
   await page.evaluate(
     ([key, value]) => {
@@ -176,8 +182,8 @@ async function setRoomWidth(page: Page, surface: Surface, runId: string): Promis
   const room = await openNodeRoom(page, surface, runId, TODO_STRIP_TODO_NODE);
   const width = (await room.boundingBox())?.width ?? 0;
   expect(
-    Math.abs(width - TARGET_ROOM_WIDTH),
-    `measured room width ${String(width)} must land within ${String(TARGET_ROOM_WIDTH)}±${String(ROOM_TOLERANCE_PX)}`
+    Math.abs(width - target),
+    `measured room width ${String(width)} must land within ${String(target)}±${String(ROOM_TOLERANCE_PX)}`
   ).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
   return width;
 }
@@ -408,7 +414,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(plainRoom.locator(STRIP)).toHaveCount(0);
   });
 
-  test(`[P1] todo strip starts collapsed with the representative item and 1/12 on ${surface}`, async ({
+  test(`[P1] todo strip starts collapsed with the terminal representative and 11/12 on ${surface}`, async ({
     page,
     archon,
   }) => {
@@ -419,13 +425,18 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(strip).toHaveCount(1);
     const button = strip.getByRole('button');
     await expect(button).toHaveAttribute('aria-expanded', 'false');
-    await expect(button).toContainText('Map the message path');
-    await expect(button).toContainText('1/12');
+    // The CLI run is already terminal (completed) by the time the test opens
+    // the room, so the strip reads the completed projection
+    // (todo-fold-contract.md:88): every non-abandoned item folds to done, and
+    // the representative becomes the last one completed in fold order —
+    // "Run the suite" (its own `block` call is superseded by the projection).
+    await expect(button).toContainText('Run the suite');
+    await expect(button).toContainText('11/12');
     const body = await stripBody(strip);
     await expect(body).toBeHidden();
   });
 
-  test(`[P1] todo strip expands on Enter, lists all five statuses, collapses on Space on ${surface}`, async ({
+  test(`[P1] todo strip expands on Enter, lists every item at the terminal completed projection, collapses on Space on ${surface}`, async ({
     page,
     archon,
   }) => {
@@ -441,13 +452,18 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(body).toBeVisible();
     await expect(body.getByRole('heading', { name: 'Research' })).toBeVisible();
     await expect(body.getByRole('heading', { name: 'Implement' })).toBeVisible();
-    // One named example per status: completed, in progress, blocked, pending, abandoned.
+    // Every item's own text survives the terminal projection regardless of
+    // its original status — including the one the run recorded `block` for.
     await expect(body.getByText('Read the spec')).toBeVisible();
     await expect(body.getByText('Map the message path')).toBeVisible();
     await expect(body.getByText('Run the suite')).toBeVisible();
-    await expect(body.getByText(/blocked: CI has one build job/)).toBeVisible();
     await expect(body.getByText('Check contract conflicts')).toBeVisible();
+    // The completed node finished its plan, so the item the run had blocked
+    // reads as done — the blocker reason no longer renders.
+    await expect(body.getByText(/blocked: CI has one build job/)).toHaveCount(0);
+    // Abandoned is the one status the completed projection never overrules.
     await expect(body.getByText('Review output')).toBeVisible();
+    await expect(body.getByText('· dropped')).toBeVisible();
     expect(await button.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
     await button.press('Space');
     await expect(button).toHaveAttribute('aria-expanded', 'false');
@@ -628,23 +644,22 @@ for (const surface of ['console', 'legacy'] as const) {
     const run = await runTodoStrip(page, archon);
     await openNodeRoom(page, surface, run.runId, TODO_STRIP_TODO_NODE);
     const roomWidth = await setRoomWidth(page, surface, run.runId);
-    expect(Math.abs(roomWidth - TARGET_ROOM_WIDTH)).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
+    expect(Math.abs(roomWidth - TARGET_ROOM_WIDTH[surface])).toBeLessThanOrEqual(ROOM_TOLERANCE_PX);
     const room = roomRegion(page, TODO_STRIP_TODO_NODE);
     const strip = room.locator(STRIP);
     const button = strip.getByRole('button');
     const body = await stripBody(strip);
 
     const elevated = await resolveColorIn(room, 'var(--surface-elevated)');
-    const surfaceBg = await resolveColorIn(room, 'var(--surface)');
     const hoverBg = await resolveColorIn(room, 'var(--surface-hover)');
-    const running = await resolveColorIn(room, RUNNING_TOKEN[surface]);
     const success = await resolveColorIn(room, 'var(--success)');
-    const warning = await resolveColorIn(room, 'var(--warning)');
     const borderBright = await resolveColorIn(room, 'var(--border-bright)');
     const textSecondary = await resolveColorIn(room, 'var(--text-secondary)');
     const textPrimary = await resolveColorIn(room, 'var(--text-primary)');
 
-    // Container: full room width, flex-none, surface-elevated, no radius, 1px bottom rule.
+    // Container: full room width, flex-none, surface-elevated, no radius, 1px
+    // top rule (separates the strip from the transcript above; the queue band
+    // below carries its own top rule, so the strip itself has no bottom one).
     const stripBox = await strip.boundingBox();
     expect(stripBox).toBeTruthy();
     expect(Math.abs((stripBox?.width ?? 0) - roomWidth)).toBeLessThanOrEqual(1);
@@ -654,14 +669,14 @@ for (const surface of ['console', 'legacy'] as const) {
         flexGrow: cs?.flexGrow ?? '',
         flexShrink: cs?.flexShrink ?? '',
         background: cs?.backgroundColor ?? '',
-        borderBottomWidth: cs?.borderBottomWidth ?? '',
+        borderTopWidth: cs?.borderTopWidth ?? '',
         borderRadius: cs?.borderRadius ?? '',
       };
     });
     expect(container.flexGrow).toBe('0');
     expect(container.flexShrink).toBe('0');
     expect(container.background, 'container uses surface-elevated').toBe(elevated.resolved);
-    expect(container.borderBottomWidth).toBe('1px');
+    expect(container.borderTopWidth).toBe('1px');
     expect(container.borderRadius).toBe('0px');
 
     // Header: one line, 6/10 padding, ≥24px target, 8px gaps, surface-hover.
@@ -727,9 +742,12 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(label.color).toBe(textSecondary.resolved);
 
     // Representative item: 11.5px mono, text-primary, fixed glyph, elided.
+    // The completed projection makes "Run the suite" the last completed item
+    // in fold order, so it — not the pre-projection in-progress item — is
+    // the representative here.
     const representative = await button.evaluate(el => {
       const node = Array.from(el.querySelectorAll('span')).find(
-        s => s.textContent?.trim() === 'Map the message path'
+        s => s.textContent?.trim() === 'Run the suite'
       );
       const cs = node ? el.ownerDocument.defaultView?.getComputedStyle(node) : undefined;
       const glyph = node?.parentElement?.querySelector('span[aria-hidden="true"]');
@@ -752,8 +770,8 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(representative.textOverflow).toBe('ellipsis');
     expect(representative.whiteSpace).toBe('nowrap');
     expect(representative.color).toBe(textPrimary.resolved);
-    expect(representative.glyphText).toBe('◐');
-    expect(representative.glyphColor).toBe(running.resolved);
+    expect(representative.glyphText).toBe('☑');
+    expect(representative.glyphColor).toBe(success.resolved);
 
     // Meter: 12 decorative cells, 3px high, 2px gap, status token mapping.
     const meter = strip.locator(TODO_METER);
@@ -774,15 +792,17 @@ for (const surface of ['console', 'legacy'] as const) {
     for (const cell of meterMetrics.cells) {
       expect(Math.abs(cell.height - 3), 'meter cell is 3px high').toBeLessThanOrEqual(0.5);
     }
-    // Fixture order: completed, in-progress, pending ×8, blocked, abandoned.
-    expect(meterMetrics.cells[0]?.background).toBe(success.resolved);
-    expect(meterMetrics.cells[1]?.background).toBe(running.resolved);
-    expect(meterMetrics.cells[2]?.background).toBe(borderBright.resolved);
-    expect(meterMetrics.cells[10]?.background).toBe(warning.resolved);
+    // The completed projection folds every non-abandoned item to done —
+    // eleven success cells, then the one abandoned item's own token.
+    for (let index = 0; index < 11; index++) {
+      expect(meterMetrics.cells[index]?.background, `cell ${String(index)} is success`).toBe(
+        success.resolved
+      );
+    }
     expect(meterMetrics.cells[11]?.background).toBe(borderBright.resolved);
 
     // Count + caret: 10px mono count; 9px caret, 0° closed.
-    const countStyle = await spanWithText(button, '1/12').evaluate(el => {
+    const countStyle = await spanWithText(button, '11/12').evaluate(el => {
       const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {
         fontSize: cs?.fontSize ?? '',
@@ -874,22 +894,16 @@ for (const surface of ['console', 'legacy'] as const) {
     ).toBeLessThanOrEqual(0.01);
     expect(itemStyle.color).toBe(textSecondary.resolved);
 
-    const currentRow = await body
-      .locator('li')
-      .filter({ hasText: 'Map the message path' })
-      .evaluate(el => {
-        const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
-        return {
-          background: cs?.backgroundColor ?? '',
-          color: cs?.color ?? '',
-          boxShadow: cs?.boxShadow ?? '',
-        };
-      });
-    expect(currentRow.background, 'current row uses surface bg').toBe(surfaceBg.resolved);
-    expect(currentRow.color).toBe(textPrimary.resolved);
-    expect(currentRow.boxShadow).toContain('inset');
-    expect(currentRow.boxShadow).toContain('2px 0px 0px');
-    expect(currentRow.boxShadow).toContain(running.resolved);
+    // No item is "current" once the node is terminal — the completed
+    // projection leaves no in-progress item, so no row anywhere in the
+    // checklist carries the surface bg + text-primary + inset running marker.
+    const currentMarkerCount = await body.evaluate(el => {
+      const view = el.ownerDocument.defaultView;
+      return Array.from(el.querySelectorAll('li')).filter(li =>
+        (view?.getComputedStyle(li).boxShadow ?? '').includes('inset')
+      ).length;
+    });
+    expect(currentMarkerCount, 'no row carries the running marker on a completed node').toBe(0);
 
     await captureEvidence(strip, `${surface}-todo-expanded-460.png`, testInfo);
 
@@ -918,7 +932,7 @@ for (const surface of ['console', 'legacy'] as const) {
       body: bodyStyle,
       phase: phaseStyle,
       item: itemStyle,
-      currentRow,
+      currentMarkerCount,
     });
     mergeMetrics(`overflow.${surface}`, {
       bodyMaxHeight: bodyStyle.maxHeight,
@@ -948,11 +962,11 @@ for (const surface of ['console', 'legacy'] as const) {
       );
       expect(buttonBox?.height ?? 0, `header target ≥24px at ${label}`).toBeGreaterThanOrEqual(24);
       expect(buttonBox?.height ?? 99, `header one line at ${label}`).toBeLessThanOrEqual(40);
-      await expect(spanWithText(button, '1/12')).toBeVisible();
+      await expect(spanWithText(button, '11/12')).toBeVisible();
       await expect(caretSpan(button)).toBeVisible();
       const elides = await button.evaluate(el => {
         const node = Array.from(el.querySelectorAll('span')).find(
-          s => s.textContent?.trim() === 'Map the message path'
+          s => s.textContent?.trim() === 'Run the suite'
         );
         const cs = node ? el.ownerDocument.defaultView?.getComputedStyle(node) : undefined;
         return {
@@ -1348,9 +1362,11 @@ for (const surface of ['console', 'legacy'] as const) {
     expect(collapsedButton, 'header exposes a button node').toBeTruthy();
     const collapsedName = String(collapsedButton?.name?.value ?? '');
     expect(collapsedName).toContain('TODO');
-    expect(collapsedName).toContain('in progress');
-    expect(collapsedName).toContain('Map the message path');
-    expect(collapsedName).toContain('1/12');
+    // The CLI run is already terminal (completed) by observation time, so
+    // the strip reads the completed projection (todo-fold-contract.md:88).
+    expect(collapsedName).toContain('completed');
+    expect(collapsedName).toContain('Run the suite');
+    expect(collapsedName).toContain('11/12');
     for (const decorative of ['▾', '◐', '☑', '⊘', '☐']) {
       expect(collapsedName).not.toContain(decorative);
     }
@@ -1426,13 +1442,16 @@ for (const surface of ['console', 'legacy'] as const) {
         `decorative dropped marker stays out of the tree in ${JSON.stringify(texts)}`
       ).toBe(false);
     }
-    const blocked = textsByItem.find(texts => texts.includes('Run the suite'));
-    expect(blocked, 'blocked item present').toBeTruthy();
+    // The completed projection folds the item the run had blocked into done —
+    // its blocker reason no longer speaks, and it reads as any other
+    // completed item.
+    const wasBlocked = textsByItem.find(texts => texts.includes('Run the suite'));
+    expect(wasBlocked, 'the once-blocked item is present').toBeTruthy();
     expect(
-      blocked?.filter(text => text.includes('CI has one build job')),
-      'blocked reason spoken once, not duplicated by the decorative suffix'
-    ).toHaveLength(1);
-    expect(blocked?.some(text => text === 'blocked — CI has one build job')).toBe(true);
+      wasBlocked?.some(text => text.includes('CI has one build job')),
+      'the blocker reason no longer speaks once the node completed'
+    ).toBe(false);
+    expect(wasBlocked?.some(text => text === 'completed')).toBe(true);
     const dropped = textsByItem.find(texts => texts.includes('Review output'));
     expect(dropped, 'abandoned item present').toBeTruthy();
     expect(dropped?.filter(text => text === 'abandoned')).toHaveLength(1);
@@ -1499,8 +1518,8 @@ test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
       };
       return {
         label: pick('TODO'),
-        count: pick('1/12'),
-        representative: pick('Map the message path'),
+        count: pick('11/12'),
+        representative: pick('Run the suite'),
       };
     });
     const itemTones = await body.evaluate(el => {
@@ -1570,12 +1589,12 @@ test('[P1] todo strip tones clear contrast floors on both surfaces', async ({
     await check('count (text-secondary)', headerTones.count, elevatedBg, 4.5);
     await check('representative (text-primary)', headerTones.representative, elevatedBg, 4.5);
 
-    // Every status glyph plus its item text on the row's actual background.
+    // The completed projection leaves only two distinct status treatments
+    // visible on this terminal node — completed and abandoned — so those are
+    // the glyph/text pairs contrast is proven against; the other three
+    // fixture items now render identically to "Read the spec".
     const itemsByName: [string, string][] = [
       ['Read the spec', 'completed'],
-      ['Map the message path', 'in progress'],
-      ['Check contract conflicts', 'pending'],
-      ['Run the suite', 'blocked'],
       ['Review output', 'abandoned'],
     ];
     for (const [itemText, status] of itemsByName) {

@@ -750,15 +750,24 @@ describe('WorkflowExecution room visit', () => {
   });
 
   test('graph clicks restore the last explicit row after visiting another node', async () => {
+    // The room header title states the bare node name only, so which explicit
+    // iteration is open is read from the Execution select's own value — the
+    // known row id for iteration 1's `loop_iteration_started` event — rather
+    // than from a title suffix. That id survives the Graph tab unmounting
+    // the log list, unlike a `#legacy-log-…` anchor.
+    function selectedExecutionRowId(): string | null {
+      return (
+        host.querySelector<HTMLSelectElement>(
+          '[data-testid="legacy-node-room"] select[aria-label="Execution"]'
+        )?.value ?? null
+      );
+    }
+
     await renderVisit();
     await clickTab('Logs');
     await flushUntil('loop rows', () => (host.textContent ?? '').includes('Group ×1'));
     await clickNamed('Group ×1');
-    await flushUntil('explicit iteration', () =>
-      (host.querySelector('[data-testid="legacy-node-room"]')?.textContent ?? '').includes(
-        'Group ×1'
-      )
-    );
+    await flushUntil('explicit iteration', () => selectedExecutionRowId() === 'iter-1-start');
 
     await clickTab('Graph');
     await clickGraphNode('review');
@@ -766,14 +775,8 @@ describe('WorkflowExecution room visit', () => {
       (host.querySelector('[data-testid="legacy-node-room"]')?.textContent ?? '').includes('Review')
     );
     await clickGraphNode('group');
-    await flushUntil('restored last explicit', () =>
-      (host.querySelector('[data-testid="legacy-node-room"]')?.textContent ?? '').includes(
-        'Group ×1'
-      )
-    );
-    expect(host.querySelector('[data-testid="legacy-node-room"]')?.textContent).not.toContain(
-      'Group ×2'
-    );
+    await flushUntil('restored last explicit', () => selectedExecutionRowId() === 'iter-1-start');
+    expect(selectedExecutionRowId()).not.toBe('iter-2-start');
   });
 
   test('runtime graph drops the minimap but keeps controls and node selection', async () => {

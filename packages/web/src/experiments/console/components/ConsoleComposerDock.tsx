@@ -81,6 +81,7 @@ import {
   type RemovalFocusTarget,
   type SteeringDockMode,
   type SteeringDockState,
+  type SteeringExecutionState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
 import type { FinishedIterationView } from '@/lib/execution-room-model';
@@ -180,6 +181,13 @@ export interface ConsoleComposerDockProps {
    */
   autoFocusTarget?: 'field' | 'go' | null;
   onAutoFocusApplied?: () => void;
+  /**
+   * The last observed queue-read execution state, reported on every change
+   * (including back to null on a scope reset) so the room header can show
+   * `Recovery required` — the dock is the only place this durable signal is
+   * currently read.
+   */
+  onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
   send?: SendNodeGuidance;
   interrupt?: InterruptNode;
   withdraw?: WithdrawNodeGuidance;
@@ -247,6 +255,95 @@ function controlsMounted(mode: SteeringDockMode): boolean {
   return mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
 }
 
+// The Console surface's running colour is --running — matches ConsoleTodoStrip.tsx.
+const QUEUE_RUNNING_MARKER = 'shadow-[inset_2px_0_0_var(--running)]';
+
+/**
+ * Queue/never-sent/recovery band header. Shares the pinned todo strip's
+ * collapsible header idiom (DESIGN.md: "shares that strip's header idiom and
+ * item geometry"). `label` carries the header word and count together (e.g.
+ * "queued · 1"); CSS renders it uppercase without changing the text a reader
+ * or test sees.
+ */
+function QueueBandHeader({
+  label,
+  savedLine,
+  open,
+  onToggle,
+  bodyId,
+}: {
+  label: string;
+  savedLine: string | null;
+  open: boolean;
+  onToggle: () => void;
+  bodyId: string;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={bodyId}
+      onClick={onToggle}
+      className="flex min-h-[24px] w-full items-center gap-2 overflow-hidden whitespace-nowrap px-[10px] py-[6px] text-left hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2"
+    >
+      <span className="flex-none text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary">
+        {label}
+      </span>
+      {savedLine === null ? null : (
+        <span className="ml-auto flex-none text-[10px] text-text-secondary">{savedLine}</span>
+      )}
+      <span
+        aria-hidden="true"
+        className={[
+          'w-[9px] flex-none text-center text-[9px] leading-none text-text-tertiary transition-transform duration-[120ms] motion-reduce:transition-none',
+          open ? 'rotate-180' : '',
+        ].join(' ')}
+      >
+        ▾
+      </span>
+    </button>
+  );
+}
+
+/**
+ * One queue/never-sent/recovery band item: a 1-based position number plus
+ * the message text, with trailing status text and action buttons supplied
+ * by the caller. `accent` marks the next item due out — only the live
+ * composer band's own head item, never a read-only band.
+ */
+function QueueBandItem({
+  ord,
+  dataMessageId,
+  text,
+  accent,
+  children,
+}: {
+  ord: number;
+  dataMessageId?: string;
+  text: string;
+  accent: boolean;
+  children?: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <li
+      {...(dataMessageId !== undefined ? { 'data-message-id': dataMessageId } : {})}
+      className={[
+        'flex items-baseline gap-2 rounded-[4px] py-[1px] pr-[4px] pl-[2px] font-mono text-[11.5px] leading-[1.85]',
+        accent ? `bg-surface text-text-primary ${QUEUE_RUNNING_MARKER}` : 'text-text-secondary',
+      ].join(' ')}
+    >
+      <span
+        aria-hidden="true"
+        className="w-[12px] flex-none text-center text-[10px] text-text-secondary"
+      >
+        {ord}
+      </span>
+      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{text}</span>
+      {children}
+    </li>
+  );
+}
+
 export function ConsoleComposerDock({
   runId,
   nodeId,
@@ -259,6 +356,7 @@ export function ConsoleComposerDock({
   onSelectLiveRow,
   autoFocusTarget = null,
   onAutoFocusApplied,
+  onExecutionStateChange,
   send = sendNodeGuidance,
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
@@ -277,7 +375,7 @@ export function ConsoleComposerDock({
   const scopeKey = steeringScopeKey(runId, nodeId);
   const fieldId = useId();
   const reasonId = useId();
-  const bandHeaderId = useId();
+  const queueBodyId = useId();
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const wellRef = useRef<HTMLDivElement>(null);
   const goButtonRef = useRef<HTMLButtonElement>(null);
@@ -297,6 +395,9 @@ export function ConsoleComposerDock({
 
   const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
   const [draft, setDraft] = useState('');
+  // Shared across the four mutually-exclusive band renders below; only one
+  // ever mounts at a time. Default open matches the approved mockup.
+  const [queueBandOpen, setQueueBandOpen] = useState(true);
   /** Finished-iteration poll 422: show detached alert without leaving the mode. */
   const [readDetached, setReadDetached] = useState(false);
   /** Finished-iteration other 4xx notify copy (poll stopped). */
@@ -465,6 +566,13 @@ export function ConsoleComposerDock({
   useEffect(() => {
     setDock(current => syncProjectedSubState(current, subState));
   }, [subState]);
+
+  // The only reader of the durable queue snapshot's execution state today —
+  // report every change, including the reset back to null on a scope swap,
+  // so a parent header can show `Recovery required` without polling twice.
+  useEffect(() => {
+    onExecutionStateChange?.(dock.executionState);
+  }, [dock.executionState, onExecutionStateChange]);
 
   useEffect(() => {
     if (!nodeTerminal) {
@@ -855,37 +963,38 @@ export function ConsoleComposerDock({
   if (mode === 'recovery-required') {
     return (
       <section
-        aria-labelledby={bandHeaderId}
+        aria-label={queueBandHeader(dock.sent.length)}
         className="flex-none border-t border-border bg-surface-elevated"
       >
         {dock.sent.length === 0 ? null : (
           <>
-            <div className="flex items-baseline gap-2 px-[10px] pt-[6px]">
-              <h3
-                id={bandHeaderId}
-                className="flex-none text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
-              >
-                {queueBandHeader(dock.sent.length)}
-              </h3>
-              <span className="ml-auto flex-none text-[10px] text-text-secondary">
-                {savedToServerLine(dock.autoSend)}
-              </span>
-            </div>
-            <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+            <QueueBandHeader
+              label={queueBandHeader(dock.sent.length)}
+              savedLine={savedToServerLine(dock.autoSend)}
+              open={queueBandOpen}
+              onToggle={(): void => {
+                setQueueBandOpen(value => !value);
+              }}
+              bodyId={queueBodyId}
+            />
+            <div
+              id={queueBodyId}
+              hidden={!queueBandOpen}
+              className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
+            >
               <ul aria-label={queueListLabel(dock.sent.length)}>
-                {dock.sent.map(receipt => (
-                  <li
+                {dock.sent.map((receipt, index) => (
+                  <QueueBandItem
                     key={receipt.messageId}
-                    data-message-id={receipt.messageId}
-                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                    dataMessageId={receipt.messageId}
+                    ord={index + 1}
+                    text={receipt.message}
+                    accent={false}
                   >
-                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                      {receipt.message}
-                    </span>
                     {queueItemStatusLabel(receipt.state) === null ? null : (
                       <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
                     )}
-                  </li>
+                  </QueueBandItem>
                 ))}
               </ul>
             </div>
@@ -918,53 +1027,52 @@ export function ConsoleComposerDock({
   }
 
   if (mode === 'finished' && finishedEntries.length > 0) {
+    const neverSentEntries = dock.neverSent ?? [];
+    const draftOrd = dock.sent.length + neverSentEntries.length + 1;
     return (
       <section
-        aria-labelledby={bandHeaderId}
+        aria-label={neverSentBandHeader(finishedEntries.length)}
         className="flex-none border-t border-border bg-surface-elevated"
       >
-        <h3
-          id={bandHeaderId}
-          className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+        <QueueBandHeader
+          label={neverSentBandHeader(finishedEntries.length)}
+          savedLine={null}
+          open={queueBandOpen}
+          onToggle={(): void => {
+            setQueueBandOpen(value => !value);
+          }}
+          bodyId={queueBodyId}
+        />
+        <div
+          id={queueBodyId}
+          hidden={!queueBandOpen}
+          className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
         >
-          {neverSentBandHeader(finishedEntries.length)}
-        </h3>
-        <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
           <ul aria-label={neverSentListLabel(finishedEntries.length)}>
-            {dock.sent.map(receipt => (
-              <li
+            {dock.sent.map((receipt, index) => (
+              <QueueBandItem
                 key={receipt.messageId}
-                data-message-id={receipt.messageId}
-                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                dataMessageId={receipt.messageId}
+                ord={index + 1}
+                text={receipt.message}
+                accent={false}
               >
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {receipt.message}
-                </span>
                 {queueItemStatusLabel(receipt.state) === null ? null : (
                   <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
                 )}
-              </li>
+              </QueueBandItem>
             ))}
-            {(dock.neverSent ?? []).map((entry, index) => (
-              <li
+            {neverSentEntries.map((entry, index) => (
+              <QueueBandItem
                 key={entry.messageId ?? `never-sent-${String(index)}`}
-                {...(entry.messageId !== null ? { 'data-message-id': entry.messageId } : {})}
-                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
-              >
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {entry.message}
-                </span>
-              </li>
+                dataMessageId={entry.messageId ?? undefined}
+                ord={dock.sent.length + index + 1}
+                text={entry.message}
+                accent={false}
+              />
             ))}
             {draft.trim().length > 0 ? (
-              <li
-                key="never-sent-draft"
-                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
-              >
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {draft}
-                </span>
-              </li>
+              <QueueBandItem key="never-sent-draft" ord={draftOrd} text={draft} accent={false} />
             ) : null}
           </ul>
         </div>
@@ -1021,30 +1129,36 @@ export function ConsoleComposerDock({
         </div>
         {dock.sent.length === 0 ? null : (
           <section
-            aria-labelledby={bandHeaderId}
+            aria-label={queueBandHeader(dock.sent.length)}
             className="flex-none border-t border-border bg-surface-elevated"
           >
-            <h3
-              id={bandHeaderId}
-              className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
+            <QueueBandHeader
+              label={queueBandHeader(dock.sent.length)}
+              savedLine={null}
+              open={queueBandOpen}
+              onToggle={(): void => {
+                setQueueBandOpen(value => !value);
+              }}
+              bodyId={queueBodyId}
+            />
+            <div
+              id={queueBodyId}
+              hidden={!queueBandOpen}
+              className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
             >
-              {queueBandHeader(dock.sent.length)}
-            </h3>
-            <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
               <ul aria-label={queueListLabel(dock.sent.length)}>
-                {dock.sent.map(receipt => (
-                  <li
+                {dock.sent.map((receipt, index) => (
+                  <QueueBandItem
                     key={receipt.messageId}
-                    data-message-id={receipt.messageId}
-                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                    dataMessageId={receipt.messageId}
+                    ord={index + 1}
+                    text={receipt.message}
+                    accent={false}
                   >
-                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                      {receipt.message}
-                    </span>
                     {queueItemStatusLabel(receipt.state) === null ? null : (
                       <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
                     )}
-                  </li>
+                  </QueueBandItem>
                 ))}
               </ul>
             </div>
@@ -1067,42 +1181,47 @@ export function ConsoleComposerDock({
   // and only for a row the server can still claim.
   const canSendItemNow = dock.softInjection && agentMode === 'generating';
 
+  const queueBandLabel = idle
+    ? willSendBandHeader(dock.sent.length)
+    : queueBandHeader(dock.sent.length);
+
   return (
     <>
       {dock.sent.length === 0 ? null : (
         <section
-          aria-labelledby={bandHeaderId}
+          aria-label={queueBandLabel}
           className="flex-none border-t border-border bg-surface-elevated"
         >
-          <div className="flex items-baseline gap-2 px-[10px] pt-[6px]">
-            <h3
-              id={bandHeaderId}
-              className="flex-none text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
-            >
-              {idle ? willSendBandHeader(dock.sent.length) : queueBandHeader(dock.sent.length)}
-            </h3>
-            <span className="ml-auto flex-none text-[10px] text-text-secondary">
-              {savedToServerLine(dock.autoSend)}
-            </span>
-          </div>
-          <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
+          <QueueBandHeader
+            label={queueBandLabel}
+            savedLine={savedToServerLine(dock.autoSend)}
+            open={queueBandOpen}
+            onToggle={(): void => {
+              setQueueBandOpen(value => !value);
+            }}
+            bodyId={queueBodyId}
+          />
+          <div
+            id={queueBodyId}
+            hidden={!queueBandOpen}
+            className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
+          >
             <ul
               aria-label={
                 idle ? willSendListLabel(dock.sent.length) : queueListLabel(dock.sent.length)
               }
             >
-              {dock.sent.map(receipt => {
+              {dock.sent.map((receipt, index) => {
                 const claimable = isQueueItemClaimable(receipt.state);
                 const statusLabel = queueItemStatusLabel(receipt.state);
                 return (
-                  <li
+                  <QueueBandItem
                     key={receipt.messageId}
-                    data-message-id={receipt.messageId}
-                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+                    dataMessageId={receipt.messageId}
+                    ord={index + 1}
+                    text={receipt.message}
+                    accent={index === 0}
                   >
-                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                      {receipt.message}
-                    </span>
                     {statusLabel === null ? null : <span className="flex-none">{statusLabel}</span>}
                     {claimable && canSendItemNow ? (
                       <button
@@ -1145,7 +1264,7 @@ export function ConsoleComposerDock({
                         {STEERING_DELETE_LABEL}
                       </button>
                     ) : null}
-                  </li>
+                  </QueueBandItem>
                 );
               })}
             </ul>

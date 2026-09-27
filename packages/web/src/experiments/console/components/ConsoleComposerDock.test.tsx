@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { Root } from 'react-dom/client';
 
 import { installHappyDom, restoreHappyDom } from '../test/install-happy-dom';
-import { SteeringRequestError, type SteeringSubState } from '@/lib/steering-dock';
+import {
+  SteeringRequestError,
+  STEERING_DELETE_LABEL,
+  type SteeringSubState,
+} from '@/lib/steering-dock';
 import type {
   ClearNodeDraft,
   InterruptNode,
@@ -194,6 +198,7 @@ describe('ConsoleComposerDock', () => {
       onSelectLiveRow: (liveRowId: string) => void;
       autoFocusTarget: 'field' | 'go' | null;
       onAutoFocusApplied: () => void;
+      onExecutionStateChange: (state: 'live' | 'recovery_required' | 'finished' | null) => void;
       send: SendNodeGuidance;
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
@@ -225,6 +230,7 @@ describe('ConsoleComposerDock', () => {
           onSelectLiveRow: overrides.onSelectLiveRow,
           autoFocusTarget: overrides.autoFocusTarget,
           onAutoFocusApplied: overrides.onAutoFocusApplied,
+          onExecutionStateChange: overrides.onExecutionStateChange,
           send: overrides.send ?? nextSend,
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
@@ -361,6 +367,28 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('[role="alert"]')).not.toBeNull();
   });
 
+  test('a non-empty recovery-required band numbers its items but carries no accent', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue(
+        [
+          { message_id: 'id-a', message: 'alpha' },
+          { message_id: 'id-b', message: 'beta' },
+        ],
+        { execution_state: 'recovery_required' }
+      )
+    );
+    const items = [...(host.querySelectorAll('ul[aria-label="Queued messages, 2"] li') ?? [])];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toBe('1alpha');
+    expect(items[1]?.textContent).toBe('2beta');
+    // Read-only bands never carry the live "next out" accent.
+    expect(items[0]?.className).not.toContain('bg-surface');
+    expect(items[0]?.className).toContain('text-text-secondary');
+  });
+
   test('recovery-required survives a queue re-read while the composer stays mounted', async () => {
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, pollIntervalMs: 1 });
@@ -369,6 +397,21 @@ describe('ConsoleComposerDock', () => {
     await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
     expect(host.textContent).toContain('restored after server restart');
     expect(host.querySelector('textarea')).toBeNull();
+  });
+
+  test('reports every observed execution state to the parent, including the initial null', async () => {
+    const ctrl = controllableRead();
+    const observed: (string | null)[] = [];
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      onExecutionStateChange: state => {
+        observed.push(state);
+      },
+    });
+    expect(observed).toEqual([null]);
+    await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
+    expect(observed).toEqual([null, 'recovery_required']);
   });
 
   test.each(['pending', 'completed', 'failed', 'skipped'] as const)(
@@ -397,10 +440,10 @@ describe('ConsoleComposerDock', () => {
     expect(calls[0].body.message_id.length).toBeGreaterThan(0);
 
     expect(host.textContent).toContain('queued · 1');
-    const header = [...host.querySelectorAll('h3')].find(el =>
-      (el.textContent ?? '').includes('queued · 1')
+    const headerLabel = [...host.querySelectorAll('button[aria-expanded] span')].find(
+      el => (el.textContent ?? '') === 'queued · 1'
     );
-    expect(header?.className).toContain('uppercase');
+    expect(headerLabel?.className).toContain('uppercase');
     const list = host.querySelector('ul[aria-label="Queued messages, 1"]');
     expect(list).not.toBeNull();
     const items = [...(list?.querySelectorAll('li') ?? [])];
@@ -438,6 +481,51 @@ describe('ConsoleComposerDock', () => {
     const scroller = list?.parentElement;
     expect(scroller?.className).toContain('max-h-[33vh]');
     expect(scroller?.className).toContain('overflow-y-auto');
+  });
+
+  test('each queue item leads with its 1-based position number; only the head item carries the accent', async () => {
+    await renderDock();
+    await setDraft('first');
+    await clickQueue();
+    await setDraft('second');
+    await clickQueue();
+    const items = [...(host.querySelectorAll('ul[aria-label="Queued messages, 2"] li') ?? [])];
+    expect(items).toHaveLength(2);
+    expect(items[0]?.textContent).toBe(`1first${STEERING_DELETE_LABEL}`);
+    expect(items[1]?.textContent).toBe(`2second${STEERING_DELETE_LABEL}`);
+    expect(items[0]?.className).toContain('bg-surface');
+    expect(items[0]?.className).toContain('text-text-primary');
+    expect(items[1]?.className).not.toContain('bg-surface');
+    expect(items[1]?.className).toContain('text-text-secondary');
+  });
+
+  test('the band collapse toggle hides and restores the item list without removing it', async () => {
+    await renderDock();
+    await setDraft('wrong suite');
+    await clickQueue();
+    const toggle = host.querySelector('button[aria-expanded]');
+    if (toggle === null) throw new Error('missing band toggle');
+    // Open by default, matching the approved mockup.
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const bodyId = toggle.getAttribute('aria-controls');
+    if (bodyId === null) throw new Error('missing aria-controls');
+    const body = win.document.getElementById(bodyId);
+    expect(body?.hasAttribute('hidden')).toBe(false);
+    expect(host.querySelector('ul[aria-label="Queued messages, 1"]')).not.toBeNull();
+
+    await act(async () => {
+      (toggle as unknown as HTMLButtonElement).click();
+    });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(body?.hasAttribute('hidden')).toBe(true);
+    // The list stays in the DOM — collapsing is a display state, not a removal.
+    expect(host.querySelector('ul[aria-label="Queued messages, 1"]')).not.toBeNull();
+
+    await act(async () => {
+      (toggle as unknown as HTMLButtonElement).click();
+    });
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(body?.hasAttribute('hidden')).toBe(false);
   });
 
   test('Cmd+Enter and Ctrl+Enter submit; plain and Shift+Enter do not', async () => {
@@ -1485,9 +1573,11 @@ describe('ConsoleComposerDock', () => {
     );
     const band = host.querySelector('ul[aria-label="Queued messages, 1"]')?.closest('section');
     expect(band?.textContent).toContain('saved to server · Auto-send on');
-    // Read-only: no control anywhere in the band carries the indicator text.
+    // The band's own collapse toggle (aria-expanded) incidentally contains
+    // the status text; no OTHER button — one that could actually act on
+    // auto-send — exists.
     expect(
-      [...(band?.querySelectorAll('button') ?? [])].some(button =>
+      [...(band?.querySelectorAll('button:not([aria-expanded])') ?? [])].some(button =>
         (button.textContent ?? '').includes('Auto-send')
       )
     ).toBe(false);
@@ -1988,7 +2078,8 @@ describe('ConsoleComposerDock', () => {
     expect(list?.getAttribute('aria-label')).toBe('Never sent, 2');
     const items = neverSentItems();
     expect(items.map(item => item.getAttribute('data-message-id'))).toEqual(['id-a', 'id-b']);
-    expect(items.map(item => item.textContent)).toEqual(['alpha', 'beta']);
+    // Each row leads with its 1-based position number.
+    expect(items.map(item => item.textContent)).toEqual(['1alpha', '2beta']);
     expect(host.textContent).toContain(NEVER_SENT_ALERT);
   });
 
@@ -2027,7 +2118,8 @@ describe('ConsoleComposerDock', () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.getAttribute('data-message-id')).toBe('id-a');
     expect(items[1]?.getAttribute('data-message-id')).toBeNull();
-    expect(items[1]?.textContent).toBe('half-typed line');
+    // The draft is the trailing item, so it carries the next position number.
+    expect(items[1]?.textContent).toBe('2half-typed line');
   });
 
   test('a delivery_unknown row survives to the terminal band with its own label', async () => {
@@ -2042,8 +2134,8 @@ describe('ConsoleComposerDock', () => {
     );
     const items = neverSentItems();
     expect(items.map(item => item.getAttribute('data-message-id'))).toEqual(['id-a', 'id-b']);
-    expect(items[0]?.textContent).toBe('alphadelivery unknown');
-    expect(items[1]?.textContent).toBe('beta');
+    expect(items[0]?.textContent).toBe('1alphadelivery unknown');
+    expect(items[1]?.textContent).toBe('2beta');
   });
 
   test('nothing undelivered and a blank draft renders no dock at all', async () => {
@@ -2082,10 +2174,11 @@ describe('ConsoleComposerDock', () => {
       ctrl,
       okQueue([{ message_id: 'id-a', message: 'only', state: 'never_sent' }])
     );
-    const heading = host.querySelector('h3');
-    expect(heading?.textContent).toBe('never sent · 1');
-    expect(heading?.className ?? '').toContain('uppercase');
-    expect(heading?.className ?? '').toContain('tracking-[0.07em]');
+    const headerButton = host.querySelector('button[aria-expanded]');
+    const headerLabel = headerButton?.querySelector('span');
+    expect(headerLabel?.textContent).toBe('never sent · 1');
+    expect(headerLabel?.className ?? '').toContain('uppercase');
+    expect(headerLabel?.className ?? '').toContain('tracking-[0.07em]');
     expect(neverSentList()?.getAttribute('aria-label')).toBe('Never sent, 1');
     const alerts = [...host.querySelectorAll('[role="alert"]')];
     expect(alerts).toHaveLength(1);
@@ -2285,7 +2378,7 @@ describe('ConsoleComposerDock', () => {
       okQueue([{ message_id: 'id-b', message: 'beta', state: 'never_sent' }])
     );
     expect(neverSentList()?.getAttribute('aria-label')).toBe('Never sent, 1');
-    expect(neverSentItems()[0]?.textContent).toBe('beta');
+    expect(neverSentItems()[0]?.textContent).toBe('1beta');
     expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
     expect(host.textContent).toContain(EXPIRED_ALERT);
     expect(host.textContent).not.toContain(NEVER_SENT_ALERT);

@@ -34,6 +34,8 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import type { SteeringExecutionState } from '@/lib/steering-dock';
+import { projectTerminalTodoState } from '@/lib/todo-state';
 
 import type { Run } from '../primitives/run';
 import type {
@@ -530,6 +532,10 @@ export function ConsoleNodeRoom({
   const [retryNonce, setRetryNonce] = useState(0);
   const [navTarget, setNavTarget] = useState<string | null>(null);
   const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
+  // Reported by the dock's own queue poll — the only place restart recovery
+  // is currently observable. A fresh dock mount reports null immediately, so
+  // switching rows/nodes clears a stale recovery pill without extra plumbing.
+  const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
   const pageStateRef = useRef(pageState);
@@ -716,6 +722,13 @@ export function ConsoleNodeRoom({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
+  // A restart-recovery row stays 'running' in its own lifecycle status — the
+  // server durably reports the process is gone, not the row's own status —
+  // so a still-open tool call there needs the same settle rule as a genuinely
+  // terminal row: no live process can ever complete it.
+  const noLiveProcessForRow =
+    (rowStatus !== 'running' && rowStatus !== 'awaiting') ||
+    dockExecutionState === 'recovery_required';
   const agentHistory: AgentHistory =
     row === null
       ? { items: [], todos: [] }
@@ -725,9 +738,14 @@ export function ConsoleNodeRoom({
           nodeId: row.nodeId,
           outputFormat: resolution?.definitionNode?.output_format,
           nowMs,
+          nodeTerminal: noLiveProcessForRow,
         });
   const items = agentHistory.items;
-  const showTodoStrip = agentActive && agentHistory.todos.length > 0;
+  // The strip and the latest todo row's inline checklist share this one
+  // terminal-projected fold — a terminal node never keeps showing an
+  // `in_progress` item as still running (todo-fold-contract.md).
+  const projectedTodos = projectTerminalTodoState(agentHistory.todos, rowStatus);
+  const showTodoStrip = agentActive && projectedTodos.length > 0;
   const visibleAsks =
     row !== null && resolution?.kind === 'agent'
       ? selectVisibleNodeAskInteractions({
@@ -920,7 +938,7 @@ export function ConsoleNodeRoom({
         showToolCalls={showToolCalls}
         showSystem={showSystem}
         unknownScope={row.unknownScope === true}
-        todos={agentHistory.todos}
+        todos={projectedTodos}
         onLoadFullOutput={async (item): Promise<unknown> => {
           const message = await loadMessage(run.id, row.nodeId, item.messageId);
           return message.kind === 'tool' ? message.payload.output : undefined;
@@ -1041,6 +1059,7 @@ export function ConsoleNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
+        recoveryRequired={dockExecutionState === 'recovery_required'}
       />
     );
 
@@ -1103,7 +1122,7 @@ export function ConsoleNodeRoom({
             {body}
           </div>
           {showTodoStrip ? (
-            <ConsoleTodoStrip key={resolvedScopeKey} phases={agentHistory.todos} />
+            <ConsoleTodoStrip key={resolvedScopeKey} phases={projectedTodos} />
           ) : null}
           {controls}
           {agentActive && row !== null ? (
@@ -1122,6 +1141,7 @@ export function ConsoleNodeRoom({
               onAutoFocusApplied={(): void => {
                 setAutoFocusTarget(null);
               }}
+              onExecutionStateChange={setDockExecutionState}
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}
               idleAwaitExpired={idleAwaitExpired}

@@ -47,6 +47,7 @@ import {
   chooseExecutionForNode,
   closeRoom,
   computeRunOfTotal,
+  disambiguateExecutionOptions,
   openRoom,
   openExplicitRoom,
   askCardId,
@@ -790,14 +791,17 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const headerOptions =
     selectedExecutionRow === null
       ? []
-      : capExecutionOptions(executionRowsForSelectedNode).map(candidate => ({
-          rowId: candidate.id,
-          label: buildExecutionHeader({
-            row: candidate,
-            events: queryData?.events ?? [],
-            runStartedAt: runStartedAtIso,
-          }).executionLabel,
-        }));
+      : disambiguateExecutionOptions(
+          capExecutionOptions(executionRowsForSelectedNode).map(candidate => ({
+            id: candidate.id,
+            label: buildExecutionHeader({
+              row: candidate,
+              events: queryData?.events ?? [],
+              runStartedAt: runStartedAtIso,
+            }).executionLabel,
+            status: candidate.status,
+          }))
+        ).map(option => ({ rowId: option.id, label: option.label }));
   const executionCount = executionRowsForSelectedNode.length;
   const runOfTotal =
     selectedExecutionRow === null

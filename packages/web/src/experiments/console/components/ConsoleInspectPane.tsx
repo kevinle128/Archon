@@ -9,6 +9,7 @@ import {
   capExecutionOptions,
   selectableExecutionRows,
   computeRunOfTotal,
+  disambiguateExecutionOptions,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   latestNodeExecutionKey,
@@ -161,19 +162,23 @@ function executionOptionsForNode(
   ).map(row => ({ id: row.id, order: row.order }));
   const capped = capExecutionOptions(forNode);
   const cappedIds = new Set(capped.map(row => row.id));
-  const options: ConsoleExecutionHeaderOption[] = [];
+  const rawOptions: { id: string; label: string; status: string }[] = [];
   for (const entry of entries) {
     if (entry.row.nodeId !== nodeId || !cappedIds.has(entry.row.id)) continue;
-    options.push({
-      rowId: entry.row.id,
+    rawOptions.push({
+      id: entry.row.id,
       label: buildExecutionHeader({
         row: toExecutionRow(entry.row),
         events,
         runStartedAt,
       }).executionLabel,
+      status: entry.row.status,
     });
   }
-  return options;
+  return disambiguateExecutionOptions(rawOptions).map(option => ({
+    rowId: option.id,
+    label: option.label,
+  }));
 }
 
 /** Uncapped execution total for the node — the header's "of N" caption reads

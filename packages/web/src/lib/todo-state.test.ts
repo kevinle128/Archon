@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  projectTerminalTodoState,
   projectTodoState,
   summarizeTodoState,
+  todoTerminalOutcome,
   TODO_STATUS_PRESENTATION,
   type TodoItem,
   type TodoPhase,
@@ -915,5 +917,81 @@ describe('TODO_STATUS_PRESENTATION', () => {
       pending: { glyph: '☐', label: 'pending' },
       abandoned: { glyph: '☐', label: 'abandoned' },
     });
+  });
+});
+
+describe('todoTerminalOutcome', () => {
+  test('completed maps to the completed outcome', () => {
+    expect(todoTerminalOutcome('completed')).toBe('completed');
+  });
+
+  test('failed, cancelled, and skipped map to the interrupted outcome', () => {
+    expect(todoTerminalOutcome('failed')).toBe('interrupted');
+    // `LogRow['status']` folds a cancelled row into `skipped`
+    // (build-log-rows.ts), so both must resolve the same way — `cancelled`
+    // for a caller holding the run-level status instead.
+    expect(todoTerminalOutcome('cancelled')).toBe('interrupted');
+    expect(todoTerminalOutcome('skipped')).toBe('interrupted');
+  });
+
+  test('pending, running, and awaiting are not terminal', () => {
+    expect(todoTerminalOutcome('pending')).toBeNull();
+    expect(todoTerminalOutcome('running')).toBeNull();
+    expect(todoTerminalOutcome('awaiting')).toBeNull();
+  });
+});
+
+describe('projectTerminalTodoState', () => {
+  const phases: TodoPhase[] = [
+    phase('P', [
+      item('done', COMPLETED),
+      item('running', IN_PROGRESS),
+      item('blocked', BLOCKED, 'waiting on ci'),
+      item('todo', PENDING),
+      item('dropped', ABANDONED),
+    ]),
+  ];
+
+  test('a live node status leaves the fold untouched', () => {
+    expect(projectTerminalTodoState(phases, 'running')).toEqual(phases);
+    expect(projectTerminalTodoState(phases, 'awaiting')).toEqual(phases);
+    expect(projectTerminalTodoState(phases, 'pending')).toEqual(phases);
+  });
+
+  test('a completed node marks every item done except one already abandoned', () => {
+    expect(projectTerminalTodoState(phases, 'completed')).toEqual([
+      phase('P', [
+        item('done', COMPLETED),
+        item('running', COMPLETED),
+        item('blocked', COMPLETED),
+        item('todo', COMPLETED),
+        item('dropped', ABANDONED),
+      ]),
+    ]);
+  });
+
+  test('a failed node demotes only the in-progress item to pending', () => {
+    expect(projectTerminalTodoState(phases, 'failed')).toEqual([
+      phase('P', [
+        item('done', COMPLETED),
+        item('running', PENDING),
+        item('blocked', BLOCKED, 'waiting on ci'),
+        item('todo', PENDING),
+        item('dropped', ABANDONED),
+      ]),
+    ]);
+  });
+
+  test('a cancelled node applies the same interrupted projection as failed', () => {
+    expect(projectTerminalTodoState(phases, 'cancelled')).toEqual(
+      projectTerminalTodoState(phases, 'failed')
+    );
+  });
+
+  test('never mutates the input phases', () => {
+    const before = JSON.parse(JSON.stringify(phases));
+    projectTerminalTodoState(phases, 'completed');
+    projectTerminalTodoState(phases, 'failed');
+    expect(phases).toEqual(before);
   });
 });

@@ -24,13 +24,15 @@ import {
   type NodeMessageState,
 } from '@/lib/node-message-pages';
 import type { FinishedIterationView } from '@/lib/execution-room-model';
-import { groupByOccurrence } from '@/lib/occurrence-groups';
+import { groupByOccurrence, type OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
   jumpToLatest,
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import type { SteeringExecutionState } from '@/lib/steering-dock';
+import { projectTerminalTodoState } from '@/lib/todo-state';
 import type { WorkflowRunStatus } from '@/lib/types';
 
 import { AskCard, InvalidAskCard } from './AskCard';
@@ -108,6 +110,15 @@ export interface NodeTranscriptPaneProps {
   idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
+  /** Forwarded to the composer dock; see its own doc comment. */
+  onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /**
+   * Server-reported restart recovery for the selected row (owned by the
+   * parent room, which reads it from the dock's own `onExecutionStateChange`
+   * report) — a still-open tool call settles the same way a terminal row's
+   * does, since no live process backs either. Default false.
+   */
+  recoveryRequired?: boolean;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -145,6 +156,8 @@ export function NodeTranscriptPane({
   idleAwaitExpired = false,
   nodeExecutionKey = null,
   onSelectLiveRow,
+  onExecutionStateChange,
+  recoveryRequired = false,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -320,6 +333,12 @@ export function NodeTranscriptPane({
   const allMessages = pageState.rows;
   const visibleMessages = row === null ? [] : selectNodeRoomMessages(allMessages, row.selection);
   const nowMs = Date.now();
+  // A restart-recovery row stays 'running' in its own lifecycle status — the
+  // server durably reports the process is gone, not the row's own status —
+  // so a still-open tool call there needs the same settle rule as a genuinely
+  // terminal row: no live process can ever complete it.
+  const noLiveProcessForRow =
+    (rowStatus !== 'running' && rowStatus !== 'awaiting') || recoveryRequired;
   const agentHistory: AgentHistory =
     row === null
       ? { items: [], todos: [] }
@@ -329,17 +348,35 @@ export function NodeTranscriptPane({
           nodeId: row.nodeId,
           outputFormat: outputFormat ?? undefined,
           nowMs,
+          nodeTerminal: noLiveProcessForRow,
         });
   const items = agentHistory.items;
   const occurrenceGrouping = groupByOccurrence(items);
+  // Raw lifecycle rows (`started`, `iteration_started 1`, the terminal
+  // `failed …` line) are engine state identifiers, not one of the room's
+  // approved row types — grouping still sees the full list first so its own
+  // `failed` detection (which reads a lifecycle item) is unaffected; only
+  // what actually renders is filtered, mirroring Console's System-off default.
+  const displayItems = items.filter(item => item.kind !== 'lifecycle');
+  const displayGroups = occurrenceGrouping.groups
+    .map(group => ({ ...group, items: group.items.filter(item => item.kind !== 'lifecycle') }))
+    .filter(group => group.items.length > 0);
+  const displayGrouping: OccurrenceGrouping = {
+    prefixItems: occurrenceGrouping.prefixItems.filter(item => item.kind !== 'lifecycle'),
+    groups: displayGroups,
+    showHeaders: displayGroups.length >= 2,
+  };
   const navTargetIsRendered =
-    occurrenceGrouping.showHeaders &&
+    displayGrouping.showHeaders &&
     navTarget !== null &&
-    occurrenceGrouping.groups.some(group => group.key === navTarget);
+    displayGrouping.groups.some(group => group.key === navTarget);
   useEffect(() => {
     if (navTarget !== null && !navTargetIsRendered) setNavTarget(null);
   }, [navTarget, navTargetIsRendered]);
-  const todos = agentHistory.todos;
+  // The strip and the latest todo row's inline checklist share this one
+  // terminal-projected fold — a terminal node never keeps showing an
+  // `in_progress` item as still running (todo-fold-contract.md).
+  const todos = projectTerminalTodoState(agentHistory.todos, rowStatus);
   const visibleAsks =
     row === null
       ? []
@@ -513,8 +550,8 @@ export function NodeTranscriptPane({
       <NodeRoom
         embedded
         nodeId={row?.nodeId ?? null}
-        items={items}
-        occurrenceGrouping={occurrenceGrouping}
+        items={displayItems}
+        occurrenceGrouping={displayGrouping}
         headingIdPrefix={headingIdPrefix}
         unknownScope={row?.unknownScope ?? false}
         todos={todos}
@@ -538,7 +575,7 @@ export function NodeTranscriptPane({
     </div>
   );
   const navSelectValue = navTargetIsRendered ? navTarget : '';
-  const occurrenceNavigator = occurrenceGrouping.showHeaders ? (
+  const occurrenceNavigator = displayGrouping.showHeaders ? (
     <div className="flex min-w-0 items-center gap-1 px-3 py-2">
       <label htmlFor={navigatorSelectId} className="shrink-0 text-xs text-text-secondary">
         Jump to
@@ -554,9 +591,9 @@ export function NodeTranscriptPane({
         onChange={handleJumpToOccurrence}
       >
         <option value="" disabled>
-          {occurrenceGrouping.groups.length} occurrences
+          {displayGrouping.groups.length} occurrences
         </option>
-        {occurrenceGrouping.groups.map(group => (
+        {displayGrouping.groups.map(group => (
           <option key={group.key} value={group.key}>
             {group.label}
           </option>
@@ -607,6 +644,7 @@ export function NodeTranscriptPane({
         onAutoFocusApplied={(): void => {
           setAutoFocusTarget(null);
         }}
+        onExecutionStateChange={onExecutionStateChange}
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
         idleAwaitExpired={idleAwaitExpired}

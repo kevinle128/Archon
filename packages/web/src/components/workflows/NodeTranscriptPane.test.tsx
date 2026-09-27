@@ -407,6 +407,7 @@ describe('NodeTranscriptPane', () => {
     onSelectLiveRow?: (liveRowId: string) => void;
     nodeTerminal?: boolean;
     nodeExecutionKey?: string | null;
+    recoveryRequired?: boolean;
   }): void {
     const row = args.row;
     const selection =
@@ -447,6 +448,7 @@ describe('NodeTranscriptPane', () => {
           onSelectLiveRow: args.onSelectLiveRow,
           nodeTerminal: args.nodeTerminal,
           nodeExecutionKey: args.nodeExecutionKey,
+          recoveryRequired: args.recoveryRequired,
         })
       )
     );
@@ -474,6 +476,30 @@ describe('NodeTranscriptPane', () => {
     expect(calls).toEqual([['run-1', 'review']]);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
     expect(host.querySelector('[aria-label="review room"]')).not.toBeNull();
+  });
+
+  test('a still-open tool call settles once restart recovery is reported, even though the row status stays running', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [
+        {
+          id: 'm1',
+          seq: 1,
+          kind: 'tool',
+          payload: { name: 'sleep 120', id: 'call-1', input: {} },
+          created_at: CREATED_AT,
+        },
+      ],
+    });
+    await act(async () => {
+      renderPane({ row: REVIEW_ROW, loadMessages, recoveryRequired: true });
+    });
+    await flushUntil(host, 'settled row', () => (host.textContent ?? '').includes('sleep 120'));
+    // Recovery is reported without the row's own status ever leaving
+    // 'running' — the still-open call settles to unknown (glyph –) anyway,
+    // since no live process backs it either way, and never renders the
+    // running glyph (◐).
+    expect(host.textContent).toContain('–');
+    expect(host.textContent).not.toContain('◐');
   });
 
   test('unwraps an exact one-string envelope only when the definition schema is supplied', async () => {
@@ -522,9 +548,12 @@ describe('NodeTranscriptPane', () => {
     expect(calls[0]).toEqual(['run-1', 'review']);
     expect(calls.every(call => call[0] === 'run-1' && call[1] === 'review')).toBe(true);
     expect(host.querySelectorAll('[role="region"]')).toHaveLength(1);
+    // Iteration 2's own content is visible; iteration 1's is gone. The raw
+    // `iteration_started`/`iteration_failed` lifecycle rows never render —
+    // they are not one of the room's approved row types.
     expect(host.textContent).toContain('Read');
-    expect(host.textContent).toContain('iteration_started');
-    expect(host.textContent).toContain('iteration_failed');
+    expect(host.textContent).not.toContain('iteration_started');
+    expect(host.textContent).not.toContain('iteration_failed');
     expect(host.textContent).not.toContain('first');
   });
 
@@ -771,7 +800,10 @@ describe('NodeTranscriptPane', () => {
         pendingInteractions: [],
       });
     });
-    await flushUntil(host, 'status awaiting', () => (host.textContent ?? '').includes('awaiting'));
+    // 'awaiting' is a raw lifecycle status row, never rendered — 'first' is
+    // this data set's own text row and only appears once it has loaded.
+    await flushUntil(host, 'review row reloaded', () => (host.textContent ?? '').includes('first'));
+    expect(host.textContent).not.toContain('awaiting');
     expect(host.querySelector('form[aria-label="question from agent, 1 questions"]')).toBeNull();
     expect(host.textContent).not.toContain('Ship it?');
   });
