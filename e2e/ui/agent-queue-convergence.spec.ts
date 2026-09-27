@@ -313,9 +313,9 @@ interface DraftSnapshot {
 }
 
 /**
- * Reads the acting operator's own server-persisted composer draft (Story
- * 7.2). Scoped by the request context's identity header — a different
- * identity's GET on the same run/node never sees this one.
+ * Reads the acting operator's own server-persisted composer draft. Scoped
+ * by the request context's identity header — a different identity's GET on
+ * the same run/node never sees this one.
  */
 async function readDraft(
   request: APIRequestContext,
@@ -622,13 +622,18 @@ for (const surface of ['console', 'legacy'] as const) {
 
       const starterDraftCleared = waitForDraftCleared(starterA, run.runId, nodeId);
       const starterId = await queueGuidance(starterA, roomA, run.runId, nodeId, starterText);
-      // Cleared after send: sending from any tab of the same operator clears
-      // that operator's shared server draft for this node.
+      // Cleared after send, current behavior: ComposerDock's submit() calls
+      // clearDraft(runId, nodeId) unconditionally on success, so a send from
+      // ANY tab of this operator clears the one shared draft row on this
+      // node — including a different, still-open tab's own unsent draft
+      // text. Whether that cross-tab wipe is the intended contract is a
+      // product question, not settled here; this only pins today's
+      // behavior.
       await starterDraftCleared;
       const draftAlphaAfterStarterSend = await readDraft(starterB.request, run.runId, nodeId);
       expect(
         draftAlphaAfterStarterSend,
-        "sending clears the shared draft for that operator's node"
+        "current behavior: sending clears the shared draft for that operator's node"
       ).toBeNull();
       const draftBetaAfterStarterSend = await readDraft(teammate.request, run.runId, nodeId);
       expect(
