@@ -4,8 +4,15 @@
  * tool names.
  *
  * Rules:
- *  - Only the most recent retry attempt of each node is considered: an
- *    earlier attempt's evidence points at commits a later retry reset away.
+ *  - An execution counts only when its end commit is still an ancestor of
+ *    (or equal to) the checkout's current HEAD. A `checkoutStrategy:
+ *    'checkpoint'` retry resets the checkout to an earlier commit, orphaning
+ *    every execution that ran after it — their end commits fall out of
+ *    HEAD's ancestry and they are excluded. A `checkoutStrategy: 'current'`
+ *    retry never resets anything, so an earlier attempt's commits stay
+ *    exactly where they were and remain ancestors of HEAD — that attempt is
+ *    still counted alongside the retry. Retry epoch number is never used as
+ *    a proxy for this: only git ancestry decides.
  *  - An execution with no end evidence proves nothing.
  *  - Two executions whose recorded time ranges overlap share one checkout at
  *    the same moment, so neither one's diff can be trusted to be its own —
@@ -16,6 +23,9 @@
  */
 import type { ChangedFile } from '@archon/git';
 import type { WorkflowNodeExecutionEvidence } from '@archon/workflows/store';
+
+/** True when `commitSha` is still an ancestor of (or equal to) the checkout's current HEAD. */
+export type IsAncestorOfHead = (commitSha: string) => Promise<boolean>;
 
 export interface AttributedNodeExecution {
   nodeId: string;
@@ -51,25 +61,22 @@ function toMs(value: Date | string): number {
   return typeof value === 'string' ? new Date(value).getTime() : value.getTime();
 }
 
-/** Keeps, per node id, only the rows from that node's highest retry epoch. */
-function selectLatestEpochPerNode(
-  evidence: readonly WorkflowNodeExecutionEvidence[]
-): WorkflowNodeExecutionEvidence[] {
-  const maxEpochByNode = new Map<string, number>();
-  for (const row of evidence) {
-    const current = maxEpochByNode.get(row.node_id);
-    if (current === undefined || row.retry_epoch > current) {
-      maxEpochByNode.set(row.node_id, row.retry_epoch);
-    }
-  }
-  return evidence.filter(row => maxEpochByNode.get(row.node_id) === row.retry_epoch);
-}
-
-/** Drops rows with no proven end state — an open or failed-to-capture execution proves nothing. */
-function toUsableExecutions(evidence: readonly WorkflowNodeExecutionEvidence[]): UsableExecution[] {
+/**
+ * Drops rows with no proven end state — an open or failed-to-capture
+ * execution proves nothing — then keeps only executions whose end commit is
+ * still an ancestor of HEAD (see the module docstring: this is the sole test
+ * for whether a retry reset an earlier attempt away, never the epoch
+ * number). An end commit that is still an ancestor of HEAD proves its start
+ * commit is too, by transitivity along the same checkout lineage.
+ */
+async function toUsableExecutions(
+  evidence: readonly WorkflowNodeExecutionEvidence[],
+  isAncestorOfHead: IsAncestorOfHead
+): Promise<UsableExecution[]> {
   const usable: UsableExecution[] = [];
   for (const row of evidence) {
     if (row.end_commit_sha === null || row.ended_at === null) continue;
+    if (!(await isAncestorOfHead(row.end_commit_sha))) continue;
     usable.push({
       evidenceId: row.id,
       nodeId: row.node_id,
@@ -115,17 +122,21 @@ function partitionByOverlap(executions: readonly UsableExecution[]): {
 
 /**
  * The commit to diff against `HEAD` to find everything this run has changed
- * so far. It is the start snapshot of the temporally earliest execution still
- * relevant to the checkout's current state (a retried node's earlier attempt
- * is excluded, since its start commit was reset away and is no longer HEAD's
- * ancestor). `undefined` when the run has no usable evidence at all.
+ * so far. It is the start snapshot of the temporally earliest execution
+ * whose start commit is still an ancestor of the checkout's current state —
+ * a retried node's reset-away attempt is excluded because its start commit
+ * no longer is one, regardless of retry epoch. An execution still open (no
+ * end commit yet) is included: nothing later can have reset past a
+ * currently-active execution's own start. `undefined` when the run has no
+ * usable evidence at all.
  */
-export function selectRunBaselineCommit(
-  evidence: readonly WorkflowNodeExecutionEvidence[]
-): string | undefined {
-  const latestPerNode = selectLatestEpochPerNode(evidence);
+export async function selectRunBaselineCommit(
+  evidence: readonly WorkflowNodeExecutionEvidence[],
+  isAncestorOfHead: IsAncestorOfHead
+): Promise<string | undefined> {
   let earliest: { commitSha: string; startedAtMs: number } | undefined;
-  for (const row of latestPerNode) {
+  for (const row of evidence) {
+    if (!(await isAncestorOfHead(row.start_commit_sha))) continue;
     const startedAtMs = toMs(row.started_at);
     if (earliest === undefined || startedAtMs < earliest.startedAtMs) {
       earliest = { commitSha: row.start_commit_sha, startedAtMs };
@@ -141,13 +152,14 @@ export interface ComputeFileAttributionParams {
   evidence: readonly WorkflowNodeExecutionEvidence[];
   /** Reads the paths changed between two commits. Injected so this stays a pure, testable algorithm. */
   diffCommitRange: (fromCommitSha: string, toCommitSha: string) => Promise<readonly ChangedFile[]>;
+  /** Proves an execution's commits are still reachable from HEAD rather than reset away. */
+  isAncestorOfHead: IsAncestorOfHead;
 }
 
 export async function computeFileAttribution(
   params: ComputeFileAttributionParams
 ): Promise<PathAttribution[]> {
-  const latestPerNode = selectLatestEpochPerNode(params.evidence);
-  const usable = toUsableExecutions(latestPerNode);
+  const usable = await toUsableExecutions(params.evidence, params.isAncestorOfHead);
   const { confident } = partitionByOverlap(usable);
   // Chronological order makes "every proven execution is shown in stable
   // order" a property of insertion order below, not a sort at read time.
