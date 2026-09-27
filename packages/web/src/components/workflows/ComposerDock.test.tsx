@@ -194,6 +194,7 @@ describe('ComposerDock', () => {
       onSelectLiveRow: (liveRowId: string) => void;
       autoFocusTarget: 'field' | 'go' | null;
       onAutoFocusApplied: () => void;
+      onExecutionStateChange: (state: 'live' | 'recovery_required' | 'finished' | null) => void;
       send: SendNodeGuidance;
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
@@ -225,6 +226,7 @@ describe('ComposerDock', () => {
           onSelectLiveRow: overrides.onSelectLiveRow,
           autoFocusTarget: overrides.autoFocusTarget,
           onAutoFocusApplied: overrides.onAutoFocusApplied,
+          onExecutionStateChange: overrides.onExecutionStateChange,
           send: overrides.send ?? nextSend,
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
@@ -366,6 +368,21 @@ describe('ComposerDock', () => {
     await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
     expect(host.textContent).toContain('restored after server restart');
     expect(host.querySelector('textarea')).toBeNull();
+  });
+
+  test('reports every observed execution state to the parent, including the initial null', async () => {
+    const ctrl = controllableRead();
+    const observed: (string | null)[] = [];
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      onExecutionStateChange: state => {
+        observed.push(state);
+      },
+    });
+    expect(observed).toEqual([null]);
+    await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
+    expect(observed).toEqual([null, 'recovery_required']);
   });
 
   test.each(['pending', 'completed', 'failed', 'skipped'] as const)(

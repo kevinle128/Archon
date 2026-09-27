@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import {
   getWorkflowNodeMessages,
   type AskAnswerBody,
@@ -12,6 +14,7 @@ import {
   type FinishedIterationView,
   type RunOfTotal,
 } from '@/lib/execution-room-model';
+import type { SteeringExecutionState } from '@/lib/steering-dock';
 import type { WorkflowRunStatus } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -140,6 +143,11 @@ export function LegacyNodeRoom({
   askDrafts,
   onAskDraftChange,
 }: LegacyNodeRoomProps): React.ReactElement {
+  // Reported by the dock's own queue poll — the only place restart recovery
+  // is currently observable. A fresh dock mount reports null immediately, so
+  // switching rows/nodes clears a stale recovery pill without extra plumbing.
+  const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
+
   if (row === null) return <RoomPlaceholder>Select a node</RoomPlaceholder>;
 
   const resolution = resolveRoomKind(row.nodeId, definitionNodes, events, approval);
@@ -173,6 +181,7 @@ export function LegacyNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
+        recoveryRequired={dockExecutionState === 'recovery_required'}
       />
     ) : (
       <div className="flex items-center gap-2 border-b border-border px-4 py-2">
@@ -233,6 +242,7 @@ export function LegacyNodeRoom({
             idleAwaitExpired={idleAwaitExpired}
             nodeExecutionKey={nodeExecutionKey}
             onSelectLiveRow={onSelectRow}
+            onExecutionStateChange={setDockExecutionState}
           />
         );
         break;

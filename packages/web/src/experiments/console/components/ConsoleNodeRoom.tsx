@@ -34,6 +34,7 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import type { SteeringExecutionState } from '@/lib/steering-dock';
 import { projectTerminalTodoState } from '@/lib/todo-state';
 
 import type { Run } from '../primitives/run';
@@ -531,6 +532,10 @@ export function ConsoleNodeRoom({
   const [retryNonce, setRetryNonce] = useState(0);
   const [navTarget, setNavTarget] = useState<string | null>(null);
   const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
+  // Reported by the dock's own queue poll — the only place restart recovery
+  // is currently observable. A fresh dock mount reports null immediately, so
+  // switching rows/nodes clears a stale recovery pill without extra plumbing.
+  const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
   const pageStateRef = useRef(pageState);
@@ -1046,6 +1051,7 @@ export function ConsoleNodeRoom({
         runOfTotal={runOfTotal}
         idleAwaitExpired={idleAwaitExpired}
         iterationPrefix={iterationPrefix}
+        recoveryRequired={dockExecutionState === 'recovery_required'}
       />
     );
 
@@ -1127,6 +1133,7 @@ export function ConsoleNodeRoom({
               onAutoFocusApplied={(): void => {
                 setAutoFocusTarget(null);
               }}
+              onExecutionStateChange={setDockExecutionState}
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}
               idleAwaitExpired={idleAwaitExpired}

@@ -39,6 +39,8 @@ export interface NodeRoomHeaderProps {
   idleAwaitExpired?: boolean;
   /** Set only when viewing a finished iteration while the node runs live elsewhere. */
   iterationPrefix?: number | null;
+  /** Server-reported restart recovery for the selected row. Default false. */
+  recoveryRequired?: boolean;
 }
 
 // Tailwind's build scans source for literal class names, so a chip/pill tone
@@ -103,8 +105,9 @@ export function NodeRoomHeader({
   runOfTotal = null,
   idleAwaitExpired = false,
   iterationPrefix = null,
+  recoveryRequired = false,
 }: NodeRoomHeaderProps): React.ReactElement {
-  const pill = statusPill(model.status);
+  const pill = statusPill(model.status, recoveryRequired);
   const pillStyle = pill.tone === null ? NEUTRAL_PILL_STYLE : STATUS_PILL_STYLE[pill.tone];
   const chipStyle = kindChip === null ? null : (KIND_CHIP_STYLE[kindChip.tone] ?? null);
   const metaLine = headerMetaLine({
@@ -116,6 +119,7 @@ export function NodeRoomHeader({
     model: model.model,
     idleAwaitExpired,
     iterationPrefix,
+    recoveryRequired,
   });
 
   return (

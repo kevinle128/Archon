@@ -31,6 +31,7 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
+import type { SteeringExecutionState } from '@/lib/steering-dock';
 import { projectTerminalTodoState } from '@/lib/todo-state';
 import type { WorkflowRunStatus } from '@/lib/types';
 
@@ -109,6 +110,8 @@ export interface NodeTranscriptPaneProps {
   idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
+  /** Forwarded to the composer dock; see its own doc comment. */
+  onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
 }
 
 function collectToolIds(messages: readonly WorkflowNodeMessageResponse[]): Set<string> {
@@ -146,6 +149,7 @@ export function NodeTranscriptPane({
   idleAwaitExpired = false,
   nodeExecutionKey = null,
   onSelectLiveRow,
+  onExecutionStateChange,
 }: NodeTranscriptPaneProps): React.ReactElement {
   const resolvedScopeKey =
     scopeKey ??
@@ -625,6 +629,7 @@ export function NodeTranscriptPane({
         onAutoFocusApplied={(): void => {
           setAutoFocusTarget(null);
         }}
+        onExecutionStateChange={onExecutionStateChange}
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
         idleAwaitExpired={idleAwaitExpired}

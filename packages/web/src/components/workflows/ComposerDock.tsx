@@ -96,6 +96,7 @@ import {
   type RemovalFocusTarget,
   type SteeringDockMode,
   type SteeringDockState,
+  type SteeringExecutionState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
 import { cn } from '@/lib/utils';
@@ -174,6 +175,13 @@ export interface ComposerDockProps {
    */
   autoFocusTarget?: 'field' | 'go' | null;
   onAutoFocusApplied?: () => void;
+  /**
+   * The last observed queue-read execution state, reported on every change
+   * (including back to null on a scope reset) so the room header can show
+   * `Recovery required` — the dock is the only place this durable signal is
+   * currently read.
+   */
+  onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
   send?: SendNodeGuidance;
   interrupt?: InterruptNode;
   withdraw?: WithdrawNodeGuidance;
@@ -253,6 +261,7 @@ export function ComposerDock({
   onSelectLiveRow,
   autoFocusTarget = null,
   onAutoFocusApplied,
+  onExecutionStateChange,
   send = sendNodeGuidance,
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
@@ -459,6 +468,13 @@ export function ComposerDock({
   useEffect(() => {
     setDock(current => syncProjectedSubState(current, subState));
   }, [subState]);
+
+  // The only reader of the durable queue snapshot's execution state today —
+  // report every change, including the reset back to null on a scope swap,
+  // so a parent header can show `Recovery required` without polling twice.
+  useEffect(() => {
+    onExecutionStateChange?.(dock.executionState);
+  }, [dock.executionState, onExecutionStateChange]);
 
   useEffect(() => {
     if (!nodeTerminal) {
