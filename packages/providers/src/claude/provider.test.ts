@@ -2444,6 +2444,76 @@ describe('sendQuery decomposition behaviors', () => {
     });
   });
 
+  test('a tool cut off by the operator settles interrupted through the same plain tool_result path, when no hook ever touches it', async () => {
+    // Verified live: the SDK settles an aborted mid-flight tool call here,
+    // through the plain Messages API tool_result on a 'user' turn — never
+    // through PostToolUseFailure. The operator's interrupt signal already
+    // being aborted at this point is the only proof available.
+    const interruptController = new AbortController();
+    mockQuery.mockImplementation((args: { prompt: unknown }) => {
+      const fake = new FakeQuery();
+      void (async () => {
+        fake.push({
+          done: false,
+          value: {
+            type: 'assistant',
+            message: {
+              content: [
+                {
+                  type: 'tool_use',
+                  id: 'toolu_cutoff',
+                  name: 'Bash',
+                  input: { command: 'sleep 25 && echo done' },
+                },
+              ],
+            },
+          },
+        });
+        interruptController.abort();
+        fake.push({
+          done: false,
+          value: {
+            type: 'user',
+            message: {
+              content: [
+                {
+                  type: 'tool_result',
+                  tool_use_id: 'toolu_cutoff',
+                  content: "The user doesn't want to proceed with this tool use.",
+                  is_error: true,
+                },
+              ],
+            },
+          },
+        });
+        fake.push({ done: true, value: undefined });
+      })();
+      // Streaming-input mode (prompt is an AsyncIterable) needs its single
+      // message drained or the provider's held-open gate never resolves.
+      void (async () => {
+        const iterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+        await iterator.next();
+      })();
+      return fake;
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: "The user doesn't want to proceed with this tool use.",
+      toolCallId: 'toolu_cutoff',
+      toolOutcome: 'interrupted',
+      outputState: 'full',
+    });
+  });
+
   test('a denial whose tool_result content is an array of text blocks is flattened to plain text', async () => {
     mockQuery.mockImplementation(async function* () {
       yield {

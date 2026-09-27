@@ -1274,7 +1274,8 @@ async function* streamClaudeMessages(
   events: AsyncGenerator,
   toolResultQueue: ToolResultEntry[],
   sanitizeAskResume = false,
-  advisorModel?: string
+  advisorModel?: string,
+  interruptSignal?: AbortSignal
 ): AsyncGenerator<MessageChunk> {
   // Synthetic error message recorded while waiting for the terminal result to
   // confirm it (#1797). Detection is two-signal: the typed wrapper `error`
@@ -1549,7 +1550,12 @@ async function* streamClaudeMessages(
       // drain (above, at the top of this loop) runs strictly before this
       // branch and records the call id in hookSettledCallIds — so only a
       // call that hooks never touched reaches this fallback, and a normal
-      // executed call is never double-counted.
+      // executed call is never double-counted. This is also where a tool
+      // call the operator's Stop cut off mid-flight can surface (verified
+      // live — the CLI settles the aborted call here, never through
+      // PostToolUseFailure): the operator's interrupt signal already being
+      // aborted at this point is proof, the same discriminator
+      // buildToolCaptureHooks uses.
       const userMessage = msg as { message?: { content?: unknown } };
       const userContent = userMessage.message?.content;
       if (Array.isArray(userContent)) {
@@ -1574,7 +1580,7 @@ async function* streamClaudeMessages(
             toolName,
             toolOutput: textFromToolResultContent(toolResult.content),
             toolCallId: toolResult.tool_use_id,
-            toolOutcome: 'error',
+            toolOutcome: interruptSignal?.aborted === true ? 'interrupted' : 'error',
             outputState: 'full',
           };
         }
@@ -2115,7 +2121,8 @@ export class ClaudeProvider implements IAgentProvider {
               interruptibleEvents,
               toolResultQueue,
               hasAskResume,
-              assistantDefaults.advisorModel
+              assistantDefaults.advisorModel,
+              interruptSignal
             ),
             resumedOutcome(resumeSessionId, true)
           )) {
