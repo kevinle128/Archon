@@ -473,7 +473,9 @@ async function assertQueueVisualContract(
 
   for (let i = 0; i < expectedCount; i += 1) {
     const row = items.nth(i);
-    const span = row.locator('span').first();
+    // The decorative 1-based position number is the row's first span
+    // (aria-hidden); the message-text span is the first non-decorative one.
+    const span = row.locator('span:not([aria-hidden="true"])').first();
     const spanStyle = await span.evaluate(el => {
       const style = el.ownerDocument.defaultView?.getComputedStyle(el);
       return {

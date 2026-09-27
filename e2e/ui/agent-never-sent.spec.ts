@@ -236,7 +236,10 @@ async function assertNeverSentBox(
   for (let i = 0; i < expected.length; i += 1) {
     const entry = expected[i]!;
     const item = items.nth(i);
-    await expect(item).toHaveText(entry.text);
+    // The decorative 1-based position number is an aria-hidden sibling span,
+    // excluded from the accessible name but not from raw textContent — so an
+    // exact match must tolerate it; toContainText still proves the message.
+    await expect(item).toContainText(entry.text);
     if (entry.messageId === null) {
       expect(await item.getAttribute('data-message-id')).toBeNull();
     } else {

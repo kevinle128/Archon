@@ -332,7 +332,10 @@ for (const surface of ['legacy', 'console'] as const) {
       await expect(room.getByText(disclosure, { exact: true })).toBeVisible({ timeout: T.medium });
       await expect(go).toBeVisible();
       await expect(queueList(room)).toContainText(queuedMessage);
-      await expect(queueList(room)).toContainText('sent');
+      // Delivery is never inferred from prose: a queued/sent item carries no
+      // per-item status suffix (only the ambiguous delivery_unknown state
+      // does); this is a regression guard, not a proof of delivery.
+      await expect(queueList(room)).not.toContainText('sent');
       await expect(guidanceField(room)).toHaveCount(0);
       await expect(room.getByText(SEND_HINT, { exact: true })).toHaveCount(0);
       await expect(room.getByRole('button', { name: /^Queue/ })).toHaveCount(0);
@@ -483,7 +486,9 @@ for (const surface of ['legacy', 'console'] as const) {
       'data-message-id',
       messageId
     );
-    await expect(neverSent.getByRole('listitem').first()).toHaveText(queuedMessage);
+    // The decorative 1-based position number is an aria-hidden sibling span,
+    // excluded from the accessible name but not from raw textContent.
+    await expect(neverSent.getByRole('listitem').first()).toContainText(queuedMessage);
     await expect(room.getByRole('alert')).toHaveText('node finished · none of this was sent');
 
     const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_LOOP_NODE);

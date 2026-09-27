@@ -258,8 +258,10 @@ async function messageSpanFacts(row: Locator): Promise<{
   whiteSpace: string;
   overflowX: string;
 }> {
+  // The decorative 1-based position number is the row's first span
+  // (aria-hidden); the message-text span is the first non-decorative one.
   const facts = await row
-    .locator('span')
+    .locator('span:not([aria-hidden="true"])')
     .first()
     .evaluate(el => {
       const style = el.ownerDocument.defaultView?.getComputedStyle(el);

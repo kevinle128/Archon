@@ -375,7 +375,10 @@ for (const surface of ['console', 'legacy'] as const) {
       const items = queueList(room).getByRole('listitem');
       await expect(items).toHaveCount(1);
       await expect(items.first()).toContainText(FIRST_CORRECTION);
-      await expect(items.first()).toContainText('sent');
+      // Delivery is never inferred from prose: a queued/sent item carries no
+      // per-item status suffix (only the ambiguous delivery_unknown state
+      // does); this is a regression guard, not a proof of delivery.
+      await expect(items.first()).not.toContainText('sent');
       await expect(room.locator('[role="status"]')).toContainText('1 message queued');
       expect(await field.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
 
@@ -389,7 +392,7 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(items).toHaveCount(2);
       await expect(items.nth(0)).toContainText(FIRST_CORRECTION);
       await expect(items.nth(1)).toContainText('second correction');
-      await expect(items.nth(1)).toContainText('sent');
+      await expect(items.nth(1)).not.toContainText('sent');
       expect(await field.evaluate(el => el.ownerDocument.activeElement === el)).toBe(true);
       expect(sends.count()).toBe(2);
       expect(sends.messageIds()).toHaveLength(2);
@@ -696,7 +699,11 @@ for (const surface of ['console', 'legacy'] as const) {
     await expect(items).toHaveCount(2);
 
     await test.step('contrast: receipts, sent badges, hint, and field focus ring', async () => {
-      const receiptText = await textContrast(items.first().locator('span').first());
+      // The decorative 1-based position number is the row's first span
+      // (aria-hidden); the message-text span is the first non-decorative one.
+      const receiptText = await textContrast(
+        items.first().locator('span:not([aria-hidden="true"])').first()
+      );
       const sentBadge = await textContrast(items.first().locator('span').last());
       const hint = await textContrast(room.getByText(SEND_HINT));
       const queueLabel = await textContrast(queue);
@@ -796,7 +803,7 @@ for (const surface of ['console', 'legacy'] as const) {
     await test.step('reduced-motion parity', async () => {
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await expect(items).toHaveCount(2);
-      await expect(items.first()).toContainText('sent');
+      await expect(items.first()).not.toContainText('sent');
       await captureEvidence(room, `us-005-${surface}-queued-2-reduced-motion.png`, testInfo);
       await page.emulateMedia({ reducedMotion: 'no-preference' });
     });
