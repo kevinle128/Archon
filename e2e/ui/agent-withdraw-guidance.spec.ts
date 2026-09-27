@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -9,6 +9,7 @@ import { test, expect } from '../lib/playwright/suite';
 import {
   E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
   QUEUE_GUIDANCE_NODE,
+  queueGuidanceDrainReleasePath,
 } from '../lib/playwright/archon-runtime';
 import {
   getRunDetail,
@@ -175,7 +176,27 @@ async function transcriptTexts(page: Page, runId: string, nodeId: string): Promi
     .map(message => message.payload.text as string);
 }
 
-/** Queues one guidance message through the composer and returns its accepted id. */
+/**
+ * The submit control shared by Queue and Send now (`ComposerDock.tsx`,
+ * `canSubmitGuidance`) — located by its keyboard-shortcut hint rather than
+ * its label, since the label itself changes with dock mode.
+ */
+function submitControl(room: Locator): Locator {
+  return room.locator('[aria-keyshortcuts="Meta+Enter Control+Enter"]');
+}
+
+/**
+ * Queues one guidance message through the composer and returns its accepted
+ * id. `Meta+Enter` is a silent no-op while the control is `aria-disabled`
+ * (`submit()` in `ComposerDock.tsx` returns early with no visible feedback),
+ * so waiting for the control to report enabled first is the real readiness
+ * signal — a field merely being visible can still precede that by a beat
+ * under load. The run-detail refresh can also replace the whole dock while
+ * this waits (Legacy remounts it more than Console does): a fresh instance
+ * resets `draft` to `''` via its own mount-time hydration, discarding
+ * whatever this already typed, so the poll re-fills the field whenever it
+ * finds that value gone rather than only checking `aria-disabled`.
+ */
 async function queueGuidance(
   page: Page,
   room: Locator,
@@ -183,15 +204,43 @@ async function queueGuidance(
   nodeId: string,
   text: string
 ): Promise<string> {
+  const field = guidanceField(room);
+  const submit = submitControl(room);
+  await field.fill(text);
+  await expect
+    .poll(
+      async () => {
+        if ((await field.inputValue()) !== text) {
+          await field.fill(text);
+          return false;
+        }
+        return (await submit.getAttribute('aria-disabled')) !== 'true';
+      },
+      {
+        // The same order of magnitude as the node's own natural window, so
+        // this never asks for more slack than the fixture already grants.
+        timeout: T.long,
+        message: 'composer holds its draft and its submit control is enabled',
+      }
+    )
+    .toBe(true);
   const sent = page.waitForResponse(
     res =>
       res.request().method() === 'POST' &&
-      new URL(res.url()).pathname === sendPathname(runId, nodeId)
+      new URL(res.url()).pathname === sendPathname(runId, nodeId),
+    { timeout: T.medium }
   );
-  const field = guidanceField(room);
-  await field.fill(text);
   await field.press('Meta+Enter');
-  const response = await sent;
+  let response;
+  try {
+    response = await sent;
+  } catch (err) {
+    const disabled = await submit.getAttribute('aria-disabled');
+    const draft = await field.inputValue();
+    throw new Error(
+      `send POST never fired after Meta+Enter (submit aria-disabled=${String(disabled)}, field value=${JSON.stringify(draft)}): ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
   expect(response.status()).toBe(200);
   const body = (await response.json()) as { message_id?: string };
   expect(body.message_id, 'send response carries the accepted message_id').toMatch(
@@ -310,6 +359,12 @@ for (const surface of ['console', 'legacy'] as const) {
     const secondMarker = `SECOND-${tag}`;
     const secondMessage = echoMessage(secondMarker);
 
+    // The fixture's node stays open until this file is written (or its 30s
+    // ceiling elapses) — clear any marker a prior run left behind so this
+    // run's own wait starts clean.
+    const releasePath = queueGuidanceDrainReleasePath(archon.home);
+    rmSync(releasePath, { force: true });
+
     const run = await archon.startWorkflowViaWeb(
       E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
       'e2e withdraw drain'
@@ -400,6 +455,12 @@ for (const surface of ['console', 'legacy'] as const) {
       });
     });
 
+    // Every steering assertion this test needs is done — release the node's
+    // held turn now instead of waiting out the rest of the fixture's 30s
+    // ceiling, so the drain below completes immediately.
+    mkdirSync(dirname(releasePath), { recursive: true });
+    writeFileSync(releasePath, '');
+
     await test.step('run completes; only the sibling echo reaches the provider', async () => {
       await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
       const texts = await transcriptTexts(page, run.runId, QUEUE_GUIDANCE_NODE);
@@ -432,6 +493,10 @@ for (const surface of ['console', 'legacy'] as const) {
     const marker = `LAST-${tag}`;
     const message = echoMessage(marker);
 
+    // See the drain test above: clear any marker a prior run left behind.
+    const releasePath = queueGuidanceDrainReleasePath(archon.home);
+    rmSync(releasePath, { force: true });
+
     const run = await archon.startWorkflowViaWeb(
       E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
       'e2e withdraw last'
@@ -449,7 +514,8 @@ for (const surface of ['console', 'legacy'] as const) {
     const deletion = page.waitForResponse(
       res =>
         res.request().method() === 'DELETE' &&
-        new URL(res.url()).pathname === deletePathname(run.runId, QUEUE_GUIDANCE_NODE, messageId)
+        new URL(res.url()).pathname === deletePathname(run.runId, QUEUE_GUIDANCE_NODE, messageId),
+      { timeout: T.medium }
     );
     await focusDeleteViaKeyboard(page, room, 1, 0);
     await page.keyboard.press(activationKey);
@@ -489,6 +555,12 @@ for (const surface of ['console', 'legacy'] as const) {
         reducedMotionParity: true,
       });
     });
+
+    // Every check above that reads the composer field is done — release the
+    // node's held turn now instead of waiting out the rest of the fixture's
+    // 30s ceiling.
+    mkdirSync(dirname(releasePath), { recursive: true });
+    writeFileSync(releasePath, '');
 
     await test.step('run completes; no resumed echo contains the withdrawn marker', async () => {
       await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
