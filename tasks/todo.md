@@ -10,7 +10,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] B — durable steering + Stop backend merged (b14a0b8a); check:schema-upgrades OK. Live Stop→idle→Send now not yet proven on a real run (B-UI/F1 must prove)
 - [x] C1 — 4.2–4.4 merged (a281aaf3). Chat outcome plumbing fixed by me
 - [x] F2 — 4.1, 8.4, 8.6 merged; Codex + DeepSeek interrupt=stream-abort proven live (DeepSeek via alibaba/deepseek-v4.1-flash)
-- [ ] 10.4 — capability-driven interrupted tool status (Codex never ⚠) — agent story-10-4
+- [x] 10.4 merged; validate green on develop-2
 - [x] D — 6.1–6.3 merged (453f4065) + post-merge field fix (4092b2e8). Open: non-Claude thinking delta folding (see phase-d-report) → F1/F2
 - [x] E — 5.1, 5.2 merged (d25f185a). check:schema-upgrades OK on develop-2 after E merge; rerun after B and D merge
 - [x] F1 merged: Claude deliveryAck=true (replay-user-messages), Claude softInjection=false (disproven incl. priority:'next'); shared soft-injection seam wired
