@@ -7,10 +7,15 @@ describe('GrokEventParser', () => {
     const parser = new GrokEventParser();
 
     expect(parser.consumeLine('{"type":"text","data":"hello"}')).toEqual([
-      { type: 'assistant', content: 'hello' },
+      {
+        type: 'assistant',
+        content: 'hello',
+        textMode: 'delta',
+        blockId: 'grok-single-assistant-1',
+      },
     ]);
     expect(parser.consumeLine('{"type":"thought","data":"hmm"}')).toEqual([
-      { type: 'thinking', content: 'hmm' },
+      { type: 'thinking', content: 'hmm', textMode: 'delta', blockId: 'grok-single-thinking-2' },
     ]);
     expect(
       parser.consumeLine(
@@ -108,6 +113,27 @@ describe('GrokEventParser', () => {
       errors: ['bad auth'],
       resumed: false,
     });
+  });
+
+  test('folds consecutive same-kind records into one block; a kind switch or tool call starts a new one', () => {
+    const parser = new GrokEventParser();
+
+    const [first] = parser.consumeLine('{"type":"thought","data":"a"}');
+    const [second] = parser.consumeLine('{"type":"thought","data":"b"}');
+    expect(first?.type === 'thinking' ? first.blockId : undefined).toBe(
+      second?.type === 'thinking' ? second.blockId : undefined
+    );
+
+    const [assistant] = parser.consumeLine('{"type":"text","data":"c"}');
+    expect(assistant?.type === 'assistant' ? assistant.blockId : undefined).not.toBe(
+      first?.type === 'thinking' ? first.blockId : undefined
+    );
+
+    parser.consumeLine('{"type":"tool_call","toolCallId":"call-block","toolName":"read_file"}');
+    const [afterTool] = parser.consumeLine('{"type":"thought","data":"d"}');
+    expect(afterTool?.type === 'thinking' ? afterTool.blockId : undefined).not.toBe(
+      first?.type === 'thinking' ? first.blockId : undefined
+    );
   });
 });
 

@@ -587,7 +587,7 @@ export class OmpProvider implements IAgentProvider {
 
       if (outcome.kind === 'interrupted') {
         this.finishTurnKeepWarm(noSession);
-        for (const chunk of parser.drainPendingAssistant()) yield chunk;
+        for (const chunk of parser.drainPendingText()) yield chunk;
         yield await maybeEnrichResult(
           parser.buildInterruptedResult(resumedForInterrupt),
           enrichOptions

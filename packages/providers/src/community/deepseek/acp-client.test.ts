@@ -431,7 +431,12 @@ describe('driveDeepseekAcpTurn', () => {
     const first = await gen.next();
     expect(first).toEqual({
       done: false,
-      value: { type: 'assistant', content: 'streaming', textMode: 'delta' },
+      value: {
+        type: 'assistant',
+        content: 'streaming',
+        textMode: 'delta',
+        blockId: 'deepseek-assistant-1',
+      },
     });
     expect(promptSettled).toBe(false);
     hold.resolve();
@@ -972,7 +977,12 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first.value).toEqual({ type: 'assistant', content: 'partial', textMode: 'delta' });
+    expect(first.value).toEqual({
+      type: 'assistant',
+      content: 'partial',
+      textMode: 'delta',
+      blockId: 'deepseek-assistant-1',
+    });
     await gen.return(undefined);
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     hold.resolve();
@@ -1037,8 +1047,8 @@ describe('runDeepseekAcpTurn', () => {
       runDeepseekAcpTurn(processInput(), { spawn: spawnImpl, terminateGraceMs: 0 })
     );
     expect(chunks.slice(0, 2)).toEqual([
-      { type: 'assistant', content: 'Hel', textMode: 'delta' },
-      { type: 'assistant', content: 'lo', textMode: 'delta' },
+      { type: 'assistant', content: 'Hel', textMode: 'delta', blockId: 'deepseek-assistant-1' },
+      { type: 'assistant', content: 'lo', textMode: 'delta', blockId: 'deepseek-assistant-1' },
     ]);
     expect(
       chunks

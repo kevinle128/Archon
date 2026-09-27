@@ -4,10 +4,29 @@ import type { MessageChunk } from '../types';
 
 export interface GrokAcpEventState {
   readonly tools: Map<string, { name: string; input?: Record<string, unknown> }>;
+  /**
+   * The currently open assistant/thinking span, if any. ACP streams both as
+   * raw per-delta chunks with no block boundary of their own, so consecutive
+   * chunks of the SAME kind fold into one row only while this stays open;
+   * a chunk of the other kind, or a tool call starting, closes it so the
+   * next chunk (of either kind) opens a fresh span instead of reviving a
+   * stale one out of order.
+   */
+  openTextBlock: { kind: 'assistant' | 'thinking'; blockId: string } | undefined;
+  textBlockSeq: number;
 }
 
 export function createGrokAcpEventState(): GrokAcpEventState {
-  return { tools: new Map() };
+  return { tools: new Map(), openTextBlock: undefined, textBlockSeq: 0 };
+}
+
+/** Mints a fresh block id only when the open span's kind changes. */
+function textBlockId(state: GrokAcpEventState, kind: 'assistant' | 'thinking'): string {
+  if (state.openTextBlock?.kind !== kind) {
+    state.textBlockSeq += 1;
+    state.openTextBlock = { kind, blockId: `grok-acp-${kind}-${String(state.textBlockSeq)}` };
+  }
+  return state.openTextBlock.blockId;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -85,13 +104,31 @@ export function mapGrokAcpSessionUpdate(
   switch (update.sessionUpdate) {
     case 'agent_message_chunk': {
       if (update.content.type !== 'text') return [];
-      return [{ type: 'assistant', content: update.content.text, textMode: 'delta' }];
+      return [
+        {
+          type: 'assistant',
+          content: update.content.text,
+          textMode: 'delta',
+          blockId: textBlockId(state, 'assistant'),
+        },
+      ];
     }
     case 'agent_thought_chunk': {
       if (update.content.type !== 'text') return [];
-      return [{ type: 'thinking', content: update.content.text }];
+      return [
+        {
+          type: 'thinking',
+          content: update.content.text,
+          textMode: 'delta',
+          blockId: textBlockId(state, 'thinking'),
+        },
+      ];
     }
     case 'tool_call': {
+      // A tool call starting ends whichever text span was open — the next
+      // assistant/thinking chunk (of either kind) starts a fresh block
+      // rather than resuming one from before the call.
+      state.openTextBlock = undefined;
       const name = update.name ?? update.title;
       const input = asToolInput(update.rawInput);
       state.tools.set(update.toolCallId, {

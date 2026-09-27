@@ -2756,6 +2756,9 @@ async function executeNodeInternal(
             node_id: stepName,
             scope: executionScope,
             text: msg.content,
+            ...(msg.textMode !== undefined ? { textMode: msg.textMode } : {}),
+            ...(msg.streamId !== undefined ? { streamId: msg.streamId } : {}),
+            ...(msg.blockId !== undefined ? { blockId: msg.blockId } : {}),
           });
         } else if (msg.type === 'advisor' && msg.content) {
           await appendAdvisorTranscript(deps.store, {
@@ -6803,6 +6806,9 @@ async function executeLoopNodeInner(
                 node_id: stepName,
                 scope: iterationExecutionScope,
                 text: msg.content,
+                ...(msg.textMode !== undefined ? { textMode: msg.textMode } : {}),
+                ...(msg.streamId !== undefined ? { streamId: msg.streamId } : {}),
+                ...(msg.blockId !== undefined ? { blockId: msg.blockId } : {}),
               });
             } else if (msg.type === 'advisor' && msg.content) {
               await appendAdvisorTranscript(deps.store, {

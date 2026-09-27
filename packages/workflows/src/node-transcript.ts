@@ -94,6 +94,9 @@ export async function appendOperatorTranscript(
  * Append displayable provider thinking as a `thinking`-origin text row.
  * Callers must pass only content the provider explicitly marked safe to
  * show — hidden or redacted reasoning is never a valid input here.
+ * `textMode`/`streamId`/`blockId` mirror the assistant transcript's own
+ * delta-folding fields, undefined when the provider emits only complete
+ * thinking blocks.
  */
 export async function appendThinkingTranscript(
   store: IWorkflowNodeMessageStore,
@@ -102,6 +105,9 @@ export async function appendThinkingTranscript(
     node_id: string;
     scope: TranscriptExecutionScope;
     text: string;
+    textMode?: 'complete' | 'delta' | 'snapshot';
+    streamId?: string;
+    blockId?: string;
   }
 ): Promise<void> {
   await appendNodeTranscript(store, {
@@ -109,7 +115,12 @@ export async function appendThinkingTranscript(
     node_id: input.node_id,
     kind: 'text',
     payload: { text: input.text },
-    metadata: transcriptMetadata(input.scope, { origin: 'thinking' }),
+    metadata: transcriptMetadata(input.scope, {
+      origin: 'thinking',
+      ...(input.textMode !== undefined ? { text_mode: input.textMode } : {}),
+      ...(input.streamId !== undefined ? { stream_id: input.streamId } : {}),
+      ...(input.blockId !== undefined ? { block_id: input.blockId } : {}),
+    }),
   });
 }
 

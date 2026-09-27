@@ -352,7 +352,19 @@ export type MessageChunk =
       type: 'turn_not_interruptible';
       reason: string;
     }
-  | { type: 'thinking'; content: string }
+  | {
+      type: 'thinking';
+      content: string;
+      /** Provider-known text boundary — same contract as the assistant
+       *  variant. Omitted when the adapter emits only complete thinking
+       *  blocks (e.g. Claude). A provider that streams reasoning as raw
+       *  deltas sets `'delta'` plus a `blockId`/`streamId` that changes
+       *  whenever a new reasoning span starts, so consecutive deltas of one
+       *  span fold into a single row instead of one row per delta. */
+      textMode?: 'complete' | 'delta' | 'snapshot';
+      streamId?: string;
+      blockId?: string;
+    }
   | {
       /**
        * A notification from a consulted advisor model (Claude Code's

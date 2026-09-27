@@ -4,24 +4,76 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { createDeepseekEventState, mapDeepseekSessionUpdate } from './event-bridge';
 
 describe('mapDeepseekSessionUpdate', () => {
-  test('agent_message_chunk text maps to one assistant chunk', () => {
+  test('agent_message_chunk text maps to one assistant delta with a stable block id', () => {
     const update = {
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'hello from dsh' },
     } satisfies SessionUpdate;
     expect(mapDeepseekSessionUpdate(update, createDeepseekEventState())).toEqual([
-      { type: 'assistant', content: 'hello from dsh', textMode: 'delta' },
+      {
+        type: 'assistant',
+        content: 'hello from dsh',
+        textMode: 'delta',
+        blockId: 'deepseek-assistant-1',
+      },
     ]);
   });
 
-  test('agent_thought_chunk text maps to one thinking chunk', () => {
+  test('agent_thought_chunk text maps to one thinking delta with a stable block id', () => {
     const update = {
       sessionUpdate: 'agent_thought_chunk',
       content: { type: 'text', text: 'pondering' },
     } satisfies SessionUpdate;
     expect(mapDeepseekSessionUpdate(update, createDeepseekEventState())).toEqual([
-      { type: 'thinking', content: 'pondering' },
+      { type: 'thinking', content: 'pondering', textMode: 'delta', blockId: 'deepseek-thinking-1' },
     ]);
+  });
+
+  test('consecutive same-kind chunks share one block id; a kind switch mints a new one', () => {
+    const state = createDeepseekEventState();
+    const thought = (text: string): SessionUpdate => ({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text },
+    });
+    const message = (text: string): SessionUpdate => ({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text },
+    });
+
+    const [first] = mapDeepseekSessionUpdate(thought('a'), state);
+    const [second] = mapDeepseekSessionUpdate(thought('b'), state);
+    expect(first?.type === 'thinking' ? first.blockId : undefined).toBe(
+      second?.type === 'thinking' ? second.blockId : undefined
+    );
+
+    const [assistant] = mapDeepseekSessionUpdate(message('c'), state);
+    expect(assistant?.type === 'assistant' ? assistant.blockId : undefined).not.toBe(
+      first?.type === 'thinking' ? first.blockId : undefined
+    );
+
+    const [thirdThought] = mapDeepseekSessionUpdate(thought('d'), state);
+    expect(thirdThought?.type === 'thinking' ? thirdThought.blockId : undefined).not.toBe(
+      first?.type === 'thinking' ? first.blockId : undefined
+    );
+  });
+
+  test('a tool call closes the open text block so the next chunk of either kind starts fresh', () => {
+    const state = createDeepseekEventState();
+    const [beforeTool] = mapDeepseekSessionUpdate(
+      { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'thinking' } },
+      state
+    );
+    mapDeepseekSessionUpdate(
+      { sessionUpdate: 'tool_call', toolCallId: 'call-x', title: 'run_terminal_command' },
+      state
+    );
+    const [afterTool] = mapDeepseekSessionUpdate(
+      { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'thinking again' } },
+      state
+    );
+    expect(afterTool?.type === 'thinking' ? afterTool.blockId : undefined).not.toBe(
+      beforeTool?.type === 'thinking' ? beforeTool.blockId : undefined
+    );
   });
 
   test('non-text message content is ignored rather than stringified', () => {

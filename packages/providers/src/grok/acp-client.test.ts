@@ -495,7 +495,12 @@ describe('driveGrokAcpTurn', () => {
     // `.return()` to trigger its `finally` block synchronously per spec —
     // pulling the first streamed chunk puts it there.
     const first = await gen.next();
-    expect(first.value).toEqual({ type: 'assistant', content: 'partial', textMode: 'delta' });
+    expect(first.value).toEqual({
+      type: 'assistant',
+      content: 'partial',
+      textMode: 'delta',
+      blockId: 'grok-acp-assistant-1',
+    });
     await gen.return(undefined);
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     expect(fake.methodsCalled()).toContain(methods.agent.session.close);
