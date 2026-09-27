@@ -301,6 +301,13 @@ describe('syncProjectedSubState', () => {
 });
 
 describe('canSubmitGuidance', () => {
+  const base = {
+    mode: 'composer' as const,
+    sendInFlight: false,
+    agentMode: 'generating' as const,
+    willSendCount: 0,
+  };
+
   test.each([
     ['   ', false],
     ['\n\t ', false],
@@ -308,25 +315,57 @@ describe('canSubmitGuidance', () => {
     ['x', true],
     ['  keep the padding  ', true],
   ])('draft %j submittable=%s', (draft, expected) => {
-    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft })).toBe(expected);
+    expect(canSubmitGuidance({ ...base, draft })).toBe(expected);
   });
 
   test('in-flight send or non-composer modes refuse', () => {
-    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: true, draft: 'x' })).toBe(false);
+    expect(canSubmitGuidance({ ...base, sendInFlight: true, draft: 'x' })).toBe(false);
     for (const mode of ['hidden', 'blocked', 'detached'] as const) {
-      expect(canSubmitGuidance({ mode, sendInFlight: false, draft: 'x' })).toBe(false);
+      expect(canSubmitGuidance({ ...base, mode, draft: 'x' })).toBe(false);
     }
   });
 
-  test('Send now needs a non-blank newly typed draft even with queued receipts', () => {
-    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft: '' })).toBe(false);
-    expect(canSubmitGuidance({ mode: 'composer', sendInFlight: false, draft: '  ' })).toBe(false);
+  test('Queue never accepts a blank draft, regardless of queued receipts', () => {
+    expect(
+      canSubmitGuidance({ ...base, draft: '', agentMode: 'queue-only', willSendCount: 3 })
+    ).toBe(false);
+    expect(
+      canSubmitGuidance({ ...base, draft: '  ', agentMode: 'queue-only', willSendCount: 3 })
+    ).toBe(false);
+  });
+
+  test('Send now with a blank draft delivers everything already waiting (CAP-10)', () => {
+    expect(canSubmitGuidance({ ...base, draft: '', agentMode: 'idle', willSendCount: 1 })).toBe(
+      true
+    );
+    expect(canSubmitGuidance({ ...base, draft: '   ', agentMode: 'idle', willSendCount: 2 })).toBe(
+      true
+    );
+  });
+
+  test('a blank draft while idle with nothing waiting has nothing to deliver', () => {
+    expect(canSubmitGuidance({ ...base, draft: '', agentMode: 'idle', willSendCount: 0 })).toBe(
+      false
+    );
+  });
+
+  test('a blank draft outside idle never submits, even with items waiting', () => {
+    expect(
+      canSubmitGuidance({ ...base, draft: '', agentMode: 'generating', willSendCount: 2 })
+    ).toBe(false);
+    expect(
+      canSubmitGuidance({ ...base, draft: '', agentMode: 'queue-only', willSendCount: 2 })
+    ).toBe(false);
+  });
+
+  test('a non-blank draft still submits regardless of agent mode or waiting count', () => {
+    expect(
+      canSubmitGuidance({ ...base, draft: 'x', agentMode: 'queue-only', willSendCount: 0 })
+    ).toBe(true);
   });
 
   test('finished-iteration mode refuses submit', () => {
-    expect(canSubmitGuidance({ mode: 'finished-iteration', sendInFlight: false, draft: 'x' })).toBe(
-      false
-    );
+    expect(canSubmitGuidance({ ...base, mode: 'finished-iteration', draft: 'x' })).toBe(false);
   });
 });
 
@@ -633,6 +672,20 @@ describe('send now batch transitions', () => {
       messageId: begun.messageId,
       message: 'redirect now',
     });
+  });
+
+  test('a blank draft delivers the waiting band without adding a placeholder row', () => {
+    const state = idleWithReceipts(['first', 'second']);
+    const begun = beginSendNow(state, '', newId);
+    expect(begun.state.inFlightBatch?.map(entry => entry.message)).toEqual(['first', 'second']);
+    expect(begun.state.sent).toEqual([]);
+    expect(begun.state.sendInFlight).toBe(true);
+    expect(begun.state.pendingRetry).toEqual({ messageId: begun.messageId, message: '' });
+
+    const next = resolveSendNowSuccess(begun.state, { message_id: begun.messageId, state: 'sent' });
+    expect(next.sent).toEqual([]);
+    expect(next.inFlightBatch).toBeNull();
+    expect(next.subState).toBe('generating');
   });
 
   test('an ambiguous Queue retry keeps its id and queued receipt instead of faking Send-now success', () => {

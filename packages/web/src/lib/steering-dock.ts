@@ -272,15 +272,22 @@ export function steeringAgentMode(input: {
 
 /**
  * The single guard shared by Queue, Send now, and the keyboard shortcut:
- * non-blank draft, no send in flight, composer mode. `interrupting` does
- * NOT block Queue — a message sent in the race waits for Send now.
+ * no send in flight, composer mode, and either a non-blank draft or (Send
+ * now only, `agentMode === 'idle'`) at least one already-claimable queued
+ * item — a blank Send now still delivers everything waiting (CAP-10).
+ * `interrupting` does NOT block Queue — a message sent in the race waits
+ * for Send now.
  */
 export function canSubmitGuidance(input: {
   mode: SteeringDockMode;
   sendInFlight: boolean;
   draft: string;
+  agentMode: SteeringAgentMode;
+  willSendCount: number;
 }): boolean {
-  return input.mode === 'composer' && !input.sendInFlight && input.draft.trim().length > 0;
+  if (input.mode !== 'composer' || input.sendInFlight) return false;
+  if (input.draft.trim().length > 0) return true;
+  return input.agentMode === 'idle' && input.willSendCount > 0;
 }
 
 export interface SteeringShortcutEvent {
@@ -511,7 +518,10 @@ export function resolveGuidanceFailure(
  * Send now: snapshot the displayed accepted receipts plus the new draft into
  * the batch and clear the visible band optimistically, so nothing looks
  * pickable twice. Only the new draft posts (with its stable retry UUID);
- * earlier items already exist in the server registry.
+ * earlier items already exist in the server registry. A blank draft (CAP-10:
+ * deliver everything already queued, with nothing newly typed) carries a
+ * retry id for response correlation but adds no placeholder row — there is
+ * no new message to display.
  */
 export function beginSendNow(
   state: SteeringDockState,
@@ -530,17 +540,19 @@ export function beginSendNow(
     previousPending !== null && previousPending.message !== draft
       ? state.sent.filter(entry => entry.messageId !== previousPending.messageId)
       : state.sent;
-  const inFlightBatch = displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
-    ? displayedReceipts
-    : [
-        ...displayedReceipts,
-        {
-          messageId: pendingRetry.messageId,
-          message: pendingRetry.message,
-          state: 'awaiting_send_now' as const,
-          operatorUserId: null,
-        },
-      ];
+  const isBlankDraft = draft.trim().length === 0;
+  const inFlightBatch =
+    isBlankDraft || displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
+      ? displayedReceipts
+      : [
+          ...displayedReceipts,
+          {
+            messageId: pendingRetry.messageId,
+            message: pendingRetry.message,
+            state: 'awaiting_send_now' as const,
+            operatorUserId: null,
+          },
+        ];
   return {
     state: {
       ...state,

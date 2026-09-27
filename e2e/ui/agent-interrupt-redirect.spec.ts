@@ -747,15 +747,14 @@ for (const surface of ['console', 'legacy'] as const) {
       await captureEvidence(room, `us-005-${surface}-idle-after-interrupt.png`, testInfo);
     });
 
-    await test.step('blank Send now and its shortcut issue no request', async () => {
-      const before = sends.count();
+    await test.step('blank Send now is enabled while items wait, and never sent by accident', async () => {
+      // CAP-10: with items already waiting, a blank Send now would deliver
+      // everything — so the control must not be disabled here. The redirect
+      // step below exercises the actual delivery (see the dedicated blank
+      // Send now test for the delivery-with-no-typed-text path in isolation).
       const sendNow = sendNowButton(room);
-      await expect(sendNow).toHaveAttribute('aria-disabled', 'true');
+      await expect(sendNow).not.toHaveAttribute('aria-disabled', 'true');
       expect(await sendNow.getAttribute('disabled')).toBeNull();
-      await sendNow.click({ force: true });
-      await field.focus();
-      await field.press('Meta+Enter');
-      expect(sends.count(), 'no send POST while the draft is blank').toBe(before);
     });
 
     await test.step('Send now posts only the typed message; the band drains', async () => {
@@ -931,6 +930,66 @@ for (const surface of ['console', 'legacy'] as const) {
       await expect(freshRoom.getByText('delivered')).toHaveCount(0);
       await expect(guidanceField(freshRoom)).toHaveCount(0);
     });
+  });
+
+  test(`[P1] [V:steer.interrupt-blank-send-now-${surface}] blank Send now delivers everything already waiting on ${surface}`, async ({
+    page,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 2);
+    const run = await archon.startWorkflowViaWeb(
+      E2E_QUEUE_GUIDANCE_WORKFLOW_NAME,
+      'e2e blank send now'
+    );
+    const sends = trackPosts(page, sendPathname(run.runId, QUEUE_GUIDANCE_NODE));
+    const room = await openGuidanceRoom(page, surface, run.runId, QUEUE_GUIDANCE_NODE);
+    const field = guidanceField(room);
+    await expect(room.locator('[data-tool-id]').first()).toBeVisible({ timeout: T.medium });
+
+    await field.fill('first');
+    await queueButton(room).click();
+    await expect(room.getByText('queued · 1')).toBeVisible();
+
+    const interruptResponse = page.waitForResponse(
+      res => new URL(res.url()).pathname === interruptPathname(run.runId, QUEUE_GUIDANCE_NODE)
+    );
+    await stopButton(room).click();
+    expect((await interruptResponse).status()).toBe(200);
+    await expect(sendNowButton(room)).toBeVisible({ timeout: T.medium });
+    await expect(room.getByText('will send · 1')).toBeVisible();
+
+    // The composer stays empty — CAP-10's "delivers everything" applies with
+    // nothing newly typed.
+    await expect(field).toHaveValue('');
+    const sendNow = sendNowButton(room);
+    await expect(sendNow).not.toHaveAttribute('aria-disabled', 'true');
+
+    const sendNowResponse = page.waitForResponse(
+      res => new URL(res.url()).pathname === sendPathname(run.runId, QUEUE_GUIDANCE_NODE)
+    );
+    await sendNow.click();
+    const response = await sendNowResponse;
+    expect(response.status()).toBe(200);
+    const posted = response.request().postDataJSON() as { message?: string; intent?: string };
+    expect(posted.message).toBe('');
+    expect(posted.intent).toBe('send_now');
+    expect(sends.count()).toBe(2); // the earlier Queue post, then this blank Send now.
+
+    await expect(room.getByText(/^will send ·/)).toHaveCount(0);
+    await expect(stopButton(room)).toBeVisible();
+    await expect(dockStatus(room)).toContainText(AGENT_GENERATING);
+
+    await expect(room.getByText('[e2e-fake] resumed echo: first').first()).toBeVisible({
+      timeout: T.xlong,
+    });
+    await archon.waitForRunStatus(run.runId, 'completed', T.xlong);
+
+    const messages = await listNodeMessages(page, run.runId, QUEUE_GUIDANCE_NODE);
+    const operatorRows = messages.filter(
+      message => message.kind === 'text' && message.metadata?.origin === 'operator'
+    );
+    expect(operatorRows.map(row => row.payload.text)).toEqual(['first']);
+    await captureEvidence(room, `us-004-${surface}-blank-send-now.png`, testInfo);
   });
 
   test(`[P1] [V:steer.interrupt-fail-${surface}] interrupt and redirect failure paths restore state on ${surface}`, async ({

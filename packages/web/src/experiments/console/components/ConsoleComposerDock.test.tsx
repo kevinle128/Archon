@@ -914,7 +914,7 @@ describe('ConsoleComposerDock', () => {
     expect(send.getAttribute('aria-label')).toContain('Cmd/Ctrl+Enter to send');
   });
 
-  test('Send now requires a non-blank draft even when receipts exist', async () => {
+  test('Send now with a blank draft delivers everything already waiting (CAP-10)', async () => {
     nextInterrupt = async (runId, nodeId): Promise<InterruptWorkflowNodeResponse> => {
       interruptCalls.push({ runId, nodeId });
       return idleAck();
@@ -937,10 +937,23 @@ describe('ConsoleComposerDock', () => {
     await clickStop();
     expect(host.textContent).toContain('will send · 1');
     const send = sendNowButton();
+    expect(send.getAttribute('aria-disabled')).toBeNull();
+    const callsBeforeSendNow = calls.length;
+    await clickSendNow();
+    expect(calls).toHaveLength(callsBeforeSendNow + 1);
+    const sendNowCall = calls[callsBeforeSendNow];
+    expect(sendNowCall?.body.message).toBe('');
+    expect(sendNowCall?.body.intent).toBe('send_now');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
+  });
+
+  test('Send now stays disabled on a blank draft with nothing waiting', async () => {
+    await renderDock({ subState: 'idle-after-interrupt' });
+    const send = sendNowButton();
     expect(send.getAttribute('aria-disabled')).toBe('true');
     await clickSendNow();
     await pressKey({ key: 'Enter', metaKey: true });
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(0);
   });
 
   test('Send now posts only the new draft, clears band and draft on success', async () => {
