@@ -4,6 +4,7 @@ import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
 import {
   buildAgentHistory,
+  operatorDeliveryPresentation,
   promptActorLabel,
   promptSourceLabel,
   toolRuntime,
@@ -162,6 +163,20 @@ describe('toolRuntime', () => {
         'tool-1'
       )
     ).toEqual({ durationMs: null });
+  });
+});
+
+describe('operatorDeliveryPresentation', () => {
+  test('the word alone distinguishes the three states; tone is added on top', () => {
+    expect(operatorDeliveryPresentation('sent')).toEqual({ label: 'sent', tone: 'neutral' });
+    expect(operatorDeliveryPresentation('delivered')).toEqual({
+      label: 'delivered',
+      tone: 'success',
+    });
+    expect(operatorDeliveryPresentation('delivery_unknown')).toEqual({
+      label: 'delivery unknown',
+      tone: 'warning',
+    });
   });
 });
 
@@ -1160,6 +1175,51 @@ describe('buildAgentHistory', () => {
           execution: EXECUTION,
         },
       ]);
+    });
+
+    test('joins the proven delivery state onto an operator row by its stamped message id', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          operatorRow('op-delivered', 1, 'wrong suite', { messageId: 'msg-delivered' }),
+          operatorRow('op-unknown', 2, 'skip doctests', { messageId: 'msg-unknown' }),
+          operatorRow('op-still-sent', 3, 'and retry', { messageId: 'msg-still-sent' }),
+        ],
+        deliveryStateByMessageId: new Map([
+          ['msg-delivered', 'delivered'],
+          ['msg-unknown', 'delivery_unknown'],
+          // 'msg-still-sent' is deliberately absent — no evidence yet.
+        ]),
+      });
+      expect(items.map(item => (item.kind === 'operator' ? item.delivery : null))).toEqual([
+        'delivered',
+        'delivery_unknown',
+        'sent',
+      ]);
+    });
+
+    test('a never_sent/withdrawn/queued state on the map still renders sent — only delivered/delivery_unknown are distinguished', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [operatorRow('op-1', 1, 'go', { messageId: 'msg-1' })],
+        deliveryStateByMessageId: new Map([['msg-1', 'queued']]),
+      });
+      expect(items[0]).toMatchObject({ kind: 'operator', delivery: 'sent' });
+    });
+
+    test('no message id on the row (older data) always renders sent, even with a map present', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [operatorRow('op-no-id', 1, 'go')],
+        deliveryStateByMessageId: new Map([['some-other-id', 'delivered']]),
+      });
+      expect(items[0]).toMatchObject({ kind: 'operator', messageId: null, delivery: 'sent' });
     });
 
     test('keeps a one-property output_format envelope serialized for operator while unwrapping assistant', () => {

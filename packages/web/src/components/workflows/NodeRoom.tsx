@@ -11,7 +11,12 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
-import { promptActorLabel, promptSourceLabel, type AgentHistoryItem } from '@/lib/agent-history';
+import {
+  operatorDeliveryPresentation,
+  promptActorLabel,
+  promptSourceLabel,
+  type AgentHistoryItem,
+} from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
 import { toHunkData } from '@/lib/git-hunk-adapter';
 import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
@@ -299,6 +304,12 @@ function AssistantHistory({
   );
 }
 
+const OPERATOR_DELIVERY_TONE: Record<'neutral' | 'success' | 'warning', string> = {
+  neutral: 'text-text-secondary',
+  success: 'text-success',
+  warning: 'text-warning',
+};
+
 function OperatorHistory({
   item,
 }: {
@@ -306,6 +317,7 @@ function OperatorHistory({
 }): React.ReactElement {
   const label =
     item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
+  const delivery = operatorDeliveryPresentation(item.delivery);
   return (
     <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
       <div
@@ -315,9 +327,12 @@ function OperatorHistory({
         <span data-operator-label="">{label}</span>
         <span
           data-operator-delivery=""
-          className="ml-auto shrink-0 text-[11px] normal-case tracking-normal text-text-secondary"
+          className={cn(
+            'ml-auto shrink-0 text-[11px] normal-case tracking-normal',
+            OPERATOR_DELIVERY_TONE[delivery.tone]
+          )}
         >
-          sent
+          {delivery.label}
         </span>
       </div>
       <div

@@ -9,8 +9,12 @@ import type { NodeMessageRow } from './node-message-pages';
 import type { ToolTranscriptCard } from './pair-tool-transcript';
 import { projectToolTranscript } from './pair-tool-transcript';
 import { projectTextTranscript } from './project-text-transcript';
+import type { SteeringQueueItemState } from './steering-dock';
 import { projectTodoState, type TodoPhase } from './todo-state';
 import { toolRowPresentation, type ToolRowPresentation } from './tool-presentation';
+
+/** The delivery states an operator transcript row's badge distinguishes; every other wire state renders as `sent`, the safe default with no evidence yet. */
+export type OperatorDeliveryState = 'sent' | 'delivered' | 'delivery_unknown';
 
 export interface AgentHistoryInput {
   rows: readonly NodeMessageRow[];
@@ -29,6 +33,14 @@ export interface AgentHistoryInput {
    * false.
    */
   nodeTerminal?: boolean;
+  /**
+   * Every message id's last-observed delivery state from the durable
+   * steering queue read, joined onto each operator row by its stamped
+   * `message_id`. Undefined (no queue snapshot observed) or an id absent
+   * from the map both render `sent` — never inferred from the row's text or
+   * age, only from this proven evidence.
+   */
+  deliveryStateByMessageId?: ReadonlyMap<string, SteeringQueueItemState>;
 }
 
 /** Typed execution scope carried on wire rows; `null` on pre-scope history. */
@@ -53,7 +65,7 @@ export type AgentHistoryItem =
       operatorUserId: string | null;
       operatorDisplayName: string | null;
       messageId: string | null;
-      delivery: 'sent';
+      delivery: OperatorDeliveryState;
       execution: TranscriptExecution | null;
     }
   | {
@@ -151,6 +163,47 @@ export function promptSourceLabel(
   source: Extract<AgentHistoryItem, { kind: 'prompt' }>['source']
 ): string | null {
   return source === 'node_prompt' ? null : PROMPT_SOURCE_LABEL[source];
+}
+
+export interface OperatorDeliveryPresentation {
+  readonly label: string;
+  readonly tone: 'neutral' | 'success' | 'warning';
+}
+
+const OPERATOR_DELIVERY_PRESENTATION: Readonly<
+  Record<OperatorDeliveryState, OperatorDeliveryPresentation>
+> = {
+  sent: { label: 'sent', tone: 'neutral' },
+  delivered: { label: 'delivered', tone: 'success' },
+  delivery_unknown: { label: 'delivery unknown', tone: 'warning' },
+};
+
+/**
+ * Shared label and tone for an operator row's delivery badge, read by both
+ * node room shells. The word alone carries the state (per the approved
+ * mockup); `tone` is added on top, never instead — a renderer with no color
+ * token for `tone` can still show the correct word.
+ */
+export function operatorDeliveryPresentation(
+  delivery: OperatorDeliveryState
+): OperatorDeliveryPresentation {
+  return OPERATOR_DELIVERY_PRESENTATION[delivery];
+}
+
+/**
+ * The proven delivery state for one operator row, by its stamped message
+ * id. `delivered` and `delivery_unknown` are the only wire states this row
+ * distinguishes; every other state (including a missing id, or no queue
+ * snapshot observed yet) renders `sent` — the safe default with no evidence
+ * yet, never inferred from the row's text or age.
+ */
+function resolveOperatorDelivery(
+  messageId: string | null,
+  deliveryStateByMessageId: ReadonlyMap<string, SteeringQueueItemState> | undefined
+): OperatorDeliveryState {
+  if (messageId === null || deliveryStateByMessageId === undefined) return 'sent';
+  const state = deliveryStateByMessageId.get(messageId);
+  return state === 'delivered' || state === 'delivery_unknown' ? state : 'sent';
 }
 
 type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
@@ -481,6 +534,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
           : operatorUserId !== null
             ? operatorUserId.slice(0, 8)
             : null;
+      const messageId = message.metadata.message_id ?? null;
       items.push({
         kind: 'operator',
         id: message.id,
@@ -489,8 +543,8 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         text: message.payload.text,
         operatorUserId,
         operatorDisplayName,
-        messageId: message.metadata.message_id ?? null,
-        delivery: 'sent',
+        messageId,
+        delivery: resolveOperatorDelivery(messageId, input.deliveryStateByMessageId),
         execution: message.metadata.execution ?? null,
       });
       continue;

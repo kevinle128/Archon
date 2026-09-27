@@ -82,6 +82,7 @@ import {
   type SteeringDockMode,
   type SteeringDockState,
   type SteeringExecutionState,
+  type SteeringQueueItemState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
 import type { FinishedIterationView } from '@/lib/execution-room-model';
@@ -188,6 +189,14 @@ export interface ConsoleComposerDockProps {
    * currently read.
    */
   onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /**
+   * Every message id's last-observed delivery state, reported on every
+   * change so a transcript operator row can show the proven `sent` /
+   * `delivered` / `delivery unknown` state instead of a hard-coded guess —
+   * the dock's queue read is the only place this durable, per-message
+   * evidence is currently read.
+   */
+  onDeliveryStatesChange?: (states: ReadonlyMap<string, SteeringQueueItemState>) => void;
   send?: SendNodeGuidance;
   interrupt?: InterruptNode;
   withdraw?: WithdrawNodeGuidance;
@@ -357,6 +366,7 @@ export function ConsoleComposerDock({
   autoFocusTarget = null,
   onAutoFocusApplied,
   onExecutionStateChange,
+  onDeliveryStatesChange,
   send = sendNodeGuidance,
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
@@ -573,6 +583,10 @@ export function ConsoleComposerDock({
   useEffect(() => {
     onExecutionStateChange?.(dock.executionState);
   }, [dock.executionState, onExecutionStateChange]);
+
+  useEffect(() => {
+    onDeliveryStatesChange?.(dock.deliveryByMessageId);
+  }, [dock.deliveryByMessageId, onDeliveryStatesChange]);
 
   useEffect(() => {
     if (!nodeTerminal) {

@@ -474,6 +474,47 @@ describe('NodeRoom', () => {
   });
 });
 
+describe('NodeRoom operator rows', () => {
+  function operatorItem(delivery: 'sent' | 'delivered' | 'delivery_unknown'): AgentHistoryItem {
+    return {
+      kind: 'operator',
+      id: 'op-1',
+      seq: 1,
+      role: 'operator',
+      text: 'wrong suite — use -p archon-workflows',
+      operatorUserId: 'user-1',
+      operatorDisplayName: 'kevin',
+      messageId: 'msg-1',
+      delivery,
+      execution: null,
+    };
+  }
+
+  test('shows "sent" in the neutral tone by default', () => {
+    const markup = renderRoom({ items: [operatorItem('sent')] });
+    expect(markup).toContain('data-operator-delivery=""');
+    const region = /<span data-operator-delivery=""[^>]*>([^<]*)<\/span>/.exec(markup);
+    expect(region?.[1]).toBe('sent');
+    expect(markup).toContain('text-text-secondary');
+  });
+
+  test('shows "delivered" in the success tone once the provider acknowledges the message id', () => {
+    const markup = renderRoom({ items: [operatorItem('delivered')] });
+    const region = /<span data-operator-delivery=""[^>]*>([^<]*)<\/span>/.exec(markup);
+    expect(region?.[1]).toBe('delivered');
+    const tag = /<span data-operator-delivery="" class="([^"]*)"/.exec(markup);
+    expect(tag?.[1]).toContain('text-success');
+  });
+
+  test('shows "delivery unknown" in the warning tone when the claim never resolved', () => {
+    const markup = renderRoom({ items: [operatorItem('delivery_unknown')] });
+    const region = /<span data-operator-delivery=""[^>]*>([^<]*)<\/span>/.exec(markup);
+    expect(region?.[1]).toBe('delivery unknown');
+    const tag = /<span data-operator-delivery="" class="([^"]*)"/.exec(markup);
+    expect(tag?.[1]).toContain('text-warning');
+  });
+});
+
 describe('NodeRoom tool rows', () => {
   test('maps the five outcomes to closed/open and the exact glyph + hidden status word', () => {
     const items: AgentHistoryItem[] = [

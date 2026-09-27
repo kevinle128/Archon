@@ -35,7 +35,7 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
-import type { SteeringExecutionState } from '@/lib/steering-dock';
+import type { SteeringExecutionState, SteeringQueueItemState } from '@/lib/steering-dock';
 import { projectTerminalTodoState } from '@/lib/todo-state';
 
 import type { Run } from '../primitives/run';
@@ -537,6 +537,9 @@ export function ConsoleNodeRoom({
   // is currently observable. A fresh dock mount reports null immediately, so
   // switching rows/nodes clears a stale recovery pill without extra plumbing.
   const [dockExecutionState, setDockExecutionState] = useState<SteeringExecutionState | null>(null);
+  const [deliveryStates, setDeliveryStates] = useState<ReadonlyMap<string, SteeringQueueItemState>>(
+    () => new Map()
+  );
   const headingIdPrefix = useId();
   const navigatorSelectId = useId();
   const pageStateRef = useRef(pageState);
@@ -741,6 +744,7 @@ export function ConsoleNodeRoom({
           outputFormat: resolution?.definitionNode?.output_format,
           nowMs,
           nodeTerminal: noLiveProcessForRow,
+          deliveryStateByMessageId: deliveryStates,
         });
   const items = agentHistory.items;
   // The strip and the latest todo row's inline checklist share this one
@@ -1144,6 +1148,7 @@ export function ConsoleNodeRoom({
                 setAutoFocusTarget(null);
               }}
               onExecutionStateChange={setDockExecutionState}
+              onDeliveryStatesChange={setDeliveryStates}
               focusLastRow={focusLastRow}
               nodeTerminal={nodeTerminal}
               idleAwaitExpired={idleAwaitExpired}
