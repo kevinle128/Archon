@@ -8007,6 +8007,19 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt', () => {
     const sendRoute = paths['/api/workflows/runs/{runId}/nodes/{nodeId}/send'];
     expect(sendRoute?.post).toBeDefined();
   });
+
+  test('returns 422 immediately for a turn the provider reported cannot be interrupted, and never aborts', async () => {
+    const { handle, controller, token, aborts } = liveInterruptibleSetup();
+    handle.markTurnNotInterruptible(token);
+    const before = captureSteeringBefore(handle);
+    const { app } = makeApp();
+    const res = await postNodeInterrupt(app);
+
+    await expectSteeringError(res, 422, 'not_steerable_here');
+    expect(aborts()).toBe(0);
+    expect(controller.signal.aborted).toBe(false);
+    expectNoSteeringMutation(handle, before);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -8564,6 +8577,24 @@ describe('GET /api/workflows/runs/:runId — steeringSubState projection', () =>
     expect(res.status).toBe(200);
     const raw = await res.text();
     expect(raw).not.toContain('steeringSubState');
+  });
+
+  test('a turn the provider reported cannot be interrupted omits steeringSubState, even on an otherwise-interruptible handle', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', 'plan')]);
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, 'plan', { interruptible: true });
+    const token = handle.beginTurn(new AbortController());
+    handle.markTurnNotInterruptible(token);
+
+    const { app } = makeApp();
+    const res = await app.request(`/api/workflows/runs/${STEER_RUN_ID}`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      nodeStates: { nodeId: string; status: string; steeringSubState?: string }[];
+    };
+    const plan = body.nodeStates.find(s => s.nodeId === 'plan');
+    expect(plan?.status).toBe('running');
+    expect(plan && 'steeringSubState' in plan).toBe(false);
   });
 });
 

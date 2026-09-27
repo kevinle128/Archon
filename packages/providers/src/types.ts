@@ -335,6 +335,23 @@ export type MessageChunk =
       blockId?: string;
     }
   | { type: 'system'; content: string }
+  | {
+      /**
+       * Provider-neutral, turn-scoped notice that the CURRENT provider turn
+       * cannot honor an operator Stop (`interruptSignal`) — e.g. a fallback
+       * transport with no interrupt hook. Emitted once, before any other
+       * chunk of the turn it describes, so the dag-executor can withhold the
+       * Stop control for that turn instead of showing one it cannot honor,
+       * and a racing interrupt request settles immediately as
+       * `not_steerable_here` rather than waiting on the turn's natural end.
+       * Scoped to the turn that emitted it: a later turn on the same node
+       * (a different transport, a different pass) reports its own
+       * interruptibility independently and is unaffected. `reason` is for
+       * operator-facing display only — never re-parsed for control flow.
+       */
+      type: 'turn_not_interruptible';
+      reason: string;
+    }
   | { type: 'thinking'; content: string }
   | {
       /**
