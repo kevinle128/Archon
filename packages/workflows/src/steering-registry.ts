@@ -52,6 +52,8 @@
  * workflows package root.
  */
 
+import type { SoftInjectionChannel, SoftInjectionRequest } from '@archon/providers/types';
+
 /** Fixed product rule: 30 minutes of genuine composer inactivity ends idle-await. */
 export const STEERING_IDLE_AWAIT_INACTIVITY_MS = 30 * 60_000;
 
@@ -170,6 +172,53 @@ interface PendingInterrupt {
   readonly resolve: (outcome: InterruptSettlement) => void;
 }
 
+/**
+ * Concrete, executor-owned soft-injection controller — the companion to the
+ * interrupt `AbortController` (#183). `channel` is the read-only view handed
+ * to the provider adapter through `AgentRequestOptions.softInjection`;
+ * `push()` is called only by `NodeSteeringHandle.softInject()`, mirroring how
+ * only `interrupt()` ever calls the matching turn's `controller.abort()`.
+ */
+export interface SoftInjectionController {
+  readonly channel: SoftInjectionChannel;
+  /** Resolves `true` only when a currently-registered handler accepted the request. */
+  push(request: SoftInjectionRequest): Promise<boolean>;
+}
+
+/**
+ * Builds one turn-scoped soft-injection controller. A fresh instance is
+ * required per turn (never reused across passes), exactly like the interrupt
+ * `AbortController` it accompanies — an adapter's `ready()` registration from
+ * a settled turn must never receive a request meant for its successor.
+ */
+export function createSoftInjectionController(): SoftInjectionController {
+  let handler: ((request: SoftInjectionRequest) => Promise<boolean>) | undefined;
+  return {
+    channel: {
+      ready(next): () => void {
+        handler = next;
+        return (): void => {
+          if (handler === next) handler = undefined;
+        };
+      },
+    },
+    push(request): Promise<boolean> {
+      return handler === undefined ? Promise.resolve(false) : handler(request);
+    },
+  };
+}
+
+/**
+ * Outcome of one `NodeSteeringHandle.softInject()` call:
+ * - `delivered` — a registered handler accepted the request into the live turn.
+ * - `not_ready` — a live turn exists but no handler is currently registered
+ *   (the provider's adapter has not reached its injectable window, or the
+ *   handler itself declined).
+ * - `no_active_turn` — no live interruptible turn exists to inject into
+ *   (between turns, idle-after-interrupt, or the handle is not live).
+ */
+export type SoftInjectionOutcome = 'delivered' | 'not_ready' | 'no_active_turn';
+
 interface ActiveTurn {
   readonly token: number;
   controller: AbortController | undefined;
@@ -177,6 +226,8 @@ interface ActiveTurn {
   /** Set the first time `interrupt()` lands on this token; released on settle. */
   operatorInterrupted: boolean;
   pendingInterrupt: PendingInterrupt | undefined;
+  /** Undefined for a queue-only provider or a provider without the capability. */
+  softInjection: SoftInjectionController | undefined;
 }
 
 export class NodeSteeringHandle {
@@ -228,7 +279,7 @@ export class NodeSteeringHandle {
    * ended, the executor must classify it (settle/enterIdle) first so an
    * in-flight `interrupt()` is never abandoned across pass boundaries.
    */
-  beginTurn(controller: AbortController): number {
+  beginTurn(controller: AbortController, softInjection?: SoftInjectionController): number {
     if (!this.interruptible) {
       throw new Error('beginTurn requires an interruptible steering handle');
     }
@@ -246,9 +297,31 @@ export class NodeSteeringHandle {
       settled: false,
       operatorInterrupted: false,
       pendingInterrupt: undefined,
+      softInjection,
     };
     this.subState = 'generating';
     return token;
+  }
+
+  /**
+   * Offer one operator message to the current live turn without invoking
+   * Stop (#183 companion to `interrupt()`). Only a live interruptible handle
+   * with an unsettled current turn and a registered adapter handler can
+   * accept it; every other case resolves `no_active_turn` without throwing,
+   * exactly like `interrupt()` resolving a truthful projection instead of
+   * failing.
+   */
+  softInject(request: SoftInjectionRequest): Promise<SoftInjectionOutcome> {
+    if (!this.interruptible || this.phase !== 'live') {
+      return Promise.resolve('no_active_turn');
+    }
+    const turn = this.currentTurn;
+    if (turn === undefined || turn.settled || turn.softInjection === undefined) {
+      return Promise.resolve('no_active_turn');
+    }
+    return turn.softInjection
+      .push(request)
+      .then(accepted => (accepted ? 'delivered' : 'not_ready'));
   }
 
   /**

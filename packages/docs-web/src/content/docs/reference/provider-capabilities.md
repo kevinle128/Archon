@@ -60,7 +60,7 @@ per-node YAML field for that provider; a ❌ means the field is accepted but ign
 | Turn interrupt (operator Stop) | **native** | **stream-abort** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | **stream-abort** | ❌ |
 | Interrupted tool status (per-tool proof) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | Soft injection (per-item Send now while generating) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Delivery acknowledgement (message-id echo) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Delivery acknowledgement (message-id echo) | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ## Caveats
 

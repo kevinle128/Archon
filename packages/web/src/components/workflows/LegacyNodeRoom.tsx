@@ -69,8 +69,6 @@ export interface LegacyNodeRoomProps {
   idleAwaitExpired?: boolean;
   /** Logical execution key from ordered events. Default null. */
   nodeExecutionKey?: string | null;
-  /** Node-wide written operator ids for terminal reconciliation. Default null. */
-  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   onClose?: () => void;
   closeLabel?: 'Close' | 'Back';
   scopeKey?: string;
@@ -134,7 +132,6 @@ export function LegacyNodeRoom({
   nodeTerminal = false,
   idleAwaitExpired = false,
   nodeExecutionKey = null,
-  writtenOperatorMessageIds = null,
   onClose,
   closeLabel = 'Close',
   scopeKey,
@@ -235,7 +232,6 @@ export function LegacyNodeRoom({
             nodeTerminal={nodeTerminal}
             idleAwaitExpired={idleAwaitExpired}
             nodeExecutionKey={nodeExecutionKey}
-            writtenOperatorMessageIds={writtenOperatorMessageIds}
             onSelectLiveRow={onSelectRow}
           />
         );

@@ -736,7 +736,6 @@ describe('LegacyNodeRoom dispatcher', () => {
     nodeTerminal?: boolean;
     idleAwaitExpired?: boolean;
     nodeExecutionKey?: string | null;
-    writtenOperatorMessageIds?: ReadonlySet<string> | null;
     scopeKey?: string;
     finishedIteration?: { liveRowId: string; liveIteration: number } | null;
   }): void {
@@ -765,7 +764,6 @@ describe('LegacyNodeRoom dispatcher', () => {
           nodeTerminal: args.nodeTerminal,
           idleAwaitExpired: args.idleAwaitExpired,
           nodeExecutionKey: args.nodeExecutionKey,
-          writtenOperatorMessageIds: args.writtenOperatorMessageIds,
           scopeKey: args.scopeKey,
           finishedIteration: args.finishedIteration,
           onSelectRow:
@@ -1253,7 +1251,7 @@ describe('LegacyNodeRoom dispatcher', () => {
     return null;
   }
 
-  test('T3.15 pass-through pins nodeTerminal and nodeExecutionKey on the dock', async () => {
+  test('pass-through pins nodeTerminal and nodeExecutionKey on the dock', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -1267,7 +1265,15 @@ describe('LegacyNodeRoom dispatcher', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1304,7 +1310,7 @@ describe('LegacyNodeRoom dispatcher', () => {
     }
   });
 
-  test('T4.16 pass-through pins idleAwaitExpired on the dock', async () => {
+  test('pass-through pins idleAwaitExpired on the dock', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -1318,7 +1324,15 @@ describe('LegacyNodeRoom dispatcher', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1356,9 +1370,14 @@ describe('LegacyNodeRoom dispatcher', () => {
     }
   });
 
-  test('T3.17 occurrence switch keeps observed receipt under stable run/node dock key', async () => {
-    let queued: { message_id: string; message: string }[] = [
-      { message_id: 'id-a', message: 'alpha receipt' },
+  test('occurrence switch keeps observed receipt under stable run/node dock key', async () => {
+    let queued: {
+      message_id: string;
+      message: string;
+      operator_user_id: string | null;
+      state: string;
+    }[] = [
+      { message_id: 'id-a', message: 'alpha receipt', operator_user_id: null, state: 'queued' },
     ];
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
@@ -1371,10 +1390,19 @@ describe('LegacyNodeRoom dispatcher', () => {
         pathname = raw.split('?')[0] ?? raw;
       }
       if (method === 'GET' && pathname.endsWith('/queue')) {
-        return new Response(JSON.stringify({ success: true, queued }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            execution_state: 'live',
+            auto_send: false,
+            capabilities: { soft_injection: false, delivery_ack: false },
+            queued,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
       if (method === 'GET' && pathname.includes('/messages')) {
         return new Response(JSON.stringify({ messages: [] }), {
@@ -1432,8 +1460,17 @@ describe('LegacyNodeRoom dispatcher', () => {
       });
       expect((host.textContent ?? '').toLowerCase()).toContain('alpha receipt');
 
-      // Switch to the finished occurrence; empty later snapshot must not erase A.
-      queued = [];
+      // Switch to the finished occurrence. The executor's own terminal
+      // reconcile is what flips a durable row to `never_sent` server-side —
+      // simulate that here rather than expecting the client to remember.
+      queued = [
+        {
+          message_id: 'id-a',
+          message: 'alpha receipt',
+          operator_user_id: null,
+          state: 'never_sent',
+        },
+      ];
       await act(async () => {
         renderRoom({
           row: occ1Row,

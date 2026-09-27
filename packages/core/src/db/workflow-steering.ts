@@ -465,6 +465,51 @@ export async function markSteeringMessagesSent(
   );
 }
 
+/**
+ * `sent` -> `delivered`, once the live provider turn echoes a verified
+ * acknowledgement for this exact caller-stamped message id. A missing row or
+ * a row not currently `sent` (already delivered, withdrawn, reconciled, or
+ * never claimed) is a silent no-op — delivery ack correlates by id alone and
+ * must never advance a different entry.
+ */
+export async function markSteeringMessageDelivered(
+  workflowRunId: string,
+  nodeId: string,
+  messageId: string
+): Promise<void> {
+  const dialect = getDialect();
+  await pool.query(
+    `UPDATE remote_agent_steering_queue_entries
+     SET state = 'delivered', updated_at = ${dialect.now()}
+     WHERE workflow_run_id = $1 AND node_id = $2 AND message_id = $3 AND state = 'sent'`,
+    [workflowRunId, nodeId, messageId]
+  );
+}
+
+/**
+ * Reverts a soft-injection claim back to `queued` when the live provider
+ * turn did not actually accept the request. `claimSteeringMessageForSoftInjection`
+ * durably claims the entry to `sent` before delivery is attempted (so the
+ * durable claim itself is the seam per `engine-integration.md`), so a refused
+ * or unreachable live turn must not strand the entry there — the queue must
+ * stay unchanged from the caller's perspective per the API contract's "every
+ * rejected request leaves the queue unchanged" rule. No-op when the entry is
+ * no longer `sent` (e.g. a concurrent path already advanced it further).
+ */
+export async function revertSteeringSoftInjectionClaim(
+  workflowRunId: string,
+  nodeId: string,
+  messageId: string
+): Promise<void> {
+  const dialect = getDialect();
+  await pool.query(
+    `UPDATE remote_agent_steering_queue_entries
+     SET state = 'queued', updated_at = ${dialect.now()}
+     WHERE workflow_run_id = $1 AND node_id = $2 AND message_id = $3 AND state = 'sent'`,
+    [workflowRunId, nodeId, messageId]
+  );
+}
+
 export async function claimSteeringMessageForSoftInjection(
   workflowRunId: string,
   nodeId: string,

@@ -2508,10 +2508,19 @@ describe('LegacyGraphLogsPane', () => {
         pathname = raw.split('?')[0] ?? raw;
       }
       if (method === 'GET' && pathname.endsWith('/queue')) {
-        return new Response(JSON.stringify({ success: true, queued: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            execution_state: 'live',
+            auto_send: false,
+            capabilities: { soft_injection: false, delivery_ack: false },
+            queued: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
       if (method === 'GET' && pathname.includes('/messages')) {
         return new Response(JSON.stringify({ messages: [] }), {
@@ -2598,7 +2607,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -2668,7 +2685,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -2762,7 +2787,7 @@ describe('LegacyGraphLogsPane', () => {
     return null;
   }
 
-  test('T3.15 Legacy wrapper passes exact node terminal inputs; siblings ignored', async () => {
+  test('Legacy wrapper passes exact node terminal inputs; siblings ignored', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -2776,7 +2801,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -2867,7 +2900,7 @@ describe('LegacyGraphLogsPane', () => {
     }
   });
 
-  test('T3.17 completed occurrence selection stays nonterminal with stable execution key', async () => {
+  test('completed occurrence selection stays nonterminal with stable execution key', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -2881,7 +2914,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -3001,7 +3042,7 @@ describe('LegacyGraphLogsPane', () => {
     }
   });
 
-  test('T4.16 idleAwaitExpired reaches selected room including group.body', async () => {
+  test('idleAwaitExpired reaches selected room including group.body', async () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
@@ -3015,7 +3056,15 @@ describe('LegacyGraphLogsPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );

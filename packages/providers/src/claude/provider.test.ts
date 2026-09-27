@@ -3245,6 +3245,76 @@ describe('turn interrupt (native seam)', () => {
     });
   });
 
+  test('operatorMessageId stamps the streamed user message uuid and requests --replay-user-messages', async () => {
+    const interruptController = new AbortController();
+    let inputIterator: AsyncIterator<unknown> | undefined;
+    let capturedExtraArgs: Record<string, string | null> | undefined;
+    mockQuery.mockImplementation((args: { prompt: unknown; options: { extraArgs?: unknown } }) => {
+      inputIterator = (args.prompt as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+      capturedExtraArgs = args.options.extraArgs as Record<string, string | null> | undefined;
+      const fake = new FakeQuery();
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+      operatorMessageId: 'msg-op-1',
+    })) {
+      // consume
+    }
+
+    const first = await inputIterator!.next();
+    expect(first.value).toMatchObject({ uuid: 'msg-op-1' });
+    expect(capturedExtraArgs).toEqual({ 'replay-user-messages': null });
+  });
+
+  test('without operatorMessageId no uuid is stamped and --replay-user-messages is not requested', async () => {
+    const interruptController = new AbortController();
+    let capturedExtraArgs: Record<string, string | null> | undefined;
+    mockQuery.mockImplementation((args: { options: { extraArgs?: unknown } }) => {
+      capturedExtraArgs = args.options.extraArgs as Record<string, string | null> | undefined;
+      const fake = new FakeQuery();
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      // consume
+    }
+
+    expect(capturedExtraArgs).toBeUndefined();
+  });
+
+  test('a replayed user message carrying the injected uuid yields operator_delivery_ack; a non-replay user message does not', async () => {
+    const interruptController = new AbortController();
+    mockQuery.mockImplementation(() => {
+      const fake = new FakeQuery();
+      fake.push({
+        done: false,
+        value: { type: 'user', isReplay: true, uuid: 'msg-op-1', session_id: 'sid-1' },
+      });
+      fake.push({
+        done: false,
+        value: { type: 'user', uuid: 'msg-op-2', session_id: 'sid-1' },
+      });
+      fake.push({ done: true, value: undefined });
+      return fake;
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+      operatorMessageId: 'msg-op-1',
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([{ type: 'operator_delivery_ack', messageId: 'msg-op-1' }]);
+  });
+
   test('interrupt abort calls native interrupt() exactly once and never aborts the SDK controller or closes the query', async () => {
     const interruptController = new AbortController();
     const fake = new FakeQuery();
