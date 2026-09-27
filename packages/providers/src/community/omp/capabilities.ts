@@ -33,8 +33,8 @@ export const OMP_CAPABILITIES: ProviderCapabilities = {
   // turn 1's context) but the abort command's own acknowledgement did not
   // reliably echo back by id across repeated runs, and porting the
   // provider's whole turn loop, event parser, and usage tracker to RPC
-  // framing is a dedicated story, not provable here. See the phase-f1
-  // report for the full spike evidence.
+  // framing is a substantial migration, not something a conformance spike
+  // alone can prove.
   interrupt: false,
   // Verified false: RPC `steer` sent in the documented "between tool calls"
   // gap did not change the model's already-planned next tool call — the
