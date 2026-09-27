@@ -746,6 +746,80 @@ describe('buildAgentHistory', () => {
     expect(settled.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
   });
 
+  test('a still-open tool call settles to unknown when the execution is terminal', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: true,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-abandoned',
+          seq: 1,
+          name: 'sleep 30',
+          toolUseId: 'never-completed',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool']);
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-abandoned', outcome: 'unknown' });
+    if (settled?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(settled.presentation).toMatchObject({ glyph: '–', statusLabel: 'unknown' });
+    // A settled call never carries a live elapsed-time badge.
+    expect(settled.durationMs).toBeNull();
+  });
+
+  test('a still-open tool call stays running while the execution is not terminal', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: false,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-live',
+          seq: 1,
+          name: 'sleep 30',
+          toolUseId: 'still-going',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-live', outcome: 'running' });
+  });
+
+  test('a proven interrupt still wins the glyph over the terminal fallback', () => {
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: true,
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'proven-terminal', tool_outcome: 'interrupted' },
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'call-proven-terminal',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'proven-terminal',
+          metadata: { tool_phase: 'call' },
+        }),
+        statusRow('s-interrupt', 2, 'interrupted'),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool']);
+    const [settled] = items;
+    expect(settled).toMatchObject({ id: 'call-proven-terminal', outcome: 'interrupted' });
+  });
+
   test('does not fold across intervening items, detail text, or non-exact states', () => {
     const { items } = buildAgentHistory({
       nodeId: NODE_ID,

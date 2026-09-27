@@ -334,6 +334,7 @@ export function NodeTranscriptPane({
           nodeId: row.nodeId,
           outputFormat: outputFormat ?? undefined,
           nowMs,
+          nodeTerminal: rowStatus !== 'running' && rowStatus !== 'awaiting',
         });
   const items = agentHistory.items;
   const occurrenceGrouping = groupByOccurrence(items);

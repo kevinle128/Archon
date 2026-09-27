@@ -731,6 +731,7 @@ export function ConsoleNodeRoom({
           nodeId: row.nodeId,
           outputFormat: resolution?.definitionNode?.output_format,
           nowMs,
+          nodeTerminal: rowStatus !== 'running' && rowStatus !== 'awaiting',
         });
   const items = agentHistory.items;
   // The strip and the latest todo row's inline checklist share this one

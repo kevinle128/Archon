@@ -19,6 +19,16 @@ export interface AgentHistoryInput {
   nowMs: number;
   /** Matched definition node's `output_format`; absent or ineligible schemas leave text untouched. */
   outputFormat?: Record<string, unknown>;
+  /**
+   * The selected execution has already reached a terminal lifecycle status
+   * (or a restart left it durable with no live process). A finished
+   * execution can never write a late `tool_completed` for a call still
+   * showing `running`, so that call settles to `unknown` here — the same
+   * verdict `settledToolOutcome` already gives an ambiguous interrupt —
+   * rather than the presenter claiming a process is still active. Default
+   * false.
+   */
+  nodeTerminal?: boolean;
 }
 
 /** Typed execution scope carried on wire rows; `null` on pre-scope history. */
@@ -430,7 +440,9 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         next.message.payload.state === 'interrupted';
       const settledOutcome = interrupted
         ? settledToolOutcome(input.events, input.nodeId, toolUseIdFrom(item))
-        : undefined;
+        : item.pending && input.nodeTerminal === true
+          ? 'unknown'
+          : undefined;
       items.push(toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome));
       // Consume the status row only when it proved the interrupted outcome —
       // that reads as this row's own glyph. Otherwise the row still recorded
