@@ -5782,6 +5782,21 @@ export function registerApiRoutes(
         }
 
         const idleBeforeInsert = handle.steeringSubState() === 'idle-after-interrupt';
+
+        // A blank `send_now` carries no newly typed text — there is nothing
+        // to queue, so it never writes a durable row. It only wakes the idle
+        // handle so every already-queued item claims the next turn together
+        // (CAP-10 "delivers everything"). A wake against a handle that is no
+        // longer idle (a race with auto-drain or a concurrent send) is a safe
+        // no-op — `wakeForSendNow()` reports it without throwing.
+        if (body.intent === 'send_now' && body.message.trim() === '') {
+          handle.wakeForSendNow();
+          return c.json(
+            { success: true as const, message_id: body.message_id, state: 'sent' as const },
+            200
+          );
+        }
+
         const { entry, duplicate } = await workflowSteeringDb.enqueueSteeringMessage({
           workflow_run_id: runId,
           node_id: nodeId,
@@ -5790,12 +5805,7 @@ export function registerApiRoutes(
           operator_user_id: requester?.userId ?? null,
           initial_state: idleBeforeInsert ? 'awaiting_send_now' : 'queued',
         });
-        if (
-          !duplicate &&
-          idleBeforeInsert &&
-          body.intent === 'send_now' &&
-          body.message.trim() !== ''
-        ) {
+        if (!duplicate && idleBeforeInsert && body.intent === 'send_now') {
           handle.wakeForSendNow();
         }
         return c.json(

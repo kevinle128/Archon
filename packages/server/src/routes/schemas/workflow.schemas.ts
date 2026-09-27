@@ -566,24 +566,31 @@ export const steeringQueueItemStateSchema = z.enum([
 /**
  * Request body for operator steering guidance.
  *
- * `message` is refined for non-blank content but NEVER transformed — the
- * operator's original characters (leading/trailing whitespace included) are
- * queued verbatim. `message_id` is the caller-stamped correlation key for
- * idempotent replay and terminal reconciliation. `queued_message_id` selects
- * an existing durable queue entry for per-item Send now (soft injection into
- * the active turn); it must belong to the same node and is only honored when
- * the active provider's capability data proves soft injection.
+ * `message` is refined for non-blank content on `intent: 'queue'` — there is
+ * nothing to queue with no text. `intent: 'send_now'` allows a blank message:
+ * with no newly typed text, Send now still claims every eligible durable
+ * queue entry in server FIFO order as the next turn (CAP-10 "delivers
+ * everything"), so the field is optional context, not the delivery vehicle.
+ * When non-blank it is NEVER transformed — the operator's original characters
+ * (leading/trailing whitespace included) are queued verbatim. `message_id` is
+ * the caller-stamped correlation key for idempotent replay and terminal
+ * reconciliation. `queued_message_id` selects an existing durable queue entry
+ * for per-item Send now (soft injection into the active turn); it must belong
+ * to the same node and is only honored when the active provider's capability
+ * data proves soft injection.
  */
 export const sendWorkflowNodeBodySchema = z
   .object({
-    message: z.string().refine(value => value.trim().length > 0, {
-      message: 'must not be blank',
-    }),
+    message: z.string(),
     message_id: z.string().uuid(),
     intent: z.enum(['queue', 'send_now']),
     queued_message_id: z.string().uuid().optional(),
   })
   .strict()
+  .refine(data => data.intent === 'send_now' || data.message.trim().length > 0, {
+    message: 'must not be blank',
+    path: ['message'],
+  })
   .openapi('SendWorkflowNodeBody');
 
 export type SendWorkflowNodeBody = z.infer<typeof sendWorkflowNodeBodySchema>;

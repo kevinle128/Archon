@@ -78,12 +78,18 @@ describe('interactionsForExecution', () => {
     expect(onSecond.showApproval).toBe(false);
   });
 
-  test('drops an Ask whose occurrence matches but attempt does not', () => {
+  test('places an Ask on the entry whose occurrence matches even when attempt differs', () => {
+    // A guidance turn (or a run recorded before it kept one attempt per
+    // occurrence) can carry an ask under an attempt that no longer matches
+    // the entry's own — the occurrence is still the same execution, so the
+    // ask must land there rather than vanish.
     const interactions = [
       ask({ execution_scope: { occurrence_id: OCC_2, attempt_id: ATTEMPT_1 } }),
     ];
     expect(interactionsForExecution(interactions, first, all).interactions).toEqual([]);
-    expect(interactionsForExecution(interactions, second, all).interactions).toEqual([]);
+    const onSecond = interactionsForExecution(interactions, second, all);
+    expect(onSecond.interactions).toHaveLength(1);
+    expect(onSecond.interactions[0]?.tool_use_id).toBe('tool-ask');
   });
 
   test('places an unscoped Ask only on the latest entry with a limitation', () => {

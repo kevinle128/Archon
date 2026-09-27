@@ -7149,15 +7149,23 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
 
   // -- Validation matrix ------------------------------------------------------
 
-  test('returns nested 400 for a blank-only message', async () => {
+  test('returns nested 400 for a blank-only message on intent queue', async () => {
     const handle = liveSetup();
     const before = captureSteeringBefore(handle);
     const { app } = makeApp();
-    const res = await postNodeSend(app, sendPayload({ message: '   \n\t  ' }));
+    const res = await postNodeSend(app, sendPayload({ message: '   \n\t  ', intent: 'queue' }));
 
     await expectSteeringError(res, 400, 'invalid_request');
     expect(mockGetWorkflowRun).not.toHaveBeenCalled();
     expectNoSteeringMutation(handle, before);
+  });
+
+  test('accepts a blank message on intent send_now — nothing to queue is not malformed', async () => {
+    liveSetup();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ message: '   \n\t  ', intent: 'send_now' }));
+
+    expect(res.status).not.toBe(400);
   });
 
   test('returns nested 400 for a missing field', async () => {
@@ -8474,6 +8482,52 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — intent on idle 
     expect(await res2.json()).toEqual(firstBody);
     // No second entry — the durable store still shows exactly one row.
     expect(snapshotSteeringQueueFor()).toHaveLength(1);
+  });
+
+  test('a blank send_now wakes the idle handle without writing a durable row', async () => {
+    const { handle, idleWait } = idleInterruptibleSetup();
+    const { app } = makeApp();
+    const res = await postNodeSend(app, sendPayload({ message: '', intent: 'send_now' }));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID,
+      state: 'sent',
+    });
+    const wake = await idleWait;
+    expect(wake.kind).toBe('send_now');
+    expect(handle.snapshot().subState).toBe('idle-after-interrupt');
+    // Nothing was newly typed, so nothing was queued for it.
+    expect(snapshotSteeringQueueFor()).toHaveLength(0);
+  });
+
+  test('a blank send_now claims every already-queued item in FIFO order without adding one', async () => {
+    const { idleWait } = idleInterruptibleSetup();
+    const { app } = makeApp();
+    const q1 = await postNodeSend(app, sendPayload({ intent: 'queue' }));
+    expect(((await q1.json()) as { state: string }).state).toBe('awaiting_send_now');
+    const q2 = await postNodeSend(
+      app,
+      sendPayload({ message_id: STEER_MESSAGE_ID_2, message: 'second', intent: 'queue' })
+    );
+    expect(((await q2.json()) as { state: string }).state).toBe('awaiting_send_now');
+
+    const res = await postNodeSend(
+      app,
+      sendPayload({ message_id: STEER_MESSAGE_ID_3, message: '', intent: 'send_now' })
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      success: true,
+      message_id: STEER_MESSAGE_ID_3,
+      state: 'sent',
+    });
+    const wake = await idleWait;
+    expect(wake.kind).toBe('send_now');
+    // Delivers everything already waiting — no third row for the blank draft.
+    const queued = snapshotSteeringQueueFor();
+    expect(queued.map(m => m.message_id)).toEqual([STEER_MESSAGE_ID, STEER_MESSAGE_ID_2]);
   });
 
   test("send during interrupting returns 'queued' and stays pending for explicit Send now", async () => {

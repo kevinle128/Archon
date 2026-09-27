@@ -28,7 +28,8 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 
 - **draft write** — `{ message: string }`; an empty string is represented by the idempotent DELETE route rather than a second clear shape.
 - **auto-send write** — `{ enabled: boolean }`.
-- **send** — `{ message: string (non-empty), message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now', queued_message_id?: string }`.
+- **send** — `{ message: string, message_id: string (caller-stamped uuid), intent: 'queue' | 'send_now', queued_message_id?: string }`.
+  `message` must be non-empty for `intent: 'queue'` — there is nothing to hold with no text. `intent: 'send_now'` allows an empty `message`: with nothing newly typed, Send now still claims every eligible durable queue entry in server FIFO order as the next turn (CAP-10 "delivers everything"), and the route never durably writes an empty draft.
   `message_id` is the durable identity and delivery-correlation key. `queued_message_id` selects an existing durable item for per-item Send now and must belong to the same node.
 - **interrupt** — `{}` (no body); the target is the live turn on the registry handle.
 - **keepalive** — no request body; it only re-arms the timer (AD-4 inactivity timer, SC 2.2.1). This is AD-4's composing keepalive, within AD-11's Send/Interrupt route family — not a new grant.
@@ -42,6 +43,7 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
 - **auto-send write** — `{ success: true, enabled: boolean }`.
 - **send** — `{ success: true, message_id: string, state: 'queued' | 'awaiting_send_now' | 'dispatching' | 'sent' | 'delivered' | 'delivery_unknown' }`.
   A queue response is returned only after the durable write commits. Immediate delivery reports only evidence known at response time and never infers `delivered` from prose.
+  A blank-message `send_now` writes no durable row, so its response echoes the caller's own `message_id` with `state: 'sent'` — it reports that the drain-now request took effect, never a specific message's delivery.
 - **withdraw** — `{ success: true, message_id: string }`; idempotent — success whether the message was still queued (now removed) or had already drained (nothing to remove).
 - **interrupt** — `{ success: true, sub_state: 'idle-after-interrupt' | 'generating' }`.
   `idle-after-interrupt` when the interrupt landed mid-turn; **`generating`** when the turn already ended naturally before the interrupt landed (interrupt spent, AD-2) and a queued message auto-drained into turn N+1. If the turn ended naturally with an **empty** queue the node has completed — the route then returns 409 `node_finished` (below), not a success shape.

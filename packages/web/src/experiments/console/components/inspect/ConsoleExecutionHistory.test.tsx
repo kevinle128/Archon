@@ -266,7 +266,10 @@ describe('ConsoleExecutionHistory', () => {
     await flushUntil('occ b', () => (host.textContent ?? '').includes('occ-b-assistant'));
     expect(recorded.length).toBeGreaterThan(0);
     expect(recorded[0]?.occurrenceId).toBe(OCC_B);
-    expect(recorded[0]?.attemptId).toBe(ATTEMPT_B);
+    // Occurrence-scoped only — a steered node's later turns share this
+    // occurrence under a different attempt, so the fetch must not narrow to
+    // one attempt or those turns' rows would never load.
+    expect(recorded[0]?.attemptId).toBeUndefined();
     expect(recorded[0]?.limit).toBe(100);
     expect(recorded[0]?.signal).toBeInstanceOf(AbortSignal);
     expect(host.textContent).toContain('assistant');

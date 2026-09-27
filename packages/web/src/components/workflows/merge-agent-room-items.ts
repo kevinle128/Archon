@@ -69,11 +69,12 @@ export function selectVisibleNodeAskInteractions(input: {
     if (interaction.execution_scope == null && !input.ownsUnscopedInteractions) {
       continue;
     }
+    // Occurrence-scoped only (CAP-6): an ask raised during one provider turn
+    // of a steered node belongs to the whole occurrence, not one attempt.
     if (
       interaction.execution_scope != null &&
       (input.selection.kind !== 'occurrence' ||
-        interaction.execution_scope.occurrence_id !== input.selection.occurrenceId ||
-        interaction.execution_scope.attempt_id !== input.selection.attemptId)
+        interaction.execution_scope.occurrence_id !== input.selection.occurrenceId)
     ) {
       continue;
     }
