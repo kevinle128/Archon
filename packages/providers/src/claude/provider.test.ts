@@ -2290,6 +2290,156 @@ describe('sendQuery decomposition behaviors', () => {
     });
   });
 
+  test('a built-in CLI guard denial with no hook settles via the plain Messages API tool_result', async () => {
+    // The leading-sleep guard (and similar built-in denials) blocks a call
+    // before it ever reaches execution, so it fires neither PostToolUse,
+    // PostToolUseFailure, nor PermissionDenied — Archon's only signal is a
+    // plain `user`-turn tool_result with is_error: true, exactly as the real
+    // Claude CLI emits it.
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'toolu_blocked',
+              name: 'Bash',
+              input: { command: 'sleep 25 && echo done' },
+            },
+          ],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_blocked',
+              content: '<tool_use_error>Blocked: sleep 25 followed by: echo done</tool_use_error>',
+              is_error: true,
+            },
+          ],
+        },
+      };
+      yield {
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'blocked, moving on' }] },
+      };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool',
+      toolName: 'Bash',
+      toolInput: { command: 'sleep 25 && echo done' },
+      toolCallId: 'toolu_blocked',
+    });
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '<tool_use_error>Blocked: sleep 25 followed by: echo done</tool_use_error>',
+      toolCallId: 'toolu_blocked',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a denial whose tool_result content is an array of text blocks is flattened to plain text', async () => {
+    mockQuery.mockImplementation(async function* () {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'toolu_arr', name: 'Write', input: {} }],
+        },
+      };
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_arr',
+              content: [{ type: 'text', text: 'denied by policy' }],
+              is_error: true,
+            },
+          ],
+        },
+      };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    expect(chunks).toContainEqual({
+      type: 'tool_result',
+      toolName: 'Write',
+      toolOutput: 'denied by policy',
+      toolCallId: 'toolu_arr',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
+  test('a genuinely executed failure already settled by PostToolUseFailure is never double-counted from its own user-turn tool_result', async () => {
+    // The Messages API always echoes a tool_result back as a user turn,
+    // including for calls that DID execute and already went through a hook.
+    // The hook-drain must be the one and only source for those.
+    mockQuery.mockImplementation(async function* (args: {
+      options: {
+        hooks?: Record<string, Array<{ hooks: Array<(input: unknown) => Promise<unknown>> }>>;
+      };
+    }) {
+      yield {
+        type: 'assistant',
+        message: {
+          content: [{ type: 'tool_use', id: 'toolu_ran', name: 'Bash', input: {} }],
+        },
+      };
+      const failureHook = args.options.hooks?.PostToolUseFailure?.[0]?.hooks?.[0];
+      await failureHook?.({
+        tool_name: 'Bash',
+        tool_use_id: 'toolu_ran',
+        error: 'exit 1',
+        is_interrupt: false,
+      });
+      yield {
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_ran',
+              content: 'exit 1',
+              is_error: true,
+            },
+          ],
+        },
+      };
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'done' }] } };
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test', '/workspace')) chunks.push(chunk);
+
+    const results = chunks.filter(
+      c => c.type === 'tool_result' && (c as { toolCallId?: string }).toolCallId === 'toolu_ran'
+    );
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual({
+      type: 'tool_result',
+      toolName: 'Bash',
+      toolOutput: '❌ Error: exit 1',
+      toolCallId: 'toolu_ran',
+      toolOutcome: 'error',
+      outputState: 'full',
+    });
+  });
+
   test('terminal tool result queue drain preserves hook outcome', async () => {
     mockQuery.mockImplementation(async function* (args: {
       options: {
