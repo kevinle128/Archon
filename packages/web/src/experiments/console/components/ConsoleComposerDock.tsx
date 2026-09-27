@@ -1,14 +1,16 @@
 /**
  * Steering composer dock for the Console node room: guarded send into the
- * run's process-local steering queue, plus the Story 2.3 turn model —
- * `Stop` interrupts the agent's current generation, `Send now` delivers a
- * typed message on the same session once the agent is idle-after-interrupt.
- * Story 2.9 hydrates and reconciles the shared registry queue via a serial
- * abortable poll; local POST/DELETE responses still update immediately.
- * Mirrors the Legacy ComposerDock semantics through console-owned seams.
- * Sent receipts are in-memory; the unsent draft and ambiguous retry id
- * persist in sessionStorage scoped by run + node id. Story 2.10 adds a
- * read-only finished-iteration branch (GET poll only).
+ * run's durable steering queue, plus the turn model — `Stop` interrupts the
+ * agent's current generation, `Send now` delivers a typed message on the
+ * same session once the agent is idle-after-interrupt. Mirrors the Legacy
+ * ComposerDock semantics through console-owned seams. A serial abortable
+ * poll of `GET .../queue` hydrates and reconciles the durable queue, the
+ * `never_sent` band, and the recovery/auto-send/soft-injection signals the
+ * server carries on every read; local POST/DELETE responses still update
+ * immediately. The composer draft is saved on the server per operator via
+ * `GET`/`PUT`/`DELETE .../draft`, debounced while typing. A read-only
+ * finished-iteration branch (GET poll only) covers a completed occurrence of
+ * a still-live loop node.
  *
  * The console-wide `.console-root :focus-visible` ring (--accent-ring at 0.3
  * alpha) composites to ~2:1 on the dock surfaces — under the 3:1 non-text
@@ -22,6 +24,7 @@ import {
   beginGuidanceSubmission,
   beginInterrupt,
   beginSendNow,
+  beginSendNowItem,
   beginWithdraw,
   canSubmitGuidance,
   createKeepaliveCoalescer,
@@ -31,33 +34,34 @@ import {
   focusTargetAfterSnapshot,
   goToIterationLabel,
   isKeepaliveActivityKey,
+  isQueueItemClaimable,
   isQueueShortcut,
-  loadSteeringDraft,
   neverSentBandHeader,
   neverSentDisclosure,
   neverSentListLabel,
   nextFocusAfterRemoval,
   queueBandHeader,
   queueButtonAccessibleName,
+  queueItemStatusLabel,
   queueListLabel,
   queuedCountPhrase,
-  reconcileNeverSent,
   resolveGuidanceFailure,
   resolveGuidanceSuccess,
   resolveInterruptError,
   resolveInterruptOutcome,
   resolveSendNowFailure,
+  resolveSendNowItemFailure,
+  resolveSendNowItemSuccess,
   resolveSendNowSuccess,
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
-  saveSteeringDraft,
   savedToServerLine,
   sendNowButtonAccessibleName,
   startQueuePolling,
   steeringAgentMode,
   steeringBlockedReason,
   steeringDockMode,
-  steeringDraftStorageKey,
+  steeringScopeKey,
   syncProjectedSubState,
   STEERING_DELETE_LABEL,
   STEERING_DETACHED_DISCLOSURE,
@@ -73,6 +77,7 @@ import {
   willSendListLabel,
   toSteeringRequestError,
   type KeepaliveCoalescer,
+  type NeverSentEntry,
   type RemovalFocusTarget,
   type SteeringDockMode,
   type SteeringDockState,
@@ -81,16 +86,22 @@ import {
 import type { FinishedIterationView } from '@/lib/execution-room-model';
 
 import {
+  clearNodeDraft,
   interruptNode,
   keepaliveNode,
+  readNodeDraft,
   readNodeGuidanceQueue,
+  saveNodeDraft,
   sendNodeGuidance,
   withdrawNodeGuidance,
+  type ClearSteeringDraftResponse,
   type InterruptWorkflowNodeResponse,
   type KeepaliveWorkflowNodeResponse,
+  type PutSteeringDraftBody,
   type ReadWorkflowNodeQueueResponse,
   type SendWorkflowNodeBody,
   type SendWorkflowNodeResponse,
+  type SteeringDraftResponse,
   type WithdrawWorkflowNodeResponse,
   type WorkflowNodeState,
 } from '../skills/runs';
@@ -122,6 +133,20 @@ export type ReadNodeGuidanceQueue = (
   nodeId: string,
   options?: { signal?: AbortSignal }
 ) => Promise<ReadWorkflowNodeQueueResponse>;
+
+export type ReadNodeDraft = (
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+) => Promise<SteeringDraftResponse>;
+
+export type SaveNodeDraft = (
+  runId: string,
+  nodeId: string,
+  body: PutSteeringDraftBody
+) => Promise<SteeringDraftResponse>;
+
+export type ClearNodeDraft = (runId: string, nodeId: string) => Promise<ClearSteeringDraftResponse>;
 
 export interface ConsoleComposerDockProps {
   runId: string;
@@ -160,21 +185,20 @@ export interface ConsoleComposerDockProps {
   withdraw?: WithdrawNodeGuidance;
   /** Queue snapshot reader; defaults to the Console API helper. */
   readQueue?: ReadNodeGuidanceQueue;
+  /** Draft read/write/clear; default to the Console API helpers. */
+  readDraft?: ReadNodeDraft;
+  saveDraft?: SaveNodeDraft;
+  clearDraft?: ClearNodeDraft;
+  /** Draft-save debounce in ms; production default 600, narrow test seam only. */
+  draftSaveDelayMs?: number;
   /** Poll cadence in ms; production default 1000, narrow test seam only. */
   pollIntervalMs?: number;
-  storage?: Storage;
   /**
    * Focuses the last rendered transcript row (scroller fallback) when the
    * Stop control or the whole dock leaves the DOM — focus must never land
    * on `<body>`.
    */
   focusLastRow?: () => void;
-  /**
-   * Node-wide operator message ids already written to the transcript.
-   * Non-null arms terminal reconciliation; default null leaves it inert.
-   * Phase 3 supplies the real set from the node-wide drain.
-   */
-  writtenOperatorMessageIds?: ReadonlySet<string> | null;
   /**
    * True only when the parent has actual node-terminal evidence. Run-level
    * terminal status is not sufficient. Default false.
@@ -193,36 +217,9 @@ export interface ConsoleComposerDockProps {
   keepalive?: KeepaliveNode;
   /**
    * True when the selected node's latest terminal execution failed for the
-   * idle-await expiry cause. Drives the Story 2.12 never-sent alert copy.
-   * Default false.
+   * idle-await expiry cause. Drives the never-sent alert copy. Default false.
    */
   idleAwaitExpired?: boolean;
-  /**
-   * True when the server has confirmed the live provider process was lost to
-   * a restart (CAP-14). Absent/false leaves today's visibility table; no
-   * caller derives this today — it is wired once the backend reports it.
-   */
-  recoveryRequired?: boolean;
-  /**
-   * True only when the active provider has verified soft injection (CAP-12):
-   * its transport can accept a queued message mid-turn without interrupting.
-   * Absent/false omits the per-item Send now control entirely — a
-   * queue-only provider must never draw a disabled one. No caller sets this
-   * today; the provider registry does not expose the capability yet.
-   */
-  softInjectionAvailable?: boolean;
-  /**
-   * Delivers exactly one queued message into the active turn without
-   * invoking Stop (CAP-12). Required alongside `softInjectionAvailable` —
-   * the control renders only when both are present.
-   */
-  onSendQueuedMessageNow?: (messageId: string) => void;
-  /**
-   * True when the durable Auto-send setting (CAP-15) is confirmed on. The
-   * indicator is read-only and reports state only. Default false; no caller
-   * derives this today — the durable setting itself is not built.
-   */
-  autoSendEnabled?: boolean;
 }
 
 const FIELD_CLASSES = [
@@ -242,6 +239,7 @@ const CONTROL_DISABLED_CLASSES = 'border-border text-text-secondary';
 const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
+const DEFAULT_DRAFT_SAVE_DELAY_MS = 600;
 
 /** Modes where the dock's focusable controls are in the DOM. */
 function controlsMounted(mode: SteeringDockMode): boolean {
@@ -265,21 +263,18 @@ export function ConsoleComposerDock({
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
   readQueue = readNodeGuidanceQueue,
+  readDraft = readNodeDraft,
+  saveDraft = saveNodeDraft,
+  clearDraft = clearNodeDraft,
+  draftSaveDelayMs = DEFAULT_DRAFT_SAVE_DELAY_MS,
   keepalive = keepaliveNode,
   pollIntervalMs = 1000,
-  storage,
   focusLastRow,
-  writtenOperatorMessageIds = null,
   nodeTerminal = false,
   nodeExecutionKey = null,
   idleAwaitExpired = false,
-  recoveryRequired = false,
-  softInjectionAvailable = false,
-  onSendQueuedMessageNow,
-  autoSendEnabled = false,
 }: ConsoleComposerDockProps): React.ReactElement | null {
-  const store = storage ?? (typeof sessionStorage === 'undefined' ? undefined : sessionStorage);
-  const storageKey = steeringDraftStorageKey(runId, nodeId);
+  const scopeKey = steeringScopeKey(runId, nodeId);
   const fieldId = useId();
   const reasonId = useId();
   const bandHeaderId = useId();
@@ -291,31 +286,102 @@ export function ConsoleComposerDock({
   const pendingFocusRef = useRef<RemovalFocusTarget | null>(null);
   const detachedAlertRef = useRef<HTMLParagraphElement>(null);
   const dockRef = useRef<SteeringDockState>(createSteeringDockState(subState));
-  /** Per-attempt observation eligibility — set on composer/blocked/finished-iteration. */
-  const queueWasObservableRef = useRef(false);
   /** Bumped on run/node scope change or execution-key/attempt reset. */
   const attemptGenerationRef = useRef(0);
-  const prevScopeRef = useRef(storageKey);
+  const prevScopeRef = useRef(scopeKey);
   const prevExecutionKeyRef = useRef<string | null>(nodeExecutionKey);
   const prevNodeTerminalRef = useRef(nodeTerminal);
   const coalescerRef = useRef<KeepaliveCoalescer | null>(null);
   const keepaliveRef = useRef(keepalive);
   keepaliveRef.current = keepalive;
 
-  /** Skip one ordinary persist after an explicit pendingRetry:null write. */
-  const suppressPersistRef = useRef(false);
-  const draftRef = useRef('');
-  const [dock, setDock] = useState<SteeringDockState>(() => ({
-    ...createSteeringDockState(subState),
-    pendingRetry: loadSteeringDraft(store, storageKey).pendingRetry,
-  }));
-  const [draft, setDraft] = useState<string>(() => loadSteeringDraft(store, storageKey).draft);
+  const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
+  const [draft, setDraft] = useState('');
   /** Finished-iteration poll 422: show detached alert without leaving the mode. */
   const [readDetached, setReadDetached] = useState(false);
   /** Finished-iteration other 4xx notify copy (poll stopped). */
   const [readNotify, setReadNotify] = useState<string | null>(null);
   dockRef.current = dock;
-  draftRef.current = draft;
+
+  // Draft hydration/persistence. The draft is server-scoped by (run, node)
+  // only — never per execution attempt — so it survives a loop iteration or
+  // a resumed attempt on the same node, and this effect keys on scope alone.
+  // `lastKnownServerDraftRef` is `null` until hydration settles (blocking any
+  // save) and otherwise holds the last value known to match the server —
+  // updated by hydration and by every successful save/clear. A save is only
+  // ever scheduled when the local draft differs from that value, so an
+  // echoed hydration (including an empty one) never needs a separate
+  // "consume once" flag that could otherwise stay wrongly armed.
+  const lastKnownServerDraftRef = useRef<string | null>(null);
+  const userEditedRef = useRef(false);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    lastKnownServerDraftRef.current = null;
+    userEditedRef.current = false;
+    const controller = new AbortController();
+    void readDraft(runId, nodeId, { signal: controller.signal }).then(
+      (response): void => {
+        const value = response.draft?.message ?? '';
+        lastKnownServerDraftRef.current = value;
+        // A read that resolves after the operator already started typing must
+        // never overwrite what they are mid-way through composing.
+        if (!userEditedRef.current) setDraft(value);
+      },
+      (): void => {
+        // Treat a failed read as "assume empty" rather than blocking saves
+        // forever; a later edit still reaches the server once retried.
+        lastKnownServerDraftRef.current = '';
+      }
+    );
+    return (): void => {
+      controller.abort();
+    };
+    // Intentionally keyed on scope only.
+  }, [runId, nodeId]);
+
+  const scheduleDraftSave = (nextDraft: string): void => {
+    if (saveTimerRef.current !== null) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const known = lastKnownServerDraftRef.current;
+    if (known === null || known === nextDraft) return;
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      if (nextDraft.trim().length === 0) {
+        void clearDraft(runId, nodeId).then(
+          () => {
+            lastKnownServerDraftRef.current = '';
+          },
+          () => {
+            // Best-effort; a later edit reschedules.
+          }
+        );
+      } else {
+        void saveDraft(runId, nodeId, { message: nextDraft }).then(
+          () => {
+            lastKnownServerDraftRef.current = nextDraft;
+          },
+          () => {
+            // Best-effort; a later save reconciles.
+          }
+        );
+      }
+    }, draftSaveDelayMs);
+  };
+
+  useEffect(() => {
+    scheduleDraftSave(draft);
+    return (): void => {
+      if (saveTimerRef.current !== null) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+    };
+    // scheduleDraftSave closes over stable deps and is called directly, not
+    // listed as a dependency.
+  }, [draft, runId, nodeId, draftSaveDelayMs]);
 
   // A host without a selection callback must never show an enabled Go control.
   const usableFinishedIteration =
@@ -323,35 +389,58 @@ export function ConsoleComposerDock({
       ? finishedIteration
       : null;
 
+  // Durable never-sent rows plus this operator's own still-unsent draft,
+  // folded in as the trailing item (control-states.md: "the half-typed line
+  // folds in as the last item"). A `delivery_unknown` row that survives to a
+  // terminal node (no reconcile touches it) counts too — undelivered content
+  // must remain readable regardless of which exact state it froze in.
+  const finishedEntries: NeverSentEntry[] = [
+    ...dock.sent.map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
+    ...(dock.neverSent ?? []),
+    ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
+  ];
+
   const mode = steeringDockMode({
     rowStatus,
     live,
     hasPendingAsk,
     refusal: dock.refusal,
     finishedIteration: usableFinishedIteration,
-    neverSent: dock.neverSent,
+    neverSent: finishedEntries,
     nodeTerminal,
-    recoveryRequired,
+    recoveryRequired: dock.executionState === 'recovery_required',
   });
 
-  // Attempt reset + observation marking run in layout before passive async
-  // continuations so a generation bump invalidates in-flight work first.
-  // Reset is declared before observation so a new-attempt render cannot set
-  // queueWasObservable only to have a later effect clear it.
+  // One-shot fetch on the terminal transition (never gated on any local
+  // state): the durable `never_sent`/`delivery_unknown` rows the executor
+  // wrote are readable the instant the node is known terminal, whether this
+  // dock watched the whole run live or was opened cold well afterward.
+  // Declared before the scope-reset effect below so a scope change can also
+  // reset it — a new (runId, nodeId) attempt must get its own fetch even
+  // while `nodeTerminal` stays continuously true across the swap.
+  const terminalFetchedRef = useRef(false);
+
+  // Attempt reset run in layout before passive async continuations so a
+  // generation bump invalidates in-flight work first.
   useLayoutEffect(() => {
-    const scopeChanged = prevScopeRef.current !== storageKey;
+    const scopeChanged = prevScopeRef.current !== scopeKey;
     if (scopeChanged) {
-      prevScopeRef.current = storageKey;
+      prevScopeRef.current = scopeKey;
       attemptGenerationRef.current += 1;
-      queueWasObservableRef.current = false;
       prevExecutionKeyRef.current = nodeExecutionKey;
       prevNodeTerminalRef.current = nodeTerminal;
       pendingFocusRef.current = null;
-      const saved = loadSteeringDraft(store, storageKey);
-      setDraft(saved.draft);
-      setDock({ ...createSteeringDockState(subState), pendingRetry: saved.pendingRetry });
+      terminalFetchedRef.current = false;
+      setDock(createSteeringDockState(subState));
       setReadDetached(false);
       setReadNotify(null);
+      // Clear the previous scope's text synchronously so it never flashes
+      // under the new scope while that scope's own draft is still loading;
+      // the hydration effect (keyed on the same runId/nodeId) fills it in.
+      // No save fires for this clear: the same effect resets
+      // lastKnownServerDraftRef to null first, and a null "known" value
+      // blocks scheduleDraftSave outright until the new scope hydrates.
+      setDraft('');
     } else {
       const prevKey = prevExecutionKeyRef.current;
       const nextKey = nodeExecutionKey;
@@ -362,12 +451,8 @@ export function ConsoleComposerDock({
 
       if (keyReplaced || terminalFailSafe) {
         attemptGenerationRef.current += 1;
-        queueWasObservableRef.current = false;
         pendingFocusRef.current = null;
-        suppressPersistRef.current = true;
-        const keptDraft = draftRef.current;
-        saveSteeringDraft(store, storageKey, { draft: keptDraft, pendingRetry: null });
-        setDock({ ...createSteeringDockState(subState), pendingRetry: null });
+        setDock(createSteeringDockState(subState));
         setReadDetached(false);
         setReadNotify(null);
       }
@@ -375,59 +460,44 @@ export function ConsoleComposerDock({
       prevExecutionKeyRef.current = nodeExecutionKey;
       prevNodeTerminalRef.current = nodeTerminal;
     }
+  }, [scopeKey, subState, nodeExecutionKey, nodeTerminal]);
 
-    if (mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration') {
-      queueWasObservableRef.current = true;
-    }
-  }, [storageKey, store, subState, nodeExecutionKey, nodeTerminal, mode]);
-
-  useEffect(() => {
-    if (suppressPersistRef.current) {
-      suppressPersistRef.current = false;
-      return;
-    }
-    saveSteeringDraft(store, storageKey, { draft, pendingRetry: dock.pendingRetry });
-  }, [store, storageKey, draft, dock.pendingRetry]);
-
-  // The projected sub-state is authoritative; the local interrupting
-  // transient yields to it when a defined projection arrives.
   useEffect(() => {
     setDock(current => syncProjectedSubState(current, subState));
   }, [subState]);
 
-  // One-shot terminal reconciliation — only when the attempt could observe
-  // the queue and no own withdraw is in flight.
   useEffect(() => {
-    if (writtenOperatorMessageIds === null || writtenOperatorMessageIds === undefined) return;
-    if (!nodeTerminal) return;
-    if (dock.neverSent !== null) return;
-    if (dock.withdrawingMessageId !== null) return;
-    if (!queueWasObservableRef.current) return;
-    const written = writtenOperatorMessageIds;
-    const draftAtReconcile = draftRef.current;
-    setDock(current => {
-      if (current.neverSent !== null) return current;
-      if (current.withdrawingMessageId !== null) return current;
-      return reconcileNeverSent(current, {
-        writtenMessageIds: written,
-        draft: draftAtReconcile,
-      });
-    });
-  }, [
-    writtenOperatorMessageIds,
-    nodeTerminal,
-    dock.neverSent,
-    dock.withdrawingMessageId,
-    dock.observedLedger,
-    dock.pendingRetry,
-  ]);
+    if (!nodeTerminal) {
+      terminalFetchedRef.current = false;
+      return;
+    }
+    if (terminalFetchedRef.current) return;
+    terminalFetchedRef.current = true;
+    const controller = new AbortController();
+    void readQueue(runId, nodeId, { signal: controller.signal }).then(
+      snapshot => {
+        setDock(current => applyQueueSnapshot(current, snapshot, current.queueGeneration));
+      },
+      () => {
+        // Read-only hydration; a failure here just leaves less to show.
+      }
+    );
+    return (): void => {
+      controller.abort();
+    };
+  }, [nodeTerminal, runId, nodeId, readQueue]);
 
-  // Shared-queue reads while composer/blocked/finished-iteration are mounted.
-  // Hidden historical/terminal rooms and send-triggered detached disclosures
-  // never poll — Story 2.9 gives queue reads no capability-state transition.
-  // finished-iteration polls GET only (no mutation handlers bound).
-  // finished mode never polls.
-  const pollingEnabled = mode === 'composer' || mode === 'blocked' || mode === 'finished-iteration';
+  // Shared-queue reads while composer/blocked/finished-iteration/recovery are
+  // mounted. Recovery keeps polling (not just a one-shot) so this dock can
+  // observe the moment Resume re-establishes a live handle and the mode
+  // reverts on its own. finished-iteration polls GET only (no mutation
+  // handlers bound). finished mode never polls — the one-shot above covers
+  // it, and nothing can mutate a terminal node's queue.
+  const pollingEnabled =
+    mode === 'composer' ||
+    mode === 'blocked' ||
+    mode === 'finished-iteration' ||
+    mode === 'recovery-required';
 
   useEffect(() => {
     if (!pollingEnabled) return;
@@ -450,10 +520,14 @@ export function ConsoleComposerDock({
           }
         }
         setDock(current => {
-          const previousIds = current.sent.map(receipt => receipt.messageId);
+          const previousIds = current.sent
+            .filter(receipt => isQueueItemClaimable(receipt.state))
+            .map(receipt => receipt.messageId);
           const next = applyQueueSnapshot(current, snapshot, generationAtRequest);
           if (next === current) return current;
-          const nextIds = next.sent.map(receipt => receipt.messageId);
+          const nextIds = next.sent
+            .filter(receipt => isQueueItemClaimable(receipt.state))
+            .map(receipt => receipt.messageId);
           if (
             !finishedMode &&
             focusedId !== null &&
@@ -609,10 +683,21 @@ export function ConsoleComposerDock({
     };
   }, [agentMode, nodeExecutionKey, runId, nodeId]);
 
+  const cancelPendingDraftSave = (): void => {
+    if (saveTimerRef.current !== null) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+  };
+
   const submit = (): void => {
     if (!canSubmit) return;
     const submittedDraft = draft;
     const attemptGen = attemptGenerationRef.current;
+    // Cancel any pending debounced PUT first — a submission that succeeds
+    // clears the server draft explicitly below, and a stale PUT firing after
+    // that DELETE would resurrect exactly the text the operator just sent.
+    cancelPendingDraftSave();
     if (agentMode === 'idle') {
       // Send now cancels pending trailing keepalive and never issues one of its own.
       coalescerRef.current?.dispose();
@@ -628,11 +713,29 @@ export function ConsoleComposerDock({
           if (attemptGenerationRef.current !== attemptGen) return;
           setDock(current => resolveSendNowSuccess(current, receipt));
           setDraft(current => (current === submittedDraft ? '' : current));
+          void clearDraft(runId, nodeId).then(
+            () => {
+              lastKnownServerDraftRef.current = '';
+            },
+            () => {
+              // Best-effort; a later save reconciles.
+            }
+          );
           fieldRef.current?.focus();
         },
         (error: unknown): void => {
           if (attemptGenerationRef.current !== attemptGen) return;
           setDock(current => resolveSendNowFailure(current, toSteeringRefusal(error)));
+          // The draft never left the field; re-establish it on the server
+          // since the debounce that would have done so was just cancelled.
+          void saveDraft(runId, nodeId, { message: submittedDraft }).then(
+            () => {
+              lastKnownServerDraftRef.current = submittedDraft;
+            },
+            () => {
+              // Best-effort; a later save reconciles.
+            }
+          );
         }
       );
       return;
@@ -650,11 +753,27 @@ export function ConsoleComposerDock({
         // The field stays editable while the POST is in flight. Clear only the
         // text that was accepted; preserve anything the operator typed next.
         setDraft(current => (current === submittedDraft ? '' : current));
+        void clearDraft(runId, nodeId).then(
+          () => {
+            lastKnownServerDraftRef.current = '';
+          },
+          () => {
+            // Best-effort; a later save reconciles.
+          }
+        );
         fieldRef.current?.focus();
       },
       (error: unknown): void => {
         if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveGuidanceFailure(current, toSteeringRefusal(error)));
+        void saveDraft(runId, nodeId, { message: submittedDraft }).then(
+          () => {
+            lastKnownServerDraftRef.current = submittedDraft;
+          },
+          () => {
+            // Best-effort; a later save reconciles.
+          }
+        );
       }
     );
   };
@@ -689,7 +808,9 @@ export function ConsoleComposerDock({
     if (dock.withdrawingMessageId !== null) return;
     const attemptGen = attemptGenerationRef.current;
     pendingFocusRef.current = nextFocusAfterRemoval(
-      dock.sent.map(receipt => receipt.messageId),
+      dock.sent
+        .filter(receipt => isQueueItemClaimable(receipt.state))
+        .map(receipt => receipt.messageId),
       messageId
     );
     setDock(current => beginWithdraw(current, messageId));
@@ -702,6 +823,29 @@ export function ConsoleComposerDock({
         if (attemptGenerationRef.current !== attemptGen) return;
         pendingFocusRef.current = null;
         setDock(current => resolveWithdrawFailure(current, messageId, toSteeringRefusal(error)));
+      }
+    );
+  };
+
+  const sendQueuedMessageNow = (item: { messageId: string; message: string }): void => {
+    if (dock.sendingNowMessageId !== null) return;
+    const attemptGen = attemptGenerationRef.current;
+    setDock(current => beginSendNowItem(current, item.messageId));
+    void send(runId, nodeId, {
+      message: item.message,
+      message_id: crypto.randomUUID(),
+      intent: 'send_now',
+      queued_message_id: item.messageId,
+    }).then(
+      (): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        setDock(current => resolveSendNowItemSuccess(current, item.messageId));
+      },
+      (error: unknown): void => {
+        if (attemptGenerationRef.current !== attemptGen) return;
+        setDock(current =>
+          resolveSendNowItemFailure(current, item.messageId, toSteeringRefusal(error))
+        );
       }
     );
   };
@@ -724,7 +868,7 @@ export function ConsoleComposerDock({
                 {queueBandHeader(dock.sent.length)}
               </h3>
               <span className="ml-auto flex-none text-[10px] text-text-secondary">
-                {savedToServerLine(autoSendEnabled)}
+                {savedToServerLine(dock.autoSend)}
               </span>
             </div>
             <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
@@ -738,7 +882,9 @@ export function ConsoleComposerDock({
                     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                       {receipt.message}
                     </span>
-                    <span className="flex-none">sent</span>
+                    {queueItemStatusLabel(receipt.state) === null ? null : (
+                      <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -771,8 +917,7 @@ export function ConsoleComposerDock({
     );
   }
 
-  if (mode === 'finished' && dock.neverSent !== null && dock.neverSent.length > 0) {
-    const entries = dock.neverSent;
+  if (mode === 'finished' && finishedEntries.length > 0) {
     return (
       <section
         aria-labelledby={bandHeaderId}
@@ -782,13 +927,27 @@ export function ConsoleComposerDock({
           id={bandHeaderId}
           className="px-[10px] pt-[6px] text-[10px] font-bold uppercase tracking-[0.07em] text-text-secondary"
         >
-          {neverSentBandHeader(entries.length)}
+          {neverSentBandHeader(finishedEntries.length)}
         </h3>
         <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
-          <ul aria-label={neverSentListLabel(entries.length)}>
-            {entries.map((entry, index) => (
+          <ul aria-label={neverSentListLabel(finishedEntries.length)}>
+            {dock.sent.map(receipt => (
               <li
-                key={entry.messageId ?? `draft-${String(index)}`}
+                key={receipt.messageId}
+                data-message-id={receipt.messageId}
+                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+              >
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {receipt.message}
+                </span>
+                {queueItemStatusLabel(receipt.state) === null ? null : (
+                  <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
+                )}
+              </li>
+            ))}
+            {(dock.neverSent ?? []).map((entry, index) => (
+              <li
+                key={entry.messageId ?? `never-sent-${String(index)}`}
                 {...(entry.messageId !== null ? { 'data-message-id': entry.messageId } : {})}
                 className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
               >
@@ -797,6 +956,16 @@ export function ConsoleComposerDock({
                 </span>
               </li>
             ))}
+            {draft.trim().length > 0 ? (
+              <li
+                key="never-sent-draft"
+                className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
+              >
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                  {draft}
+                </span>
+              </li>
+            ) : null}
           </ul>
         </div>
         <p
@@ -872,7 +1041,9 @@ export function ConsoleComposerDock({
                     <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
                       {receipt.message}
                     </span>
-                    <span className="flex-none">sent</span>
+                    {queueItemStatusLabel(receipt.state) === null ? null : (
+                      <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -892,9 +1063,9 @@ export function ConsoleComposerDock({
   const showStop = agentMode === 'generating' || agentMode === 'interrupting';
   const stopping = agentMode === 'interrupting';
   // Per-item Send now is honest only while the turn genuinely accepts a
-  // mid-turn message: generating, on a provider with proven soft injection.
-  const canSendItemNow =
-    softInjectionAvailable && agentMode === 'generating' && onSendQueuedMessageNow !== undefined;
+  // mid-turn message: generating, on a provider with proven soft injection,
+  // and only for a row the server can still claim.
+  const canSendItemNow = dock.softInjection && agentMode === 'generating';
 
   return (
     <>
@@ -911,7 +1082,7 @@ export function ConsoleComposerDock({
               {idle ? willSendBandHeader(dock.sent.length) : queueBandHeader(dock.sent.length)}
             </h3>
             <span className="ml-auto flex-none text-[10px] text-text-secondary">
-              {savedToServerLine(autoSendEnabled)}
+              {savedToServerLine(dock.autoSend)}
             </span>
           </div>
           <div className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]">
@@ -920,56 +1091,63 @@ export function ConsoleComposerDock({
                 idle ? willSendListLabel(dock.sent.length) : queueListLabel(dock.sent.length)
               }
             >
-              {dock.sent.map(receipt => (
-                <li
-                  key={receipt.messageId}
-                  data-message-id={receipt.messageId}
-                  className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
-                >
-                  <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-                    {receipt.message}
-                  </span>
-                  <span className="flex-none">sent</span>
-                  {canSendItemNow ? (
-                    <button
-                      type="button"
-                      aria-label={sendNowItemAccessibleName(receipt.message)}
-                      onClick={(): void => {
-                        onSendQueuedMessageNow?.(receipt.messageId);
-                      }}
-                      className={[
-                        'min-h-[24px] flex-none whitespace-nowrap rounded-md border border-border px-[7px] font-sans text-[10.5px]',
-                        'text-text-secondary hover:border-border-bright hover:text-text-primary',
-                        'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
-                      ].join(' ')}
-                    >
-                      {STEERING_SEND_NOW_ITEM_LABEL}
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    ref={(el): void => {
-                      if (el === null) {
-                        deleteButtonsRef.current.delete(receipt.messageId);
-                      } else {
-                        deleteButtonsRef.current.set(receipt.messageId, el);
-                      }
-                    }}
-                    aria-label={deleteButtonAccessibleName(receipt.message)}
-                    aria-disabled={dock.withdrawingMessageId !== null ? true : undefined}
-                    onClick={(): void => {
-                      withdrawMessage(receipt.messageId);
-                    }}
-                    className={[
-                      'min-h-[24px] min-w-[24px] flex-none rounded-md px-2 font-mono text-[11px]',
-                      'text-text-secondary hover:bg-surface-inset',
-                      'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
-                    ].join(' ')}
+              {dock.sent.map(receipt => {
+                const claimable = isQueueItemClaimable(receipt.state);
+                const statusLabel = queueItemStatusLabel(receipt.state);
+                return (
+                  <li
+                    key={receipt.messageId}
+                    data-message-id={receipt.messageId}
+                    className="flex items-baseline gap-2 py-[1px] font-mono text-[11.5px] leading-[1.85] text-text-secondary"
                   >
-                    {STEERING_DELETE_LABEL}
-                  </button>
-                </li>
-              ))}
+                    <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+                      {receipt.message}
+                    </span>
+                    {statusLabel === null ? null : <span className="flex-none">{statusLabel}</span>}
+                    {claimable && canSendItemNow ? (
+                      <button
+                        type="button"
+                        aria-label={sendNowItemAccessibleName(receipt.message)}
+                        aria-disabled={dock.sendingNowMessageId !== null ? true : undefined}
+                        onClick={(): void => {
+                          sendQueuedMessageNow(receipt);
+                        }}
+                        className={[
+                          'min-h-[24px] flex-none whitespace-nowrap rounded-md border border-border px-[7px] font-sans text-[10.5px]',
+                          'text-text-secondary hover:border-border-bright hover:text-text-primary',
+                          'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+                        ].join(' ')}
+                      >
+                        {STEERING_SEND_NOW_ITEM_LABEL}
+                      </button>
+                    ) : null}
+                    {claimable ? (
+                      <button
+                        type="button"
+                        ref={(el): void => {
+                          if (el === null) {
+                            deleteButtonsRef.current.delete(receipt.messageId);
+                          } else {
+                            deleteButtonsRef.current.set(receipt.messageId, el);
+                          }
+                        }}
+                        aria-label={deleteButtonAccessibleName(receipt.message)}
+                        aria-disabled={dock.withdrawingMessageId !== null ? true : undefined}
+                        onClick={(): void => {
+                          withdrawMessage(receipt.messageId);
+                        }}
+                        className={[
+                          'min-h-[24px] min-w-[24px] flex-none rounded-md px-2 font-mono text-[11px]',
+                          'text-text-secondary hover:bg-surface-inset',
+                          'focus-visible:outline-2 focus-visible:outline-accent-bright! focus-visible:outline-offset-2',
+                        ].join(' ')}
+                      >
+                        {STEERING_DELETE_LABEL}
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>
@@ -1009,6 +1187,7 @@ export function ConsoleComposerDock({
           value={draft}
           rows={2}
           onChange={(event): void => {
+            userEditedRef.current = true;
             setDraft(event.target.value);
           }}
           onFocus={(): void => {

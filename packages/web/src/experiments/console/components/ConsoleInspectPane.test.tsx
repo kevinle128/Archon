@@ -859,10 +859,19 @@ describe('ConsoleInspectPane', () => {
         pathname = raw.split('?')[0] ?? raw;
       }
       if (method === 'GET' && pathname.endsWith('/queue')) {
-        return new Response(JSON.stringify({ success: true, queued: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            execution_state: 'live',
+            auto_send: false,
+            capabilities: { soft_injection: false, delivery_ack: false },
+            queued: [],
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }
+        );
       }
       if (method === 'GET' && pathname.includes('/messages')) {
         return new Response(JSON.stringify({ messages: [] }), {
@@ -956,7 +965,15 @@ describe('ConsoleInspectPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1076,7 +1093,15 @@ describe('ConsoleInspectPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1232,7 +1257,15 @@ describe('ConsoleInspectPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );
@@ -1350,7 +1383,15 @@ describe('ConsoleInspectPane', () => {
       if (method === 'GET' && (pathname.endsWith('/queue') || pathname.includes('/messages'))) {
         return new Response(
           JSON.stringify(
-            pathname.endsWith('/queue') ? { success: true, queued: [] } : { messages: [] }
+            pathname.endsWith('/queue')
+              ? {
+                  success: true,
+                  execution_state: 'live',
+                  auto_send: false,
+                  capabilities: { soft_injection: false, delivery_ack: false },
+                  queued: [],
+                }
+              : { messages: [] }
           ),
           { status: 200, headers: { 'Content-Type': 'application/json' } }
         );

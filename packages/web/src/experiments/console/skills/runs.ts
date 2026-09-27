@@ -161,7 +161,7 @@ export type WithdrawWorkflowNodeResponse = components['schemas']['WithdrawWorkfl
 export type ReadWorkflowNodeQueueResponse = components['schemas']['ReadWorkflowNodeQueueResponse'];
 
 /**
- * POST /api/workflows/runs/:runId/nodes/:nodeId/send — Story 2.1 queue send.
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/send — queue send.
  * Refusals surface as SteeringRequestError carrying the nested {code,message}
  * so the dock can distinguish a canonical 422 `not_steerable_here` from other
  * failures. No auto-retry and no message logging — the caller owns
@@ -185,7 +185,7 @@ export async function sendNodeGuidance(
 export type InterruptWorkflowNodeResponse = components['schemas']['InterruptWorkflowNodeResponse'];
 
 /**
- * POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt — Story 2.3 turn
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/interrupt — turn
  * interrupt. The awaited response is the ACTUAL settled sub-state —
  * `idle-after-interrupt` or `generating` — and terminal refusals surface as
  * SteeringRequestError (409 `node_finished`, 422 `not_steerable_here`).
@@ -207,7 +207,7 @@ export async function interruptNode(
 export type KeepaliveWorkflowNodeResponse = components['schemas']['KeepaliveWorkflowNodeResponse'];
 
 /**
- * POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive — Story 2.12 bodyless
+ * POST /api/workflows/runs/:runId/nodes/:nodeId/keepalive — bodyless
  * idle-await re-arm. No request body; no auto-retry. Failures normalize through
  * SteeringRequestError so callers keep the same refusal surface as interrupt.
  */
@@ -267,6 +267,73 @@ export async function readNodeGuidanceQueue(
         ...(options?.signal === undefined ? {} : { signal: options.signal }),
       }
     );
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+export type SteeringDraftResponse = components['schemas']['SteeringDraftResponse'];
+export type PutSteeringDraftBody = components['schemas']['PutSteeringDraftBody'];
+export type ClearSteeringDraftResponse = components['schemas']['ClearSteeringDraftResponse'];
+
+function nodeDraftUrl(runId: string, nodeId: string): string {
+  return `/api/workflows/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/draft`;
+}
+
+/**
+ * GET /api/workflows/runs/:runId/nodes/:nodeId/draft — the acting operator's
+ * own composer draft plus the node's shared auto-send setting. Bodyless GET,
+ * no auto-retry; failures normalize through SteeringRequestError.
+ */
+export async function readNodeDraft(
+  runId: string,
+  nodeId: string,
+  options?: { signal?: AbortSignal }
+): Promise<SteeringDraftResponse> {
+  try {
+    return await requestJson<SteeringDraftResponse>(nodeDraftUrl(runId, nodeId), {
+      method: 'GET',
+      ...(options?.signal === undefined ? {} : { signal: options.signal }),
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * PUT /api/workflows/runs/:runId/nodes/:nodeId/draft — upsert the acting
+ * operator's own composer draft after a debounced change. No auto-retry;
+ * failures normalize through SteeringRequestError.
+ */
+export async function saveNodeDraft(
+  runId: string,
+  nodeId: string,
+  body: PutSteeringDraftBody
+): Promise<SteeringDraftResponse> {
+  try {
+    return await requestJson<SteeringDraftResponse>(nodeDraftUrl(runId, nodeId), {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    throw toSteeringRequestError(error);
+  }
+}
+
+/**
+ * DELETE /api/workflows/runs/:runId/nodes/:nodeId/draft — clear the acting
+ * operator's own composer draft. Idempotent on an already-cleared or
+ * never-saved draft. No auto-retry; failures normalize through
+ * SteeringRequestError.
+ */
+export async function clearNodeDraft(
+  runId: string,
+  nodeId: string
+): Promise<ClearSteeringDraftResponse> {
+  try {
+    return await requestJson<ClearSteeringDraftResponse>(nodeDraftUrl(runId, nodeId), {
+      method: 'DELETE',
+    });
   } catch (error) {
     throw toSteeringRequestError(error);
   }
