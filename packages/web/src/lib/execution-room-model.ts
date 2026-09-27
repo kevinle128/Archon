@@ -61,6 +61,8 @@ export interface ExecutionHeaderModel {
   provider: string | null;
   model: string | null;
   unknownScope: boolean;
+  /** True when the selected execution is one iteration of a loop node. */
+  isLoopIteration: boolean;
 }
 
 export interface ExecutionHeaderInput {
@@ -443,6 +445,7 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     provider: runtime?.provider || null,
     model: runtime?.model || null,
     unknownScope: input.row.unknownScope ?? true,
+    isLoopIteration: input.row.selection.kind === 'loop_iteration',
   };
 }
 

@@ -24,6 +24,7 @@ const ITERATION_TWO: ExecutionHeaderModel = {
   provider: 'openai',
   model: 'gpt-5',
   unknownScope: false,
+  isLoopIteration: false,
 };
 
 function closeButton(host: Element): Element {
