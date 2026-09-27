@@ -103,6 +103,7 @@ describe('CodexProvider', () => {
         containerExec: false,
         askHuman: false,
         interrupt: 'stream-abort',
+        interruptedToolStatus: false,
         softInjection: false,
         deliveryAck: false,
       });

@@ -91,6 +91,7 @@ describe('DEVIN_CAPABILITIES', () => {
       containerExec: false,
       askHuman: true,
       interrupt: false,
+      interruptedToolStatus: false,
       softInjection: false,
       deliveryAck: false,
     });
