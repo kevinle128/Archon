@@ -68,6 +68,10 @@ export const CLAUDE_CAPABILITIES: ProviderCapabilities = {
   containerExec: true, // spawns the CLI in-container via spawnClaudeCodeProcess
   askHuman: true,
   interrupt: 'native', // Query.interrupt() over streaming input
+  // The SDK's PostToolUseFailure hook carries `is_interrupt`, tied to the
+  // exact tool_use id that was cut short — a real per-tool proof, not a
+  // guess from turn-level timing.
+  interruptedToolStatus: true,
   softInjection: false, // transport conformance is current implementation work
   deliveryAck: false, // message-id echo is current implementation work
 };

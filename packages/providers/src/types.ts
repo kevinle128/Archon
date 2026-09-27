@@ -871,6 +871,18 @@ export interface ProviderCapabilities {
    */
   interrupt: 'native' | 'stream-abort' | false;
   /**
+   * Whether the provider's own event stream can prove that a SPECIFIC tool
+   * call was cut short by an operator interrupt, as distinct from merely
+   * knowing the turn ended early. `true` only when the provider ties an
+   * interrupt marker to the exact tool call (Claude's SDK reports
+   * `is_interrupt` on the failed tool's own hook payload). A provider that
+   * ends a turn by killing its whole stream or child process (Codex,
+   * DeepSeek) has no per-tool signal, so a still-open tool at turn end
+   * settles as `'unknown'` rather than a guessed `'interrupted'`. Default
+   * `false` for a provider whose evidence has not been checked.
+   */
+  interruptedToolStatus: boolean;
+  /**
    * Whether a verified adapter transport can deliver one queued operator
    * message into the CURRENT active turn without ending it (steering
    * per-item "Send now" while generating). `false` until a provider's own

@@ -29,6 +29,10 @@ export const CODEX_CAPABILITIES: ProviderCapabilities = {
   // thread id, so redirect continues on the same thread rather than
   // silently starting a new one.
   interrupt: 'stream-abort',
+  // The SDK kills the whole child process on abort and never reports which
+  // tool call, if any, was in flight — a still-open tool at turn end has no
+  // provable fate, so it must settle 'unknown', never a guessed 'interrupted'.
+  interruptedToolStatus: false,
   softInjection: false,
   deliveryAck: false,
 };

@@ -30,6 +30,7 @@ export const COPILOT_CAPABILITIES: ProviderCapabilities = {
   containerExec: false, // no in-container spawn path yet (fail-fast source of truth)
   askHuman: false,
   interrupt: false,
+  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   softInjection: false,
   deliveryAck: false,
 };

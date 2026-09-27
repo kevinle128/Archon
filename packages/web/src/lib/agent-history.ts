@@ -367,6 +367,32 @@ function runningElapsed(
   return Math.max(0, nowMs - startedAt);
 }
 
+/**
+ * The outcome the executor actually settled a still-open tool call with, read
+ * from its matching `tool_completed` event's `tool_outcome` field. A provider
+ * that cannot tie an interrupt marker to a specific tool call settles that
+ * field `'unknown'` rather than `'interrupted'` — this lets the fold below
+ * respect that distinction without knowing which provider produced it.
+ * Ambiguous data (no match, or more than one) defaults to `'interrupted'`,
+ * matching every row recorded before this distinction existed.
+ */
+function settledToolOutcome(
+  events: readonly components['schemas']['WorkflowEvent'][],
+  nodeId: string,
+  toolUseId: string
+): 'interrupted' | 'unknown' {
+  const matches: unknown[] = [];
+  for (const workflowEvent of events) {
+    if (workflowEvent.event_type !== 'tool_completed') continue;
+    if (workflowEvent.step_name !== nodeId) continue;
+    const data = asRecord(workflowEvent.data);
+    if (data === null) continue;
+    if (data.tool_call_id !== toolUseId) continue;
+    matches.push(data.tool_outcome);
+  }
+  return matches.length === 1 && matches[0] === 'unknown' ? 'unknown' : 'interrupted';
+}
+
 export function toolRuntime(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
@@ -408,7 +434,9 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
           input.events,
           input.nodeId,
           input.nowMs,
-          interrupted ? 'interrupted' : undefined
+          interrupted
+            ? settledToolOutcome(input.events, input.nodeId, toolUseIdFrom(item))
+            : undefined
         )
       );
       if (interrupted) index++;

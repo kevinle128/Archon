@@ -19,6 +19,7 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   containerExec: false,
   askHuman: false,
   interrupt: false,
+  interruptedToolStatus: false, // no turn interrupt at all, so no per-tool proof either
   softInjection: false,
   deliveryAck: false,
 };
