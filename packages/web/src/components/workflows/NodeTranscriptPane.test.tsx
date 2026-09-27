@@ -2064,6 +2064,32 @@ describe('NodeTranscriptPane', () => {
       expect(host.querySelector('select')).toBeNull();
     });
 
+    test('a status-only occurrence (no model/tool output) still renders its own heading', async () => {
+      // Filtering raw lifecycle rows out of what renders must never drop the
+      // occurrence group itself: a failed retry with nothing but lifecycle
+      // content is exactly the "status-only" case, and its heading is the
+      // only signal that the attempt happened and failed.
+      await act(async () => {
+        renderPane({
+          row: REVIEW_ROW,
+          runStatus: 'completed',
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [
+              ...TWO_OCCURRENCES,
+              occStatus(7, 'started', OCC_C, 2),
+              occStatus(8, 'failed', OCC_C, 2),
+            ],
+          }),
+        });
+      });
+      await flushUntil(host, 'three occurrences', () =>
+        (host.textContent ?? '').includes('run-two')
+      );
+      expect(occHeadings()).toHaveLength(3);
+      const statusOnlyHeading = occurrenceHeading(OCC_C);
+      expect(statusOnlyHeading.textContent).toContain('failed');
+    });
+
     test('renders a labelled select whose options mirror the headings verbatim', async () => {
       await mountTwoOccurrences();
       const select = navigatorSelect();
