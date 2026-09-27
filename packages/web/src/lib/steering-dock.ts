@@ -123,6 +123,14 @@ export interface SteeringDockState {
    * withdrew or dropping one they just sent.
    */
   readonly queueGeneration: number;
+  /**
+   * Every message id's last-observed delivery state from the durable queue
+   * read, covering every row the server returned for this node — not just
+   * the pending band `sent` tracks, since a `sent`/`delivered` row is
+   * exactly the evidence a transcript operator row's delivery label needs.
+   * Empty until the first snapshot.
+   */
+  readonly deliveryByMessageId: ReadonlyMap<string, SteeringQueueItemState>;
 }
 
 export type SteeringDockMode =
@@ -272,15 +280,22 @@ export function steeringAgentMode(input: {
 
 /**
  * The single guard shared by Queue, Send now, and the keyboard shortcut:
- * non-blank draft, no send in flight, composer mode. `interrupting` does
- * NOT block Queue — a message sent in the race waits for Send now.
+ * no send in flight, composer mode, and either a non-blank draft or (Send
+ * now only, `agentMode === 'idle'`) at least one already-claimable queued
+ * item — a blank Send now still delivers everything waiting (CAP-10).
+ * `interrupting` does NOT block Queue — a message sent in the race waits
+ * for Send now.
  */
 export function canSubmitGuidance(input: {
   mode: SteeringDockMode;
   sendInFlight: boolean;
   draft: string;
+  agentMode: SteeringAgentMode;
+  willSendCount: number;
 }): boolean {
-  return input.mode === 'composer' && !input.sendInFlight && input.draft.trim().length > 0;
+  if (input.mode !== 'composer' || input.sendInFlight) return false;
+  if (input.draft.trim().length > 0) return true;
+  return input.agentMode === 'idle' && input.willSendCount > 0;
 }
 
 export interface SteeringShortcutEvent {
@@ -409,6 +424,7 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     withdrawingMessageId: null,
     sendingNowMessageId: null,
     queueGeneration: 0,
+    deliveryByMessageId: new Map(),
   };
 }
 
@@ -511,7 +527,10 @@ export function resolveGuidanceFailure(
  * Send now: snapshot the displayed accepted receipts plus the new draft into
  * the batch and clear the visible band optimistically, so nothing looks
  * pickable twice. Only the new draft posts (with its stable retry UUID);
- * earlier items already exist in the server registry.
+ * earlier items already exist in the server registry. A blank draft (CAP-10:
+ * deliver everything already queued, with nothing newly typed) carries a
+ * retry id for response correlation but adds no placeholder row — there is
+ * no new message to display.
  */
 export function beginSendNow(
   state: SteeringDockState,
@@ -530,17 +549,19 @@ export function beginSendNow(
     previousPending !== null && previousPending.message !== draft
       ? state.sent.filter(entry => entry.messageId !== previousPending.messageId)
       : state.sent;
-  const inFlightBatch = displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
-    ? displayedReceipts
-    : [
-        ...displayedReceipts,
-        {
-          messageId: pendingRetry.messageId,
-          message: pendingRetry.message,
-          state: 'awaiting_send_now' as const,
-          operatorUserId: null,
-        },
-      ];
+  const isBlankDraft = draft.trim().length === 0;
+  const inFlightBatch =
+    isBlankDraft || displayedReceipts.some(entry => entry.messageId === pendingRetry.messageId)
+      ? displayedReceipts
+      : [
+          ...displayedReceipts,
+          {
+            messageId: pendingRetry.messageId,
+            message: pendingRetry.message,
+            state: 'awaiting_send_now' as const,
+            operatorUserId: null,
+          },
+        ];
   return {
     state: {
       ...state,
@@ -843,6 +864,9 @@ export function applyQueueSnapshot(
   const nextNeverSent: NeverSentEntry[] = snapshot.queued
     .filter(row => row.state === 'never_sent')
     .map(row => ({ messageId: row.message_id, message: row.message }));
+  const nextDeliveryByMessageId = new Map(
+    snapshot.queued.map(row => [row.message_id, row.state] as const)
+  );
 
   const sentUnchanged =
     nextSent.length === state.sent.length &&
@@ -861,9 +885,15 @@ export function applyQueueSnapshot(
         row.messageId === state.neverSent?.[i]?.messageId &&
         row.message === state.neverSent[i]?.message
     );
+  const deliveryUnchanged =
+    nextDeliveryByMessageId.size === state.deliveryByMessageId.size &&
+    [...nextDeliveryByMessageId].every(
+      ([messageId, deliveryState]) => state.deliveryByMessageId.get(messageId) === deliveryState
+    );
   const unchanged =
     sentUnchanged &&
     neverSentUnchanged &&
+    deliveryUnchanged &&
     state.executionState === snapshot.execution_state &&
     state.autoSend === snapshot.auto_send &&
     state.softInjection === snapshot.capabilities.soft_injection;
@@ -873,6 +903,7 @@ export function applyQueueSnapshot(
     ...state,
     sent: sentUnchanged ? state.sent : nextSent,
     neverSent: neverSentUnchanged ? state.neverSent : nextNeverSent,
+    deliveryByMessageId: deliveryUnchanged ? state.deliveryByMessageId : nextDeliveryByMessageId,
     executionState: snapshot.execution_state,
     autoSend: snapshot.auto_send,
     softInjection: snapshot.capabilities.soft_injection,

@@ -3401,11 +3401,16 @@ describe('ConsoleNodeRoom', () => {
       if (region === null) throw new Error('expanded region missing');
       const bar = region.querySelector('div');
       if (bar === null) throw new Error('family bar missing');
-      const barText = bar.querySelector('span');
-      expect(barText?.className).toContain('whitespace-nowrap');
-      expect(barText?.className).toContain('text-ellipsis');
-      expect(barText?.className).toContain('min-w-0');
-      expect(barText?.textContent).toBe('file · exit 2 · truncated · 1.5s');
+      const spans = bar.querySelectorAll('span');
+      const label = spans[0];
+      const badges = spans[1];
+      expect(label?.className).toContain('whitespace-nowrap');
+      expect(label?.className).toContain('text-ellipsis');
+      expect(label?.className).toContain('min-w-0');
+      expect(label?.textContent).toBe('file');
+      expect(badges?.className).toContain('shrink-0');
+      expect(badges?.className).toContain('whitespace-nowrap');
+      expect(badges?.textContent).toBe('exit 2 · truncated · 1.5s');
       const raw = rawButton(row);
       expect(raw.getAttribute('aria-expanded')).toBe('false');
       expect(raw.textContent).toContain('Raw');
@@ -3673,10 +3678,11 @@ describe('ConsoleNodeRoom', () => {
         const summaryText = rowSummary(row).textContent ?? '';
         expect(summaryText).toContain('+2');
         expect(summaryText).toContain('−2');
-        const bar = row.querySelector('summary + div div span');
-        expect(bar?.textContent).toBe('file · 1 hunk · replace_all: false · 1.5s');
-        expect(bar?.textContent).not.toContain('+2');
-        expect(bar?.textContent).not.toContain('−2');
+        const barSpans = row.querySelectorAll('summary + div div span');
+        expect(barSpans[0]?.textContent).toBe('file · 1 hunk · replace_all: false');
+        expect(barSpans[1]?.textContent).toBe('1.5s');
+        expect(barSpans[0]?.textContent).not.toContain('+2');
+        expect(barSpans[0]?.textContent).not.toContain('−2');
       });
 
       test('a failed row keeps the table and adds its normalized output in a second inset box', async () => {
@@ -3722,8 +3728,9 @@ describe('ConsoleNodeRoom', () => {
         // It sits between hunk one's last line and hunk two's first line.
         expect(decoration?.previousElementSibling?.textContent).toContain('line 9');
         expect(decoration?.nextElementSibling?.textContent).toContain('line 12');
-        const bar = row.querySelector('summary + div div span');
-        expect(bar?.textContent).toBe('file · 2 hunks · 1.5s');
+        const barSpans = row.querySelectorAll('summary + div div span');
+        expect(barSpans[0]?.textContent).toBe('file · 2 hunks');
+        expect(barSpans[1]?.textContent).toBe('1.5s');
       });
 
       test('identical sides render the no-changes note with no table or diff badges', async () => {
@@ -3746,8 +3753,9 @@ describe('ConsoleNodeRoom', () => {
         const summaryText = rowSummary(row).textContent ?? '';
         expect(summaryText).not.toContain('+');
         expect(summaryText).not.toContain('−');
-        const bar = row.querySelector('summary + div div span');
-        expect(bar?.textContent).toBe('file · no changes · 1.5s');
+        const barSpans = row.querySelectorAll('summary + div div span');
+        expect(barSpans[0]?.textContent).toBe('file · no changes');
+        expect(barSpans[1]?.textContent).toBe('1.5s');
       });
 
       test('one-sided, no-input, and refused pairs keep the path-plus-preview fallback', async () => {

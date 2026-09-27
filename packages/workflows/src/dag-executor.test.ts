@@ -27136,7 +27136,12 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     const causedAttempt = secondTurnText!.metadata?.execution?.attempt_id;
     expect(causedAttempt).toBeDefined();
     expect(operatorRows.every(r => r.metadata.execution?.attempt_id === causedAttempt)).toBe(true);
-    expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
+    // A steered node is one execution across several provider turns: every
+    // turn's rows share the SAME occurrence and attempt as the node's start.
+    expect(firstTurnText!.metadata?.execution?.attempt_id).toBe(causedAttempt);
+    expect(firstTurnText!.metadata?.execution?.occurrence_id).toBe(
+      secondTurnText!.metadata?.execution?.occurrence_id
+    );
   });
 
   it('stamps operatorMessageId when the guidance turn delivers exactly one durable message', async () => {
@@ -28026,7 +28031,13 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     const resumedAttempt = resumed!.metadata?.execution?.attempt_id;
     expect(resumedAttempt).toBeDefined();
     expect(operatorRows.every(r => r.metadata.execution?.attempt_id === resumedAttempt)).toBe(true);
-    expect(interrupted!.metadata?.execution?.attempt_id).not.toBe(resumedAttempt);
+    // The redirect turn is the SAME execution as the interrupted turn — one
+    // occurrence and attempt spanning both, so the room never loses either
+    // turn's rows.
+    expect(interrupted!.metadata?.execution?.attempt_id).toBe(resumedAttempt);
+    expect(interrupted!.metadata?.execution?.occurrence_id).toBe(
+      resumed!.metadata?.execution?.occurrence_id
+    );
   });
 
   it('interrupt marker wins over an isError/errorSubtype result — idles instead of failing', async () => {
@@ -28655,8 +28666,13 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
       resumed!.metadata?.execution?.attempt_id
     );
-    expect(operatorRows[0]!.metadata.execution?.attempt_id).not.toBe(
+    // The redirected iteration is the SAME execution as the interrupted one —
+    // one occurrence and attempt spanning both turns.
+    expect(operatorRows[0]!.metadata.execution?.attempt_id).toBe(
       interrupted!.metadata?.execution?.attempt_id
+    );
+    expect(operatorRows[0]!.metadata.execution?.occurrence_id).toBe(
+      interrupted!.metadata?.execution?.occurrence_id
     );
   });
 

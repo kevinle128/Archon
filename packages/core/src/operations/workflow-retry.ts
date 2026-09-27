@@ -224,9 +224,13 @@ async function validateWorkflowNodeRetryTarget(
   };
 }
 
-async function readRetryCheckoutPreview(input: {
+/**
+ * Read-only checkpoint-vs-HEAD comparison, shared by the preview endpoint
+ * and the pre-claim guard in `prepareWorkflowNodeRetry`. Never touches the
+ * working path or the run row — only git ref reads.
+ */
+async function computeCheckoutChoice(input: {
   run: WorkflowRun;
-  workflow: WorkflowDefinition;
   nodeId: string;
   targetNode: WorkflowRetryTargetNode;
   retryEpoch: number;
@@ -241,19 +245,7 @@ async function readRetryCheckoutPreview(input: {
     | 'requiresCommitChoice'
   >
 > {
-  if (input.workflow.mutates_checkout === false) {
-    return { resetSkipped: true, hasNewerHead: false, requiresCommitChoice: false };
-  }
-
   const repoPath = requireWorkflowRunPath(input.run);
-  const activeWorkflow = await workflowDb.getActiveWorkflowRunByPath(repoPath, {
-    id: input.run.id,
-    startedAt: getRunStartedAtDate(input.run),
-  });
-  if (activeWorkflow) {
-    throw buildPathInUseError(input.run, activeWorkflow);
-  }
-
   const checkpoint = await workflowCheckpointDb.findLatestCheckpointForRetry(
     input.run.id,
     input.nodeId,
@@ -294,6 +286,49 @@ async function readRetryCheckoutPreview(input: {
     hasNewerHead,
     requiresCommitChoice: hasNewerHead,
   };
+}
+
+function checkoutStrategyRequiredError(
+  currentHeadSha: string,
+  checkpointCommitSha: string
+): WorkflowRetryError {
+  return new WorkflowRetryError(
+    'checkout_strategy_required',
+    `Current HEAD ${currentHeadSha.slice(0, 12)} is newer than retry checkpoint ${checkpointCommitSha.slice(0, 12)}. Choose whether to retry from current HEAD or the saved node checkpoint.`
+  );
+}
+
+async function readRetryCheckoutPreview(input: {
+  run: WorkflowRun;
+  workflow: WorkflowDefinition;
+  nodeId: string;
+  targetNode: WorkflowRetryTargetNode;
+  retryEpoch: number;
+}): Promise<
+  Pick<
+    WorkflowNodeRetryPreviewResult,
+    | 'resetSkipped'
+    | 'checkpointRef'
+    | 'checkpointCommitSha'
+    | 'currentHeadSha'
+    | 'hasNewerHead'
+    | 'requiresCommitChoice'
+  >
+> {
+  if (input.workflow.mutates_checkout === false) {
+    return { resetSkipped: true, hasNewerHead: false, requiresCommitChoice: false };
+  }
+
+  const repoPath = requireWorkflowRunPath(input.run);
+  const activeWorkflow = await workflowDb.getActiveWorkflowRunByPath(repoPath, {
+    id: input.run.id,
+    startedAt: getRunStartedAtDate(input.run),
+  });
+  if (activeWorkflow) {
+    throw buildPathInUseError(input.run, activeWorkflow);
+  }
+
+  return computeCheckoutChoice(input);
 }
 
 export async function getWorkflowNodeRetryPreview(
@@ -346,6 +381,35 @@ export async function prepareWorkflowNodeRetry(
 
   const { targetNode, invalidatedNodeIds } = await validateWorkflowNodeRetryTarget(run, input);
   const checkoutStrategy = input.checkoutStrategy ?? 'checkpoint';
+
+  // A missing checkout-strategy choice is a rejected REQUEST, not a setup
+  // failure — decide it before claiming the run so a caller that omitted
+  // `checkoutStrategy` can retry the same request with one chosen, instead
+  // of finding the run already marked failed at a bumped retry epoch. The
+  // in-flight claimed branch below keeps its own check as a narrow backstop
+  // for the rare case where HEAD moves in the gap between this read and the
+  // claim; that race mirrors the existing path-lock check and is not this
+  // guard's job to close.
+  if (
+    input.workflow.mutates_checkout !== false &&
+    input.requesterSurface === 'web' &&
+    input.checkoutStrategy === undefined
+  ) {
+    const nextRetryEpoch = getNextRetryEpoch(run.metadata);
+    const preClaimChoice = await computeCheckoutChoice({
+      run,
+      nodeId: input.nodeId,
+      targetNode,
+      retryEpoch: nextRetryEpoch,
+    });
+    if (preClaimChoice.requiresCommitChoice) {
+      throw checkoutStrategyRequiredError(
+        preClaimChoice.currentHeadSha ?? '',
+        preClaimChoice.checkpointCommitSha ?? ''
+      );
+    }
+  }
+
   let claimedRun: WorkflowRun | undefined;
   let retryEpoch = 0;
   let setupPhase = 'retry_preparation';
@@ -473,10 +537,10 @@ export async function prepareWorkflowNodeRetry(
             input.requesterSurface === 'web' &&
             input.checkoutStrategy === undefined
           ) {
-            throw new WorkflowRetryError(
-              'checkout_strategy_required',
-              `Current HEAD ${currentHeadSha.slice(0, 12)} is newer than retry checkpoint ${checkpointCommitSha.slice(0, 12)}. Choose whether to retry from current HEAD or the saved node checkpoint.`
-            );
+            // Backstop only: the pre-claim guard above already rejects this
+            // request before the run is claimed. Reaching here means HEAD
+            // moved in the narrow gap between that read and this claim.
+            throw checkoutStrategyRequiredError(currentHeadSha, checkpointCommitSha);
           }
         } catch (error) {
           throw toRetryError(error, 'checkpoint_unavailable');

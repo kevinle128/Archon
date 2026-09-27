@@ -291,7 +291,10 @@ export function ToolCallCard({ tool }: ToolCallCardProps): React.ReactElement {
       {expanded && (
         <div className="border-t border-border px-3 py-2 text-xs text-text-secondary">
           <div className="mb-1.5 flex items-center gap-2 text-[10px] text-text-tertiary">
-            <span className="min-w-0 flex-1 truncate">{presentation.bodyBarText}</span>
+            <span className="min-w-0 flex-1 truncate">{presentation.bodyBar.label}</span>
+            {presentation.bodyBar.badges.length > 0 ? (
+              <span className="shrink-0 whitespace-nowrap">{presentation.bodyBar.badges}</span>
+            ) : null}
             <button
               type="button"
               aria-expanded={rawOpen}

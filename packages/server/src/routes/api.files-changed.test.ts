@@ -25,6 +25,11 @@ const mockDiffCommitRange = mock(
 const mockListEvidence = mock(
   async (_runId: string): Promise<WorkflowNodeExecutionEvidence[]> => []
 );
+// Every commit counts as an ancestor of HEAD by default — no evidence row is
+// reset away unless a test explicitly overrides this.
+const mockIsCommitAncestorOfHead = mock(
+  async (_workingPath: string, _commitSha: string): Promise<boolean> => true
+);
 
 const mockLogger = {
   fatal: mock((_object?: unknown, _message?: string): void => undefined),
@@ -56,6 +61,7 @@ mock.module('@archon/core/db/workflow-node-execution-evidence', () => ({
 mock.module('@archon/git', () => ({
   isGitWorkTree: mockIsGitWorkTree,
   diffCommitRange: mockDiffCommitRange,
+  isCommitAncestorOfHead: mockIsCommitAncestorOfHead,
 }));
 mock.module('@archon/paths', () => ({
   createLogger: (): typeof mockLogger => mockLogger,
@@ -129,6 +135,7 @@ beforeEach(async () => {
   mockIsGitWorkTree.mockReset();
   mockDiffCommitRange.mockReset();
   mockListEvidence.mockReset();
+  mockIsCommitAncestorOfHead.mockReset();
   mockGetWorkflowRun.mockImplementation(async (): Promise<WorkflowRun> => runRow());
   mockGetConversationById.mockImplementation(
     async (): Promise<{ isolation_env_id: null }> => ({ isolation_env_id: null })
@@ -137,6 +144,7 @@ beforeEach(async () => {
   mockIsGitWorkTree.mockImplementation(async (): Promise<boolean> => true);
   mockDiffCommitRange.mockImplementation(async (): Promise<ChangedFile[]> => []);
   mockListEvidence.mockImplementation(async (): Promise<WorkflowNodeExecutionEvidence[]> => []);
+  mockIsCommitAncestorOfHead.mockImplementation(async (): Promise<boolean> => true);
   mockLogger.info.mockClear();
   mockLogger.error.mockClear();
 });

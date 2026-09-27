@@ -82,6 +82,7 @@ import {
   type SteeringDockMode,
   type SteeringDockState,
   type SteeringExecutionState,
+  type SteeringQueueItemState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
 import type { FinishedIterationView } from '@/lib/execution-room-model';
@@ -188,6 +189,14 @@ export interface ConsoleComposerDockProps {
    * currently read.
    */
   onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /**
+   * Every message id's last-observed delivery state, reported on every
+   * change so a transcript operator row can show the proven `sent` /
+   * `delivered` / `delivery unknown` state instead of a hard-coded guess —
+   * the dock's queue read is the only place this durable, per-message
+   * evidence is currently read.
+   */
+  onDeliveryStatesChange?: (states: ReadonlyMap<string, SteeringQueueItemState>) => void;
   send?: SendNodeGuidance;
   interrupt?: InterruptNode;
   withdraw?: WithdrawNodeGuidance;
@@ -357,6 +366,7 @@ export function ConsoleComposerDock({
   autoFocusTarget = null,
   onAutoFocusApplied,
   onExecutionStateChange,
+  onDeliveryStatesChange,
   send = sendNodeGuidance,
   interrupt = interruptNode,
   withdraw = withdrawNodeGuidance,
@@ -575,6 +585,10 @@ export function ConsoleComposerDock({
   }, [dock.executionState, onExecutionStateChange]);
 
   useEffect(() => {
+    onDeliveryStatesChange?.(dock.deliveryByMessageId);
+  }, [dock.deliveryByMessageId, onDeliveryStatesChange]);
+
+  useEffect(() => {
     if (!nodeTerminal) {
       terminalFetchedRef.current = false;
       return;
@@ -592,6 +606,13 @@ export function ConsoleComposerDock({
     );
     return (): void => {
       controller.abort();
+      // Synchronous, not inside the rejection handler above: StrictMode's
+      // dev-only double-invoke runs this cleanup, then the setup again, with
+      // the SAME ref instance, before the aborted fetch's rejection ever
+      // resolves — leaving the flag `true` here would make the second
+      // invocation see "already fetched" and skip its own (unaborted) fetch,
+      // permanently losing this node's terminal hydration for the mount.
+      terminalFetchedRef.current = false;
     };
   }, [nodeTerminal, runId, nodeId, readQueue]);
 
@@ -764,7 +785,13 @@ export function ConsoleComposerDock({
 
   const blockedReason = steeringBlockedReason({ rowStatus, hasPendingAsk });
   const agentMode = steeringAgentMode(dock);
-  const canSubmit = canSubmitGuidance({ mode, sendInFlight: dock.sendInFlight, draft });
+  const canSubmit = canSubmitGuidance({
+    mode,
+    sendInFlight: dock.sendInFlight,
+    draft,
+    agentMode,
+    willSendCount: dock.sent.filter(entry => isQueueItemClaimable(entry.state)).length,
+  });
 
   // One coalescer per idle attempt. Leaving idle / attempt-key change / unmount
   // disposes it so a late result cannot affect a new attempt.
@@ -1305,6 +1332,7 @@ export function ConsoleComposerDock({
           ref={fieldRef}
           value={draft}
           rows={2}
+          placeholder="Message the agent…"
           onChange={(event): void => {
             userEditedRef.current = true;
             setDraft(event.target.value);

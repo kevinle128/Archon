@@ -8,7 +8,6 @@
 import type { CSSProperties } from 'react';
 
 import {
-  EXECUTION_OPTIONS_MAX,
   headerMetaLine,
   statusPill,
   type ExecutionHeaderModel,
@@ -31,7 +30,7 @@ export interface NodeRoomHeaderProps {
   closeLabel?: 'Close' | 'Back';
   /** Node-kind chip for line 1, or null when the kind has no established token. */
   kindChip: NodeKindChip | null;
-  /** Uncapped execution total for this node, for the "of N · max 8" caption. */
+  /** Uncapped execution total for this node, for the "of N" (and, on a loop, "· max N") caption. */
   executionCount: number;
   /** Retry position/count for the selected row, or null when it never retried. */
   runOfTotal?: RunOfTotal | null;
@@ -137,7 +136,7 @@ export function NodeRoomHeader({
               {kindChip.label}
             </span>
           ) : null}
-          <div className="min-w-[8rem] flex-1 truncate text-sm font-medium text-text-primary">
+          <div className="min-w-0 truncate font-mono text-[13px] font-bold text-text-primary">
             {model.nodeLabel}
           </div>
           <span
@@ -181,7 +180,10 @@ export function NodeRoomHeader({
                   ))}
                 </select>
                 <span className="shrink-0 text-[10.5px] text-text-tertiary">
-                  of {executionCount} · max {EXECUTION_OPTIONS_MAX}
+                  of {executionCount}
+                  {model.loopMaxIterations !== null
+                    ? ` · max ${String(model.loopMaxIterations)}`
+                    : ''}
                 </span>
               </>
             ) : (

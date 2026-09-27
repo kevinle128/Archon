@@ -96,6 +96,14 @@ describe('groupByOccurrence', () => {
     expect(grouping.showHeaders).toBe(true);
   });
 
+  test('numbers runs by the epochs present, so a skipped epoch leaves no gap', () => {
+    const grouping = groupByOccurrence([
+      assistant('a1', execution('occ-a')),
+      assistant('a2', execution('occ-c', { retry_epoch: 2 })),
+    ]);
+    expect(grouping.groups.map(group => group.label)).toEqual(['Run 1', 'Run 2 · retry']);
+  });
+
   test('labels retry epochs 0 and 1 as Run 1 and Run 2 · retry', () => {
     const grouping = groupByOccurrence([
       assistant('a1', execution('occ-a', { retry_epoch: 0 })),

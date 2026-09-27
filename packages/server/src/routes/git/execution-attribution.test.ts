@@ -26,6 +26,12 @@ function stubDiff(
   return async (from, to) => table[`${from}..${to}`] ?? [];
 }
 
+/** Every commit sha counts as an ancestor of HEAD unless explicitly listed as reset away. */
+function stubAncestry(resetAway: readonly string[] = []): (commitSha: string) => Promise<boolean> {
+  const excluded = new Set(resetAway);
+  return async commitSha => !excluded.has(commitSha);
+}
+
 describe('computeFileAttribution', () => {
   test('attributes a single execution that proved a path change', async () => {
     const evidence = [
@@ -44,6 +50,7 @@ describe('computeFileAttribution', () => {
       files: [{ path: 'src/a.ts', status: 'M' }],
       evidence,
       diffCommitRange: diff,
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result).toEqual([
@@ -86,6 +93,7 @@ describe('computeFileAttribution', () => {
       files: [{ path: 'src/shared.ts', status: 'M' }],
       evidence,
       diffCommitRange: diff,
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result[0]?.executions.map(e => e.nodeId)).toEqual(['first', 'second']);
@@ -106,6 +114,7 @@ describe('computeFileAttribution', () => {
       files: [{ path: 'src/mystery.ts', status: 'M' }],
       evidence,
       diffCommitRange: stubDiff({}),
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result).toEqual([{ path: 'src/mystery.ts', status: 'M', executions: [] }]);
@@ -116,6 +125,7 @@ describe('computeFileAttribution', () => {
       files: [{ path: 'src/outside.ts', status: 'A' }],
       evidence: [],
       diffCommitRange: stubDiff({}),
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result).toEqual([{ path: 'src/outside.ts', status: 'A', executions: [] }]);
@@ -146,6 +156,7 @@ describe('computeFileAttribution', () => {
       files: [{ path: 'src/racy.ts', status: 'M' }],
       evidence,
       diffCommitRange: diff,
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result).toEqual([{ path: 'src/racy.ts', status: 'M', executions: [] }]);
@@ -185,6 +196,7 @@ describe('computeFileAttribution', () => {
       ],
       evidence,
       diffCommitRange: diff,
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result).toEqual([
@@ -204,7 +216,7 @@ describe('computeFileAttribution', () => {
     ]);
   });
 
-  test('only the highest retry epoch of a node is considered — an earlier attempt is ignored', async () => {
+  test('a checkpoint-strategy retry excludes the reset-away attempt, proven by ancestry rather than epoch', async () => {
     const evidence = [
       makeEvidence({
         id: 'exec-1',
@@ -233,6 +245,9 @@ describe('computeFileAttribution', () => {
       ],
       evidence,
       diffCommitRange: diff,
+      // The checkpoint reset that started epoch 1 discarded exec-1's commits —
+      // its end commit is no longer reachable from HEAD.
+      isAncestorOfHead: stubAncestry(['exec-1-end']),
     });
 
     expect(result).toEqual([
@@ -249,6 +264,59 @@ describe('computeFileAttribution', () => {
         ],
       },
       { path: 'src/reverted.ts', status: 'M', executions: [] },
+    ]);
+  });
+
+  test('a current-strategy retry keeps the earlier attempt attributed alongside the retry', async () => {
+    // checkoutStrategy: 'current' never resets the checkout, so exec-1's
+    // commits stay exactly where they were — both attempts remain provable.
+    const evidence = [
+      makeEvidence({
+        id: 'exec-1',
+        node_id: 'edit-a',
+        retry_epoch: 0,
+        started_at: '2026-01-01T00:00:00.000Z',
+        ended_at: '2026-01-01T00:00:01.000Z',
+      }),
+      makeEvidence({
+        id: 'exec-2',
+        node_id: 'edit-b',
+        retry_epoch: 1,
+        started_at: '2026-01-01T00:00:02.000Z',
+        ended_at: '2026-01-01T00:00:03.000Z',
+      }),
+    ];
+    const diff = stubDiff({
+      'exec-1-start..exec-1-end': [{ path: 'notes.md', status: 'M' }],
+      'exec-2-start..exec-2-end': [{ path: 'notes.md', status: 'M' }],
+    });
+
+    const result = await computeFileAttribution({
+      files: [{ path: 'notes.md', status: 'M' }],
+      evidence,
+      diffCommitRange: diff,
+      isAncestorOfHead: stubAncestry(),
+    });
+
+    expect(result).toEqual([
+      {
+        path: 'notes.md',
+        status: 'M',
+        executions: [
+          {
+            nodeId: 'edit-a',
+            retryEpoch: 0,
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:01.000Z',
+          },
+          {
+            nodeId: 'edit-b',
+            retryEpoch: 1,
+            startedAt: '2026-01-01T00:00:02.000Z',
+            endedAt: '2026-01-01T00:00:03.000Z',
+          },
+        ],
+      },
     ]);
   });
 
@@ -278,6 +346,7 @@ describe('computeFileAttribution', () => {
       files: [{ path: 'src/iteration.ts', status: 'M' }],
       evidence,
       diffCommitRange: diff,
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result[0]?.executions).toHaveLength(2);
@@ -292,6 +361,7 @@ describe('computeFileAttribution', () => {
       files: [],
       evidence: [],
       diffCommitRange: stubDiff({}),
+      isAncestorOfHead: stubAncestry(),
     });
 
     expect(result).toEqual([]);
@@ -299,11 +369,11 @@ describe('computeFileAttribution', () => {
 });
 
 describe('selectRunBaselineCommit', () => {
-  test('returns undefined when the run has no evidence at all', () => {
-    expect(selectRunBaselineCommit([])).toBeUndefined();
+  test('returns undefined when the run has no evidence at all', async () => {
+    expect(await selectRunBaselineCommit([], stubAncestry())).toBeUndefined();
   });
 
-  test('picks the earliest execution start commit as the baseline', () => {
+  test('picks the earliest execution start commit as the baseline', async () => {
     const evidence = [
       makeEvidence({
         id: 'exec-2',
@@ -317,10 +387,10 @@ describe('selectRunBaselineCommit', () => {
       }),
     ];
 
-    expect(selectRunBaselineCommit(evidence)).toBe('exec-1-start');
+    expect(await selectRunBaselineCommit(evidence, stubAncestry())).toBe('exec-1-start');
   });
 
-  test('ignores a retried attempt whose start commit was reset away', () => {
+  test('ignores a retried attempt whose start commit was reset away', async () => {
     const evidence = [
       makeEvidence({
         id: 'exec-1',
@@ -338,10 +408,32 @@ describe('selectRunBaselineCommit', () => {
 
     // Only the retried node's newest epoch remains an ancestor of HEAD, so
     // the baseline must come from exec-2, not the earlier, reset-away exec-1.
-    expect(selectRunBaselineCommit(evidence)).toBe('exec-2-start');
+    expect(await selectRunBaselineCommit(evidence, stubAncestry(['exec-1-start']))).toBe(
+      'exec-2-start'
+    );
   });
 
-  test('still uses a still-open execution as the earliest boundary', () => {
+  test('a current-strategy retry keeps the earlier attempt as the baseline', async () => {
+    const evidence = [
+      makeEvidence({
+        id: 'exec-1',
+        node_id: 'edit-a',
+        retry_epoch: 0,
+        started_at: '2026-01-01T00:00:00.000Z',
+      }),
+      makeEvidence({
+        id: 'exec-2',
+        node_id: 'edit-b',
+        retry_epoch: 1,
+        started_at: '2026-01-01T00:00:05.000Z',
+      }),
+    ];
+
+    // Nothing was reset away, so the earliest execution overall still wins.
+    expect(await selectRunBaselineCommit(evidence, stubAncestry())).toBe('exec-1-start');
+  });
+
+  test('still uses a still-open execution as the earliest boundary', async () => {
     const evidence = [
       makeEvidence({
         id: 'exec-1',
@@ -353,6 +445,6 @@ describe('selectRunBaselineCommit', () => {
       }),
     ];
 
-    expect(selectRunBaselineCommit(evidence)).toBe('exec-1-start');
+    expect(await selectRunBaselineCommit(evidence, stubAncestry())).toBe('exec-1-start');
   });
 });
