@@ -9,8 +9,12 @@ import type { NodeMessageRow } from './node-message-pages';
 import type { ToolTranscriptCard } from './pair-tool-transcript';
 import { projectToolTranscript } from './pair-tool-transcript';
 import { projectTextTranscript } from './project-text-transcript';
+import type { SteeringQueueItemState } from './steering-dock';
 import { projectTodoState, type TodoPhase } from './todo-state';
 import { toolRowPresentation, type ToolRowPresentation } from './tool-presentation';
+
+/** The delivery states an operator transcript row's badge distinguishes; every other wire state renders as `sent`, the safe default with no evidence yet. */
+export type OperatorDeliveryState = 'sent' | 'delivered' | 'delivery_unknown';
 
 export interface AgentHistoryInput {
   rows: readonly NodeMessageRow[];
@@ -29,6 +33,14 @@ export interface AgentHistoryInput {
    * false.
    */
   nodeTerminal?: boolean;
+  /**
+   * Every message id's last-observed delivery state from the durable
+   * steering queue read, joined onto each operator row by its stamped
+   * `message_id`. Undefined (no queue snapshot observed) or an id absent
+   * from the map both render `sent` — never inferred from the row's text or
+   * age, only from this proven evidence.
+   */
+  deliveryStateByMessageId?: ReadonlyMap<string, SteeringQueueItemState>;
 }
 
 /** Typed execution scope carried on wire rows; `null` on pre-scope history. */
@@ -53,7 +65,7 @@ export type AgentHistoryItem =
       operatorUserId: string | null;
       operatorDisplayName: string | null;
       messageId: string | null;
-      delivery: 'sent';
+      delivery: OperatorDeliveryState;
       execution: TranscriptExecution | null;
     }
   | {
@@ -71,6 +83,8 @@ export type AgentHistoryItem =
       role: 'prompt';
       text: string;
       actorUserId: string | null;
+      /** Display name resolved server-side from `actorUserId`; null when there is no actor. */
+      actorDisplayName: string | null;
       source: 'node_prompt' | 'command_file' | 'reask';
       execution: TranscriptExecution | null;
     }
@@ -115,9 +129,21 @@ export interface AgentHistory {
   todos: TodoPhase[];
 }
 
-/** Shared label text for a `prompt` item's label line, read by both node room shells. */
-export function promptActorLabel(actorUserId: string | null): string {
-  return actorUserId !== null ? actorUserId.slice(0, 8) : 'run';
+/**
+ * Shared label text for a `prompt` item's label line, read by both node room
+ * shells. Never a raw id fragment: `actorDisplayName` is resolved
+ * server-side (a real display name, or the neutral `unknown user` fallback
+ * — never the id itself) from the same user lookup the operator label
+ * already uses; the local fallback here only covers older data that
+ * predates the field.
+ */
+export function promptActorLabel(
+  actorUserId: string | null,
+  actorDisplayName: string | null
+): string {
+  if (actorUserId === null) return 'run';
+  const trimmed = actorDisplayName?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : 'unknown user';
 }
 
 const PROMPT_SOURCE_LABEL: Record<Extract<AgentHistoryItem, { kind: 'prompt' }>['source'], string> =
@@ -127,11 +153,57 @@ const PROMPT_SOURCE_LABEL: Record<Extract<AgentHistoryItem, { kind: 'prompt' }>[
     reask: 'retry',
   };
 
-/** Shared label text for a `prompt` item's source, read by both node room shells. */
+/**
+ * Shared label text for a `prompt` item's source, read by both node room
+ * shells, or null for `node_prompt` — the row's own `prompt ·` label already
+ * says that, so the source segment would repeat the word for no added
+ * information. `command_file` and `reask` still carry it (`command`/`retry`).
+ */
 export function promptSourceLabel(
   source: Extract<AgentHistoryItem, { kind: 'prompt' }>['source']
-): string {
-  return PROMPT_SOURCE_LABEL[source];
+): string | null {
+  return source === 'node_prompt' ? null : PROMPT_SOURCE_LABEL[source];
+}
+
+export interface OperatorDeliveryPresentation {
+  readonly label: string;
+  readonly tone: 'neutral' | 'success' | 'warning';
+}
+
+const OPERATOR_DELIVERY_PRESENTATION: Readonly<
+  Record<OperatorDeliveryState, OperatorDeliveryPresentation>
+> = {
+  sent: { label: 'sent', tone: 'neutral' },
+  delivered: { label: 'delivered', tone: 'success' },
+  delivery_unknown: { label: 'delivery unknown', tone: 'warning' },
+};
+
+/**
+ * Shared label and tone for an operator row's delivery badge, read by both
+ * node room shells. The word alone carries the state (per the approved
+ * mockup); `tone` is added on top, never instead — a renderer with no color
+ * token for `tone` can still show the correct word.
+ */
+export function operatorDeliveryPresentation(
+  delivery: OperatorDeliveryState
+): OperatorDeliveryPresentation {
+  return OPERATOR_DELIVERY_PRESENTATION[delivery];
+}
+
+/**
+ * The proven delivery state for one operator row, by its stamped message
+ * id. `delivered` and `delivery_unknown` are the only wire states this row
+ * distinguishes; every other state (including a missing id, or no queue
+ * snapshot observed yet) renders `sent` — the safe default with no evidence
+ * yet, never inferred from the row's text or age.
+ */
+function resolveOperatorDelivery(
+  messageId: string | null,
+  deliveryStateByMessageId: ReadonlyMap<string, SteeringQueueItemState> | undefined
+): OperatorDeliveryState {
+  if (messageId === null || deliveryStateByMessageId === undefined) return 'sent';
+  const state = deliveryStateByMessageId.get(messageId);
+  return state === 'delivered' || state === 'delivery_unknown' ? state : 'sent';
 }
 
 type ToolOutcome = Extract<AgentHistoryItem, { kind: 'tool' }>['outcome'];
@@ -462,6 +534,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
           : operatorUserId !== null
             ? operatorUserId.slice(0, 8)
             : null;
+      const messageId = message.metadata.message_id ?? null;
       items.push({
         kind: 'operator',
         id: message.id,
@@ -470,8 +543,8 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         text: message.payload.text,
         operatorUserId,
         operatorDisplayName,
-        messageId: message.metadata.message_id ?? null,
-        delivery: 'sent',
+        messageId,
+        delivery: resolveOperatorDelivery(messageId, input.deliveryStateByMessageId),
         execution: message.metadata.execution ?? null,
       });
       continue;
@@ -495,6 +568,7 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         role: 'prompt',
         text: message.payload.text,
         actorUserId: message.metadata.actor_user_id ?? null,
+        actorDisplayName: message.prompt_display_name ?? null,
         source: message.metadata.prompt_source ?? 'node_prompt',
         execution: message.metadata.execution ?? null,
       });
@@ -559,6 +633,43 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         item.kind === 'tool' && item.presentation.family === 'todo'
     )
     .sort((left, right) => left.seq - right.seq)
-    .map(item => item.input);
+    .map(todoFoldInput);
   return { items, todos: projectTodoState(todoInputs) };
+}
+
+/**
+ * The record `projectTodoState` folds for one todo-family tool call. A
+ * `TaskCreate` call's input never carries the id the tool assigns to it —
+ * only its *output* does (`{ task: { id } }`) — so this merges that id onto
+ * the input under the same `taskId` key `TaskUpdate` already sends,
+ * giving every Task-family call one identity field regardless of which
+ * side of the call carried it. A call whose output has not landed yet
+ * (still live) folds exactly as sent, with no fabricated id, and is
+ * skipped until the id is known.
+ */
+function todoFoldInput(item: Extract<AgentHistoryItem, { kind: 'tool' }>): unknown {
+  const input = asRecord(item.input);
+  if (input === null || typeof input.taskId === 'string' || typeof input.subject !== 'string') {
+    return item.input;
+  }
+  const output = asRecord(item.output);
+  const parsedOutput =
+    output !== null
+      ? output
+      : typeof item.output === 'string'
+        ? parseJsonRecord(item.output)
+        : null;
+  const assignedId = asRecord(parsedOutput?.task)?.id;
+  return typeof assignedId === 'string' && assignedId.length > 0
+    ? { ...input, taskId: assignedId }
+    : item.input;
+}
+
+/** `JSON.parse` that never throws; non-string or unparseable input yields null. */
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    return asRecord(JSON.parse(value));
+  } catch {
+    return null;
+  }
 }

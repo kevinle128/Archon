@@ -2,7 +2,14 @@ import { describe, expect, test } from 'bun:test';
 
 import type { components } from './api.generated';
 import type { NodeMessageRow } from './node-message-pages';
-import { buildAgentHistory, toolRuntime, type AgentHistoryItem } from './agent-history';
+import {
+  buildAgentHistory,
+  operatorDeliveryPresentation,
+  promptActorLabel,
+  promptSourceLabel,
+  toolRuntime,
+  type AgentHistoryItem,
+} from './agent-history';
 import { toolRawPayloadJson } from './tool-presentation';
 
 const CREATED_AT = '2026-09-08T00:00:00.000Z';
@@ -156,6 +163,46 @@ describe('toolRuntime', () => {
         'tool-1'
       )
     ).toEqual({ durationMs: null });
+  });
+});
+
+describe('operatorDeliveryPresentation', () => {
+  test('the word alone distinguishes the three states; tone is added on top', () => {
+    expect(operatorDeliveryPresentation('sent')).toEqual({ label: 'sent', tone: 'neutral' });
+    expect(operatorDeliveryPresentation('delivered')).toEqual({
+      label: 'delivered',
+      tone: 'success',
+    });
+    expect(operatorDeliveryPresentation('delivery_unknown')).toEqual({
+      label: 'delivery unknown',
+      tone: 'warning',
+    });
+  });
+});
+
+describe('promptActorLabel', () => {
+  test('is the resolved display name, trimmed, for a real actor', () => {
+    expect(promptActorLabel('user-1', '  Kevin  ')).toBe('Kevin');
+  });
+
+  test('falls back to a neutral label, never the raw id, when no name resolved', () => {
+    expect(promptActorLabel('user-1', null)).toBe('unknown user');
+    expect(promptActorLabel('5dea152bfc00', null)).not.toContain('5dea152b');
+  });
+
+  test('is "run" only when there is no actor at all', () => {
+    expect(promptActorLabel(null, null)).toBe('run');
+  });
+});
+
+describe('promptSourceLabel', () => {
+  test('is null for node_prompt, so the row never repeats its own "prompt" label', () => {
+    expect(promptSourceLabel('node_prompt')).toBeNull();
+  });
+
+  test('names the reason for command_file and reask', () => {
+    expect(promptSourceLabel('command_file')).toBe('command');
+    expect(promptSourceLabel('reask')).toBe('retry');
   });
 });
 
@@ -1052,7 +1099,10 @@ describe('buildAgentHistory', () => {
       ],
     });
     expect(tool.presentation.bodyFacts).toEqual(['batch', '2 subtasks']);
-    expect(tool.presentation.bodyBarText).toBe('task · batch · 2 subtasks · 40ms');
+    expect(tool.presentation.bodyBar).toEqual({
+      label: 'task · batch · 2 subtasks',
+      badges: '40ms',
+    });
     expect(tool.presentation.badges).toContainEqual({
       kind: 'count',
       text: '2 subagents',
@@ -1125,6 +1175,51 @@ describe('buildAgentHistory', () => {
           execution: EXECUTION,
         },
       ]);
+    });
+
+    test('joins the proven delivery state onto an operator row by its stamped message id', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [
+          operatorRow('op-delivered', 1, 'wrong suite', { messageId: 'msg-delivered' }),
+          operatorRow('op-unknown', 2, 'skip doctests', { messageId: 'msg-unknown' }),
+          operatorRow('op-still-sent', 3, 'and retry', { messageId: 'msg-still-sent' }),
+        ],
+        deliveryStateByMessageId: new Map([
+          ['msg-delivered', 'delivered'],
+          ['msg-unknown', 'delivery_unknown'],
+          // 'msg-still-sent' is deliberately absent — no evidence yet.
+        ]),
+      });
+      expect(items.map(item => (item.kind === 'operator' ? item.delivery : null))).toEqual([
+        'delivered',
+        'delivery_unknown',
+        'sent',
+      ]);
+    });
+
+    test('a never_sent/withdrawn/queued state on the map still renders sent — only delivered/delivery_unknown are distinguished', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [operatorRow('op-1', 1, 'go', { messageId: 'msg-1' })],
+        deliveryStateByMessageId: new Map([['msg-1', 'queued']]),
+      });
+      expect(items[0]).toMatchObject({ kind: 'operator', delivery: 'sent' });
+    });
+
+    test('no message id on the row (older data) always renders sent, even with a map present', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [operatorRow('op-no-id', 1, 'go')],
+        deliveryStateByMessageId: new Map([['some-other-id', 'delivered']]),
+      });
+      expect(items[0]).toMatchObject({ kind: 'operator', messageId: null, delivery: 'sent' });
     });
 
     test('keeps a one-property output_format envelope serialized for operator while unwrapping assistant', () => {
@@ -1255,13 +1350,22 @@ describe('buildAgentHistory', () => {
       extras: {
         actorUserId?: string | null;
         source?: 'node_prompt' | 'command_file' | 'reask';
+        actorDisplayName?: string | null;
       } = {}
-    ): NodeMessageRow {
-      return textRow(id, seq, body, {
-        origin: 'prompt',
-        actor_user_id: extras.actorUserId === undefined ? 'user-starter-1' : extras.actorUserId,
-        prompt_source: extras.source ?? 'node_prompt',
-      });
+    ): Extract<NodeMessageRow, { kind: 'text' }> {
+      return {
+        id,
+        seq,
+        kind: 'text',
+        payload: { text: body },
+        created_at: CREATED_AT,
+        metadata: {
+          origin: 'prompt',
+          actor_user_id: extras.actorUserId === undefined ? 'user-starter-1' : extras.actorUserId,
+          prompt_source: extras.source ?? 'node_prompt',
+        },
+        ...('actorDisplayName' in extras ? { prompt_display_name: extras.actorDisplayName } : {}),
+      };
     }
 
     function advisorRow(
@@ -1295,7 +1399,7 @@ describe('buildAgentHistory', () => {
       ]);
     });
 
-    test('projects the triggering prompt with its actor and source, unedited', () => {
+    test('projects the triggering prompt with its actor, resolved display name, and source, unedited', () => {
       const { items } = buildAgentHistory({
         nodeId: NODE_ID,
         nowMs: NOW_MS,
@@ -1303,6 +1407,7 @@ describe('buildAgentHistory', () => {
         rows: [
           promptRow('prompt-1', 1, '  Review this PR for regressions.  ', {
             actorUserId: 'user-starter-1',
+            actorDisplayName: 'Kevin',
             source: 'command_file',
           }),
         ],
@@ -1315,10 +1420,21 @@ describe('buildAgentHistory', () => {
           role: 'prompt',
           text: '  Review this PR for regressions.  ',
           actorUserId: 'user-starter-1',
+          actorDisplayName: 'Kevin',
           source: 'command_file',
           execution: null,
         },
       ]);
+    });
+
+    test('keeps a null display name when the server sent none for a real actor', () => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [],
+        rows: [promptRow('prompt-noname', 1, 'go', { actorUserId: 'user-starter-1' })],
+      });
+      expect(items[0]).toMatchObject({ actorUserId: 'user-starter-1', actorDisplayName: null });
     });
 
     test('keeps a null actor and defaults a missing source to node_prompt', () => {
@@ -1501,6 +1617,65 @@ describe('buildAgentHistory', () => {
         ],
       },
     ]);
+  });
+
+  test('TaskCreate folds by the id its own output assigns, then TaskUpdate advances it by that id', () => {
+    const { items, todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-create',
+          seq: 1,
+          name: 'TaskCreate',
+          toolUseId: 'tc-1',
+          input: { subject: 'Scout the routes', description: 'Map the send/interrupt path' },
+          // The real SDK sends the output as a JSON-encoded string, not an object.
+          output: '{"task":{"id":"1","subject":"Scout the routes"}}',
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'call-update',
+          seq: 2,
+          name: 'TaskUpdate',
+          toolUseId: 'tu-1',
+          input: { taskId: '1', status: 'in_progress' },
+          output: '{"success":true,"taskId":"1","updatedFields":["status"]}',
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(kinds(items)).toEqual(['tool', 'tool']);
+    expect(items.map(item => (item.kind === 'tool' ? item.presentation.family : null))).toEqual([
+      'todo',
+      'todo',
+    ]);
+    expect(todos).toEqual([
+      {
+        phase: 'Tasks',
+        items: [{ content: 'Scout the routes', status: 'in_progress', id: '1' }],
+      },
+    ]);
+  });
+
+  test('a still-live TaskCreate (no output yet) never folds a blank row', () => {
+    const { todos } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      events: [],
+      rows: [
+        toolRow({
+          id: 'call-create',
+          seq: 1,
+          name: 'TaskCreate',
+          toolUseId: 'tc-1',
+          input: { subject: 'Scout the routes', description: 'still running' },
+          metadata: { tool_phase: 'call' },
+        }),
+      ],
+    });
+    expect(todos).toEqual([]);
   });
 
   test('non-todo tools carrying op-shaped inputs and lifecycle rows do not fold', () => {

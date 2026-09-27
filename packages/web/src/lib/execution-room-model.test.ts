@@ -16,6 +16,7 @@ import {
   hasUnsettledNodeExecutions,
   headerMetaLine,
   latestNodeExecutionKey,
+  loopMaxIterationsForNode,
   nodeKindChip,
   openRoom,
   openExplicitRoom,
@@ -807,6 +808,20 @@ describe('computeRunOfTotal', () => {
     expect(computeRunOfTotal(rows, 'iter1-run1')).toBeNull();
   });
 
+  test('ranks by surviving position, not the raw retry epoch, when a middle epoch was entirely skipped', () => {
+    const rows = [
+      occ('epoch-0', 'failed', { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 }),
+      occ('epoch-1-skipped', 'skipped', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-2',
+        retryEpoch: 1,
+      }),
+      occ('epoch-2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-3', retryEpoch: 2 }),
+    ];
+    expect(computeRunOfTotal(rows, 'epoch-2')).toEqual({ run: 2, total: 2 });
+    expect(computeRunOfTotal(rows, 'epoch-0')).toEqual({ run: 1, total: 2 });
+  });
+
   test('is null for a non-occurrence selection or an unknown row id', () => {
     const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
     expect(computeRunOfTotal(rows, 'missing')).toBeNull();
@@ -905,6 +920,19 @@ describe('headerMetaLine', () => {
         iterationPrefix: 1,
       })
     ).toBe(`iteration 1 · started ${startedHours()}:52 · 6m 04s · omp · claude-opus-5`);
+  });
+});
+
+describe('loopMaxIterationsForNode', () => {
+  test('reads a loop node’s own cap, never the selector-display ceiling', () => {
+    expect(loopMaxIterationsForNode({ loop: { max_iterations: 4 } })).toBe(4);
+    expect(loopMaxIterationsForNode({ loop_group: { max_iterations: 6 } })).toBe(6);
+  });
+
+  test('is null for a non-loop node, or when no definition is known yet', () => {
+    expect(loopMaxIterationsForNode({})).toBeNull();
+    expect(loopMaxIterationsForNode(null)).toBeNull();
+    expect(loopMaxIterationsForNode(undefined)).toBeNull();
   });
 });
 
@@ -1054,6 +1082,65 @@ describe('buildExecutionHeader', () => {
         runStartedAt: RUN_STARTED_AT,
       }).executionLabel
     ).toBe('Run 1');
+  });
+
+  test('ranks "Run N" by surviving position when siblingRows is given, not the raw epoch', () => {
+    const siblingRows = [
+      row({
+        id: 'epoch-0',
+        status: 'failed',
+        order: 0,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-1', retryEpoch: 0 },
+      }),
+      row({
+        id: 'epoch-1-skipped',
+        status: 'skipped',
+        order: 1,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-2', retryEpoch: 1 },
+      }),
+      row({
+        id: 'epoch-2',
+        status: 'completed',
+        order: 2,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-3', retryEpoch: 2 },
+      }),
+    ];
+    expect(
+      buildExecutionHeader({
+        row: siblingRows[2],
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        siblingRows,
+      }).executionLabel
+    ).toBe('Run 2');
+    // Omitting siblingRows keeps the raw-epoch label — correct whenever
+    // there is no skipped epoch to create a gap, and the only option a
+    // caller with no sibling rows in hand (most fixtures) has.
+    expect(
+      buildExecutionHeader({
+        row: siblingRows[2],
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).executionLabel
+    ).toBe('Run 3');
+  });
+
+  test('loopMaxIterations passes through from the input, defaulting to null', () => {
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'loop-node', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        loopMaxIterations: 4,
+      }).loopMaxIterations
+    ).toBe(4);
+    expect(
+      buildExecutionHeader({
+        row: row({ id: 'plain-node', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+      }).loopMaxIterations
+    ).toBeNull();
   });
 
   test('startedOffsetMs is measured from the run started_at', () => {

@@ -63,12 +63,31 @@ export interface ExecutionHeaderModel {
   unknownScope: boolean;
   /** True when the selected execution is one iteration of a loop node. */
   isLoopIteration: boolean;
+  /**
+   * The node definition's `loop`/`loop_group.max_iterations`, or null for a
+   * non-loop node (or when the caller has no definition to read it from).
+   * This is the loop's own configured cap — never `EXECUTION_OPTIONS_MAX`,
+   * the unrelated selector-display ceiling — and only a loop node's header
+   * caption shows it.
+   */
+  loopMaxIterations: number | null;
 }
 
 export interface ExecutionHeaderInput {
   row: ExecutionRow;
   events: readonly WorkflowEvent[];
   runStartedAt: string;
+  /**
+   * Every execution row for this node, used to rank a retried selection's
+   * "Run N" against its surviving siblings (`survivingRetryEpochs`) instead
+   * of the raw retry epoch, so a skipped middle epoch never leaves a
+   * numbering gap. Omitted callers (most test fixtures, and any caller with
+   * no sibling rows in hand) keep the raw-epoch label — correct whenever
+   * there is no skipped epoch to create a gap.
+   */
+  siblingRows?: readonly RunFamilyRow[];
+  /** The selected row's node definition's loop cap, for `loopMaxIterations`. Omitted or null for a non-loop node. */
+  loopMaxIterations?: number | null;
 }
 
 export type RoomOpenerKind = 'log' | 'graph';
@@ -105,7 +124,51 @@ function latestByOrder<T extends { order: number }>(rows: readonly T[]): T {
   return rows.reduce((best, row) => (row.order >= best.order ? row : best));
 }
 
-function executionLabel(selection: ExecutionRowSelection): string {
+/**
+ * Non-skipped retry epochs recorded for one iteration/route slot, across
+ * every row for the node — the sibling set every "Run N" label (a selector
+ * option, the header meta line) must rank against. A resume's skipped
+ * middle epoch (e.g. a rejected retry request that never produced a real
+ * run) must never leave a gap in the numbering, so the rank comes from
+ * position among survivors, never from the raw epoch value. Null when the
+ * selection carries no retry identity to rank.
+ */
+function survivingRetryEpochs(
+  rows: readonly RunFamilyRow[],
+  selection: ExecutionRowSelection
+): ReadonlySet<number> | null {
+  if (selection.kind !== 'occurrence') return null;
+  const iteration = selection.iteration ?? null;
+  const route = selection.routeActivationSeq ?? null;
+  const epochs = new Set<number>();
+  for (const candidate of rows) {
+    if (candidate.status === 'skipped') continue;
+    if (candidate.selection.kind !== 'occurrence') continue;
+    if ((candidate.selection.iteration ?? null) !== iteration) continue;
+    if ((candidate.selection.routeActivationSeq ?? null) !== route) continue;
+    epochs.add(candidate.selection.retryEpoch ?? 0);
+  }
+  epochs.add(selection.retryEpoch ?? 0);
+  return epochs;
+}
+
+/** 1-based rank of `retryEpoch` among `epochs`, sorted ascending. */
+function retryRunNumber(epochs: ReadonlySet<number>, retryEpoch: number): number {
+  const sorted = [...epochs].sort((a, b) => a - b);
+  const index = sorted.indexOf(retryEpoch);
+  return index === -1 ? retryEpoch + 1 : index + 1;
+}
+
+/**
+ * `survivingEpochs` is the sibling set from `survivingRetryEpochs`, when the
+ * caller has it — every real production call site does. It stays optional
+ * so a caller with no sibling rows in hand (a lone selection, most test
+ * fixtures) still gets a label, using the raw epoch as its own rank.
+ */
+function executionLabel(
+  selection: ExecutionRowSelection,
+  survivingEpochs?: ReadonlySet<number> | null
+): string {
   if (selection.kind === 'loop_iteration') {
     return `Iteration ${String(selection.iteration)}`;
   }
@@ -121,7 +184,11 @@ function executionLabel(selection: ExecutionRowSelection): string {
       context.push(`Iteration ${String(selection.iteration)}`);
     }
     if (selection.retryEpoch !== undefined && selection.retryEpoch > 0) {
-      context.push(`Run ${String(selection.retryEpoch + 1)}`);
+      const run =
+        survivingEpochs !== undefined && survivingEpochs !== null
+          ? retryRunNumber(survivingEpochs, selection.retryEpoch)
+          : selection.retryEpoch + 1;
+      context.push(`Run ${String(run)}`);
     }
     // "Attempt" is banned transcript vocabulary (EXPERIENCE.md); a bare
     // first occurrence uses the same "Run N" base occurrence-groups.ts
@@ -187,6 +254,25 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
 
 /** Execution selector ceiling — also the header's "max N" caption. */
 export const EXECUTION_OPTIONS_MAX = 8;
+
+/** The node-definition shape `loopMaxIterationsForNode` reads; a `DagNode` satisfies this structurally. */
+export interface LoopMaxIterationsCandidate {
+  readonly loop?: { readonly max_iterations: number };
+  readonly loop_group?: { readonly max_iterations: number };
+}
+
+/**
+ * A loop node's own configured iteration cap, for the header's "· max N"
+ * caption — never `EXECUTION_OPTIONS_MAX`, the unrelated selector-display
+ * ceiling. Null for a non-loop node, or when the caller has no definition
+ * (still loading, or the node was removed from the workflow since the run
+ * started).
+ */
+export function loopMaxIterationsForNode(
+  node: LoopMaxIterationsCandidate | null | undefined
+): number | null {
+  return node?.loop?.max_iterations ?? node?.loop_group?.max_iterations ?? null;
+}
 
 /**
  * Rows a header selector offers for one node. A skipped row (for example a
@@ -495,10 +581,14 @@ function bareNodeLabel(label: string): string {
 
 export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHeaderModel {
   const runtime = runtimeForSelection(input.events, input.row);
+  const survivingEpochs =
+    input.siblingRows !== undefined
+      ? survivingRetryEpochs(input.siblingRows, input.row.selection)
+      : null;
   return {
     nodeId: input.row.nodeId,
     nodeLabel: bareNodeLabel(input.row.label),
-    executionLabel: executionLabel(input.row.selection),
+    executionLabel: executionLabel(input.row.selection, survivingEpochs),
     status: input.row.status,
     startedOffsetMs: startedOffsetMs(input.row, input.runStartedAt),
     startedAt: input.row.startedAt ?? null,
@@ -507,6 +597,7 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     model: runtime?.model || null,
     unknownScope: input.row.unknownScope ?? true,
     isLoopIteration: input.row.selection.kind === 'loop_iteration',
+    loopMaxIterations: input.loopMaxIterations ?? null,
   };
 }
 
@@ -607,20 +698,10 @@ export function computeRunOfTotal(
 ): RunOfTotal | null {
   const selected = rows.find(candidate => candidate.id === selectedId);
   if (selected?.selection.kind !== 'occurrence') return null;
-  const iteration = selected.selection.iteration ?? null;
-  const route = selected.selection.routeActivationSeq ?? null;
-  const epochs = new Set<number>();
-  for (const candidate of rows) {
-    if (candidate.status === 'skipped') continue;
-    if (candidate.selection.kind !== 'occurrence') continue;
-    if ((candidate.selection.iteration ?? null) !== iteration) continue;
-    if ((candidate.selection.routeActivationSeq ?? null) !== route) continue;
-    epochs.add(candidate.selection.retryEpoch ?? 0);
-  }
+  const epochs = survivingRetryEpochs(rows, selected.selection);
+  if (epochs === null || epochs.size <= 1) return null;
   const selectedEpoch = selected.selection.retryEpoch ?? 0;
-  epochs.add(selectedEpoch);
-  if (epochs.size <= 1) return null;
-  return { run: selectedEpoch + 1, total: epochs.size };
+  return { run: retryRunNumber(epochs, selectedEpoch), total: epochs.size };
 }
 
 function startedClockLabel(startedAt: string): string | null {

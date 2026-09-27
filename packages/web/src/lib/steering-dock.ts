@@ -123,6 +123,14 @@ export interface SteeringDockState {
    * withdrew or dropping one they just sent.
    */
   readonly queueGeneration: number;
+  /**
+   * Every message id's last-observed delivery state from the durable queue
+   * read, covering every row the server returned for this node — not just
+   * the pending band `sent` tracks, since a `sent`/`delivered` row is
+   * exactly the evidence a transcript operator row's delivery label needs.
+   * Empty until the first snapshot.
+   */
+  readonly deliveryByMessageId: ReadonlyMap<string, SteeringQueueItemState>;
 }
 
 export type SteeringDockMode =
@@ -416,6 +424,7 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
     withdrawingMessageId: null,
     sendingNowMessageId: null,
     queueGeneration: 0,
+    deliveryByMessageId: new Map(),
   };
 }
 
@@ -855,6 +864,9 @@ export function applyQueueSnapshot(
   const nextNeverSent: NeverSentEntry[] = snapshot.queued
     .filter(row => row.state === 'never_sent')
     .map(row => ({ messageId: row.message_id, message: row.message }));
+  const nextDeliveryByMessageId = new Map(
+    snapshot.queued.map(row => [row.message_id, row.state] as const)
+  );
 
   const sentUnchanged =
     nextSent.length === state.sent.length &&
@@ -873,9 +885,15 @@ export function applyQueueSnapshot(
         row.messageId === state.neverSent?.[i]?.messageId &&
         row.message === state.neverSent[i]?.message
     );
+  const deliveryUnchanged =
+    nextDeliveryByMessageId.size === state.deliveryByMessageId.size &&
+    [...nextDeliveryByMessageId].every(
+      ([messageId, deliveryState]) => state.deliveryByMessageId.get(messageId) === deliveryState
+    );
   const unchanged =
     sentUnchanged &&
     neverSentUnchanged &&
+    deliveryUnchanged &&
     state.executionState === snapshot.execution_state &&
     state.autoSend === snapshot.auto_send &&
     state.softInjection === snapshot.capabilities.soft_injection;
@@ -885,6 +903,7 @@ export function applyQueueSnapshot(
     ...state,
     sent: sentUnchanged ? state.sent : nextSent,
     neverSent: neverSentUnchanged ? state.neverSent : nextNeverSent,
+    deliveryByMessageId: deliveryUnchanged ? state.deliveryByMessageId : nextDeliveryByMessageId,
     executionState: snapshot.execution_state,
     autoSend: snapshot.auto_send,
     softInjection: snapshot.capabilities.soft_injection,

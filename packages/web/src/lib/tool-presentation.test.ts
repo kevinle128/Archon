@@ -1073,7 +1073,7 @@ describe('body invariants', () => {
   });
 });
 
-describe('bodyBarText', () => {
+describe('bodyBar', () => {
   test('a non-task row maps badges byte-for-byte after the family prefix', () => {
     const presentation = row('bash', { command: 'bun test' }, 'oops', {
       outcome: 'interrupted',
@@ -1081,12 +1081,28 @@ describe('bodyBarText', () => {
       outputState: 'truncated',
       durationMs: 2400,
     });
-    expect(presentation.bodyBarText).toBe('shell · interrupted · exit 1 · truncated · 2.4s');
+    expect(presentation.bodyBar).toEqual({
+      label: 'shell',
+      badges: 'interrupted · exit 1 · truncated · 2.4s',
+    });
   });
 
-  test('a bare non-task row is the family alone', () => {
+  test('a bare non-task row is the family alone, with no badges', () => {
     const presentation = row('Read', { path: 'a' }, 'x', SUCCEEDED);
-    expect(presentation.bodyBarText).toBe('file');
+    expect(presentation.bodyBar).toEqual({ label: 'file', badges: '' });
+  });
+
+  test('a long wrapped Codex name never crowds out its own exit/duration badges', () => {
+    const presentation = row(
+      "/bin/zsh -lc 'bun test src/operations/workflow-retry.test.ts'",
+      {},
+      '',
+      { outcome: 'failed', exitCode: 1, outputState: 'full', durationMs: 2 }
+    );
+    expect(presentation.bodyBar).toEqual({
+      label: 'shell · bun test src/operations/workflow-retry.test.ts',
+      badges: 'exit 1 · 2ms',
+    });
   });
 
   test('a non-task count badge stays in the bar', () => {
@@ -1095,7 +1111,7 @@ describe('bodyBarText', () => {
       outputState: 'full',
       durationMs: 120,
     });
-    expect(presentation.bodyBarText).toBe('search · 14 matches · 120ms');
+    expect(presentation.bodyBar).toEqual({ label: 'search', badges: '14 matches · 120ms' });
   });
 
   test('a batch task row leads with the task facts and never repeats the count', () => {
@@ -1111,8 +1127,7 @@ describe('bodyBarText', () => {
       'done',
       { outcome: 'succeeded', outputState: 'full', durationMs: 1500 }
     );
-    expect(presentation.bodyBarText).toBe('task · batch · 2 subtasks · 1.5s');
-    expect(presentation.bodyBarText).not.toContain('subagent');
+    expect(presentation.bodyBar).toEqual({ label: 'task · batch · 2 subtasks', badges: '1.5s' });
     // The collapsed row still carries the subagent count badge.
     expect(presentation.badges).toContainEqual({
       kind: 'count',
@@ -1121,15 +1136,14 @@ describe('bodyBarText', () => {
     });
   });
 
-  test('a single task row produces "task · single dispatch · <duration>" exactly once', () => {
+  test('a single task row produces "task · single dispatch" plus its duration badge exactly once', () => {
     const presentation = row('Agent', { description: 'scan', prompt: 'do it' }, 'done', {
       outcome: 'succeeded',
       outputState: 'full',
       durationMs: 800,
     });
-    expect(presentation.bodyBarText).toBe('task · single dispatch · 800ms');
-    expect(presentation.bodyBarText.split('single dispatch')).toHaveLength(2);
-    expect(presentation.bodyBarText).not.toContain('subagent');
+    expect(presentation.bodyBar).toEqual({ label: 'task · single dispatch', badges: '800ms' });
+    expect(presentation.bodyBar.label.split('single dispatch')).toHaveLength(2);
   });
 
   test('runtime facts follow a task row once, in existing order', () => {
@@ -1139,9 +1153,10 @@ describe('bodyBarText', () => {
       outputState: 'truncated',
       durationMs: 100,
     });
-    expect(presentation.bodyBarText).toBe(
-      'task · batch · 1 subtask · interrupted · exit 2 · truncated · 100ms'
-    );
+    expect(presentation.bodyBar).toEqual({
+      label: 'task · batch · 1 subtask',
+      badges: 'interrupted · exit 2 · truncated · 100ms',
+    });
   });
 
   test('a malformed task row carries no explicit task facts in the bar', () => {
@@ -1150,9 +1165,7 @@ describe('bodyBarText', () => {
       exitCode: 1,
       outputState: 'full',
     });
-    expect(presentation.bodyBarText).toBe('task · exit 1');
-    expect(presentation.bodyBarText).not.toContain('batch');
-    expect(presentation.bodyBarText).not.toContain('subtask');
+    expect(presentation.bodyBar).toEqual({ label: 'task', badges: 'exit 1' });
   });
 });
 
@@ -1297,10 +1310,22 @@ describe('terminal body', () => {
     expect(b.command).toHaveLength(MAX_BODY_COMMAND_CODE_UNITS);
   });
 
-  test('wrapper-preserving sent name supplies the command when input lacks one', () => {
+  test('a wrapped sent name supplies the command, stripped like the headline', () => {
     const b = body("/bin/zsh -lc 'ls -la'", {}, 'out', 'shell');
     if (b?.kind !== 'terminal') throw new Error('expected terminal');
-    expect(b.command).toBe("/bin/zsh -lc 'ls -la'");
+    expect(b.command).toBe('ls -la');
+  });
+
+  test('a multi-line wrapped sent name keeps every line, not just the first', () => {
+    const b = body("/bin/zsh -lc 'ls -la\ngrep foo'", {}, 'out', 'shell');
+    if (b?.kind !== 'terminal') throw new Error('expected terminal');
+    expect(b.command).toBe('ls -la\ngrep foo');
+  });
+
+  test('an incomplete wrapper stays untouched in the body too', () => {
+    const b = body("/bin/zsh -lc 'ls -la", {}, 'out', 'shell');
+    if (b?.kind !== 'terminal') throw new Error('expected terminal');
+    expect(b.command).toBe("/bin/zsh -lc 'ls -la");
   });
 });
 
@@ -1339,7 +1364,7 @@ describe('file edit diff', () => {
     expect(presentation.badges).toContainEqual(DIFF_BADGE_SUCCESS);
     expect(presentation.badges).toContainEqual(DIFF_BADGE_DANGER);
     expect(presentation.bodyFacts).toEqual(['1 hunk']);
-    expect(presentation.bodyBarText).toBe('file · 1 hunk');
+    expect(presentation.bodyBar).toEqual({ label: 'file · 1 hunk', badges: '' });
   });
 
   test('both alias pairs qualify on file-family names', () => {
@@ -1377,7 +1402,7 @@ describe('file edit diff', () => {
       'ok',
       SUCCEEDED
     );
-    expect(exact.bodyBarText).toBe('file · 1 hunk · replace_all: false');
+    expect(exact.bodyBar).toEqual({ label: 'file · 1 hunk · replace_all: false', badges: '' });
     const truthy = call('Edit', {
       file_path: 'a',
       old_string: 'x',
@@ -1419,7 +1444,7 @@ describe('file edit diff', () => {
     );
     expect(presentation.bodyFacts).toEqual(['no changes']);
     expect(presentation.badges.filter(badge => badge.kind === 'diff')).toHaveLength(0);
-    expect(presentation.bodyBarText).toBe('file · no changes');
+    expect(presentation.bodyBar).toEqual({ label: 'file · no changes', badges: '' });
   });
 
   test('diff badges never reach the body bar', () => {
@@ -1428,9 +1453,9 @@ describe('file edit diff', () => {
       outputState: 'full',
       durationMs: 120,
     });
-    expect(presentation.bodyBarText).toBe('file · 1 hunk · 120ms');
-    expect(presentation.bodyBarText).not.toContain('+1');
-    expect(presentation.bodyBarText).not.toContain('−1');
+    expect(presentation.bodyBar).toEqual({ label: 'file · 1 hunk', badges: '120ms' });
+    expect(presentation.bodyBar.label).not.toContain('+1');
+    expect(presentation.bodyBar.label).not.toContain('−1');
   });
 
   test('file body arm carries the diff result; refused and missing pairs keep the preview fallback', () => {

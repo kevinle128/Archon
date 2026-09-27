@@ -119,6 +119,21 @@ export interface ToolRowFacts {
   runningElapsedMs?: number | null;
 }
 
+/**
+ * The open-row body bar, composed once in the core and split into two zones
+ * so a renderer can truncate one without truncating the other: `label`
+ * (family, body facts, and the resolved name when the chip fell back to it)
+ * is arbitrarily long — a Codex wrapped command, a long path — and is the
+ * only part meant to ellipsize; `badges` (runtime facts: interrupted/exit
+ * code/output state/duration) must stay fully visible next to the Raw
+ * toggle regardless of how long `label` is. Empty string when there are no
+ * badges.
+ */
+export interface ToolBodyBar {
+  readonly label: string;
+  readonly badges: string;
+}
+
 export interface ToolRowPresentation extends ToolPresentation {
   glyph: ToolStatusGlyph;
   statusLabel: ToolOutcome;
@@ -126,8 +141,8 @@ export interface ToolRowPresentation extends ToolPresentation {
   badges: ToolRowBadge[];
   /** Canonical provider-facing payload for the Raw disclosure; opaque to renderers. */
   rawPayload: ToolRawPayload;
-  /** Complete open-row body bar: family prefix plus fact text, composed once in the core. */
-  bodyBarText: string;
+  /** Open-row body bar, pre-split into a truncatable label and pinned badges. */
+  bodyBar: ToolBodyBar;
 }
 
 const MCP_PREFIX = 'mcp__';
@@ -189,6 +204,8 @@ const FAMILY_ALIASES: Record<string, ToolFamily> = {
   todo: 'todo',
   todowrite: 'todo',
   plan: 'todo',
+  taskcreate: 'todo',
+  taskupdate: 'todo',
   task: 'task',
   agent: 'task',
   subagent: 'task',
@@ -912,17 +929,22 @@ export function toolRowPresentation(
   // an over-long tool name), so it stays readable and selectable.
   const isTaskBody = content.body?.kind === 'task';
   const sentName = safeRawName(rawPayload);
+  // Stripped the same way the shell headline and terminal body are — a
+  // fallen-back name is most often a Codex wrapped command, so the bar must
+  // never show the wrapper the headline and body have already dropped.
+  const strippedSentName = stripShellWrapper(sentName);
   const barName =
-    content.label !== sentName ? sanitizeBounded(sentName, MAX_ALIAS_NAME_CODE_UNITS).text : null;
+    content.label !== sentName
+      ? sanitizeBounded(strippedSentName, MAX_ALIAS_NAME_CODE_UNITS).text
+      : null;
   const barBadges = badges
     .filter(badge => badge.kind !== 'placeholder' && badge.kind !== 'diff')
     .filter(badge => !(isTaskBody && badge.kind === 'count'))
     .map(badge => badge.text);
-  const bodyBarText = [
+  const bodyBarLabel = [
     content.family,
     ...content.bodyFacts,
     ...(barName !== null && barName.length > 0 ? [barName] : []),
-    ...barBadges,
   ].join(' · ');
 
   return {
@@ -932,7 +954,7 @@ export function toolRowPresentation(
     initialOpen: outcome === 'failed',
     badges,
     rawPayload,
-    bodyBarText,
+    bodyBar: { label: bodyBarLabel, badges: barBadges.join(' · ') },
   };
 }
 
@@ -1200,7 +1222,11 @@ function resolveToolBody(
 
   switch (family) {
     case 'shell': {
-      const sent = firstStringField(record, COMMAND_KEYS) ?? name;
+      // Same normalizer as the headline (`shellHeadline`): a Codex name-only
+      // call carries its command as the wrapped tool name, and the body
+      // shows the same stripped text the headline already committed to —
+      // only Raw keeps the untouched name (`rawPayload`, captured separately).
+      const sent = firstStringField(record, COMMAND_KEYS) ?? stripShellWrapper(name);
       const command = sanitizeBounded(sent, MAX_BODY_COMMAND_CODE_UNITS);
       return {
         kind: 'terminal',

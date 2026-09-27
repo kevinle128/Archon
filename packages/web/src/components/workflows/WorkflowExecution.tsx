@@ -48,6 +48,7 @@ import {
   closeRoom,
   computeRunOfTotal,
   disambiguateExecutionOptions,
+  loopMaxIterationsForNode,
   openRoom,
   openExplicitRoom,
   askCardId,
@@ -773,14 +774,6 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
   const selectedExecutionRow =
     executionRows.find(candidate => candidate.id === room.selection?.rowId) ?? null;
   const runStartedAtIso = workflow === null ? '' : new Date(workflow.startedAt).toISOString();
-  const headerModel =
-    selectedExecutionRow === null
-      ? undefined
-      : buildExecutionHeader({
-          row: selectedExecutionRow,
-          events: queryData?.events ?? [],
-          runStartedAt: runStartedAtIso,
-        });
   const executionRowsForSelectedNode =
     selectedExecutionRow === null
       ? []
@@ -788,6 +781,20 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           executionRows.filter(candidate => candidate.nodeId === selectedExecutionRow.nodeId),
           selectedExecutionRow.id
         );
+  const selectedDefinitionNode =
+    selectedExecutionRow === null
+      ? undefined
+      : dagDefinitionNodes?.find(candidate => candidate.id === selectedExecutionRow.nodeId);
+  const headerModel =
+    selectedExecutionRow === null
+      ? undefined
+      : buildExecutionHeader({
+          row: selectedExecutionRow,
+          events: queryData?.events ?? [],
+          runStartedAt: runStartedAtIso,
+          siblingRows: executionRowsForSelectedNode,
+          loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
+        });
   const headerOptions =
     selectedExecutionRow === null
       ? []
@@ -798,6 +805,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
               row: candidate,
               events: queryData?.events ?? [],
               runStartedAt: runStartedAtIso,
+              siblingRows: executionRowsForSelectedNode,
             }).executionLabel,
             status: candidate.status,
           }))

@@ -15,6 +15,8 @@ export interface TodoItem {
   content: string;
   status: TodoStatus;
   blocker?: string;
+  /** Stable identity for a source whose items can be renamed after creation. Undefined for OMP and TodoWrite. */
+  id?: string;
 }
 export interface TodoPhase {
   phase: string;
@@ -24,23 +26,41 @@ export interface TodoPhase {
 export function projectTodoState(inputs: readonly unknown[]): TodoPhase[];
 ```
 
-## Two provider shapes, one output
+## Three provider shapes, one output
 
-The two are not variants of one format; they share nothing but the concept.
+None are variants of one format; they share nothing but the concept.
 
-|               | OMP `todo`                                                      | Claude `TodoWriteInput`                                         |
-| ------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
-| shape         | `{ op, ... }` — a mutation                                      | `{ todos: [{ content, status, activeForm }] }` — the whole list |
-| status        | **absent from input**; implied entirely by which op ran         | **explicit on every item**                                      |
-| statuses      | five: `pending` `in_progress` `completed` `abandoned` `blocked` | three: `pending` `in_progress` `completed`                      |
-| phases        | yes                                                             | none                                                            |
-| item on input | a bare string                                                   | an object                                                       |
+|               | OMP `todo`                                                      | Claude `TodoWriteInput`                                         | Claude `TaskCreate`/`TaskUpdate`                                                                                     |
+| ------------- | --------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| shape         | `{ op, ... }` — a mutation                                      | `{ todos: [{ content, status, activeForm }] }` — the whole list | one task per call: `{ subject, description, activeForm? }` (create) or `{ taskId, subject?, status?, ... }` (update) |
+| identity      | `task` content string                                           | `content` string (whole-list snapshot, no separate id)          | `taskId`, a string the tool assigns — see "Identity" below                                                           |
+| status        | **absent from input**; implied entirely by which op ran         | **explicit on every item**                                      | **explicit, on `TaskUpdate` only**; a `TaskCreate` call starts `pending`                                             |
+| statuses      | five: `pending` `in_progress` `completed` `abandoned` `blocked` | three: `pending` `in_progress` `completed`                      | four: `pending` `in_progress` `completed` `deleted`                                                                  |
+| phases        | yes                                                             | none                                                            | none                                                                                                                 |
+| item on input | a bare string                                                   | an object                                                       | an object                                                                                                            |
 
-**Claude is the degenerate case, and it is the easy one:** each call already carries the final state, so folding is last-call-wins.
+**Claude's `TodoWriteInput` is the degenerate case, and it is the easy one:** each call already carries the final state, so folding is last-call-wins.
 Map it to a single phase named `"Tasks"` and widen its three statuses into the five (`abandoned` and `blocked` simply never occur).
 `activeForm` is the present-tense label Claude shows while an item runs; it is not needed for a rendered checklist and is dropped.
 
 **OMP is the hard one:** the sections below describe it, and none of it applies to Claude.
+
+## Identity for TaskCreate/TaskUpdate
+
+`TaskCreate`'s input never carries the id the tool assigns to the new task — only its _output_ does (`{ task: { id, subject } }`).
+`projectTodoState` folds only recorded tool **inputs**, so the id has to reach it some other way: the caller (`agent-history.ts`) reads a `TaskCreate` call's paired output and merges the assigned id onto the input under a `taskId` key — the exact key `TaskUpdate` already sends natively — before handing it to the fold.
+That gives every Task-family record one identity field regardless of which side of the call carried it, and lets this module treat create and update as one upsert:
+
+- A `taskId` this fold has not seen before, paired with a `subject`, establishes a new item (`pending`, unless the same call also sets `status`).
+- A `taskId` already known updates that item's `content` (from `subject`) and/or `status` in place — never by matching on `content`, since `TaskUpdate` can rename it.
+- A `taskId` this fold has not seen before, with **no** `subject` to establish it, is rejected as a no-op — the same "unknown target never fabricates a row" rule OMP's own `findTask` already enforces for an unmatched `task`.
+- A call whose output has not landed yet (the tool call is still live) is folded exactly as sent, with no `taskId` — it does not match the Task-family shape at all, so it is skipped until the id is known.
+
+All Task-family items live in one `"Tasks"` phase; the tool has no phase concept of its own.
+Only `subject` (title) and `status` drive the checklist.
+`description`, `activeForm`, `addBlocks`, `addBlockedBy`, `owner`, and `metadata` are real fields the agent reads and writes, but none of them change a flat checklist's rendering, so this fold ignores them.
+`deleted` (a `TaskUpdate.status` value with no match among the five shared statuses) maps to `abandoned` — the nearest existing status, not a new one; OMP's own `drop` already means "no longer active, not completed" and renders the same struck-through way.
+Task-family calls never run OMP's auto-promotion (below): unlike OMP, Claude's own tool never implies a side effect on a task the call did not name.
 
 ## The nine OMP ops
 

@@ -1066,6 +1066,26 @@ describe('applyQueueSnapshot', () => {
     expect(next.sent).toEqual([receipt('b', 'beta'), receipt('c', 'gamma-remote')]);
   });
 
+  test('deliveryByMessageId covers every row the server returned, including sent/delivered ones dropped from sent', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const next = applyQueueSnapshot(
+      state,
+      mkSnapshot([
+        guidanceRow('a', 'alpha', { state: 'sent' }),
+        guidanceRow('b', 'beta', { state: 'delivered' }),
+        guidanceRow('c', 'gamma', { state: 'never_sent' }),
+      ]),
+      0
+    );
+    // 'sent'/'delivered' rows are gone from the pending band…
+    expect(next.sent).toEqual([]);
+    // …but their delivery state is still readable by message id.
+    expect(next.deliveryByMessageId.get('a')).toBe('sent');
+    expect(next.deliveryByMessageId.get('b')).toBe('delivered');
+    expect(next.deliveryByMessageId.get('c')).toBe('never_sent');
+    expect(next.deliveryByMessageId.get('unknown-id')).toBeUndefined();
+  });
+
   test('returns the identical state object when the snapshot is identical', () => {
     const state = stateWith([receipt('a', 'alpha'), receipt('b', 'beta')], {
       // A prior snapshot already populated these — this call represents a
@@ -1078,6 +1098,10 @@ describe('applyQueueSnapshot', () => {
       pendingRetry: { messageId: 'p', message: 'wip' },
       refusal: { code: 'stale', message: 'old' },
       withdrawingMessageId: 'a',
+      deliveryByMessageId: new Map([
+        ['a', 'queued'],
+        ['b', 'queued'],
+      ]),
     });
     const next = applyQueueSnapshot(
       state,

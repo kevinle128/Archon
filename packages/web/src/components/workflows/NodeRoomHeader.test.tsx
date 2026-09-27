@@ -25,6 +25,7 @@ const ITERATION_TWO: ExecutionHeaderModel = {
   model: 'gpt-5',
   unknownScope: false,
   isLoopIteration: false,
+  loopMaxIterations: null,
 };
 
 function closeButton(host: Element): Element {
@@ -63,7 +64,7 @@ describe('NodeRoomHeader', () => {
     await act(async () => {
       root.render(
         createElement(nodeRoomHeader.NodeRoomHeader, {
-          model: ITERATION_TWO,
+          model: { ...ITERATION_TWO, loopMaxIterations: 8 },
           options: [
             { rowId: 'iter-1', label: 'Iteration 1' },
             { rowId: 'iter-2', label: 'Iteration 2' },
@@ -115,6 +116,29 @@ describe('NodeRoomHeader', () => {
       );
     });
     expect(closes).toEqual([1]);
+  });
+
+  test('a non-loop node with multiple runs shows "of N" with no max caption', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: { ...ITERATION_TWO, loopMaxIterations: null },
+          options: [
+            { rowId: 'run-1', label: 'Run 1' },
+            { rowId: 'run-2', label: 'Run 2' },
+          ],
+          selectedRowId: 'run-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 2,
+        })
+      );
+    });
+
+    const text = host.textContent ?? '';
+    expect(text).toContain('of 2');
+    expect(text).not.toContain('max');
   });
 
   test('omits the kind chip, meta line, and picker when their own data is absent', async () => {

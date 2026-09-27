@@ -6209,6 +6209,7 @@ export interface components {
             seq: number;
             created_at: string;
             operator_display_name?: string | null;
+            prompt_display_name?: string | null;
         } | {
             metadata?: {
                 execution?: {

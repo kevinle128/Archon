@@ -199,6 +199,7 @@ describe('ComposerDock', () => {
       autoFocusTarget: 'field' | 'go' | null;
       onAutoFocusApplied: () => void;
       onExecutionStateChange: (state: 'live' | 'recovery_required' | 'finished' | null) => void;
+      onDeliveryStatesChange: (states: ReadonlyMap<string, string>) => void;
       send: SendNodeGuidance;
       interrupt: InterruptNode;
       withdraw: WithdrawNodeGuidance;
@@ -231,6 +232,7 @@ describe('ComposerDock', () => {
           autoFocusTarget: overrides.autoFocusTarget,
           onAutoFocusApplied: overrides.onAutoFocusApplied,
           onExecutionStateChange: overrides.onExecutionStateChange,
+          onDeliveryStatesChange: overrides.onDeliveryStatesChange,
           send: overrides.send ?? nextSend,
           interrupt: overrides.interrupt ?? nextInterrupt,
           withdraw: overrides.withdraw ?? nextWithdraw,
@@ -409,6 +411,30 @@ describe('ComposerDock', () => {
     expect(observed).toEqual([null]);
     await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
     expect(observed).toEqual([null, 'recovery_required']);
+  });
+
+  test('reports every message id’s delivery state, including rows the pending band drops', async () => {
+    const ctrl = controllableRead();
+    const observed: ReadonlyMap<string, string>[] = [];
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      onDeliveryStatesChange: states => {
+        observed.push(states);
+      },
+    });
+    expect(observed).toHaveLength(1);
+    expect(observed[0]?.size).toBe(0);
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'a', message: 'alpha', state: 'sent' },
+        { message_id: 'b', message: 'beta', state: 'delivered' },
+      ])
+    );
+    expect(observed).toHaveLength(2);
+    expect(observed[1]?.get('a')).toBe('sent');
+    expect(observed[1]?.get('b')).toBe('delivered');
   });
 
   test.each(['pending', 'completed', 'failed', 'skipped'] as const)(

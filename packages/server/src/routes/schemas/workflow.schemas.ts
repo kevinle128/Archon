@@ -196,6 +196,8 @@ export const workflowNodeMessageTextResponseSchema = nodeMessageTextSchema
   .safeExtend({
     ...nodeMessageWireShape,
     operator_display_name: z.string().nullable().optional(),
+    /** `prompt`-origin only: the row's `actor_user_id` resolved to a display name. Null when there is no actor to resolve. */
+    prompt_display_name: z.string().nullable().optional(),
   });
 export const workflowNodeMessageToolResponseSchema = nodeMessageToolSchema
   .omit({ workflow_run_id: true, node_id: true })

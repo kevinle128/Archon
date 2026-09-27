@@ -11,7 +11,12 @@ import rehypeHighlight from 'rehype-highlight';
 import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 
-import { promptActorLabel, promptSourceLabel, type AgentHistoryItem } from '@/lib/agent-history';
+import {
+  operatorDeliveryPresentation,
+  promptActorLabel,
+  promptSourceLabel,
+  type AgentHistoryItem,
+} from '@/lib/agent-history';
 import { getWorkflowNodeMessage, type WorkflowNodeMessageResponse } from '@/lib/api';
 import { toHunkData } from '@/lib/git-hunk-adapter';
 import type { OccurrenceGrouping } from '@/lib/occurrence-groups';
@@ -299,6 +304,12 @@ function AssistantHistory({
   );
 }
 
+const OPERATOR_DELIVERY_TONE: Record<'neutral' | 'success' | 'warning', string> = {
+  neutral: 'text-text-secondary',
+  success: 'text-success',
+  warning: 'text-warning',
+};
+
 function OperatorHistory({
   item,
 }: {
@@ -306,6 +317,7 @@ function OperatorHistory({
 }): React.ReactElement {
   const label =
     item.operatorDisplayName === null ? 'operator' : `operator · ${item.operatorDisplayName}`;
+  const delivery = operatorDeliveryPresentation(item.delivery);
   return (
     <div data-operator-row="" style={{ overflowWrap: 'anywhere' }}>
       <div
@@ -315,9 +327,12 @@ function OperatorHistory({
         <span data-operator-label="">{label}</span>
         <span
           data-operator-delivery=""
-          className="ml-auto shrink-0 text-[11px] normal-case tracking-normal text-text-secondary"
+          className={cn(
+            'ml-auto shrink-0 text-[11px] normal-case tracking-normal',
+            OPERATOR_DELIVERY_TONE[delivery.tone]
+          )}
         >
-          sent
+          {delivery.label}
         </span>
       </div>
       <div
@@ -367,7 +382,8 @@ function PromptHistory({
         style={{ margin: '10px 2px 3px' }}
       >
         <span data-prompt-label="">
-          prompt · {promptActorLabel(item.actorUserId)} · {promptSourceLabel(item.source)}
+          prompt · {promptActorLabel(item.actorUserId, item.actorDisplayName)}
+          {promptSourceLabel(item.source) !== null ? ` · ${promptSourceLabel(item.source)}` : ''}
         </span>
       </div>
       <div
@@ -1092,8 +1108,11 @@ function ToolHistory({
         <div className="mb-2 ml-[29px] mt-0.5 border-l-2 border-border pl-2.5">
           <div className="mb-1.5 flex items-center gap-2 font-mono text-[10.5px] text-text-secondary">
             <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
-              {presentation.bodyBarText}
+              {presentation.bodyBar.label}
             </span>
+            {presentation.bodyBar.badges.length > 0 ? (
+              <span className="shrink-0 whitespace-nowrap">{presentation.bodyBar.badges}</span>
+            ) : null}
             <button
               type="button"
               aria-expanded={rawOpen}

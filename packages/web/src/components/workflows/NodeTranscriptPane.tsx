@@ -31,7 +31,7 @@ import {
   jumpToOccurrence,
   onRoomScroll,
 } from '@/lib/room-scroll-follow';
-import type { SteeringExecutionState } from '@/lib/steering-dock';
+import type { SteeringExecutionState, SteeringQueueItemState } from '@/lib/steering-dock';
 import { projectTerminalTodoState } from '@/lib/todo-state';
 import type { WorkflowRunStatus } from '@/lib/types';
 
@@ -172,6 +172,9 @@ export function NodeTranscriptPane({
   );
   const [retryNonce, setRetryNonce] = useState(0);
   const [localAskDrafts, setLocalAskDrafts] = useState<AskDraftByRequest>({});
+  const [deliveryStates, setDeliveryStates] = useState<ReadonlyMap<string, SteeringQueueItemState>>(
+    () => new Map()
+  );
   const [navTarget, setNavTarget] = useState<string | null>(null);
   /** Consume-once autofocus after a Go-driven selection change. */
   const [autoFocusTarget, setAutoFocusTarget] = useState<'field' | 'go' | null>(null);
@@ -349,6 +352,7 @@ export function NodeTranscriptPane({
           outputFormat: outputFormat ?? undefined,
           nowMs,
           nodeTerminal: noLiveProcessForRow,
+          deliveryStateByMessageId: deliveryStates,
         });
   const items = agentHistory.items;
   const occurrenceGrouping = groupByOccurrence(items);
@@ -654,6 +658,7 @@ export function NodeTranscriptPane({
           setAutoFocusTarget(null);
         }}
         onExecutionStateChange={onExecutionStateChange}
+        onDeliveryStatesChange={setDeliveryStates}
         focusLastRow={focusLastRow}
         nodeTerminal={nodeTerminal}
         idleAwaitExpired={idleAwaitExpired}
