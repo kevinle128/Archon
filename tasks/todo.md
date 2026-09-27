@@ -17,7 +17,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] F1 merged: Claude deliveryAck=true (replay-user-messages), Claude softInjection=false (disproven incl. priority:'next'); shared soft-injection seam wired
 - [x] 8.7 OMP RPC-mode Stop merged (1263b93f); live 3/3 on grok-4.5 + gpt-5.6-sol; validate green
 - [x] 8.5 Grok ACP transport merged; Stop verified live. Interject = follow-up semantics (softInjection false)
-- [ ] Per-turn interruptibility signal (Grok --single fallback must hide Stop) — agent turn-interruptible
+- [x] Per-turn interruptibility signal merged (turn_not_interruptible chunk)
 - [x] B-UI merged (7e30d6e7): draft/auto-send/per-item Send now/recovery wired in both shells
 - [x] B-UI follow-ups merged (Legacy focus anchor, queue-convergence e2e on draft API)
 - [x] agent-interrupt-redirect e2e 11/11 merged. Note: agent-withdraw-guidance.spec.ts ~566 may be stale (422 vs recovery) — check in final gate
