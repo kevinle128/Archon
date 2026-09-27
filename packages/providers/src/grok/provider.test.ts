@@ -9,6 +9,7 @@ import {
   type GrokProcess,
   type GrokSpawner,
 } from './provider';
+import { parseGrokConfig } from './config';
 import type { MessageChunk, SendQueryOptions } from '../types';
 import { STREAM_ABORTED_TERMINAL_REASON } from '../types';
 
@@ -284,18 +285,22 @@ describe('GrokProvider --single fallback transport', () => {
     };
     const provider = new GrokProvider({ spawn, resolveBinary: async () => '/bin/grok' });
 
-    await expect(
-      collect(provider, [
-        'hello',
-        '/repo',
-        undefined,
-        { env: { XAI_API_KEY: 'managed' }, ...FORCE_SINGLE_TRANSPORT },
-      ])
-    ).resolves.toEqual([
+    const chunks = await collect(provider, [
+      'hello',
+      '/repo',
+      undefined,
+      { env: { XAI_API_KEY: 'managed' }, ...FORCE_SINGLE_TRANSPORT },
+    ]);
+    expect(chunks).toEqual([
+      { type: 'turn_not_interruptible', reason: expect.stringContaining('--json-schema') },
       { type: 'system', content: expect.stringContaining('legacy --single transport') },
       { type: 'assistant', content: 'hello' },
       { type: 'result', sessionId: 'session-1', stopReason: 'end_turn' },
     ]);
+    // ⚠️-prefixed so the dag-executor's generic system-chunk forwarding
+    // actually delivers this to the operator (an unprefixed notice is
+    // dropped at debug level — see dag.system_message_unhandled).
+    expect((chunks[1] as { content: string }).content.startsWith('⚠️')).toBe(true);
     expect(spawnedCommand[0]).toBe('/bin/grok');
     expect(spawnedEnv.XAI_API_KEY).toBe('managed');
   });
@@ -510,6 +515,37 @@ describe('GrokProvider --single fallback transport', () => {
     await expect(result).rejects.toThrow('Query aborted');
     expect(signals).toContain('SIGTERM');
   });
+
+  test('emits the typed turn_not_interruptible signal before any other chunk, for every fallback reason', async () => {
+    const fallbackRequestOptions: SendQueryOptions[] = [
+      { outputFormat: { type: 'json_schema', schema: { type: 'object' } } },
+      {
+        nodeConfig: { agents: { reviewer: { description: 'Review', prompt: 'Review carefully' } } },
+      },
+      { nodeConfig: { allowed_tools: ['read_file'] } },
+      { nodeConfig: { denied_tools: ['run_terminal_cmd'] } },
+      { systemPrompt: 'be terse' },
+      { forkSession: true },
+      { assistantConfig: { permissionMode: 'plan' } },
+    ];
+    for (const requestOptions of fallbackRequestOptions) {
+      const config = parseGrokConfig(requestOptions.assistantConfig ?? {});
+      const expectedReason = selectGrokTransport({ config, requestOptions });
+      if (expectedReason.kind !== 'single') {
+        throw new Error('test fixture must select the --single transport');
+      }
+      const provider = new GrokProvider({
+        spawn: () => processFor(['{"type":"end","stopReason":"end_turn","sessionId":"s"}\n']),
+        resolveBinary: async () => '/bin/grok',
+      });
+      const chunks = await collect(provider, ['hello', '/repo', undefined, requestOptions]);
+      expect(chunks[0]).toEqual({
+        type: 'turn_not_interruptible',
+        reason: expectedReason.reason,
+      });
+      expect(chunks[1]).toMatchObject({ type: 'system' });
+    }
+  });
 });
 
 describe('GrokProvider ACP transport (default)', () => {
@@ -591,7 +627,10 @@ describe('GrokProvider ACP transport (default)', () => {
     const chunks = await collect(provider, ['hello', '/repo', undefined, FORCE_SINGLE_TRANSPORT]);
     expect(captured.input).toBeUndefined();
     expect(singleSpawned).toBe(true);
-    const notice = chunks[0] as { type: string; content: string };
+    const signal = chunks[0] as { type: string; reason: string };
+    expect(signal.type).toBe('turn_not_interruptible');
+    expect(signal.reason).toContain('--json-schema');
+    const notice = chunks[1] as { type: string; content: string };
     expect(notice.type).toBe('system');
     expect(notice.content).toContain('legacy --single transport');
     expect(notice.content).toContain('--json-schema');

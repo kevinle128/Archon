@@ -383,6 +383,90 @@ describe('interrupt', () => {
 });
 
 // ---------------------------------------------------------------------------
+// markTurnNotInterruptible — per-turn interrupt downgrade (provider report
+// that THIS turn cannot honor Stop despite an otherwise-interruptible handle)
+// ---------------------------------------------------------------------------
+
+describe('markTurnNotInterruptible', () => {
+  test('hides the sub-state projection for the flagged turn only', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    handle.markTurnNotInterruptible(t1);
+    expect(handle.steeringSubState()).toBeUndefined();
+    expect(handle.snapshot().subState).toBeUndefined();
+  });
+
+  test('interrupt() on a flagged turn settles not_steerable_here immediately and never aborts', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const token = handle.beginTurn(controller);
+    handle.markTurnNotInterruptible(token);
+    await expect(handle.interrupt()).resolves.toBe('not_steerable_here');
+    expect(controller.signal.aborted).toBe(false); // no node-level or turn-level abort
+    expect(handle.wasOperatorInterrupted(token)).toBe(false); // flag never set
+  });
+
+  test('an interrupt() that lands BEFORE the report resolves immediately once the report arrives, instead of hanging until the turn settles', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const controller = new AbortController();
+    const token = handle.beginTurn(controller);
+
+    const pending = handle.interrupt(); // races in before the provider's report
+    expect(controller.signal.aborted).toBe(true); // inert abort — nothing reads this signal
+    expect(handle.wasOperatorInterrupted(token)).toBe(true);
+
+    handle.markTurnNotInterruptible(token); // the report arrives next
+
+    await expect(pending).resolves.toBe('not_steerable_here'); // resolves now, not at turn end
+    expect(handle.wasOperatorInterrupted(token)).toBe(false); // stale flag cleared
+
+    // A second call after the report is idempotent with the first's outcome.
+    await expect(handle.interrupt()).resolves.toBe('not_steerable_here');
+  });
+
+  test('a later turn on the same node is interruptible again', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    handle.markTurnNotInterruptible(t1);
+    handle.endTurnStream(t1);
+    handle.settleTurn(t1, 'generating');
+
+    const t2 = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    expect(handle.snapshot().subState).toBe('generating');
+    void t2;
+  });
+
+  test('stale or already-settled tokens are a no-op', () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1', { interruptible: true });
+    const t1 = handle.beginTurn(new AbortController());
+    handle.markTurnNotInterruptible(999); // stale — no-op
+    expect(handle.steeringSubState()).toBe('generating');
+
+    handle.endTurnStream(t1);
+    handle.settleTurn(t1, 'generating');
+    handle.markTurnNotInterruptible(t1); // already settled — no-op, no throw
+    const t2 = handle.beginTurn(new AbortController());
+    expect(handle.steeringSubState()).toBe('generating');
+    void t2;
+  });
+
+  test('a queue-only (non-interruptible) handle ignores the report and stays not-steerable', async () => {
+    const registry = createSteeringRegistry();
+    const handle = registry.register('run-1', 'node-1');
+    handle.markTurnNotInterruptible(1); // no active turn, no throw
+    expect(handle.steeringSubState()).toBeUndefined();
+    await expect(handle.interrupt()).resolves.toBe('not_steerable_here');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // softInject — mid-turn delivery channel (CAP-12 per-item Send now)
 // ---------------------------------------------------------------------------
 

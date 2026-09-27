@@ -194,9 +194,13 @@ interface SelectGrokTransportInput {
  *   `--always-approve`, no `--permission-mode` flag at all.
  *
  * A request routed to `--single` for one of these reasons loses Stop for
- * THIS turn only — `sendQuery()` emits a `system` chunk naming the reason,
- * since `capabilities.interrupt` is a provider-wide flag and cannot vary
- * per turn.
+ * THIS turn only. `capabilities.interrupt` stays a provider-wide flag and
+ * cannot vary per turn, so `sendQuery()` instead emits a typed
+ * `turn_not_interruptible` chunk naming the reason before any other chunk of
+ * the turn — the dag-executor withholds Stop for that one turn only; a later
+ * turn on the same node (e.g. a config that qualifies for ACP) is
+ * interruptible again. A human-readable `system` chunk follows for the
+ * operator's transcript, never as the signal itself.
  */
 export function selectGrokTransport(input: SelectGrokTransportInput): GrokTransportSelection {
   const { config, requestOptions } = input;
@@ -385,9 +389,13 @@ export class GrokProvider implements IAgentProvider {
     const config = parseGrokConfig(requestOptions?.assistantConfig ?? {});
     const selection = selectGrokTransport({ config, requestOptions });
     if (selection.kind === 'single') {
+      // The typed signal (consumed by the dag-executor to withhold Stop for
+      // THIS turn) comes first; the prose notice below is for the operator's
+      // transcript only and is never itself the signal.
+      yield { type: 'turn_not_interruptible', reason: selection.reason };
       yield {
         type: 'system',
-        content: `Grok is running this turn on the legacy --single transport (${selection.reason}); an interrupt (Stop) request will wait for it to finish naturally rather than ending it early.`,
+        content: `⚠️ Grok is running this turn on the legacy --single transport (${selection.reason}); Stop is not available for this turn. It will run to completion.`,
       };
       yield* this.singleQuery(prompt, cwd, resumeSessionId, requestOptions, config);
       return;

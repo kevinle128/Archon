@@ -42,8 +42,9 @@ export const GROK_CAPABILITIES: ProviderCapabilities = {
   // and any `--permission-mode` beyond the default all had no proof found
   // live — see `selectGrokTransport()` in `provider.ts` for the exact
   // evidence per flag). Those node configs still run on `--single`, losing
-  // Stop for that one turn only; `sendQuery()` says so in a `system` chunk
-  // since this flag cannot vary per turn.
+  // Stop for that one turn only; this flag cannot vary per turn, so
+  // `sendQuery()` reports the downgrade with a typed `turn_not_interruptible`
+  // chunk instead (see `selectGrokTransport()`'s doc comment).
   interrupt: 'stream-abort',
   // ACP's `tool_call_update` has no distinct cancelled status either (same
   // as DeepSeek): a tool cut short by `session/cancel` observed live never

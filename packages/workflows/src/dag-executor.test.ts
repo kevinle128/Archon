@@ -28492,6 +28492,113 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(storedEventTypes(store)).toContain('node_completed');
   });
 
+  it('a provider-reported per-turn downgrade hides Stop for that turn only, and an interrupt AFTER the report settles safely without aborting', async () => {
+    let observedSubState: string | undefined;
+    let observedOutcome: string | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+      const handle = liveHandle(RUN_ID, 'review');
+      observedSubState = handle.steeringSubState();
+      observedOutcome = await handle.interrupt();
+      // An interrupt on an already-flagged turn must never abort the signal
+      // the provider was actually handed — nothing reads it, and the turn is
+      // left to run to completion.
+      expect(options?.interruptSignal?.aborted).toBe(false);
+      yield { type: 'assistant', content: 'ran to completion' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(observedSubState).toBeUndefined();
+    expect(observedOutcome).toBe('not_steerable_here');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    // A downgraded turn that never carries an abort marker is a plain
+    // natural completion, never reclassified as interrupted.
+    const states = await transcriptStates(store, RUN_ID, 'review');
+    expect(states).not.toContain('interrupted');
+  });
+
+  it('a Stop that races in BEFORE the provider reports the downgrade still resolves promptly once the report arrives, and never blocks the node', async () => {
+    let abortedBeforeReport: boolean | undefined;
+    let observedOutcome: string | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      // Simulates an HTTP interrupt request landing on the registry between
+      // beginTurn() and the executor ever seeing this turn's first chunk.
+      const pending = liveHandle(RUN_ID, 'review').interrupt();
+      abortedBeforeReport = options?.interruptSignal?.aborted;
+      yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+      // Processing this chunk must resolve the ALREADY-pending interrupt
+      // right away — never leave it waiting on the turn's natural end.
+      observedOutcome = await pending;
+      yield { type: 'assistant', content: 'ran to completion' };
+      yield { type: 'result', sessionId: 'sess-1' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(abortedBeforeReport).toBe(true); // inert abort — nothing reads this signal
+    expect(observedOutcome).toBe('not_steerable_here');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const states = await transcriptStates(store, RUN_ID, 'review');
+    expect(states).not.toContain('interrupted');
+  });
+
+  it('queued guidance still drains at the natural boundary after a non-interruptible turn, and the next turn is interruptible again', async () => {
+    let calls = 0;
+    const subStates: (string | undefined)[] = [];
+    let secondTurnInterruptOutcome: Promise<string> | undefined;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls === 1) {
+        yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+        subStates.push(liveHandle(RUN_ID, 'review').steeringSubState());
+        enqueue(store, RUN_ID, 'review', 'm-1', 'go again');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-1' };
+        return;
+      }
+      // Turn two: a fresh token with no downgrade — Stop actually aborts the
+      // signal this time (it just doesn't carry an abort marker in the
+      // result below, so the turn still completes the node naturally).
+      subStates.push(liveHandle(RUN_ID, 'review').steeringSubState());
+      secondTurnInterruptOutcome = liveHandle(RUN_ID, 'review').interrupt() as Promise<string>;
+      expect(options?.interruptSignal?.aborted).toBe(true);
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('go again');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('sess-1');
+    expect(subStates[0]).toBeUndefined(); // turn one: hidden
+    expect(subStates[1]).toBe('generating'); // turn two: interruptible again
+    // The natural (unmarked) result settles the racing interrupt as
+    // node_finished once the node's terminal close() seals the handle.
+    await expect(secondTurnInterruptOutcome).resolves.toBe('node_finished');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+  });
+
   it('interrupt in an AI loop idles inside the iteration and Send now resumes without consuming one', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {
@@ -28551,6 +28658,37 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(operatorRows[0]!.metadata.execution?.attempt_id).not.toBe(
       interrupted!.metadata?.execution?.attempt_id
     );
+  });
+
+  it('a provider-reported per-turn downgrade inside an AI loop iteration hides Stop for that iteration only', async () => {
+    let calls = 0;
+    const subStates: (string | undefined)[] = [];
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        yield { type: 'turn_not_interruptible', reason: 'legacy fallback transport' };
+        subStates.push(liveHandle(RUN_ID, 'my-loop').steeringSubState());
+        yield { type: 'assistant', content: 'iteration work' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      // Iteration 2: a fresh turn with no downgrade — interruptible again.
+      subStates.push(liveHandle(RUN_ID, 'my-loop').steeringSubState());
+      yield { type: 'assistant', content: 'done. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    expect(subStates[0]).toBeUndefined(); // iteration 1: hidden
+    expect(subStates[1]).toBe('generating'); // iteration 2: interruptible again
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
   });
 
   it('interrupt throw in an AI loop resumes the threaded session, not the dead pass', async () => {
