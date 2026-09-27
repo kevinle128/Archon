@@ -679,6 +679,17 @@ export interface AgentRequestOptions {
    * like a provider that ignores `interruptSignal`.
    */
   softInjection?: SoftInjectionChannel;
+  /**
+   * Caller-stamped durable message id for the single operator-guidance
+   * message this turn's `prompt` delivers (CAP-13 delivery acknowledgement).
+   * Set only when exactly one durable queue entry is being delivered as this
+   * turn's prompt — a combined multi-message prompt omits it, since one
+   * provider acknowledgement cannot honestly attribute to more than one id.
+   * A provider with `capabilities.deliveryAck === true` stamps it onto the
+   * outgoing message and emits `operator_delivery_ack` when the provider
+   * echoes it back; a provider without the capability ignores it.
+   */
+  operatorMessageId?: string;
   systemPrompt?: SystemPromptInput;
   outputFormat?: { type: 'json_schema'; schema: Record<string, unknown> };
   env?: Record<string, string>;

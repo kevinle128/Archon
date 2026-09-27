@@ -218,6 +218,12 @@ async function runSoftInjectionSpike(
     // means the content block (and often the whole turn) has already
     // finished, which is too late to prove genuine mid-turn delivery.
     includePartialMessages: true,
+    // `claude --help`: "Re-emit user messages from stdin back on stdout for
+    // acknowledgment (only works with --input-format=stream-json and
+    // --output-format=stream-json)" — exactly this spike's transport. Tests
+    // whether the re-emitted SDKUserMessageReplay carries the injected
+    // message's stamped uuid, the candidate delivery-ack mechanism.
+    extraArgs: { 'replay-user-messages': null },
   };
 
   try {

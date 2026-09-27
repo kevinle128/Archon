@@ -2571,6 +2571,13 @@ async function executeNodeInternal(
       delete passOptions.resumeInteractions;
       executionScope = newTranscriptAttempt(executionScope);
     }
+    // Delivery ack (CAP-13): only when this pass's prompt is a SINGLE durable
+    // operator message — a combined multi-message prompt has no honest
+    // single id to attribute a provider echo to. Reask passes carry no
+    // `operatorReceipt` of their own, so this is naturally pass-zero-only.
+    if (operatorReceipt?.messages.length === 1) {
+      passOptions.operatorMessageId = operatorReceipt.messages[0].message_id;
+    }
     // Fresh interrupt controller per provider pass (#183) — never reused across
     // re-asks or guidance turns. beginTurn registers immediately before
     // sendQuery so interrupt() can only ever abort a live query of this token.
@@ -6591,6 +6598,13 @@ async function executeLoopNodeInner(
               },
             },
           };
+
+          // Delivery ack (CAP-13): only when this pass's prompt is a SINGLE
+          // durable operator message and it is the guidance turn's first
+          // (non-reask) pass — mirrors runStreamPass in executeNodeInternal.
+          if (passReaskAttempt === 0 && pendingOperatorReceipt?.messages.length === 1) {
+            iterationOptions.operatorMessageId = pendingOperatorReceipt.messages[0].message_id;
+          }
 
           // Fresh interrupt controller per provider pass (#183) — never reused
           // across attempts or turns. beginTurn registers immediately before

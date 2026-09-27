@@ -27137,6 +27137,49 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(firstTurnText!.metadata?.execution?.attempt_id).not.toBe(causedAttempt);
   });
 
+  it('stamps operatorMessageId when the guidance turn delivers exactly one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'solo-1', 'redirect the plan', 'op-a');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBe('solo-1');
+  });
+
+  it('omits operatorMessageId when a guidance turn combines more than one durable message', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'combo-1', 'first', 'op-a');
+        enqueue(store, RUN_ID, 'review', 'combo-2', 'second', 'op-b');
+        yield { type: 'assistant', content: 'turn one' };
+        yield { type: 'result', sessionId: 'sess-turn-1' };
+        return;
+      }
+      yield { type: 'assistant', content: 'turn two' };
+      yield { type: 'result', sessionId: 'sess-turn-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    const options = sendQueryArg<SendQueryOptions>(1, 3);
+    expect(options.operatorMessageId).toBeUndefined();
+  });
+
   it('flushes batch output once per settled turn and folds usage across turns', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {

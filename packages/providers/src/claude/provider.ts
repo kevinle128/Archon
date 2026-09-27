@@ -97,15 +97,25 @@ function closeQuery(queryToClose: ClosableQuery | undefined, reason: string): vo
  * query's control channel (interrupt, setPermissionMode, …) alive only while
  * input is streaming, so the provider resolves the gate in every result,
  * error, Cancel, and finally path.
+ *
+ * `uuid`, when provided, stamps the durable operator message id this prompt
+ * delivers (CAP-13 delivery ack) — the CLI echoes it back on the output
+ * stream (`isReplay: true`) only when started with `--replay-user-messages`.
  */
 async function* singleTurnInput(
   text: string,
-  holdOpen: Promise<void>
+  holdOpen: Promise<void>,
+  uuid?: string
 ): AsyncGenerator<SDKUserMessage, void, undefined> {
   yield {
     type: 'user',
     message: { role: 'user', content: text },
     parent_tool_use_id: null,
+    // The durable steering message id is caller-stamped as a UUID (see
+    // steering-api-contract.md); the SDK's `UUID` template-literal type
+    // needs pinning since it is validated at the durable-store boundary,
+    // not by this SDK type.
+    ...(uuid !== undefined ? { uuid: uuid as SDKUserMessage['uuid'] } : {}),
   };
   await holdOpen;
 }
@@ -1435,6 +1445,17 @@ async function* streamClaudeMessages(
       } else {
         getLog().debug({ subtype: sysMsg.subtype }, 'claude.system_message_unhandled');
       }
+    } else if (event.type === 'user') {
+      // With `extraArgs: { 'replay-user-messages': null }` the CLI re-emits
+      // each stdin-delivered user message on stdout (`isReplay: true`) once
+      // accepted — the verified delivery-acknowledgement signal (CAP-13).
+      // Correlation is the caller-stamped `uuid` alone; an id that matches no
+      // pending durable entry is a harmless no-op at the store layer, never
+      // inferred from timing or content.
+      const replay = msg as { isReplay?: boolean; uuid?: string };
+      if (replay.isReplay === true && typeof replay.uuid === 'string') {
+        yield { type: 'operator_delivery_ack', messageId: replay.uuid };
+      }
     } else if (event.type === 'rate_limit_event') {
       const rateLimitMsg = msg as { rate_limit_info?: Record<string, unknown> };
       getLog().warn({ rateLimitInfo: rateLimitMsg.rate_limit_info }, 'claude.rate_limit_event');
@@ -1923,7 +1944,14 @@ export class ClaudeProvider implements IAgentProvider {
             const holdOpen = new Promise<void>(resolve => {
               releaseInput = resolve;
             });
-            promptInput = singleTurnInput(queryPrompt, holdOpen);
+            promptInput = singleTurnInput(queryPrompt, holdOpen, requestOptions?.operatorMessageId);
+            if (requestOptions?.operatorMessageId !== undefined) {
+              // `--replay-user-messages` requires the streaming-input path
+              // singleTurnInput already establishes above; CAP-13 delivery
+              // ack is otherwise inert. See the `event.type === 'user'`
+              // branch in streamClaudeMessages for the echo it produces.
+              options.extraArgs = { ...options.extraArgs, 'replay-user-messages': null };
+            }
           }
           const rawEvents = query({ prompt: promptInput, options });
           currentQuery = rawEvents;
