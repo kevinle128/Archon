@@ -287,6 +287,15 @@ one increment behind where it would have been. A state-accumulating check theref
 reaches its threshold one iteration later. Approving with no text finalizes from the
 already-computed output and does not diverge at all.
 
+A second case shifts the timing the other way. Operator guidance sent through the
+node's `Queue` control drains as an extra provider turn inside the *same*
+iteration — not a loop iteration of its own — and every completion channel
+re-evaluates on that turn's own output. A state-accumulating check therefore runs
+once *more* per drained guidance message, so it can reach its threshold in *fewer*
+iterations than it would with no operator guidance at all. `loopIterations` and the
+`loop_iteration_completed` event count iterations, not provider turns, so one
+iteration that absorbed a guidance turn still reports as one.
+
 Prefer a `until_bash` that only *reads* state — `test`, `grep`, a test suite — and
 let a `bash:` node inside the loop own any mutation.
 :::

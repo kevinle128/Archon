@@ -271,6 +271,12 @@ function eventMatchesSelection(event: WorkflowEvent, row: ExecutionRow): boolean
   return occurrenceId === null && attemptId === null;
 }
 
+/** A row backed by a live provider process — the same two statuses every
+ * selector/header live-word and follow-live decision in this module reads. */
+export function isLiveRowStatus(status: string): boolean {
+  return status === 'running' || status === 'awaiting';
+}
+
 export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
   rows: readonly T[],
   nodeId: string,
@@ -292,6 +298,67 @@ export function chooseExecutionForNode<T extends ExecutionChoiceRow>(
   const ran = forNode.filter(row => row.status !== 'skipped');
   if (ran.length > 0) return latestByOrder(ran);
   return latestByOrder(forNode);
+}
+
+/**
+ * The row a room visit actually displays, resolved fresh on every render —
+ * never written back into `RoomVisitState` itself, so there is nothing to
+ * resynchronize and no extra render pass between a live row appearing and
+ * the room showing it.
+ *
+ * While `selection.followingLive` holds, the displayed row is exactly what
+ * a brand-new room-open would choose right now (`chooseExecutionForNode`
+ * with no explicit override): it advances to a newer live row the instant
+ * one exists, and falls through to "the latest row that ran" when none does
+ * — the gap between one iteration ending and the next iteration's first row
+ * appearing stays on the just-finished row rather than jumping anywhere,
+ * because `chooseExecutionForNode` reports no live candidate to jump to.
+ * `resolveGapHoldStatus` is what keeps the dock itself open through that
+ * gap despite the row's own terminal status.
+ *
+ * An explicit pick of a non-live row (`followingLive: false`) is pinned by
+ * id — the transcript never moves out from under an operator reading it on
+ * purpose.
+ */
+export function resolveFollowedRow<T extends ExecutionChoiceRow>(
+  selection: RoomVisitSelection | null,
+  rows: readonly T[]
+): T | null {
+  if (selection === null) return null;
+  if (selection.followingLive) {
+    const live = chooseExecutionForNode(rows, selection.nodeId, null);
+    if (live !== null) return live;
+  }
+  return rows.find(row => row.id === selection.rowId) ?? null;
+}
+
+/**
+ * The room-header caption + the dock's own `rowStatus` input agree while a
+ * followed row is live or terminal; they diverge only in the gap between one
+ * iteration's row completing and the next iteration's row starting (e.g.
+ * `until_bash` still deciding). During that gap `resolveFollowedRow` holds
+ * the just-finished row (nothing live exists to switch to), whose own status
+ * would otherwise read `completed` and drop the composer. Returns the
+ * status to feed `steeringDockMode` instead — the node's own live status —
+ * only during that exact gap; every other case returns the row's own status
+ * unchanged, including once the node itself goes terminal (the hold releases
+ * on its own).
+ */
+export function resolveGapHoldStatus<S extends string>(input: {
+  followingLive: boolean;
+  rowStatus: S;
+  nodeStatus: S | null | undefined;
+}): S {
+  if (
+    input.followingLive &&
+    !isLiveRowStatus(input.rowStatus) &&
+    input.nodeStatus !== null &&
+    input.nodeStatus !== undefined &&
+    isLiveRowStatus(input.nodeStatus)
+  ) {
+    return input.nodeStatus;
+  }
+  return input.rowStatus;
 }
 
 /** Execution selector ceiling — also the header's "max N" caption. */
@@ -882,6 +949,18 @@ export interface RoomVisitSelection {
   nodeId: string;
   rowId: string;
   openerId: string | null;
+  /**
+   * True when `rowId` was live (`isLiveRowStatus`) at the moment it was
+   * selected — by any path: an auto room-open, an explicit click on the row
+   * currently backed by a live process, or "Go to iteration N" (which always
+   * targets the live row). `resolveFollowedRow` re-chooses the displayed row
+   * on every render while this holds, so the room keeps following the live
+   * execution across iteration boundaries. An explicit pick of a row that
+   * was NOT live at selection time sets this false, pinning that exact row —
+   * the operator is reading history on purpose and the room must never move
+   * out from under them.
+   */
+  followingLive: boolean;
 }
 
 export interface RoomVisitState {
@@ -950,7 +1029,7 @@ export function applyRoomDeepLink(
   }
   return openRoom(
     { ...state, appliedDeepLinkNode: queryNode },
-    { nodeId: queryNode, rowId: row.id, openerId: null }
+    { nodeId: queryNode, rowId: row.id, openerId: null, followingLive: isLiveRowStatus(row.status) }
   );
 }
 

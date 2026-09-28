@@ -18,6 +18,7 @@ import {
   hasIdleAwaitExpiredEvidence,
   hasUnsettledNodeExecutions,
   headerMetaLine,
+  isLiveRowStatus,
   latestNodeExecutionKey,
   loopMaxIterationsForNode,
   nodeKindChip,
@@ -26,6 +27,8 @@ import {
   rememberRoomScroll,
   resetRoomVisit,
   resolveFinishedIterationView,
+  resolveFollowedRow,
+  resolveGapHoldStatus,
   resolveRunDetailRefetchIntervalMs,
   roomOpenerId,
   runtimeForSelection,
@@ -33,6 +36,7 @@ import {
   type ExecutionLoopAncestryEntry,
   type ExecutionRow,
   type ExecutionRowSelection,
+  type RoomVisitSelection,
   selectableExecutionRows,
 } from './execution-room-model';
 
@@ -117,6 +121,97 @@ describe('chooseExecutionForNode', () => {
 
   test('returns null for an unknown node', () => {
     expect(chooseExecutionForNode(rows, 'other', 'awaiting')).toBeNull();
+  });
+});
+
+describe('isLiveRowStatus', () => {
+  test('running and awaiting are live; every other status is not', () => {
+    expect(isLiveRowStatus('running')).toBe(true);
+    expect(isLiveRowStatus('awaiting')).toBe(true);
+    expect(isLiveRowStatus('completed')).toBe(false);
+    expect(isLiveRowStatus('failed')).toBe(false);
+    expect(isLiveRowStatus('skipped')).toBe(false);
+    expect(isLiveRowStatus('cancelled')).toBe(false);
+    expect(isLiveRowStatus('pending')).toBe(false);
+  });
+});
+
+describe('resolveFollowedRow', () => {
+  const iteration1 = row({ id: 'iter-1', status: 'completed', order: 0 });
+  const iteration2 = row({ id: 'iter-2', status: 'running', order: 1 });
+  const iteration3Awaiting = row({ id: 'iter-3', status: 'awaiting', order: 2 });
+  const rows = [iteration1, iteration2];
+  const selection = (over: Partial<RoomVisitSelection>): RoomVisitSelection => ({
+    nodeId: NODE_ID,
+    rowId: iteration1.id,
+    openerId: null,
+    followingLive: true,
+    ...over,
+  });
+
+  test('a null selection resolves to null', () => {
+    expect(resolveFollowedRow(null, rows)).toBeNull();
+  });
+
+  test('following live advances to a newer live row once one appears', () => {
+    expect(resolveFollowedRow(selection({ rowId: iteration1.id }), rows)).toBe(iteration2);
+  });
+
+  test('following live advances again when an even newer row supersedes it', () => {
+    const withIteration3 = [iteration1, { ...iteration2, status: 'completed' }, iteration3Awaiting];
+    expect(resolveFollowedRow(selection({ rowId: iteration2.id }), withIteration3)).toBe(
+      iteration3Awaiting
+    );
+  });
+
+  test('an explicit pick of a finished row is pinned, never advancing to a live row', () => {
+    expect(
+      resolveFollowedRow(selection({ rowId: iteration1.id, followingLive: false }), rows)
+    ).toBe(iteration1);
+  });
+
+  test('the gap between iterations — nothing live yet — stays on the just-finished row', () => {
+    const onlyFinished = [iteration1];
+    expect(resolveFollowedRow(selection({ rowId: iteration1.id }), onlyFinished)).toBe(iteration1);
+  });
+
+  test('following live on the row that is itself already live is a no-op', () => {
+    expect(resolveFollowedRow(selection({ rowId: iteration2.id }), rows)).toBe(iteration2);
+  });
+});
+
+describe('resolveGapHoldStatus', () => {
+  test('holds the node status while following live with nothing live selected', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: 'running' })
+    ).toBe('running');
+  });
+
+  test('does not override an already-live row status', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'running', nodeStatus: 'running' })
+    ).toBe('running');
+  });
+
+  test('never holds for an explicit (non-following) selection', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: false, rowStatus: 'completed', nodeStatus: 'running' })
+    ).toBe('completed');
+  });
+
+  test('releases once the node itself goes terminal — the loop actually finished', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: 'completed' })
+    ).toBe('completed');
+  });
+
+  test('a missing node status never holds', () => {
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: undefined })
+    ).toBe('completed');
+    expect(
+      resolveGapHoldStatus({ followingLive: true, rowStatus: 'completed', nodeStatus: null })
+    ).toBe('completed');
   });
 });
 
@@ -1602,11 +1697,13 @@ describe('room visit transitions', () => {
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     expect(opened.selection).toEqual({
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     expect(opened.lastExplicitRowByNode).toEqual({});
   });
@@ -1616,6 +1713,7 @@ describe('room visit transitions', () => {
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     expect(opened.lastExplicitRowByNode).toEqual({ [NODE_ID]: awaiting.id });
   });
@@ -1625,6 +1723,7 @@ describe('room visit transitions', () => {
       nodeId: NODE_ID,
       rowId: awaiting.id,
       openerId,
+      followingLive: true,
     });
     const withScroll = rememberRoomScroll(opened, 'run-1:review', 120);
     const closed = closeRoom(withScroll);
@@ -1698,6 +1797,7 @@ describe('room visit transitions', () => {
         nodeId: NODE_ID,
         rowId: awaiting.id,
         openerId,
+        followingLive: true,
       }),
       'scope',
       80

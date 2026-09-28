@@ -49,6 +49,7 @@ import {
   computeLoopIterationCount,
   computeRunOfTotal,
   disambiguateExecutionOptions,
+  isLiveRowStatus,
   loopMaxIterationsForNode,
   openRoom,
   openExplicitRoom,
@@ -56,6 +57,7 @@ import {
   rememberRoomScroll,
   resetRoomVisit,
   resolveRunDetailRefetchIntervalMs,
+  resolveFollowedRow,
   roomOpenerId,
   type RoomVisitState,
 } from '@/lib/execution-room-model';
@@ -755,13 +757,19 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
 
   const handleOpenRoom = useCallback(
     (rowId: string, nodeId: string, openerId: string | null, rememberExplicit: boolean): void => {
-      const selection = { nodeId, rowId, openerId };
+      const row = executionRows.find(candidate => candidate.id === rowId);
+      const selection = {
+        nodeId,
+        rowId,
+        openerId,
+        followingLive: row !== undefined && isLiveRowStatus(row.status),
+      };
       setRoom(previous =>
         rememberExplicit ? openExplicitRoom(previous, selection) : openRoom(previous, selection)
       );
       setNodeScrollTrigger(prev => prev + 1);
     },
-    []
+    [executionRows]
   );
 
   const handleCloseRoom = useCallback((): void => {
@@ -772,8 +780,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     });
   }, [room.selection?.openerId]);
 
-  const selectedExecutionRow =
-    executionRows.find(candidate => candidate.id === room.selection?.rowId) ?? null;
+  const selectedExecutionRow = resolveFollowedRow(room.selection, executionRows);
   const runStartedAtIso = workflow === null ? '' : new Date(workflow.startedAt).toISOString();
   const executionRowsForSelectedNode =
     selectedExecutionRow === null
@@ -839,6 +846,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           nodeId: next.nodeId,
           rowId: next.id,
           openerId: previous.selection?.openerId ?? null,
+          followingLive: isLiveRowStatus(next.status),
         })
       );
     },
@@ -879,6 +887,10 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             nodeId,
             rowId: `node:${nodeId}`,
             openerId: roomOpenerId('legacy', 'graph', nodeId),
+            // No row exists yet for this node — nothing to follow now, but
+            // the first row it does produce should be followed rather than
+            // pinned, matching the intent of clicking a not-yet-started node.
+            followingLive: true,
           })
         );
       } else {
@@ -887,6 +899,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             nodeId,
             rowId: row.id,
             openerId: roomOpenerId('legacy', 'graph', nodeId),
+            followingLive: isLiveRowStatus(row.status),
           })
         );
       }
@@ -1056,7 +1069,12 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           activeView={activeView === 'chat' ? 'chat' : activeView === 'graph' ? 'graph' : 'logs'}
           renderGraph={renderGraph}
           selectedNodeId={selectedDagNode}
-          selectedLogRowId={room.selection?.rowId ?? null}
+          // The RESOLVED row — while `room.selection.followingLive` holds,
+          // this can be a newer row than `room.selection.rowId` itself once
+          // the room advances to a live iteration; the pane must render the
+          // same row the header above it describes, never the raw pinned id.
+          selectedLogRowId={selectedExecutionRow?.id ?? null}
+          followingLive={room.selection?.followingLive ?? false}
           lastExplicitRowByNode={room.lastExplicitRowByNode}
           onOpenRoom={handleOpenRoom}
           onCloseRoom={handleCloseRoom}

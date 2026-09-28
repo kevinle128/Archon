@@ -26,6 +26,14 @@ import { AsyncQueue } from './async-queue';
 const DEFAULT_TERMINATE_GRACE_MS = 5_000;
 /** Post-cancel window for the agent to flush trailing updates and settle the prompt before a hung one is released. Mirrors the DeepSeek ACP client's drain window. */
 const CANCEL_DRAIN_GRACE_MS = 500;
+/**
+ * How long, after `abortSignal` fires, `runGrokAcpTurn` waits before
+ * concluding the ACP protocol itself is stuck and force-killing the process
+ * — well past `CANCEL_DRAIN_GRACE_MS`, the graceful in-flight-prompt cancel
+ * path's own expected settlement time, so a normally responsive agent's
+ * cancel always wins first and never trips this fallback.
+ */
+const DEFAULT_ABORT_STUCK_GRACE_MS = 3_000;
 /** `_meta.usage.costUsdTicks` is fixed-point USD: `docs/…/cli.md` "1 USD = 10^10 ticks" (verified against a live `costUsdTicks`/dollar pair). */
 const USD_TICKS_PER_DOLLAR = 1e10;
 
@@ -57,6 +65,8 @@ export interface GrokAcpProcessInput extends GrokAcpTurnInput {
 export interface GrokAcpProcessDependencies {
   spawn?: typeof spawn;
   terminateGraceMs?: number;
+  /** See `DEFAULT_ABORT_STUCK_GRACE_MS`. Overridable for tests only. */
+  abortStuckGraceMs?: number;
 }
 
 function errorMessage(error: unknown): string {
@@ -494,6 +504,7 @@ export async function* runGrokAcpTurn(
 ): AsyncGenerator<MessageChunk> {
   const spawnFn = dependencies?.spawn ?? spawn;
   const terminateGraceMs = dependencies?.terminateGraceMs ?? DEFAULT_TERMINATE_GRACE_MS;
+  const abortStuckGraceMs = dependencies?.abortStuckGraceMs ?? DEFAULT_ABORT_STUCK_GRACE_MS;
 
   const args = ['agent', '--always-approve', '--no-leader'];
   if (input.model) args.push('-m', input.model);
@@ -547,6 +558,40 @@ export async function* runGrokAcpTurn(
   );
   const gen = driveGrokAcpTurn(stream, input);
 
+  // Reaping the child must never depend on THIS generator being resumed
+  // again. A caller that stops pulling once it sees `input.abortSignal`
+  // fire (`withIdleTimeout`'s external-abort branch is exactly this) can
+  // leave this generator suspended at its last `yield` forever — no further
+  // `.next()` call ever arrives to run any cleanup an in-loop race would
+  // depend on, `finally` included. So this reap is armed as a plain
+  // listener on the signal itself: it fires `abortStuckGraceMs` after
+  // abort — well past `driveGrokAcpTurn`'s own graceful in-flight-prompt
+  // cancel (`CANCEL_DRAIN_GRACE_MS`), so a normally responsive agent's
+  // cancel always finishes and clears it first — and kills the child
+  // directly. `reapOnce` is idempotent with the `finally` block's own
+  // reap below, so both can fire without conflict; killing the process
+  // also unblocks whatever ACP request `driveGrokAcpTurn` was stuck
+  // awaiting, letting its own cleanup settle on its own schedule even
+  // though nothing is consuming its output anymore.
+  let reaped = false;
+  const reapOnce = async (): Promise<void> => {
+    if (reaped) return;
+    reaped = true;
+    await reapChild(child, terminateGraceMs);
+  };
+  let abortStuckTimer: ReturnType<typeof setTimeout> | undefined;
+  const abortSignal = input.abortSignal;
+  const armAbortStuckReap = (): void => {
+    abortStuckTimer = setTimeout(() => {
+      if (finished) return;
+      void reapOnce();
+    }, abortStuckGraceMs);
+  };
+  if (abortSignal !== undefined) {
+    if (abortSignal.aborted) armAbortStuckReap();
+    else abortSignal.addEventListener('abort', armAbortStuckReap, { once: true });
+  }
+
   try {
     for (;;) {
       const next = gen.next();
@@ -573,11 +618,18 @@ export async function* runGrokAcpTurn(
       : new Error(`${String(error)}${suffix}`);
   } finally {
     finished = true;
+    if (abortStuckTimer !== undefined) clearTimeout(abortStuckTimer);
+    // `{ once: true }` self-removes once fired, but a turn that completes
+    // (or fails) BEFORE abort ever fires leaves the listener attached — the
+    // dag-executor reuses one AbortController across every turn of a node,
+    // so a long-running node would otherwise accumulate one dead listener
+    // per turn.
+    abortSignal?.removeEventListener('abort', armAbortStuckReap);
     try {
       await gen.return(undefined);
     } catch {
       // Turn already failed or completed.
     }
-    await reapChild(child, terminateGraceMs);
+    await reapOnce();
   }
 }

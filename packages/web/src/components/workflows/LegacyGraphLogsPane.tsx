@@ -61,6 +61,15 @@ export interface LegacyGraphLogsPaneProps {
   }) => ReactNode;
   selectedNodeId: string | null;
   selectedLogRowId: string | null;
+  /**
+   * True while the room is following the live execution rather than pinned
+   * to an explicit pick — see `RoomVisitSelection.followingLive`. Feeds the
+   * gap-hold override that keeps the dock in composer mode between one
+   * loop iteration's row completing and the next iteration's row starting,
+   * when `selectedLogRowId` resolves to that just-finished row because
+   * nothing live exists yet to follow.
+   */
+  followingLive?: boolean;
   lastExplicitRowByNode?: Record<string, string>;
   onOpenRoom: (
     rowId: string,
@@ -196,6 +205,7 @@ export function LegacyGraphLogsPane({
   renderGraph,
   selectedNodeId,
   selectedLogRowId,
+  followingLive = false,
   lastExplicitRowByNode = {},
   onOpenRoom,
   onCloseRoom,
@@ -539,6 +549,7 @@ export function LegacyGraphLogsPane({
         actionStates={actionStates}
         onSubmitAsk={onSubmitAsk}
         nodeState={selectedNodeState}
+        followingLive={followingLive}
         headerModel={headerModel}
         headerOptions={headerOptions}
         executionCount={executionCount}

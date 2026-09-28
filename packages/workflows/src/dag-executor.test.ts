@@ -10651,6 +10651,50 @@ nodes:
       const data = (failed[0][0] as Record<string, unknown>).data as Record<string, unknown>;
       expect(String(data.error)).toContain('exceeded max iterations');
     });
+
+    it('stamps the durable steering settings row with the resolved provider, exactly like a prompt node', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'DONE' };
+        yield { type: 'result', sessionId: 'loop-steering-stamp' };
+      });
+
+      const store = createMockStore();
+      await executeDagWorkflow(
+        createMockDeps(store),
+        createMockPlatform(),
+        'conv-loop-steering-stamp',
+        testDir,
+        {
+          name: 'loop-steering-stamp-fixture',
+          nodes: [
+            {
+              id: 'steer-loop',
+              loop: {
+                prompt: 'Do the work until DONE.',
+                until: 'DONE',
+                max_iterations: 2,
+              },
+            },
+          ],
+        },
+        makeWorkflowRun('loop-steering-stamp-run'),
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      // This durable stamp is what lets a restarted server classify the node
+      // as `recovery_required` (settings row exists, no live handle) instead
+      // of `not_steerable_here` (never registered) — see
+      // `classifySteeringLifecycle` in @archon/server.
+      const settings = await store.getSteeringNodeSettings('loop-steering-stamp-run', 'steer-loop');
+      expect(settings?.provider_id).toBe('claude');
+    });
   });
 
   // ─── Decoupled stream-cancel poller (silent tool call) — loop variant ────
@@ -28182,6 +28226,63 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(nodeFailedError(store, 'my-loop')).toContain('exceeded max iterations');
   });
 
+  it('a guidance turn that does real work can satisfy a read-only until_bash within the same iteration', async () => {
+    // Read-only completion check (the documented, recommended shape — see
+    // loop-nodes.md's until_bash caution block): true once a flag file
+    // exists, never mutating anything itself. The natural turn does no work
+    // (no flag); the drained guidance turn is where the real work happens.
+    const flagFile = join(testDir, 'guidance-flag');
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'finish the task now');
+        yield { type: 'assistant', content: 'thinking about it' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      // The guidance turn's own (simulated) work is what makes the
+      // completion check true — nothing else in this test touches the file.
+      writeFileSync(flagFile, 'done');
+      yield { type: 'assistant', content: 'finished per the operator note' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: {
+          prompt: 'Do a task.',
+          until_bash: `test -f "${flagFile}"`,
+          max_iterations: 3,
+        },
+      },
+    ]);
+
+    // Two provider turns ran (natural + the drained guidance turn), but the
+    // guidance turn's own until_bash pass is what completed the node — the
+    // engine never held it back for a second, un-guided iteration. This is
+    // intentional (`dag-executor.ts`'s steering-boundary comment: "every
+    // completion channel re-evaluates on the newest turn's output") and
+    // matches the UX contract: `Queue` delivers guidance "as the next turn
+    // when the current turn ends naturally" — the same turn, not a later one.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('finish the task now');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    // `loop_iteration_completed` counts iterations, not provider turns: one
+    // iteration ran two turns, so exactly one such event exists, not two,
+    // and it reports iteration 1.
+    const iterationCompletedEvents = (
+      store.createWorkflowEvent as ReturnType<typeof mock>
+    ).mock.calls
+      .map(call => call[0] as { event_type: string; data: Record<string, unknown> })
+      .filter(event => event.event_type === 'loop_iteration_completed');
+    expect(iterationCompletedEvents).toHaveLength(1);
+    expect(iterationCompletedEvents[0]!.data.iteration).toBe(1);
+  });
+
   it('registers loop-group body prompt nodes under the namespaced step name', async () => {
     let calls = 0;
     let sawNamespaced: NodeSteeringHandle | undefined;
@@ -28630,6 +28731,23 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(interrupted!.metadata?.execution?.occurrence_id).toBe(
       resumed!.metadata?.execution?.occurrence_id
     );
+  });
+
+  it('stamps the durable steering settings row with the resolved provider for a prompt node', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'prompt-steering-stamp' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    // This durable stamp is what lets a restarted server classify the node
+    // as `recovery_required` (settings row exists, no live handle) instead
+    // of `not_steerable_here` (never registered) — see
+    // `classifySteeringLifecycle` in @archon/server. The loop-node path
+    // stamps identically through the same shared helper.
+    const settings = await store.getSteeringNodeSettings(RUN_ID, 'review');
+    expect(settings?.provider_id).toBe('claude');
   });
 
   it('emits node_turn_started on every pass and node_turn_interrupted on Stop, in order, so an observing tab always has a live refetch trigger', async () => {

@@ -1147,8 +1147,13 @@ export function ConsoleAgentHistoryList({
 
   const afterById = new Map<string, ReactNode>();
   for (const item of items) afterById.set(item.id, renderAfterItem?.(item));
-  // Only the actual last rendered history item is programmatically focusable
-  // (the steering dock's Stop-removal focus target); it never joins Tab order.
+  // Every history row is programmatically focusable (never joining Tab
+  // order) so that losing `data-last-row` status on a later render — a new
+  // item becomes the anchor — never strips the tabIndex a still-focused row
+  // depends on. A `tabIndex` that vanishes out from under the focused
+  // element forces the browser to blur it with nothing left to receive
+  // focus, which is exactly how focus used to fall to `<body>` when a turn
+  // resumed after Stop.
   let lastItemId: string | null = null;
   // The latest todo call is where the folded checklist reads best; every
   // earlier call stays a plain "todo updated" row with no expandable body.
@@ -1162,8 +1167,10 @@ export function ConsoleAgentHistoryList({
       latestTodoItemId = item.id;
     }
   }
-  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
-    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> => ({
+    tabIndex: -1,
+    ...(item.id === lastItemId ? { 'data-last-row': '' } : {}),
+  });
   const lastRowRing = (item: AgentHistoryItem): string =>
     item.id === lastItemId ? ' focus-visible:outline-2 focus-visible:outline-accent-bright!' : '';
 

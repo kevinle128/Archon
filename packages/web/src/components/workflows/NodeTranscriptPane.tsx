@@ -23,7 +23,11 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
-import { bareNodeLabel, type FinishedIterationView } from '@/lib/execution-room-model';
+import {
+  bareNodeLabel,
+  resolveGapHoldStatus,
+  type FinishedIterationView,
+} from '@/lib/execution-room-model';
 import { groupByOccurrence, type OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -90,6 +94,14 @@ export interface NodeTranscriptPaneProps {
   starterDisplayName: string | null;
   actionStates: AskActionStateByRequest;
   nodeState: WorkflowNodeStateResponse | undefined;
+  /**
+   * True while the room is following the live execution rather than pinned
+   * to an explicit pick (`RoomVisitSelection.followingLive`). Feeds the
+   * dock's own `rowStatus` only — see `resolveGapHoldStatus` — so the
+   * composer stays open through the gap between one loop iteration's row
+   * completing and the next iteration's row starting. Default false.
+   */
+  followingLive?: boolean;
   /** Matched definition node's `output_format`; absent or ineligible schemas leave text untouched. */
   outputFormat?: Record<string, unknown> | null;
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
@@ -142,6 +154,7 @@ export function NodeTranscriptPane({
   starterDisplayName,
   actionStates,
   nodeState,
+  followingLive = false,
   outputFormat,
   onSubmitAsk,
   events = [],
@@ -195,6 +208,17 @@ export function NodeTranscriptPane({
   const nodeId = row?.nodeId ?? null;
   const rowId = row?.id ?? null;
   const rowStatus = row?.status ?? 'completed';
+  // The dock's OWN input only: between one loop iteration's row completing
+  // and the next iteration's row starting, `resolveFollowedRow` is still
+  // following live but has nothing live to show yet, so `rowStatus` above
+  // reads the just-finished row's terminal status. Substituting the node's
+  // own live status there — never anywhere else `rowStatus` is read in this
+  // file — keeps the composer open through that gap instead of dropping it.
+  const composerRowStatus = resolveGapHoldStatus({
+    followingLive,
+    rowStatus,
+    nodeStatus: nodeState?.status,
+  });
   const occurrenceId = row?.selection.kind === 'occurrence' ? row.selection.occurrenceId : null;
   const attemptId = row?.selection.kind === 'occurrence' ? (row.selection.attemptId ?? null) : null;
 
@@ -683,7 +707,7 @@ export function NodeTranscriptPane({
         runId={runId}
         nodeId={row.nodeId}
         nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
-        rowStatus={rowStatus}
+        rowStatus={composerRowStatus}
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
         subState={nodeState?.steeringSubState}

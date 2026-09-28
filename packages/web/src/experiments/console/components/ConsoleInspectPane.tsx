@@ -75,6 +75,8 @@ export interface ConsoleInspectPaneProps {
   streamNodeFilter: string;
   selectedNodeId: string | null;
   selectedLogRowId: string | null;
+  /** See `LegacyGraphLogsPaneProps.followingLive`. */
+  followingLive?: boolean;
   showToolCalls: boolean;
   showSystem: boolean;
   logHeader: ReactNode;
@@ -235,6 +237,7 @@ export function ConsoleInspectPane({
   streamNodeFilter,
   selectedNodeId,
   selectedLogRowId,
+  followingLive = false,
   showToolCalls,
   showSystem,
   logHeader,
@@ -418,6 +421,7 @@ export function ConsoleInspectPane({
           projectId={projectId}
           nodeId={selectedNodeId}
           selectedRow={selectedRow}
+          followingLive={followingLive}
           definitionNodes={definitionNodes}
           definitionPending={definitionPending}
           nodeStates={nodeStates}

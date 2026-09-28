@@ -674,6 +674,48 @@ for (const surface of ['console', 'legacy'] as const) {
     await captureEvidence(room, `us-005-${surface}-detached-recovery-required.png`, testInfo);
   });
 
+  test(`[P1] [V:steer.detached-loop-${surface}] a CLI-detached LOOP run discloses recovery-required, not a live composer, on ${surface}`, async ({
+    page,
+    archon,
+  }, testInfo: TestInfo) => {
+    test.setTimeout(T.xlong * 2);
+    // A CLI-detached run's executor registers its own live handle and
+    // durably stamps `provider_id` on the node's steering settings row in
+    // ITS OWN process. From this server's perspective the row looks exactly
+    // like a node whose process crashed and restarted: a durable stamp with
+    // no in-memory handle. The loop-node executor path used to skip that
+    // stamp entirely (only the prompt-node path wrote it), so a loop node
+    // in this exact state rendered a live, steerable composer instead of
+    // the read-only recovery band — this is the regression guard for that.
+    const detached = await archon.startDetachedWorkflow(E2E_QUEUE_GUIDANCE_LOOP_WORKFLOW_NAME);
+    const runId = await detached.runId;
+    await archon.waitForRunStatus(runId, 'running', T.long);
+    await waitForNodeStarted(page, runId, QUEUE_GUIDANCE_LOOP_NODE);
+    const room = await openGuidanceRoom(page, surface, runId, QUEUE_GUIDANCE_LOOP_NODE);
+    const disclosure = room.getByRole('alert');
+    await expect(disclosure).toContainText(STEERING_RECOVERY_DISCLOSURE);
+    await expect(guidanceField(room)).toHaveCount(0);
+    await expect(queueButton(room)).toHaveCount(0);
+    await expect(room.getByText(/^queued ·/)).toHaveCount(0);
+
+    const queueAttempt = await archon.starterFetch(sendPathname(runId, QUEUE_GUIDANCE_LOOP_NODE), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: 'detached loop guidance',
+        message_id: randomUUID(),
+        intent: 'queue',
+      }),
+    });
+    expect(queueAttempt.status).toBe(409);
+    expect(await queueAttempt.json()).toMatchObject({
+      success: false,
+      error: { code: 'recovery_required' },
+    });
+
+    await captureEvidence(room, `us-005-${surface}-detached-loop-recovery-required.png`, testInfo);
+  });
+
   test(`[P1] [V:steer.visual-${surface}] queue guidance dock geometry, contrast, and reduced-motion evidence on ${surface}`, async ({
     page,
     archon,

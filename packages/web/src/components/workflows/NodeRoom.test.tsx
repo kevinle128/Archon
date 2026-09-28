@@ -413,7 +413,11 @@ describe('NodeRoom', () => {
     const markup = renderRoom();
     const markers = markup.match(/data-last-row=""/g) ?? [];
     expect(markers).toHaveLength(1);
-    expect(markup).toContain('data-last-row="" tabindex="-1"');
+    // Every row carries `tabindex="-1"` (never Tab-reachable, always
+    // programmatically focusable) so that losing `data-last-row` on a later
+    // render never strips the tabindex a still-focused row depends on.
+    expect(markup).toContain('tabindex="-1" data-last-row=""');
+    expect((markup.match(/tabindex="-1"/g) ?? []).length).toBeGreaterThan(1);
     // The default fixture ends with a trailing `lifecycle` row (a terminal
     // status notice) after the tool row; the marker must skip past it and
     // sit on the tool row's own wrapper instead — see the regression tests
@@ -831,8 +835,10 @@ describe('NodeRoom tool rows', () => {
       lifecycleItem('l-1', 4, 'completed'),
     ];
     const markup = renderRoom({ items });
-    expect(markup).toContain('<div><details data-tool-id="t-1"');
-    expect(markup).toContain('</details></div><div><details data-tool-id="t-2"');
+    // Every row wrapper carries `tabindex="-1"` unconditionally now (see the
+    // focus-target marker test above); rows sit flush with no other class.
+    expect(markup).toContain('<div tabindex="-1"><details data-tool-id="t-1"');
+    expect(markup).toContain('</details></div><div tabindex="-1"><details data-tool-id="t-2"');
     expect(markup).not.toContain('gap-3');
     expect(markup).toContain('px-3');
     expect(markup).toContain('py-2.5');
@@ -2228,5 +2234,78 @@ describe('NodeRoom occurrence headings', () => {
     ];
     const markup = renderRoom({ items, occurrenceGrouping: groupByOccurrence(items) });
     expect(headingTexts(markup)).toEqual(['Run 1', 'Run 1 · occurrence 2']);
+  });
+});
+
+describe('NodeRoom live focus behavior', () => {
+  let win: Window;
+  let host: Element;
+  let root: Root;
+
+  beforeEach(() => {
+    win = installHappyDom();
+    const el = win.document.createElement('div');
+    win.document.body.appendChild(el);
+    host = el as unknown as Element;
+    root = createRoot(host);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    win.close();
+    restoreGlobals();
+  });
+
+  function renderLiveRoom(items: readonly AgentHistoryItem[]): void {
+    root.render(
+      createElement(NodeRoom, {
+        nodeId: 'review',
+        items,
+        unknownScope: false,
+        runId: 'run-1',
+        isPending: false,
+        error: null,
+        onRetry: (): void => {
+          return;
+        },
+      })
+    );
+  }
+
+  test('a row focused via the fallback stays focusable, never body, once a later row becomes last', async () => {
+    // Reproduces the reported mechanism directly: focus parked on the last
+    // row, then a new row arrives (the turn resumed after Stop) and takes
+    // over `data-last-row`. The row that lost that marker must keep its
+    // `tabindex` — the browser only blurs an element whose tabindex
+    // disappears or that leaves the DOM, neither of which should happen here.
+    const initialItems: AgentHistoryItem[] = [
+      lifecycleItem('life-1', 1, 'started'),
+      assistantItem('asst-1', 2, 'first'),
+    ];
+    await act(async () => {
+      renderLiveRoom(initialItems);
+    });
+    const firstLastRow = host.querySelector('[data-last-row]');
+    if (firstLastRow === null) throw new Error('missing last-row marker');
+    await act(async () => {
+      (firstLastRow as unknown as HTMLElement).focus();
+    });
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+
+    await act(async () => {
+      renderLiveRoom([...initialItems, assistantItem('asst-2', 3, 'resumed')]);
+    });
+
+    const nextLastRow = host.querySelector('[data-last-row]');
+    if (nextLastRow === null) throw new Error('missing last-row marker after append');
+    expect(nextLastRow).not.toBe(firstLastRow);
+    // The old row lost `data-last-row` but must still be in the DOM, still
+    // focusable, and — since nothing asked focus to move — still focused.
+    expect(host.contains(firstLastRow)).toBe(true);
+    expect(firstLastRow.getAttribute('tabindex')).toBe('-1');
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
   });
 });

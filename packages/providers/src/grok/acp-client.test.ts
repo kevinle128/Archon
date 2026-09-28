@@ -528,6 +528,14 @@ class FakeChild extends EventEmitter {
     queueMicrotask(() => {
       if (this.exitCode !== null || this.signalCode !== null) return;
       this.signalCode = sig;
+      // A real OS kill closes the process's own file descriptors, which is
+      // what actually unblocks a pending ACP request stuck reading from
+      // stdout — see `crash()`'s own comment. Without this, a test using
+      // `kill()` to simulate an abort-driven reap would hang exactly like a
+      // fake with open pipes but no process behind them, never reproducing
+      // what a genuine kill unblocks.
+      this.stdin.destroy();
+      this.stdout.destroy();
       this.emit('exit', null, sig);
     });
     return true;
@@ -633,5 +641,81 @@ describe('runGrokAcpTurn', () => {
     await expect(collect(runGrokAcpTurn(processInput(), { spawn: spy }))).rejects.toThrow(
       'Failed to spawn Grok ACP agent: ENOENT'
     );
+  });
+
+  test('an abort while stuck on an unanswered ACP request still reaps the child', async () => {
+    // No agent attached — nothing ever responds to `initialize`, simulating
+    // a subprocess that is alive but has stopped answering the ACP
+    // protocol. `driveGrokAcpTurn`'s own cancel race only covers an
+    // in-flight `session/prompt`, which is never even sent here. The reap
+    // is armed as a plain listener on `abortSignal`, independent of this
+    // generator ever being resumed again — the guarantee a caller that
+    // stops pulling on abort (e.g. `withIdleTimeout`'s external-abort
+    // branch) would otherwise defeat, leaking the process (what this test
+    // guards). Killing the child closes its stdio, which is what actually
+    // unblocks the stuck request — the turn then rejects with the ordinary
+    // "process exited" error `death` already produces for any child exit,
+    // not a synthesized abort message.
+    const child = new FakeChild();
+    const controller = new AbortController();
+    const promise = collect(
+      runGrokAcpTurn(processInput({ abortSignal: controller.signal }), {
+        spawn: fakeSpawn(child),
+        // A responsive agent's graceful cancel is expected to win this race
+        // within CANCEL_DRAIN_GRACE_MS (500ms); this test's agent is never
+        // even attached, so it can never win, and a short grace here just
+        // keeps the test fast instead of waiting out the 3s production default.
+        abortStuckGraceMs: 5,
+      })
+    );
+    controller.abort();
+    await expect(promise).rejects.toThrow('exited before the turn completed');
+    expect(child.signals).toContain('SIGTERM');
+  });
+
+  test('a caller that stops pulling after abort still gets the child reaped, with no further .next() call', async () => {
+    // This reproduces the exact shape a caller like `withIdleTimeout`
+    // produces in production: it pulls one chunk, observes the node's
+    // AbortController fire, and never calls `.next()` again. An async
+    // generator that has just yielded is suspended AT that yield — any
+    // cleanup living inside its own loop (a `finally` included) requires a
+    // further `.next()` to even reach, so a reap wired only into the loop's
+    // own race can never fire here. This differs from the "unanswered ACP
+    // request" test above, where the outer generator is still parked INSIDE
+    // its very first, still-running `gen.next()`/`Promise.race` call — an
+    // in-loop race can still resolve that specific await. Here the loop has
+    // already produced one chunk and stopped being resumed entirely, which
+    // is what the reap must not depend on.
+    const hold = createDeferred<void>();
+    const fake = createFakeGrokAgent({
+      sessionId: 'sess-parked',
+      promptUpdates: [
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'partial' } },
+      ],
+      promptHold: hold,
+      // No `onCancel` handler: `session/cancel` is acknowledged but never
+      // resolves `promptHold`, so the graceful cancel path can never win
+      // either — only the generator-independent stuck-reap listener can end this.
+    });
+    const child = new FakeChild();
+    attachAgent(child, fake);
+    const controller = new AbortController();
+    const gen = runGrokAcpTurn(processInput({ abortSignal: controller.signal }), {
+      spawn: fakeSpawn(child),
+      abortStuckGraceMs: 5,
+    });
+
+    const first = await gen.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toMatchObject({ type: 'assistant', content: 'partial' });
+
+    controller.abort();
+    // Deliberately never call gen.next() again below — proving the reap
+    // does not depend on it.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(child.signals).toContain('SIGTERM');
+
+    hold.resolve();
+    await gen.return(undefined).catch(() => undefined);
   });
 });

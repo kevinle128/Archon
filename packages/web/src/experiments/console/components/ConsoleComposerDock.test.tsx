@@ -1201,7 +1201,12 @@ describe('ConsoleComposerDock', () => {
     await setDraft('the redirect');
     await clickSendNow();
     expect(calls[2].body.intent).toBe('send_now');
-    expect(host.querySelectorAll('li')).toHaveLength(0);
+    // The batch renders as an optimistic `dispatching` row in the SAME
+    // state update as the click — never a render with neither the queued
+    // items nor a sending row.
+    const sendingList = host.querySelector('ul[aria-label="Sending, 3"]');
+    expect(sendingList).not.toBeNull();
+    expect(sendingList?.querySelectorAll('li')).toHaveLength(3);
     await act(async () => {
       first.reject(new TypeError('network lost'));
     });
@@ -2655,6 +2660,27 @@ describe('ConsoleComposerDock', () => {
     );
     expect(neverSentList()).not.toBeNull();
     expect(calls).toBe(0);
+  });
+
+  test('a cold mount straight into a recovery-required node never moves focus', async () => {
+    let calls = 0;
+    const focusLastRow = (): void => {
+      calls += 1;
+    };
+    const ctrl = controllableRead();
+    // The dock's own first render (executionState still null) renders the
+    // live composer optimistically; only the queue read below reclassifies
+    // it as recovery-required. That controls-mount-then-unmount transition
+    // must never treat `document.activeElement` reading `<body>` — true
+    // here only because nothing was ever focused — as focus having been in
+    // the dock and dropped.
+    await renderDock({ readQueue: ctrl.read, focusLastRow, pollIntervalMs: 60_000 });
+    await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
+    expect(host.textContent).toContain(
+      'restored after server restart · Resume the workflow to continue'
+    );
+    expect(calls).toBe(0);
+    expect(win.document.activeElement).toBe(win.document.body);
   });
 
   // ---------------------------------------------------------------------------

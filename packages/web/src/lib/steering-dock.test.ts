@@ -691,10 +691,19 @@ describe('send now batch transitions', () => {
     return state;
   }
 
-  test('begin snapshots the band plus new draft into inFlightBatch and clears it optimistically', () => {
+  test('begin snapshots the band plus new draft into inFlightBatch and shows them as dispatching in the same update', () => {
     const state = idleWithReceipts(['first', 'second']);
     const begun = beginSendNow(state, 'redirect now', newId);
-    expect(begun.state.sent).toEqual([]);
+    // The click's own state update already renders the batch as `dispatching`
+    // — there is never a render between the click and the first `sending`
+    // frame where the band shows neither the queued items nor a sending row.
+    expect(begun.state.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual(
+      [
+        { message: 'first', state: 'dispatching' },
+        { message: 'second', state: 'dispatching' },
+        { message: 'redirect now', state: 'dispatching' },
+      ]
+    );
     expect(begun.state.inFlightBatch?.map(entry => entry.message)).toEqual([
       'first',
       'second',
@@ -707,17 +716,23 @@ describe('send now batch transitions', () => {
     });
   });
 
-  test('a blank draft delivers the waiting band without adding a placeholder row', () => {
+  test('a blank draft delivers the waiting band, shown as dispatching immediately, without adding a placeholder row', () => {
     const state = idleWithReceipts(['first', 'second']);
     const begun = beginSendNow(state, '', newId);
     expect(begun.state.inFlightBatch?.map(entry => entry.message)).toEqual(['first', 'second']);
-    expect(begun.state.sent).toEqual([]);
+    expect(begun.state.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual(
+      [
+        { message: 'first', state: 'dispatching' },
+        { message: 'second', state: 'dispatching' },
+      ]
+    );
     expect(begun.state.sendInFlight).toBe(true);
     expect(begun.state.pendingRetry).toEqual({ messageId: begun.messageId, message: '' });
 
     const next = resolveSendNowSuccess(begun.state, { message_id: begun.messageId, state: 'sent' });
-    // The batch renders as an optimistic `dispatching` row immediately
-    // rather than leaving the band empty until the next queue poll.
+    // The response's own settle re-asserts the same `dispatching` mapping
+    // beginSendNow already rendered — a defensive re-sync, not the first
+    // paint of it.
     expect(next.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual([
       { message: 'first', state: 'dispatching' },
       { message: 'second', state: 'dispatching' },
@@ -740,8 +755,16 @@ describe('send now batch transitions', () => {
     });
 
     expect(sendNow.messageId).toBe(queued.messageId);
+    // beginSendNow already rendered it optimistically as `dispatching`; an
+    // ambiguous `queued` response must revert that, not leave it stuck
+    // showing as sent.
+    expect(sendNow.state.sent).toEqual([
+      expect.objectContaining({ message: 'redirect now', state: 'dispatching' }),
+    ]);
     expect(resolved.subState).toBe('idle-after-interrupt');
-    expect(resolved.sent.map(entry => entry.message)).toEqual(['redirect now']);
+    expect(resolved.sent).toEqual([
+      expect.objectContaining({ message: 'redirect now', state: 'awaiting_send_now' }),
+    ]);
     expect(resolved.pendingRetry).toBeNull();
     expect(resolved.notice).toBe('1 message will send');
   });
@@ -749,12 +772,21 @@ describe('send now batch transitions', () => {
   test('success discards the batch, derives generating, announces once, and shows an optimistic dispatching row', () => {
     const state = idleWithReceipts(['first']);
     const begun = beginSendNow(state, 'redirect now', newId);
+    // Already dispatching from the click's own state update — no render
+    // between the click and the first queue read shows nothing.
+    expect(begun.state.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual(
+      [
+        { message: 'first', state: 'dispatching' },
+        { message: 'redirect now', state: 'dispatching' },
+      ]
+    );
     const next = resolveSendNowSuccess(begun.state, {
       message_id: begun.messageId,
       state: 'awaiting_send_now',
     });
-    // Fills the gap before the next queue poll restores the server's own
-    // `dispatching` row under the same message id — see resolveSendNowSuccess.
+    // The settled response re-asserts the identical mapping — a re-sync, not
+    // the first paint of it — before the next queue poll restores the
+    // server's own `dispatching` row under the same message id.
     expect(next.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual([
       { message: 'first', state: 'dispatching' },
       { message: 'redirect now', state: 'dispatching' },
@@ -782,6 +814,13 @@ describe('send now batch transitions', () => {
       message: STEERING_SEND_FAILED_MESSAGE,
     });
     expect(failed.sent.map(entry => entry.message)).toEqual(['first', 'second', 'redirect now']);
+    // Reverted from the optimistic `dispatching` row beginSendNow rendered,
+    // never duplicated alongside it.
+    expect(failed.sent.map(entry => entry.state)).toEqual([
+      'queued',
+      'queued',
+      'awaiting_send_now',
+    ]);
     expect(failed.inFlightBatch).toBeNull();
     expect(failed.sendInFlight).toBe(false);
     expect(failed.subState).toBe('idle-after-interrupt');
