@@ -5941,3 +5941,72 @@ describe('ConsoleNodeRoom', () => {
     });
   });
 });
+
+describe('ConsoleAgentHistoryList live focus behavior', () => {
+  let win: ReturnType<typeof installHappyDom>;
+  let host: Element;
+  let root: Root;
+
+  beforeEach(() => {
+    win = installHappyDom();
+    const el = win.document.createElement('div');
+    win.document.body.appendChild(el);
+    host = el as unknown as Element;
+    root = createRoot(host);
+  });
+
+  afterEach(async () => {
+    await act(async () => {
+      root.unmount();
+    });
+    win.close();
+    restoreHappyDom();
+  });
+
+  function assistantItem(id: string, seq: number, text: string): AgentHistoryItem {
+    return { kind: 'assistant', id, seq, role: 'assistant', text, execution: null };
+  }
+
+  function mountList(items: readonly AgentHistoryItem[]): void {
+    root.render(
+      createElement(consoleHistoryList.ConsoleAgentHistoryList, {
+        items,
+        showToolCalls: true,
+        showSystem: true,
+        onLoadFullOutput: async (): Promise<unknown> => undefined,
+      })
+    );
+  }
+
+  test('a row focused via the fallback stays focusable, never body, once a later row becomes last', async () => {
+    // Reproduces the reported mechanism directly: focus parked on the last
+    // row, then a new row arrives (the turn resumed after Stop) and takes
+    // over `data-last-row`. The row that lost that marker must keep its
+    // `tabindex` — the browser only blurs an element whose tabindex
+    // disappears or that leaves the DOM, neither of which should happen here.
+    const initialItems: AgentHistoryItem[] = [assistantItem('asst-1', 1, 'first')];
+    await act(async () => {
+      mountList(initialItems);
+    });
+    const firstLastRow = host.querySelector('[data-last-row]');
+    if (firstLastRow === null) throw new Error('missing last-row marker');
+    await act(async () => {
+      (firstLastRow as unknown as HTMLElement).focus();
+    });
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+
+    await act(async () => {
+      mountList([...initialItems, assistantItem('asst-2', 2, 'resumed')]);
+    });
+
+    const nextLastRow = host.querySelector('[data-last-row]');
+    if (nextLastRow === null) throw new Error('missing last-row marker after append');
+    expect(nextLastRow).not.toBe(firstLastRow);
+    // The old row lost `data-last-row` but must still be in the DOM, still
+    // focusable, and — since nothing asked focus to move — still focused.
+    expect(host.contains(firstLastRow)).toBe(true);
+    expect(firstLastRow.getAttribute('tabindex')).toBe('-1');
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+    expect(win.document.activeElement).not.toBe(win.document.body);
+  });
+});

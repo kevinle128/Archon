@@ -1206,17 +1206,21 @@ export function NodeRoom({
   const headingPrefix = headingIdPrefix ?? generatedHeadingPrefix;
   const grouping = occurrenceGrouping?.showHeaders ? occurrenceGrouping : null;
 
-  // Only the actual last rendered history item is programmatically focusable
-  // (the steering dock's Stop-removal focus target); it never joins Tab
-  // order. A trailing lifecycle/status row (e.g. the terminal node-failure
-  // notice) must not become that anchor on its own: it can arrive after
-  // focus already landed on the preceding substantive row, and moving the
-  // marker off a focused element strips its tabIndex, which forces the
-  // browser to blur it with nothing left to receive focus. Console's
-  // history list keeps the same anchor by hiding lifecycle rows behind a
-  // toggle; Legacy renders every row unconditionally, so it skips lifecycle
-  // rows when choosing the anchor instead, unless one carries its own
-  // attached content.
+  // Every history row is programmatically focusable (never joining Tab
+  // order) so that losing `data-last-row` status on a later render — a new
+  // item becomes the anchor — never strips the tabIndex a still-focused row
+  // depends on. A `tabIndex` that vanishes out from under the focused
+  // element forces the browser to blur it with nothing left to receive
+  // focus, which is exactly how focus used to fall to `<body>` when a
+  // turn resumed after Stop. A trailing lifecycle/status row (e.g. the
+  // terminal node-failure notice) must not become the ANCHOR on its own,
+  // though: it can arrive after focus already landed on the preceding
+  // substantive row, and — before this row stayed focusable regardless —
+  // that was the only thing standing between the anchor and the same blur.
+  // Console's history list keeps the same anchor by hiding lifecycle rows
+  // behind a toggle; Legacy renders every row unconditionally, so it skips
+  // lifecycle rows when choosing the anchor instead, unless one carries its
+  // own attached content.
   let lastItemId: string | null = null;
   for (const item of items) {
     if (item.kind !== 'lifecycle') {
@@ -1226,8 +1230,10 @@ export function NodeRoom({
     const after = renderAfterItem?.(item);
     if (after !== undefined && after !== null) lastItemId = item.id;
   }
-  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> =>
-    item.id === lastItemId ? { 'data-last-row': '', tabIndex: -1 } : {};
+  const lastRowMarker = (item: AgentHistoryItem): Record<string, unknown> => ({
+    tabIndex: -1,
+    ...(item.id === lastItemId ? { 'data-last-row': '' } : {}),
+  });
   const lastRowRing = (item: AgentHistoryItem): string | undefined =>
     item.id === lastItemId
       ? 'focus-visible:outline-2 focus-visible:outline-accent-bright'

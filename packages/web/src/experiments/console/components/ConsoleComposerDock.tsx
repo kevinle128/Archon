@@ -771,6 +771,17 @@ export function ConsoleComposerDock({
   useEffect(() => {
     focusLastRowRef.current = focusLastRow;
   });
+  // The exact element `focusFallbackRow` last focused, so a later remount can
+  // tell "focus is still exactly where the fallback put it" (retarget into
+  // the dock) from "the operator deliberately focused something else since
+  // — a tool `<summary>`, another row" (leave it alone). Self-clearing by
+  // construction: it is a node identity check against `document.activeElement`,
+  // not a flag that needs an extra listener to reset.
+  const fallbackFocusedElementRef = useRef<Element | null>(null);
+  const focusFallbackRow = (): void => {
+    focusLastRowRef.current?.();
+    fallbackFocusedElementRef.current = document.activeElement;
+  };
   // Track whether focus ever sat inside the dock so an unmount moves it to
   // the transcript only when the dock actually held it — a StrictMode mount
   // replay must never steal focus it never owned.
@@ -783,17 +794,40 @@ export function ConsoleComposerDock({
   const controlsEverMountedRef = useRef(controlsMountedRef.current);
   useEffect(() => {
     const wasMounted = controlsMountedRef.current;
-    controlsMountedRef.current = controlsMounted(mode);
-    if (controlsMountedRef.current) controlsEverMountedRef.current = true;
-    if (!wasMounted || controlsMountedRef.current) return;
-    const active = document.activeElement;
-    if (
-      focusInsideRef.current ||
-      active === null ||
-      active === document.body ||
-      !document.contains(active)
-    ) {
-      focusLastRowRef.current?.();
+    const nowMounted = controlsMounted(mode);
+    controlsMountedRef.current = nowMounted;
+    if (nowMounted) controlsEverMountedRef.current = true;
+    if (wasMounted && !nowMounted) {
+      // Reclaim focus only when it was genuinely inside the dock before this
+      // transition. A DOM removal blurs its focused element without a
+      // `relatedTarget` `onBlurCapture` can attribute elsewhere, so
+      // `focusInsideRef` stays the reliable true-positive signal even though
+      // `document.activeElement` has already fallen back to `<body>` by the
+      // time this effect runs — checking `activeElement` too used to make
+      // "nothing was ever focused" (a cold mount whose controls rendered for
+      // one render before the first queue read classified the node as
+      // `recovery-required`) indistinguishable from "focus was just here and
+      // got removed", stealing focus on the former.
+      if (focusInsideRef.current) {
+        focusFallbackRow();
+      }
+      return;
+    }
+    if (!wasMounted && nowMounted && fallbackFocusedElementRef.current !== null) {
+      // The dock's controls just came back (e.g. the turn resumed after
+      // Stop). If focus is still exactly on the transcript row
+      // `focusFallbackRow` parked it on, bring it back into the dock —
+      // that row was never a destination, only a place to hold focus while
+      // there was nothing to focus. An operator who moved focus elsewhere
+      // in the meantime (a tool `<summary>`, a different row) is left alone.
+      if (document.activeElement === fallbackFocusedElementRef.current) {
+        if (mode === 'finished-iteration') {
+          goButtonRef.current?.focus();
+        } else {
+          fieldRef.current?.focus();
+        }
+      }
+      fallbackFocusedElementRef.current = null;
     }
   });
   useEffect(
@@ -802,7 +836,7 @@ export function ConsoleComposerDock({
       const active = document.activeElement;
       const inside =
         focusInsideRef.current || (active !== null && (wellRef.current?.contains(active) ?? false));
-      if (inside) focusLastRowRef.current?.();
+      if (inside) focusFallbackRow();
     },
     []
   );
@@ -830,7 +864,7 @@ export function ConsoleComposerDock({
       !document.contains(active) ||
       focusInsideRef.current
     ) {
-      focusLastRowRef.current?.();
+      focusFallbackRow();
     }
   }, [mode]);
 
@@ -999,7 +1033,7 @@ export function ConsoleComposerDock({
         if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveInterruptOutcome(current, response.sub_state));
         if (response.sub_state === 'idle-after-interrupt') {
-          focusLastRowRef.current?.();
+          focusFallbackRow();
         }
       },
       (error: unknown): void => {

@@ -2773,6 +2773,27 @@ describe('ComposerDock', () => {
     expect(calls).toBe(0);
   });
 
+  test('a cold mount straight into a recovery-required node never moves focus', async () => {
+    let calls = 0;
+    const focusLastRow = (): void => {
+      calls += 1;
+    };
+    const ctrl = controllableRead();
+    // The dock's own first render (executionState still null) renders the
+    // live composer optimistically; only the queue read below reclassifies
+    // it as recovery-required. That controls-mount-then-unmount transition
+    // must never treat `document.activeElement` reading `<body>` — true
+    // here only because nothing was ever focused — as focus having been in
+    // the dock and dropped.
+    await renderDock({ readQueue: ctrl.read, focusLastRow, pollIntervalMs: 60_000 });
+    await settleSnapshot(ctrl, okQueue([], { execution_state: 'recovery_required' }));
+    expect(host.textContent).toContain(
+      'restored after server restart · Resume the workflow to continue'
+    );
+    expect(calls).toBe(0);
+    expect(win.document.activeElement).toBe(win.document.body);
+  });
+
   // ---------------------------------------------------------------------------
   // Idle-after-interrupt disclosure, keepalive coalescing, and idle-await expiry copy.
   // ---------------------------------------------------------------------------
