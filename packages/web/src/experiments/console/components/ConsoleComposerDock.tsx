@@ -31,10 +31,12 @@ import {
   createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  effectiveNodeTerminal,
   finishedIterationDisclosure,
   focusTargetAfterSnapshot,
   goToIterationLabel,
   isKeepaliveActivityKey,
+  isPossiblyNeverSent,
   isQueueItemClaimable,
   isQueueShortcut,
   neverSentBandHeader,
@@ -83,6 +85,7 @@ import {
   toSteeringRequestError,
   type KeepaliveCoalescer,
   type NeverSentEntry,
+  type QueuePollingHandle,
   type RemovalFocusTarget,
   type SteeringDockMode,
   type SteeringDockState,
@@ -418,6 +421,10 @@ export function ConsoleComposerDock({
   const coalescerRef = useRef<KeepaliveCoalescer | null>(null);
   const keepaliveRef = useRef(keepalive);
   keepaliveRef.current = keepalive;
+  /** Set while the queue-polling effect below is active; null otherwise. */
+  const pollingHandleRef = useRef<QueuePollingHandle | null>(null);
+  /** `dock.queueGeneration` as of the last kick decision — see that effect. */
+  const priorQueueGenerationRef = useRef(0);
 
   const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
   const [draft, setDraft] = useState('');
@@ -520,17 +527,26 @@ export function ConsoleComposerDock({
   // folded in as the trailing item (control-states.md: "the half-typed line
   // folds in as the last item"). A `delivery_unknown` row that survives to a
   // terminal node (no reconcile touches it) counts too — undelivered content
-  // must remain readable regardless of which exact state it froze in.
-  // `dispatching` is excluded: it means a send is actively in flight, which
-  // is the opposite of undelivered, so it must never render as "never sent"
-  // before the terminal reconciliation result (server truth) arrives.
+  // must remain readable regardless of which exact state it froze in. Every
+  // in-flight row (`dispatching`, `sent`, `delivered`) is excluded: it means
+  // a send is actively in flight or already left the queue for the
+  // transcript, which is the opposite of undelivered, so it must never
+  // render as "never sent" before the terminal reconciliation result
+  // (server truth) arrives.
   const finishedEntries: NeverSentEntry[] = [
     ...dock.sent
-      .filter(receipt => receipt.state !== 'dispatching')
+      .filter(receipt => isPossiblyNeverSent(receipt.state))
       .map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
     ...(dock.neverSent ?? []),
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];
+
+  // The `nodeTerminal` prop comes from the parent's run-detail poll; this
+  // dock's own queue read can report `execution_state: 'finished'` first —
+  // fold that signal in (mirrors ComposerDock.tsx) so this dock's mode and
+  // one-shot terminal fetch react without waiting on the slower external
+  // poll.
+  const nodeIsTerminal = effectiveNodeTerminal(nodeTerminal, dock.executionState);
 
   const mode = steeringDockMode({
     rowStatus,
@@ -539,7 +555,7 @@ export function ConsoleComposerDock({
     refusal: dock.refusal,
     finishedIteration: usableFinishedIteration,
     neverSent: finishedEntries,
-    nodeTerminal,
+    nodeTerminal: nodeIsTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
   });
 
@@ -563,6 +579,8 @@ export function ConsoleComposerDock({
       prevNodeTerminalRef.current = nodeTerminal;
       pendingFocusRef.current = null;
       terminalFetchedRef.current = false;
+      priorQueueGenerationRef.current = 0;
+      controlsEverMountedRef.current = false;
       setDock(createSteeringDockState(subState));
       setReadDetached(false);
       setReadNotify(null);
@@ -584,6 +602,8 @@ export function ConsoleComposerDock({
       if (keyReplaced || terminalFailSafe) {
         attemptGenerationRef.current += 1;
         pendingFocusRef.current = null;
+        priorQueueGenerationRef.current = 0;
+        controlsEverMountedRef.current = false;
         setDock(createSteeringDockState(subState));
         setReadDetached(false);
         setReadNotify(null);
@@ -613,8 +633,11 @@ export function ConsoleComposerDock({
     // A non-live run (Cancel/Abandon) qualifies exactly like nodeTerminal
     // does — see steeringDockMode — so a cold mount opened during the window
     // between the run leaving `live` and this node's own terminal event
-    // still hydrates the queue instead of showing nothing.
-    if (!nodeTerminal && live) {
+    // still hydrates the queue instead of showing nothing. Gated on
+    // `nodeIsTerminal` (not the raw prop) so this dock's own queue read
+    // triggers the authoritative refetch as soon as ITS poll learns the
+    // node is finished, rather than waiting on the slower external poll.
+    if (!nodeIsTerminal && live) {
       terminalFetchedRef.current = false;
       return;
     }
@@ -639,7 +662,7 @@ export function ConsoleComposerDock({
       // permanently losing this node's terminal hydration for the mount.
       terminalFetchedRef.current = false;
     };
-  }, [nodeTerminal, live, runId, nodeId, readQueue]);
+  }, [nodeIsTerminal, live, runId, nodeId, readQueue]);
 
   // Shared-queue reads while composer/blocked/finished-iteration/recovery are
   // mounted. Recovery keeps polling (not just a one-shot) so this dock can
@@ -657,7 +680,7 @@ export function ConsoleComposerDock({
     if (!pollingEnabled) return;
     const finishedMode = mode === 'finished-iteration';
     const attemptGen = attemptGenerationRef.current;
-    return startQueuePolling({
+    const handle = startQueuePolling({
       read: signal => readQueue(runId, nodeId, { signal }),
       currentGeneration: () => dockRef.current.queueGeneration,
       onSnapshot: (snapshot, generationAtRequest): void => {
@@ -719,8 +742,28 @@ export function ConsoleComposerDock({
         : undefined,
       intervalMs: pollIntervalMs,
     });
+    pollingHandleRef.current = handle;
+    return (): void => {
+      pollingHandleRef.current = null;
+      handle();
+    };
     // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
   }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
+
+  // Force the next queue read to fire now, instead of waiting out the rest
+  // of the interval, right after a Queue/Send now/withdraw/per-item Send now
+  // resolves in this tab — every one of those bumps `queueGeneration`. This
+  // closes the gap between this tab's own resolved mutation and its next
+  // scheduled poll — most importantly the withdraw case: the server never
+  // reports whether a withdraw actually removed the row, so the dock must
+  // re-read the true state immediately instead of trusting its own
+  // optimistic removal. `pollingHandleRef` is null while polling is
+  // disabled, making the kick a safe no-op then.
+  useEffect(() => {
+    if (priorQueueGenerationRef.current === dock.queueGeneration) return;
+    priorQueueGenerationRef.current = dock.queueGeneration;
+    pollingHandleRef.current?.kick();
+  }, [dock.queueGeneration]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -734,9 +777,15 @@ export function ConsoleComposerDock({
   // replay must never steal focus it never owned.
   const focusInsideRef = useRef(false);
   const controlsMountedRef = useRef(controlsMounted(mode));
+  // Sticky across the composer→hidden→finished chain within one scope: true
+  // once this attempt's dock has rendered ANY focusable control, even after
+  // those controls unmount. Reset alongside `pendingFocusRef` on scope/attempt
+  // reset (below) so a fresh node never inherits a prior node's focus history.
+  const controlsEverMountedRef = useRef(controlsMountedRef.current);
   useEffect(() => {
     const wasMounted = controlsMountedRef.current;
     controlsMountedRef.current = controlsMounted(mode);
+    if (controlsMountedRef.current) controlsEverMountedRef.current = true;
     if (!wasMounted || controlsMountedRef.current) return;
     const active = document.activeElement;
     if (
@@ -767,10 +816,14 @@ export function ConsoleComposerDock({
   }, [mode]);
 
   // Cancel can hide the dock (live→false) before neverSent is ready, then
-  // re-enter finished. The composer→hidden handoff may miss; ensure finished
-  // never leaves keyboard focus on <body>.
+  // re-enter finished; that composer→hidden handoff can land between two
+  // renders the transition effect above never sees as one mount→unmount
+  // edge. Only a factor when THIS attempt's dock actually held focusable
+  // controls at some point — never on a cold mount straight into a
+  // finished/failed/recovery node, where focus was never in the dock to
+  // begin with and `document.activeElement` defaults to `<body>` regardless.
   useEffect(() => {
-    if (mode !== 'finished') return;
+    if (mode !== 'finished' || !controlsEverMountedRef.current) return;
     const active = document.activeElement;
     if (
       active === null ||
