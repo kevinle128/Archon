@@ -1335,6 +1335,81 @@ describe('ConsoleNodeRoom', () => {
     expect(host.textContent).not.toContain('queued ·');
   });
 
+  test('re-pins to the bottom when the scroller resizes with no new row (e.g. a sibling band growing)', async () => {
+    type ResizeCallback = () => void;
+    const observed: HTMLElement[] = [];
+    let triggerResize: ResizeCallback | undefined;
+    let disconnected = false;
+    class FakeResizeObserver {
+      constructor(callback: ResizeCallback) {
+        triggerResize = callback;
+      }
+      observe(el: HTMLElement): void {
+        observed.push(el);
+      }
+      unobserve(): void {
+        return;
+      }
+      disconnect(): void {
+        disconnected = true;
+      }
+    }
+    const originalResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: FakeResizeObserver,
+    });
+
+    try {
+      await act(async () => {
+        renderRoom({
+          isLive: true,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [...FIXTURE],
+          }),
+        });
+      });
+      await flushUntil('resize scroll', () => (host.textContent ?? '').includes('first'));
+      const scrollerNode = host.querySelector('[data-testid="console-node-room-scroll"]');
+      if (scrollerNode === null) throw new Error('missing scroller');
+      const scroller = scrollerNode as unknown as HTMLElement;
+      expect(observed).toContain(scroller);
+
+      // A sibling (queue band, todo strip, dock) growing shrinks the
+      // scroller's own box with no new row arriving: scrollHeight is
+      // unchanged, but clientHeight drops and a stale scrollTop would leave
+      // a gap at the bottom.
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 });
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
+      scroller.scrollTop = 200;
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 136 });
+
+      if (triggerResize === undefined) throw new Error('resize observer never attached');
+      await act(async () => {
+        triggerResize?.();
+      });
+      // scrollHeight (400) - the shrunk clientHeight (136): the bottom stays
+      // flush against the fold instead of leaving a 64px gap.
+      expect(scroller.scrollTop).toBe(264);
+
+      await act(async () => {
+        root.unmount();
+      });
+      expect(disconnected).toBe(true);
+    } finally {
+      if (originalResizeObserver === undefined) {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver');
+      } else {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          configurable: true,
+          writable: true,
+          value: originalResizeObserver,
+        });
+      }
+    }
+  });
+
   test('renders no dock for a historical (non-live) run or a terminal row', async () => {
     await act(async () => {
       renderRoom({

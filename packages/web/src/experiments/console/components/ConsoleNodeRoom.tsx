@@ -676,6 +676,23 @@ export function ConsoleNodeRoom({
     }
   }, [follow, pageState.rows.length]);
 
+  // The scroller's own box can shrink or grow with no new row arriving — the
+  // queue band, todo strip, or dock changing height all resize it — so a
+  // pinned reader must re-pin on the scroller's own resize too, not only when
+  // a new row arrives.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el === null || !follow.pinToBottom) return;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    });
+    observer.observe(el);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [follow.pinToBottom]);
+
   useEffect(() => {
     const heading = navigatedHeadingRef.current;
     if (heading === null || heading.isConnected) return;
