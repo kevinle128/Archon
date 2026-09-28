@@ -9904,6 +9904,62 @@ describe('steering lifecycle classification — a settings row alone is never pr
     const queueRes = await getNodeQueue(app);
     await expectSteeringError(queueRes, 422, 'not_steerable_here');
   });
+
+  test('a restart while a node sits idle-after-interrupt yields recovery_required, keeps the durable queue, and never re-arms a timer', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    // No live handle is registered at all — the in-memory registry a real
+    // restart wipes clean, leaving only what the executor durably stamped
+    // before the crash: the settings row's provider_id (proof a handle once
+    // lived here) and the node's own non-terminal event history.
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started')]);
+    mockSteeringSettings.push({
+      id: 'settings-idle-before-crash',
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      auto_send_enabled: false,
+      updated_by_user_id: null,
+      provider_id: RECOVERY_TEST_PROVIDER_ID,
+      updated_at: new Date(),
+    });
+    // A message an operator queued while the node was idle-after-interrupt,
+    // still sitting in the durable store from before the crash.
+    seedSteeringQueueEntry({
+      workflow_run_id: STEER_RUN_ID,
+      node_id: STEER_NODE_ID,
+      message_id: 'msg-before-crash',
+      message: 'redirect after the restart',
+      operator_user_id: 'some-operator',
+      state: 'queued',
+    });
+    const { app } = makeApp();
+
+    await expectSteeringError(await postNodeSend(app, sendPayload()), 409, 'recovery_required');
+    // The keepalive route's only path to `handle.keepalive()` requires the
+    // `live` classification (see the route above); a 409 here is the proof
+    // that path was never reached, so no timer was armed or rearmed.
+    await expectSteeringError(await postNodeKeepalive(app), 409, 'recovery_required');
+
+    const queueRes = await getNodeQueue(app);
+    expect(queueRes.status).toBe(200);
+    const queueBody = (await queueRes.json()) as {
+      execution_state: string;
+      queued: {
+        message_id: string;
+        message: string;
+        operator_user_id: string | null;
+        state: string;
+      }[];
+    };
+    expect(queueBody.execution_state).toBe('recovery_required');
+    expect(queueBody.queued).toEqual([
+      {
+        message_id: 'msg-before-crash',
+        message: 'redirect after the restart',
+        operator_user_id: 'some-operator',
+        state: 'queued',
+      },
+    ]);
+  });
 });
 
 // Registered once, real (not mocked): the soft-injection tests below need a

@@ -10,6 +10,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { buildAgentHistory } from './agent-history';
 import {
   toolRowPresentation,
   type ToolFamily,
@@ -18,6 +19,9 @@ import {
   type ToolRowBadgeKind,
   type ToolStatusGlyph,
 } from './tool-presentation';
+import { chatToolOutcome } from '../components/chat/ToolCallCard';
+import type { NodeMessageRow } from './node-message-pages';
+import type { ToolCallDisplay } from './types';
 
 const TOOL_FAMILIES: readonly ToolFamily[] = [
   'shell',
@@ -135,6 +139,101 @@ describe('cross-surface fixture parity — Web presenter', () => {
       expect(presentation.badges.map(b => ({ kind: b.kind, text: b.text }))).toEqual(
         fixture.expected.badges
       );
+    });
+  }
+});
+
+/**
+ * The raw, provider-reported outcome string that would lead EITHER surface's
+ * own outcome derivation to the fixture's already-resolved `facts.outcome` —
+ * both surfaces consume the same three-value vocabulary (`success` / `error`
+ * / `interrupted` / `unknown`) before turning it into a `ToolOutcome`. A
+ * `running` fact has no raw outcome of its own — each surface derives it from
+ * its own liveness flag (a pending row / `isRunning`) instead, checked before
+ * either even looks at a recorded outcome.
+ */
+function rawOutcomeFor(outcome: ToolOutcome): 'success' | 'error' | 'interrupted' | 'unknown' {
+  switch (outcome) {
+    case 'succeeded':
+      return 'success';
+    case 'failed':
+      return 'error';
+    case 'interrupted':
+      return 'interrupted';
+    case 'unknown':
+    case 'running':
+      return 'unknown';
+  }
+}
+
+function nodeRoomOutcome(fixture: FixtureCase): ToolOutcome {
+  const toolUseId = fixture.id;
+  const rows: NodeMessageRow[] = [
+    {
+      id: `${fixture.id}-call`,
+      seq: 1,
+      kind: 'tool',
+      payload: { name: fixture.name, id: toolUseId, input: fixture.input },
+      created_at: '2026-09-08T00:00:00.000Z',
+      metadata: { tool_phase: 'call' },
+    },
+  ];
+  // A 'running' fixture has no result row at all — the pending call alone
+  // is what the node room's own derivation reads as still in flight.
+  if (fixture.facts.outcome !== 'running') {
+    rows.push({
+      id: `${fixture.id}-result`,
+      seq: 2,
+      kind: 'tool',
+      payload: { name: fixture.name, id: toolUseId, output: fixture.output ?? undefined },
+      created_at: '2026-09-08T00:00:00.000Z',
+      metadata: {
+        tool_phase: 'result',
+        outcome: rawOutcomeFor(fixture.facts.outcome),
+        ...(fixture.facts.exitCode !== undefined ? { exit_code: fixture.facts.exitCode } : {}),
+      },
+    });
+  }
+  const { items } = buildAgentHistory({ nodeId: 'review', nowMs: Date.now(), events: [], rows });
+  const tool = items.find(item => item.kind === 'tool');
+  if (tool?.kind !== 'tool') throw new Error(`expected a tool item for fixture ${fixture.id}`);
+  return tool.outcome;
+}
+
+function chatOutcome(fixture: FixtureCase): ToolOutcome {
+  const isRunning = fixture.facts.outcome === 'running';
+  const tool: ToolCallDisplay = {
+    id: fixture.id,
+    name: fixture.name,
+    input: (fixture.input as Record<string, unknown>) ?? {},
+    startedAt: Date.now(),
+    isExpanded: false,
+    ...(isRunning
+      ? {}
+      : {
+          output:
+            typeof fixture.output === 'string' ? fixture.output : JSON.stringify(fixture.output),
+          duration: fixture.facts.durationMs ?? 0,
+          outcome: rawOutcomeFor(fixture.facts.outcome),
+          ...(fixture.facts.exitCode !== undefined ? { exitCode: fixture.facts.exitCode } : {}),
+        }),
+  };
+  return chatToolOutcome(tool, isRunning);
+}
+
+describe('cross-surface outcome-derivation parity — Chat vs Node Room', () => {
+  const fixtures = loadFixtures();
+
+  for (const fixture of fixtures) {
+    test(`${fixture.id}: Chat and Node Room derive the same outcome from equivalent raw data`, () => {
+      const nodeRoom = nodeRoomOutcome(fixture);
+      const chat = chatOutcome(fixture);
+      // Both surfaces must agree with each other, and with the fixture's own
+      // expectation — not just with each other, in case both silently made
+      // the same wrong call.
+      expect(nodeRoom).toBe(fixture.facts.outcome);
+      expect(chat).toBe(fixture.facts.outcome);
+      expect(chat).toBe(nodeRoom);
     });
   }
 });

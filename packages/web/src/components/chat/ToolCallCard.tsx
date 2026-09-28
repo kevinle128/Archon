@@ -172,9 +172,11 @@ function ToolBodyView({ body }: { body: ToolBody }): React.ReactElement {
  * proves interruption; `stopped` (the run ended while the tool was still
  * open) proves nothing about the tool itself, so it degrades to `unknown`.
  * A completed call without a reported outcome keeps the historical
- * `succeeded` reading.
+ * `succeeded` reading. Exported for the cross-surface parity test in
+ * `tool-presentation-fixtures.test.ts`, which proves this agrees with the
+ * node room's own derivation for the vocabulary they share.
  */
-function chatToolOutcome(tool: ToolCallDisplay, isRunning: boolean): ToolOutcome {
+export function chatToolOutcome(tool: ToolCallDisplay, isRunning: boolean): ToolOutcome {
   if (isRunning) return 'running';
   if (tool.status === 'cancelled') return 'interrupted';
   if (tool.status === 'stopped') return 'unknown';
