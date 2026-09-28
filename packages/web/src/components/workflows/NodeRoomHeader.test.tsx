@@ -19,6 +19,7 @@ const ITERATION_TWO: ExecutionHeaderModel = {
   executionLabel: 'Iteration 2',
   status: 'running',
   statusReason: null,
+  waitingOnOperator: false,
   startedOffsetMs: 1500,
   startedAt: '2026-09-08T04:52:00.000Z',
   durationMs: null,
@@ -141,6 +142,23 @@ describe('NodeRoomHeader', () => {
     expect(pill.className).toContain('text-accent-bright');
     expect(pill.className).not.toContain('text-accent ');
     expect(pill.querySelector('span[aria-hidden]')).not.toBeNull();
+  });
+
+  test('meta appends waiting on operator for an idle-after-interrupt agent', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: { ...ITERATION_TWO, status: 'running', waitingOnOperator: true },
+          options: [],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+        })
+      );
+    });
+    expect(host.textContent).toContain('running… · waiting on operator');
   });
 
   test('a non-loop node with multiple runs shows "of N" with no max caption', async () => {

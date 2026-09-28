@@ -127,6 +127,7 @@ export function ConsoleRoomHeader({
     model: model.model,
     idleAwaitExpired,
     statusReason: model.statusReason,
+    waitingOnOperator: model.waitingOnOperator,
     iterationPrefix,
     recoveryRequired,
   });

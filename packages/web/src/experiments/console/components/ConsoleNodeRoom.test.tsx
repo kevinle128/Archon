@@ -1357,6 +1357,27 @@ describe('ConsoleNodeRoom', () => {
     expect(label?.textContent).not.toContain('×');
   });
 
+  test('header meta appends waiting on operator when the node state reports idle-after-interrupt', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        nodeStates: [
+          nodeState({
+            nodeId: 'review',
+            name: 'Review',
+            status: 'running',
+            steeringSubState: 'idle-after-interrupt',
+          }),
+        ],
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('idle meta', () => (host.textContent ?? '').includes('waiting on operator'));
+    expect(host.textContent).toContain('running… · waiting on operator');
+  });
+
   test('re-pins to the bottom when the scroller resizes with no new row (e.g. a sibling band growing)', async () => {
     type ResizeCallback = () => void;
     const observed: HTMLElement[] = [];

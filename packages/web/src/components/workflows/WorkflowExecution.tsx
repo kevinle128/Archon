@@ -801,6 +801,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
           nodeStatus: selectedRoomNodeState?.status,
           nodeError: selectedRoomNodeState?.error,
+          nodeSteeringSubState: selectedRoomNodeState?.steeringSubState,
         });
   const headerOptions =
     selectedExecutionRow === null

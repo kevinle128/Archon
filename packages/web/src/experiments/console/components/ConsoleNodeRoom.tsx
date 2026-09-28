@@ -730,6 +730,7 @@ export function ConsoleNodeRoom({
           loopMaxIterations: loopMaxIterationsForNode(resolution?.definitionNode),
           nodeStatus: selectedNodeState?.status,
           nodeError: selectedNodeState?.error,
+          nodeSteeringSubState: selectedNodeState?.steeringSubState,
         }));
   const computedOptions: readonly ConsoleExecutionHeaderOption[] =
     headerOptions ??

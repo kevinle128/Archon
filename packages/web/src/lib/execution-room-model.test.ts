@@ -1041,6 +1041,34 @@ describe('headerMetaLine', () => {
       })
     ).toBe(`started ${startedHours()}:52 · failed after idle timeout`);
   });
+
+  test('appends waiting on operator right after running… for an idle-after-interrupt agent', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+        waitingOnOperator: true,
+      })
+    ).toBe(`started ${startedHours()}:52 · running… · waiting on operator · omp · claude-opus-5`);
+  });
+
+  test('omits waiting on operator while the agent is generating', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'running',
+        durationMs: null,
+        runOfTotal: null,
+        provider: 'omp',
+        model: 'claude-opus-5',
+        waitingOnOperator: false,
+      })
+    ).toBe(`started ${startedHours()}:52 · running… · omp · claude-opus-5`);
+  });
 });
 
 describe('loopMaxIterationsForNode', () => {

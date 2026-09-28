@@ -315,6 +315,7 @@ export function ConsoleInspectPane({
           loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
           nodeStatus: selectedNodeState?.status,
           nodeError: selectedNodeState?.error,
+          nodeSteeringSubState: selectedNodeState?.steeringSubState,
         });
   const headerOptions =
     selectedNodeId === null

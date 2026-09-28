@@ -57,6 +57,8 @@ export interface ExecutionHeaderModel {
   status: string;
   /** The node's own failure reason. Only ever set while `status` is `failed`; null otherwise or when unknown. */
   statusReason: string | null;
+  /** True while the agent is idle-after-interrupt: the header meta appends `waiting on operator` right after `running…`. */
+  waitingOnOperator: boolean;
   startedOffsetMs: number | null;
   /** ISO timestamp the selected execution started, for the header's clock-time segment. */
   startedAt: string | null;
@@ -104,6 +106,10 @@ export interface ExecutionHeaderInput {
    */
   nodeStatus?: string | null;
   nodeError?: string | null;
+  /** The node's live steering sub-state (from the same node state as
+   * `nodeStatus`/`nodeError`), for `waitingOnOperator`. Omitted or any value
+   * other than `'idle-after-interrupt'` leaves `waitingOnOperator` false. */
+  nodeSteeringSubState?: string | null;
 }
 
 export type RoomOpenerKind = 'log' | 'graph';
@@ -630,6 +636,7 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     executionLabel: executionLabel(input.row.selection, survivingEpochs),
     status,
     statusReason: status === 'failed' ? (input.nodeError ?? null) : null,
+    waitingOnOperator: input.nodeSteeringSubState === 'idle-after-interrupt',
     startedOffsetMs: startedOffsetMs(input.row, input.runStartedAt),
     startedAt: input.row.startedAt ?? null,
     durationMs: input.row.durationMs ?? null,
@@ -805,6 +812,12 @@ export interface HeaderMetaLineInput {
   readonly iterationPrefix?: number | null;
   /** Server-reported restart recovery — see `statusPill`. Default false. */
   readonly recoveryRequired?: boolean;
+  /** The agent is idle-after-interrupt: the node stayed running, but its
+   * current generation stopped and now waits on an operator redirect.
+   * Appended right after `running…` — the node's own status, not this
+   * projected sub-state, still decides whether that segment renders at
+   * all. Default false. */
+  readonly waitingOnOperator?: boolean;
 }
 
 /** The live segment a restart-recovery meta line reports instead of `running…`. */
@@ -842,6 +855,7 @@ export function headerMetaLine(input: HeaderMetaLineInput): string | null {
     segments.push(input.statusReason);
   } else if (LIVE_META_STATUSES.has(input.status)) {
     segments.push('running…');
+    if (input.waitingOnOperator === true) segments.push('waiting on operator');
   } else if (input.durationMs !== null) {
     segments.push(formatDurationLong(input.durationMs));
   }
