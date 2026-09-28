@@ -552,6 +552,20 @@ describe('ConsoleComposerDock', () => {
     expect(items[1]?.textContent).not.toContain(STEERING_DELETE_LABEL);
   });
 
+  test('a visible dispatching row with nothing else queued reads sending, never queued · 0', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'dispatching' }])
+    );
+    expect(host.textContent).toContain('sending · 1');
+    expect(host.textContent).not.toContain('queued · 0');
+    const list = host.querySelector('ul[aria-label="Sending, 1"]');
+    expect(list).not.toBeNull();
+    expect(list?.textContent).toContain('sending…');
+  });
+
   test('the band collapse toggle hides and restores the item list without removing it', async () => {
     await renderDock();
     await setDraft('wrong suite');

@@ -370,6 +370,27 @@ export function willSendListLabel(count: number): string {
   return `Will send, ${count.toString()}`;
 }
 
+/** Lowercase DOM text; the renderer applies CSS uppercase + phase tracking. */
+export function sendingBandHeader(count: number): string {
+  return `sending · ${count.toString()}`;
+}
+
+export function sendingListLabel(count: number): string {
+  return `Sending, ${count.toString()}`;
+}
+
+/**
+ * True when every visible pending row is actively dispatching — a send
+ * request in flight, never a claimable queued row. The band header must
+ * never contradict the rows listed under it: `queued · 0` above a visible
+ * `sending…` row claims nothing is happening while something plainly is.
+ * `pendingQueueCount` already excludes `dispatching` from its count for the
+ * same reason — this is the header-selection counterpart of that exclusion.
+ */
+export function allPendingDispatching(sent: readonly LocalSentReceipt[]): boolean {
+  return sent.length > 0 && sent.every(receipt => receipt.state === 'dispatching');
+}
+
 /**
  * The live queue band's persistence line: the draft and queue
  * are server-persisted, so this always renders while the band is live.

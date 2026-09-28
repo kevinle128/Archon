@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  allPendingDispatching,
   applyQueueSnapshot,
   beginGuidanceSubmission,
   beginInterrupt,
@@ -35,6 +36,8 @@ import {
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   savedToServerLine,
+  sendingBandHeader,
+  sendingListLabel,
   sendNowButtonAccessibleName,
   sendNowItemAccessibleName,
   startQueuePolling,
@@ -879,6 +882,32 @@ describe('pendingQueueCount', () => {
   });
 });
 
+describe('allPendingDispatching', () => {
+  function receiptWithState(messageId: string, state: LocalSentReceipt['state']): LocalSentReceipt {
+    return { messageId, message: 'm', state, operatorUserId: null };
+  }
+
+  test('true only when every row is dispatching', () => {
+    expect(allPendingDispatching([receiptWithState('a', 'dispatching')])).toBe(true);
+    expect(
+      allPendingDispatching([
+        receiptWithState('a', 'dispatching'),
+        receiptWithState('b', 'dispatching'),
+      ])
+    ).toBe(true);
+  });
+
+  test('false when a claimable row is mixed in, even alongside a dispatching one', () => {
+    expect(
+      allPendingDispatching([receiptWithState('a', 'dispatching'), receiptWithState('b', 'queued')])
+    ).toBe(false);
+  });
+
+  test('false for an empty queue — nothing is dispatching if nothing is pending', () => {
+    expect(allPendingDispatching([])).toBe(false);
+  });
+});
+
 describe('steeringScopeKey', () => {
   test('joins run and node id', () => {
     expect(steeringScopeKey('run-1', 'grp.body')).toBe('run-1:grp.body');
@@ -896,6 +925,12 @@ describe('wording', () => {
   test('list labels are `Queued messages, n` and `Will send, n`', () => {
     expect(queueListLabel(2)).toBe('Queued messages, 2');
     expect(willSendListLabel(2)).toBe('Will send, 2');
+  });
+
+  test('the sending band header and list label are lowercase `sending · n` / `Sending, n`', () => {
+    expect(sendingBandHeader(1)).toBe('sending · 1');
+    expect(sendingBandHeader(2)).toBe('sending · 2');
+    expect(sendingListLabel(1)).toBe('Sending, 1');
   });
 
   test('accessible name starts with Queue and carries shortcut + count', () => {
