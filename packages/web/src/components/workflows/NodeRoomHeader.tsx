@@ -68,27 +68,40 @@ const KIND_CHIP_STYLE: Readonly<Record<string, { className: string; style: CSSPr
   },
 };
 
-const STATUS_PILL_STYLE: Readonly<Record<string, { className: string; style: CSSProperties }>> = {
+interface StatusPillStyle {
+  className: string;
+  style: CSSProperties;
+  /** Draws a small solid dot in the pill's own color before the label — only
+   * the live (running/pending) pill carries one, matching the mockup's
+   * active-run indicator. */
+  dot?: boolean;
+}
+
+// `--running` has no Legacy equivalent in index.css (it is Console-only, in
+// theme.css) — `--accent-bright` is Legacy's own bright blue, already used
+// for this exact tone's border, and is the nearest existing token to it.
+const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   accent: {
-    className: 'text-accent',
+    className: 'text-[11px] font-semibold text-accent-bright',
     style: { borderColor: 'color-mix(in oklch, var(--accent-bright) 40%, transparent)' },
+    dot: true,
   },
   warning: {
-    className: 'text-warning',
+    className: 'text-[10px] font-bold text-warning',
     style: { borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)' },
   },
   success: {
-    className: 'text-success',
+    className: 'text-[10px] font-bold text-success',
     style: { borderColor: 'color-mix(in oklch, var(--success) 40%, transparent)' },
   },
   error: {
-    className: 'text-error',
+    className: 'text-[10px] font-bold text-error',
     style: { borderColor: 'color-mix(in oklch, var(--error) 40%, transparent)' },
   },
 };
 
-const NEUTRAL_PILL_STYLE = {
-  className: 'text-text-secondary',
+const NEUTRAL_PILL_STYLE: StatusPillStyle = {
+  className: 'text-[10px] font-bold text-text-secondary',
   style: { borderColor: 'var(--border)' },
 };
 
@@ -142,11 +155,14 @@ export function NodeRoomHeader({
           </div>
           <span
             className={cn(
-              'shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-bold',
+              'inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5',
               pillStyle.className
             )}
             style={pillStyle.style}
           >
+            {pillStyle.dot === true ? (
+              <span aria-hidden className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
+            ) : null}
             {pill.label}
           </span>
           <button

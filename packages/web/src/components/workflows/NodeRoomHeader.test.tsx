@@ -119,6 +119,30 @@ describe('NodeRoomHeader', () => {
     expect(closes).toEqual([1]);
   });
 
+  test('the running pill carries a live dot and the bright-blue accent token, not text-accent', async () => {
+    await act(async () => {
+      root.render(
+        createElement(nodeRoomHeader.NodeRoomHeader, {
+          model: { ...ITERATION_TWO, status: 'running' },
+          options: [],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+        })
+      );
+    });
+
+    const pill = Array.from(host.querySelectorAll('span')).find(
+      el => el.textContent?.trim() === 'Running'
+    );
+    if (pill === undefined) throw new Error('missing Running pill');
+    expect(pill.className).toContain('text-accent-bright');
+    expect(pill.className).not.toContain('text-accent ');
+    expect(pill.querySelector('span[aria-hidden]')).not.toBeNull();
+  });
+
   test('a non-loop node with multiple runs shows "of N" with no max caption', async () => {
     await act(async () => {
       root.render(

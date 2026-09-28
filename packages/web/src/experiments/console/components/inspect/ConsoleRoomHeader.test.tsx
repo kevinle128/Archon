@@ -119,6 +119,30 @@ describe('ConsoleRoomHeader', () => {
     expect(closes).toEqual([1]);
   });
 
+  test('the running pill carries a live dot and the --running token, not the brand accent color', async () => {
+    await act(async () => {
+      root.render(
+        createElement(consoleRoomHeader.ConsoleRoomHeader, {
+          model: { ...ITERATION_TWO, status: 'running' },
+          options: [],
+          selectedRowId: 'iter-2',
+          onSelectRow: (): void => undefined,
+          onClose: (): void => undefined,
+          kindChip: null,
+          executionCount: 1,
+        })
+      );
+    });
+
+    const pill = Array.from(host.querySelectorAll('span')).find(
+      el => el.textContent?.trim() === 'Running'
+    );
+    if (pill === undefined) throw new Error('missing Running pill');
+    expect(pill.className).toContain('var(--running)');
+    expect(pill.className).not.toContain('text-accent');
+    expect(pill.querySelector('span[aria-hidden]')).not.toBeNull();
+  });
+
   test('a non-loop node with multiple runs shows "of N" with no max caption', async () => {
     await act(async () => {
       root.render(
