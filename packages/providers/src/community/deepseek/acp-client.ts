@@ -33,6 +33,14 @@ const STDERR_CAP = 4096;
 const DEFAULT_TERMINATE_GRACE_MS = 2000;
 /** Post-cancel window for a compliant agent to flush trailing updates and settle the prompt before a hung one is released. Matches Devin ACP. */
 const CANCEL_DRAIN_GRACE_MS = 500;
+/**
+ * How long, after `abortSignal` fires, `runDeepseekAcpTurn` waits before
+ * concluding the ACP protocol itself is stuck and force-killing the process
+ * — well past `CANCEL_DRAIN_GRACE_MS`, the graceful in-flight-prompt cancel
+ * path's own expected settlement time, so a normally responsive agent's
+ * cancel always wins first and never trips this fallback.
+ */
+const DEFAULT_ABORT_STUCK_GRACE_MS = 3_000;
 
 type DeepseekCancellationCause = 'node-cancel' | 'operator-interrupt' | 'cleanup';
 
@@ -68,6 +76,8 @@ export interface DeepseekProcessInput extends DeepseekAcpTurnInput {
 export interface DeepseekProcessDependencies {
   spawn?: typeof spawn;
   terminateGraceMs?: number;
+  /** See `DEFAULT_ABORT_STUCK_GRACE_MS`. Overridable for tests only. */
+  abortStuckGraceMs?: number;
 }
 
 function errorMessage(error: unknown): string {
@@ -496,6 +506,7 @@ export async function* runDeepseekAcpTurn(
 ): AsyncGenerator<MessageChunk> {
   const spawnFn = dependencies?.spawn ?? spawn;
   const terminateGraceMs = dependencies?.terminateGraceMs ?? DEFAULT_TERMINATE_GRACE_MS;
+  const abortStuckGraceMs = dependencies?.abortStuckGraceMs ?? DEFAULT_ABORT_STUCK_GRACE_MS;
   // The floor is applied here as well as at each call site: a value shorter than
   // it matches ordinary output and would shred every message it appeared in.
   const secrets = [
@@ -570,16 +581,64 @@ export async function* runDeepseekAcpTurn(
   );
   const gen = driveDeepseekAcpTurn(stream, input);
 
+  // `driveDeepseekAcpTurn` races `input.abortSignal` against its own
+  // in-flight `session/prompt` request and settles gracefully within
+  // `CANCEL_DRAIN_GRACE_MS` — but every OTHER ACP round trip it awaits
+  // (`initialize`, `session/new`, `session/resume`, `session/close`) is not
+  // raced against anything, so a DSH subprocess that stops responding after
+  // one of those leaves that `await` permanently pending, and this loop's
+  // `gen.next()` never settles either. This is a SEPARATE, delayed race
+  // against the same signal — armed only `abortStuckGraceMs` after abort
+  // fires, well past the graceful path's own expected settlement time, so a
+  // normally responsive agent's cancel always wins this race first and this
+  // branch never fires for it. It exists purely as the fallback that
+  // guarantees the child is still reaped when the protocol itself never
+  // gets a chance to unwind.
+  let abortedWhileWaiting = false;
+  const abortSignal = input.abortSignal;
+  let abortStuckTimer: ReturnType<typeof setTimeout> | undefined;
+  const aborted: Promise<{ kind: 'aborted' }> | undefined =
+    abortSignal === undefined
+      ? undefined
+      : new Promise(resolve => {
+          const arm = (): void => {
+            abortStuckTimer = setTimeout(() => {
+              resolve({ kind: 'aborted' });
+            }, abortStuckGraceMs);
+          };
+          if (abortSignal.aborted) {
+            arm();
+            return;
+          }
+          abortSignal.addEventListener('abort', arm, { once: true });
+        });
+
   try {
     while (true) {
       const next = gen.next();
-      const winner = await Promise.race([
+      const racers: Promise<
+        | { kind: 'chunk'; result: IteratorResult<MessageChunk> }
+        | { kind: 'death'; error: Error }
+        | { kind: 'aborted' }
+      >[] = [
         next.then((result: IteratorResult<MessageChunk>) => ({
           kind: 'chunk' as const,
           result,
         })),
         death.then((error: Error) => ({ kind: 'death' as const, error })),
-      ]);
+      ];
+      if (aborted !== undefined) racers.push(aborted);
+      const winner = await Promise.race(racers);
+      if (winner.kind === 'aborted') {
+        abortedWhileWaiting = true;
+        // Prevent an unhandled rejection once the reap below unblocks
+        // whatever ACP request `gen` was stuck awaiting.
+        next.catch(() => undefined);
+        throw new DeepseekProviderError(
+          'deepseek_aborted',
+          'DeepSeek ACP agent stopped responding and the turn was aborted.'
+        );
+      }
       if (winner.kind === 'death') {
         throw winner.error;
       }
@@ -604,12 +663,25 @@ export async function* runDeepseekAcpTurn(
     }
     throw toAcpFailed(error, stderr);
   } finally {
+    if (abortStuckTimer !== undefined) clearTimeout(abortStuckTimer);
     finished = true;
-    try {
-      await gen.return(undefined);
-    } catch {
-      // Turn already failed or completed.
+    if (abortedWhileWaiting) {
+      // Kill first: `gen` may be stuck awaiting an ACP request the
+      // subprocess will never answer (that is exactly why the race above
+      // fired), so calling `gen.return()` before the process is dead would
+      // wait on the very thing being torn down. Killing first closes the
+      // stdio pipes, which unblocks that pending request and lets `gen`'s
+      // own cleanup settle quickly in the background — not awaited, since
+      // the process being gone is what this function actually promises.
+      await reapChild(child, terminateGraceMs);
+      void gen.return(undefined).catch(() => undefined);
+    } else {
+      try {
+        await gen.return(undefined);
+      } catch {
+        // Turn already failed or completed.
+      }
+      await reapChild(child, terminateGraceMs);
     }
-    await reapChild(child, terminateGraceMs);
   }
 }

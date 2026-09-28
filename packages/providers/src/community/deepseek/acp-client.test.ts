@@ -1392,4 +1392,32 @@ describe('runDeepseekAcpTurn', () => {
       }
     }
   });
+
+  test('an abort while stuck on an unanswered ACP request still reaps the child', async () => {
+    // No agent attached — nothing ever responds to `initialize`, simulating
+    // a subprocess that is alive but has stopped answering the ACP
+    // protocol. `driveDeepseekAcpTurn`'s own cancel race only covers an
+    // in-flight `session/prompt`, which is never even sent here; without a
+    // race against `abortSignal` at THIS level the turn would hang forever
+    // and the child would never be reaped (the process leak this guards).
+    const child = new FakeChild();
+    const spawnImpl = (() => child as unknown as ChildProcess) as typeof spawn;
+    const controller = new AbortController();
+    const promise = collect(
+      runDeepseekAcpTurn(processInput({ abortSignal: controller.signal }), {
+        spawn: spawnImpl,
+        terminateGraceMs: 0,
+        // A responsive agent's graceful cancel is expected to win this race
+        // within CANCEL_DRAIN_GRACE_MS (500ms); this test's agent is never
+        // even attached, so it can never win, and a short grace here just
+        // keeps the test fast instead of waiting out the 3s production default.
+        abortStuckGraceMs: 5,
+      })
+    );
+    controller.abort();
+    const error = await promise.catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(DeepseekProviderError);
+    expect((error as DeepseekProviderError).subtype).toBe('deepseek_aborted');
+    expect(child.signals).toContain('SIGTERM');
+  });
 });
