@@ -89,10 +89,7 @@ const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   },
   warning: {
     className: 'text-[10px] font-bold text-warning',
-    style: {
-      borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)',
-      lineHeight: 'normal',
-    },
+    style: { borderColor: 'var(--status-pill-border-warning)', lineHeight: 'normal' },
   },
   success: {
     className: 'text-[10px] font-bold text-success',
