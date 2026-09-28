@@ -29,7 +29,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA2 engine fixes merged (steered turns keep attempt identity, rejected retry side effects, blank Send now drains queue, blocked Claude tool ◐, Files changed after retry) — agent qa2-engine
 - [x] QA2 web fixes merged (delivered state, run N of M, loop max caption, actor name, Codex body bar, wrapper in body, TaskCreate/TaskUpdate todos, header cosmetics, placeholder) — agent qa2-web
 - [x] QA round 3 report: all prior findings fixed; 2 major + 5 minor new
-- [ ] QA3 fixes (success protected from ⚠, Grok/other delta folding, loop header provider/model, Console cross-tab idle latency, Grok background command ✓, loop caption, dispatching item in QUEUED) + tests for timer re-arm, Chat parity, restart while idle — agent qa3-fixes
+- [x] QA3 fixes merged (6f1b352b); e2e 153/0/4; real Claude+Grok evidence
 - [ ] QA round 4 (final acceptance) after QA3 fixes
 
 ## Background processes started by this session
