@@ -10651,6 +10651,50 @@ nodes:
       const data = (failed[0][0] as Record<string, unknown>).data as Record<string, unknown>;
       expect(String(data.error)).toContain('exceeded max iterations');
     });
+
+    it('stamps the durable steering settings row with the resolved provider, exactly like a prompt node', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'DONE' };
+        yield { type: 'result', sessionId: 'loop-steering-stamp' };
+      });
+
+      const store = createMockStore();
+      await executeDagWorkflow(
+        createMockDeps(store),
+        createMockPlatform(),
+        'conv-loop-steering-stamp',
+        testDir,
+        {
+          name: 'loop-steering-stamp-fixture',
+          nodes: [
+            {
+              id: 'steer-loop',
+              loop: {
+                prompt: 'Do the work until DONE.',
+                until: 'DONE',
+                max_iterations: 2,
+              },
+            },
+          ],
+        },
+        makeWorkflowRun('loop-steering-stamp-run'),
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      // This durable stamp is what lets a restarted server classify the node
+      // as `recovery_required` (settings row exists, no live handle) instead
+      // of `not_steerable_here` (never registered) — see
+      // `classifySteeringLifecycle` in @archon/server.
+      const settings = await store.getSteeringNodeSettings('loop-steering-stamp-run', 'steer-loop');
+      expect(settings?.provider_id).toBe('claude');
+    });
   });
 
   // ─── Decoupled stream-cancel poller (silent tool call) — loop variant ────
@@ -28630,6 +28674,23 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     expect(interrupted!.metadata?.execution?.occurrence_id).toBe(
       resumed!.metadata?.execution?.occurrence_id
     );
+  });
+
+  it('stamps the durable steering settings row with the resolved provider for a prompt node', async () => {
+    mockSendQueryDag.mockImplementation(function* () {
+      yield { type: 'assistant', content: 'done' };
+      yield { type: 'result', sessionId: 'prompt-steering-stamp' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    // This durable stamp is what lets a restarted server classify the node
+    // as `recovery_required` (settings row exists, no live handle) instead
+    // of `not_steerable_here` (never registered) — see
+    // `classifySteeringLifecycle` in @archon/server. The loop-node path
+    // stamps identically through the same shared helper.
+    const settings = await store.getSteeringNodeSettings(RUN_ID, 'review');
+    expect(settings?.provider_id).toBe('claude');
   });
 
   it('emits node_turn_started on every pass and node_turn_interrupted on Stop, in order, so an observing tab always has a live refetch trigger', async () => {

@@ -159,6 +159,7 @@ import {
   isInlineScript,
   formatSubprocessFailure,
   safeSendMessage,
+  registerSteeringHandle,
   type SendMessageContext,
 } from './executor-shared';
 import {
@@ -3555,30 +3556,14 @@ async function executeNodeInternal(
   // session — a turn that cannot be resumed cannot accept follow-up guidance,
   // so unsupported providers never expose a route target.
   const providerInterruptible = getProviderCapabilities(provider).interrupt !== false;
-  const steeringHandle: NodeSteeringHandle | undefined = aiClient.getCapabilities().sessionResume
-    ? getSteeringRegistry().register(workflowRun.id, stepName, {
-        interruptible: providerInterruptible,
-      })
-    : undefined;
-  if (steeringHandle !== undefined) {
-    // Durable trace that this node IS steerable, stamped with its resolved
-    // provider, so a route can tell "recovery required" (durable settings
-    // exist, no live handle — e.g. after a restart) from a node that never
-    // supported steering. Best-effort: a write failure here degrades only
-    // post-restart recovery reporting, never this run.
-    deps.store
-      .upsertSteeringNodeSettings({
-        workflow_run_id: workflowRun.id,
-        node_id: stepName,
-        provider_id: provider,
-      })
-      .catch((err: unknown) => {
-        getLog().warn(
-          { err: err as Error, workflowRunId: workflowRun.id, nodeId: node.id },
-          'dag.steering_node_settings_upsert_failed'
-        );
-      });
-  }
+  const steeringHandle: NodeSteeringHandle | undefined = registerSteeringHandle(deps, {
+    workflowRunId: workflowRun.id,
+    stepName,
+    nodeId: node.id,
+    provider,
+    sessionResume: aiClient.getCapabilities().sessionResume,
+    interruptible: providerInterruptible,
+  });
   // The interrupt-capable face of the handle (#183): only when the resolved
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
@@ -6440,11 +6425,14 @@ async function executeLoopNodeInner(
   // session — without `sessionResume` queued operator guidance could never
   // ride a natural boundary, so the node exposes no handle at all.
   const providerInterruptible = getProviderCapabilities(workflowProvider).interrupt !== false;
-  steering.steeringHandle = aiClient.getCapabilities().sessionResume
-    ? getSteeringRegistry().register(workflowRun.id, stepName, {
-        interruptible: providerInterruptible,
-      })
-    : undefined;
+  steering.steeringHandle = registerSteeringHandle(deps, {
+    workflowRunId: workflowRun.id,
+    stepName,
+    nodeId: node.id,
+    provider: workflowProvider,
+    sessionResume: aiClient.getCapabilities().sessionResume,
+    interruptible: providerInterruptible,
+  });
   // The interrupt-capable face of the handle (#183): only when the resolved
   // provider capability supports per-turn interrupt. Queue-only providers
   // keep #181 behaviour verbatim — no token, no interruptSignal.
