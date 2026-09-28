@@ -7567,6 +7567,7 @@ describe('POST /api/workflows/runs/:runId/nodes/:nodeId/send — queued guidance
         execution_state: 'live',
         auto_send: false,
         capabilities: { soft_injection: false, delivery_ack: false },
+        sub_state: null,
         queued: [
           { message_id: B1, message: 'from-b-1', operator_user_id: OP_B, state: 'queued' },
           { message_id: B2, message: 'from-b-2', operator_user_id: OP_B, state: 'queued' },
@@ -9176,6 +9177,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
       execution_state: 'live',
       auto_send: false,
       capabilities: { soft_injection: false, delivery_ack: false },
+      sub_state: null,
       queued: [
         {
           message_id: STEER_MESSAGE_ID,
@@ -9205,6 +9207,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
       execution_state: 'live',
       auto_send: false,
       capabilities: { soft_injection: false, delivery_ack: false },
+      sub_state: null,
       queued: [],
     });
   });
@@ -9224,6 +9227,7 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
       execution_state: 'live',
       auto_send: false,
       capabilities: { soft_injection: false, delivery_ack: false },
+      sub_state: null,
       queued: [
         {
           message_id: STEER_MESSAGE_ID,
@@ -9241,6 +9245,28 @@ describe('GET /api/workflows/runs/:runId/nodes/:nodeId/queue — queue snapshot'
     });
     expect(handle.snapshot().phase).toBe('parked');
     expectNoSteeringMutation(handle, before);
+  });
+
+  test('sub_state reflects the live interruptible projection, and is null for a non-interruptible handle', async () => {
+    mockGetWorkflowRun.mockResolvedValue(mockSteerableRun());
+    mockListWorkflowEvents.mockResolvedValue([steerEvent('node_started', STEER_NODE_ID)]);
+    const handle = getSteeringRegistry().register(STEER_RUN_ID, STEER_NODE_ID, {
+      interruptible: true,
+    });
+    const { app } = makeApp();
+
+    const beforeTurn = await getNodeQueue(app);
+    expect(((await beforeTurn.json()) as { sub_state: string | null }).sub_state).toBeNull();
+
+    const token = handle.beginTurn(new AbortController());
+    const midTurn = await getNodeQueue(app);
+    expect(((await midTurn.json()) as { sub_state: string | null }).sub_state).toBe('generating');
+
+    void handle.enterIdle(token);
+    const idle = await getNodeQueue(app);
+    expect(((await idle.json()) as { sub_state: string | null }).sub_state).toBe(
+      'idle-after-interrupt'
+    );
   });
 
   test('omits withdrawn rows but keeps claimed (dispatching) ones visible', async () => {

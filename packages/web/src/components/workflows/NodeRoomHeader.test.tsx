@@ -120,7 +120,7 @@ describe('NodeRoomHeader', () => {
     expect(closes).toEqual([1]);
   });
 
-  test('the running pill carries a live dot and the bright-blue accent token, not text-accent', async () => {
+  test('the running pill carries the bright-blue accent token, not text-accent, and no dot', async () => {
     await act(async () => {
       root.render(
         createElement(nodeRoomHeader.NodeRoomHeader, {
@@ -141,7 +141,9 @@ describe('NodeRoomHeader', () => {
     if (pill === undefined) throw new Error('missing Running pill');
     expect(pill.className).toContain('text-accent-bright');
     expect(pill.className).not.toContain('text-accent ');
-    expect(pill.querySelector('span[aria-hidden]')).not.toBeNull();
+    expect(pill.className).toContain('text-[10px]');
+    expect(pill.className).toContain('font-bold');
+    expect(pill.querySelector('span[aria-hidden]')).toBeNull();
   });
 
   test('meta appends waiting on operator for an idle-after-interrupt agent', async () => {

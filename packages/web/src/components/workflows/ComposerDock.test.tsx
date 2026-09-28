@@ -215,6 +215,7 @@ describe('ComposerDock', () => {
       nodeTerminal: boolean;
       nodeExecutionKey: string | null;
       idleAwaitExpired: boolean;
+      deliveredMessageIds: ReadonlySet<string>;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -247,6 +248,7 @@ describe('ComposerDock', () => {
           nodeTerminal: overrides.nodeTerminal,
           nodeExecutionKey: overrides.nodeExecutionKey,
           idleAwaitExpired: overrides.idleAwaitExpired,
+          deliveredMessageIds: overrides.deliveredMessageIds,
         })
       );
     });
@@ -570,6 +572,32 @@ describe('ComposerDock', () => {
     expect(list?.textContent).toContain('sending…');
   });
 
+  test('a dispatching row already delivered to the transcript never shows twice, and the header count agrees', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      deliveredMessageIds: new Set(['id-a']),
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha', state: 'dispatching' },
+        { message_id: 'id-b', message: 'beta', state: 'dispatching' },
+      ])
+    );
+    // 'id-a' already landed as a transcript row — the band hides it and the
+    // header counts only the one still genuinely in flight, never claiming
+    // two are sending while only one row is visible.
+    expect(host.textContent).toContain('sending · 1');
+    expect(host.textContent).not.toContain('sending · 2');
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+    const list = host.querySelector('ul[aria-label="Sending, 1"]');
+    expect(list).not.toBeNull();
+    expect(list?.textContent).toContain('beta');
+    expect(list?.textContent).not.toContain('alpha');
+  });
+
   test('the band collapse toggle hides and restores the item list without removing it', async () => {
     await renderDock();
     await setDraft('wrong suite');
@@ -886,6 +914,26 @@ describe('ComposerDock', () => {
     expect(row).not.toBeNull();
     const children = [...(row?.children ?? [])];
     expect(children.indexOf(stop)).toBeLessThan(children.indexOf(queue));
+  });
+
+  test('the queue poll corrects Stop/Send now even when the projected subState prop never changes', async () => {
+    const ctrl = controllableRead();
+    // The prop reflects a stale projection this tab's own render never sees
+    // update — the same shape as a parent whose separate, slower poll
+    // sampled the same value on both sides of a transition another shell
+    // caused. The dock's own queue poll must still self-heal.
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+    });
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+
+    await settleSnapshot(ctrl, okQueue([], { sub_state: 'generating' }));
+
+    expect(stopButton()).not.toBeNull();
+    expect(host.textContent).not.toContain('Send now');
   });
 
   test('Stop resolves idle: Stopping… transient, one announcement, focus leaves the dock', async () => {
@@ -1246,6 +1294,7 @@ describe('ComposerDock', () => {
         operator_user_id: row.operator_user_id ?? null,
         state: row.state ?? 'queued',
       })),
+      sub_state: overrides?.sub_state ?? null,
     };
   }
 
@@ -1696,6 +1745,7 @@ describe('ComposerDock', () => {
       ctrl,
       okQueue([{ message_id: 'id-a', message: 'alpha' }], {
         capabilities: { soft_injection: true, delivery_ack: false },
+        sub_state: 'generating',
       })
     );
 
