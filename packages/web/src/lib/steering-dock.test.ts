@@ -689,7 +689,12 @@ describe('send now batch transitions', () => {
     expect(begun.state.pendingRetry).toEqual({ messageId: begun.messageId, message: '' });
 
     const next = resolveSendNowSuccess(begun.state, { message_id: begun.messageId, state: 'sent' });
-    expect(next.sent).toEqual([]);
+    // The batch renders as an optimistic `dispatching` row immediately
+    // rather than leaving the band empty until the next queue poll.
+    expect(next.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual([
+      { message: 'first', state: 'dispatching' },
+      { message: 'second', state: 'dispatching' },
+    ]);
     expect(next.inFlightBatch).toBeNull();
     expect(next.subState).toBe('generating');
   });
@@ -714,14 +719,19 @@ describe('send now batch transitions', () => {
     expect(resolved.notice).toBe('1 message will send');
   });
 
-  test('success discards the batch, derives generating, announces once', () => {
+  test('success discards the batch, derives generating, announces once, and shows an optimistic dispatching row', () => {
     const state = idleWithReceipts(['first']);
     const begun = beginSendNow(state, 'redirect now', newId);
     const next = resolveSendNowSuccess(begun.state, {
       message_id: begun.messageId,
       state: 'awaiting_send_now',
     });
-    expect(next.sent).toEqual([]);
+    // Fills the gap before the next queue poll restores the server's own
+    // `dispatching` row under the same message id — see resolveSendNowSuccess.
+    expect(next.sent.map(entry => ({ message: entry.message, state: entry.state }))).toEqual([
+      { message: 'first', state: 'dispatching' },
+      { message: 'redirect now', state: 'dispatching' },
+    ]);
     expect(next.inFlightBatch).toBeNull();
     expect(next.pendingRetry).toBeNull();
     expect(next.subState).toBe('generating');

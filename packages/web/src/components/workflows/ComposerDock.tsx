@@ -526,6 +526,17 @@ export function ComposerDock({
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];
 
+  // The `nodeTerminal` prop comes from the parent's 3s run-detail poll; this
+  // dock's own queue read (~1s) can report `execution_state: 'finished'`
+  // first. Without this, the composer band can render with the queued item
+  // already dropped from the live list (the same snapshot that flips
+  // `execution_state` also reconciles the item toward `never_sent`) but
+  // before either terminal signal has arrived, so nothing durable is on
+  // screen for a beat. Folding the dock's own signal in here — used for the
+  // mode decision and to trigger the one-shot authoritative queue fetch below
+  // — closes that gap instead of waiting on the slower external poll.
+  const effectiveNodeTerminal = nodeTerminal || dock.executionState === 'finished';
+
   const mode = steeringDockMode({
     rowStatus,
     live,
@@ -533,7 +544,7 @@ export function ComposerDock({
     refusal: dock.refusal,
     finishedIteration: usableFinishedIteration,
     neverSent: finishedEntries,
-    nodeTerminal,
+    nodeTerminal: effectiveNodeTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
   });
 
@@ -607,8 +618,11 @@ export function ComposerDock({
     // A non-live run (Cancel/Abandon) qualifies exactly like nodeTerminal
     // does — see steeringDockMode — so a cold mount opened during the window
     // between the run leaving `live` and this node's own terminal event
-    // still hydrates the queue instead of showing nothing.
-    if (!nodeTerminal && live) {
+    // still hydrates the queue instead of showing nothing. Gated on
+    // `effectiveNodeTerminal` (not the raw prop) so this dock's own queue
+    // read triggers the authoritative refetch as soon as ITS poll learns the
+    // node is finished, rather than waiting on the slower external poll.
+    if (!effectiveNodeTerminal && live) {
       terminalFetchedRef.current = false;
       return;
     }
@@ -633,7 +647,7 @@ export function ComposerDock({
       // permanently losing this node's terminal hydration for the mount.
       terminalFetchedRef.current = false;
     };
-  }, [nodeTerminal, live, runId, nodeId, readQueue]);
+  }, [effectiveNodeTerminal, live, runId, nodeId, readQueue]);
 
   // Shared-queue reads while composer/blocked/finished-iteration/recovery are
   // mounted. Recovery keeps polling (not just a one-shot) so this dock can

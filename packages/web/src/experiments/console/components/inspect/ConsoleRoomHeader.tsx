@@ -74,29 +74,45 @@ interface StatusPillStyle {
 
 // Every tone renders 10px/700 with no dot, matching the mockup room header
 // pill (measured against the live mockup, not the run-level page header
-// pill it was once confused with).
+// pill it was once confused with). `lineHeight: 'normal'` matches the
+// mockup's pill exactly: it sets no line-height of its own, so the browser's
+// own default for the span's font wins — `text-[10px]`'s Tailwind-paired
+// line-height (1.5, i.e. 15px) makes the pill 21px tall instead of the
+// mockup's 18px.
 const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   accent: {
     className: 'text-[10px] font-bold text-[color:var(--running)]',
-    style: { borderColor: 'color-mix(in oklch, var(--running) 40%, transparent)' },
+    style: {
+      borderColor: 'color-mix(in oklch, var(--running) 40%, transparent)',
+      lineHeight: 'normal',
+    },
   },
   warning: {
     className: 'text-[10px] font-bold text-warning',
-    style: { borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)' },
+    style: {
+      borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)',
+      lineHeight: 'normal',
+    },
   },
   success: {
     className: 'text-[10px] font-bold text-success',
-    style: { borderColor: 'color-mix(in oklch, var(--success) 40%, transparent)' },
+    style: {
+      borderColor: 'color-mix(in oklch, var(--success) 40%, transparent)',
+      lineHeight: 'normal',
+    },
   },
   error: {
     className: 'text-[10px] font-bold text-error',
-    style: { borderColor: 'color-mix(in oklch, var(--error) 40%, transparent)' },
+    style: {
+      borderColor: 'color-mix(in oklch, var(--error) 40%, transparent)',
+      lineHeight: 'normal',
+    },
   },
 };
 
 const NEUTRAL_PILL_STYLE: StatusPillStyle = {
   className: 'text-[10px] font-bold text-text-secondary',
-  style: { borderColor: 'var(--border)' },
+  style: { borderColor: 'var(--border)', lineHeight: 'normal' },
 };
 
 export function ConsoleRoomHeader({
