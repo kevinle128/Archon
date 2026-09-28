@@ -230,6 +230,38 @@ test('appends a thinking-origin row with no other metadata', async () => {
   ]);
 });
 
+test('appends a thinking-origin row with delta-folding metadata when the provider supplies it', async () => {
+  const received: AppendNodeMessageInput[] = [];
+  const scope = {
+    occurrence_id: '11111111-1111-4111-8111-111111111111',
+    attempt_id: '22222222-2222-4222-8222-222222222222',
+  };
+  await appendThinkingTranscript(collectingStore(received), {
+    workflow_run_id: 'run-1',
+    node_id: 'review',
+    scope,
+    text: 'pond',
+    textMode: 'delta',
+    streamId: 'stream-1',
+    blockId: 'block-1',
+  });
+  expect(received).toEqual([
+    {
+      workflow_run_id: 'run-1',
+      node_id: 'review',
+      kind: 'text',
+      payload: { text: 'pond' },
+      metadata: {
+        execution: scope,
+        origin: 'thinking',
+        text_mode: 'delta',
+        stream_id: 'stream-1',
+        block_id: 'block-1',
+      },
+    },
+  ]);
+});
+
 test('appends a prompt-origin row with actor and source', async () => {
   const received: AppendNodeMessageInput[] = [];
   const scope = {

@@ -396,15 +396,35 @@ export function isQueueItemClaimable(state: SteeringQueueItemState): boolean {
 }
 
 /**
+ * The count a "queued · N" / "will send · N" band header states — every
+ * pending entry except one already `dispatching`. control-states.md lists
+ * `queued` and `dispatching` as distinct states: a message already being
+ * delivered is not waiting, so counting it as queued misreports what is
+ * actually happening (a provider whose delivery takes several seconds, not
+ * the sub-second case this once assumed, made that reading visible). The
+ * dispatching entry still renders in the list, labelled by
+ * `queueItemStatusLabel`, so nothing disappears — it just is not counted
+ * twice as "queued" and "in flight" at once.
+ */
+export function pendingQueueCount(sent: readonly LocalSentReceipt[]): number {
+  return sent.filter(receipt => receipt.state !== 'dispatching').length;
+}
+
+/**
  * Per-item delivery label for a pending queue row. `queued`/`awaiting_send_now`
- * and the sub-second `dispatching` claim render with no label at all, matching
- * the approved mockup's plain rows. `delivery_unknown` is the one pending
- * state that must never render silently — control-states.md's exact copy.
- * `sent`/`delivered`/`never_sent` never reach this helper: once delivered the
- * message is a transcript row, and never-sent rows use their own band.
+ * render with no label at all, matching the approved mockup's plain rows.
+ * `dispatching` and `delivery_unknown` are the two pending states that must
+ * never render silently as a plain queued row — control-states.md lists
+ * `dispatching` as its own state, and a verified provider can take several
+ * real seconds to accept a dispatched message, not the sub-second window
+ * this once assumed. `sent`/`delivered`/`never_sent` never reach this
+ * helper: once delivered the message is a transcript row, and never-sent
+ * rows use their own band.
  */
 export function queueItemStatusLabel(state: SteeringQueueItemState): string | null {
-  return state === 'delivery_unknown' ? 'delivery unknown' : null;
+  if (state === 'delivery_unknown') return 'delivery unknown';
+  if (state === 'dispatching') return 'sending…';
+  return null;
 }
 
 export function createSteeringDockState(subState?: SteeringSubState): SteeringDockState {

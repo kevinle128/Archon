@@ -8,6 +8,7 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeLoopIterationCount,
   computeRunOfTotal,
   disambiguateExecutionOptions,
   excludeRepresentedLoopContainers,
@@ -62,12 +63,14 @@ function nodeStarted(args: {
   attemptId?: string;
   provider?: string;
   model?: string;
+  retryEpoch?: number;
 }): WorkflowEvent {
   const data: Record<string, unknown> = {};
   if (args.occurrenceId !== undefined) data.occurrence_id = args.occurrenceId;
   if (args.attemptId !== undefined) data.attempt_id = args.attemptId;
   if (args.provider !== undefined) data.provider = args.provider;
   if (args.model !== undefined) data.model = args.model;
+  if (args.retryEpoch !== undefined) data.retry_epoch = args.retryEpoch;
   return {
     id: args.id,
     workflow_run_id: 'run-1',
@@ -840,6 +843,92 @@ describe('computeRunOfTotal', () => {
   });
 });
 
+describe('computeLoopIterationCount', () => {
+  function occ(
+    id: string,
+    status: string,
+    selection: Extract<ExecutionRowSelection, { kind: 'occurrence' }>
+  ): { id: string; status: string; selection: ExecutionRowSelection } {
+    return { id, status, selection };
+  }
+
+  test('counts only the selected row’s own retry, not every retry of a single-iteration loop', () => {
+    // A max_iterations: 1 loop retried once: two total node executions, but
+    // each is its own one-iteration run — the header's "of N" must read 1,
+    // never 2, or it contradicts "· max 1" (VQ3-6).
+    const rows = [
+      occ('run0-iter1', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('run1-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1',
+        iteration: 1,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeLoopIterationCount(rows, 'run1-iter1')).toBe(1);
+    expect(computeLoopIterationCount(rows, 'run0-iter1')).toBe(1);
+  });
+
+  test('counts every iteration of one live, non-retried run', () => {
+    const rows = [
+      occ('iter1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1', iteration: 1 }),
+      occ('iter2', 'completed', { kind: 'occurrence', occurrenceId: 'occ-2', iteration: 2 }),
+      occ('iter3', 'running', { kind: 'occurrence', occurrenceId: 'occ-3', iteration: 3 }),
+    ];
+    expect(computeLoopIterationCount(rows, 'iter3')).toBe(3);
+  });
+
+  test('does not mix iterations from a different run into the count', () => {
+    const rows = [
+      occ('run0-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0a',
+        iteration: 1,
+        retryEpoch: 0,
+      }),
+      occ('run0-iter2', 'failed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-0b',
+        iteration: 2,
+        retryEpoch: 0,
+      }),
+      occ('run1-iter1', 'completed', {
+        kind: 'occurrence',
+        occurrenceId: 'occ-1a',
+        iteration: 1,
+        retryEpoch: 1,
+      }),
+    ];
+    expect(computeLoopIterationCount(rows, 'run1-iter1')).toBe(1);
+    expect(computeLoopIterationCount(rows, 'run0-iter2')).toBe(2);
+  });
+
+  test('is null for a non-loop-iteration selection or an unknown row id', () => {
+    const rows = [occ('run-1', 'completed', { kind: 'occurrence', occurrenceId: 'occ-1' })];
+    expect(computeLoopIterationCount(rows, 'run-1')).toBeNull();
+    expect(computeLoopIterationCount(rows, 'missing')).toBeNull();
+    expect(
+      computeLoopIterationCount(
+        [{ id: 'node-row', status: 'completed', selection: { kind: 'node' } }],
+        'node-row'
+      )
+    ).toBeNull();
+  });
+
+  test('counts every legacy loop_iteration row as one live run (pre-occurrence-tracking history)', () => {
+    const rows = [
+      { id: 'legacy-1', status: 'completed', selection: { kind: 'loop_iteration', iteration: 1 } },
+      { id: 'legacy-2', status: 'running', selection: { kind: 'loop_iteration', iteration: 2 } },
+    ] as const;
+    expect(computeLoopIterationCount(rows, 'legacy-2')).toBe(2);
+  });
+});
+
 describe('headerMetaLine', () => {
   test('joins start time, live state, run count, provider, and model', () => {
     expect(
@@ -1263,6 +1352,77 @@ describe('buildExecutionHeader', () => {
     expect(header.provider).toBe('claude');
     expect(header.model).toBe('sonnet');
     expect(header.unknownScope).toBe(true);
+  });
+
+  test('a live loop iteration reads provider and model from the loop node’s own node_started row', () => {
+    // The loop node's node_started carries its OWN outer occurrence/attempt
+    // identity, never the same as any individual iteration's nested scope —
+    // a live loop_iteration selection has no occurrence identity of its own
+    // to match against, so it must still resolve from that outer row.
+    const selected = row({
+      id: 'loop-live',
+      status: 'running',
+      order: 0,
+      selection: { kind: 'loop_iteration', iteration: 2 },
+      unknownScope: true,
+    });
+    const header = buildExecutionHeader({
+      row: selected,
+      events: [
+        nodeStarted({
+          id: 'loop-start',
+          occurrenceId: 'occ-loop-outer',
+          attemptId: 'att-loop-outer',
+          provider: 'claude',
+          model: 'haiku',
+        }),
+      ],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    expect(header.provider).toBe('claude');
+    expect(header.model).toBe('haiku');
+  });
+
+  test('a retried loop iteration reads provider and model from its own retry epoch’s node_started row', () => {
+    const selected = row({
+      id: 'loop-retried',
+      status: 'completed',
+      order: 0,
+      selection: {
+        kind: 'occurrence',
+        occurrenceId: 'occ-iter-inner',
+        attemptId: 'att-iter-inner',
+        retryEpoch: 1,
+        iteration: 1,
+      },
+      unknownScope: false,
+    });
+    const header = buildExecutionHeader({
+      row: selected,
+      events: [
+        nodeStarted({
+          id: 'loop-start-epoch-0',
+          occurrenceId: 'occ-loop-outer-0',
+          attemptId: 'att-loop-outer-0',
+          provider: 'claude',
+          model: 'haiku',
+          retryEpoch: 0,
+        }),
+        nodeStarted({
+          id: 'loop-start-epoch-1',
+          occurrenceId: 'occ-loop-outer-1',
+          attemptId: 'att-loop-outer-1',
+          provider: 'codex',
+          model: 'gpt-5',
+          retryEpoch: 1,
+        }),
+      ],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    // The selected row is on retry epoch 1, so its provider/model come from
+    // the loop's SECOND start row, never the first retry's.
+    expect(header.provider).toBe('codex');
+    expect(header.model).toBe('gpt-5');
   });
 });
 

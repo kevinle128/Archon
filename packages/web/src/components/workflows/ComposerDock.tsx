@@ -56,6 +56,7 @@ import {
   neverSentDisclosure,
   neverSentListLabel,
   nextFocusAfterRemoval,
+  pendingQueueCount,
   queueBandHeader,
   queueButtonAccessibleName,
   queueItemStatusLabel,
@@ -982,15 +983,16 @@ export function ComposerDock({
   if (mode === 'hidden') return null;
 
   if (mode === 'recovery-required') {
+    const pendingCount = pendingQueueCount(dock.sent);
     return (
       <section
-        aria-label={queueBandHeader(dock.sent.length)}
+        aria-label={queueBandHeader(pendingCount)}
         className="flex-none border-t border-border bg-surface-elevated"
       >
         {dock.sent.length === 0 ? null : (
           <>
             <QueueBandHeader
-              label={queueBandHeader(dock.sent.length)}
+              label={queueBandHeader(pendingCount)}
               savedLine={savedToServerLine(dock.autoSend)}
               open={queueBandOpen}
               onToggle={(): void => {
@@ -1003,7 +1005,7 @@ export function ComposerDock({
               hidden={!queueBandOpen}
               className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
             >
-              <ul aria-label={queueListLabel(dock.sent.length)}>
+              <ul aria-label={queueListLabel(pendingCount)}>
                 {dock.sent.map((receipt, index) => (
                   <QueueBandItem
                     key={receipt.messageId}
@@ -1150,11 +1152,11 @@ export function ComposerDock({
         </div>
         {dock.sent.length === 0 ? null : (
           <section
-            aria-label={queueBandHeader(dock.sent.length)}
+            aria-label={queueBandHeader(pendingQueueCount(dock.sent))}
             className="flex-none border-t border-border bg-surface-elevated"
           >
             <QueueBandHeader
-              label={queueBandHeader(dock.sent.length)}
+              label={queueBandHeader(pendingQueueCount(dock.sent))}
               savedLine={null}
               open={queueBandOpen}
               onToggle={(): void => {
@@ -1167,7 +1169,7 @@ export function ComposerDock({
               hidden={!queueBandOpen}
               className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
             >
-              <ul aria-label={queueListLabel(dock.sent.length)}>
+              <ul aria-label={queueListLabel(pendingQueueCount(dock.sent))}>
                 {dock.sent.map((receipt, index) => (
                   <QueueBandItem
                     key={receipt.messageId}
@@ -1191,10 +1193,11 @@ export function ComposerDock({
 
   const blocked = mode === 'blocked';
   const idle = agentMode === 'idle';
+  const pendingCount = pendingQueueCount(dock.sent);
   const statusText =
     blocked && blockedReason !== null
       ? blockedReason
-      : (dock.notice ?? (dock.sent.length > 0 ? queuedCountPhrase(dock.sent.length) : ''));
+      : (dock.notice ?? (pendingCount > 0 ? queuedCountPhrase(pendingCount) : ''));
   const showStop = agentMode === 'generating' || agentMode === 'interrupting';
   const stopping = agentMode === 'interrupting';
   // Per-item Send now is honest only while the turn genuinely accepts a
@@ -1202,9 +1205,7 @@ export function ComposerDock({
   // and only for a row the server can still claim.
   const canSendItemNow = dock.softInjection && agentMode === 'generating';
 
-  const queueBandLabel = idle
-    ? willSendBandHeader(dock.sent.length)
-    : queueBandHeader(dock.sent.length);
+  const queueBandLabel = idle ? willSendBandHeader(pendingCount) : queueBandHeader(pendingCount);
 
   return (
     <>
@@ -1227,11 +1228,7 @@ export function ComposerDock({
             hidden={!queueBandOpen}
             className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
           >
-            <ul
-              aria-label={
-                idle ? willSendListLabel(dock.sent.length) : queueListLabel(dock.sent.length)
-              }
-            >
+            <ul aria-label={idle ? willSendListLabel(pendingCount) : queueListLabel(pendingCount)}>
               {dock.sent.map((receipt, index) => {
                 const claimable = isQueueItemClaimable(receipt.state);
                 const statusLabel = queueItemStatusLabel(receipt.state);
@@ -1386,8 +1383,8 @@ export function ComposerDock({
             type="button"
             aria-label={
               idle
-                ? sendNowButtonAccessibleName(dock.sent.length)
-                : queueButtonAccessibleName(dock.sent.length)
+                ? sendNowButtonAccessibleName(pendingCount)
+                : queueButtonAccessibleName(pendingCount)
             }
             aria-keyshortcuts="Meta+Enter Control+Enter"
             aria-disabled={canSubmit ? undefined : true}

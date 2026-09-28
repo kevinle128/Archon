@@ -520,7 +520,7 @@ describe('OmpEventParser', () => {
     expect(parser.hasNaturalTurnEnded()).toBe(true);
   });
 
-  test('drainPendingAssistant is idempotent over flushAssistant', () => {
+  test('drainPendingText is idempotent over the coalesced assistant span', () => {
     const parser = new OmpEventParser(false);
     parser.consumeLine(JSON.stringify({ type: 'session', id: 's1' }));
     parser.consumeLine(
@@ -538,8 +538,30 @@ describe('OmpEventParser', () => {
         assistantMessageEvent: { type: 'text_delta', delta: 'lo' },
       })
     );
-    expect(parser.drainPendingAssistant()).toEqual([{ type: 'assistant', content: 'Hello' }]);
-    expect(parser.drainPendingAssistant()).toEqual([]);
+    expect(parser.drainPendingText()).toEqual([{ type: 'assistant', content: 'Hello' }]);
+    expect(parser.drainPendingText()).toEqual([]);
+  });
+
+  test('drainPendingText also flushes a coalesced thinking span left open at interrupt', () => {
+    const parser = new OmpEventParser(false);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's1' }));
+    parser.consumeLine(
+      JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } })
+    );
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'thinking_delta', delta: 'Pond' },
+      })
+    );
+    parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'thinking_delta', delta: 'ering' },
+      })
+    );
+    expect(parser.drainPendingText()).toEqual([{ type: 'thinking', content: 'Pondering' }]);
+    expect(parser.drainPendingText()).toEqual([]);
   });
 
   test('buildInterruptedResult keeps only session/accounting/model and stream_aborted marker', () => {
@@ -704,6 +726,33 @@ describe('OmpEventParser', () => {
       content: expect.stringContaining('failed'),
     });
     expect(chunks[1]).toMatchObject({ toolOutcome: 'error' });
+  });
+
+  test('folds consecutive thinking_delta events into one thinking chunk, not one per delta', () => {
+    const parser = new OmpEventParser(false);
+    parser.consumeLine(JSON.stringify({ type: 'session', id: 's-thinking' }));
+    parser.consumeLine(
+      JSON.stringify({ type: 'message_start', message: { role: 'assistant', content: [] } })
+    );
+    const deltas = ['Pond', 'ering', ' about', ' it'];
+    const chunks = deltas.flatMap(delta =>
+      parser.consumeLine(
+        JSON.stringify({
+          type: 'message_update',
+          assistantMessageEvent: { type: 'thinking_delta', delta },
+        })
+      )
+    );
+    // Every delta accumulates silently; nothing is yielded until a
+    // different event closes the span, so four deltas never become four rows.
+    expect(chunks).toEqual([]);
+    const closing = parser.consumeLine(
+      JSON.stringify({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: 'Answer' },
+      })
+    );
+    expect(closing).toEqual([{ type: 'thinking', content: 'Pondering about it' }]);
   });
 });
 

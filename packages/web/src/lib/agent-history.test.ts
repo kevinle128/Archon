@@ -666,7 +666,7 @@ describe('buildAgentHistory', () => {
     });
   });
 
-  test('folds an immediately following interrupted status into the tool row', () => {
+  test('a completed call keeps its own recorded outcome next to an interrupted status row, never overridden', () => {
     const { items } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
@@ -686,7 +686,7 @@ describe('buildAgentHistory', () => {
           name: 'Bash',
           toolUseId: 'fold-1',
           output: 'partial',
-          metadata: { tool_phase: 'result', outcome: 'success', exit_code: 2 },
+          metadata: { tool_phase: 'result', outcome: 'error', exit_code: 2 },
         }),
         statusRow('s-interrupt', 3, 'interrupted'),
         statusRow('s-next', 4, 'iteration_started', '2'),
@@ -701,24 +701,23 @@ describe('buildAgentHistory', () => {
         statusRow('s-interrupt-2', 6, 'interrupted'),
       ],
     });
-    expect(kinds(items)).toEqual(['tool', 'lifecycle', 'tool']);
-    const [folded, lifecycle, pendingFolded] = items;
-    // The interrupted override beats the recorded failure for display while the
-    // exit fact survives; the folded status row leaves no lifecycle item.
-    expect(folded).toMatchObject({ id: 'call-f', seq: 1, outcome: 'interrupted', exitCode: 2 });
-    if (folded?.kind !== 'tool') throw new Error('expected a tool item');
-    expect(folded.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
-    expect(folded.presentation.badges).toContainEqual({
-      kind: 'state',
-      text: 'interrupted',
-      tone: 'warning',
-    });
-    expect(folded.presentation.badges).toContainEqual({
+    // The call genuinely failed (recorded error, exit 2) before Stop landed
+    // right after it — that is unproven either way, so the fold leaves it as
+    // recorded rather than guessing; the status row it sits next to still
+    // reads as its own lifecycle item, same as the next status row after it.
+    expect(kinds(items)).toEqual(['tool', 'lifecycle', 'lifecycle', 'tool', 'lifecycle']);
+    const [failed, interruptLifecycle, iterationLifecycle, pending, secondInterruptLifecycle] =
+      items;
+    expect(failed).toMatchObject({ id: 'call-f', seq: 1, outcome: 'failed', exitCode: 2 });
+    if (failed?.kind !== 'tool') throw new Error('expected a tool item');
+    expect(failed.presentation).toMatchObject({ glyph: '✕', statusLabel: 'failed' });
+    expect(failed.presentation.badges).toContainEqual({
       kind: 'exit',
       text: 'exit 2',
       tone: 'danger',
     });
-    expect(lifecycle).toEqual({
+    expect(interruptLifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
+    expect(iterationLifecycle).toEqual({
       kind: 'lifecycle',
       id: 's-next',
       seq: 4,
@@ -726,7 +725,12 @@ describe('buildAgentHistory', () => {
       detail: '2',
       execution: null,
     });
-    expect(pendingFolded).toMatchObject({ id: 'call-p', seq: 5, outcome: 'interrupted' });
+    // The second call never settled at all (no result row, no matching
+    // tool_completed event) — with no proof either way it stays 'running',
+    // never a guessed 'interrupted', so the status row after it is not
+    // consumed either.
+    expect(pending).toMatchObject({ id: 'call-p', seq: 5, outcome: 'running' });
+    expect(secondInterruptLifecycle).toMatchObject({ kind: 'lifecycle', state: 'interrupted' });
   });
 
   test('a pending tool settled unknown by its recorded event folds to unknown, not the interrupted glyph', () => {
@@ -792,6 +796,65 @@ describe('buildAgentHistory', () => {
     if (settled?.kind !== 'tool') throw new Error('expected a tool item');
     expect(settled.presentation).toMatchObject({ glyph: '⚠', statusLabel: 'interrupted' });
   });
+
+  test.each([
+    ['omp', 'success', 'succeeded'],
+    ['grok', 'success', 'succeeded'],
+    ['codex', 'success', 'succeeded'],
+    ['codex', 'error', 'failed'],
+    ['claude', 'interrupted', 'interrupted'],
+  ] as const)(
+    '%s: a completed call recorded %j settles to %j, never inferred from the adjacent status row',
+    (_provider, recordedOutcome, expectedOutcome) => {
+      const { items } = buildAgentHistory({
+        nodeId: NODE_ID,
+        nowMs: NOW_MS,
+        events: [
+          event({
+            id: 'evt-1',
+            eventType: 'tool_completed',
+            stepName: NODE_ID,
+            data: { tool_call_id: 'finished-before-stop', tool_outcome: recordedOutcome },
+          }),
+        ],
+        rows: [
+          toolRow({
+            id: 'call-finished',
+            seq: 1,
+            name: 'Bash',
+            toolUseId: 'finished-before-stop',
+            input: { cmd: 'sleep 25 && echo done' },
+            metadata: { tool_phase: 'call' },
+          }),
+          toolRow({
+            id: 'result-finished',
+            seq: 2,
+            name: 'Bash',
+            toolUseId: 'finished-before-stop',
+            output: 'done',
+            metadata: { tool_phase: 'result', outcome: recordedOutcome },
+          }),
+          statusRow('s-interrupt', 3, 'interrupted'),
+        ],
+      });
+      const [settled] = items;
+      expect(settled).toMatchObject({ id: 'call-finished', outcome: expectedOutcome });
+      if (expectedOutcome === 'interrupted') {
+        // The call's own recorded outcome already IS the interrupted glyph
+        // (a provider that proves the tie, persisting it directly, per
+        // Claude's own PostToolUseFailure classification) — the adjacent
+        // status row would only repeat that fact, so it is consumed.
+        expect(kinds(items)).toEqual(['tool']);
+      } else {
+        // Every other recorded outcome — including Codex's own genuine
+        // 'error', which Codex can never prove is interrupt-caused — is
+        // trusted as recorded. The adjacent status row still recorded that
+        // Stop landed in this turn, so it stays visible as its own
+        // lifecycle item rather than being silently dropped.
+        expect(kinds(items)).toEqual(['tool', 'lifecycle']);
+      }
+    }
+  );
 
   test('a still-open tool call settles to unknown when the execution is terminal', () => {
     const { items } = buildAgentHistory({
@@ -1781,7 +1844,14 @@ describe('buildAgentHistory', () => {
     const { items, todos } = buildAgentHistory({
       nodeId: NODE_ID,
       nowMs: NOW_MS,
-      events: [],
+      events: [
+        event({
+          id: 'evt-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'todo-block', tool_outcome: 'interrupted' },
+        }),
+      ],
       rows: [
         toolRow({
           id: 'call-init',
@@ -1802,8 +1872,12 @@ describe('buildAgentHistory', () => {
         statusRow('s-interrupt', 3, 'interrupted'),
       ],
     });
-    // The interrupted status folds into the second tool row, leaving no lifecycle item.
+    // The first call never settled (no result row, no matching event) and
+    // stays 'running' — the second call's own `tool_completed` event proves
+    // it was cut off, so the interrupted status folds into it, leaving no
+    // lifecycle item.
     expect(kinds(items)).toEqual(['tool', 'tool']);
+    expect(items[0]).toMatchObject({ outcome: 'running' });
     expect(items[1]).toMatchObject({ outcome: 'interrupted' });
     expect(todos).toEqual([
       {

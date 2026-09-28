@@ -120,6 +120,11 @@ function stringField(record: Record<string, unknown>, key: string): string | nul
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+function numberField(record: Record<string, unknown>, key: string): number | null {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
 function latestByOrder<T extends { order: number }>(rows: readonly T[]): T {
   return rows.reduce((best, row) => (row.order >= best.order ? row : best));
 }
@@ -216,6 +221,21 @@ function eventMatchesSelection(event: WorkflowEvent, row: ExecutionRow): boolean
   }
   const data = asRecord(event.data);
   if (data === null) return false;
+  // A loop iteration's own execution scope (loop_ancestry) is nested under
+  // the loop node's own outer scope — never the same occurrence/attempt
+  // identity as the loop's single node_started row, since the loop node
+  // starts once per retry, never once per iteration. An iteration
+  // selection therefore matches that outer row by retry epoch alone.
+  if (row.selection.kind === 'loop_iteration') {
+    // The live selection carries no retry epoch of its own — there is only
+    // ever one loop execution live at a time, so the caller (which orders
+    // by array position) picks the latest match.
+    return true;
+  }
+  if (row.selection.kind === 'occurrence' && row.selection.iteration !== undefined) {
+    const retryEpoch = numberField(data, 'retry_epoch') ?? 0;
+    return retryEpoch === (row.selection.retryEpoch ?? 0);
+  }
   const occurrenceId = stringField(data, 'occurrence_id');
   if (row.selection.kind === 'occurrence') {
     // Occurrence identity alone decides the match (CAP-6: grouping never
@@ -702,6 +722,41 @@ export function computeRunOfTotal(
   if (epochs === null || epochs.size <= 1) return null;
   const selectedEpoch = selected.selection.retryEpoch ?? 0;
   return { run: retryRunNumber(epochs, selectedEpoch), total: epochs.size };
+}
+
+/** The retry epoch an iteration selection belongs to, or null when the
+ * selection is not one iteration of a loop node at all. The legacy
+ * `loop_iteration` kind (pre-occurrence-tracking history) never carries a
+ * retry epoch of its own — there is only ever one such live run at a time,
+ * so every row of that kind belongs to the same run. */
+function iterationRetryEpoch(selection: ExecutionRowSelection): number | null {
+  if (selection.kind === 'loop_iteration') return 0;
+  if (selection.kind === 'occurrence' && selection.iteration !== undefined) {
+    return selection.retryEpoch ?? 0;
+  }
+  return null;
+}
+
+/**
+ * How many iterations belong to the selected row's OWN run (retry epoch) —
+ * the header's "of N" caption pairs this against the loop's configured cap
+ * ("· max M"), so both numbers must describe the same run. Counting every
+ * iteration across every retry instead reads as impossible the moment a
+ * single-iteration loop retries even once ("of 2 · max 1"): "of N" would
+ * count retry executions while "max M" caps iterations per run. Null when
+ * the selected row is not a loop iteration at all, so the caller keeps
+ * using its own generic execution count for every other node kind.
+ */
+export function computeLoopIterationCount(
+  rows: readonly RunFamilyRow[],
+  selectedId: string
+): number | null {
+  const selected = rows.find(candidate => candidate.id === selectedId);
+  if (selected === undefined) return null;
+  const selectedEpoch = iterationRetryEpoch(selected.selection);
+  if (selectedEpoch === null) return null;
+  return rows.filter(candidate => iterationRetryEpoch(candidate.selection) === selectedEpoch)
+    .length;
 }
 
 function startedClockLabel(startedAt: string): string | null {

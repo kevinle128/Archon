@@ -9,6 +9,12 @@ export interface ProjectableTextMetadata {
   message_id?: string;
   block_id?: string;
   text_mode?: 'complete' | 'delta' | 'snapshot';
+  /** Which row family this text belongs to (assistant, thinking, operator,
+   * prompt, advisor). Always part of the fold key: a delta/snapshot from one
+   * family must never absorb another's text, even when both happen to share
+   * a stream/block id or neither carries one. Missing on an older assistant
+   * row, which is the implicit default family. */
+  origin?: string;
   execution?: {
     occurrence_id?: string;
     attempt_id?: string;
@@ -36,6 +42,13 @@ function isTextMessage<T extends ProjectableTextMessage>(
   );
 }
 
+/** Missing `origin` is the implicit assistant family — the only one that
+ * predates this field, so this default reproduces every pre-existing row's
+ * grouping unchanged. */
+function originKey(metadata: ProjectableTextMetadata | null | undefined): string {
+  return metadata?.origin ?? 'assistant';
+}
+
 function streamKey(metadata: ProjectableTextMetadata | null | undefined): string {
   const streamId = metadata?.stream_id ?? '';
   const messageId = metadata?.message_id ?? '';
@@ -43,7 +56,7 @@ function streamKey(metadata: ProjectableTextMetadata | null | undefined): string
   if (streamId.length === 0 && messageId.length === 0 && blockId.length === 0) {
     return '';
   }
-  return `${streamId}\0${messageId}\0${blockId}\0${executionIdentity(metadata)}`;
+  return `${originKey(metadata)}\0${streamId}\0${messageId}\0${blockId}\0${executionIdentity(metadata)}`;
 }
 
 function executionIdentity(metadata: ProjectableTextMetadata | null | undefined): string {
@@ -63,8 +76,17 @@ export function projectTextTranscript<T extends ProjectableTextMessage>(
 ): T[] {
   const projected: T[] = [];
   const openByKey = new Map<string, T & { kind: 'text'; payload: { text: string } }>();
+  // Keyless (no stream/message/block id) deltas fold by adjacency instead of
+  // a proven id: at most one open span at a time, so a thinking delta can
+  // never absorb an assistant delta or vice versa even when both are
+  // keyless — a delta of a different family (or the same family in a
+  // different execution) closes the previous span rather than reopening it,
+  // which also keeps rows in the order they actually happened instead of
+  // reordering an interleaved family's text to wherever its span first
+  // opened. Any other interruption — a non-text row, or a 'complete'-mode
+  // row — closes it too.
   let anonymousDelta: (T & { kind: 'text'; payload: { text: string } }) | undefined;
-  let anonymousIdentity: string | undefined;
+  let anonymousKey: string | undefined;
 
   for (const message of messages) {
     if (!isTextMessage(message)) {
@@ -84,10 +106,10 @@ export function projectTextTranscript<T extends ProjectableTextMessage>(
 
     if (mode === 'delta') {
       if (key.length === 0) {
-        const identity = executionIdentity(message.metadata);
-        if (anonymousDelta === undefined || anonymousIdentity !== identity) {
+        const nextAnonymousKey = `${originKey(message.metadata)}\0${executionIdentity(message.metadata)}`;
+        if (anonymousDelta === undefined || anonymousKey !== nextAnonymousKey) {
           anonymousDelta = { ...message, payload: { text: message.payload.text } };
-          anonymousIdentity = identity;
+          anonymousKey = nextAnonymousKey;
           projected.push(anonymousDelta);
         } else {
           anonymousDelta.payload = { text: anonymousDelta.payload.text + message.payload.text };

@@ -294,7 +294,12 @@ describe('GrokProvider --single fallback transport', () => {
     expect(chunks).toEqual([
       { type: 'turn_not_interruptible', reason: expect.stringContaining('--json-schema') },
       { type: 'system', content: expect.stringContaining('legacy --single transport') },
-      { type: 'assistant', content: 'hello' },
+      {
+        type: 'assistant',
+        content: 'hello',
+        textMode: 'delta',
+        blockId: 'grok-single-assistant-1',
+      },
       { type: 'result', sessionId: 'session-1', stopReason: 'end_turn' },
     ]);
     // ⚠️-prefixed so the dag-executor's generic system-chunk forwarding

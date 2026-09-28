@@ -28,8 +28,29 @@ function serialize(value: unknown): string {
   }
 }
 
+/**
+ * Grok's own shape for "this command moved to the background, it has not
+ * finished" — classifying a structured payload Grok itself defines, not
+ * reconstructing intent from prose (the command's actual output is free-form
+ * text this shape never appears in by coincidence).
+ */
+function isBackgroundTaskStarted(rawOutput: unknown): boolean {
+  const record = asObject(rawOutput);
+  return record?.type === 'BackgroundTaskStarted';
+}
+
 export class GrokEventParser {
   private readonly activeTools = new Map<string, string>();
+  /**
+   * The currently open assistant/thinking span, if any. This NDJSON stream
+   * emits one `text`/`thought` record per delta with no block boundary of
+   * its own, so consecutive records of the SAME kind fold into one row only
+   * while this stays open; a record of the other kind, or a tool call
+   * starting, closes it so the next record (of either kind) opens a fresh
+   * span instead of reviving a stale one out of order.
+   */
+  private openTextBlock: { kind: 'assistant' | 'thinking'; blockId: string } | undefined;
+  private textBlockSeq = 0;
   private sawEnd = false;
   private sessionId: string | undefined;
   private tokens: TokenUsage | undefined;
@@ -72,11 +93,29 @@ export class GrokEventParser {
     switch (type) {
       case 'text': {
         const data = stringField(event.data);
-        return data ? [{ type: 'assistant', content: data }] : [];
+        return data
+          ? [
+              {
+                type: 'assistant',
+                content: data,
+                textMode: 'delta',
+                blockId: this.textBlockId('assistant'),
+              },
+            ]
+          : [];
       }
       case 'thought': {
         const data = stringField(event.data);
-        return data ? [{ type: 'thinking', content: data }] : [];
+        return data
+          ? [
+              {
+                type: 'thinking',
+                content: data,
+                textMode: 'delta',
+                blockId: this.textBlockId('thinking'),
+              },
+            ]
+          : [];
       }
       case 'tool_call':
         return this.consumeToolCall(event);
@@ -252,6 +291,15 @@ export class GrokEventParser {
     return models;
   }
 
+  /** Mints a fresh block id only when the open span's kind changes. */
+  private textBlockId(kind: 'assistant' | 'thinking'): string {
+    if (this.openTextBlock?.kind !== kind) {
+      this.textBlockSeq += 1;
+      this.openTextBlock = { kind, blockId: `grok-single-${kind}-${String(this.textBlockSeq)}` };
+    }
+    return this.openTextBlock.blockId;
+  }
+
   private consumeToolCall(event: JsonObject): MessageChunk[] {
     const toolCallId = stringField(event.toolCallId);
     const toolName = stringField(event.toolName);
@@ -261,6 +309,10 @@ export class GrokEventParser {
     if (this.activeTools.has(toolCallId)) {
       throw new Error(`Grok CLI emitted duplicate tool call '${toolCallId}'.`);
     }
+    // A tool call starting ends whichever text span was open — the next
+    // assistant/thinking record (of either kind) starts a fresh block
+    // rather than resuming one from before the call.
+    this.openTextBlock = undefined;
     this.activeTools.set(toolCallId, toolName);
     const toolInput = asObject(event.rawInput);
     return [{ type: 'tool', toolName, toolCallId, ...(toolInput ? { toolInput } : {}) }];
@@ -271,6 +323,13 @@ export class GrokEventParser {
     if (!toolCallId) throw new Error('Grok CLI emitted a tool update without toolCallId.');
     const status = stringField(event.status);
     if (status !== 'completed' && status !== 'failed') return [];
+    // Grok reports moving a command to the background as `status:
+    // 'completed'` with a `BackgroundTaskStarted` payload — the command
+    // itself is still running, so this is not a real completion. The call
+    // stays open until a later update (if Grok ever sends one) or the turn
+    // ends, when closeOutstandingTools settles it 'unknown' rather than a
+    // guessed outcome.
+    if (status === 'completed' && isBackgroundTaskStarted(event.rawOutput)) return [];
     const toolName = this.activeTools.get(toolCallId);
     if (!toolName) throw new Error(`Grok CLI updated unknown tool call '${toolCallId}'.`);
     this.activeTools.delete(toolCallId);

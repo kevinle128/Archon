@@ -7,10 +7,15 @@ describe('GrokEventParser', () => {
     const parser = new GrokEventParser();
 
     expect(parser.consumeLine('{"type":"text","data":"hello"}')).toEqual([
-      { type: 'assistant', content: 'hello' },
+      {
+        type: 'assistant',
+        content: 'hello',
+        textMode: 'delta',
+        blockId: 'grok-single-assistant-1',
+      },
     ]);
     expect(parser.consumeLine('{"type":"thought","data":"hmm"}')).toEqual([
-      { type: 'thinking', content: 'hmm' },
+      { type: 'thinking', content: 'hmm', textMode: 'delta', blockId: 'grok-single-thinking-2' },
     ]);
     expect(
       parser.consumeLine(
@@ -108,6 +113,77 @@ describe('GrokEventParser', () => {
       errors: ['bad auth'],
       resumed: false,
     });
+  });
+
+  test('folds consecutive same-kind records into one block; a kind switch or tool call starts a new one', () => {
+    const parser = new GrokEventParser();
+
+    const [first] = parser.consumeLine('{"type":"thought","data":"a"}');
+    const [second] = parser.consumeLine('{"type":"thought","data":"b"}');
+    expect(first?.type === 'thinking' ? first.blockId : undefined).toBe(
+      second?.type === 'thinking' ? second.blockId : undefined
+    );
+
+    const [assistant] = parser.consumeLine('{"type":"text","data":"c"}');
+    expect(assistant?.type === 'assistant' ? assistant.blockId : undefined).not.toBe(
+      first?.type === 'thinking' ? first.blockId : undefined
+    );
+
+    parser.consumeLine('{"type":"tool_call","toolCallId":"call-block","toolName":"read_file"}');
+    const [afterTool] = parser.consumeLine('{"type":"thought","data":"d"}');
+    expect(afterTool?.type === 'thinking' ? afterTool.blockId : undefined).not.toBe(
+      first?.type === 'thinking' ? first.blockId : undefined
+    );
+  });
+
+  test('a completed status carrying a BackgroundTaskStarted payload is not a real completion', () => {
+    const parser = new GrokEventParser();
+    parser.consumeLine(
+      '{"type":"tool_call","toolCallId":"call-bg","toolName":"run_terminal_command"}'
+    );
+    // No tool_result yet — the command is still running, not succeeded.
+    expect(
+      parser.consumeLine(
+        '{"type":"tool_call_update","toolCallId":"call-bg","status":"completed","rawOutput":{"type":"BackgroundTaskStarted","status":"running"}}'
+      )
+    ).toEqual([]);
+    // The call stays open: turn end settles it 'unknown', never a guessed
+    // outcome, and never twice (draining is idempotent).
+    expect(parser.closeOutstandingTools()).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'run_terminal_command',
+        toolCallId: 'call-bg',
+        toolOutput: 'Grok ended before reporting a tool result.',
+        toolOutcome: 'unknown',
+        outputState: 'unknown',
+      },
+    ]);
+    expect(parser.closeOutstandingTools()).toEqual([]);
+  });
+
+  test('a later real completion after a backgrounded update still settles the call', () => {
+    const parser = new GrokEventParser();
+    parser.consumeLine(
+      '{"type":"tool_call","toolCallId":"call-bg2","toolName":"run_terminal_command"}'
+    );
+    parser.consumeLine(
+      '{"type":"tool_call_update","toolCallId":"call-bg2","status":"completed","rawOutput":{"type":"BackgroundTaskStarted","status":"running"}}'
+    );
+    expect(
+      parser.consumeLine(
+        '{"type":"tool_call_update","toolCallId":"call-bg2","status":"completed","rawOutput":{"lines":3}}'
+      )
+    ).toEqual([
+      {
+        type: 'tool_result',
+        toolName: 'run_terminal_command',
+        toolCallId: 'call-bg2',
+        toolOutput: '{"lines":3}',
+        toolOutcome: 'success',
+        outputState: 'full',
+      },
+    ]);
   });
 });
 

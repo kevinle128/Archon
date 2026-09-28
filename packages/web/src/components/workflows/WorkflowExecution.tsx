@@ -46,6 +46,7 @@ import {
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
+  computeLoopIterationCount,
   computeRunOfTotal,
   disambiguateExecutionOptions,
   loopMaxIterationsForNode,
@@ -810,7 +811,14 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
             status: candidate.status,
           }))
         ).map(option => ({ rowId: option.id, label: option.label }));
-  const executionCount = executionRowsForSelectedNode.length;
+  // A loop node's "of N" pairs with its own "· max M" cap in the header, so
+  // both must describe the same run — count iterations within the selected
+  // row's own run rather than every node execution across every retry.
+  const loopIterationCount =
+    selectedExecutionRow === null
+      ? null
+      : computeLoopIterationCount(executionRowsForSelectedNode, selectedExecutionRow.id);
+  const executionCount = loopIterationCount ?? executionRowsForSelectedNode.length;
   const runOfTotal =
     selectedExecutionRow === null
       ? null

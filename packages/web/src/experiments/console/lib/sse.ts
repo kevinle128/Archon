@@ -131,12 +131,17 @@ export function useRunStreamSSE(conversationPlatformId: string | null, runId: st
           messagesDirty = true;
           runDirty = true;
           break;
+        // node_turn_interrupted: a turn just settled idle-after-interrupt —
+        // the only signal for this transition when no tool call was open at
+        // the moment Stop landed (a genuinely still-open tool already lands
+        // here via its own workflow_tool_activity completion).
         case 'workflow_status':
         case 'workflow_tool_activity':
         case 'dag_node':
         case 'workflow_step':
         case 'workflow_artifact':
         case 'workflow_dispatch':
+        case 'node_turn_interrupted':
           runDirty = true;
           break;
         // Other event types (system_status, retract, etc.) don't change
