@@ -581,67 +581,53 @@ export async function* runDeepseekAcpTurn(
   );
   const gen = driveDeepseekAcpTurn(stream, input);
 
-  // `driveDeepseekAcpTurn` races `input.abortSignal` against its own
+  // Reaping the child must never depend on THIS generator being resumed
+  // again. `driveDeepseekAcpTurn` races `input.abortSignal` against its own
   // in-flight `session/prompt` request and settles gracefully within
-  // `CANCEL_DRAIN_GRACE_MS` — but every OTHER ACP round trip it awaits
+  // `CANCEL_DRAIN_GRACE_MS`, but every OTHER ACP round trip it awaits
   // (`initialize`, `session/new`, `session/resume`, `session/close`) is not
-  // raced against anything, so a DSH subprocess that stops responding after
-  // one of those leaves that `await` permanently pending, and this loop's
-  // `gen.next()` never settles either. This is a SEPARATE, delayed race
-  // against the same signal — armed only `abortStuckGraceMs` after abort
-  // fires, well past the graceful path's own expected settlement time, so a
-  // normally responsive agent's cancel always wins this race first and this
-  // branch never fires for it. It exists purely as the fallback that
-  // guarantees the child is still reaped when the protocol itself never
-  // gets a chance to unwind.
-  let abortedWhileWaiting = false;
-  const abortSignal = input.abortSignal;
+  // raced against anything — a DSH subprocess that stops responding during
+  // one of those leaves that `await`, and therefore this loop's `gen.next()`,
+  // permanently pending. A caller that stops pulling once it sees
+  // `input.abortSignal` fire (`withIdleTimeout`'s external-abort branch is
+  // exactly this) never issues that next `.next()`, so any cleanup living
+  // inside the loop below — a `finally` included — would never run either.
+  // This reap is armed instead as a plain listener on the signal itself: it
+  // fires `abortStuckGraceMs` after abort, well past the graceful path's own
+  // expected settlement time, so a normally responsive agent's cancel always
+  // wins and clears it first, and it kills the child directly as a
+  // generator-independent side effect. `reapOnce` is idempotent with the
+  // `finally` block's own reap below, so both can fire without conflict;
+  // killing the process also unblocks whatever ACP request `gen` was stuck
+  // awaiting, letting its own cleanup settle in the background even though
+  // nothing is consuming its output anymore.
+  let reaped = false;
+  const reapOnce = async (): Promise<void> => {
+    if (reaped) return;
+    reaped = true;
+    await reapChild(child, terminateGraceMs);
+  };
   let abortStuckTimer: ReturnType<typeof setTimeout> | undefined;
-  const aborted: Promise<{ kind: 'aborted' }> | undefined =
-    abortSignal === undefined
-      ? undefined
-      : new Promise(resolve => {
-          const arm = (): void => {
-            abortStuckTimer = setTimeout(() => {
-              resolve({ kind: 'aborted' });
-            }, abortStuckGraceMs);
-          };
-          if (abortSignal.aborted) {
-            arm();
-            return;
-          }
-          abortSignal.addEventListener('abort', arm, { once: true });
-        });
+  const abortSignal = input.abortSignal;
+  if (abortSignal !== undefined) {
+    const armAbortStuckReap = (): void => {
+      abortStuckTimer = setTimeout(() => {
+        if (finished) return;
+        void reapOnce();
+      }, abortStuckGraceMs);
+    };
+    if (abortSignal.aborted) armAbortStuckReap();
+    else abortSignal.addEventListener('abort', armAbortStuckReap, { once: true });
+  }
 
   try {
-    while (true) {
+    for (;;) {
       const next = gen.next();
-      const racers: Promise<
-        | { kind: 'chunk'; result: IteratorResult<MessageChunk> }
-        | { kind: 'death'; error: Error }
-        | { kind: 'aborted' }
-      >[] = [
-        next.then((result: IteratorResult<MessageChunk>) => ({
-          kind: 'chunk' as const,
-          result,
-        })),
+      const winner = await Promise.race([
+        next.then((result: IteratorResult<MessageChunk>) => ({ kind: 'chunk' as const, result })),
         death.then((error: Error) => ({ kind: 'death' as const, error })),
-      ];
-      if (aborted !== undefined) racers.push(aborted);
-      const winner = await Promise.race(racers);
-      if (winner.kind === 'aborted') {
-        abortedWhileWaiting = true;
-        // Prevent an unhandled rejection once the reap below unblocks
-        // whatever ACP request `gen` was stuck awaiting.
-        next.catch(() => undefined);
-        throw new DeepseekProviderError(
-          'deepseek_aborted',
-          'DeepSeek ACP agent stopped responding and the turn was aborted.'
-        );
-      }
-      if (winner.kind === 'death') {
-        throw winner.error;
-      }
+      ]);
+      if (winner.kind === 'death') throw winner.error;
       if (winner.result.done) break;
       yield winner.result.value;
     }
@@ -663,25 +649,13 @@ export async function* runDeepseekAcpTurn(
     }
     throw toAcpFailed(error, stderr);
   } finally {
-    if (abortStuckTimer !== undefined) clearTimeout(abortStuckTimer);
     finished = true;
-    if (abortedWhileWaiting) {
-      // Kill first: `gen` may be stuck awaiting an ACP request the
-      // subprocess will never answer (that is exactly why the race above
-      // fired), so calling `gen.return()` before the process is dead would
-      // wait on the very thing being torn down. Killing first closes the
-      // stdio pipes, which unblocks that pending request and lets `gen`'s
-      // own cleanup settle quickly in the background — not awaited, since
-      // the process being gone is what this function actually promises.
-      await reapChild(child, terminateGraceMs);
-      void gen.return(undefined).catch(() => undefined);
-    } else {
-      try {
-        await gen.return(undefined);
-      } catch {
-        // Turn already failed or completed.
-      }
-      await reapChild(child, terminateGraceMs);
+    if (abortStuckTimer !== undefined) clearTimeout(abortStuckTimer);
+    try {
+      await gen.return(undefined);
+    } catch {
+      // Turn already failed or completed.
     }
+    await reapOnce();
   }
 }

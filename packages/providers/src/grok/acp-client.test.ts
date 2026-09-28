@@ -528,6 +528,14 @@ class FakeChild extends EventEmitter {
     queueMicrotask(() => {
       if (this.exitCode !== null || this.signalCode !== null) return;
       this.signalCode = sig;
+      // A real OS kill closes the process's own file descriptors, which is
+      // what actually unblocks a pending ACP request stuck reading from
+      // stdout — see `crash()`'s own comment. Without this, a test using
+      // `kill()` to simulate an abort-driven reap would hang exactly like a
+      // fake with open pipes but no process behind them, never reproducing
+      // what a genuine kill unblocks.
+      this.stdin.destroy();
+      this.stdout.destroy();
       this.emit('exit', null, sig);
     });
     return true;
@@ -639,9 +647,15 @@ describe('runGrokAcpTurn', () => {
     // No agent attached — nothing ever responds to `initialize`, simulating
     // a subprocess that is alive but has stopped answering the ACP
     // protocol. `driveGrokAcpTurn`'s own cancel race only covers an
-    // in-flight `session/prompt`, which is never even sent here; without a
-    // race against `abortSignal` at THIS level the turn would hang forever
-    // and the child would never be reaped (the process leak this guards).
+    // in-flight `session/prompt`, which is never even sent here. The reap
+    // is armed as a plain listener on `abortSignal`, independent of this
+    // generator ever being resumed again — the guarantee a caller that
+    // stops pulling on abort (e.g. `withIdleTimeout`'s external-abort
+    // branch) would otherwise defeat, leaking the process (what this test
+    // guards). Killing the child closes its stdio, which is what actually
+    // unblocks the stuck request — the turn then rejects with the ordinary
+    // "process exited" error `death` already produces for any child exit,
+    // not a synthesized abort message.
     const child = new FakeChild();
     const controller = new AbortController();
     const promise = collect(
@@ -655,7 +669,7 @@ describe('runGrokAcpTurn', () => {
       })
     );
     controller.abort();
-    await expect(promise).rejects.toThrow('Query aborted');
+    await expect(promise).rejects.toThrow('exited before the turn completed');
     expect(child.signals).toContain('SIGTERM');
   });
 });

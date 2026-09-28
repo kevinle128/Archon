@@ -260,6 +260,14 @@ class FakeChild extends EventEmitter {
     queueMicrotask(() => {
       if (this.exitCode !== null || this.signalCode !== null) return;
       this.signalCode = sig as NodeJS.Signals;
+      // A real OS kill closes the process's own file descriptors, which is
+      // what actually unblocks a pending ACP request stuck reading from
+      // stdout (mirrors `crash()` below, which destroys the same streams
+      // for the same reason) — without this a simulated "kill" never
+      // unblocks the generator the way a real kill does, and a test built
+      // on this fixture hangs instead of failing.
+      this.stdin.destroy();
+      this.stdout.destroy();
       this.emit('exit', null, sig);
     });
     return true;
@@ -1398,8 +1406,13 @@ describe('runDeepseekAcpTurn', () => {
     // a subprocess that is alive but has stopped answering the ACP
     // protocol. `driveDeepseekAcpTurn`'s own cancel race only covers an
     // in-flight `session/prompt`, which is never even sent here; without a
-    // race against `abortSignal` at THIS level the turn would hang forever
-    // and the child would never be reaped (the process leak this guards).
+    // reap armed directly off `abortSignal` (independent of this generator
+    // ever being resumed again) the turn would hang forever and the child
+    // would never be reaped (the process leak this guards). The reap kills
+    // the child, which resolves the outer `death` race with DSH's own
+    // early-exit error — the same shape any other unexpected mid-turn exit
+    // produces, so it is classified the same way (`deepseek_spawn_failed`)
+    // rather than a distinct abort subtype.
     const child = new FakeChild();
     const spawnImpl = (() => child as unknown as ChildProcess) as typeof spawn;
     const controller = new AbortController();
@@ -1417,7 +1430,8 @@ describe('runDeepseekAcpTurn', () => {
     controller.abort();
     const error = await promise.catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(DeepseekProviderError);
-    expect((error as DeepseekProviderError).subtype).toBe('deepseek_aborted');
+    expect((error as DeepseekProviderError).subtype).toBe('deepseek_spawn_failed');
+    expect((error as Error).message).toContain('exited before the ACP turn completed');
     expect(child.signals).toContain('SIGTERM');
   });
 });
