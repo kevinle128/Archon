@@ -12,7 +12,7 @@ import {
   type ReactNode,
   type UIEvent,
 } from 'react';
-import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
 import {
   bareNodeLabel,
   buildExecutionHeader,
@@ -770,6 +770,21 @@ export function ConsoleNodeRoom({
           deliveryStateByMessageId: deliveryStates,
         });
   const items = agentHistory.items;
+  // Every operator message id already rendered as a transcript row, so the
+  // dock can hide its own dispatching-band row for the same message the
+  // instant the transcript shows it — the two must never both display the
+  // same message at once. `items` is rebuilt fresh every render (not
+  // memoized), so this is too; the set itself is cheap for a room's message
+  // count and the dock only reads it during render, never as an effect
+  // dependency.
+  const deliveredMessageIds = new Set(
+    items
+      .filter(
+        (item): item is Extract<AgentHistoryItem, { kind: 'operator' }> => item.kind === 'operator'
+      )
+      .map(item => item.messageId)
+      .filter((messageId): messageId is string => messageId !== null)
+  );
   // The strip and the latest todo row's inline checklist share this one
   // terminal-projected fold — a terminal node never keeps showing an
   // `in_progress` item as still running (todo-fold-contract.md).
@@ -1178,6 +1193,7 @@ export function ConsoleNodeRoom({
               nodeTerminal={nodeTerminal}
               idleAwaitExpired={idleAwaitExpired}
               nodeExecutionKey={nodeExecutionKey}
+              deliveredMessageIds={deliveredMessageIds}
             />
           ) : null}
         </RoomRegion>

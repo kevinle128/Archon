@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useRef, useState } from 'react';
 
-import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
+import { buildAgentHistory, type AgentHistory, type AgentHistoryItem } from '@/lib/agent-history';
 import {
   getWorkflowNodeMessage,
   type AskAnswerBody,
@@ -372,6 +372,21 @@ export function NodeTranscriptPane({
           deliveryStateByMessageId: deliveryStates,
         });
   const items = agentHistory.items;
+  // Every operator message id already rendered as a transcript row, so the
+  // dock can hide its own dispatching-band row for the same message the
+  // instant the transcript shows it — the two must never both display the
+  // same message at once. `items` is rebuilt fresh every render (not
+  // memoized), so this is too; the set itself is cheap for a room's message
+  // count and the dock only reads it during render, never as an effect
+  // dependency.
+  const deliveredMessageIds = new Set(
+    items
+      .filter(
+        (item): item is Extract<AgentHistoryItem, { kind: 'operator' }> => item.kind === 'operator'
+      )
+      .map(item => item.messageId)
+      .filter((messageId): messageId is string => messageId !== null)
+  );
   const occurrenceGrouping = groupByOccurrence(items);
   // Raw lifecycle rows (`started`, `iteration_started 1`, the terminal
   // `failed …` line) are engine state identifiers, not one of the room's
@@ -684,6 +699,7 @@ export function NodeTranscriptPane({
         nodeTerminal={nodeTerminal}
         idleAwaitExpired={idleAwaitExpired}
         nodeExecutionKey={nodeExecutionKey}
+        deliveredMessageIds={deliveredMessageIds}
       />
     </RoomRegion>
   );

@@ -215,6 +215,7 @@ describe('ComposerDock', () => {
       nodeTerminal: boolean;
       nodeExecutionKey: string | null;
       idleAwaitExpired: boolean;
+      deliveredMessageIds: ReadonlySet<string>;
     }> = {}
   ): Promise<void> {
     await act(async () => {
@@ -247,6 +248,7 @@ describe('ComposerDock', () => {
           nodeTerminal: overrides.nodeTerminal,
           nodeExecutionKey: overrides.nodeExecutionKey,
           idleAwaitExpired: overrides.idleAwaitExpired,
+          deliveredMessageIds: overrides.deliveredMessageIds,
         })
       );
     });
@@ -568,6 +570,32 @@ describe('ComposerDock', () => {
     const list = host.querySelector('ul[aria-label="Sending, 1"]');
     expect(list).not.toBeNull();
     expect(list?.textContent).toContain('sending…');
+  });
+
+  test('a dispatching row already delivered to the transcript never shows twice, and the header count agrees', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      deliveredMessageIds: new Set(['id-a']),
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([
+        { message_id: 'id-a', message: 'alpha', state: 'dispatching' },
+        { message_id: 'id-b', message: 'beta', state: 'dispatching' },
+      ])
+    );
+    // 'id-a' already landed as a transcript row — the band hides it and the
+    // header counts only the one still genuinely in flight, never claiming
+    // two are sending while only one row is visible.
+    expect(host.textContent).toContain('sending · 1');
+    expect(host.textContent).not.toContain('sending · 2');
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+    const list = host.querySelector('ul[aria-label="Sending, 1"]');
+    expect(list).not.toBeNull();
+    expect(list?.textContent).toContain('beta');
+    expect(list?.textContent).not.toContain('alpha');
   });
 
   test('the band collapse toggle hides and restores the item list without removing it', async () => {

@@ -77,6 +77,7 @@ import {
   STEERING_INTERRUPT_FAILED_MESSAGE,
   STEERING_SEND_HINT,
   toSteeringRefusal,
+  visiblePendingReceipts,
   willSendBandHeader,
   willSendListLabel,
   toSteeringRequestError,
@@ -241,6 +242,14 @@ export interface ConsoleComposerDockProps {
    * idle-await expiry cause. Drives the never-sent alert copy. Default false.
    */
   idleAwaitExpired?: boolean;
+  /**
+   * Message ids already rendered as a delivered transcript operator row.
+   * Filters a dispatching band row the instant its transcript row lands, so
+   * the same message never shows twice while this tab's own send-resolve
+   * or next queue poll is still catching up. Presentational only — never
+   * mutates dock state. Default empty (no filtering).
+   */
+  deliveredMessageIds?: ReadonlySet<string>;
 }
 
 const FIELD_CLASSES = [
@@ -261,6 +270,8 @@ const BLOCKED_REASON_CLASSES =
   'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary';
 const REFUSAL_CLASSES = 'mt-[6px] font-mono text-[10.5px] leading-[1.45] text-error';
 const DEFAULT_DRAFT_SAVE_DELAY_MS = 600;
+/** Stable empty-set default so an omitted `deliveredMessageIds` prop never allocates one per render. */
+const EMPTY_DELIVERED_MESSAGE_IDS: ReadonlySet<string> = new Set();
 
 /** Modes where the dock's focusable controls are in the DOM. */
 function controlsMounted(mode: SteeringDockMode): boolean {
@@ -385,6 +396,7 @@ export function ConsoleComposerDock({
   nodeTerminal = false,
   nodeExecutionKey = null,
   idleAwaitExpired = false,
+  deliveredMessageIds = EMPTY_DELIVERED_MESSAGE_IDS,
 }: ConsoleComposerDockProps): React.ReactElement | null {
   const scopeKey = steeringScopeKey(runId, nodeId);
   const fieldId = useId();
@@ -1128,6 +1140,14 @@ export function ConsoleComposerDock({
     );
   }
 
+  // Presentational only: a message already rendered as a delivered
+  // transcript row never shows twice in the pending band, even for the
+  // short window before this tab's own send-resolve or next queue poll
+  // would otherwise drop it. Only 'finished-iteration' and 'composer'
+  // below can show an actively-dispatching row, so this is computed once
+  // for both.
+  const visibleSent = visiblePendingReceipts(dock.sent, deliveredMessageIds);
+
   if (mode === 'finished-iteration' && usableFinishedIteration !== null) {
     const liveIteration = usableFinishedIteration.liveIteration;
     const liveRowId = usableFinishedIteration.liveRowId;
@@ -1168,20 +1188,20 @@ export function ConsoleComposerDock({
             </p>
           ) : null}
         </div>
-        {dock.sent.length === 0 ? null : (
+        {visibleSent.length === 0 ? null : (
           <section
             aria-label={
-              allPendingDispatching(dock.sent)
-                ? sendingBandHeader(dock.sent.length)
-                : queueBandHeader(pendingQueueCount(dock.sent))
+              allPendingDispatching(visibleSent)
+                ? sendingBandHeader(visibleSent.length)
+                : queueBandHeader(pendingQueueCount(visibleSent))
             }
             className="flex-none border-t border-border bg-surface-elevated"
           >
             <QueueBandHeader
               label={
-                allPendingDispatching(dock.sent)
-                  ? sendingBandHeader(dock.sent.length)
-                  : queueBandHeader(pendingQueueCount(dock.sent))
+                allPendingDispatching(visibleSent)
+                  ? sendingBandHeader(visibleSent.length)
+                  : queueBandHeader(pendingQueueCount(visibleSent))
               }
               savedLine={null}
               open={queueBandOpen}
@@ -1197,12 +1217,12 @@ export function ConsoleComposerDock({
             >
               <ul
                 aria-label={
-                  allPendingDispatching(dock.sent)
-                    ? sendingListLabel(dock.sent.length)
-                    : queueListLabel(pendingQueueCount(dock.sent))
+                  allPendingDispatching(visibleSent)
+                    ? sendingListLabel(visibleSent.length)
+                    : queueListLabel(pendingQueueCount(visibleSent))
                 }
               >
-                {dock.sent.map((receipt, index) => (
+                {visibleSent.map((receipt, index) => (
                   <QueueBandItem
                     key={receipt.messageId}
                     dataMessageId={receipt.messageId}
@@ -1225,7 +1245,7 @@ export function ConsoleComposerDock({
 
   const blocked = mode === 'blocked';
   const idle = agentMode === 'idle';
-  const pendingCount = pendingQueueCount(dock.sent);
+  const pendingCount = pendingQueueCount(visibleSent);
   const statusText =
     blocked && blockedReason !== null
       ? blockedReason
@@ -1237,15 +1257,15 @@ export function ConsoleComposerDock({
   // and only for a row the server can still claim.
   const canSendItemNow = dock.softInjection && agentMode === 'generating';
 
-  const queueBandLabel = allPendingDispatching(dock.sent)
-    ? sendingBandHeader(dock.sent.length)
+  const queueBandLabel = allPendingDispatching(visibleSent)
+    ? sendingBandHeader(visibleSent.length)
     : idle
       ? willSendBandHeader(pendingCount)
       : queueBandHeader(pendingCount);
 
   return (
     <>
-      {dock.sent.length === 0 ? null : (
+      {visibleSent.length === 0 ? null : (
         <section
           aria-label={queueBandLabel}
           className="flex-none border-t border-border bg-surface-elevated"
@@ -1266,14 +1286,14 @@ export function ConsoleComposerDock({
           >
             <ul
               aria-label={
-                allPendingDispatching(dock.sent)
-                  ? sendingListLabel(dock.sent.length)
+                allPendingDispatching(visibleSent)
+                  ? sendingListLabel(visibleSent.length)
                   : idle
                     ? willSendListLabel(pendingCount)
                     : queueListLabel(pendingCount)
               }
             >
-              {dock.sent.map((receipt, index) => {
+              {visibleSent.map((receipt, index) => {
                 const claimable = isQueueItemClaimable(receipt.state);
                 const statusLabel = queueItemStatusLabel(receipt.state);
                 return (
