@@ -1114,6 +1114,22 @@ describe('NodeTranscriptPane', () => {
     expect(host.textContent).toContain('live-two');
   });
 
+  test('the composer accessible name uses the bare node label, never the log stream’s ×N suffix', async () => {
+    const loadMessages: NodeMessageLoader = async () => ({ messages: [...FIXTURE] });
+    await act(async () => {
+      renderPane({
+        row: { ...ITERATION_TWO_ROW, status: 'running' },
+        runStatus: 'running',
+        loadMessages,
+      });
+    });
+    await flushUntil(host, 'live loop composer', () => host.querySelector('textarea') !== null);
+    const field = host.querySelector('textarea');
+    const label = field?.labels?.[0] ?? host.querySelector(`label[for="${field?.id ?? ''}"]`);
+    expect(label?.textContent).toBe('message to Review');
+    expect(label?.textContent).not.toContain('×');
+  });
+
   test('starts completed history at the top and follows running history until the reader scrolls away', async () => {
     const loadMessages: NodeMessageLoader = async () => ({
       messages: [textMessage('scroll-1', 1, 'scroll-one')],

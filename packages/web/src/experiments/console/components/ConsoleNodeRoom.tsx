@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
+  bareNodeLabel,
   buildExecutionHeader,
   loopMaxIterationsForNode,
   nodeKindChip,
@@ -1159,7 +1160,7 @@ export function ConsoleNodeRoom({
               key={`steering:run:${run.id}|node:${row.nodeId}`}
               runId={run.id}
               nodeId={row.nodeId}
-              nodeLabel={agentDisplayName || row.nodeId}
+              nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
               rowStatus={rowStatus}
               live={isLive}
               hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}

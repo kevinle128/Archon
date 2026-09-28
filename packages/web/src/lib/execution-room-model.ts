@@ -608,9 +608,11 @@ export function runtimeForSelection(
  * of many rows, but the room header already states which execution is
  * selected through its own Execution selector, so repeating the suffix in
  * the title is redundant. Strips exactly that trailing suffix; a bare label
- * with no suffix passes through unchanged.
+ * with no suffix passes through unchanged. Exported so any other surface
+ * naming this node — the composer's accessible name, for one — reads the
+ * same bare label rather than the log stream's disambiguated one.
  */
-function bareNodeLabel(label: string): string {
+export function bareNodeLabel(label: string): string {
   const match = /^(.+) (?:×|#)\d+$/.exec(label);
   return match?.[1] ?? label;
 }

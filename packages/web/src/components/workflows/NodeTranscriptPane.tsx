@@ -23,7 +23,7 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
-import type { FinishedIterationView } from '@/lib/execution-room-model';
+import { bareNodeLabel, type FinishedIterationView } from '@/lib/execution-room-model';
 import { groupByOccurrence, type OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -667,7 +667,7 @@ export function NodeTranscriptPane({
         key={`steering:run:${runId}|node:${row.nodeId}`}
         runId={runId}
         nodeId={row.nodeId}
-        nodeLabel={agentDisplayName || row.nodeId}
+        nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
         rowStatus={rowStatus}
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}

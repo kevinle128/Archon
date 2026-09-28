@@ -536,7 +536,11 @@ describe('ConsoleInspectPane', () => {
     expect(host.querySelector('#node-transition-loop-i1-start')).toBeNull();
     expect(host.querySelector('#node-transition-loop-i2-start')).toBeNull();
     expect(host.querySelector('[aria-label="loop room"]')).not.toBeNull();
-    expect(host.textContent).toContain('×2');
+    // The room opened at iteration 2 specifically, not just at the loop node —
+    // the composer's accessible name uses the bare node label, never the log
+    // stream's own ×N suffix, so this checks the header's iteration state
+    // instead of the (now correctly absent) "×2" in the composer label.
+    expect(host.textContent).toContain('Iteration 2');
   });
 
   test('selected row prefers the exact log row then the most recent row for the node', async () => {

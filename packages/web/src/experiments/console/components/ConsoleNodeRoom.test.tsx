@@ -1335,6 +1335,28 @@ describe('ConsoleNodeRoom', () => {
     expect(host.textContent).not.toContain('queued ·');
   });
 
+  test('the composer accessible name uses the bare node label, never the log stream’s ×N suffix', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        selectedRow: row({
+          nodeId: 'review',
+          label: 'Review ×2',
+          status: 'running',
+          selection: { kind: 'loop_iteration', iteration: 2 },
+        }),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('composer field', () => dockField() !== null);
+    const field = host.querySelector('textarea');
+    const label = host.querySelector(`label[for="${field?.id ?? ''}"]`);
+    expect(label?.textContent).toBe('message to Review');
+    expect(label?.textContent).not.toContain('×');
+  });
+
   test('re-pins to the bottom when the scroller resizes with no new row (e.g. a sibling band growing)', async () => {
     type ResizeCallback = () => void;
     const observed: HTMLElement[] = [];
