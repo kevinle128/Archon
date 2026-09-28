@@ -231,3 +231,12 @@ Status: DONE_WITH_CONCERNS
 Summary: All 28 earlier findings (VQ-1..9, VQ2-1..12, VQ3-1..7) are fixed, several re-checked in their original trigger: Stop landing between tools on Claude, OMP, Grok and Codex keeps `✓`; the Console observer goes idle within 3 s on a tool turn; the typing keepalive re-arm was proven on a real clock (A failed 30 min after the keystroke, not after the Stop); s7 and s8 match on real Claude runs. Two new majors: DeepSeek and Grok ACP redirect replies are folded into the first turn's rows because their block ids restart every turn (VQ4-1), and a loop that fails on `max_iterations` shows a green `Completed` pill with no failure reason (VQ4-2). Three minors: the Legacy `Running` pill is illegible (VQ4-3), the queue band insertion breaks the bottom scroll pin (VQ4-5), and for ~30 s after an Abandon mid-tool the unsent queue item disappears (VQ4-6). Four cosmetics: the Console pill colour, `QUEUED · 0` during dispatch, a sub-frame false `Never sent` flash, and `×1` in the composer's accessible name.
 
 Verdict: REJECT
+
+## Decisions on the open questions (2026-09-28)
+
+1. VQ4-1 is fixed on both sides: providers mint text and thinking block ids that are unique per execution, and the web fold never re-opens a keyed span across an intervening row, so rows stored by earlier builds also render in order.
+2. VQ4-2: the room header pill shows the node's status (mockup loop s7), not the selected iteration's.
+3. VQ4-7: the band header never contradicts the visible list. It reads `SENDING · n` when only dispatching rows are visible and `QUEUED · n` counts queued rows otherwise.
+4. Idle meta: the header shows `waiting on operator` while the agent is idle after an interrupt, as the mockup s3 does.
+
+Fixes are owned by the `qa4-fixes` follow-up work.
