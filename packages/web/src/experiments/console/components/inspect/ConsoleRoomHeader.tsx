@@ -70,17 +70,15 @@ const KIND_CHIP_STYLE: Readonly<Record<string, { className: string; style: CSSPr
 interface StatusPillStyle {
   className: string;
   style: CSSProperties;
-  /** Draws a small solid dot in the pill's own color before the label — only
-   * the live (running/pending) pill carries one, matching the mockup's
-   * active-run indicator. */
-  dot?: boolean;
 }
 
+// Every tone renders 10px/700 with no dot, matching the mockup room header
+// pill (measured against the live mockup, not the run-level page header
+// pill it was once confused with).
 const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   accent: {
-    className: 'text-[11px] font-semibold text-[color:var(--running)]',
+    className: 'text-[10px] font-bold text-[color:var(--running)]',
     style: { borderColor: 'color-mix(in oklch, var(--running) 40%, transparent)' },
-    dot: true,
   },
   warning: {
     className: 'text-[10px] font-bold text-warning',
@@ -148,12 +146,9 @@ export function ConsoleRoomHeader({
             {model.nodeLabel}
           </div>
           <span
-            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 ${pillStyle.className}`}
+            className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 ${pillStyle.className}`}
             style={pillStyle.style}
           >
-            {pillStyle.dot === true ? (
-              <span aria-hidden className="h-[7px] w-[7px] shrink-0 rounded-full bg-current" />
-            ) : null}
             {pill.label}
           </span>
           <button
