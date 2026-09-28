@@ -240,12 +240,3 @@ Verdict: REJECT
 4. Idle meta: the header shows `waiting on operator` while the agent is idle after an interrupt, as the mockup s3 does.
 
 Fixes are owned by the `qa4-fixes` follow-up work.
-
-## Decisions on the open questions (2026-09-28)
-
-1. VQ4-1 is fixed on both sides. Block ids become unique per execution in the providers, and the web fold never re-opens a keyed span across an intervening row.
-2. VQ4-2: a loop room's pill shows the node's status.
-3. VQ4-7: the band reads `SENDING · n` when only dispatching rows are visible; `QUEUED · n` counts queued rows only.
-4. The idle header meta gains the mockup's `waiting on operator`.
-
-The `qa4-fixes` follow-up work owns the fixes.
