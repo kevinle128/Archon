@@ -49,3 +49,13 @@ A small set of scoped CSS custom properties is defined in `packages/web/src/inde
 | `--rv-panel-max-width` | `720px` | Inspect panel maximum width |
 
 Do not use these tokens outside the run-view roots, and do not add new run-view tokens without updating this table.
+
+## Node room status pill borders
+
+The Legacy node room header draws its status pill outline from three sitewide tokens in `packages/web/src/index.css` (`:root`). Each one is its status hue at low lightness, so the outline reads on `--surface` without competing with the pill text.
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `--status-pill-border-running` | `oklch(0.4 0.12 250)` | Running pill outline |
+| `--status-pill-border-success` | `oklch(0.4 0.08 155)` | Completed pill outline |
+| `--status-pill-border-error` | `oklch(0.4 0.12 25)` | Failed pill outline |

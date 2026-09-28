@@ -88,7 +88,7 @@ interface StatusPillStyle {
 const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   accent: {
     className: 'text-[10px] font-bold text-accent-bright',
-    style: { borderColor: 'oklch(0.4 0.12 250)', lineHeight: 'normal' },
+    style: { borderColor: 'var(--status-pill-border-running)', lineHeight: 'normal' },
   },
   warning: {
     className: 'text-[10px] font-bold text-warning',
@@ -99,11 +99,11 @@ const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   },
   success: {
     className: 'text-[10px] font-bold text-success',
-    style: { borderColor: 'oklch(0.4 0.08 155)', lineHeight: 'normal' },
+    style: { borderColor: 'var(--status-pill-border-success)', lineHeight: 'normal' },
   },
   error: {
     className: 'text-[10px] font-bold text-error',
-    style: { borderColor: 'oklch(0.4 0.12 25)', lineHeight: 'normal' },
+    style: { borderColor: 'var(--status-pill-border-error)', lineHeight: 'normal' },
   },
 };
 

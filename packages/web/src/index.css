@@ -23,6 +23,11 @@
   --success: oklch(0.65 0.17 155);
   --warning: oklch(0.75 0.15 75);
   --error: oklch(0.6 0.2 25);
+  /* Status pill borders in the node room header: the status hue at low
+     lightness so the outline reads on --surface without competing with text. */
+  --status-pill-border-running: oklch(0.4 0.12 250);
+  --status-pill-border-success: oklch(0.4 0.08 155);
+  --status-pill-border-error: oklch(0.4 0.12 25);
 
   /* Node type colors */
   --node-command: oklch(0.62 0.18 250);
