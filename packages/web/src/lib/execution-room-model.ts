@@ -53,7 +53,12 @@ export interface ExecutionHeaderModel {
   nodeId: string;
   nodeLabel: string;
   executionLabel: string;
+  /** The node's own condition — never the selected row's, when the two differ. See `ExecutionHeaderInput.nodeStatus`. */
   status: string;
+  /** The node's own failure reason. Only ever set while `status` is `failed`; null otherwise or when unknown. */
+  statusReason: string | null;
+  /** True while the agent is idle-after-interrupt: the header meta appends `waiting on operator` right after `running…`. */
+  waitingOnOperator: boolean;
   startedOffsetMs: number | null;
   /** ISO timestamp the selected execution started, for the header's clock-time segment. */
   startedAt: string | null;
@@ -88,6 +93,23 @@ export interface ExecutionHeaderInput {
   siblingRows?: readonly RunFamilyRow[];
   /** The selected row's node definition's loop cap, for `loopMaxIterations`. Omitted or null for a non-loop node. */
   loopMaxIterations?: number | null;
+  /**
+   * The node's own aggregate status and failure reason — the same node
+   * state the graph card reads — independent of which execution row is
+   * selected. The header pill and meta always report the node's own
+   * condition, never a historical row's: a loop that failed on
+   * `max_iterations` still reads `Failed` while an earlier iteration is
+   * selected, and a node that later succeeded on retry reads `Completed`
+   * even while viewing the run that failed. Omitted callers (most test
+   * fixtures) keep the selected row's own status, which is correct
+   * whenever the two coincide — every node with exactly one execution.
+   */
+  nodeStatus?: string | null;
+  nodeError?: string | null;
+  /** The node's live steering sub-state (from the same node state as
+   * `nodeStatus`/`nodeError`), for `waitingOnOperator`. Omitted or any value
+   * other than `'idle-after-interrupt'` leaves `waitingOnOperator` false. */
+  nodeSteeringSubState?: string | null;
 }
 
 export type RoomOpenerKind = 'log' | 'graph';
@@ -592,9 +614,11 @@ export function runtimeForSelection(
  * of many rows, but the room header already states which execution is
  * selected through its own Execution selector, so repeating the suffix in
  * the title is redundant. Strips exactly that trailing suffix; a bare label
- * with no suffix passes through unchanged.
+ * with no suffix passes through unchanged. Exported so any other surface
+ * naming this node — the composer's accessible name, for one — reads the
+ * same bare label rather than the log stream's disambiguated one.
  */
-function bareNodeLabel(label: string): string {
+export function bareNodeLabel(label: string): string {
   const match = /^(.+) (?:×|#)\d+$/.exec(label);
   return match?.[1] ?? label;
 }
@@ -605,11 +629,14 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     input.siblingRows !== undefined
       ? survivingRetryEpochs(input.siblingRows, input.row.selection)
       : null;
+  const status = input.nodeStatus ?? input.row.status;
   return {
     nodeId: input.row.nodeId,
     nodeLabel: bareNodeLabel(input.row.label),
     executionLabel: executionLabel(input.row.selection, survivingEpochs),
-    status: input.row.status,
+    status,
+    statusReason: status === 'failed' ? (input.nodeError ?? null) : null,
+    waitingOnOperator: input.nodeSteeringSubState === 'idle-after-interrupt',
     startedOffsetMs: startedOffsetMs(input.row, input.runStartedAt),
     startedAt: input.row.startedAt ?? null,
     durationMs: input.row.durationMs ?? null,
@@ -776,11 +803,21 @@ export interface HeaderMetaLineInput {
   readonly model: string | null;
   /** Latest terminal execution failed for idle-await expiry. Default false. */
   readonly idleAwaitExpired?: boolean;
+  /** The node's own failure reason (`ExecutionHeaderModel.statusReason`), shown
+   * in place of the duration segment while `status` is `failed` and no more
+   * specific reason (idle-await expiry) applies. Default null. */
+  readonly statusReason?: string | null;
   /** Set only when viewing a finished iteration while the node runs live
    * elsewhere; the run count is not meaningful for that stale history view. */
   readonly iterationPrefix?: number | null;
   /** Server-reported restart recovery — see `statusPill`. Default false. */
   readonly recoveryRequired?: boolean;
+  /** The agent is idle-after-interrupt: the node stayed running, but its
+   * current generation stopped and now waits on an operator redirect.
+   * Appended right after `running…` — the node's own status, not this
+   * projected sub-state, still decides whether that segment renders at
+   * all. Default false. */
+  readonly waitingOnOperator?: boolean;
 }
 
 /** The live segment a restart-recovery meta line reports instead of `running…`. */
@@ -809,8 +846,16 @@ export function headerMetaLine(input: HeaderMetaLineInput): string | null {
     segments.push(RECOVERY_REQUIRED_META_SEGMENT);
   } else if (input.status === 'failed' && input.idleAwaitExpired === true) {
     segments.push('failed after idle timeout');
+  } else if (
+    input.status === 'failed' &&
+    input.statusReason !== null &&
+    input.statusReason !== undefined &&
+    input.statusReason.length > 0
+  ) {
+    segments.push(input.statusReason);
   } else if (LIVE_META_STATUSES.has(input.status)) {
     segments.push('running…');
+    if (input.waitingOnOperator === true) segments.push('waiting on operator');
   } else if (input.durationMs !== null) {
     segments.push(formatDurationLong(input.durationMs));
   }

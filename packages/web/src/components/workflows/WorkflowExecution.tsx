@@ -786,6 +786,10 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
     selectedExecutionRow === null
       ? undefined
       : dagDefinitionNodes?.find(candidate => candidate.id === selectedExecutionRow.nodeId);
+  const selectedRoomNodeState =
+    selectedExecutionRow === null
+      ? undefined
+      : queryData?.nodeStates?.find(state => state.nodeId === selectedExecutionRow.nodeId);
   const headerModel =
     selectedExecutionRow === null
       ? undefined
@@ -795,6 +799,9 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           runStartedAt: runStartedAtIso,
           siblingRows: executionRowsForSelectedNode,
           loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
+          nodeStatus: selectedRoomNodeState?.status,
+          nodeError: selectedRoomNodeState?.error,
+          nodeSteeringSubState: selectedRoomNodeState?.steeringSubState,
         });
   const headerOptions =
     selectedExecutionRow === null

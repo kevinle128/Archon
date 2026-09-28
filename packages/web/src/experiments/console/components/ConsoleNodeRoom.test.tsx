@@ -370,6 +370,7 @@ describe('ConsoleNodeRoom', () => {
       renderRoom({
         run: run({ id: 'run-agent' }),
         loadMessages,
+        nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'awaiting' })],
         selectedRow: row({
           nodeId: 'review',
           label: 'Review ×2',
@@ -1332,6 +1333,124 @@ describe('ConsoleNodeRoom', () => {
     expect(scroller.contains(dockWell)).toBe(false);
     expect(host.textContent).toContain('Cmd/Ctrl+Enter to send · saved for you');
     expect(host.textContent).not.toContain('queued ·');
+  });
+
+  test('the composer accessible name uses the bare node label, never the log stream’s ×N suffix', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        selectedRow: row({
+          nodeId: 'review',
+          label: 'Review ×2',
+          status: 'running',
+          selection: { kind: 'loop_iteration', iteration: 2 },
+        }),
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('composer field', () => dockField() !== null);
+    const field = host.querySelector('textarea');
+    const label = host.querySelector(`label[for="${field?.id ?? ''}"]`);
+    expect(label?.textContent).toBe('message to Review');
+    expect(label?.textContent).not.toContain('×');
+  });
+
+  test('header meta appends waiting on operator when the node state reports idle-after-interrupt', async () => {
+    await act(async () => {
+      renderRoom({
+        isLive: true,
+        nodeStates: [
+          nodeState({
+            nodeId: 'review',
+            name: 'Review',
+            status: 'running',
+            steeringSubState: 'idle-after-interrupt',
+          }),
+        ],
+        loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+          messages: [...FIXTURE],
+        }),
+      });
+    });
+    await flushUntil('idle meta', () => (host.textContent ?? '').includes('waiting on operator'));
+    expect(host.textContent).toContain('running… · waiting on operator');
+  });
+
+  test('re-pins to the bottom when the scroller resizes with no new row (e.g. a sibling band growing)', async () => {
+    type ResizeCallback = () => void;
+    const observed: HTMLElement[] = [];
+    let triggerResize: ResizeCallback | undefined;
+    let disconnected = false;
+    class FakeResizeObserver {
+      constructor(callback: ResizeCallback) {
+        triggerResize = callback;
+      }
+      observe(el: HTMLElement): void {
+        observed.push(el);
+      }
+      unobserve(): void {
+        return;
+      }
+      disconnect(): void {
+        disconnected = true;
+      }
+    }
+    const originalResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: FakeResizeObserver,
+    });
+
+    try {
+      await act(async () => {
+        renderRoom({
+          isLive: true,
+          loadMessages: async (): Promise<WorkflowNodeMessagesResponse> => ({
+            messages: [...FIXTURE],
+          }),
+        });
+      });
+      await flushUntil('resize scroll', () => (host.textContent ?? '').includes('first'));
+      const scrollerNode = host.querySelector('[data-testid="console-node-room-scroll"]');
+      if (scrollerNode === null) throw new Error('missing scroller');
+      const scroller = scrollerNode as unknown as HTMLElement;
+      expect(observed).toContain(scroller);
+
+      // A sibling (queue band, todo strip, dock) growing shrinks the
+      // scroller's own box with no new row arriving: scrollHeight is
+      // unchanged, but clientHeight drops and a stale scrollTop would leave
+      // a gap at the bottom.
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 });
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
+      scroller.scrollTop = 200;
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 136 });
+
+      if (triggerResize === undefined) throw new Error('resize observer never attached');
+      await act(async () => {
+        triggerResize?.();
+      });
+      // scrollHeight (400) - the shrunk clientHeight (136): the bottom stays
+      // flush against the fold instead of leaving a 64px gap.
+      expect(scroller.scrollTop).toBe(264);
+
+      await act(async () => {
+        root.unmount();
+      });
+      expect(disconnected).toBe(true);
+    } finally {
+      if (originalResizeObserver === undefined) {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver');
+      } else {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          configurable: true,
+          writable: true,
+          value: originalResizeObserver,
+        });
+      }
+    }
   });
 
   test('renders no dock for a historical (non-live) run or a terminal row', async () => {

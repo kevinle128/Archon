@@ -4,18 +4,23 @@ import { GrokEventParser } from './event-parser';
 
 describe('GrokEventParser', () => {
   test('maps text, thought, tools, and authoritative end metadata', () => {
-    const parser = new GrokEventParser();
+    const parser = new GrokEventParser(undefined, 'turn-1');
 
     expect(parser.consumeLine('{"type":"text","data":"hello"}')).toEqual([
       {
         type: 'assistant',
         content: 'hello',
         textMode: 'delta',
-        blockId: 'grok-single-assistant-1',
+        blockId: 'grok-single-turn-1-assistant-1',
       },
     ]);
     expect(parser.consumeLine('{"type":"thought","data":"hmm"}')).toEqual([
-      { type: 'thinking', content: 'hmm', textMode: 'delta', blockId: 'grok-single-thinking-2' },
+      {
+        type: 'thinking',
+        content: 'hmm',
+        textMode: 'delta',
+        blockId: 'grok-single-turn-1-thinking-2',
+      },
     ]);
     expect(
       parser.consumeLine(
@@ -71,6 +76,17 @@ describe('GrokEventParser', () => {
       structuredOutput: { ok: true },
       resumed: true,
     });
+  });
+
+  test('two parsers mint different block ids for the same kind and sequence number', () => {
+    // A fresh parser is created per turn and its block-id counter restarts
+    // at 1, so the turn id is what keeps a later turn's first block from
+    // colliding with an earlier turn's block of the same kind and sequence.
+    const first = new GrokEventParser().consumeLine('{"type":"text","data":"a"}');
+    const second = new GrokEventParser().consumeLine('{"type":"text","data":"a"}');
+    expect(first[0]?.type === 'assistant' ? first[0].blockId : undefined).not.toBe(
+      second[0]?.type === 'assistant' ? second[0].blockId : undefined
+    );
   });
 
   test('ignores forward-compatible events and closes outstanding tools', () => {

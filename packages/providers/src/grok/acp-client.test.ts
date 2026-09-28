@@ -495,12 +495,16 @@ describe('driveGrokAcpTurn', () => {
     // `.return()` to trigger its `finally` block synchronously per spec —
     // pulling the first streamed chunk puts it there.
     const first = await gen.next();
-    expect(first.value).toEqual({
+    expect(first.value).toMatchObject({
       type: 'assistant',
       content: 'partial',
       textMode: 'delta',
-      blockId: 'grok-acp-assistant-1',
     });
+    // The turn id inside the block id is random per turn, so only the
+    // fixed prefix/suffix shape is asserted here.
+    expect((first.value as { blockId: string }).blockId).toMatch(
+      /^grok-acp-[0-9a-f-]{36}-assistant-1$/
+    );
     await gen.return(undefined);
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     expect(fake.methodsCalled()).toContain(methods.agent.session.close);

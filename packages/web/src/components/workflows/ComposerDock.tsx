@@ -35,6 +35,7 @@ import {
 } from '@/lib/api';
 import type { FinishedIterationView } from '@/lib/execution-room-model';
 import {
+  allPendingDispatching,
   applyQueueSnapshot,
   beginGuidanceSubmission,
   beginInterrupt,
@@ -73,6 +74,8 @@ import {
   resolveWithdrawFailure,
   resolveWithdrawSuccess,
   savedToServerLine,
+  sendingBandHeader,
+  sendingListLabel,
   sendNowButtonAccessibleName,
   startQueuePolling,
   steeringAgentMode,
@@ -500,8 +503,13 @@ export function ComposerDock({
   // folds in as the last item"). A `delivery_unknown` row that survives to a
   // terminal node (no reconcile touches it) counts too — undelivered content
   // must remain readable regardless of which exact state it froze in.
+  // `dispatching` is excluded: it means a send is actively in flight, which
+  // is the opposite of undelivered, so it must never render as "never sent"
+  // before the terminal reconciliation result (server truth) arrives.
   const finishedEntries: NeverSentEntry[] = [
-    ...dock.sent.map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
+    ...dock.sent
+      .filter(receipt => receipt.state !== 'dispatching')
+      .map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
     ...(dock.neverSent ?? []),
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];
@@ -584,7 +592,11 @@ export function ComposerDock({
   }, [dock.deliveryByMessageId, onDeliveryStatesChange]);
 
   useEffect(() => {
-    if (!nodeTerminal) {
+    // A non-live run (Cancel/Abandon) qualifies exactly like nodeTerminal
+    // does — see steeringDockMode — so a cold mount opened during the window
+    // between the run leaving `live` and this node's own terminal event
+    // still hydrates the queue instead of showing nothing.
+    if (!nodeTerminal && live) {
       terminalFetchedRef.current = false;
       return;
     }
@@ -609,7 +621,7 @@ export function ComposerDock({
       // permanently losing this node's terminal hydration for the mount.
       terminalFetchedRef.current = false;
     };
-  }, [nodeTerminal, runId, nodeId, readQueue]);
+  }, [nodeTerminal, live, runId, nodeId, readQueue]);
 
   // Shared-queue reads while composer/blocked/finished-iteration/recovery are
   // mounted. Recovery keeps polling (not just a one-shot) so this dock can
@@ -1152,11 +1164,19 @@ export function ComposerDock({
         </div>
         {dock.sent.length === 0 ? null : (
           <section
-            aria-label={queueBandHeader(pendingQueueCount(dock.sent))}
+            aria-label={
+              allPendingDispatching(dock.sent)
+                ? sendingBandHeader(dock.sent.length)
+                : queueBandHeader(pendingQueueCount(dock.sent))
+            }
             className="flex-none border-t border-border bg-surface-elevated"
           >
             <QueueBandHeader
-              label={queueBandHeader(pendingQueueCount(dock.sent))}
+              label={
+                allPendingDispatching(dock.sent)
+                  ? sendingBandHeader(dock.sent.length)
+                  : queueBandHeader(pendingQueueCount(dock.sent))
+              }
               savedLine={null}
               open={queueBandOpen}
               onToggle={(): void => {
@@ -1169,7 +1189,13 @@ export function ComposerDock({
               hidden={!queueBandOpen}
               className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
             >
-              <ul aria-label={queueListLabel(pendingQueueCount(dock.sent))}>
+              <ul
+                aria-label={
+                  allPendingDispatching(dock.sent)
+                    ? sendingListLabel(dock.sent.length)
+                    : queueListLabel(pendingQueueCount(dock.sent))
+                }
+              >
                 {dock.sent.map((receipt, index) => (
                   <QueueBandItem
                     key={receipt.messageId}
@@ -1205,7 +1231,11 @@ export function ComposerDock({
   // and only for a row the server can still claim.
   const canSendItemNow = dock.softInjection && agentMode === 'generating';
 
-  const queueBandLabel = idle ? willSendBandHeader(pendingCount) : queueBandHeader(pendingCount);
+  const queueBandLabel = allPendingDispatching(dock.sent)
+    ? sendingBandHeader(dock.sent.length)
+    : idle
+      ? willSendBandHeader(pendingCount)
+      : queueBandHeader(pendingCount);
 
   return (
     <>
@@ -1228,7 +1258,15 @@ export function ComposerDock({
             hidden={!queueBandOpen}
             className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
           >
-            <ul aria-label={idle ? willSendListLabel(pendingCount) : queueListLabel(pendingCount)}>
+            <ul
+              aria-label={
+                allPendingDispatching(dock.sent)
+                  ? sendingListLabel(dock.sent.length)
+                  : idle
+                    ? willSendListLabel(pendingCount)
+                    : queueListLabel(pendingCount)
+              }
+            >
               {dock.sent.map((receipt, index) => {
                 const claimable = isQueueItemClaimable(receipt.state);
                 const statusLabel = queueItemStatusLabel(receipt.state);

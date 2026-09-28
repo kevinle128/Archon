@@ -556,6 +556,20 @@ describe('ComposerDock', () => {
     expect(items[1]?.textContent).not.toContain(STEERING_DELETE_LABEL);
   });
 
+  test('a visible dispatching row with nothing else queued reads sending, never queued · 0', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'dispatching' }])
+    );
+    expect(host.textContent).toContain('sending · 1');
+    expect(host.textContent).not.toContain('queued · 0');
+    const list = host.querySelector('ul[aria-label="Sending, 1"]');
+    expect(list).not.toBeNull();
+    expect(list?.textContent).toContain('sending…');
+  });
+
   test('the band collapse toggle hides and restores the item list without removing it', async () => {
     await renderDock();
     await setDraft('wrong suite');
@@ -1593,12 +1607,17 @@ describe('ComposerDock', () => {
     expect((win.document.activeElement as unknown) === field()).toBe(true);
     expect(win.document.activeElement).not.toBe(win.document.body);
   });
-  test('hidden and detached modes never read; detached preserves disclosure', async () => {
+  test('a non-live, non-terminal row does a one-shot read with nothing to show; detached never reads', async () => {
     const ctrl = controllableRead();
     nextRead = ctrl.read;
-    await renderDock({ live: false, readQueue: ctrl.read });
-    expect(readCalls).toHaveLength(0);
+    // A non-live row (Cancel/Abandon) qualifies for the same one-shot
+    // hydration a terminal row gets — it may still have a queued item worth
+    // showing read-only. An empty result correctly settles back to hidden.
+    await renderDock({ live: false, nodeTerminal: false, readQueue: ctrl.read });
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(readCalls).toHaveLength(1);
     expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('ul')).toBeNull();
 
     nextSend = async (): Promise<SendWorkflowNodeResponse> => {
       throw new SteeringRequestError(
@@ -2340,6 +2359,20 @@ describe('ComposerDock', () => {
     expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
   });
 
+  test('a node that finishes while a send is still dispatching never shows a false never-sent band', async () => {
+    // A message actively dispatching is the opposite of undelivered — the
+    // node reaching terminal before the send resolves must not flash a
+    // "never sent" band for it ahead of the server's own reconciliation.
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'in flight', state: 'dispatching' }])
+    );
+    expect(host.querySelector('ul')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
   test('exact finished anatomy: heading, alert, and no controls', async () => {
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
@@ -2365,6 +2398,24 @@ describe('ComposerDock', () => {
       })
     ).toBe(false);
     expect(host.textContent ?? '').not.toContain('Cmd/Ctrl+Enter');
+  });
+
+  test('a cancelled run shows the read-only band for a still-queued item before the node reports terminal', async () => {
+    // Abandon flips the run non-live at once; the node's own node_failed can
+    // land tens of seconds later. The queued item must stay visible as
+    // read-only through that whole window, not vanish until node_failed
+    // arrives.
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, live: false, nodeTerminal: false });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'redirect' }]));
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(
+      [...host.querySelectorAll('button')].some(b => {
+        const t = (b.textContent ?? '').trim();
+        return t === 'Stop' || t === 'Queue' || t === 'Send now';
+      })
+    ).toBe(false);
   });
 
   test('the terminal fetch runs once per terminal transition, not once per render', async () => {

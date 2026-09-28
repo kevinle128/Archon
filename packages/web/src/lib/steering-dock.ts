@@ -203,24 +203,31 @@ export const STEERING_RECOVERY_DISCLOSURE =
 
 /**
  * Visibility/block precedence: a nonempty never-sent result with explicit
- * node-terminal evidence selects finished first (so Cancel that flips the run
- * non-live after observation still surfaces recovery); otherwise a non-live
- * run hides the dock entirely; a proven finished-iteration descriptor wins
- * before the terminal-row hide check so a completed occurrence on a still-live
- * loop can surface the read-only dock; otherwise a non-generating row hides the
- * dock (historical/cold executions must never issue a request); a real pending
+ * node-terminal evidence, OR the run itself no longer live, selects finished
+ * first (so Cancel that flips the run non-live after observation still
+ * surfaces recovery); otherwise a non-live run hides the dock entirely; a
+ * proven finished-iteration descriptor wins before the terminal-row hide
+ * check so a completed occurrence on a still-live loop can surface the
+ * read-only dock; otherwise a non-generating row hides the dock
+ * (historical/cold executions must never issue a request); a real pending
  * ask keeps its blocked reason even when a refusal is stored — no request
  * should have been made from that state; only then does a stored 422
  * `not_steerable_here` flip the dock to the detached disclosure.
  *
  * `neverSent` is the caller's render-time union of the server's durable
- * `never_sent` rows plus the operator's own still-unsent draft text — never a
- * client-side ledger. `finished` still requires both nonempty neverSent and
- * nodeTerminal, so a terminal node with nothing undelivered and a blank draft
- * correctly falls through to hidden — matching "no dock at all" once nothing
- * survives to show. A cold-opened terminal run reaches this mode as soon as
- * its one-shot queue/draft reads land, not only when a live session was
- * mounted throughout.
+ * `never_sent` rows, the still-pending queue, and the operator's own
+ * still-unsent draft text — never a client-side ledger. `finished` still
+ * requires nonempty `neverSent`, so a terminal (or non-live) node with
+ * nothing undelivered and a blank draft correctly falls through to hidden —
+ * matching "no dock at all" once nothing survives to show. A cold-opened
+ * terminal run reaches this mode as soon as its one-shot queue/draft reads
+ * land, not only when a live session was mounted throughout.
+ *
+ * The run going non-live (Cancel/Abandon) qualifies for `finished` the same
+ * way `nodeTerminal` does, because sending is impossible either way: an
+ * abandoned run's still-queued item is exactly as undeliverable as a proven
+ * `never_sent` row, and the read-only band must not vanish for the window
+ * between the run leaving `live` and the node's own terminal event landing.
  *
  * An explicit `recoveryRequired` signal (server restart) is checked
  * before the terminal and liveness checks: it comes from the server telling
@@ -239,7 +246,7 @@ export function steeringDockMode(input: {
 }): SteeringDockMode {
   if (input.recoveryRequired === true) return 'recovery-required';
   if (
-    input.nodeTerminal === true &&
+    (input.nodeTerminal === true || !input.live) &&
     input.neverSent !== null &&
     input.neverSent !== undefined &&
     input.neverSent.length > 0
@@ -361,6 +368,27 @@ export function queueListLabel(count: number): string {
 
 export function willSendListLabel(count: number): string {
   return `Will send, ${count.toString()}`;
+}
+
+/** Lowercase DOM text; the renderer applies CSS uppercase + phase tracking. */
+export function sendingBandHeader(count: number): string {
+  return `sending · ${count.toString()}`;
+}
+
+export function sendingListLabel(count: number): string {
+  return `Sending, ${count.toString()}`;
+}
+
+/**
+ * True when every visible pending row is actively dispatching — a send
+ * request in flight, never a claimable queued row. The band header must
+ * never contradict the rows listed under it: `queued · 0` above a visible
+ * `sending…` row claims nothing is happening while something plainly is.
+ * `pendingQueueCount` already excludes `dispatching` from its count for the
+ * same reason — this is the header-selection counterpart of that exclusion.
+ */
+export function allPendingDispatching(sent: readonly LocalSentReceipt[]): boolean {
+  return sent.length > 0 && sent.every(receipt => receipt.state === 'dispatching');
 }
 
 /**

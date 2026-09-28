@@ -23,7 +23,7 @@ import {
   type NodeMessageSelection,
   type NodeMessageState,
 } from '@/lib/node-message-pages';
-import type { FinishedIterationView } from '@/lib/execution-room-model';
+import { bareNodeLabel, type FinishedIterationView } from '@/lib/execution-room-model';
 import { groupByOccurrence, type OccurrenceGrouping } from '@/lib/occurrence-groups';
 import {
   createScrollFollow,
@@ -318,6 +318,23 @@ export function NodeTranscriptPane({
       el.scrollTop = follow.scrollTop;
     }
   }, [follow, pageState.rows.length]);
+
+  // The scroller's own box can shrink or grow with no new row arriving — the
+  // queue band, todo strip, or dock changing height all resize it — so a
+  // pinned reader must re-pin on the scroller's own resize too, not only when
+  // a new row arrives.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el === null || !follow.pinToBottom) return;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    });
+    observer.observe(el);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [follow.pinToBottom]);
 
   useEffect(() => {
     const heading = navigatedHeadingRef.current;
@@ -650,7 +667,7 @@ export function NodeTranscriptPane({
         key={`steering:run:${runId}|node:${row.nodeId}`}
         runId={runId}
         nodeId={row.nodeId}
-        nodeLabel={agentDisplayName || row.nodeId}
+        nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
         rowStatus={rowStatus}
         live={isLiveRunStatus(runStatus)}
         hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}

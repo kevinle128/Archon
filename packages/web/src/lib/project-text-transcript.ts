@@ -1,6 +1,7 @@
 /**
  * Project immutable text transcript rows into complete Markdown blocks.
- * Deltas concatenate and snapshots replace only inside one matching stream/block.
+ * Deltas concatenate and snapshots replace, but only while the matching
+ * stream/block stays the single open row — any intervening row closes it.
  * Independent complete messages never concatenate.
  */
 
@@ -49,13 +50,15 @@ function originKey(metadata: ProjectableTextMetadata | null | undefined): string
   return metadata?.origin ?? 'assistant';
 }
 
-function streamKey(metadata: ProjectableTextMetadata | null | undefined): string {
+/** A block's identity for folding purposes. Two rows fold together only when
+ * this string matches exactly, including for rows that carry no explicit
+ * stream/message/block id — those still get a stable key from their origin
+ * and execution identity alone, so an unrelated keyless family never folds
+ * into this one by accident. */
+function foldKey(metadata: ProjectableTextMetadata | null | undefined): string {
   const streamId = metadata?.stream_id ?? '';
   const messageId = metadata?.message_id ?? '';
   const blockId = metadata?.block_id ?? '';
-  if (streamId.length === 0 && messageId.length === 0 && blockId.length === 0) {
-    return '';
-  }
   return `${originKey(metadata)}\0${streamId}\0${messageId}\0${blockId}\0${executionIdentity(metadata)}`;
 }
 
@@ -75,72 +78,49 @@ export function projectTextTranscript<T extends ProjectableTextMessage>(
   messages: readonly T[]
 ): T[] {
   const projected: T[] = [];
-  const openByKey = new Map<string, T & { kind: 'text'; payload: { text: string } }>();
-  // Keyless (no stream/message/block id) deltas fold by adjacency instead of
-  // a proven id: at most one open span at a time, so a thinking delta can
-  // never absorb an assistant delta or vice versa even when both are
-  // keyless — a delta of a different family (or the same family in a
-  // different execution) closes the previous span rather than reopening it,
-  // which also keeps rows in the order they actually happened instead of
-  // reordering an interleaved family's text to wherever its span first
-  // opened. Any other interruption — a non-text row, or a 'complete'-mode
-  // row — closes it too.
-  let anonymousDelta: (T & { kind: 'text'; payload: { text: string } }) | undefined;
-  let anonymousKey: string | undefined;
+  // Only the single most recently pushed text row can ever be extended, and
+  // only while its fold key still matches. Any other row — a different
+  // block, a non-text row, or a 'complete'-mode row — closes it. A later
+  // delta or snapshot that reuses that same key starts a fresh row rather
+  // than reopening the closed one. This keeps a reply positioned after the
+  // row that produced it even when a provider reuses a block id across
+  // turns, and it is what lets an interleaved family (thinking vs assistant,
+  // keyed or not) keep its own row instead of absorbing another family's
+  // text.
+  let openRow: (T & { kind: 'text'; payload: { text: string } }) | undefined;
+  let openKey: string | undefined;
 
   for (const message of messages) {
     if (!isTextMessage(message)) {
-      anonymousDelta = undefined;
+      openRow = undefined;
+      openKey = undefined;
       projected.push(message);
       continue;
     }
 
     const mode = textMode(message.metadata);
-    const key = streamKey(message.metadata);
 
     if (mode === 'complete') {
-      anonymousDelta = undefined;
+      openRow = undefined;
+      openKey = undefined;
       projected.push(message);
       continue;
     }
 
-    if (mode === 'delta') {
-      if (key.length === 0) {
-        const nextAnonymousKey = `${originKey(message.metadata)}\0${executionIdentity(message.metadata)}`;
-        if (anonymousDelta === undefined || anonymousKey !== nextAnonymousKey) {
-          anonymousDelta = { ...message, payload: { text: message.payload.text } };
-          anonymousKey = nextAnonymousKey;
-          projected.push(anonymousDelta);
-        } else {
-          anonymousDelta.payload = { text: anonymousDelta.payload.text + message.payload.text };
-        }
-        continue;
-      }
-      anonymousDelta = undefined;
-      const open = openByKey.get(key);
-      if (open === undefined) {
-        const next = { ...message, payload: { text: message.payload.text } };
-        openByKey.set(key, next);
-        projected.push(next);
-      } else {
-        open.payload = { text: open.payload.text + message.payload.text };
-      }
+    const key = foldKey(message.metadata);
+
+    if (openRow !== undefined && openKey === key) {
+      openRow.payload =
+        mode === 'delta'
+          ? { text: openRow.payload.text + message.payload.text }
+          : { text: message.payload.text };
       continue;
     }
 
-    anonymousDelta = undefined;
-    if (key.length === 0) {
-      projected.push(message);
-      continue;
-    }
-    const open = openByKey.get(key);
-    if (open === undefined) {
-      const next = { ...message, payload: { text: message.payload.text } };
-      openByKey.set(key, next);
-      projected.push(next);
-    } else {
-      open.payload = { text: message.payload.text };
-    }
+    const next = { ...message, payload: { text: message.payload.text } };
+    projected.push(next);
+    openRow = next;
+    openKey = key;
   }
 
   return projected;

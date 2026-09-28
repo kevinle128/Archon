@@ -24,6 +24,10 @@ import {
 import { DeepseekProviderError } from './errors';
 
 const CWD = '/tmp/archon-deepseek-cwd';
+/** Matches a block id minted for the first assistant block of a turn: a
+ * random turn id sits between the fixed prefix and the kind/sequence
+ * suffix, so a real turn's id can never be asserted as a literal. */
+const ASSISTANT_BLOCK_1 = /^deepseek-[0-9a-f-]{36}-assistant-1$/;
 const STDIO_MCP: McpServer[] = [
   {
     name: 'demo',
@@ -429,15 +433,13 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first).toEqual({
-      done: false,
-      value: {
-        type: 'assistant',
-        content: 'streaming',
-        textMode: 'delta',
-        blockId: 'deepseek-assistant-1',
-      },
+    expect(first.done).toBe(false);
+    expect(first.value).toMatchObject({
+      type: 'assistant',
+      content: 'streaming',
+      textMode: 'delta',
     });
+    expect((first.value as { blockId: string }).blockId).toMatch(ASSISTANT_BLOCK_1);
     expect(promptSettled).toBe(false);
     hold.resolve();
     const rest = await collect(gen);
@@ -977,12 +979,12 @@ describe('driveDeepseekAcpTurn', () => {
     });
     const gen = driveDeepseekAcpTurn(fake.app, baseInput());
     const first = await gen.next();
-    expect(first.value).toEqual({
+    expect(first.value).toMatchObject({
       type: 'assistant',
       content: 'partial',
       textMode: 'delta',
-      blockId: 'deepseek-assistant-1',
     });
+    expect((first.value as { blockId: string }).blockId).toMatch(ASSISTANT_BLOCK_1);
     await gen.return(undefined);
     expect(fake.methodsCalled()).toContain(methods.agent.session.cancel);
     hold.resolve();
@@ -1046,10 +1048,15 @@ describe('runDeepseekAcpTurn', () => {
     const chunks = await collect(
       runDeepseekAcpTurn(processInput(), { spawn: spawnImpl, terminateGraceMs: 0 })
     );
-    expect(chunks.slice(0, 2)).toEqual([
-      { type: 'assistant', content: 'Hel', textMode: 'delta', blockId: 'deepseek-assistant-1' },
-      { type: 'assistant', content: 'lo', textMode: 'delta', blockId: 'deepseek-assistant-1' },
+    expect(chunks.slice(0, 2)).toMatchObject([
+      { type: 'assistant', content: 'Hel', textMode: 'delta' },
+      { type: 'assistant', content: 'lo', textMode: 'delta' },
     ]);
+    const [helBlockId, loBlockId] = chunks
+      .slice(0, 2)
+      .map(chunk => (chunk as { blockId: string }).blockId);
+    expect(helBlockId).toMatch(ASSISTANT_BLOCK_1);
+    expect(helBlockId).toBe(loBlockId);
     expect(
       chunks
         .filter(chunk => chunk.type === 'assistant')

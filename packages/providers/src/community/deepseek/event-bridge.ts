@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { ContentBlock, SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk';
 
 import type { MessageChunk } from '../../types';
@@ -14,17 +16,29 @@ export interface DeepseekEventState {
    */
   openTextBlock: { kind: 'assistant' | 'thinking'; blockId: string } | undefined;
   textBlockSeq: number;
+  /**
+   * Identifies this turn. A fresh state is created for every turn, and each
+   * turn's block-id counter restarts at 1 — so this id must be unique per
+   * turn for the id to stay unique across an execution that runs several
+   * turns (e.g. a redirected operator message resuming the same session).
+   * Without it, a later turn's first thinking/assistant block would carry
+   * the exact id a prior turn already used.
+   */
+  readonly turnId: string;
 }
 
-export function createDeepseekEventState(): DeepseekEventState {
-  return { tools: new Map(), openTextBlock: undefined, textBlockSeq: 0 };
+export function createDeepseekEventState(turnId: string = randomUUID()): DeepseekEventState {
+  return { tools: new Map(), openTextBlock: undefined, textBlockSeq: 0, turnId };
 }
 
 /** Mints a fresh block id only when the open span's kind changes. */
 function textBlockId(state: DeepseekEventState, kind: 'assistant' | 'thinking'): string {
   if (state.openTextBlock?.kind !== kind) {
     state.textBlockSeq += 1;
-    state.openTextBlock = { kind, blockId: `deepseek-${kind}-${String(state.textBlockSeq)}` };
+    state.openTextBlock = {
+      kind,
+      blockId: `deepseek-${state.turnId}-${kind}-${String(state.textBlockSeq)}`,
+    };
   }
   return state.openTextBlock.blockId;
 }

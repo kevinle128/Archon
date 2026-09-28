@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import type { MessageChunk, ModelUsageEntry, TokenUsage, UsageBreakdown } from '../types';
 import { toUsageBreakdown } from '../usage-breakdown';
 
@@ -51,6 +53,14 @@ export class GrokEventParser {
    */
   private openTextBlock: { kind: 'assistant' | 'thinking'; blockId: string } | undefined;
   private textBlockSeq = 0;
+  /**
+   * Identifies this turn. A fresh parser is created for every turn, and each
+   * turn's block-id counter restarts at 1 — so this id must be unique per
+   * turn for the id to stay unique across an execution that runs several
+   * turns. Without it, a later turn's first thinking/assistant block would
+   * carry the exact id a prior turn already used.
+   */
+  private readonly turnId: string;
   private sawEnd = false;
   private sessionId: string | undefined;
   private tokens: TokenUsage | undefined;
@@ -71,11 +81,12 @@ export class GrokEventParser {
   private structuredOutputError: string | undefined;
   private readonly requestedModel: string | undefined;
 
-  constructor(requestedModel?: string) {
+  constructor(requestedModel?: string, turnId: string = randomUUID()) {
     this.requestedModel =
       typeof requestedModel === 'string' && requestedModel.trim() !== ''
         ? requestedModel.trim()
         : undefined;
+    this.turnId = turnId;
   }
   consumeLine(line: string): MessageChunk[] {
     let parsed: unknown;
@@ -295,7 +306,10 @@ export class GrokEventParser {
   private textBlockId(kind: 'assistant' | 'thinking'): string {
     if (this.openTextBlock?.kind !== kind) {
       this.textBlockSeq += 1;
-      this.openTextBlock = { kind, blockId: `grok-single-${kind}-${String(this.textBlockSeq)}` };
+      this.openTextBlock = {
+        kind,
+        blockId: `grok-single-${this.turnId}-${kind}-${String(this.textBlockSeq)}`,
+      };
     }
     return this.openTextBlock.blockId;
   }

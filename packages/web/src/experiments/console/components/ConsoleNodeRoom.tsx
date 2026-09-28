@@ -14,6 +14,7 @@ import {
 } from 'react';
 import { buildAgentHistory, type AgentHistory } from '@/lib/agent-history';
 import {
+  bareNodeLabel,
   buildExecutionHeader,
   loopMaxIterationsForNode,
   nodeKindChip,
@@ -519,6 +520,8 @@ export function ConsoleNodeRoom({
   const waitingOnDefinition = definitionPending && isUnknownAgentFallback(resolution);
   const agentActive = nodeId !== null && isAgentKind(resolution?.kind) && !waitingOnDefinition;
   const row = nodeId === null ? null : inspectRow(nodeId, selectedRow, nodeStates);
+  const selectedNodeState =
+    row === null ? undefined : nodeStates.find(state => state.nodeId === row.nodeId);
   const resolvedScopeKey =
     scopeKey ??
     (row === null
@@ -674,6 +677,23 @@ export function ConsoleNodeRoom({
     }
   }, [follow, pageState.rows.length]);
 
+  // The scroller's own box can shrink or grow with no new row arriving — the
+  // queue band, todo strip, or dock changing height all resize it — so a
+  // pinned reader must re-pin on the scroller's own resize too, not only when
+  // a new row arrives.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el === null || !follow.pinToBottom) return;
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
+    });
+    observer.observe(el);
+    return (): void => {
+      observer.disconnect();
+    };
+  }, [follow.pinToBottom]);
+
   useEffect(() => {
     const heading = navigatedHeadingRef.current;
     if (heading === null || heading.isConnected) return;
@@ -708,6 +728,9 @@ export function ConsoleNodeRoom({
           events,
           runStartedAt: run.startedAt,
           loopMaxIterations: loopMaxIterationsForNode(resolution?.definitionNode),
+          nodeStatus: selectedNodeState?.status,
+          nodeError: selectedNodeState?.error,
+          nodeSteeringSubState: selectedNodeState?.steeringSubState,
         }));
   const computedOptions: readonly ConsoleExecutionHeaderOption[] =
     headerOptions ??
@@ -801,8 +824,6 @@ export function ConsoleNodeRoom({
     ),
     ...unanchoredAsks,
   ];
-  const selectedNodeState =
-    row === null ? undefined : nodeStates.find(state => state.nodeId === row.nodeId);
   const firstActionableId = orderedAsks.find(interaction => {
     if (interaction.status !== 'pending') return false;
     if (parseAskEnvelope(interaction.envelope) === null) return false;
@@ -1140,7 +1161,7 @@ export function ConsoleNodeRoom({
               key={`steering:run:${run.id}|node:${row.nodeId}`}
               runId={run.id}
               nodeId={row.nodeId}
-              nodeLabel={agentDisplayName || row.nodeId}
+              nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
               rowStatus={rowStatus}
               live={isLive}
               hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}

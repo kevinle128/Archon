@@ -298,7 +298,8 @@ describe('GrokProvider --single fallback transport', () => {
         type: 'assistant',
         content: 'hello',
         textMode: 'delta',
-        blockId: 'grok-single-assistant-1',
+        // The turn id inside the block id is random per turn.
+        blockId: expect.stringMatching(/^grok-single-[0-9a-f-]{36}-assistant-1$/),
       },
       { type: 'result', sessionId: 'session-1', stopReason: 'end_turn' },
     ]);

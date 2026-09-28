@@ -1114,6 +1114,22 @@ describe('NodeTranscriptPane', () => {
     expect(host.textContent).toContain('live-two');
   });
 
+  test('the composer accessible name uses the bare node label, never the log stream’s ×N suffix', async () => {
+    const loadMessages: NodeMessageLoader = async () => ({ messages: [...FIXTURE] });
+    await act(async () => {
+      renderPane({
+        row: { ...ITERATION_TWO_ROW, status: 'running' },
+        runStatus: 'running',
+        loadMessages,
+      });
+    });
+    await flushUntil(host, 'live loop composer', () => host.querySelector('textarea') !== null);
+    const field = host.querySelector('textarea');
+    const label = field?.labels?.[0] ?? host.querySelector(`label[for="${field?.id ?? ''}"]`);
+    expect(label?.textContent).toBe('message to Review');
+    expect(label?.textContent).not.toContain('×');
+  });
+
   test('starts completed history at the top and follows running history until the reader scrolls away', async () => {
     const loadMessages: NodeMessageLoader = async () => ({
       messages: [textMessage('scroll-1', 1, 'scroll-one')],
@@ -1170,6 +1186,84 @@ describe('NodeTranscriptPane', () => {
       jump.click();
     });
     expect(liveScroller.scrollTop).toBe(200);
+  });
+
+  test('re-pins to the bottom when the scroller resizes with no new row (e.g. a sibling band growing)', async () => {
+    type ResizeCallback = () => void;
+    const observed: HTMLElement[] = [];
+    let triggerResize: ResizeCallback | undefined;
+    let disconnected = false;
+    class FakeResizeObserver {
+      constructor(callback: ResizeCallback) {
+        triggerResize = callback;
+      }
+      observe(el: HTMLElement): void {
+        observed.push(el);
+      }
+      unobserve(): void {
+        return;
+      }
+      disconnect(): void {
+        disconnected = true;
+      }
+    }
+    const originalResizeObserver = (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
+    Object.defineProperty(globalThis, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: FakeResizeObserver,
+    });
+
+    try {
+      const loadMessages: NodeMessageLoader = async () => ({
+        messages: [textMessage('scroll-resize-1', 1, 'scroll-resize-one')],
+        hasMore: false,
+        nextCursor: '1',
+        highWatermark: 1,
+      });
+      await act(async () => {
+        renderPane({ row: REVIEW_ROW, runStatus: 'running', loadMessages });
+      });
+      await flushUntil(host, 'resize scroll', () =>
+        (host.textContent ?? '').includes('scroll-resize-one')
+      );
+      const scrollerNode = host.querySelector('[data-testid="node-transcript-scroll"]');
+      if (scrollerNode === null) throw new Error('missing scroller');
+      const scroller = scrollerNode as unknown as HTMLElement;
+      expect(observed).toContain(scroller);
+
+      // A sibling (queue band, todo strip, dock) growing shrinks the
+      // scroller's own box with no new row arriving: scrollHeight is
+      // unchanged, but clientHeight drops and a stale scrollTop would leave
+      // a gap at the bottom.
+      Object.defineProperty(scroller, 'scrollHeight', { configurable: true, value: 400 });
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 200 });
+      scroller.scrollTop = 200;
+      Object.defineProperty(scroller, 'clientHeight', { configurable: true, value: 136 });
+
+      if (triggerResize === undefined) throw new Error('resize observer never attached');
+      await act(async () => {
+        triggerResize?.();
+      });
+      // scrollHeight (400) - the shrunk clientHeight (136): the bottom stays
+      // flush against the fold instead of leaving a 64px gap.
+      expect(scroller.scrollTop).toBe(264);
+
+      await act(async () => {
+        root.unmount();
+      });
+      expect(disconnected).toBe(true);
+    } finally {
+      if (originalResizeObserver === undefined) {
+        Reflect.deleteProperty(globalThis, 'ResizeObserver');
+      } else {
+        Object.defineProperty(globalThis, 'ResizeObserver', {
+          configurable: true,
+          writable: true,
+          value: originalResizeObserver,
+        });
+      }
+    }
   });
 
   test('aborts the active request on unmount', async () => {
