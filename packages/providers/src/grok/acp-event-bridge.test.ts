@@ -9,25 +9,50 @@ import {
 
 describe('mapGrokAcpSessionUpdate', () => {
   test('maps an agent_message_chunk to an assistant delta with a stable block id', () => {
-    const state = createGrokAcpEventState();
+    const state = createGrokAcpEventState('turn-1');
     const update: SessionUpdate = {
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'hello' },
     };
     expect(mapGrokAcpSessionUpdate(update, state)).toEqual([
-      { type: 'assistant', content: 'hello', textMode: 'delta', blockId: 'grok-acp-assistant-1' },
+      {
+        type: 'assistant',
+        content: 'hello',
+        textMode: 'delta',
+        blockId: 'grok-acp-turn-1-assistant-1',
+      },
     ]);
   });
 
   test('maps an agent_thought_chunk to a thinking delta with a stable block id', () => {
-    const state = createGrokAcpEventState();
+    const state = createGrokAcpEventState('turn-1');
     const update: SessionUpdate = {
       sessionUpdate: 'agent_thought_chunk',
       content: { type: 'text', text: 'pondering' },
     };
     expect(mapGrokAcpSessionUpdate(update, state)).toEqual([
-      { type: 'thinking', content: 'pondering', textMode: 'delta', blockId: 'grok-acp-thinking-1' },
+      {
+        type: 'thinking',
+        content: 'pondering',
+        textMode: 'delta',
+        blockId: 'grok-acp-turn-1-thinking-1',
+      },
     ]);
+  });
+
+  test('two turns mint different block ids for the same kind and sequence number', () => {
+    // Each turn gets a fresh state whose block-id counter restarts at 1, so
+    // the turn id is what keeps a later turn's first thinking block from
+    // colliding with an earlier turn's block of the same kind and sequence.
+    const thought = (text: string): SessionUpdate => ({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text },
+    });
+    const [firstTurn] = mapGrokAcpSessionUpdate(thought('a'), createGrokAcpEventState());
+    const [secondTurn] = mapGrokAcpSessionUpdate(thought('a'), createGrokAcpEventState());
+    expect(firstTurn?.type === 'thinking' ? firstTurn.blockId : undefined).not.toBe(
+      secondTurn?.type === 'thinking' ? secondTurn.blockId : undefined
+    );
   });
 
   test('consecutive same-kind chunks share one block id; a kind switch mints a new one', () => {

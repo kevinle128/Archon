@@ -62,16 +62,53 @@ describe('projectTextTranscript', () => {
     expect(projected).toHaveLength(2);
   });
 
-  test('replaces snapshots only inside the matching stream', () => {
+  test('replaces an adjacent snapshot of the same stream and block', () => {
+    const projected = projectTextTranscript([
+      text('t1', 'old', { text_mode: 'snapshot', message_id: 'm1', block_id: 'b1' }),
+      text('t2', 'new', { text_mode: 'snapshot', message_id: 'm1', block_id: 'b1' }),
+    ]);
+    expect(projected).toHaveLength(1);
+    expect(projected[0]?.kind === 'text' ? projected[0].payload.text : '').toBe('new');
+  });
+
+  test('an intervening row closes a snapshot span, so a later snapshot with the same key starts fresh', () => {
     const projected = projectTextTranscript([
       text('t1', 'old', { text_mode: 'snapshot', message_id: 'm1', block_id: 'b1' }),
       text('t2', 'keep', { text_mode: 'complete' }),
       text('t3', 'new', { text_mode: 'snapshot', message_id: 'm1', block_id: 'b1' }),
     ]);
     expect(projected.map(row => (row.kind === 'text' ? row.payload.text : ''))).toEqual([
-      'new',
+      'old',
       'keep',
+      'new',
     ]);
+  });
+
+  test('a delta that reuses an earlier block id after an intervening row starts a fresh row instead of re-merging', () => {
+    // A provider that restarts its block-id counter every turn can hand back
+    // the same id for an unrelated later block. The fold must not let that
+    // later delta land inside the row from the earlier turn.
+    const projected = projectTextTranscript([
+      text('t1', 'turn-one', {
+        text_mode: 'delta',
+        origin: 'thinking',
+        block_id: 'thinking-1',
+        execution: { occurrence_id: 'occ-a', attempt_id: 'att-1' },
+      }),
+      tool('t2'),
+      text('t3', 'operator says redirect', { text_mode: 'complete', origin: 'operator' }),
+      text('t4', 'turn-two', {
+        text_mode: 'delta',
+        origin: 'thinking',
+        block_id: 'thinking-1',
+        execution: { occurrence_id: 'occ-a', attempt_id: 'att-1' },
+      }),
+    ]);
+    expect(
+      projected
+        .filter(row => row.kind === 'text')
+        .map(row => (row as { payload: { text: string } }).payload.text)
+    ).toEqual(['turn-one', 'operator says redirect', 'turn-two']);
   });
 
   test('keeps identical keyed streams in different occurrences as separate blocks', () => {

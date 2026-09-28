@@ -9,12 +9,12 @@ describe('mapDeepseekSessionUpdate', () => {
       sessionUpdate: 'agent_message_chunk',
       content: { type: 'text', text: 'hello from dsh' },
     } satisfies SessionUpdate;
-    expect(mapDeepseekSessionUpdate(update, createDeepseekEventState())).toEqual([
+    expect(mapDeepseekSessionUpdate(update, createDeepseekEventState('turn-1'))).toEqual([
       {
         type: 'assistant',
         content: 'hello from dsh',
         textMode: 'delta',
-        blockId: 'deepseek-assistant-1',
+        blockId: 'deepseek-turn-1-assistant-1',
       },
     ]);
   });
@@ -24,9 +24,29 @@ describe('mapDeepseekSessionUpdate', () => {
       sessionUpdate: 'agent_thought_chunk',
       content: { type: 'text', text: 'pondering' },
     } satisfies SessionUpdate;
-    expect(mapDeepseekSessionUpdate(update, createDeepseekEventState())).toEqual([
-      { type: 'thinking', content: 'pondering', textMode: 'delta', blockId: 'deepseek-thinking-1' },
+    expect(mapDeepseekSessionUpdate(update, createDeepseekEventState('turn-1'))).toEqual([
+      {
+        type: 'thinking',
+        content: 'pondering',
+        textMode: 'delta',
+        blockId: 'deepseek-turn-1-thinking-1',
+      },
     ]);
+  });
+
+  test('two turns mint different block ids for the same kind and sequence number', () => {
+    // Each turn gets a fresh state whose block-id counter restarts at 1, so
+    // the turn id is what keeps a later turn's first thinking block from
+    // colliding with an earlier turn's block of the same kind and sequence.
+    const thought = (text: string): SessionUpdate => ({
+      sessionUpdate: 'agent_thought_chunk',
+      content: { type: 'text', text },
+    });
+    const [firstTurn] = mapDeepseekSessionUpdate(thought('a'), createDeepseekEventState());
+    const [secondTurn] = mapDeepseekSessionUpdate(thought('a'), createDeepseekEventState());
+    expect(firstTurn?.type === 'thinking' ? firstTurn.blockId : undefined).not.toBe(
+      secondTurn?.type === 'thinking' ? secondTurn.blockId : undefined
+    );
   });
 
   test('consecutive same-kind chunks share one block id; a kind switch mints a new one', () => {
