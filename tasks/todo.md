@@ -30,7 +30,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA2 web fixes merged (delivered state, run N of M, loop max caption, actor name, Codex body bar, wrapper in body, TaskCreate/TaskUpdate todos, header cosmetics, placeholder) — agent qa2-web
 - [x] QA round 3 report: all prior findings fixed; 2 major + 5 minor new
 - [x] QA3 fixes merged (6f1b352b); e2e 153/0/4; real Claude+Grok evidence
-- [x] QA round 4 draft: 2 major, 3 minor, 4 cosmetic (VQ4-1..9); agent visual-qa-4 still finishing
+- [x] QA round 4: REJECT (2 major, 3 minor, 4 cosmetic); all 28 earlier findings hold
 - [ ] QA4 fixes — agent qa4-fixes
 - [ ] QA round 5 (final acceptance, Verdict: ACCEPT required)
 
