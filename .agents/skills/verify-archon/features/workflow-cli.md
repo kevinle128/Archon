@@ -8,7 +8,8 @@ Execution and artifact persistence, failed-node retry, approval and rejection, r
 
 Use `archon workflow run <name> --no-worktree`, then `workflow get <run-id> --json`.
 Use `workflow retry-node <run-id> <node-id>` for a failed node.
-Use `workflow approve`, `reject`, `resume`, or `cancel` with the run ID to control it.
+Use `workflow approve`, `reject`, or `resume` with the run ID.
+`workflow cancel <run-id> --json` records cancellation. Without `--json` the command exits 1 and points at `workflow abandon <run-id>`.
 
 ## Driving it with the CLI harness
 
@@ -22,4 +23,5 @@ Retain its command transcript and cleanup result.
 
 JSON approval records a decision; it does not execute the next node.
 Use the blocking resume command to prove continuation.
+JSON cancel is the supported cancellation command. Interactive cancellation uses `workflow abandon`.
 These recipes use deterministic script nodes and do not prove provider reasoning or external platform delivery.

@@ -7,16 +7,17 @@ Console and Legacy navigation, node rooms, tool rows and Raw disclosure, Ask car
 ## How to get to it (user POV)
 
 Open a workflow run in Console or Legacy and select a node.
-Use its Log, Graph, and Artifacts views; open the same room through a deep link and a narrow viewport.
+Console uses Log, Graph, and Artifacts. Legacy uses Graph, Logs, and Chat.
+Open the same room through a deep link and a narrow viewport.
 Open Raw on a tool row, answer a pending Ask, and queue guidance while the agent is running.
 
 ## Driving it with Playwright
 
 Run the recipes that match the requested behavior.
-`ui.rooms` checks navigation, room layout, graph selection, artifacts, deep links, and mobile Back on both surfaces.
+`ui.rooms` checks navigation, room layout, graph selection, deep links, and mobile Back on both surfaces. Artifacts stay docked on Console.
 `ui.tools` checks Raw disclosure, keyboard access, geometry, and contrast.
 `ui.ask` checks real pending requests, submitted answers, retained decisions, focus, mobile layout, and CLI/web resume behavior.
-`ui.transcript-display` checks structured report rendering, the Legacy scroller at desktop and narrow sizes, and graph interaction.
+`ui.transcript-display` checks one-string report unwrap, multi-field labeled values with a collapsed Raw JSON disclosure, the Legacy scroller at desktop and narrow sizes, and graph interaction.
 `ui.queue-guidance` checks direct and loop delivery, blocked and detached states, dock geometry, and both routes.
 `ui.visual` captures matched product/reference states and evaluates the approved design criteria in `../visual-config.json`.
 Select visual checks for affected UI behavior.

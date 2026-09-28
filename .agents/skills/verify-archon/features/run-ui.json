@@ -16,7 +16,7 @@
   "behaviors": [
     {
       "id": "ui.rooms",
-      "description": "Rooms preserve navigation, Log/Graph/Artifacts state, deep links and narrow layout.",
+      "description": "Rooms preserve Console Log/Graph/Artifacts and Legacy Graph/Logs/Chat navigation, deep links, and narrow layout.",
       "priority": 1,
       "impact_paths": [
         "packages/web/src/components/workflows/",
@@ -58,7 +58,7 @@
     },
     {
       "id": "ui.transcript-display",
-      "description": "Streamed ACP text groups into one answer per execution attempt, a canonical one-string report renders unwrapped in every transcript mount, the Legacy transcript stays inside the run shell, and the runtime graph has no minimap.",
+      "description": "Streamed ACP text groups into one answer per execution attempt, a canonical one-string report renders unwrapped, a canonical multi-field result shows labeled values with collapsed Raw JSON, the Legacy transcript stays inside the run shell, and the runtime graph has no minimap.",
       "priority": 1,
       "impact_paths": [
         "packages/providers/src/community/",
@@ -166,7 +166,7 @@
       ],
       "proof_obligations": [
         "Each mapped transcript-display test executes exactly once and passes",
-        "Structured unwrap, viewport containment, and graph checks run against real seeded runs",
+        "One-string unwrap, multi-field labeled values, viewport containment, and graph checks run against real seeded runs",
         "Fresh browser evidence is retained"
       ]
     },
@@ -191,7 +191,7 @@
       "id": "ui.visual",
       "runner": {
         "kind": "browser",
-        "id": "visual-d83fb73c81bf79483fbd0ffd6f79053a6b8476200f2e6fec4d33dfa630712845"
+        "id": "visual-da7009df210f74c77ea8999f3dd9df80e1f391cd73468233e38f4dac9b98352b"
       },
       "prerequisites": [
         "Bun and installed target dependencies",

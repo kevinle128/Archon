@@ -39,7 +39,7 @@
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/SPEC.md",
-      "sha256": "89cf15455fe4491f5a03a050264839184deebec0f9ea895e662705cc559ad32b"
+      "sha256": "cf4bc516b30f244f840c0f27be89e3adb6d4ff757bdf108c52eed92ecc9d29bc"
     },
     {
       "path": "_bmad-output/specs/spec-agent-node-room/tool-presentation-contract.md",
@@ -124,7 +124,7 @@
       "states": [
         "assistant-report"
       ],
-      "source": "_bmad-output/specs/spec-agent-node-room/SPEC.md#read-half",
+      "source": "_bmad-output/specs/spec-agent-node-room/SPEC.md#read-and-presentation-paths",
       "expected": "One assistant block carries the ASSISTANT label and readable Markdown report text with no JSON envelope, braces, or serialized quoting; styling matches the surface's other assistant text. Compare presentation, not fixture wording."
     },
     {

@@ -38,6 +38,7 @@
       ],
       "proof_obligations": [
         "Version matches target manifest",
+        "Help exposes workflow commands",
         "Local workflow appears in JSON discovery",
         "Valid workflow passes and an invalid dependency fails"
       ]
