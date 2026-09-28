@@ -5,6 +5,7 @@ import {
   applyRoomDeepLink,
   askCardId,
   buildExecutionHeader,
+  capExecutionOptions,
   chooseExecutionForInteraction,
   chooseExecutionForNode,
   closeRoom,
@@ -12,6 +13,7 @@ import {
   computeRunOfTotal,
   disambiguateExecutionOptions,
   excludeRepresentedLoopContainers,
+  EXECUTION_OPTIONS_MAX,
   hasTerminalNodeEvidence,
   hasIdleAwaitExpiredEvidence,
   hasUnsettledNodeExecutions,
@@ -1081,6 +1083,46 @@ describe('loopMaxIterationsForNode', () => {
     expect(loopMaxIterationsForNode({})).toBeNull();
     expect(loopMaxIterationsForNode(null)).toBeNull();
     expect(loopMaxIterationsForNode(undefined)).toBeNull();
+  });
+});
+
+describe('capExecutionOptions', () => {
+  function rows(count: number): { id: string; order: number }[] {
+    return Array.from({ length: count }, (_, i) => ({ id: `r${String(i + 1)}`, order: i + 1 }));
+  }
+
+  test('returns every row unchanged when at or under the ceiling', () => {
+    expect(capExecutionOptions(rows(8))).toEqual(rows(8));
+    expect(capExecutionOptions(rows(3))).toEqual(rows(3));
+    expect(capExecutionOptions([])).toEqual([]);
+  });
+
+  test('a loop past the ceiling keeps only the most recent N, oldest dropped', () => {
+    const capped = capExecutionOptions(rows(11));
+    expect(capped).toHaveLength(8);
+    expect(capped.map(r => r.id)).toEqual(['r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11']);
+  });
+
+  test('the kept rows stay in chronological order even from unordered input', () => {
+    const all = rows(11);
+    const shuffled = [...all].reverse();
+    const capped = capExecutionOptions(shuffled);
+    expect(capped.map(r => r.id)).toEqual(['r4', 'r5', 'r6', 'r7', 'r8', 'r9', 'r10', 'r11']);
+  });
+
+  test('the live execution (highest order) is always kept, never dropped', () => {
+    const live = { id: 'live', order: 12 };
+    const capped = capExecutionOptions([...rows(11), live]);
+    expect(capped.map(r => r.id)).toContain('live');
+    expect(capped.at(-1)).toEqual(live);
+  });
+
+  test('a custom max is honored', () => {
+    expect(capExecutionOptions(rows(5), 3).map(r => r.id)).toEqual(['r3', 'r4', 'r5']);
+  });
+
+  test('the default ceiling is 8', () => {
+    expect(EXECUTION_OPTIONS_MAX).toBe(8);
   });
 });
 
