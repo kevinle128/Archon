@@ -500,8 +500,13 @@ export function ComposerDock({
   // folds in as the last item"). A `delivery_unknown` row that survives to a
   // terminal node (no reconcile touches it) counts too — undelivered content
   // must remain readable regardless of which exact state it froze in.
+  // `dispatching` is excluded: it means a send is actively in flight, which
+  // is the opposite of undelivered, so it must never render as "never sent"
+  // before the terminal reconciliation result (server truth) arrives.
   const finishedEntries: NeverSentEntry[] = [
-    ...dock.sent.map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
+    ...dock.sent
+      .filter(receipt => receipt.state !== 'dispatching')
+      .map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
     ...(dock.neverSent ?? []),
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];

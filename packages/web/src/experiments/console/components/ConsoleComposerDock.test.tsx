@@ -2238,6 +2238,20 @@ describe('ConsoleComposerDock', () => {
     expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
   });
 
+  test('a node that finishes while a send is still dispatching never shows a false never-sent band', async () => {
+    // A message actively dispatching is the opposite of undelivered — the
+    // node reaching terminal before the send resolves must not flash a
+    // "never sent" band for it ahead of the server's own reconciliation.
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'in flight', state: 'dispatching' }])
+    );
+    expect(host.querySelector('ul')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+
   test('exact finished anatomy: heading, alert, and no controls', async () => {
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
