@@ -1683,8 +1683,8 @@ describe('startQueuePolling', () => {
   });
 });
 
-describe('steeringDockMode: finished requires explicit node-terminal evidence', () => {
-  test('finished mode requires explicit node terminal', () => {
+describe('steeringDockMode: finished requires explicit node-terminal evidence or a non-live run', () => {
+  test('finished mode requires node terminal or a non-live run', () => {
     const neverSent: NeverSentEntry[] = [{ messageId: 'a', message: 'alpha' }];
     expect(
       modeFor('completed', {
@@ -1699,8 +1699,13 @@ describe('steeringDockMode: finished requires explicit node-terminal evidence', 
     // wins when both neverSent and nodeTerminal are present.
     expect(modeFor('running', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
     expect(modeFor('completed', { live: false, neverSent, nodeTerminal: true })).toBe('finished');
-    // live:false alone still hides — no finished without neverSent+nodeTerminal.
-    expect(modeFor('running', { live: false, neverSent, nodeTerminal: false })).toBe('hidden');
+    // A non-live run (Cancel/Abandon) qualifies on its own, before the node's
+    // own node_failed/node_completed event lands: an abandoned run's queued
+    // item is exactly as undeliverable as a proven never_sent row, so the
+    // read-only band must not vanish for that window.
+    expect(modeFor('running', { live: false, neverSent, nodeTerminal: false })).toBe('finished');
+    // Neither condition and nothing to show still hides.
+    expect(modeFor('running', { live: false, neverSent: [], nodeTerminal: false })).toBe('hidden');
   });
 
   test('an empty or unresolved never-sent result preserves the ordinary table', () => {

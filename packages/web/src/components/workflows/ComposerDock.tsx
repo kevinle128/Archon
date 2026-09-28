@@ -584,7 +584,11 @@ export function ComposerDock({
   }, [dock.deliveryByMessageId, onDeliveryStatesChange]);
 
   useEffect(() => {
-    if (!nodeTerminal) {
+    // A non-live run (Cancel/Abandon) qualifies exactly like nodeTerminal
+    // does — see steeringDockMode — so a cold mount opened during the window
+    // between the run leaving `live` and this node's own terminal event
+    // still hydrates the queue instead of showing nothing.
+    if (!nodeTerminal && live) {
       terminalFetchedRef.current = false;
       return;
     }
@@ -609,7 +613,7 @@ export function ComposerDock({
       // permanently losing this node's terminal hydration for the mount.
       terminalFetchedRef.current = false;
     };
-  }, [nodeTerminal, runId, nodeId, readQueue]);
+  }, [nodeTerminal, live, runId, nodeId, readQueue]);
 
   // Shared-queue reads while composer/blocked/finished-iteration/recovery are
   // mounted. Recovery keeps polling (not just a one-shot) so this dock can
