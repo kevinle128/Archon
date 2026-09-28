@@ -57,6 +57,8 @@ export interface LegacyNodeRoomProps {
   actionStates: AskActionStateByRequest;
   onSubmitAsk: (requestId: string, body: AskAnswerBody) => Promise<void>;
   nodeState: WorkflowNodeStateResponse | undefined;
+  /** See `LegacyGraphLogsPaneProps.followingLive`. */
+  followingLive?: boolean;
   headerModel?: ExecutionHeaderModel;
   headerOptions?: readonly ExecutionHeaderOption[];
   /** Uncapped execution total for the node, for the header's "of N · max 8" caption. */
@@ -126,6 +128,7 @@ export function LegacyNodeRoom({
   actionStates,
   onSubmitAsk,
   nodeState,
+  followingLive = false,
   headerModel,
   headerOptions,
   executionCount,
@@ -229,6 +232,7 @@ export function LegacyNodeRoom({
             starterDisplayName={starterDisplayName}
             actionStates={actionStates}
             nodeState={nodeState}
+            followingLive={followingLive}
             outputFormat={resolution.definitionNode?.output_format}
             onSubmitAsk={onSubmitAsk}
             events={events}

@@ -49,10 +49,12 @@ import {
   chooseExecutionForNode,
   closeRoom,
   hasUnsettledNodeExecutions,
+  isLiveRowStatus,
   openRoom,
   openExplicitRoom,
   rememberRoomScroll,
   resetRoomVisit,
+  resolveFollowedRow,
   roomOpenerId,
   type RoomVisitState,
 } from '@/lib/execution-room-model';
@@ -388,7 +390,12 @@ export function RunDetailPage(): ReactElement {
           (rowId !== undefined
             ? roomOpenerId('console', 'log', rowId)
             : roomOpenerId('console', 'graph', nodeId));
-        const selection = { nodeId, rowId: chosen.id, openerId: nextOpener };
+        const selection = {
+          nodeId,
+          rowId: chosen.id,
+          openerId: nextOpener,
+          followingLive: isLiveRowStatus(chosen.status),
+        };
         return rememberExplicit
           ? openExplicitRoom(previous, selection)
           : openRoom(previous, selection);
@@ -580,8 +587,8 @@ export function RunDetailPage(): ReactElement {
   );
   useKeymap({ bindings });
   const selectedNodeId = room.selection?.nodeId ?? null;
-  const selectedLogRowId = room.selection?.rowId ?? null;
-  const selectedRow = logRows.find(row => row.id === selectedLogRowId) ?? null;
+  const selectedRow = resolveFollowedRow(room.selection, logRows);
+  const selectedLogRowId = selectedRow?.id ?? null;
   const transcriptScopeKey =
     selectedRow === null
       ? 'run:none|node:none|sel:node:none'
@@ -767,6 +774,7 @@ export function RunDetailPage(): ReactElement {
                 streamNodeFilter={streamNodeFilter}
                 selectedNodeId={selectedNodeId}
                 selectedLogRowId={selectedLogRowId}
+                followingLive={room.selection?.followingLive ?? false}
                 showToolCalls={showToolCalls}
                 showSystem={showSystem}
                 logHeader={logHeader}

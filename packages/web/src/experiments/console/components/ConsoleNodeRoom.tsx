@@ -18,6 +18,7 @@ import {
   buildExecutionHeader,
   loopMaxIterationsForNode,
   nodeKindChip,
+  resolveGapHoldStatus,
   type ExecutionHeaderModel,
   type FinishedIterationView,
   type RunOfTotal,
@@ -82,6 +83,8 @@ export interface ConsoleNodeRoomProps {
   projectId: string;
   nodeId: string | null;
   selectedRow: LogRow | null;
+  /** See `LegacyGraphLogsPaneProps.followingLive`. */
+  followingLive?: boolean;
   definitionNodes: readonly DagNode[];
   definitionPending: boolean;
   nodeStates: readonly WorkflowNodeState[];
@@ -482,6 +485,7 @@ export function ConsoleNodeRoom({
   projectId,
   nodeId,
   selectedRow,
+  followingLive = false,
   definitionNodes,
   definitionPending,
   nodeStates,
@@ -559,6 +563,17 @@ export function ConsoleNodeRoom({
   const nodeKey = row?.nodeId ?? null;
   const rowId = row?.id ?? null;
   const rowStatus = row?.status ?? 'completed';
+  // The dock's OWN input only: between one loop iteration's row completing
+  // and the next iteration's row starting, `resolveFollowedRow` is still
+  // following live but has nothing live to show yet, so `rowStatus` above
+  // reads the just-finished row's terminal status. Substituting the node's
+  // own live status there — never anywhere else `rowStatus` is read in this
+  // file — keeps the composer open through that gap instead of dropping it.
+  const composerRowStatus = resolveGapHoldStatus({
+    followingLive,
+    rowStatus,
+    nodeStatus: selectedNodeState?.status,
+  });
 
   // After Go commits a new selection, clear the pending target then hand focus
   // to the live composer/blocked field, the new finished Go button, or the
@@ -1177,7 +1192,7 @@ export function ConsoleNodeRoom({
               runId={run.id}
               nodeId={row.nodeId}
               nodeLabel={bareNodeLabel(agentDisplayName || row.nodeId)}
-              rowStatus={rowStatus}
+              rowStatus={composerRowStatus}
               live={isLive}
               hasPendingAsk={visibleAsks.some(interaction => interaction.status === 'pending')}
               subState={selectedNodeState?.steeringSubState}
