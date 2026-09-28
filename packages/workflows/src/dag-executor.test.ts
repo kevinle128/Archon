@@ -110,6 +110,7 @@ import {
   containerCommandName,
   buildSubprocessDockerArgs,
   IDLE_AWAIT_EXPIRED_ERROR,
+  STREAM_CANCEL_POLL_INTERVAL_MS,
 } from './dag-executor';
 import type { WorkflowModelScope } from './node-model-resolution';
 import { getSteeringRegistry, type NodeSteeringHandle } from './steering-registry';
@@ -7221,6 +7222,145 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
     });
   });
 
+  // ─── Decoupled stream-cancel poller (silent tool call) ──────────────────
+
+  describe('executeDagWorkflow -- silent stream cancellation', () => {
+    const runSingleNode = async (
+      store: ReturnType<typeof createMockStore>,
+      platform: IWorkflowPlatform,
+      runId: string
+    ): Promise<void> => {
+      const mockDeps = createMockDeps(store);
+      const workflowRun = makeWorkflowRun(runId);
+      await executeDagWorkflow(
+        mockDeps,
+        platform,
+        'conv-silent-cancel',
+        testDir,
+        { name: 'silent-cancel-test', nodes: [{ id: 'step1', command: 'step1' }] },
+        workflowRun,
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+    };
+
+    const findFailedEvent = (
+      store: ReturnType<typeof createMockStore>
+    ): { data: Record<string, unknown> } | undefined => {
+      const eventCalls = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+      const call = eventCalls.find(
+        (c: unknown[]) =>
+          (c[0] as { event_type: string }).event_type === 'node_failed' &&
+          (c[0] as { step_name: string }).step_name === 'step1'
+      );
+      return call?.[0] as { data: Record<string, unknown> } | undefined;
+    };
+
+    it('fails a node as cancelled while its tool call stays silent forever, even when the provider never reacts to the abort signal', async () => {
+      // No chunk ever arrives after the first one, and the mock generator
+      // never even looks at the abort signal — the in-loop cancel check
+      // (chunk-triggered) can never fire here, and neither can a provider
+      // that ignores the signal mid-tool-call. Only the decoupled poller
+      // racing `withIdleTimeout`'s own `.next()` pull can end this node.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<never>(() => {
+          // Intentionally never resolves — a genuinely unresponsive tool.
+        });
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const startedAt = Date.now();
+      await runSingleNode(store, platform, 'silent-ai-run');
+      const elapsedMs = Date.now() - startedAt;
+
+      const failed = findFailedEvent(store);
+      expect(failed).toBeDefined();
+      expect(failed!.data.error).toBe('Cancelled by user');
+      const eventTypes = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => (call[0] as { event_type: string }).event_type
+      );
+      expect(eventTypes).not.toContain('node_completed');
+      // Comfortably under the 10s in-loop-check throttle this closes the gap
+      // on — the decoupled poller's own interval is a couple of seconds.
+      expect(elapsedMs).toBeLessThan(8000);
+    }, 15_000);
+
+    it('still reaches the cancelled terminal path — not a generic failure — when the provider does react and throws after the abort', async () => {
+      // The orphaned generator's eventual throw must not surface as a second
+      // terminal event, an unhandled rejection, or a misclassified failure —
+      // the wrapper has already returned by the time this settles.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      await runSingleNode(store, platform, 'silent-ai-throw-run');
+
+      const failedEvents = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls
+        .map(call => call[0])
+        .filter(
+          e =>
+            (e as { event_type: string }).event_type === 'node_failed' &&
+            (e as { step_name: string }).step_name === 'step1'
+        );
+      expect(failedEvents).toHaveLength(1);
+      expect((failedEvents[0] as { data: { error: string } }).data.error).toBe('Cancelled by user');
+    }, 15_000);
+
+    it('stops polling once the node completes normally (no leaked timer)', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'done' };
+        yield { type: 'result', sessionId: 'sid' };
+      });
+      const store = createMockStore();
+      let statusCalls = 0;
+      store.getWorkflowRunStatus = mock(() => {
+        statusCalls++;
+        return Promise.resolve('running' as const);
+      });
+      const platform = createMockPlatform();
+
+      await runSingleNode(store, platform, 'silent-ai-leak-run');
+      const countAtCompletion = statusCalls;
+      expect(countAtCompletion).toBeGreaterThan(0);
+
+      // A real wait past one full poll interval — a leaked timer would tick
+      // again and increment the count.
+      await new Promise(resolve => setTimeout(resolve, STREAM_CANCEL_POLL_INTERVAL_MS + 500));
+      expect(statusCalls).toBe(countAtCompletion);
+    }, 15_000);
+  });
+
   // ─── Loop Node Tests ─────────────────────────────────────────────────────
 
   describe('loop node execution', () => {
@@ -10390,6 +10530,143 @@ nodes:
       const data = (failed[0][0] as Record<string, unknown>).data as Record<string, unknown>;
       expect(String(data.error)).toContain('exceeded max iterations');
     });
+  });
+
+  // ─── Decoupled stream-cancel poller (silent tool call) — loop variant ────
+
+  describe('executeDagWorkflow -- loop node silent stream cancellation', () => {
+    const runLoopNode = async (
+      store: ReturnType<typeof createMockStore>,
+      platform: IWorkflowPlatform,
+      runId: string
+    ): Promise<void> => {
+      const mockDeps = createMockDeps(store);
+      const workflowRun = makeWorkflowRun(runId);
+      await executeDagWorkflow(
+        mockDeps,
+        platform,
+        'conv-silent-loop-cancel',
+        testDir,
+        {
+          name: 'silent-loop-cancel-test',
+          nodes: [
+            {
+              id: 'loop1',
+              loop: { prompt: 'Do the work until DONE.', until: 'DONE', max_iterations: 3 },
+            },
+          ],
+        },
+        workflowRun,
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+    };
+
+    const findFailedEvent = (
+      store: ReturnType<typeof createMockStore>
+    ): { data: Record<string, unknown> } | undefined => {
+      const eventCalls = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+      const call = eventCalls.find(
+        (c: unknown[]) =>
+          (c[0] as { event_type: string }).event_type === 'node_failed' &&
+          (c[0] as { step_name: string }).step_name === 'loop1'
+      );
+      return call?.[0] as { data: Record<string, unknown> } | undefined;
+    };
+
+    it('fails a loop iteration as cancelled while its tool call stays silent forever, even when the provider never reacts to the abort signal', async () => {
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* () {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<never>(() => {
+          // Intentionally never resolves — a genuinely unresponsive tool.
+        });
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const startedAt = Date.now();
+      await runLoopNode(store, platform, 'silent-loop-run');
+      const elapsedMs = Date.now() - startedAt;
+
+      const failed = findFailedEvent(store);
+      expect(failed).toBeDefined();
+      expect(String(failed!.data.error)).toContain('Workflow cancelled');
+      const eventTypes = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => (call[0] as { event_type: string }).event_type
+      );
+      expect(eventTypes).not.toContain('node_completed');
+      expect(elapsedMs).toBeLessThan(8000);
+    }, 15_000);
+
+    it('still reaches the cancelled terminal path — not a generic failure — when the provider does react and throws after the abort', async () => {
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'assistant', content: 'partial' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      await runLoopNode(store, platform, 'silent-loop-throw-run');
+
+      const failedEvents = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls
+        .map(call => call[0])
+        .filter(
+          e =>
+            (e as { event_type: string }).event_type === 'node_failed' &&
+            (e as { step_name: string }).step_name === 'loop1'
+        );
+      expect(failedEvents).toHaveLength(1);
+      expect(String((failedEvents[0] as { data: { error: string } }).data.error)).toContain(
+        'Workflow cancelled'
+      );
+    }, 15_000);
+
+    it('stops polling once the loop iteration completes normally (no leaked timer)', async () => {
+      mockSendQueryDag.mockImplementation(function* () {
+        yield { type: 'assistant', content: 'DONE' };
+        yield { type: 'result', sessionId: 'sid' };
+      });
+      const store = createMockStore();
+      let statusCalls = 0;
+      store.getWorkflowRunStatus = mock(() => {
+        statusCalls++;
+        return Promise.resolve('running' as const);
+      });
+      const platform = createMockPlatform();
+
+      await runLoopNode(store, platform, 'silent-loop-leak-run');
+      const countAtCompletion = statusCalls;
+      expect(countAtCompletion).toBeGreaterThan(0);
+
+      await new Promise(resolve => setTimeout(resolve, STREAM_CANCEL_POLL_INTERVAL_MS + 500));
+      expect(statusCalls).toBe(countAtCompletion);
+    }, 15_000);
   });
 });
 
@@ -16960,6 +17237,150 @@ describe('shouldContinueStreamingForStatus', () => {
     const { shouldContinueStreamingForStatus } = await import('./dag-executor');
     expect(shouldContinueStreamingForStatus('pending')).toBe(false);
     expect(shouldContinueStreamingForStatus('invalid-status')).toBe(false);
+  });
+});
+
+describe('startStreamCancelPoller', () => {
+  it('checks the run status immediately, then re-arms on a continuable status', async () => {
+    const { startStreamCancelPoller, STREAM_CANCEL_POLL_INTERVAL_MS } =
+      await import('./dag-executor');
+    const store = createMockStore();
+    let callCount = 0;
+    let resolveStatus: ((status: string) => void) | undefined;
+    store.getWorkflowRunStatus = mock(() => {
+      callCount++;
+      return new Promise<string>(resolve => {
+        resolveStatus = resolve;
+      });
+    });
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const setTimeoutSpy = spyOn(global, 'setTimeout');
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    try {
+      // The first read is issued synchronously, with no setTimeout involved.
+      expect(callCount).toBe(1);
+      resolveStatus!('running');
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(setTimeoutSpy).toHaveBeenCalledWith(
+        expect.any(Function),
+        STREAM_CANCEL_POLL_INTERVAL_MS
+      );
+      expect(controller.signal.aborted).toBe(false);
+    } finally {
+      stop();
+      setTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('aborts the controller once the status stops permitting streaming, and reports it via onDetected', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    store.getWorkflowRunStatus = mock(() => Promise.resolve('cancelled' as const));
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    let detected: string | null | undefined;
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller, status => {
+      detected = status;
+    });
+    try {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(controller.signal.aborted).toBe(true);
+      expect(detected).toBe('cancelled');
+    } finally {
+      stop();
+    }
+  });
+
+  it('a deleted run (null status) also aborts the controller', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    store.getWorkflowRunStatus = mock(() => Promise.resolve(null));
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    try {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(controller.signal.aborted).toBe(true);
+    } finally {
+      stop();
+    }
+  });
+
+  it('stop() before an in-flight read resolves discards the result (no late abort)', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    let resolveStatus: ((status: string) => void) | undefined;
+    store.getWorkflowRunStatus = mock(
+      () =>
+        new Promise<string>(resolve => {
+          resolveStatus = resolve;
+        })
+    );
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    stop();
+    resolveStatus!('cancelled');
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(controller.signal.aborted).toBe(false);
+  });
+
+  it('stop() clears the pending re-arm timer — no leaked poller after the pass ends', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    let callCount = 0;
+    store.getWorkflowRunStatus = mock(() => {
+      callCount++;
+      return Promise.resolve('running' as const);
+    });
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    const clearTimeoutSpy = spyOn(global, 'clearTimeout');
+    try {
+      const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+      // Let the immediate tick resolve and arm its re-check timer.
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(callCount).toBe(1);
+      stop();
+      expect(clearTimeoutSpy).toHaveBeenCalled();
+      // A second, redundant stop() must not throw or double-clear anything odd.
+      expect(() => stop()).not.toThrow();
+      // No further status reads even across a real interval — the timer really
+      // was cleared, not just scheduled to no-op.
+      await new Promise(resolve => setTimeout(resolve, 50));
+      expect(callCount).toBe(1);
+    } finally {
+      clearTimeoutSpy.mockRestore();
+    }
+  });
+
+  it('an already-aborted controller short-circuits every tick', async () => {
+    const { startStreamCancelPoller } = await import('./dag-executor');
+    const store = createMockStore();
+    let callCount = 0;
+    store.getWorkflowRunStatus = mock(() => {
+      callCount++;
+      return Promise.resolve('running' as const);
+    });
+    const deps = createMockDeps(store);
+    const controller = new AbortController();
+    controller.abort();
+    const stop = startStreamCancelPoller(deps, 'run-1', 'node-1', controller);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(callCount).toBe(0);
+    stop();
   });
 });
 
