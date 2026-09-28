@@ -1,0 +1,2629 @@
+{
+  "label": "vq74-grok",
+  "runId": "94d805b7ae6cb8976d3f136375dc4923",
+  "nodeId": "grok-node",
+  "clickAtMs": 84,
+  "sampleCount": 436,
+  "firstBandGoneMs": 20272,
+  "firstTranscriptMs": 20272,
+  "gapFrames": 0,
+  "overlapFrames": 0,
+  "samples": [
+    {
+      "t": 0,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": false
+    },
+    {
+      "t": 39,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": false
+    },
+    {
+      "t": 84,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": false
+    },
+    {
+      "t": 126,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 175,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 230,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 317,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 365,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 467,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 561,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 624,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 672,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 714,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 749,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 789,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 835,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 873,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 914,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 947,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 995,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1033,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1108,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1165,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1209,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1243,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1292,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1336,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1393,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1441,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1475,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1507,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1542,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1592,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1632,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1683,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1727,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1781,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1822,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1859,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1902,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1951,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 1990,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2027,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2076,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2124,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2174,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2230,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2273,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2323,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2367,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2402,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2442,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2490,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2524,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2557,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2594,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2640,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2692,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2741,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2804,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2840,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2900,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2945,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 2990,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3041,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3097,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3154,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3202,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3259,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3307,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3355,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3417,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3458,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3508,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3553,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3590,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3622,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3657,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3707,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3757,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3807,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3855,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3899,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 3956,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4025,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4063,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4100,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4133,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4166,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4208,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4250,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4290,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4336,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4406,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4457,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4500,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4544,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4589,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4637,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4692,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4748,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4805,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4840,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4874,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4907,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4954,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 4997,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5040,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5097,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5149,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5191,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5241,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5276,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5313,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5348,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5380,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5414,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5452,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5490,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5522,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5568,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5615,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5666,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5732,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5779,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5814,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5859,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5898,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 5936,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6021,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6060,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6121,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6201,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6309,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6370,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6428,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6544,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6590,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6634,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6679,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6725,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6760,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6804,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6841,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6884,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 6923,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7009,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7069,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7114,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7169,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7220,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7284,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7336,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7371,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7405,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7458,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7511,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7553,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7594,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7637,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7685,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7769,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7825,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7860,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7893,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7937,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 7995,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8044,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8101,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8192,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8253,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8303,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8359,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8400,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8438,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8473,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8517,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8600,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8652,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8686,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8731,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8772,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8807,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8852,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8892,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8931,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 8972,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9027,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9071,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9122,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9185,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9226,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9261,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9300,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9339,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9410,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9502,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9561,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9609,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9692,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9735,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9781,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9816,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9855,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9900,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9942,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 9974,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10008,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10045,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10115,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10223,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10268,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10422,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10470,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10506,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10552,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10588,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10620,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10656,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10689,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10725,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10760,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10794,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10831,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10871,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10917,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10959,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 10992,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11026,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11062,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11103,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11145,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11189,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11232,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11269,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11312,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11358,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11393,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11433,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11478,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11521,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11556,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11593,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11628,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11667,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11706,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11751,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11795,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11833,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11869,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11902,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11935,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 11972,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12007,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12040,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12097,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12160,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12203,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12237,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12274,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12312,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12357,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12397,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12433,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12472,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12530,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12569,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12603,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12643,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12681,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12760,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12824,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12863,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12897,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 12945,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13004,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13061,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13114,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13156,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13212,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13272,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13326,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13377,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13411,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13455,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13494,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13539,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13592,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13656,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13693,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13729,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13774,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13814,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13864,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13905,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13943,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 13989,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14023,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14059,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14093,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14129,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14164,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14198,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14231,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14266,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14308,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14348,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14387,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14433,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14508,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14580,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14623,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14679,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14722,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14772,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14820,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14870,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14921,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 14967,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15005,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15042,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15091,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15130,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15166,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15201,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15235,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15271,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15308,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15350,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15391,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15425,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15460,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15497,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15531,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15565,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15600,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15635,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15670,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15706,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15741,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15773,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15820,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15887,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 15957,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16010,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16062,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16105,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16151,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16202,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16260,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16307,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16347,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16385,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16431,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16491,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16548,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16595,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16632,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16667,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16716,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16795,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16845,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16880,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 16926,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17001,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17057,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17095,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17131,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17175,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17219,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17261,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17294,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17326,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17364,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17410,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17456,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17491,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17531,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17576,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17614,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17662,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17718,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17784,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17837,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17875,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 17931,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18003,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18059,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18099,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18157,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18241,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18350,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18403,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18459,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18510,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18555,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18593,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18651,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18687,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18749,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18819,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18889,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 18946,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19004,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19044,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19081,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19120,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19153,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19187,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19255,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19304,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19345,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19383,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19420,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19466,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19507,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19566,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19622,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19675,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19728,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19776,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19830,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19866,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19922,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 19961,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 20016,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 20065,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 20124,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 20170,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 20224,
+      "bandVisible": true,
+      "bandText": "1vq74-grok redirect probesending…",
+      "transcriptVisible": false
+    },
+    {
+      "t": 20272,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": true
+    },
+    {
+      "t": 20317,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": true
+    },
+    {
+      "t": 20353,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": true
+    },
+    {
+      "t": 20392,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": true
+    },
+    {
+      "t": 20437,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": true
+    },
+    {
+      "t": 20511,
+      "bandVisible": false,
+      "bandText": null,
+      "transcriptVisible": true
+    }
+  ]
+}
