@@ -216,3 +216,12 @@ Status: DONE_WITH_CONCERNS
 Summary: All four round-7 findings are fixed in their original triggers (VQ7-1 with 13 real withdraw races, VQ7-2 with 10/10 abandons, VQ7-4 with 0 gaps in 19 cycles), except that VQ7-3 still reproduces on the restart-recovery state (VQ8-4). There are three new defects. A loop node that restarts after a Stop is shown as live and steerable, its durable queue is hidden, and it is called "started detached" (VQ8-1, major). A live loop's next iteration forces the finished-iteration view and drops the operator's composer and focus (VQ8-2, minor). Focus placed on the last row after Stop falls to `<body>` when the turn resumes (VQ8-3, minor). One cosmetic is also logged (VQ8-5).
 
 Verdict: REJECT
+
+## Decisions (2026-09-29)
+
+1. VQ8-1: the loop path stamps the steering provider exactly like the prompt path through one shared helper, so a restarted loop node is classified `recovery_required` with its durable queue kept.
+2. VQ8-2 is raised to major: it happens at every iteration boundary for every viewer and breaks AC 10.1. The room follows the live execution when the viewer was on the previous live execution, and stays only when the viewer explicitly chose an older one. The composer and focus survive the boundary.
+3. VQ8-3 and VQ8-4: focus never falls to `<body>`; the cold-load guard covers the recovery path.
+4. VQ8-5: the optimistic sending row renders in the same state update as the click.
+
+Fixes are owned by the `qa8-fixes` follow-up work.

@@ -39,7 +39,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA6 fixes merged; e2e 154/0/4; pill border colors tokenized + brand guide
 - [x] QA round 7: REJECT (0 major, 3 minor, 1 cosmetic); all VQ6 fixes hold
 - [x] QA7 fixes merged; e2e 154/0/4; validate green
-- [ ] QA round 8 (final acceptance, Verdict: ACCEPT required)
+- [x] QA round 8: REJECT (2 major incl. raised VQ8-2, 2 minor, 1 cosmetic); all VQ7 fixes hold except s8 focus
+- [ ] QA8 fixes — agent qa8-fixes
+- [ ] QA round 9 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
 
