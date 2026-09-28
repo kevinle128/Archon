@@ -1434,4 +1434,55 @@ describe('runDeepseekAcpTurn', () => {
     expect((error as Error).message).toContain('exited before the ACP turn completed');
     expect(child.signals).toContain('SIGTERM');
   });
+
+  test('a caller that stops pulling after abort still gets the child reaped, with no further .next() call', async () => {
+    // This reproduces the exact shape a caller like `withIdleTimeout`
+    // produces in production: it pulls one chunk, observes the node's
+    // AbortController fire, and never calls `.next()` again. An async
+    // generator that has just yielded is suspended AT that yield — any
+    // cleanup living inside its own loop (a `finally` included) requires a
+    // further `.next()` to even reach, so a reap wired only into the loop's
+    // own race can never fire here. This differs from the "unanswered ACP
+    // request" test above, where the outer generator is still parked INSIDE
+    // its very first, still-running `gen.next()`/`Promise.race` call — an
+    // in-loop race can still resolve that specific await. Here the loop has
+    // already produced one chunk and stopped being resumed entirely, which
+    // is what the reap must not depend on.
+    const hold = createDeferred<void>();
+    const fake = createFakeDsh({
+      sessionId: 'sess-parked',
+      promptUpdates: [
+        { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'partial' } },
+      ],
+      promptHold: hold,
+      // `session/cancel` is acknowledged but never resolves `promptHold`, so
+      // the graceful cancel path can never win either — only the
+      // generator-independent stuck-reap listener can end this.
+      resolvePromptHoldOnCancel: false,
+    });
+    const child = new FakeChild();
+    const spawnImpl = (() => {
+      attachAgent(child, fake);
+      return child as unknown as ChildProcess;
+    }) as typeof spawn;
+    const controller = new AbortController();
+    const gen = runDeepseekAcpTurn(processInput({ abortSignal: controller.signal }), {
+      spawn: spawnImpl,
+      terminateGraceMs: 0,
+      abortStuckGraceMs: 5,
+    });
+
+    const first = await gen.next();
+    expect(first.done).toBe(false);
+    expect(first.value).toMatchObject({ type: 'assistant', content: 'partial' });
+
+    controller.abort();
+    // Deliberately never call gen.next() again below — proving the reap
+    // does not depend on it.
+    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(child.signals).toContain('SIGTERM');
+
+    hold.resolve();
+    await gen.return(undefined).catch(() => undefined);
+  });
 });

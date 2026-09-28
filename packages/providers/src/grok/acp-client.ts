@@ -581,13 +581,13 @@ export async function* runGrokAcpTurn(
   };
   let abortStuckTimer: ReturnType<typeof setTimeout> | undefined;
   const abortSignal = input.abortSignal;
+  const armAbortStuckReap = (): void => {
+    abortStuckTimer = setTimeout(() => {
+      if (finished) return;
+      void reapOnce();
+    }, abortStuckGraceMs);
+  };
   if (abortSignal !== undefined) {
-    const armAbortStuckReap = (): void => {
-      abortStuckTimer = setTimeout(() => {
-        if (finished) return;
-        void reapOnce();
-      }, abortStuckGraceMs);
-    };
     if (abortSignal.aborted) armAbortStuckReap();
     else abortSignal.addEventListener('abort', armAbortStuckReap, { once: true });
   }
@@ -619,6 +619,12 @@ export async function* runGrokAcpTurn(
   } finally {
     finished = true;
     if (abortStuckTimer !== undefined) clearTimeout(abortStuckTimer);
+    // `{ once: true }` self-removes once fired, but a turn that completes
+    // (or fails) BEFORE abort ever fires leaves the listener attached — the
+    // dag-executor reuses one AbortController across every turn of a node,
+    // so a long-running node would otherwise accumulate one dead listener
+    // per turn.
+    abortSignal?.removeEventListener('abort', armAbortStuckReap);
     try {
       await gen.return(undefined);
     } catch {
