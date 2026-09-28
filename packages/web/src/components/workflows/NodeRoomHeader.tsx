@@ -117,6 +117,7 @@ export function NodeRoomHeader({
     provider: model.provider,
     model: model.model,
     idleAwaitExpired,
+    statusReason: model.statusReason,
     iterationPrefix,
     recoveryRequired,
   });

@@ -18,6 +18,7 @@ const ITERATION_TWO: ExecutionHeaderModel = {
   nodeLabel: 'Review',
   executionLabel: 'Iteration 2',
   status: 'running',
+  statusReason: null,
   startedOffsetMs: 1500,
   startedAt: '2026-09-08T04:52:00.000Z',
   durationMs: null,

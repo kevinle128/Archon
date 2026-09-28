@@ -313,6 +313,8 @@ export function ConsoleInspectPane({
             .filter(entry => entry.row.nodeId === selectedRow.nodeId)
             .map(entry => toExecutionRow(entry.row)),
           loopMaxIterations: loopMaxIterationsForNode(selectedDefinitionNode),
+          nodeStatus: selectedNodeState?.status,
+          nodeError: selectedNodeState?.error,
         });
   const headerOptions =
     selectedNodeId === null

@@ -519,6 +519,8 @@ export function ConsoleNodeRoom({
   const waitingOnDefinition = definitionPending && isUnknownAgentFallback(resolution);
   const agentActive = nodeId !== null && isAgentKind(resolution?.kind) && !waitingOnDefinition;
   const row = nodeId === null ? null : inspectRow(nodeId, selectedRow, nodeStates);
+  const selectedNodeState =
+    row === null ? undefined : nodeStates.find(state => state.nodeId === row.nodeId);
   const resolvedScopeKey =
     scopeKey ??
     (row === null
@@ -708,6 +710,8 @@ export function ConsoleNodeRoom({
           events,
           runStartedAt: run.startedAt,
           loopMaxIterations: loopMaxIterationsForNode(resolution?.definitionNode),
+          nodeStatus: selectedNodeState?.status,
+          nodeError: selectedNodeState?.error,
         }));
   const computedOptions: readonly ConsoleExecutionHeaderOption[] =
     headerOptions ??
@@ -801,8 +805,6 @@ export function ConsoleNodeRoom({
     ),
     ...unanchoredAsks,
   ];
-  const selectedNodeState =
-    row === null ? undefined : nodeStates.find(state => state.nodeId === row.nodeId);
   const firstActionableId = orderedAsks.find(interaction => {
     if (interaction.status !== 'pending') return false;
     if (parseAskEnvelope(interaction.envelope) === null) return false;

@@ -1010,6 +1010,37 @@ describe('headerMetaLine', () => {
       })
     ).toBe(`iteration 1 · started ${startedHours()}:52 · 6m 04s · omp · claude-opus-5`);
   });
+
+  test('reports the node’s own failure reason in place of a duration number', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'failed',
+        durationMs: 9_000,
+        runOfTotal: null,
+        provider: 'claude',
+        model: 'haiku',
+        statusReason: "exceeded max iterations (1) without a passing 'until_bash' check",
+      })
+    ).toBe(
+      `started ${startedHours()}:52 · exceeded max iterations (1) without a passing 'until_bash' check · claude · haiku`
+    );
+  });
+
+  test('idle-await expiry wins over a supplied status reason', () => {
+    expect(
+      headerMetaLine({
+        startedAt: '2026-09-08T04:52:00.000Z',
+        status: 'failed',
+        durationMs: 1_800_000,
+        runOfTotal: null,
+        provider: null,
+        model: null,
+        idleAwaitExpired: true,
+        statusReason: 'some other reason',
+      })
+    ).toBe(`started ${startedHours()}:52 · failed after idle timeout`);
+  });
 });
 
 describe('loopMaxIterationsForNode', () => {
@@ -1423,6 +1454,55 @@ describe('buildExecutionHeader', () => {
     // the loop's SECOND start row, never the first retry's.
     expect(header.provider).toBe('codex');
     expect(header.model).toBe('gpt-5');
+  });
+
+  test('status reads the node’s own condition, not a historical row’s, whenever they differ', () => {
+    // A loop that exceeded max_iterations reads Failed at the node level even
+    // while an earlier iteration that itself completed is selected.
+    const failedNode = buildExecutionHeader({
+      row: row({
+        id: 'iter-1',
+        status: 'completed',
+        order: 0,
+        selection: { kind: 'loop_iteration', iteration: 1 },
+      }),
+      events: [],
+      runStartedAt: RUN_STARTED_AT,
+      nodeStatus: 'failed',
+      nodeError: "exceeded max iterations (1) without a passing 'until_bash' check",
+    });
+    expect(failedNode.status).toBe('failed');
+    expect(failedNode.statusReason).toBe(
+      "exceeded max iterations (1) without a passing 'until_bash' check"
+    );
+
+    // A node that later succeeded on retry reads Completed even while
+    // viewing the earlier run that failed.
+    const completedAfterRetry = buildExecutionHeader({
+      row: row({
+        id: 'run-1',
+        status: 'failed',
+        order: 0,
+        selection: { kind: 'occurrence', occurrenceId: 'occ-1', attemptId: 'att-1', retryEpoch: 0 },
+      }),
+      events: [],
+      runStartedAt: RUN_STARTED_AT,
+      nodeStatus: 'completed',
+      nodeError: 'some earlier failure',
+    });
+    expect(completedAfterRetry.status).toBe('completed');
+    // The reason is only ever meaningful while the node itself is failed.
+    expect(completedAfterRetry.statusReason).toBeNull();
+  });
+
+  test('status falls back to the selected row when no node status is supplied', () => {
+    const header = buildExecutionHeader({
+      row: row({ id: 'solo', status: 'running', order: 0 }),
+      events: [],
+      runStartedAt: RUN_STARTED_AT,
+    });
+    expect(header.status).toBe('running');
+    expect(header.statusReason).toBeNull();
   });
 });
 

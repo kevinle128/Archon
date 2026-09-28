@@ -370,6 +370,7 @@ describe('ConsoleNodeRoom', () => {
       renderRoom({
         run: run({ id: 'run-agent' }),
         loadMessages,
+        nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'awaiting' })],
         selectedRow: row({
           nodeId: 'review',
           label: 'Review ×2',
