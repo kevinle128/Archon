@@ -205,6 +205,22 @@ interface NodeTurnInterruptedEvent {
   nodeId: string;
 }
 
+/**
+ * A live interruptible handle just began a provider pass — the node's
+ * steering sub-state is (re)projecting `generating`, whether this is the
+ * node's very first turn, a re-ask, a loop iteration, or a redirect resuming
+ * from idle-after-interrupt. Fired unconditionally on every pass so an
+ * observing tab always has a cheap trigger to refetch instead of guessing
+ * which passes are "interesting" — the idle→generating flip a Send-now
+ * dispatch causes has no other live signal, the same gap
+ * `NodeTurnInterruptedEvent` closes for the opposite direction.
+ */
+interface NodeTurnStartedEvent {
+  type: 'node_turn_started';
+  runId: string;
+  nodeId: string;
+}
+
 // ─── Subagent Task Lifecycle (aggregated from Claude provider task_* chunks) ──
 // Forwarded by the dag-executor whenever a `task_started` / `task_progress` /
 // `task_notification` MessageChunk arrives from the provider. The bridge maps
@@ -286,6 +302,7 @@ export type WorkflowEmitterEvent =
   | InteractionResolvedEvent
   | WorkflowCancelledEvent
   | NodeTurnInterruptedEvent
+  | NodeTurnStartedEvent
   | TaskActivityEvent
   | HookActivityEvent
   | ContainerLifecycleEvent;

@@ -380,6 +380,25 @@ export function sendingListLabel(count: number): string {
 }
 
 /**
+ * Drop a pending row the moment its message id is already a delivered
+ * transcript row, so the dispatching band and the transcript never both
+ * show the same message at once. The dock's own `dock.sent` still carries
+ * the row for the short window between the transcript's (faster, ~1s-poll)
+ * confirmation and this tab's own send-resolve or next queue poll — this
+ * filter is purely presentational and must be applied everywhere `sent`
+ * feeds the band (row list, count, "all dispatching" header selection,
+ * accessible names), never to the state machine itself, or the header and
+ * the rows beneath it would disagree about how many messages remain.
+ */
+export function visiblePendingReceipts(
+  sent: readonly LocalSentReceipt[],
+  deliveredMessageIds: ReadonlySet<string>
+): readonly LocalSentReceipt[] {
+  if (deliveredMessageIds.size === 0) return sent;
+  return sent.filter(receipt => !deliveredMessageIds.has(receipt.messageId));
+}
+
+/**
  * True when every visible pending row is actively dispatching — a send
  * request in flight, never a claimable queued row. The band header must
  * never contradict the rows listed under it: `queued · 0` above a visible
@@ -871,6 +890,14 @@ export interface QueueSnapshot {
   readonly auto_send: boolean;
   readonly capabilities: { readonly soft_injection: boolean; readonly delivery_ack: boolean };
   readonly queued: readonly QueuedGuidanceRow[];
+  /**
+   * Server-authoritative projected sub-state for a live interruptible
+   * handle, read fresh on every poll — null for a queue-only or non-live
+   * node. Reconciled into the dock unconditionally on every accepted
+   * snapshot (see `applyQueueSnapshot`), independent of the separate
+   * `subState` prop a host may also thread in from its own, slower poll.
+   */
+  readonly sub_state: SteeringSubState | null;
 }
 
 /**
@@ -888,6 +915,18 @@ export interface QueueSnapshot {
  *   went terminal, still learns exactly what was never delivered, because
  *   the server — not this tab's history — is what remembers.
  * - `executionState`, `autoSend`, and `softInjection` mirror the snapshot.
+ * - `subState` reconciles to `snapshot.sub_state` on EVERY accepted
+ *   snapshot, not only when it differs from the value last observed. A host
+ *   that also threads a `subState` prop from a separate, slower poll can
+ *   miss a transition entirely when the prop's own sampled value happens to
+ *   read the same before and after (another shell flipped it and back
+ *   between two of the prop's polls) — this dock-owned poll is the
+ *   self-healing path that never depends on the prop noticing a change.
+ *   `interruptInFlight` clears only on `idle-after-interrupt` (proof a
+ *   Stop actually landed server-side) or a lost projection (`null`); a
+ *   snapshot that still reads `generating` while a Stop is mid-flight
+ *   leaves it untouched, so "Stopping…" never flips back to "Stop" before
+ *   the interrupt response itself resolves the transient.
  *
  * `sendInFlight`, `pendingRetry`, `refusal`, `withdrawingMessageId`,
  * `sendingNowMessageId`, and `queueGeneration` are preserved exactly.
@@ -938,10 +977,12 @@ export function applyQueueSnapshot(
     [...nextDeliveryByMessageId].every(
       ([messageId, deliveryState]) => state.deliveryByMessageId.get(messageId) === deliveryState
     );
+  const subStateUnchanged = state.subState === snapshot.sub_state;
   const unchanged =
     sentUnchanged &&
     neverSentUnchanged &&
     deliveryUnchanged &&
+    subStateUnchanged &&
     state.executionState === snapshot.execution_state &&
     state.autoSend === snapshot.auto_send &&
     state.softInjection === snapshot.capabilities.soft_injection;
@@ -955,6 +996,18 @@ export function applyQueueSnapshot(
     executionState: snapshot.execution_state,
     autoSend: snapshot.auto_send,
     softInjection: snapshot.capabilities.soft_injection,
+    ...(subStateUnchanged
+      ? null
+      : {
+          subState: snapshot.sub_state,
+          interruptInFlight: snapshot.sub_state === 'generating' ? state.interruptInFlight : false,
+          notice:
+            snapshot.sub_state === 'idle-after-interrupt'
+              ? STEERING_AGENT_IDLE
+              : snapshot.sub_state === 'generating'
+                ? STEERING_AGENT_GENERATING
+                : state.notice,
+        }),
   };
 }
 

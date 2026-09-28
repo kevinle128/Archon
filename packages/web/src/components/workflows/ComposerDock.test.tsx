@@ -888,6 +888,26 @@ describe('ComposerDock', () => {
     expect(children.indexOf(stop)).toBeLessThan(children.indexOf(queue));
   });
 
+  test('the queue poll corrects Stop/Send now even when the projected subState prop never changes', async () => {
+    const ctrl = controllableRead();
+    // The prop reflects a stale projection this tab's own render never sees
+    // update — the same shape as a parent whose separate, slower poll
+    // sampled the same value on both sides of a transition another shell
+    // caused. The dock's own queue poll must still self-heal.
+    await renderDock({
+      subState: 'idle-after-interrupt',
+      pollIntervalMs: 60_000,
+      readQueue: ctrl.read,
+    });
+    expect(host.textContent).not.toContain('Stop');
+    expect(sendNowButton()).not.toBeNull();
+
+    await settleSnapshot(ctrl, okQueue([], { sub_state: 'generating' }));
+
+    expect(stopButton()).not.toBeNull();
+    expect(host.textContent).not.toContain('Send now');
+  });
+
   test('Stop resolves idle: Stopping… transient, one announcement, focus leaves the dock', async () => {
     let focused = 0;
     const focusLastRow = (): void => {
@@ -1246,6 +1266,7 @@ describe('ComposerDock', () => {
         operator_user_id: row.operator_user_id ?? null,
         state: row.state ?? 'queued',
       })),
+      sub_state: overrides?.sub_state ?? null,
     };
   }
 
@@ -1696,6 +1717,7 @@ describe('ComposerDock', () => {
       ctrl,
       okQueue([{ message_id: 'id-a', message: 'alpha' }], {
         capabilities: { soft_injection: true, delivery_ack: false },
+        sub_state: 'generating',
       })
     );
 

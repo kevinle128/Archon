@@ -28040,6 +28040,45 @@ describe('executeDagWorkflow -- interrupt and redirect (#183)', () => {
     );
   });
 
+  it('emits node_turn_started on every pass and node_turn_interrupted on Stop, in order, so an observing tab always has a live refetch trigger', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* (
+      _prompt: string,
+      _cwd: string,
+      _resume?: string,
+      options?: SendQueryOptions
+    ) {
+      calls++;
+      if (calls === 1) {
+        void liveHandle(RUN_ID, 'review').interrupt();
+        yield { type: 'assistant', content: 'partial output' };
+        yield { type: 'result', sessionId: 'sess-1', terminalReason: 'aborted_streaming' };
+        return;
+      }
+      yield { type: 'assistant', content: 'redirected output' };
+      yield { type: 'result', sessionId: 'sess-2' };
+    });
+    const store = createMockStore();
+
+    const captured: string[] = [];
+    const unsubscribe = getWorkflowEventEmitter().subscribe(e => {
+      if (e.runId === RUN_ID && e.nodeId === 'review') captured.push(e.type);
+    });
+
+    try {
+      const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+      await awaitIdle(RUN_ID, 'review');
+      sendNow(store, RUN_ID, 'review', 'm-new', 'new instruction', 'op-b');
+      await run;
+    } finally {
+      unsubscribe();
+    }
+
+    expect(
+      captured.filter(type => type === 'node_turn_started' || type === 'node_turn_interrupted')
+    ).toEqual(['node_turn_started', 'node_turn_interrupted', 'node_turn_started']);
+  });
+
   it('interrupt marker wins over an isError/errorSubtype result — idles instead of failing', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {

@@ -197,6 +197,14 @@ export function mapWorkflowEvent(event: WorkflowEmitterEvent): string | null {
         timestamp: Date.now(),
       });
 
+    case 'node_turn_started':
+      return JSON.stringify({
+        type: 'node_turn_started',
+        runId: event.runId,
+        nodeId: event.nodeId,
+        timestamp: Date.now(),
+      });
+
     case 'task_activity':
       return JSON.stringify({
         type: 'workflow_task_activity',

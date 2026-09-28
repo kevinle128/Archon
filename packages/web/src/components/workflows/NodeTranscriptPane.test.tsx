@@ -307,8 +307,14 @@ describe('NodeTranscriptPane', () => {
   let queryClient: InstanceType<typeof reactQuery.QueryClient>;
   let nodeTranscriptPane: typeof import('./NodeTranscriptPane');
   let queueFetchSpy: { mockRestore: () => void } | undefined;
+  // The stubbed GET .../queue response's sub_state — kept in sync with
+  // whatever `nodeState.steeringSubState` a test renders, matching the real
+  // server (both wire fields are read from the same live handle). Reset to
+  // null (queue-only/no live handle) before each test.
+  let queueSubStateStub: 'generating' | 'idle-after-interrupt' | null = null;
 
   beforeEach(async () => {
+    queueSubStateStub = null;
     notifyManager.setScheduler((cb: () => void): void => {
       cb();
     });
@@ -349,6 +355,7 @@ describe('NodeTranscriptPane', () => {
               auto_send: false,
               capabilities: { soft_injection: false, delivery_ack: false },
               queued: [],
+              sub_state: queueSubStateStub,
             }),
             {
               status: 200,
@@ -1873,6 +1880,7 @@ describe('NodeTranscriptPane', () => {
   }
 
   test('a generating projection renders Stop in the live dock', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1892,6 +1900,7 @@ describe('NodeTranscriptPane', () => {
   });
 
   test('an idle-after-interrupt projection renders Send now and the disclosure', async () => {
+    queueSubStateStub = 'idle-after-interrupt';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1918,6 +1927,7 @@ describe('NodeTranscriptPane', () => {
   });
 
   test('dock removal moves focus to the last transcript row, never body', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,
@@ -1961,6 +1971,7 @@ describe('NodeTranscriptPane', () => {
   });
 
   test('with no transcript rows the scroller itself takes the fallback focus', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderPane({
         row: REVIEW_ROW,

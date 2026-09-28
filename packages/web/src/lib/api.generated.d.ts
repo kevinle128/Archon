@@ -6090,6 +6090,8 @@ export interface components {
             auto_send: boolean;
             capabilities: components["schemas"]["SteeringCapabilities"];
             queued: components["schemas"]["QueuedGuidanceMessage"][];
+            /** @enum {string|null} */
+            sub_state: "generating" | "idle-after-interrupt" | null;
         };
         SteeringCapabilities: {
             soft_injection: boolean;

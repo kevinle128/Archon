@@ -2594,6 +2594,16 @@ async function executeNodeInternal(
       passTurn.token = interruptibleHandle.beginTurn(controller, softInjection);
       passOptions.interruptSignal = controller.signal;
       passOptions.softInjection = softInjection.channel;
+      // An observing tab (a redirect dispatched from a different shell, or a
+      // node-state poll that sampled 'generating' on both sides of an idle
+      // window it missed) has no other live signal that a pass just started
+      // — emit one so it refetches promptly instead of waiting on an
+      // unrelated event or the next poll tick.
+      getWorkflowEventEmitter().emit({
+        type: 'node_turn_started',
+        runId: workflowRun.id,
+        nodeId: node.id,
+      });
     }
     try {
       let sawStreamChunk = false;
@@ -6665,6 +6675,16 @@ async function executeLoopNodeInner(
             turnToken = interruptibleHandle.beginTurn(turnInterruptController, softInjection);
             iterationOptions.interruptSignal = turnInterruptController.signal;
             iterationOptions.softInjection = softInjection.channel;
+            // An observing tab (a redirect dispatched from a different
+            // shell, or a node-state poll that sampled 'generating' on both
+            // sides of an idle window it missed) has no other live signal
+            // that a pass just started — emit one so it refetches promptly
+            // instead of waiting on an unrelated event or the next poll tick.
+            getWorkflowEventEmitter().emit({
+              type: 'node_turn_started',
+              runId: workflowRun.id,
+              nodeId: node.id,
+            });
           }
 
           // Reask attempts start a FRESH session (mirrors runStreamPass in

@@ -248,9 +248,15 @@ describe('ConsoleNodeRoom', () => {
   let root: Root;
   let closed = 0;
   let queueFetchSpy: { mockRestore: () => void } | undefined;
+  // The stubbed GET .../queue response's sub_state — kept in sync with
+  // whatever `nodeState.steeringSubState` a test renders, matching the real
+  // server (both wire fields are read from the same live handle). Reset to
+  // null (queue-only/no live handle) before each test.
+  let queueSubStateStub: 'generating' | 'idle-after-interrupt' | null = null;
 
   beforeEach(() => {
     closed = 0;
+    queueSubStateStub = null;
     win = installHappyDom();
     const el = win.document.createElement('div');
     win.document.body.appendChild(el);
@@ -279,6 +285,7 @@ describe('ConsoleNodeRoom', () => {
               auto_send: false,
               capabilities: { soft_injection: false, delivery_ack: false },
               queued: [],
+              sub_state: queueSubStateStub,
             }),
             {
               status: 200,
@@ -1575,6 +1582,7 @@ describe('ConsoleNodeRoom', () => {
   });
 
   test('a generating projection renders Stop in the console dock', async () => {
+    queueSubStateStub = 'generating';
     await act(async () => {
       renderRoom({
         isLive: true,
@@ -1600,6 +1608,7 @@ describe('ConsoleNodeRoom', () => {
   });
 
   test('an idle-after-interrupt projection renders Send now and the disclosure', async () => {
+    queueSubStateStub = 'idle-after-interrupt';
     await act(async () => {
       renderRoom({
         isLive: true,
@@ -1632,6 +1641,7 @@ describe('ConsoleNodeRoom', () => {
   });
 
   test('dock removal moves focus to the last transcript row, never body', async () => {
+    queueSubStateStub = 'generating';
     const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
       messages: [...FIXTURE],
     });
@@ -1686,6 +1696,7 @@ describe('ConsoleNodeRoom', () => {
   });
 
   test('with no transcript rows the console scroller takes the fallback focus', async () => {
+    queueSubStateStub = 'generating';
     const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
       messages: [],
     });
@@ -5794,6 +5805,7 @@ describe('ConsoleNodeRoom', () => {
                 auto_send: false,
                 capabilities: { soft_injection: false, delivery_ack: false },
                 queued,
+                sub_state: null,
               }),
               {
                 status: 200,

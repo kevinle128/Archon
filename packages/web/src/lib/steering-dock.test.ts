@@ -67,6 +67,7 @@ import {
   SteeringRequestError,
   toSteeringRefusal,
   toSteeringRequestError,
+  visiblePendingReceipts,
   willSendBandHeader,
   willSendCountPhrase,
   willSendListLabel,
@@ -101,6 +102,7 @@ function mkSnapshot(
     auto_send: overrides?.auto_send ?? false,
     capabilities: overrides?.capabilities ?? { soft_injection: false, delivery_ack: false },
     queued,
+    sub_state: overrides?.sub_state ?? null,
   };
 }
 
@@ -908,6 +910,27 @@ describe('allPendingDispatching', () => {
   });
 });
 
+describe('visiblePendingReceipts', () => {
+  function receiptWithState(messageId: string, state: LocalSentReceipt['state']): LocalSentReceipt {
+    return { messageId, message: 'm', state, operatorUserId: null };
+  }
+
+  test('returns the same array reference when nothing is delivered yet', () => {
+    const sent = [receiptWithState('a', 'dispatching')];
+    expect(visiblePendingReceipts(sent, new Set())).toBe(sent);
+  });
+
+  test('drops a row whose message id already landed as a transcript row', () => {
+    const sent = [receiptWithState('a', 'dispatching'), receiptWithState('b', 'queued')];
+    expect(visiblePendingReceipts(sent, new Set(['a']))).toEqual([receiptWithState('b', 'queued')]);
+  });
+
+  test('an id in the set with no matching row is a no-op', () => {
+    const sent = [receiptWithState('a', 'queued')];
+    expect(visiblePendingReceipts(sent, new Set(['unrelated']))).toEqual(sent);
+  });
+});
+
 describe('steeringScopeKey', () => {
   test('joins run and node id', () => {
     expect(steeringScopeKey('run-1', 'grp.body')).toBe('run-1:grp.body');
@@ -1206,7 +1229,11 @@ describe('applyQueueSnapshot', () => {
       withdrawingMessageId: 'a',
       queueGeneration: 5,
     });
-    const next = applyQueueSnapshot(state, mkSnapshot([guidanceRow('b', 'beta')]), 5);
+    const next = applyQueueSnapshot(
+      state,
+      mkSnapshot([guidanceRow('b', 'beta')], { sub_state: 'idle-after-interrupt' }),
+      5
+    );
     expect(next.sent).toEqual([receipt('b', 'beta')]);
     expect(next.sendInFlight).toBe(true);
     expect(next.interruptInFlight).toBe(true);
@@ -1217,6 +1244,55 @@ describe('applyQueueSnapshot', () => {
     expect(next.refusal).toEqual({ code: 'node_finished', message: 'done' });
     expect(next.withdrawingMessageId).toBe('a');
     expect(next.queueGeneration).toBe(5);
+  });
+
+  test('reconciles subState from the snapshot even when the queue rows are unchanged — the self-heal path for a transition this tab never observed via its own prop', () => {
+    const state = stateWith([receipt('a', 'alpha')], { subState: 'idle-after-interrupt' });
+    const next = applyQueueSnapshot(
+      state,
+      mkSnapshot([guidanceRow('a', 'alpha')], { sub_state: 'generating' }),
+      0
+    );
+    expect(next).not.toBe(state);
+    expect(next.subState).toBe('generating');
+    expect(next.notice).toBe(STEERING_AGENT_GENERATING);
+  });
+
+  test('a snapshot that still reads generating leaves an in-flight Stop untouched', () => {
+    const state = stateWith([], { subState: 'generating', interruptInFlight: true });
+    const next = applyQueueSnapshot(state, mkSnapshot([], { sub_state: 'generating' }), 0);
+    expect(next.interruptInFlight).toBe(true);
+  });
+
+  test('a snapshot proving the Stop landed clears the in-flight flag', () => {
+    const state = stateWith([], { subState: 'generating', interruptInFlight: true });
+    const next = applyQueueSnapshot(
+      state,
+      mkSnapshot([], { sub_state: 'idle-after-interrupt' }),
+      0
+    );
+    expect(next.interruptInFlight).toBe(false);
+    expect(next.subState).toBe('idle-after-interrupt');
+    expect(next.notice).toBe(STEERING_AGENT_IDLE);
+  });
+
+  test('a lost projection (queue-only or non-live) clears an in-flight Stop too', () => {
+    const state = stateWith([], { subState: 'generating', interruptInFlight: true });
+    const next = applyQueueSnapshot(state, mkSnapshot([], { sub_state: null }), 0);
+    expect(next.interruptInFlight).toBe(false);
+    expect(next.subState).toBeNull();
+  });
+
+  test('an unchanged subState does not touch notice or interruptInFlight', () => {
+    const state = stateWith([], {
+      subState: 'generating',
+      interruptInFlight: false,
+      notice: 'unrelated notice',
+      neverSent: [],
+      executionState: 'live',
+    });
+    const next = applyQueueSnapshot(state, mkSnapshot([], { sub_state: 'generating' }), 0);
+    expect(next).toBe(state);
   });
 
   test('a snapshot that removes the actively-withdrawing row keeps the id so its success still resolves safely', () => {

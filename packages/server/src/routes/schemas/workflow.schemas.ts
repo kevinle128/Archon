@@ -751,6 +751,16 @@ export const readWorkflowNodeQueueResponseSchema = z
     auto_send: z.boolean(),
     capabilities: steeringCapabilitiesSchema,
     queued: z.array(queuedGuidanceMessageSchema),
+    /**
+     * Server-authoritative projected sub-state (#183), read fresh from the
+     * in-process registry on every poll — null for a queue-only or non-live
+     * node. The dock reconciles its local sub-state from this field on
+     * every accepted read, not only when it differs from the value last
+     * observed: the client's separate, slower node-state poll can sample
+     * the same value before and after another shell's transition, missing
+     * it entirely, so this dock-owned channel is what self-heals.
+     */
+    sub_state: z.enum(['generating', 'idle-after-interrupt']).nullable(),
   })
   .strict()
   .openapi('ReadWorkflowNodeQueueResponse');

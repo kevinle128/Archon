@@ -135,6 +135,11 @@ export function useRunStreamSSE(conversationPlatformId: string | null, runId: st
         // the only signal for this transition when no tool call was open at
         // the moment Stop landed (a genuinely still-open tool already lands
         // here via its own workflow_tool_activity completion).
+        // node_turn_started: a turn just (re)started generating — the only
+        // signal for the idle-after-interrupt → generating flip a Send-now
+        // dispatch causes. Without it the cached run detail (and the header
+        // text/dock built from it) stays on the stale sub-state until an
+        // unrelated event happens to invalidate the same cache key.
         case 'workflow_status':
         case 'workflow_tool_activity':
         case 'dag_node':
@@ -142,6 +147,7 @@ export function useRunStreamSSE(conversationPlatformId: string | null, runId: st
         case 'workflow_artifact':
         case 'workflow_dispatch':
         case 'node_turn_interrupted':
+        case 'node_turn_started':
           runDirty = true;
           break;
         // Other event types (system_status, retract, etc.) don't change
