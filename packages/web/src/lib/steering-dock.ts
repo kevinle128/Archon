@@ -675,6 +675,14 @@ export function resolveGuidanceFailure(
  * deliver everything already queued, with nothing newly typed) carries a
  * retry id for response correlation but adds no placeholder row — there is
  * no new message to display.
+ *
+ * The band renders the batch as an optimistic `dispatching` row in this SAME
+ * state update, rather than leaving `sent` empty until the response resolves
+ * a moment later — that gap used to show neither the queued item nor a
+ * "sending" row for one render. `resolveSendNowSuccess` re-asserts the same
+ * `dispatching` mapping once the response lands (idempotent — a defensive
+ * re-sync, not a second source of truth) and `resolveSendNowFailure` reverts
+ * it back to the pre-send entries.
  */
 export function beginSendNow(
   state: SteeringDockState,
@@ -711,7 +719,7 @@ export function beginSendNow(
       ...state,
       sendInFlight: true,
       inFlightBatch,
-      sent: [],
+      sent: inFlightBatch.map(entry => ({ ...entry, state: 'dispatching' as const })),
       pendingRetry,
       refusal: null,
     },
@@ -724,12 +732,12 @@ export function beginSendNow(
  * derives generating, and one composite announcement lands. A replayed
  * success after settlement is a no-op — the band never reappears.
  *
- * The generating branch shows the just-sent batch as an optimistic
- * `dispatching` row immediately, rather than leaving `sent` empty until the
- * next queue poll (~1s) restores the server's own `dispatching` row under
- * the SAME message id. `applyQueueSnapshot` replaces `sent` wholesale by id
- * when that poll lands, so this never duplicates — it only fills the gap
- * before it does.
+ * The generating branch re-asserts the batch as `dispatching` — `beginSendNow`
+ * already rendered this same mapping synchronously with the click, so this is
+ * a defensive re-sync (covers a snapshot that landed mid-flight and changed
+ * `sent`), not the first paint of it. `applyQueueSnapshot` replaces `sent`
+ * wholesale by id once the next queue poll (~1s) lands, so neither this nor
+ * the earlier optimistic render ever duplicates a row.
  */
 export function resolveSendNowSuccess(
   state: SteeringDockState,
@@ -769,18 +777,24 @@ export function resolveSendNowSuccess(
 
 /**
  * Ambiguous Send-now failure: snapshotted receipts return to the front in
- * original order (including the new message), the new message keeps its retry
- * id, and the dock stays idle — an alert, not the polite region, carries the
- * failure.
+ * original order (including the new message) with their pre-send states —
+ * reverting the `dispatching` row `beginSendNow` optimistically rendered —
+ * and the dock stays idle. An alert, not the polite region, carries the
+ * failure. `state.sent` already equals the batch (see `beginSendNow`) unless
+ * a snapshot landed mid-flight and added an id the batch never had; that
+ * extra id is kept, deduplicated by message id rather than concatenated, so
+ * a batch entry is never shown twice.
  */
 export function resolveSendNowFailure(
   state: SteeringDockState,
   refusal: SteeringRefusal
 ): SteeringDockState {
+  const batch = state.inFlightBatch ?? [];
+  const batchIds = new Set(batch.map(entry => entry.messageId));
   return {
     ...state,
     sendInFlight: false,
-    sent: [...(state.inFlightBatch ?? []), ...state.sent],
+    sent: [...batch, ...state.sent.filter(entry => !batchIds.has(entry.messageId))],
     inFlightBatch: null,
     refusal,
   };

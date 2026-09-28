@@ -1314,8 +1314,12 @@ describe('ComposerDock', () => {
     await setDraft('the redirect');
     await clickSendNow();
     expect(calls[2].body.intent).toBe('send_now');
-    // Band cleared optimistically during flight.
-    expect(host.querySelectorAll('li')).toHaveLength(0);
+    // The batch renders as an optimistic `dispatching` row in the SAME
+    // state update as the click — never a render with neither the queued
+    // items nor a sending row.
+    const sendingList = host.querySelector('ul[aria-label="Sending, 3"]');
+    expect(sendingList).not.toBeNull();
+    expect(sendingList?.querySelectorAll('li')).toHaveLength(3);
     await act(async () => {
       first.reject(new TypeError('network lost'));
     });
