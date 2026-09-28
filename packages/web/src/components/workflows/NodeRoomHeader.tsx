@@ -78,29 +78,38 @@ interface StatusPillStyle {
 // for this exact tone's border, and is the nearest existing token to it.
 // Every tone renders 10px/700 with no dot, matching the mockup room header
 // pill (measured against the live mockup, not the run-level page header
-// pill it was once confused with).
+// pill it was once confused with). `lineHeight: 'normal'` matches the
+// mockup's pill exactly: the mockup's own markup sets no line-height on the
+// pill, so the browser's own default for its font wins there (measured 18px
+// tall); without this override the inherited cascade left the app's pill at
+// 21px. The border colors are the mockup's own flat, per-tone literals — a
+// solid color, not an alpha-blend of the bright accent over the surface —
+// so they render exactly the same regardless of what's behind the pill.
 const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   accent: {
     className: 'text-[10px] font-bold text-accent-bright',
-    style: { borderColor: 'color-mix(in oklch, var(--accent-bright) 40%, transparent)' },
+    style: { borderColor: 'oklch(0.4 0.12 250)', lineHeight: 'normal' },
   },
   warning: {
     className: 'text-[10px] font-bold text-warning',
-    style: { borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)' },
+    style: {
+      borderColor: 'color-mix(in oklch, var(--warning) 40%, transparent)',
+      lineHeight: 'normal',
+    },
   },
   success: {
     className: 'text-[10px] font-bold text-success',
-    style: { borderColor: 'color-mix(in oklch, var(--success) 40%, transparent)' },
+    style: { borderColor: 'oklch(0.4 0.08 155)', lineHeight: 'normal' },
   },
   error: {
     className: 'text-[10px] font-bold text-error',
-    style: { borderColor: 'color-mix(in oklch, var(--error) 40%, transparent)' },
+    style: { borderColor: 'oklch(0.4 0.12 25)', lineHeight: 'normal' },
   },
 };
 
 const NEUTRAL_PILL_STYLE: StatusPillStyle = {
   className: 'text-[10px] font-bold text-text-secondary',
-  style: { borderColor: 'var(--border)' },
+  style: { borderColor: 'var(--border)', lineHeight: 'normal' },
 };
 
 export function NodeRoomHeader({

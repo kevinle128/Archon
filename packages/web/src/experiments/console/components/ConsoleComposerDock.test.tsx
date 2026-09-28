@@ -1146,7 +1146,14 @@ describe('ConsoleComposerDock', () => {
       });
     });
     await flush();
-    expect(host.querySelectorAll('li')).toHaveLength(0);
+    // The whole retried batch shows as optimistic `sending…` rows rather
+    // than sitting empty until the next queue poll.
+    expect(host.textContent).toContain('sending · 3');
+    expect([...host.querySelectorAll('li')].map(li => li.textContent)).toEqual([
+      expect.stringContaining('sending…'),
+      expect.stringContaining('sending…'),
+      expect.stringContaining('sending…'),
+    ]);
     expect(stopButton()).not.toBeNull();
     expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
   });

@@ -646,6 +646,13 @@ export function beginSendNow(
  * Send-now success: the batch is discarded (server drained it), the sub-state
  * derives generating, and one composite announcement lands. A replayed
  * success after settlement is a no-op — the band never reappears.
+ *
+ * The generating branch shows the just-sent batch as an optimistic
+ * `dispatching` row immediately, rather than leaving `sent` empty until the
+ * next queue poll (~1s) restores the server's own `dispatching` row under
+ * the SAME message id. `applyQueueSnapshot` replaces `sent` wholesale by id
+ * when that poll lands, so this never duplicates — it only fills the gap
+ * before it does.
  */
 export function resolveSendNowSuccess(
   state: SteeringDockState,
@@ -672,6 +679,7 @@ export function resolveSendNowSuccess(
   }
   return {
     ...state,
+    sent: state.inFlightBatch.map(entry => ({ ...entry, state: 'dispatching' })),
     sendInFlight: false,
     inFlightBatch: null,
     pendingRetry: null,

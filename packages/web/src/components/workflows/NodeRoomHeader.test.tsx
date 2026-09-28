@@ -144,6 +144,15 @@ describe('NodeRoomHeader', () => {
     expect(pill.className).toContain('text-[10px]');
     expect(pill.className).toContain('font-bold');
     expect(pill.querySelector('span[aria-hidden]')).toBeNull();
+    // Matches the mockup pill exactly: no explicit line-height override, so
+    // the browser's own default wins (measured 18px total live) instead of
+    // the inherited cascade the app previously left in place (measured
+    // 21px). The flat, per-tone border color (vs. an alpha-blend of the
+    // bright accent) is verified against a live browser in the round's
+    // visual QA evidence — happy-dom's CSSOM does not parse `oklch()`, so it
+    // cannot assert that value here.
+    const style = pill.getAttribute('style') ?? '';
+    expect(style).toContain('line-height: normal');
   });
 
   test('meta appends waiting on operator for an idle-after-interrupt agent', async () => {

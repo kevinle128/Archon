@@ -1182,10 +1182,15 @@ describe('ComposerDock', () => {
     expect(calls[1].body.message).toBe('redirect the agent');
     expect(calls[1].body.intent).toBe('send_now');
     expect(calls[1].body.message_id.length).toBeGreaterThan(0);
-    // The in-flight band empties, then settles generating with no leftovers.
+    // The in-flight band shows both items as an optimistic `sending…` row
+    // each, rather than sitting empty until the next queue poll.
     expect(host.textContent).not.toContain('will send ·');
     expect(host.textContent).not.toContain('queued ·');
-    expect(host.querySelectorAll('li')).toHaveLength(0);
+    expect(host.textContent).toContain('sending · 2');
+    expect([...host.querySelectorAll('li')].map(li => li.textContent)).toEqual([
+      expect.stringContaining('sending…'),
+      expect.stringContaining('sending…'),
+    ]);
     expect(field().value).toBe('');
     expect(stopButton()).not.toBeNull();
     expect(queueButton()).not.toBeNull();
@@ -1258,7 +1263,14 @@ describe('ComposerDock', () => {
       });
     });
     await flush();
-    expect(host.querySelectorAll('li')).toHaveLength(0);
+    // The whole retried batch shows as optimistic `sending…` rows rather
+    // than sitting empty until the next queue poll.
+    expect(host.textContent).toContain('sending · 3');
+    expect([...host.querySelectorAll('li')].map(li => li.textContent)).toEqual([
+      expect.stringContaining('sending…'),
+      expect.stringContaining('sending…'),
+      expect.stringContaining('sending…'),
+    ]);
     expect(stopButton()).not.toBeNull();
     expect(host.querySelector('[role="status"]')?.textContent).toBe('agent generating');
   });
@@ -2466,6 +2478,48 @@ describe('ComposerDock', () => {
         return t === 'Stop' || t === 'Queue' || t === 'Send now';
       })
     ).toBe(false);
+  });
+
+  test('a durable item stays visible across the poll sequence an Abandon produces, before the slower run-detail poll reports terminal', async () => {
+    // The `nodeTerminal` prop mirrors a 3s run-detail poll; this dock's own
+    // ~1s queue poll can report `execution_state: 'finished'` and reconcile
+    // the item to `never_sent` first. Simulates that exact intermediate
+    // snapshot sequence with `nodeTerminal`/`rowStatus` still stale (as they
+    // are for several seconds after a real Abandon) and asserts the item
+    // never drops out of view.
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 1, rowStatus: 'running', live: true });
+
+    // Snapshot 1: still generating, item queued.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect' }], { execution_state: 'live' })
+    );
+    expect(host.querySelector('li[data-message-id="id-a"]')).not.toBeNull();
+
+    // Snapshot 2: Abandon has landed server-side — this poll's row is already
+    // reconciled to `never_sent` and `execution_state` already reads
+    // `finished` — but the caller's `nodeTerminal`/`rowStatus` props (driven
+    // by the separate, slower run-detail poll) are unchanged.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'never_sent' }], {
+        execution_state: 'finished',
+      })
+    );
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
+
+    // Snapshot 3: the slower run-detail poll would eventually flip
+    // `nodeTerminal`/`rowStatus` too (simulated by re-rendering), and the
+    // item is still exactly where it was.
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 1,
+      rowStatus: 'completed',
+      live: true,
+      nodeTerminal: true,
+    });
+    expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
   });
 
   test('the terminal fetch runs once per terminal transition, not once per render', async () => {

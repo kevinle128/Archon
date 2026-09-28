@@ -7337,6 +7337,127 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
       expect((failedEvents[0] as { data: { error: string } }).data.error).toBe('Cancelled by user');
     }, 15_000);
 
+    it('settles a still-open tool call to unknown when the provider throws after the abort', async () => {
+      // Same throw-after-abort shape as the previous test, but with an open
+      // tool call in flight when the throw happens (e.g. a structured-output
+      // node whose abort surfaces as a thrown validation error rather than a
+      // clean terminal 'result' chunk). The open tool must settle instead of
+      // ticking forever under a Failed pill.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'call-open' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      await runSingleNode(store, platform, 'silent-ai-tool-throw-run');
+
+      const eventPayloads = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => call[0] as { event_type: string; step_name: string; data: Record<string, unknown> }
+      );
+      const failedEvents = eventPayloads.filter(
+        e => e.event_type === 'node_failed' && e.step_name === 'step1'
+      );
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]?.data.error).toBe('Cancelled by user');
+
+      const settledTool = eventPayloads.find(
+        e => e.event_type === 'tool_completed' && e.data.tool_call_id === 'call-open'
+      );
+      expect(settledTool).toBeDefined();
+      expect(settledTool?.data.tool_outcome).toBe('unknown');
+    }, 15_000);
+
+    it('emits node_failed and settles an open tool when a structured-output node is abandoned mid-tool', async () => {
+      // The exact reported mechanism: an output_format node's stream ends via
+      // the external-abort race (a clean generator return, not a thrown
+      // provider error), but with no valid structured output ever produced.
+      // The structured-output-missing guard then throws its own error, which
+      // lands in the `dag_node_cancelled_via_abort` catch branch — the one
+      // that used to return without a node_failed event or an open-tool
+      // settle. A provider without a channel to prove its own interruption
+      // (mirrors Codex/Grok `--single`, i.e. `interruptedToolStatus: false`)
+      // settles 'unknown', matching every other Abandon path.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'structured-call-open' };
+        chunkYielded = true;
+        // Never yields again — the stream only ends via the decoupled
+        // cancel poller aborting `nodeAbortController`, exactly like the
+        // "stays silent forever" test above.
+        await new Promise<never>(() => {});
+        void options;
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const mockDeps = createMockDeps(store);
+      const workflowRun = makeWorkflowRun('structured-cancel-run');
+      await executeDagWorkflow(
+        mockDeps,
+        platform,
+        'conv-structured-cancel',
+        testDir,
+        {
+          name: 'structured-cancel-test',
+          nodes: [
+            {
+              id: 'step1',
+              command: 'step1',
+              output_format: { type: 'object', properties: { status: { type: 'string' } } },
+            },
+          ],
+        },
+        workflowRun,
+        'claude',
+        undefined,
+        join(testDir, 'artifacts'),
+        join(testDir, 'state'),
+        join(testDir, 'logs'),
+        'main',
+        'docs/',
+        minimalConfig
+      );
+
+      const eventPayloads = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => call[0] as { event_type: string; step_name: string; data: Record<string, unknown> }
+      );
+      const failedEvents = eventPayloads.filter(
+        e => e.event_type === 'node_failed' && e.step_name === 'step1'
+      );
+      expect(failedEvents).toHaveLength(1);
+      expect(failedEvents[0]?.data.error).toBe('Cancelled by user');
+
+      const settledTool = eventPayloads.find(
+        e => e.event_type === 'tool_completed' && e.data.tool_call_id === 'structured-call-open'
+      );
+      expect(settledTool).toBeDefined();
+      expect(settledTool?.data.tool_outcome).toBe('unknown');
+    }, 15_000);
+
     it('stops polling once the node completes normally (no leaked timer)', async () => {
       mockSendQueryDag.mockImplementation(function* () {
         yield { type: 'assistant', content: 'done' };
@@ -10645,6 +10766,56 @@ nodes:
       expect(String((failedEvents[0] as { data: { error: string } }).data.error)).toContain(
         'Workflow cancelled'
       );
+    }, 15_000);
+
+    it('settles a still-open tool call to unknown when a loop iteration is abandoned mid-tool', async () => {
+      // Abandon (not an operator Stop) on a loop iteration whose provider
+      // throws after the abort instead of yielding a clean terminal 'result'
+      // chunk — the loop-node counterpart of the prompt-node coverage above.
+      // The node must end promptly with a terminal event, and the open tool
+      // must settle instead of ticking forever.
+      let chunkYielded = false;
+      mockSendQueryDag.mockImplementation(async function* (
+        _prompt: string,
+        _cwd: string,
+        _resumeId: string | undefined,
+        options: SendQueryOptions
+      ) {
+        yield { type: 'tool', toolName: 'Bash', toolCallId: 'loop-call-open' };
+        chunkYielded = true;
+        await new Promise<void>(resolve => {
+          if (options.abortSignal?.aborted) {
+            resolve();
+            return;
+          }
+          options.abortSignal?.addEventListener('abort', () => resolve(), { once: true });
+        });
+        throw new Error('Query aborted');
+      });
+
+      const store = createMockStore();
+      store.getWorkflowRunStatus = mock(async () => (chunkYielded ? 'cancelled' : 'running'));
+      const platform = createMockPlatform();
+
+      const startedAt = Date.now();
+      await runLoopNode(store, platform, 'silent-loop-tool-throw-run');
+      const elapsedMs = Date.now() - startedAt;
+
+      const eventPayloads = (store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls.map(
+        call => call[0] as { event_type: string; step_name: string; data: Record<string, unknown> }
+      );
+      const failedEvents = eventPayloads.filter(
+        e => e.event_type === 'node_failed' && e.step_name === 'loop1'
+      );
+      expect(failedEvents).toHaveLength(1);
+      expect(String(failedEvents[0]?.data.error)).toContain('Workflow cancelled');
+
+      const settledTool = eventPayloads.find(
+        e => e.event_type === 'tool_completed' && e.data.tool_call_id === 'loop-call-open'
+      );
+      expect(settledTool).toBeDefined();
+      expect(settledTool?.data.tool_outcome).toBe('unknown');
+      expect(elapsedMs).toBeLessThan(8000);
     }, 15_000);
 
     it('stops polling once the loop iteration completes normally (no leaked timer)', async () => {

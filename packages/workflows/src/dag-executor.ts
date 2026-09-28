@@ -3607,6 +3607,26 @@ async function executeNodeInternal(
     const duration = Date.now() - nodeStartTime;
     getLog().info({ nodeId: node.id, durationMs: duration }, 'dag_node_cancelled_during_streaming');
 
+    // Safety net for a stream that exited via the external-abort race
+    // (`withIdleTimeout`'s decoupled poller) without ever yielding a
+    // terminal `type === 'result'` chunk, so the normal in-stream settle
+    // never ran. Entries the normal path already resolved are out of the
+    // map, so this is a no-op there.
+    settleRunningToolsOutcome(
+      deps,
+      runningTools,
+      'unknown',
+      workflowRun.id,
+      stepName,
+      node.id,
+      (err: Error) => {
+        getLog().error(
+          { err, workflowRunId: workflowRun.id, eventType: 'tool_completed' },
+          'workflow_event_persist_failed'
+        );
+      }
+    );
+
     deps.store
       .createWorkflowEvent({
         workflow_run_id: workflowRun.id,
@@ -4225,6 +4245,49 @@ async function executeNodeInternal(
       !(error instanceof AskHumanPauseFailedError)
     ) {
       getLog().info({ nodeId: node.id }, 'dag_node_cancelled_via_abort');
+      // This provider pass threw instead of yielding a terminal 'result'
+      // chunk (e.g. a structured-output node whose stream was cut off before
+      // producing valid output), so it never reached the normal in-stream
+      // settle. Without this, the room reads the header pill as failed but
+      // leaves any open tool row ticking forever. Entries the normal path
+      // already resolved are out of the map, so this is a no-op there.
+      settleRunningToolsOutcome(
+        deps,
+        runningTools,
+        'unknown',
+        workflowRun.id,
+        stepName,
+        node.id,
+        (settleErr: Error) => {
+          getLog().error(
+            { err: settleErr, workflowRunId: workflowRun.id, eventType: 'tool_completed' },
+            'workflow_event_persist_failed'
+          );
+        }
+      );
+      deps.store
+        .createWorkflowEvent({
+          workflow_run_id: workflowRun.id,
+          event_type: 'node_failed',
+          step_name: stepName,
+          data: withLifecycleScopeData(workflowRun, undefined, executionScope, {
+            error: 'Cancelled by user',
+            ...iterationData,
+          }),
+        })
+        .catch((persistErr: Error) => {
+          getLog().error(
+            { err: persistErr, workflowRunId: workflowRun.id, eventType: 'node_failed' },
+            'workflow_event_persist_failed'
+          );
+        });
+      emitter.emit({
+        type: 'node_failed',
+        runId: workflowRun.id,
+        nodeId: node.id,
+        nodeName: node.command ?? node.id,
+        error: 'Cancelled by user',
+      });
       await recordFailedStatus('Cancelled by user');
       return {
         state: 'failed',
@@ -7342,6 +7405,22 @@ async function executeLoopNodeInner(
           // iteration — mirrors both the AI-node 'Cancelled by user' return and
           // this loop's own between-iteration stop path.
           if (iterationAbortController.signal.aborted && !iterationIdleTimedOut) {
+            // Settle still-open tools before the iteration ends — the stream
+            // exited via the external-abort race (withIdleTimeout), which
+            // returns cleanly without ever yielding a terminal 'result' chunk,
+            // so the normal in-stream settle never ran. Entries it already
+            // resolved are out of the map, so this is a no-op there.
+            settleRunningToolsOutcome(
+              deps,
+              runningTools,
+              'unknown',
+              workflowRun.id,
+              stepName,
+              node.id,
+              (err: Error) => {
+                logEventStoreError(err, i);
+              }
+            );
             const effectiveStatus = streamStopStatus ?? 'cancelled';
             await safeSendMessage(
               platform,
@@ -7384,6 +7463,33 @@ async function executeLoopNodeInner(
               }
             );
             break attempts;
+          }
+          // Plain cancel (Abandon, not an operator Stop) that threw instead of
+          // yielding a terminal 'result' chunk — e.g. a structured-output loop
+          // whose stream was cut off before producing valid output. Mirrors
+          // the graceful cancel branch above (same message, same settle
+          // outcome) so a throwing provider pass ends the iteration exactly
+          // like one that exits cleanly. Entries the normal in-stream settle
+          // already resolved are out of the map, so this is a no-op there.
+          if (iterationAbortController.signal.aborted && !iterationIdleTimedOut) {
+            settleRunningToolsOutcome(
+              deps,
+              runningTools,
+              'unknown',
+              workflowRun.id,
+              stepName,
+              node.id,
+              (err: Error) => {
+                logEventStoreError(err, i);
+              }
+            );
+            const effectiveStatus = streamStopStatus ?? 'cancelled';
+            return await failLoopIteration(`Workflow ${effectiveStatus}`, {
+              costUsd: loopTotalCostUsd,
+              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+              loopIterations: i,
+              data: { status: effectiveStatus, iteration: i },
+            });
           }
           if (error instanceof AskHumanAwaitingError) {
             // Park before the pause write (#181) — a send racing the transition

@@ -144,6 +144,11 @@ describe('ConsoleRoomHeader', () => {
     expect(pill.className).toContain('text-[10px]');
     expect(pill.className).toContain('font-bold');
     expect(pill.querySelector('span[aria-hidden]')).toBeNull();
+    // Matches the mockup pill exactly: no explicit line-height override, so
+    // the browser's own default wins (measured 18px total live) instead of
+    // the inherited cascade the app previously left in place (measured
+    // 21px).
+    expect(pill.getAttribute('style') ?? '').toContain('line-height: normal');
   });
 
   test('meta appends waiting on operator for an idle-after-interrupt agent', async () => {
