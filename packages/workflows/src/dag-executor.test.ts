@@ -28226,6 +28226,63 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(nodeFailedError(store, 'my-loop')).toContain('exceeded max iterations');
   });
 
+  it('a guidance turn that does real work can satisfy a read-only until_bash within the same iteration', async () => {
+    // Read-only completion check (the documented, recommended shape — see
+    // loop-nodes.md's until_bash caution block): true once a flag file
+    // exists, never mutating anything itself. The natural turn does no work
+    // (no flag); the drained guidance turn is where the real work happens.
+    const flagFile = join(testDir, 'guidance-flag');
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'finish the task now');
+        yield { type: 'assistant', content: 'thinking about it' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      // The guidance turn's own (simulated) work is what makes the
+      // completion check true — nothing else in this test touches the file.
+      writeFileSync(flagFile, 'done');
+      yield { type: 'assistant', content: 'finished per the operator note' };
+      yield { type: 'result', sessionId: 'loop-sess-2' };
+    });
+    const store = createMockStore();
+    await invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: {
+          prompt: 'Do a task.',
+          until_bash: `test -f "${flagFile}"`,
+          max_iterations: 3,
+        },
+      },
+    ]);
+
+    // Two provider turns ran (natural + the drained guidance turn), but the
+    // guidance turn's own until_bash pass is what completed the node — the
+    // engine never held it back for a second, un-guided iteration. This is
+    // intentional (`dag-executor.ts`'s steering-boundary comment: "every
+    // completion channel re-evaluates on the newest turn's output") and
+    // matches the UX contract: `Queue` delivers guidance "as the next turn
+    // when the current turn ends naturally" — the same turn, not a later one.
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+    expect(sendQueryArg<string>(1, 0)).toBe('finish the task now');
+    expect(sendQueryArg<string | undefined>(1, 2)).toBe('loop-sess-1');
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    // `loop_iteration_completed` counts iterations, not provider turns: one
+    // iteration ran two turns, so exactly one such event exists, not two,
+    // and it reports iteration 1.
+    const iterationCompletedEvents = (
+      store.createWorkflowEvent as ReturnType<typeof mock>
+    ).mock.calls
+      .map(call => call[0] as { event_type: string; data: Record<string, unknown> })
+      .filter(event => event.event_type === 'loop_iteration_completed');
+    expect(iterationCompletedEvents).toHaveLength(1);
+    expect(iterationCompletedEvents[0]!.data.iteration).toBe(1);
+  });
+
   it('registers loop-group body prompt nodes under the namespaced step name', async () => {
     let calls = 0;
     let sawNamespaced: NodeSteeringHandle | undefined;
