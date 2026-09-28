@@ -417,10 +417,17 @@ export function ComposerDock({
   keepaliveRef.current = keepalive;
   /** Set while the queue-polling effect below is active; null otherwise. */
   const pollingHandleRef = useRef<QueuePollingHandle | null>(null);
-  /** `dock.queueGeneration` as of the last kick decision — see that effect. */
-  const priorQueueGenerationRef = useRef(0);
 
   const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
+  // Bumped whenever a withdraw resolves successfully — the trigger for the
+  // immediate-re-read effect below. A ref bump alone would not schedule a
+  // render, and firing `.kick()` synchronously inside the withdraw promise
+  // handler reads `dockRef.current` before this render's `setDock` has
+  // committed, sampling the PRE-withdraw `queueGeneration` and making the
+  // kicked read's generation check discard the very response meant to fix
+  // this. State + effect defers the kick to after commit, when
+  // `dockRef.current` already reflects the resolved generation.
+  const [withdrawKickTick, setWithdrawKickTick] = useState(0);
   const [draft, setDraft] = useState('');
   // Shared across the four mutually-exclusive band renders below; only one
   // ever mounts at a time. Default open matches the approved mockup.
@@ -577,7 +584,6 @@ export function ComposerDock({
       prevNodeTerminalRef.current = nodeTerminal;
       pendingFocusRef.current = null;
       terminalFetchedRef.current = false;
-      priorQueueGenerationRef.current = 0;
       controlsEverMountedRef.current = false;
       setDock(createSteeringDockState(subState));
       setReadDetached(false);
@@ -600,7 +606,6 @@ export function ComposerDock({
       if (keyReplaced || terminalFailSafe) {
         attemptGenerationRef.current += 1;
         pendingFocusRef.current = null;
-        priorQueueGenerationRef.current = 0;
         controlsEverMountedRef.current = false;
         setDock(createSteeringDockState(subState));
         setReadDetached(false);
@@ -748,20 +753,14 @@ export function ComposerDock({
     // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
   }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
 
-  // Force the next queue read to fire now, instead of waiting out the rest
-  // of the interval, right after a Queue/Send now/withdraw/per-item Send now
-  // resolves in this tab — every one of those bumps `queueGeneration`. This
-  // closes the gap between this tab's own resolved mutation and its next
-  // scheduled poll — most importantly the withdraw case: the server never
-  // reports whether a withdraw actually removed the row, so the dock must
-  // re-read the true state immediately instead of trusting its own
-  // optimistic removal. `pollingHandleRef` is null while polling is
-  // disabled, making the kick a safe no-op then.
+  // Fires only after a withdraw resolves successfully — see
+  // `withdrawKickTick`'s declaration for why this runs as a post-commit
+  // effect rather than inline in the promise handler. `pollingHandleRef` is
+  // null while polling is disabled, making the kick a safe no-op then.
   useEffect(() => {
-    if (priorQueueGenerationRef.current === dock.queueGeneration) return;
-    priorQueueGenerationRef.current = dock.queueGeneration;
+    if (withdrawKickTick === 0) return;
     pollingHandleRef.current?.kick();
-  }, [dock.queueGeneration]);
+  }, [withdrawKickTick]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -1029,6 +1028,12 @@ export function ComposerDock({
       (): void => {
         if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveWithdrawSuccess(current, messageId));
+        // The response never reports whether the row was actually removed
+        // (idempotent no-op either way) — force an immediate re-read (via
+        // the effect below, once this render commits) so a false "removed"
+        // (the row was already claimed) is corrected by the true state
+        // instead of trusting the optimistic removal above.
+        setWithdrawKickTick(tick => tick + 1);
       },
       (error: unknown): void => {
         if (attemptGenerationRef.current !== attemptGen) return;
