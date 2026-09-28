@@ -598,6 +598,47 @@ describe('ComposerDock', () => {
     expect(list?.textContent).not.toContain('alpha');
   });
 
+  test('a row that advances to sent stays visible as sending… until the transcript confirms it, with no gap and no duplicate', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 1 });
+    // Poll 1: still dispatching.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'dispatching' }])
+    );
+    expect(host.textContent).toContain('sending · 1');
+
+    // Poll 2: the server already advanced the claim to `sent`, but the
+    // transcript's own, independently-cadenced fetch has not rendered the
+    // matching operator row yet (`deliveredMessageIds` still excludes it).
+    // The row must not vanish here — nothing would be shown for the message
+    // at all.
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha', state: 'sent' }]));
+    expect(host.textContent).toContain('sending · 1');
+    expect(host.querySelector('li[data-message-id="id-a"]')).not.toBeNull();
+
+    // The transcript catches up — re-render with the id now delivered. The
+    // band hides its row the same render the transcript shows it: no gap,
+    // and never both at once.
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 1,
+      deliveredMessageIds: new Set(['id-a']),
+    });
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+    expect(host.textContent).not.toContain('sending · 1');
+  });
+
+  test('a sent row this tab never tracked as open is not resurrected into the band', async () => {
+    // A cold-loaded or unrelated `sent` row (e.g. a different live
+    // iteration's message) must never appear as a phantom "sending…" row.
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'alpha', state: 'sent' }]));
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+    expect(host.textContent).not.toContain('sending');
+  });
+
   test('the band collapse toggle hides and restores the item list without removing it', async () => {
     await renderDock();
     await setDraft('wrong suite');
@@ -1082,6 +1123,46 @@ describe('ComposerDock', () => {
     const send = sendNowButton();
     expect(send.getAttribute('aria-label')?.startsWith('Send now')).toBe(true);
     expect(send.getAttribute('aria-label')).toContain('Cmd/Ctrl+Enter to send');
+  });
+
+  test('an observer sees a durably-queued row stop offering withdraw the instant the projected sub-state advances past it, ahead of its own next poll', async () => {
+    // Simulates the observer shell: it learns `idle-after-interrupt` →
+    // `generating` from a faster external signal (a host prop backed by
+    // SSE/a separate poll) than its own queue poll, which has not yet
+    // re-read the item's now-`dispatching` server state. The row must stop
+    // offering withdraw and the header must read `sending…`, not `queued`,
+    // the instant the projection advances — never a window where the two
+    // disagree.
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      subState: 'idle-after-interrupt',
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'awaiting_send_now' }], {
+        sub_state: 'idle-after-interrupt',
+      })
+    );
+    expect(host.textContent).toContain('will send · 1');
+    expect(host.querySelector('li[data-message-id="id-a"] button')?.textContent).toBe(
+      STEERING_DELETE_LABEL
+    );
+
+    // The other shell's Send now lands: this tab's own poll has not fired
+    // again, but its projected sub-state prop already reads `generating`.
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      subState: 'generating',
+    });
+    expect(host.textContent).toContain('sending · 1');
+    expect(host.textContent).not.toContain('queued · 1');
+    expect(host.textContent).not.toContain('will send · 1');
+    const row = host.querySelector('li[data-message-id="id-a"]');
+    expect(row?.textContent).not.toContain(STEERING_DELETE_LABEL);
+    expect(row?.textContent).toContain('sending…');
   });
 
   test('idle with receipts shows will send band and labelled list', async () => {
@@ -1588,6 +1669,60 @@ describe('ComposerDock', () => {
       { runId: 'run-1', nodeId: 'grp.body', messageId: calls[0].body.message_id },
     ]);
   });
+  test('a withdraw success that did not actually remove the row (removed:false) is corrected by an immediate re-read, never a vanished row', async () => {
+    // The withdraw response never carries `removed` — a 200 is returned
+    // whether or not the row was still claimable server-side (idempotent
+    // no-op). If the row had already been claimed the instant before the
+    // withdraw landed, the optimistic local removal is wrong; the very next
+    // queue read (kicked immediately, not waited out on the poll interval)
+    // must restore the true state instead of leaving nothing shown.
+    const ctrl = controllableRead();
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return { success: true, message_id: messageId };
+    };
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'queued' }])
+    );
+    expect(host.querySelector('li[data-message-id="id-a"]')).not.toBeNull();
+
+    await clickDelete(0);
+    expect(withdrawCalls).toHaveLength(1);
+
+    // The kicked re-read reports the row was already claimed server-side —
+    // `removed:false` in effect, now visible as `dispatching`.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'dispatching' }])
+    );
+    const row = host.querySelector('li[data-message-id="id-a"]');
+    expect(row).not.toBeNull();
+    expect(row?.textContent).toContain('sending…');
+    expect(row?.textContent).not.toContain(STEERING_DELETE_LABEL);
+  });
+
+  test('a withdraw that genuinely removed the row stays removed after the kicked re-read confirms it', async () => {
+    const ctrl = controllableRead();
+    nextWithdraw = async (runId, nodeId, messageId): Promise<WithdrawWorkflowNodeResponse> => {
+      withdrawCalls.push({ runId, nodeId, messageId });
+      return { success: true, message_id: messageId };
+    };
+    await renderDock({ readQueue: ctrl.read, pollIntervalMs: 60_000 });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'redirect', state: 'queued' }])
+    );
+    await clickDelete(0);
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+
+    // The kicked re-read confirms the row is genuinely gone.
+    await settleSnapshot(ctrl, okQueue([]));
+    expect(host.querySelector('li[data-message-id="id-a"]')).toBeNull();
+    expect(host.querySelector('ul')).toBeNull();
+  });
+
   test('deleting the last row focuses the previous delete; deleting the only row focuses the field', async () => {
     await renderDock();
     await setDraft('first');
@@ -2563,6 +2698,75 @@ describe('ComposerDock', () => {
     );
     expect(focused).toContain('last-row');
     expect(neverSentList()).not.toBeNull();
+  });
+
+  test('field focused, then the node finishes: focus moves off the field', async () => {
+    let calls = 0;
+    const focusLastRow = (): void => {
+      calls += 1;
+    };
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, focusLastRow, pollIntervalMs: 60_000 });
+    await settleSnapshot(ctrl, okQueue([{ message_id: 'id-a', message: 'focus me out' }]));
+    await act(async () => {
+      field().focus();
+    });
+    await renderDock({
+      readQueue: ctrl.read,
+      nodeTerminal: true,
+      rowStatus: 'completed',
+      focusLastRow,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'focus me out', state: 'never_sent' }])
+    );
+    expect(calls).toBeGreaterThan(0);
+  });
+
+  test('a cold mount straight into a finished node never moves focus', async () => {
+    let calls = 0;
+    const focusLastRow = (): void => {
+      calls += 1;
+    };
+    const ctrl = controllableRead();
+    // No prior composer render — this dock never held any focusable control,
+    // so `document.activeElement` reads <body> for reasons unrelated to it.
+    await renderDock({
+      readQueue: ctrl.read,
+      focusLastRow,
+      nodeTerminal: true,
+      rowStatus: 'completed',
+      live: true,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'never delivered', state: 'never_sent' }])
+    );
+    expect(neverSentList()).not.toBeNull();
+    expect(calls).toBe(0);
+    expect(win.document.activeElement).toBe(win.document.body);
+  });
+
+  test('a cold mount straight into a failed node never moves focus', async () => {
+    let calls = 0;
+    const focusLastRow = (): void => {
+      calls += 1;
+    };
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      focusLastRow,
+      nodeTerminal: true,
+      rowStatus: 'failed',
+      live: false,
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'never delivered', state: 'never_sent' }])
+    );
+    expect(neverSentList()).not.toBeNull();
+    expect(calls).toBe(0);
   });
 
   // ---------------------------------------------------------------------------

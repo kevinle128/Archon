@@ -11,9 +11,11 @@ import {
   canSubmitGuidance,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  effectiveNodeTerminal,
   finishedIterationDisclosure,
   focusTargetAfterSnapshot,
   goToIterationLabel,
+  isPossiblyNeverSent,
   isQueueItemClaimable,
   isQueueShortcut,
   neverSentBandHeader,
@@ -303,6 +305,31 @@ describe('syncProjectedSubState', () => {
     const synced = syncProjectedSubState(idle, 'generating');
     expect(synced.subState).toBe('generating');
     expect(synced.notice).toBe(STEERING_AGENT_GENERATING);
+  });
+
+  test('idle-after-interrupt to generating flips every claimable row to dispatching', () => {
+    const idle = stateWith(
+      [
+        receipt('a', 'alpha'),
+        { ...receipt('b', 'beta'), state: 'awaiting_send_now' as const },
+        { ...receipt('c', 'gamma'), state: 'delivery_unknown' as const },
+      ],
+      { subState: 'idle-after-interrupt' }
+    );
+    const synced = syncProjectedSubState(idle, 'generating');
+    expect(synced.sent).toEqual([
+      { ...receipt('a', 'alpha'), state: 'dispatching' },
+      { ...receipt('b', 'beta'), state: 'dispatching' },
+      // Not claimable to begin with — an ambiguous-claim row is left alone;
+      // the next queue snapshot is what corrects it.
+      { ...receipt('c', 'gamma'), state: 'delivery_unknown' },
+    ]);
+  });
+
+  test('a transition other than idle-after-interrupt to generating leaves rows untouched', () => {
+    const queueOnly = stateWith([receipt('a', 'alpha')], { subState: null });
+    const synced = syncProjectedSubState(queueOnly, 'generating');
+    expect(synced.sent).toEqual([receipt('a', 'alpha')]);
   });
 });
 
@@ -849,13 +876,13 @@ describe('isQueueItemClaimable', () => {
 });
 
 describe('queueItemStatusLabel', () => {
-  test('delivery_unknown and dispatching render a label; the rest render nothing', () => {
+  test('delivery_unknown and every in-flight state render a label; the rest render nothing', () => {
     expect(queueItemStatusLabel('delivery_unknown')).toBe('delivery unknown');
     expect(queueItemStatusLabel('dispatching')).toBe('sending…');
+    expect(queueItemStatusLabel('sent')).toBe('sending…');
+    expect(queueItemStatusLabel('delivered')).toBe('sending…');
     expect(queueItemStatusLabel('queued')).toBeNull();
     expect(queueItemStatusLabel('awaiting_send_now')).toBeNull();
-    expect(queueItemStatusLabel('sent')).toBeNull();
-    expect(queueItemStatusLabel('delivered')).toBeNull();
     expect(queueItemStatusLabel('never_sent')).toBeNull();
   });
 });
@@ -889,6 +916,16 @@ describe('pendingQueueCount', () => {
     ).toBe(3);
   });
 
+  test('excludes sent and delivered entries — in flight, not queued', () => {
+    expect(
+      pendingQueueCount([
+        receiptWithState('a', 'queued'),
+        receiptWithState('b', 'sent'),
+        receiptWithState('c', 'delivered'),
+      ])
+    ).toBe(1);
+  });
+
   test('is zero for an empty queue', () => {
     expect(pendingQueueCount([])).toBe(0);
   });
@@ -915,8 +952,50 @@ describe('allPendingDispatching', () => {
     ).toBe(false);
   });
 
+  test('true for a mix of dispatching, sent, and delivered — all in flight', () => {
+    expect(
+      allPendingDispatching([
+        receiptWithState('a', 'dispatching'),
+        receiptWithState('b', 'sent'),
+        receiptWithState('c', 'delivered'),
+      ])
+    ).toBe(true);
+  });
+
   test('false for an empty queue — nothing is dispatching if nothing is pending', () => {
     expect(allPendingDispatching([])).toBe(false);
+  });
+});
+
+describe('isPossiblyNeverSent', () => {
+  test('true for every state that could still resolve to never-sent', () => {
+    expect(isPossiblyNeverSent('queued')).toBe(true);
+    expect(isPossiblyNeverSent('awaiting_send_now')).toBe(true);
+    expect(isPossiblyNeverSent('delivery_unknown')).toBe(true);
+    expect(isPossiblyNeverSent('never_sent')).toBe(true);
+  });
+
+  test('false for every in-flight state — already left the queue for the transcript', () => {
+    expect(isPossiblyNeverSent('dispatching')).toBe(false);
+    expect(isPossiblyNeverSent('sent')).toBe(false);
+    expect(isPossiblyNeverSent('delivered')).toBe(false);
+  });
+});
+
+describe('effectiveNodeTerminal', () => {
+  test('true when the host prop says so, regardless of the queue read', () => {
+    expect(effectiveNodeTerminal(true, null)).toBe(true);
+    expect(effectiveNodeTerminal(true, 'live')).toBe(true);
+  });
+
+  test("true when this dock's own queue read observed execution_state finished", () => {
+    expect(effectiveNodeTerminal(false, 'finished')).toBe(true);
+  });
+
+  test('false otherwise', () => {
+    expect(effectiveNodeTerminal(false, null)).toBe(false);
+    expect(effectiveNodeTerminal(false, 'live')).toBe(false);
+    expect(effectiveNodeTerminal(false, 'recovery_required')).toBe(false);
   });
 });
 
@@ -1169,7 +1248,7 @@ describe('applyQueueSnapshot', () => {
     expect(next.sent).toEqual([receipt('b', 'beta'), receipt('c', 'gamma-remote')]);
   });
 
-  test('deliveryByMessageId covers every row the server returned, including sent/delivered ones dropped from sent', () => {
+  test('deliveryByMessageId covers every row the server returned, including sent/delivered ones', () => {
     const state = stateWith([receipt('a', 'alpha')]);
     const next = applyQueueSnapshot(
       state,
@@ -1180,13 +1259,46 @@ describe('applyQueueSnapshot', () => {
       ]),
       0
     );
-    // 'sent'/'delivered' rows are gone from the pending band…
-    expect(next.sent).toEqual([]);
-    // …but their delivery state is still readable by message id.
+    // 'a' was tracked open on the prior snapshot, so it is retained for one
+    // extra poll of grace; 'b' was never locally tracked (a cold read, or
+    // another live iteration's message) and is not resurrected.
+    expect(next.sent).toEqual([{ ...receipt('a', 'alpha'), state: 'sent' }]);
     expect(next.deliveryByMessageId.get('a')).toBe('sent');
     expect(next.deliveryByMessageId.get('b')).toBe('delivered');
     expect(next.deliveryByMessageId.get('c')).toBe('never_sent');
     expect(next.deliveryByMessageId.get('unknown-id')).toBeUndefined();
+  });
+
+  test('a sent/delivered row retained for one grace poll falls out of sent on the next one', () => {
+    const state = stateWith([receipt('a', 'alpha')]);
+    const afterFirstPoll = applyQueueSnapshot(
+      state,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })]),
+      0
+    );
+    expect(afterFirstPoll.sent).toEqual([{ ...receipt('a', 'alpha'), state: 'sent' }]);
+    // Still 'sent' on the next poll, with no other local mutation in between
+    // — the grace window already spent, so it drops out of the band even
+    // though the server still reports it (the transcript is assumed to have
+    // caught up by now; `visiblePendingReceipts` covers the render-time hide
+    // when it has not).
+    const afterSecondPoll = applyQueueSnapshot(
+      afterFirstPoll,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })]),
+      afterFirstPoll.queueGeneration
+    );
+    expect(afterSecondPoll.sent).toEqual([]);
+  });
+
+  test('a sent/delivered row never locally tracked is never resurrected into sent', () => {
+    const state = stateWith([]);
+    const next = applyQueueSnapshot(
+      state,
+      mkSnapshot([guidanceRow('a', 'alpha', { state: 'sent' })]),
+      0
+    );
+    expect(next.sent).toEqual([]);
+    expect(next.deliveryByMessageId.get('a')).toBe('sent');
   });
 
   test('returns the identical state object when the snapshot is identical', () => {
@@ -1801,6 +1913,82 @@ describe('startQueuePolling', () => {
     await flush();
     expect(clock2.pending.size).toBe(0);
     expect(reads2).toHaveLength(1);
+  });
+
+  test('kick fires a fresh read immediately and cancels the pending timer', async () => {
+    const clock = fakeClock();
+    const snapshots: number[] = [];
+    const { reads, stop, setGeneration } = pollHarness(clock, gen => {
+      snapshots.push(gen);
+    });
+    try {
+      reads[0].resolve(mkSnapshot([]));
+      await flush();
+      expect(clock.pending.size).toBe(1);
+
+      setGeneration(3);
+      stop.kick();
+      // The interval timer was cancelled, not left to fire on its own.
+      expect(clock.pending.size).toBe(0);
+      expect(reads).toHaveLength(2);
+
+      reads[1].resolve(mkSnapshot([]));
+      await flush();
+      expect(snapshots).toEqual([0, 3]);
+    } finally {
+      stop();
+    }
+  });
+
+  test('kick aborts an in-flight request and starts a fresh one, suppressing the stale settle', async () => {
+    const clock = fakeClock();
+    const signals: AbortSignal[] = [];
+    const snapshots: number[] = [];
+    const reads: Deferred<QueueSnapshot>[] = [];
+    let generation = 0;
+    const stop = startQueuePolling({
+      read: signal => {
+        signals.push(signal);
+        const d = deferred<QueueSnapshot>();
+        reads.push(d);
+        return d.promise;
+      },
+      currentGeneration: () => generation,
+      onSnapshot: (_snapshot, generationAtRequest) => {
+        snapshots.push(generationAtRequest);
+      },
+      intervalMs: 1000,
+      setTimer: clock.setTimer,
+      clearTimer: clock.clearTimer,
+    });
+    try {
+      // First read still in flight when kick fires.
+      expect(reads).toHaveLength(1);
+      generation = 5;
+      stop.kick();
+      expect(signals[0].aborted).toBe(true);
+      expect(reads).toHaveLength(2);
+
+      // The aborted read's late resolve never reaches onSnapshot.
+      reads[0].resolve(mkSnapshot([guidanceRow('a', 'alpha')]));
+      await flush();
+      expect(snapshots).toHaveLength(0);
+
+      reads[1].resolve(mkSnapshot([]));
+      await flush();
+      expect(snapshots).toEqual([5]);
+    } finally {
+      stop();
+    }
+  });
+
+  test('kick after stop is a no-op', async () => {
+    const clock = fakeClock();
+    const { reads, stop } = pollHarness(clock, () => undefined);
+    stop();
+    stop.kick();
+    await flush();
+    expect(reads).toHaveLength(1);
   });
 });
 

@@ -28,6 +28,11 @@
   --status-pill-border-running: oklch(0.4 0.12 250);
   --status-pill-border-success: oklch(0.4 0.08 155);
   --status-pill-border-error: oklch(0.4 0.12 25);
+  /* Recovery-required pill outline: unlike the three flat literals above,
+     the mockup renders this tone as an alpha blend over --warning, not a
+     separate flat color — keep the blend so both shells' recovery pill
+     keeps matching the mockup pixel-for-pixel. */
+  --status-pill-border-warning: color-mix(in oklch, var(--warning) 40%, transparent);
 
   /* Node type colors */
   --node-command: oklch(0.62 0.18 250);

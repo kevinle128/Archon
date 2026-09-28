@@ -38,6 +38,27 @@ const STEERING_QUEUE_PENDING_STATES: readonly SteeringQueueItemState[] = [
   'delivery_unknown',
 ];
 
+/**
+ * States meaning a claimed message is moving toward the transcript: the
+ * server already committed the claim (`dispatching`), or already sent it to
+ * the provider (`sent`/`delivered`), whether or not the transcript's own,
+ * independently-cadenced read has rendered the matching operator row yet.
+ * None of these are still waiting, and none are withdrawable
+ * (`STEERING_QUEUE_CLAIMABLE_STATES` already excludes all three) — the band
+ * header, the per-row status label, and the queued count all treat every
+ * one of these states identically.
+ */
+const STEERING_QUEUE_IN_FLIGHT_STATES: readonly SteeringQueueItemState[] = [
+  'dispatching',
+  'sent',
+  'delivered',
+];
+
+/** Whether a locally-tracked row has already been claimed and dispatched. */
+export function isQueueItemInFlight(state: SteeringQueueItemState): boolean {
+  return STEERING_QUEUE_IN_FLIGHT_STATES.includes(state);
+}
+
 export interface LocalSentReceipt {
   readonly messageId: string;
   readonly message: string;
@@ -234,6 +255,24 @@ export const STEERING_RECOVERY_DISCLOSURE =
  * the client the live process is gone, not from a guess this code makes, so
  * it overrides what `live`/`rowStatus` would otherwise imply.
  */
+/**
+ * A node counts as terminal for the dock's own read-only transitions the
+ * instant EITHER signal says so: the host's own terminal projection
+ * (`nodeTerminal`), or this dock's own queue read observing
+ * `execution_state: 'finished'`. The queue read is this dock's own,
+ * faster-arriving signal in the window between a Cancel/Abandon landing and
+ * the host's slower terminal-status poll catching up — folding it in lets
+ * the terminal one-shot fetch (and `steeringDockMode`) react without
+ * waiting on that external poll. Shared by both shells so neither drifts
+ * from the other.
+ */
+export function effectiveNodeTerminal(
+  nodeTerminal: boolean,
+  executionState: SteeringExecutionState | null
+): boolean {
+  return nodeTerminal || executionState === 'finished';
+}
+
 export function steeringDockMode(input: {
   rowStatus: string;
   live: boolean;
@@ -399,15 +438,16 @@ export function visiblePendingReceipts(
 }
 
 /**
- * True when every visible pending row is actively dispatching — a send
- * request in flight, never a claimable queued row. The band header must
- * never contradict the rows listed under it: `queued · 0` above a visible
- * `sending…` row claims nothing is happening while something plainly is.
- * `pendingQueueCount` already excludes `dispatching` from its count for the
- * same reason — this is the header-selection counterpart of that exclusion.
+ * True when every visible pending row is in flight (claimed and moving
+ * toward the transcript — `dispatching`, `sent`, or `delivered`), never a
+ * claimable queued row. The band header must never contradict the rows
+ * listed under it: `queued · 0` above a visible `sending…` row claims
+ * nothing is happening while something plainly is. `pendingQueueCount`
+ * already excludes every in-flight state from its count for the same
+ * reason — this is the header-selection counterpart of that exclusion.
  */
 export function allPendingDispatching(sent: readonly LocalSentReceipt[]): boolean {
-  return sent.length > 0 && sent.every(receipt => receipt.state === 'dispatching');
+  return sent.length > 0 && sent.every(receipt => isQueueItemInFlight(receipt.state));
 }
 
 /**
@@ -443,34 +483,49 @@ export function isQueueItemClaimable(state: SteeringQueueItemState): boolean {
 }
 
 /**
+ * Whether a still-locally-tracked row is a genuine "might never have been
+ * sent" candidate for a finished node's never-sent band, before the durable
+ * `never_sent` rows the executor wrote are known. An in-flight row
+ * (`dispatching`, `sent`, `delivered`) already left the queue for the
+ * transcript — the opposite of undelivered — so it must never render as
+ * never-sent ahead of the terminal reconciliation result (server truth).
+ */
+export function isPossiblyNeverSent(state: SteeringQueueItemState): boolean {
+  return !isQueueItemInFlight(state);
+}
+
+/**
  * The count a "queued · N" / "will send · N" band header states — every
- * pending entry except one already `dispatching`. control-states.md lists
- * `queued` and `dispatching` as distinct states: a message already being
- * delivered is not waiting, so counting it as queued misreports what is
- * actually happening (a provider whose delivery takes several seconds, not
- * the sub-second case this once assumed, made that reading visible). The
- * dispatching entry still renders in the list, labelled by
- * `queueItemStatusLabel`, so nothing disappears — it just is not counted
- * twice as "queued" and "in flight" at once.
+ * pending entry except one already in flight (`dispatching`, `sent`, or
+ * `delivered`). control-states.md lists `queued` and `dispatching` as
+ * distinct states: a message already being delivered is not waiting, so
+ * counting it as queued misreports what is actually happening (a provider
+ * whose delivery takes several seconds, not the sub-second case this once
+ * assumed, made that reading visible). An in-flight entry still renders in
+ * the list, labelled by `queueItemStatusLabel`, so nothing disappears — it
+ * just is not counted twice as "queued" and "in flight" at once.
  */
 export function pendingQueueCount(sent: readonly LocalSentReceipt[]): number {
-  return sent.filter(receipt => receipt.state !== 'dispatching').length;
+  return sent.filter(receipt => !isQueueItemInFlight(receipt.state)).length;
 }
 
 /**
  * Per-item delivery label for a pending queue row. `queued`/`awaiting_send_now`
  * render with no label at all, matching the approved mockup's plain rows.
- * `dispatching` and `delivery_unknown` are the two pending states that must
- * never render silently as a plain queued row — control-states.md lists
- * `dispatching` as its own state, and a verified provider can take several
- * real seconds to accept a dispatched message, not the sub-second window
- * this once assumed. `sent`/`delivered`/`never_sent` never reach this
- * helper: once delivered the message is a transcript row, and never-sent
- * rows use their own band.
+ * Every in-flight state (`dispatching`, `sent`, `delivered`) and
+ * `delivery_unknown` must never render silently as a plain queued row —
+ * control-states.md lists `dispatching` as its own state, and a verified
+ * provider can take several real seconds to accept a dispatched message,
+ * not the sub-second window this once assumed. A `sent`/`delivered` row
+ * only briefly reaches this helper — `visiblePendingReceipts` removes it
+ * the moment the transcript confirms the matching operator row — so it
+ * keeps showing the same "sending…" label right up to that hand-off,
+ * never flickering to some other text first. `never_sent` never reaches
+ * this helper: it uses its own band.
  */
 export function queueItemStatusLabel(state: SteeringQueueItemState): string | null {
   if (state === 'delivery_unknown') return 'delivery unknown';
-  if (state === 'dispatching') return 'sending…';
+  if (isQueueItemInFlight(state)) return 'sending…';
   return null;
 }
 
@@ -500,6 +555,21 @@ export function createSteeringDockState(subState?: SteeringSubState): SteeringDo
  * authoritative and supersedes the local interrupting transient; an absent
  * projection only means queue-only — never a detached verdict — so the
  * transient survives until the caller's own interrupt response lands.
+ *
+ * An `idle-after-interrupt` → `generating` transition only ever happens
+ * after the executor's own wake-and-claim already committed every
+ * then-claimable row to `dispatching` server-side (the durable claim
+ * always precedes the turn actually starting — see `claimSteeringQueue`
+ * ahead of `beginTurn` in the engine). A tab that observes this transition
+ * through a faster, separately-cadenced channel than its own `/queue` poll
+ * (an observer watching a different tab's Send now) can otherwise still
+ * show a now-claimed row as plain `queued`/`awaiting_send_now` — offering
+ * a withdraw that can no longer take effect — until its own next queue
+ * snapshot catches up. Mirror the claim here immediately: the same
+ * optimistic-then-reconciled pattern `resolveSendNowSuccess` already uses
+ * for the sending tab itself, applied to every row this tab already knew
+ * about. The next queue snapshot still replaces `sent` wholesale, so this
+ * never diverges from server truth for longer than one poll.
  */
 export function syncProjectedSubState(
   state: SteeringDockState,
@@ -507,8 +577,15 @@ export function syncProjectedSubState(
 ): SteeringDockState {
   const next = projected ?? null;
   if (state.subState === next) return state;
+  const sent =
+    state.subState === 'idle-after-interrupt' && next === 'generating'
+      ? state.sent.map(entry =>
+          isQueueItemClaimable(entry.state) ? { ...entry, state: 'dispatching' as const } : entry
+        )
+      : state.sent;
   return {
     ...state,
+    sent,
     subState: next,
     interruptInFlight: projected === undefined ? state.interruptInFlight : false,
     notice:
@@ -915,9 +992,17 @@ export interface QueueSnapshot {
  * drop rows. On match:
  *
  * - `sent` is replaced wholesale with the durable pending rows (`queued`,
- *   `awaiting_send_now`, `dispatching`, `delivery_unknown`) in server order.
- *   A `sent`/`delivered` row is dropped from this band — it is now a
- *   transcript row, not a queue entry — and never resurrected.
+ *   `awaiting_send_now`, `dispatching`, `delivery_unknown`) in server order,
+ *   PLUS any `sent`/`delivered` row this same tab was already tracking in a
+ *   still-open state on the immediately preceding snapshot — one extra poll
+ *   of grace so the band keeps showing "sending…" for exactly as long as it
+ *   takes the transcript's own, independently-cadenced read to render the
+ *   matching operator row (`visiblePendingReceipts` is the only thing
+ *   allowed to hide it once that happens, never this reconcile). A row this
+ *   tab never tracked as open — a cold load, or a message a different live
+ *   iteration dispatched — is never resurrected once it reads `sent`; the
+ *   grace window bridges a hand-off this tab watched happen, not a general
+ *   amnesty for every `sent` row the server has ever recorded.
  * - `neverSent` is replaced wholesale with the durable `never_sent` rows.
  *   This is the sole source: a node opened cold, well after it
  *   went terminal, still learns exactly what was never delivered, because
@@ -948,8 +1033,23 @@ export function applyQueueSnapshot(
   generationAtRequest: number
 ): SteeringDockState {
   if (generationAtRequest !== state.queueGeneration) return state;
+  // Bridges the `dispatching` → `sent`/`delivered` hand-off for exactly one
+  // extra snapshot: a row counts only when the PRIOR local snapshot still
+  // held it open (any state other than `sent`/`delivered`). Once retained
+  // here, a still-open-per-server row falls out of this set on the NEXT
+  // reconcile (its own state above is already `sent`/`delivered`), so the
+  // grace is bounded to one poll interval and can never stick forever.
+  const priorOpenIds = new Set(
+    state.sent
+      .filter(entry => entry.state !== 'sent' && entry.state !== 'delivered')
+      .map(entry => entry.messageId)
+  );
   const nextSent: LocalSentReceipt[] = snapshot.queued
-    .filter(row => STEERING_QUEUE_PENDING_STATES.includes(row.state))
+    .filter(
+      row =>
+        STEERING_QUEUE_PENDING_STATES.includes(row.state) ||
+        ((row.state === 'sent' || row.state === 'delivered') && priorOpenIds.has(row.message_id))
+    )
     .map(row => ({
       messageId: row.message_id,
       message: row.message,
@@ -1069,6 +1169,23 @@ export interface QueuePollingOptions {
 }
 
 /**
+ * `startQueuePolling`'s return value: calling it directly stops the loop
+ * (same as today), and `.kick()` forces the next read to fire now instead
+ * of waiting out the rest of `intervalMs` — used to close the gap between a
+ * resolved local mutation and this tab's own next scheduled poll. A
+ * callable-with-a-method keeps every existing `return startQueuePolling(...)`
+ * call site and every `stop()`-calling test unchanged.
+ */
+export interface QueuePollingHandle {
+  (): void;
+  /**
+   * Abort any in-flight request and pending timer, then fire a fresh read
+   * immediately. A no-op after the handle has been stopped.
+   */
+  kick(): void;
+}
+
+/**
  * Framework-free queue reconcile loop: fires one read immediately, then
  * schedules the next read only after the current promise settles — requests
  * never overlap. Each request samples `currentGeneration` at fire time and
@@ -1076,11 +1193,14 @@ export interface QueuePollingOptions {
  * Synchronous throws and rejections both normalize through
  * `toSteeringRequestError`; optional `onError` receives that error once before
  * the retry/stop decision. 422, transport (0), and 5xx reschedule; any other
- * 4xx stops the loop without a snapshot callback. The returned cleanup aborts
- * the in-flight request, clears the pending timer, and suppresses every late
- * settle — an abort caused by stop() never schedules a retry.
+ * 4xx stops the loop without a snapshot callback. The returned handle's call
+ * form aborts the in-flight request, clears the pending timer, and
+ * suppresses every late settle — an abort caused by stop() never schedules a
+ * retry. `.kick()` cancels any pending timer/in-flight request the same way,
+ * then fires immediately, so a caller-triggered read is never stacked on top
+ * of the interval's own next tick.
  */
-export function startQueuePolling(options: QueuePollingOptions): () => void {
+export function startQueuePolling(options: QueuePollingOptions): QueuePollingHandle {
   const setTimer = options.setTimer ?? setTimeout;
   const clearTimer = options.clearTimer ?? clearTimeout;
   let stopped = false;
@@ -1134,10 +1254,7 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
     );
   };
 
-  tick();
-
-  return () => {
-    stopped = true;
+  const cancelPending = (): void => {
     epoch++;
     controller?.abort();
     controller = null;
@@ -1146,6 +1263,21 @@ export function startQueuePolling(options: QueuePollingOptions): () => void {
       timer = null;
     }
   };
+
+  const stop = (): void => {
+    stopped = true;
+    cancelPending();
+  };
+  const handle = stop as QueuePollingHandle;
+  handle.kick = (): void => {
+    if (stopped) return;
+    cancelPending();
+    tick();
+  };
+
+  tick();
+
+  return handle;
 }
 
 export interface KeepaliveCoalescerOptions {

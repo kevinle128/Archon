@@ -83,11 +83,11 @@
     },
     {
       "path": "packages/docs-web/src/content/docs/brand/index.md",
-      "sha256": "6cbef294819fe38ac308d41c9c85dbbb4216626abb9babe0596ecd974d4b18cc"
+      "sha256": "4b0827fcef879c33fc3622fcc99a683877c5f10b24e3aa745f80abe0b881d631"
     },
     {
       "path": "packages/web/src/index.css",
-      "sha256": "d91dd61ff791a67718c5654450c1095058b9259a1f78b22670c892840a636b92"
+      "sha256": "b087578368b7f37379da7fd90e870b622d75c21efd3bcc8bb92cc4599c54d01e"
     },
     {
       "path": "packages/web/src/experiments/console/theme.css",

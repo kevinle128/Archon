@@ -46,11 +46,13 @@ import {
   createKeepaliveCoalescer,
   createSteeringDockState,
   deleteButtonAccessibleName,
+  effectiveNodeTerminal,
   sendNowItemAccessibleName,
   finishedIterationDisclosure,
   focusTargetAfterSnapshot,
   goToIterationLabel,
   isKeepaliveActivityKey,
+  isPossiblyNeverSent,
   isQueueItemClaimable,
   isQueueShortcut,
   neverSentBandHeader,
@@ -98,6 +100,7 @@ import {
   toSteeringRequestError,
   type KeepaliveCoalescer,
   type NeverSentEntry,
+  type QueuePollingHandle,
   type RemovalFocusTarget,
   type SteeringDockMode,
   type SteeringDockState,
@@ -412,8 +415,19 @@ export function ComposerDock({
   const coalescerRef = useRef<KeepaliveCoalescer | null>(null);
   const keepaliveRef = useRef(keepalive);
   keepaliveRef.current = keepalive;
+  /** Set while the queue-polling effect below is active; null otherwise. */
+  const pollingHandleRef = useRef<QueuePollingHandle | null>(null);
 
   const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
+  // Bumped whenever a withdraw resolves successfully — the trigger for the
+  // immediate-re-read effect below. A ref bump alone would not schedule a
+  // render, and firing `.kick()` synchronously inside the withdraw promise
+  // handler reads `dockRef.current` before this render's `setDock` has
+  // committed, sampling the PRE-withdraw `queueGeneration` and making the
+  // kicked read's generation check discard the very response meant to fix
+  // this. State + effect defers the kick to after commit, when
+  // `dockRef.current` already reflects the resolved generation.
+  const [withdrawKickTick, setWithdrawKickTick] = useState(0);
   const [draft, setDraft] = useState('');
   // Shared across the four mutually-exclusive band renders below; only one
   // ever mounts at a time. Default open matches the approved mockup.
@@ -514,13 +528,15 @@ export function ComposerDock({
   // folded in as the trailing item (control-states.md: "the half-typed line
   // folds in as the last item"). A `delivery_unknown` row that survives to a
   // terminal node (no reconcile touches it) counts too — undelivered content
-  // must remain readable regardless of which exact state it froze in.
-  // `dispatching` is excluded: it means a send is actively in flight, which
-  // is the opposite of undelivered, so it must never render as "never sent"
-  // before the terminal reconciliation result (server truth) arrives.
+  // must remain readable regardless of which exact state it froze in. Every
+  // in-flight row (`dispatching`, `sent`, `delivered`) is excluded: it means
+  // a send is actively in flight or already left the queue for the
+  // transcript, which is the opposite of undelivered, so it must never
+  // render as "never sent" before the terminal reconciliation result
+  // (server truth) arrives.
   const finishedEntries: NeverSentEntry[] = [
     ...dock.sent
-      .filter(receipt => receipt.state !== 'dispatching')
+      .filter(receipt => isPossiblyNeverSent(receipt.state))
       .map(receipt => ({ messageId: receipt.messageId, message: receipt.message })),
     ...(dock.neverSent ?? []),
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
@@ -535,7 +551,7 @@ export function ComposerDock({
   // screen for a beat. Folding the dock's own signal in here — used for the
   // mode decision and to trigger the one-shot authoritative queue fetch below
   // — closes that gap instead of waiting on the slower external poll.
-  const effectiveNodeTerminal = nodeTerminal || dock.executionState === 'finished';
+  const nodeIsTerminal = effectiveNodeTerminal(nodeTerminal, dock.executionState);
 
   const mode = steeringDockMode({
     rowStatus,
@@ -544,7 +560,7 @@ export function ComposerDock({
     refusal: dock.refusal,
     finishedIteration: usableFinishedIteration,
     neverSent: finishedEntries,
-    nodeTerminal: effectiveNodeTerminal,
+    nodeTerminal: nodeIsTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
   });
 
@@ -568,6 +584,7 @@ export function ComposerDock({
       prevNodeTerminalRef.current = nodeTerminal;
       pendingFocusRef.current = null;
       terminalFetchedRef.current = false;
+      controlsEverMountedRef.current = false;
       setDock(createSteeringDockState(subState));
       setReadDetached(false);
       setReadNotify(null);
@@ -589,6 +606,7 @@ export function ComposerDock({
       if (keyReplaced || terminalFailSafe) {
         attemptGenerationRef.current += 1;
         pendingFocusRef.current = null;
+        controlsEverMountedRef.current = false;
         setDock(createSteeringDockState(subState));
         setReadDetached(false);
         setReadNotify(null);
@@ -619,10 +637,10 @@ export function ComposerDock({
     // does — see steeringDockMode — so a cold mount opened during the window
     // between the run leaving `live` and this node's own terminal event
     // still hydrates the queue instead of showing nothing. Gated on
-    // `effectiveNodeTerminal` (not the raw prop) so this dock's own queue
-    // read triggers the authoritative refetch as soon as ITS poll learns the
+    // `nodeIsTerminal` (not the raw prop) so this dock's own queue read
+    // triggers the authoritative refetch as soon as ITS poll learns the
     // node is finished, rather than waiting on the slower external poll.
-    if (!effectiveNodeTerminal && live) {
+    if (!nodeIsTerminal && live) {
       terminalFetchedRef.current = false;
       return;
     }
@@ -647,7 +665,7 @@ export function ComposerDock({
       // permanently losing this node's terminal hydration for the mount.
       terminalFetchedRef.current = false;
     };
-  }, [effectiveNodeTerminal, live, runId, nodeId, readQueue]);
+  }, [nodeIsTerminal, live, runId, nodeId, readQueue]);
 
   // Shared-queue reads while composer/blocked/finished-iteration/recovery are
   // mounted. Recovery keeps polling (not just a one-shot) so this dock can
@@ -665,7 +683,7 @@ export function ComposerDock({
     if (!pollingEnabled) return;
     const finishedMode = mode === 'finished-iteration';
     const attemptGen = attemptGenerationRef.current;
-    return startQueuePolling({
+    const handle = startQueuePolling({
       read: signal => readQueue(runId, nodeId, { signal }),
       currentGeneration: () => dockRef.current.queueGeneration,
       onSnapshot: (snapshot, generationAtRequest): void => {
@@ -727,8 +745,22 @@ export function ComposerDock({
         : undefined,
       intervalMs: pollIntervalMs,
     });
+    pollingHandleRef.current = handle;
+    return (): void => {
+      pollingHandleRef.current = null;
+      handle();
+    };
     // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
   }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
+
+  // Fires only after a withdraw resolves successfully — see
+  // `withdrawKickTick`'s declaration for why this runs as a post-commit
+  // effect rather than inline in the promise handler. `pollingHandleRef` is
+  // null while polling is disabled, making the kick a safe no-op then.
+  useEffect(() => {
+    if (withdrawKickTick === 0) return;
+    pollingHandleRef.current?.kick();
+  }, [withdrawKickTick]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -742,9 +774,15 @@ export function ComposerDock({
   // replay must never steal focus it never owned.
   const focusInsideRef = useRef(false);
   const controlsMountedRef = useRef(controlsMounted(mode));
+  // Sticky across the composer→hidden→finished chain within one scope: true
+  // once this attempt's dock has rendered ANY focusable control, even after
+  // those controls unmount. Reset alongside `pendingFocusRef` on scope/attempt
+  // reset (below) so a fresh node never inherits a prior node's focus history.
+  const controlsEverMountedRef = useRef(controlsMountedRef.current);
   useEffect(() => {
     const wasMounted = controlsMountedRef.current;
     controlsMountedRef.current = controlsMounted(mode);
+    if (controlsMountedRef.current) controlsEverMountedRef.current = true;
     if (!wasMounted || controlsMountedRef.current) return;
     const active = document.activeElement;
     if (
@@ -775,10 +813,14 @@ export function ComposerDock({
   }, [mode]);
 
   // Cancel can hide the dock (live→false) before neverSent is ready, then
-  // re-enter finished. The composer→hidden handoff may miss; ensure finished
-  // never leaves keyboard focus on <body>.
+  // re-enter finished; that composer→hidden handoff can land between two
+  // renders the transition effect above never sees as one mount→unmount
+  // edge. Only a factor when THIS attempt's dock actually held focusable
+  // controls at some point — never on a cold mount straight into a
+  // finished/failed/recovery node, where focus was never in the dock to
+  // begin with and `document.activeElement` defaults to `<body>` regardless.
   useEffect(() => {
-    if (mode !== 'finished') return;
+    if (mode !== 'finished' || !controlsEverMountedRef.current) return;
     const active = document.activeElement;
     if (
       active === null ||
@@ -986,6 +1028,12 @@ export function ComposerDock({
       (): void => {
         if (attemptGenerationRef.current !== attemptGen) return;
         setDock(current => resolveWithdrawSuccess(current, messageId));
+        // The response never reports whether the row was actually removed
+        // (idempotent no-op either way) — force an immediate re-read (via
+        // the effect below, once this render commits) so a false "removed"
+        // (the row was already claimed) is corrected by the true state
+        // instead of trusting the optimistic removal above.
+        setWithdrawKickTick(tick => tick + 1);
       },
       (error: unknown): void => {
         if (attemptGenerationRef.current !== attemptGen) return;

@@ -52,10 +52,11 @@ Do not use these tokens outside the run-view roots, and do not add new run-view 
 
 ## Node room status pill borders
 
-The Legacy node room header draws its status pill outline from three sitewide tokens in `packages/web/src/index.css` (`:root`). Each one is its status hue at low lightness, so the outline reads on `--surface` without competing with the pill text.
+The Legacy and Console node room headers draw their status pill outlines from sitewide tokens in `packages/web/src/index.css` (`:root`). The running/success/error tones are each their status hue at low lightness, so the outline reads on `--surface` without competing with the pill text; the warning tone instead blends over `--warning`, matching the mockup's own alpha-blended recovery pill.
 
 | Token | Value | Usage |
 |-------|-------|-------|
 | `--status-pill-border-running` | `oklch(0.4 0.12 250)` | Running pill outline |
 | `--status-pill-border-success` | `oklch(0.4 0.08 155)` | Completed pill outline |
 | `--status-pill-border-error` | `oklch(0.4 0.12 25)` | Failed pill outline |
+| `--status-pill-border-warning` | `color-mix(in oklch, var(--warning) 40%, transparent)` | Recovery-required pill outline |
