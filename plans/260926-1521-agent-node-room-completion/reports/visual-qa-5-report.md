@@ -194,3 +194,11 @@ Status: DONE_WITH_CONCERNS
 Summary: All nine round-4 findings and the idle-meta item are fixed and re-verified in their original triggers on real providers, and every earlier-round finding still holds. One new major: the Legacy dock keeps the idle `Send now` treatment and hides Stop while the agent generates, after Legacy pressed Stop and another shell pressed Send now (VQ5-1, reproduced twice, cured only by a reload). One minor: the Console header keeps `waiting on operator` for ~23 s after a Send now, and a Console observer dock lags ~11 s (VQ5-2). Two cosmetics: the room pill size and dot (VQ5-3) and a ~0.1 s double display at the end of dispatch (VQ5-4).
 
 Verdict: REJECT
+
+## Decisions (2026-09-28)
+
+1. VQ5-1 and VQ5-2 share one root cause and are fixed at the root: the server emits an event on every steering sub-state transition, and both docks reconcile to every server snapshot, so a missed transition heals on the next poll.
+2. VQ5-3: the room header pill matches the mockup's room pill measurements, which differ from the run-level header pill.
+3. VQ5-4: the SENDING band row hands off atomically to the operator row with the same message id.
+
+Fixes are owned by the `qa5-fixes` follow-up work.

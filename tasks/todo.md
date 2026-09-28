@@ -32,7 +32,10 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA3 fixes merged (6f1b352b); e2e 153/0/4; real Claude+Grok evidence
 - [x] QA round 4: REJECT (2 major, 3 minor, 4 cosmetic); all 28 earlier findings hold
 - [x] QA4 fixes merged; e2e 153/0/4. Executor mid-tool cancel latency left as follow-up (queue now stays visible)
-- [ ] QA round 5 (final acceptance, Verdict: ACCEPT required)
+- [x] QA round 5: REJECT (1 major, 1 minor, 2 cosmetic); all VQ4 fixes hold
+- [ ] QA5 fixes (sub-state transition events + dock reconciliation, room pill metrics, atomic send hand-off) — agent qa5-fixes
+- [ ] Faster cancel detection during silent tool — agent cancel-latency (merge after QA)
+- [ ] QA round 6 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
 
