@@ -428,12 +428,16 @@ describe('CodexProvider', () => {
         chunks.push(chunk);
       }
 
-      expect(chunks[0]).toEqual({ type: 'tool', toolName: 'npm test', toolCallId: 'cmd-1' });
+      expect(chunks[0]).toEqual({
+        type: 'tool',
+        toolName: 'npm test',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-1$/),
+      });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'tests passed\n',
-        toolCallId: 'cmd-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-1$/),
         toolOutcome: 'success',
         exitCode: 0,
         outputState: 'full',
@@ -470,7 +474,7 @@ describe('CodexProvider', () => {
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'failure\n\n[exit code: 1]',
-        toolCallId: 'cmd-2',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-2$/),
         toolOutcome: 'error',
         exitCode: 1,
         outputState: 'full',
@@ -503,7 +507,7 @@ describe('CodexProvider', () => {
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'partial output',
-        toolCallId: 'cmd-unknown',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-unknown$/),
         toolOutcome: 'unknown',
         outputState: 'full',
       });
@@ -551,13 +555,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50D} Searching: codex sdk',
-        toolCallId: 'search-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:search-1$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50D} Searching: codex sdk',
         toolOutput: '',
-        toolCallId: 'search-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:search-1$/),
         toolOutcome: 'unknown',
         outputState: 'missing',
       });
@@ -668,19 +672,19 @@ describe('CodexProvider', () => {
           type: 'tool',
           toolName: 'apply_patch',
           toolInput: { path: 'src/new.ts', kind: 'add' },
-          toolCallId: 'fc-1:0',
+          toolCallId: expect.stringMatching(/^codex-[^:]+:fc-1:0$/),
         },
         {
           type: 'tool',
           toolName: 'apply_patch',
           toolInput: { path: 'src/app.ts', kind: 'update' },
-          toolCallId: 'fc-1:1',
+          toolCallId: expect.stringMatching(/^codex-[^:]+:fc-1:1$/),
         },
         {
           type: 'tool',
           toolName: 'apply_patch',
           toolInput: { path: 'src/old.ts', kind: 'delete' },
-          toolCallId: 'fc-1:2',
+          toolCallId: expect.stringMatching(/^codex-[^:]+:fc-1:2$/),
         },
       ]);
       // Non-existent files in this fixture's cwd \u2014 a real event, honestly
@@ -868,26 +872,26 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs/readFile',
-        toolCallId: 'mcp-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-1$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs/readFile',
         toolOutput: '',
-        toolCallId: 'mcp-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-1$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
       expect(chunks[2]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs/readFile',
-        toolCallId: 'mcp-2',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-2$/),
       });
       expect(chunks[3]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs/readFile',
         toolOutput: '\u274C Error: Permission denied',
-        toolCallId: 'mcp-2',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-2$/),
         toolOutcome: 'error',
         outputState: 'full',
       });
@@ -936,39 +940,39 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: readFile',
-        toolCallId: 'mcp-tool',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-tool$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: readFile',
         toolOutput: '',
-        toolCallId: 'mcp-tool',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-tool$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
       expect(chunks[2]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs',
-        toolCallId: 'mcp-server',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-server$/),
       });
       expect(chunks[3]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs',
         toolOutput: '',
-        toolCallId: 'mcp-server',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-server$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
       expect(chunks[4]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: MCP tool',
-        toolCallId: 'mcp-unknown',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-unknown$/),
       });
       expect(chunks[5]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: MCP tool',
         toolOutput: '',
-        toolCallId: 'mcp-unknown',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-unknown$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
@@ -1003,13 +1007,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: db/query',
-        toolCallId: 'mcp-failure',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-failure$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: db/query',
         toolOutput: '\u274C Error: MCP tool failed',
-        toolCallId: 'mcp-failure',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-failure$/),
         toolOutcome: 'error',
         outputState: 'full',
       });
@@ -1046,13 +1050,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: '\u{1F50C} MCP: fs/readFile',
-        toolCallId: 'mcp-completed',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-completed$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: '\u{1F50C} MCP: fs/readFile',
         toolOutput: JSON.stringify([{ type: 'text', text: 'file contents' }]),
-        toolCallId: 'mcp-completed',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:mcp-completed$/),
         toolOutcome: 'success',
         outputState: 'full',
       });
@@ -1703,7 +1707,11 @@ describe('CodexProvider', () => {
       }
 
       expect(mockLogger.debug).toHaveBeenCalledWith(
-        { eventType: 'item.started', itemType: 'command_execution', itemId: 'item-1' },
+        {
+          eventType: 'item.started',
+          itemType: 'command_execution',
+          itemId: expect.stringMatching(/^codex-[^:]+:item-1$/),
+        },
         'item_started'
       );
 
@@ -1711,7 +1719,7 @@ describe('CodexProvider', () => {
         {
           eventType: 'item.completed',
           itemType: 'command_execution',
-          itemId: 'item-1',
+          itemId: expect.stringMatching(/^codex-[^:]+:item-1$/),
           command: 'npm test',
         },
         'item_completed'
@@ -1719,13 +1727,13 @@ describe('CodexProvider', () => {
       expect(chunks[0]).toEqual({
         type: 'tool',
         toolName: 'npm test',
-        toolCallId: 'item-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:item-1$/),
       });
       expect(chunks[1]).toEqual({
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: '',
-        toolCallId: 'item-1',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:item-1$/),
         toolOutcome: 'unknown',
         outputState: 'full',
       });
@@ -1764,7 +1772,10 @@ describe('CodexProvider', () => {
       expect(chunks.filter(chunk => chunk.type === 'tool')).toHaveLength(1);
       expect(chunks.filter(chunk => chunk.type === 'tool_result')).toHaveLength(1);
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        { itemId: 'cmd-duplicate', itemType: 'command_execution' },
+        {
+          itemId: expect.stringMatching(/^codex-[^:]+:cmd-duplicate$/),
+          itemType: 'command_execution',
+        },
         'tool_item_duplicate_completion'
       );
     });
@@ -1796,13 +1807,16 @@ describe('CodexProvider', () => {
         type: 'tool_result',
         toolName: 'npm test',
         toolOutput: 'done',
-        toolCallId: 'cmd-completed-only',
+        toolCallId: expect.stringMatching(/^codex-[^:]+:cmd-completed-only$/),
         toolOutcome: 'success',
         exitCode: 0,
         outputState: 'full',
       });
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        { itemId: 'cmd-completed-only', itemType: 'command_execution' },
+        {
+          itemId: expect.stringMatching(/^codex-[^:]+:cmd-completed-only$/),
+          itemType: 'command_execution',
+        },
         'tool_item_completed_without_start'
       );
     });
@@ -2806,7 +2820,11 @@ describe('operator interrupt (Stop, #8.4)', () => {
       chunks.push(chunk);
     }
 
-    expect(chunks.some(c => c.type === 'tool' && c.toolCallId === 't1')).toBe(true);
+    expect(
+      chunks.some(
+        c => c.type === 'tool' && typeof c.toolCallId === 'string' && c.toolCallId.endsWith(':t1')
+      )
+    ).toBe(true);
     const result = chunks.at(-1);
     expect(result).toMatchObject({
       type: 'result',

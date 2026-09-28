@@ -385,15 +385,16 @@ function toToolItem(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
   nowMs: number,
+  ordinal: number,
   outcomeOverride?: ToolOutcome
 ): Extract<AgentHistoryItem, { kind: 'tool' }> {
   const toolUseId = toolUseIdFrom(card);
   const exitCode = toolExitCode(card);
   const outcome = outcomeOverride ?? deriveOutcome(card, exitCode);
-  const durationMs = toolRuntime(events, nodeId, toolUseId).durationMs;
+  const durationMs = toolRuntime(events, nodeId, toolUseId, ordinal).durationMs;
   const outputState = deriveOutputState(card);
   const runningElapsedMs =
-    outcome === 'running' ? runningElapsed(events, nodeId, toolUseId, nowMs) : null;
+    outcome === 'running' ? runningElapsed(events, nodeId, toolUseId, nowMs, ordinal) : null;
   return {
     kind: 'tool',
     id: card.id,
@@ -418,11 +419,20 @@ function toToolItem(
   };
 }
 
-/** Exactly one matching `tool_called` start, or null — missing, ambiguous, and unparseable starts yield no elapsed badge. */
+/**
+ * The `ordinal`-th matching `tool_called` start (0-indexed, in event order),
+ * or null — missing or unparseable starts yield no elapsed badge. `ordinal`
+ * disambiguates a tool-use id reused across turns of the same node execution
+ * (a provider that restarts its own id numbering, e.g. Codex's `item_1` per
+ * turn): the caller counts how many earlier tool cards share this id and
+ * passes that count, so each card resolves to its OWN start event instead of
+ * either of two colliding events winning arbitrarily.
+ */
 function toolStartedAtMs(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
-  toolUseId: string
+  toolUseId: string,
+  ordinal: number
 ): number | null {
   const matches: string[] = [];
   for (const workflowEvent of events) {
@@ -433,8 +443,9 @@ function toolStartedAtMs(
     if (data.tool_call_id !== toolUseId) continue;
     matches.push(workflowEvent.created_at);
   }
-  if (matches.length !== 1) return null;
-  const startedAt = new Date(ensureUtc(matches[0] ?? '')).getTime();
+  const match = matches[ordinal];
+  if (match === undefined) return null;
+  const startedAt = new Date(ensureUtc(match)).getTime();
   return Number.isFinite(startedAt) ? startedAt : null;
 }
 
@@ -442,9 +453,10 @@ function runningElapsed(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
   toolUseId: string,
-  nowMs: number
+  nowMs: number,
+  ordinal: number
 ): number | null {
-  const startedAt = toolStartedAtMs(events, nodeId, toolUseId);
+  const startedAt = toolStartedAtMs(events, nodeId, toolUseId, ordinal);
   if (startedAt === null) return null;
   return Math.max(0, nowMs - startedAt);
 }
@@ -463,12 +475,16 @@ function runningElapsed(
  * call never settled — most commonly a hard restart before any turn-ending
  * message could settle it) falls back to `'unknown'` once the execution is
  * terminal, or stays `'running'` while it might still resolve.
+ *
+ * `ordinal` (0-indexed, in event order) picks which of possibly several
+ * events sharing `toolUseId` belongs to THIS card — see `toolStartedAtMs`.
  */
 function pendingToolOutcome(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
   toolUseId: string,
-  nodeTerminal: boolean
+  nodeTerminal: boolean,
+  ordinal: number
 ): ToolOutcome {
   const matches: unknown[] = [];
   for (const workflowEvent of events) {
@@ -479,8 +495,8 @@ function pendingToolOutcome(
     if (data.tool_call_id !== toolUseId) continue;
     matches.push(data.tool_outcome);
   }
-  if (matches.length === 1) {
-    switch (matches[0]) {
+  if (ordinal < matches.length) {
+    switch (matches[ordinal]) {
       case 'success':
         return 'succeeded';
       case 'error':
@@ -496,10 +512,12 @@ function pendingToolOutcome(
   return nodeTerminal ? 'unknown' : 'running';
 }
 
+/** `ordinal` (0-indexed, in event order) picks which of possibly several `tool_completed` events sharing `toolUseId` belongs to THIS card — see `toolStartedAtMs`. */
 export function toolRuntime(
   events: readonly components['schemas']['WorkflowEvent'][],
   nodeId: string,
-  toolUseId: string
+  toolUseId: string,
+  ordinal: number
 ): { durationMs: number | null } {
   const matches: number[] = [];
   for (const workflowEvent of events) {
@@ -512,20 +530,28 @@ export function toolRuntime(
     if (durationMs === null) continue;
     matches.push(durationMs);
   }
-  if (matches.length !== 1) {
-    return { durationMs: null };
-  }
-  return { durationMs: matches[0] ?? null };
+  const match = matches[ordinal];
+  return { durationMs: match ?? null };
 }
 
 export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
   const projected = projectToolTranscript(projectTextTranscript(input.rows));
   const envelopeKey = singleStringSchemaKey(input.outputFormat);
   const items: AgentHistoryItem[] = [];
+  // Counts prior tool cards sharing the same tool-use id, in projection
+  // order — the occurrence ordinal a colliding id (a provider that restarts
+  // its own numbering per turn, e.g. Codex) is disambiguated by. The
+  // projector already gives each card its OWN result when one exists
+  // (`pair-tool-transcript.ts`); this ordinal lets the event-derived
+  // duration/outcome lookups below do the same for a still-open card.
+  const toolUseOrdinal = new Map<string, number>();
   for (let index = 0; index < projected.length; index++) {
     const item = projected[index];
     if (item === undefined) continue;
     if (item.kind === 'tool-card') {
+      const toolUseId = toolUseIdFrom(item);
+      const ordinal = toolUseOrdinal.get(toolUseId) ?? 0;
+      toolUseOrdinal.set(toolUseId, ordinal + 1);
       // A card with its own result row is always trusted as recorded —
       // never overridden by an adjacent `interrupted` status row, which
       // proves only that Stop landed somewhere in this turn, not that it
@@ -536,11 +562,19 @@ export function buildAgentHistory(input: AgentHistoryInput): AgentHistory {
         ? pendingToolOutcome(
             input.events,
             input.nodeId,
-            toolUseIdFrom(item),
-            input.nodeTerminal === true
+            toolUseId,
+            input.nodeTerminal === true,
+            ordinal
           )
         : undefined;
-      const toolItem = toToolItem(item, input.events, input.nodeId, input.nowMs, settledOutcome);
+      const toolItem = toToolItem(
+        item,
+        input.events,
+        input.nodeId,
+        input.nowMs,
+        ordinal,
+        settledOutcome
+      );
       items.push(toolItem);
       // Consume the adjacent status row only when this call's own final,
       // trusted outcome IS the interrupted glyph — whether that came from

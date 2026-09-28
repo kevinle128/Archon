@@ -11,6 +11,7 @@ import {
   type ThreadStartedEvent,
   type Thread,
 } from '@openai/codex-sdk';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join as joinPath } from 'node:path';
 import type {
@@ -476,6 +477,20 @@ interface CodexStreamState {
   completedToolItemIds: Set<string>;
 }
 
+/**
+ * Codex restarts its own item numbering (`item_1`, `item_2`, …) on every
+ * turn — a fresh `thread.runStreamed()` call, not a fresh thread — so the
+ * same raw id can name a different tool call on a later turn of the same
+ * node execution (a Stop + redirect, or a cold subprocess retry). Scope
+ * every emitted id by the turn that produced it, the same per-call-nonce
+ * pattern `createDeepseekEventState`/`createGrokAcpEventState` use for their
+ * text block ids. Returns the raw (possibly falsy) id unchanged when it is
+ * empty, preserving the callers' existing truthiness checks.
+ */
+function scopedItemId(turnId: string, rawId: string): string {
+  return rawId ? `codex-${turnId}:${rawId}` : rawId;
+}
+
 function getMcpToolName(item: Record<string, unknown>): string {
   const server = item.server as string | undefined;
   const tool = item.tool as string | undefined;
@@ -551,7 +566,11 @@ async function* streamCodexEvents(
   interruptSignal: AbortSignal | undefined,
   cwd: string,
   surfaceMcpClientErrors = false,
-  requestedModel?: string
+  requestedModel?: string,
+  /** Identifies this turn. Defaulted so every call — a fresh turn or a cold
+   *  retry of the same one — gets its own scope; injectable for deterministic
+   *  tests. See `scopedItemId`. */
+  turnId: string = randomUUID()
 ): AsyncGenerator<MessageChunk> {
   const state: CodexStreamState = {
     startedToolItemIds: new Set<string>(),
@@ -639,7 +658,7 @@ async function* streamCodexEvents(
       if (event.type === 'item.started') {
         const item = event.item as Record<string, unknown>;
         const itemType = item.type as string;
-        const itemId = item.id as string;
+        const itemId = scopedItemId(turnId, item.id as string);
         getLog().debug({ eventType: event.type, itemType, itemId }, 'item_started');
 
         let toolName: string | undefined;
@@ -703,18 +722,18 @@ async function* streamCodexEvents(
       if (event.type === 'item.completed') {
         const item = event.item as Record<string, unknown>;
         const itemType = item.type as string;
+        const itemId = scopedItemId(turnId, item.id as string);
 
         const logContext: Record<string, unknown> = {
           eventType: event.type,
           itemType,
-          itemId: item.id,
+          itemId,
         };
         if (itemType === 'command_execution' && item.command) {
           logContext.command = item.command;
         }
         getLog().debug(logContext, 'item_completed');
 
-        const itemId = item.id as string;
         const isToolItem =
           itemType === 'command_execution' ||
           itemType === 'web_search' ||
@@ -764,7 +783,7 @@ async function* streamCodexEvents(
                 outputState: 'full' as const,
               };
             } else {
-              getLog().warn({ itemId: item.id }, 'command_execution_missing_command');
+              getLog().warn({ itemId }, 'command_execution_missing_command');
             }
             break;
 
@@ -786,7 +805,7 @@ async function* streamCodexEvents(
                 outputState: 'missing' as const,
               };
             } else {
-              getLog().debug({ itemId: item.id }, 'web_search_missing_query');
+              getLog().debug({ itemId }, 'web_search_missing_query');
             }
             break;
 
@@ -806,7 +825,7 @@ async function* streamCodexEvents(
                 yield { type: 'system', content: `📋 Tasks:\n${taskList}` };
               }
             } else {
-              getLog().debug({ itemId: item.id }, 'todo_list_empty_or_invalid');
+              getLog().debug({ itemId }, 'todo_list_empty_or_invalid');
             }
             break;
           }
@@ -838,10 +857,7 @@ async function* streamCodexEvents(
                   content: `❌ File changes:\n${changeList}${errorSuffix}`,
                 };
               } else {
-                getLog().warn(
-                  { itemId: item.id, status: item.status },
-                  'file_change_failed_no_changes'
-                );
+                getLog().warn({ itemId, status: item.status }, 'file_change_failed_no_changes');
                 const failMsg = fileErrorMessage
                   ? `❌ File change failed: ${fileErrorMessage}`
                   : '❌ File change failed';
@@ -851,7 +867,7 @@ async function* streamCodexEvents(
             }
 
             if (!Array.isArray(changes) || changes.length === 0) {
-              getLog().debug({ itemId: item.id, status: item.status }, 'file_change_no_changes');
+              getLog().debug({ itemId, status: item.status }, 'file_change_no_changes');
               break;
             }
 
@@ -865,10 +881,10 @@ async function* streamCodexEvents(
             for (let index = 0; index < changes.length; index++) {
               const change = changes[index];
               if (!change || typeof change.path !== 'string' || change.path.length === 0) {
-                getLog().warn({ itemId: item.id, index }, 'file_change_entry_missing_path');
+                getLog().warn({ itemId, index }, 'file_change_entry_missing_path');
                 continue;
               }
-              const toolCallId = `${item.id}:${String(index)}`;
+              const toolCallId = `${itemId}:${String(index)}`;
               yield {
                 type: 'tool',
                 toolName: CODEX_FILE_CHANGE_TOOL_NAME,
@@ -898,10 +914,7 @@ async function* streamCodexEvents(
             const mcpToolName = getMcpToolName(item);
 
             if ((item.status as string) === 'failed') {
-              getLog().warn(
-                { server, tool, error: item.error, itemId: item.id },
-                'mcp_tool_call_failed'
-              );
+              getLog().warn({ server, tool, error: item.error, itemId }, 'mcp_tool_call_failed');
               const mcpError = item.error as { message?: string } | undefined;
               const errMsg = mcpError?.message
                 ? `❌ Error: ${mcpError.message}`
@@ -923,7 +936,7 @@ async function* streamCodexEvents(
                 } else {
                   getLog().warn(
                     {
-                      itemId: item.id,
+                      itemId,
                       server,
                       tool,
                       resultType: typeof mcpResult.content,

@@ -104,30 +104,30 @@ function kinds(items: readonly AgentHistoryItem[]): Array<AgentHistoryItem['kind
 }
 
 describe('toolRuntime', () => {
-  test('joins duration only when exactly one matching completion event has a finite nonnegative duration', () => {
+  test('joins the ordinal-th matching completion event with a finite nonnegative duration', () => {
     const match = event({
       id: 'e-match',
       eventType: 'tool_completed',
       stepName: NODE_ID,
       data: { tool_call_id: 'tool-1', duration_ms: 42 },
     });
-    expect(toolRuntime([match], NODE_ID, 'tool-1')).toEqual({ durationMs: 42 });
-    expect(toolRuntime([], NODE_ID, 'tool-1')).toEqual({ durationMs: null });
-    expect(
-      toolRuntime(
-        [
-          match,
-          event({
-            id: 'e-again',
-            eventType: 'tool_completed',
-            stepName: NODE_ID,
-            data: { tool_call_id: 'tool-1', duration_ms: 99 },
-          }),
-        ],
-        NODE_ID,
-        'tool-1'
-      )
-    ).toEqual({ durationMs: null });
+    expect(toolRuntime([match], NODE_ID, 'tool-1', 0)).toEqual({ durationMs: 42 });
+    expect(toolRuntime([], NODE_ID, 'tool-1', 0)).toEqual({ durationMs: null });
+    // An id reused across two turns of the same node execution (a provider
+    // that restarts its own numbering, e.g. Codex) is disambiguated by
+    // occurrence order rather than refused as ambiguous — the ordinal-th
+    // call gets the ordinal-th completion event, in event order.
+    const again = event({
+      id: 'e-again',
+      eventType: 'tool_completed',
+      stepName: NODE_ID,
+      data: { tool_call_id: 'tool-1', duration_ms: 99 },
+    });
+    expect(toolRuntime([match, again], NODE_ID, 'tool-1', 0)).toEqual({ durationMs: 42 });
+    expect(toolRuntime([match, again], NODE_ID, 'tool-1', 1)).toEqual({ durationMs: 99 });
+    // An ordinal past the end of the matches is honestly missing, not a
+    // wraparound guess.
+    expect(toolRuntime([match, again], NODE_ID, 'tool-1', 2)).toEqual({ durationMs: null });
   });
 
   test('ignores other nodes, other tools, other event types, and invalid durations', () => {
@@ -160,7 +160,8 @@ describe('toolRuntime', () => {
           }),
         ],
         NODE_ID,
-        'tool-1'
+        'tool-1',
+        0
       )
     ).toEqual({ durationMs: null });
   });
@@ -586,7 +587,7 @@ describe('buildAgentHistory', () => {
     ]);
   });
 
-  test('produces no elapsed guess when the tool_called start is missing, ambiguous, or invalid', () => {
+  test('produces no elapsed guess when the tool_called start is missing or invalid; resolves a duplicate by ordinal', () => {
     const rows = [
       toolRow({
         id: 'call-run',
@@ -612,7 +613,11 @@ describe('buildAgentHistory', () => {
     };
 
     expect(stateTexts([])).toEqual(['running']);
-    expect(stateTexts([called('e1'), called('e2')])).toEqual(['running']);
+    // Two `tool_called` events sharing this id is the single-card-ordinal-0
+    // case of a reused id — it resolves to the first (event-order) one
+    // rather than refusing, the same ordinal rule that gives each card of a
+    // genuine cross-turn collision its own start event.
+    expect(stateTexts([called('e1'), called('e2')])).toEqual(['running · 30.0s']);
     expect(stateTexts([called('e1', 'not-a-timestamp')])).toEqual(['running']);
     expect(
       stateTexts([
@@ -626,6 +631,88 @@ describe('buildAgentHistory', () => {
     ).toEqual(['running']);
     // The future start still renders a badge, clamped to zero elapsed.
     expect(stateTexts([called('e1')], Date.parse(CREATED_AT) - 5)).toEqual(['running · 0ms']);
+  });
+
+  test('resolves each turn of a reused tool-use id to its own outcome and duration', () => {
+    // A provider that restarts its own id numbering per turn (e.g. Codex's
+    // `item_1`) reuses the same raw id for turn 1's interrupted call and
+    // turn 2's successful re-run. Turn 1 never gets its own transcript
+    // result row (only the settle event); turn 2 does. Both the pairing
+    // (turn 2's card must not be left `pending`) and the ordinal-matched
+    // event lookups (each card's own duration/outcome, not the other's)
+    // must hold.
+    const T1 = CREATED_AT;
+    const T2 = new Date(Date.parse(CREATED_AT) + 5_000).toISOString();
+    const T3 = new Date(Date.parse(CREATED_AT) + 6_000).toISOString();
+    const T4 = new Date(Date.parse(CREATED_AT) + 15_000).toISOString();
+    const { items } = buildAgentHistory({
+      nodeId: NODE_ID,
+      nowMs: NOW_MS,
+      nodeTerminal: true,
+      events: [
+        event({
+          id: 'e-called-1',
+          eventType: 'tool_called',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1' },
+          createdAt: T1,
+        }),
+        event({
+          id: 'e-completed-1',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1', tool_outcome: 'unknown', duration_ms: 5_000 },
+          createdAt: T2,
+        }),
+        event({
+          id: 'e-called-2',
+          eventType: 'tool_called',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1' },
+          createdAt: T3,
+        }),
+        event({
+          id: 'e-completed-2',
+          eventType: 'tool_completed',
+          stepName: NODE_ID,
+          data: { tool_call_id: 'item_1', tool_outcome: 'success', duration_ms: 9_000 },
+          createdAt: T4,
+        }),
+      ],
+      rows: [
+        toolRow({
+          id: 'c1',
+          seq: 1,
+          name: 'Bash',
+          toolUseId: 'item_1',
+          input: { command: 'step-1' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'c2',
+          seq: 2,
+          name: 'Bash',
+          toolUseId: 'item_1',
+          input: { command: 'step-1' },
+          metadata: { tool_phase: 'call' },
+        }),
+        toolRow({
+          id: 'r2',
+          seq: 3,
+          name: 'Bash',
+          toolUseId: 'item_1',
+          output: 'step-1\n',
+          metadata: { tool_phase: 'result', outcome: 'success' },
+        }),
+      ],
+    });
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ outcome: 'unknown', durationMs: 5_000, output: undefined });
+    expect(items[1]).toMatchObject({
+      outcome: 'succeeded',
+      durationMs: 9_000,
+      output: 'step-1\n',
+    });
   });
 
   test('keeps a direct-result interrupted outcome and presentation without a status row', () => {
