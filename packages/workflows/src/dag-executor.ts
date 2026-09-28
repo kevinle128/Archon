@@ -3607,11 +3607,11 @@ async function executeNodeInternal(
     const duration = Date.now() - nodeStartTime;
     getLog().info({ nodeId: node.id, durationMs: duration }, 'dag_node_cancelled_during_streaming');
 
-    // Safety net for a provider pass that never reached the normal
-    // `type === 'result'` settle (e.g. it threw instead of yielding a
-    // terminal result — a structured-output node whose stream was cut off
-    // before producing valid output). Entries the normal path already
-    // resolved are out of the map, so this is a no-op there.
+    // Safety net for a stream that exited via the external-abort race
+    // (`withIdleTimeout`'s decoupled poller) without ever yielding a
+    // terminal `type === 'result'` chunk, so the normal in-stream settle
+    // never ran. Entries the normal path already resolved are out of the
+    // map, so this is a no-op there.
     settleRunningToolsOutcome(
       deps,
       runningTools,

@@ -145,8 +145,9 @@ describe('ConsoleRoomHeader', () => {
     expect(pill.className).toContain('font-bold');
     expect(pill.querySelector('span[aria-hidden]')).toBeNull();
     // Matches the mockup pill exactly: no explicit line-height override, so
-    // the browser's own default wins (18px total) instead of Tailwind's
-    // paired 1.5 line-height for `text-[10px]` (21px).
+    // the browser's own default wins (measured 18px total live) instead of
+    // the inherited cascade the app previously left in place (measured
+    // 21px).
     expect(pill.getAttribute('style') ?? '').toContain('line-height: normal');
   });
 

@@ -75,10 +75,10 @@ interface StatusPillStyle {
 // Every tone renders 10px/700 with no dot, matching the mockup room header
 // pill (measured against the live mockup, not the run-level page header
 // pill it was once confused with). `lineHeight: 'normal'` matches the
-// mockup's pill exactly: it sets no line-height of its own, so the browser's
-// own default for the span's font wins — `text-[10px]`'s Tailwind-paired
-// line-height (1.5, i.e. 15px) makes the pill 21px tall instead of the
-// mockup's 18px.
+// mockup's pill exactly: the mockup's own markup sets no line-height on the
+// pill, so the browser's own default for its font wins there (measured 18px
+// tall); without this override the inherited cascade left the app's pill at
+// 21px.
 const STATUS_PILL_STYLE: Readonly<Record<string, StatusPillStyle>> = {
   accent: {
     className: 'text-[10px] font-bold text-[color:var(--running)]',
