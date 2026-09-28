@@ -35,7 +35,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA round 5: REJECT (1 major, 1 minor, 2 cosmetic); all VQ4 fixes hold
 - [x] QA5 fixes merged; e2e 154/0/4; cross-shell recovery 0.8–1.3 s (Claude, Codex live)
 - [x] Cancel detection during silent tool merged: Abandon → node_failed 84s → 1.3s (Claude live); e2e 153/0/4
-- [ ] QA round 6 (final acceptance, Verdict: ACCEPT required)
+- [x] QA round 6: REJECT (1 major, 2 minor, 2 cosmetic); all VQ5 fixes hold; abandon 0.15–2.7 s
+- [ ] QA6 fixes (tool ids unique per execution for all providers + turn-safe pairing, cancelled node terminal event, Legacy abandon queue visibility, pill metrics, immediate sending row) — agent qa6-fixes
+- [ ] QA round 7 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
 

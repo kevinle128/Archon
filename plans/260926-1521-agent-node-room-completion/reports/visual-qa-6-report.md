@@ -198,3 +198,12 @@ Status: DONE_WITH_CONCERNS
 Summary: All four round-5 findings are fixed in their original triggers (Legacy observer ≤ 1.0 s, Console header ≤ 0.15 s), and Abandon during a silent tool now ends the node in ≤ 2.7 s on every provider. One new major: after a Codex Stop + redirect, tool rows take other turns' results, so an interrupted command reads `✓ succeeded` (VQ6-1). Two new minors: an abandoned Grok `--single` node keeps a ticking `◐ running` tool because no `node_failed` event is written (VQ6-2), and Legacy hides the queued item for up to 1.8 s during the abandon window (VQ6-3). Two cosmetics: VQ6-4 and VQ6-5.
 
 Verdict: REJECT
+
+## Decisions (2026-09-28)
+
+1. VQ6-1 is fixed generally, not only for Codex: every provider emits tool call ids that are unique within a node execution, and the web pairing never pairs a result with a call from a different turn, so rows stored by earlier builds also render correctly.
+2. VQ6-2: every cancelled node emits its terminal node event and settles still-open tools by the capability rules, including the Grok `--single` path.
+3. VQ6-3: Legacy keeps durable queue items visible continuously through the abandon window, like Console.
+4. VQ6-4 and VQ6-5 match the mockup: exact room pill height and border, and an immediate `sending…` row that hands off to the operator row without duplication.
+
+Fixes are owned by the `qa6-fixes` follow-up work.
