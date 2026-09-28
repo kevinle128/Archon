@@ -976,12 +976,87 @@ export const CANCEL_CHECK_INTERVAL_MS = 10_000;
  * - `null` (run deleted), `cancelled`, `failed`, `completed`, or any other
  *   state → abort the stream.
  *
- * Exported for unit testing; the full streaming-cancel branch in
- * `executeNodeInternal` only fires once per 10s (CANCEL_CHECK_INTERVAL_MS), so
- * integration-level coverage of the policy is timing-sensitive and flaky.
+ * Exported for unit testing. Two independent callers apply this policy: the
+ * in-loop check inside `executeNodeInternal`'s `for await` body, throttled to
+ * once per 10s (CANCEL_CHECK_INTERVAL_MS) and only reachable when a chunk
+ * arrives — integration-level coverage of THAT specific branch is
+ * timing-sensitive and flaky; and `startStreamCancelPoller`'s decoupled
+ * timer below, which checks on its own short clock independent of chunk
+ * arrival and has deterministic integration coverage (see the "silent stream
+ * cancellation" describe blocks).
  */
 export function shouldContinueStreamingForStatus(status: string | null): boolean {
   return status === 'running' || status === 'paused';
+}
+
+/**
+ * Poll cadence for the decoupled stream-cancel watcher below — short enough
+ * that Abandon/Cancel is noticed well inside a few seconds even when the
+ * provider stream is completely silent (a long-running tool call yields no
+ * chunks, so nothing drives the in-loop check above during that whole
+ * window).
+ */
+export const STREAM_CANCEL_POLL_INTERVAL_MS = 2_000;
+
+/**
+ * Decoupled background poller — mirrors the idle-await poll inside
+ * `raceIdleWake` (#183), but drives `controller.abort()` directly instead of
+ * resolving a race promise. The in-loop cancel check above only runs when a
+ * new provider chunk arrives, so a silently-running tool call (no interleaved
+ * chunks) leaves a cancelled/failed/deleted run streaming until the tool
+ * itself finishes and the next chunk lands. This timer reads the run's own
+ * durable status on its own clock, independent of whether the stream is
+ * yielding anything, and aborts the node's `AbortController` — the SAME one
+ * already handed to `sendQuery` as `abortSignal` — the moment the status
+ * stops permitting streaming. The provider's own abort handling (already
+ * relied on by the idle-timeout path) then tears the stream down; this timer
+ * never touches the `for await` loop body.
+ *
+ * Read-only, single indexed lookup per tick — no write contention. `onDetected`
+ * (optional) lets a caller record the observed status before the abort fires,
+ * e.g. for a failure message that names the exact reason. The returned
+ * `stop()` MUST be called once the stream pass ends — success, throw, or
+ * abort — or the timer outlives the pass it was watching.
+ */
+export function startStreamCancelPoller(
+  deps: WorkflowDeps,
+  workflowRunId: string,
+  nodeId: string,
+  controller: AbortController,
+  onDetected?: (status: string | null) => void
+): () => void {
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const tick = (): void => {
+    if (stopped || controller.signal.aborted) return;
+    deps.store
+      .getWorkflowRunStatus(workflowRunId)
+      .then(status => {
+        if (stopped || controller.signal.aborted) return;
+        if (!shouldContinueStreamingForStatus(status)) {
+          getLog().info(
+            { workflowRunId, nodeId, status: status ?? 'deleted' },
+            'dag.node_cancel_poll_detected'
+          );
+          onDetected?.(status);
+          controller.abort();
+          return;
+        }
+        timer = setTimeout(tick, STREAM_CANCEL_POLL_INTERVAL_MS);
+      })
+      .catch((err: unknown) => {
+        getLog().warn(
+          { err: err as Error, workflowRunId, nodeId },
+          'dag.node_cancel_poll_check_failed'
+        );
+        if (!stopped) timer = setTimeout(tick, STREAM_CANCEL_POLL_INTERVAL_MS);
+      });
+  };
+  tick();
+  return () => {
+    stopped = true;
+    if (timer !== undefined) clearTimeout(timer);
+  };
 }
 
 /** Throttle state for activity heartbeat writes (only used for stale/zombie detection) */
@@ -2595,6 +2670,15 @@ async function executeNodeInternal(
       passOptions.interruptSignal = controller.signal;
       passOptions.softInjection = softInjection.channel;
     }
+    // Decoupled cancel watcher (started before the stream begins, stopped in
+    // the `finally` below no matter how this pass ends) — closes the gap left
+    // by the in-loop check further down, which only runs when a chunk arrives.
+    const stopCancelPoll = startStreamCancelPoller(
+      deps,
+      workflowRun.id,
+      node.id,
+      nodeAbortController
+    );
     try {
       let sawStreamChunk = false;
       const recordOperatorReceiptIfNeeded = async (): Promise<void> => {
@@ -2658,7 +2742,13 @@ async function executeNodeInternal(
             'dag_node_idle_timeout_reached'
           );
           nodeAbortController.abort();
-        }
+        },
+        undefined,
+        // Races every pull against the SAME controller the decoupled cancel
+        // poller aborts — guarantees a clean, prompt exit even if the
+        // provider ignores the signal mid-tool-call, instead of depending on
+        // it to settle the pending `.next()` on its own.
+        nodeAbortController.signal
       )) {
         if (!sawStreamChunk) {
           sawStreamChunk = true;
@@ -3386,6 +3476,7 @@ async function executeNodeInternal(
         throw err;
       }
     } finally {
+      stopCancelPoll();
       // The stream pump is done with this token's controller either way —
       // clear it so a late interrupt() waits on classification instead of
       // aborting a dead query (#183). Classification still owns settlement.
@@ -6509,6 +6600,10 @@ async function executeLoopNodeInner(
       // Status observed by the mid-stream check when it aborts (for the failure
       // message); undefined when the stream ends for any other reason.
       let streamStopStatus: string | undefined;
+      // Decoupled cancel watcher for the current attempt (see the AI-node
+      // stream pass for the full rationale) — closes the gap left by the
+      // in-loop check further down, which only runs when a chunk arrives.
+      let stopCancelPoll: (() => void) | undefined;
 
       // Background-task gate (#2083) — see createBackgroundTaskTracker. When the
       // set is non-empty at result time this iteration keeps consuming, so a
@@ -6567,6 +6662,15 @@ async function executeLoopNodeInner(
         streamStopStatus = undefined;
         attemptStructured = undefined;
         iterationAbortController = new AbortController();
+        stopCancelPoll = startStreamCancelPoller(
+          deps,
+          workflowRun.id,
+          node.id,
+          iterationAbortController,
+          status => {
+            streamStopStatus = status ?? 'deleted';
+          }
+        );
         backgroundTasks = createBackgroundTaskTracker();
         lastStreamStatusCheckAt = Date.now();
         iterationCost = undefined;
@@ -6738,14 +6842,24 @@ async function executeLoopNodeInner(
             });
           };
 
-          for await (const msg of withIdleTimeout(generator, effectiveIdleTimeout, () => {
-            iterationIdleTimedOut = true;
-            getLog().warn(
-              { nodeId: node.id, iteration: i, timeoutMs: effectiveIdleTimeout },
-              'loop_node.idle_timeout_reached'
-            );
-            iterationAbortController.abort();
-          })) {
+          for await (const msg of withIdleTimeout(
+            generator,
+            effectiveIdleTimeout,
+            () => {
+              iterationIdleTimedOut = true;
+              getLog().warn(
+                { nodeId: node.id, iteration: i, timeoutMs: effectiveIdleTimeout },
+                'loop_node.idle_timeout_reached'
+              );
+              iterationAbortController.abort();
+            },
+            undefined,
+            // Races every pull against the SAME controller the decoupled cancel
+            // poller aborts — guarantees a clean, prompt exit (not a throw that
+            // would be misclassified below) even if the provider ignores the
+            // signal mid-tool-call.
+            iterationAbortController.signal
+          )) {
             if (!sawStreamChunk) {
               sawStreamChunk = true;
               await recordOperatorReceiptIfNeeded();
@@ -7297,6 +7411,7 @@ async function executeLoopNodeInner(
             data: { iteration: i },
           });
         } finally {
+          stopCancelPoll?.();
           // The stream pump is done with this token's controller either way —
           // clear it so a late interrupt() waits on classification instead of
           // aborting a dead query (#183). Classification still owns settlement.
