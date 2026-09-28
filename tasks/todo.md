@@ -37,7 +37,9 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] Cancel detection during silent tool merged: Abandon → node_failed 84s → 1.3s (Claude live); e2e 153/0/4
 - [x] QA round 6: REJECT (1 major, 2 minor, 2 cosmetic); all VQ5 fixes hold; abandon 0.15–2.7 s
 - [x] QA6 fixes merged; e2e 154/0/4; pill border colors tokenized + brand guide
-- [ ] QA round 7 (final acceptance, Verdict: ACCEPT required)
+- [x] QA round 7: REJECT (0 major, 3 minor, 1 cosmetic); all VQ6 fixes hold
+- [ ] QA7 fixes (withdraw only for queued, Console effective terminal, focus fallback only from dock, atomic sending hand-off, warning border token) — agent qa7-fixes
+- [ ] QA round 8 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
 

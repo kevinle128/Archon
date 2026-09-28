@@ -224,3 +224,13 @@ Status: DONE_WITH_CONCERNS
 Summary: All five round-6 findings are fixed in their original triggers. VQ6-1 was re-run on real Codex with multi-tool redirects on colliding raw ids, and verified live, after reload, in RunStream and on the pre-fix rows. Three new minors block acceptance. The observer shell offers a withdraw `✕` on an item already being sent, and a click reports success while the message is delivered (VQ7-1). Console can still lose a queued item for 80 ms during Abandon, because the VQ6-3 fix was applied to Legacy only (VQ7-2). A cold load of an s5/s7/s8 node moves focus to the last row with a visible ring (VQ7-3). There is also one cosmetic gap at the end of the `sending…` handoff (VQ7-4).
 
 Verdict: REJECT
+
+## Decisions (2026-09-28)
+
+1. VQ7-1: the dock offers withdraw only for items in the `queued` state, the band header counts only queued items, the queue read reports a claimed item's real state as soon as the claim commits, and a `removed:false` withdraw immediately shows the server state.
+2. VQ7-2: Console uses the same effective terminal signal as Legacy through the abandon window.
+3. VQ7-3: the focus fallback runs only when focus was inside the dock when it disappeared, never on initial mount (EXPERIENCE.md:188).
+4. VQ7-4: the sending row stays until the operator row with the same message id is present, with no gap and no duplicate.
+5. The recovery (s8) pill is `Recovery required` in both shells; the Legacy mockup's blue `Running` there is mockup drift and the contract wins. The Legacy warning pill border is expressed as a design token.
+
+Fixes are owned by the `qa7-fixes` follow-up work.
