@@ -35,8 +35,12 @@ function stream(chunks: string[]): ReadableStream<Uint8Array> {
   });
 }
 
+/** Stable fixture pid — never a real process, only the tree-reap's BFS root key. */
+const FIXTURE_PID = 4242;
+
 function processFor(stdout: string[], stderr = '', exitCode = 0): GrokProcess {
   return {
+    pid: FIXTURE_PID,
     stdout: stream(stdout),
     stderr: stream([stderr]),
     exited: Promise.resolve(exitCode),
@@ -61,6 +65,7 @@ function usageTerminalLines(sessionId = 'session-usage'): string[] {
 
 function processWithStderrReject(stdout: string[]): GrokProcess {
   return {
+    pid: FIXTURE_PID,
     stdout: stream(stdout),
     stderr: new ReadableStream({
       start(controller): void {
@@ -76,6 +81,7 @@ function processWithExitReject(stdout: string[]): GrokProcess {
   const exited = Promise.reject(new Error('exit wait failed'));
   void exited.catch(() => undefined);
   return {
+    pid: FIXTURE_PID,
     stdout: stream(stdout),
     stderr: stream([]),
     exited,
@@ -88,6 +94,7 @@ function processWithStdoutFailAfter(stdoutText: string): GrokProcess {
   const payload = encoder.encode(stdoutText.endsWith('\n') ? stdoutText : `${stdoutText}\n`);
   let delivered = false;
   return {
+    pid: FIXTURE_PID,
     stdout: new ReadableStream({
       pull(controller): void {
         if (!delivered) {
@@ -486,6 +493,7 @@ describe('GrokProvider --single fallback transport', () => {
     const spawn: GrokSpawner = () => {
       spawned = true;
       return {
+        pid: FIXTURE_PID,
         stdout: new ReadableStream({
           start(controller): void {
             closeStdout = (): void => controller.close();
@@ -520,6 +528,159 @@ describe('GrokProvider --single fallback transport', () => {
 
     await expect(result).rejects.toThrow('Query aborted');
     expect(signals).toContain('SIGTERM');
+  });
+
+  describe('process-tree reap of an orphaned tool-call child on abort', () => {
+    /** A fake process tree + kill recorder, matching `ProcessTreeOps`. */
+    function fakeProcessTreeOps(
+      processes: { pid: number; ppid: number; command: string }[],
+      initiallyAlive: readonly number[]
+    ): {
+      ops: import('../shared/process-tree-reap').ProcessTreeOps;
+      killed: { pid: number; signal: NodeJS.Signals }[];
+    } {
+      const alive = new Set(initiallyAlive);
+      const killed: { pid: number; signal: NodeJS.Signals }[] = [];
+      return {
+        killed,
+        ops: {
+          listProcesses: () => Promise.resolve(processes),
+          isAlive: (pid: number) => alive.has(pid),
+          kill: (pid: number, signal: NodeJS.Signals) => {
+            killed.push({ pid, signal });
+            if (signal === 'SIGTERM') alive.delete(pid); // tool child dies promptly on SIGTERM
+          },
+        },
+      };
+    }
+
+    async function waitUntil(check: () => boolean, timeoutMs = 500): Promise<void> {
+      const deadline = Date.now() + timeoutMs;
+      while (!check() && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+      expect(check()).toBe(true);
+    }
+
+    test('node-level Abandon reaps the tool-call child, not just the grok --single root', async () => {
+      const { ops, killed } = fakeProcessTreeOps(
+        [
+          { pid: 9001, ppid: 4200, command: 'grok --single ... --cwd /workspace' },
+          { pid: 9002, ppid: 9001, command: '/bin/zsh -c sleep 20' },
+        ],
+        [9002] // grok --single (9001) is killed directly by this provider, never via the tree ops.
+      );
+      const rootSignals: (NodeJS.Signals | undefined)[] = [];
+      let resolveExit: ((value: number) => void) | undefined;
+      let closeStdout: (() => void) | undefined;
+      const exited = new Promise<number>(resolve => {
+        resolveExit = resolve;
+      });
+      const spawn: GrokSpawner = () => ({
+        pid: 9001,
+        stdout: new ReadableStream({
+          start(controller): void {
+            // The CLI's own signal that it just invoked a shell tool — the
+            // moment this provider can no longer treat the process tree as
+            // "just the root", mirroring a real long-running command.
+            controller.enqueue(
+              new TextEncoder().encode('{"type":"tool_call","toolCallId":"t1","toolName":"Bash"}\n')
+            );
+            closeStdout = (): void => controller.close();
+          },
+        }),
+        stderr: stream([]),
+        exited,
+        kill: signal => {
+          rootSignals.push(signal);
+          closeStdout?.();
+          resolveExit?.(143);
+        },
+      });
+      const controller = new AbortController();
+      const provider = new GrokProvider({
+        spawn,
+        resolveBinary: async () => '/bin/grok',
+        processTreeOps: ops,
+        treeReapTerminateGraceMs: 5,
+      });
+
+      const result = collect(provider, [
+        'hello',
+        '/workspace',
+        undefined,
+        { abortSignal: controller.signal, ...FORCE_SINGLE_TRANSPORT },
+      ]);
+      // Let the tool_call line reach the parser (a real tool runs for
+      // seconds; Abandon arriving within a millisecond of the tool starting
+      // is an edge case) before aborting.
+      await new Promise(resolve => setTimeout(resolve, 10));
+      controller.abort();
+
+      await expect(result).rejects.toThrow('Query aborted');
+      expect(rootSignals).toContain('SIGTERM');
+      await waitUntil(() => killed.some(k => k.pid === 9002));
+      expect(killed).toEqual([{ pid: 9002, signal: 'SIGTERM' }]);
+    });
+
+    test('an abort before any tool call never touches the process tree (no ps round-trip)', async () => {
+      const { ops, killed } = fakeProcessTreeOps([], []);
+      let listProcessesCalls = 0;
+      const countedOps: import('../shared/process-tree-reap').ProcessTreeOps = {
+        ...ops,
+        listProcesses: () => {
+          listProcessesCalls += 1;
+          return ops.listProcesses();
+        },
+      };
+      const signals: (NodeJS.Signals | undefined)[] = [];
+      let resolveExit: ((value: number) => void) | undefined;
+      let closeStdout: (() => void) | undefined;
+      let spawned = false;
+      const exited = new Promise<number>(resolve => {
+        resolveExit = resolve;
+      });
+      const spawn: GrokSpawner = () => {
+        spawned = true;
+        return {
+          pid: 9101,
+          stdout: new ReadableStream({
+            start(controller): void {
+              closeStdout = (): void => controller.close();
+            },
+          }),
+          stderr: stream([]),
+          exited,
+          kill: signal => {
+            signals.push(signal);
+            closeStdout?.();
+            resolveExit?.(143);
+          },
+        };
+      };
+      const controller = new AbortController();
+      const provider = new GrokProvider({
+        spawn,
+        resolveBinary: async () => '/bin/grok',
+        processTreeOps: countedOps,
+      });
+      const result = collect(provider, [
+        'hello',
+        '/repo',
+        undefined,
+        { abortSignal: controller.signal, ...FORCE_SINGLE_TRANSPORT },
+      ]);
+      await new Promise<void>(resolve => {
+        const check = (): void => (spawned ? resolve() : setTimeout(check, 0));
+        check();
+      });
+      controller.abort();
+
+      await expect(result).rejects.toThrow('Query aborted');
+      expect(signals).toContain('SIGTERM');
+      expect(listProcessesCalls).toBe(0);
+      expect(killed).toEqual([]);
+    });
   });
 
   test('emits the typed turn_not_interruptible signal before any other chunk, for every fallback reason', async () => {
