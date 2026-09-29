@@ -1,0 +1,26 @@
+{
+  "B4Fc": [
+    [172, "NOROOM"],
+    [340, "Running|||"],
+    [419, "Running||TA|Queue"],
+    [451, "Recovery required|QUEUED · 1||"]
+  ],
+  "B4Fl": [
+    [132, "NOROOM"],
+    [270, "Running|||"],
+    [301, "Running||TA|Queue"],
+    [351, "Recovery required|QUEUED · 1||"]
+  ],
+  "B4Rc": [
+    [155, "NOROOM"],
+    [323, "Running|||"],
+    [393, "Running||TA|Queue"],
+    [406, "Recovery required|QUEUED · 1||"]
+  ],
+  "B4Rl": [
+    [132, "NOROOM"],
+    [268, "Running|||"],
+    [303, "Running||TA|Queue"],
+    [350, "Recovery required|QUEUED · 1||"]
+  ]
+}

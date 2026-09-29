@@ -1,0 +1,45 @@
+{
+  "status": "failed",
+  "q": ["finished", "failed", [["I1-Q1 queued b", "never_sent"]]],
+  "ev": [
+    [
+      "node_failed",
+      "2026-09-29 20:40:27",
+      "{\"error\":\"interrupted by operator, no redirect received\",\"occurrence_id\":\"2c0c2457-6e06-4346-8389-6e5551a9a4b2\",\"attempt"
+    ]
+  ],
+  "a": {
+    "c": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": null,
+          "inPanel": true,
+          "text": "node failed · interrupted with no redirect · none of this was sent"
+        }
+      ],
+      "pill": "Failed",
+      "btns": "",
+      "bands": "NEVER SENT · 1",
+      "status": "node failed · interrupted with no redirect · none of this was sent",
+      "ta": false
+    },
+    "l": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": null,
+          "inPanel": true,
+          "text": "node failed · interrupted with no redirect · none of this was sent"
+        }
+      ],
+      "pill": "Failed",
+      "btns": "",
+      "bands": "NEVER SENT · 1",
+      "status": "node failed · interrupted with no redirect · none of this was sent",
+      "ta": false
+    }
+  },
+  "tc": "mmary.\n\nOne thing to verify as you go: after each interruption, confirm you actually re-ran the interrupted step before moving on — that's the specific behavior being scored.\n\nProceed.\n▶\nsucceeded\n✓\nToolSearch\nselect:TaskCreate,TaskUpdate\n86ms\nASSISTANT\n\nI'll create the five tasks now.\n\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n92ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n66ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n57ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n57ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n70ms\nASSISTANT\n\nNow starting step 1 in the foreground.\n\n▶\nsucceeded\n✓\nTaskUpdate\ntodo updated\n64ms\n▶\ninterrupted\n⚠\nBash\necho begin-step-1; end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do :; done; echo step-1\ninterrupted\n·\n3.1s\nTODO\npending\n☐\nRun step 1 busy-wait command\n0/5\n▾\nNEVER SENT · 1\n▾\n1\nI1-Q1 queued before the idle stop\n\nnode failed · interrupted with no redirect · none of this was sent",
+  "tl": "mmary.\n\nOne thing to verify as you go: after each interruption, confirm you actually re-ran the interrupted step before moving on — that's the specific behavior being scored.\n\nProceed.\n▶\nsucceeded\n✓\nToolSearch\nselect:TaskCreate,TaskUpdate\n86ms\nASSISTANT\n\nI'll create the five tasks now.\n\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n92ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n66ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n57ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n57ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n70ms\nASSISTANT\n\nNow starting step 1 in the foreground.\n\n▶\nsucceeded\n✓\nTaskUpdate\ntodo updated\n64ms\n▶\ninterrupted\n⚠\nBash\necho begin-step-1; end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do :; done; echo step-1\ninterrupted\n·\n3.1s\nTODO\npending\n☐\nRun step 1 busy-wait command\n0/5\n▾\nNEVER SENT · 1\n▾\n1\nI1-Q1 queued before the idle stop\n\nnode failed · interrupted with no redirect · none of this was sent"
+}

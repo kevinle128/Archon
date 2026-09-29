@@ -1,0 +1,817 @@
+{
+  "out": {
+    "tag": "lsb-c1",
+    "st": "l",
+    "sd": "c",
+    "ob": "l",
+    "stop": {
+      "post": 75,
+      "st": 200,
+      "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+    },
+    "send": {
+      "post": 23,
+      "st": 200,
+      "body": "{\"success\":true,\"message_id\":\"6a1d449c-0b4c-403b-8b72-a45d090b9b68\",\"state\":\"sent\"}"
+    },
+    "probe": null,
+    "C": {
+      "stoppingAt": null,
+      "sendNowAt": 172,
+      "stopAgainAt": 22,
+      "sendingAt": 22,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [
+        [3983, "end"],
+        [7263, "end"],
+        [8301, "end"],
+        [9301, "end"],
+        [10302, "end"],
+        [11302, "end"],
+        [12302, "end"],
+        [13302, "end"],
+        [14302, "end"],
+        [15302, "end"],
+        [16302, "end"],
+        [17343, "end"],
+        [18342, "end"],
+        [19341, "end"]
+      ],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 12.6s message to steer-loop"
+        ]
+      }
+    },
+    "L": {
+      "stoppingAt": 40,
+      "sendNowAt": 172,
+      "stopAgainAt": 944,
+      "sendingAt": 944,
+      "flipBacks": 0,
+      "staleQueued": [],
+      "gaps": [
+        [5802, "end"],
+        [5822, "end"],
+        [6824, "end"],
+        [7822, "end"],
+        [8823, "end"],
+        [9742, "end"],
+        [9822, "end"],
+        [10742, "end"],
+        [10822, "end"],
+        [11742, "end"],
+        [11823, "end"],
+        [12742, "end"],
+        [12823, "end"],
+        [13742, "end"],
+        [13823, "end"],
+        [14743, "end"],
+        [14862, "end"],
+        [15742, "end"],
+        [15862, "end"],
+        [16742, "end"],
+        [16862, "end"],
+        [17743, "end"],
+        [17862, "end"],
+        [18741, "end"],
+        [18861, "end"],
+        [19742, "end"],
+        [19862, "end"]
+      ],
+      "overlap": [],
+      "last": {
+        "bands": "",
+        "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+        "status": "agent generating",
+        "tools": [
+          "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 13.1s message to steer-loop"
+        ]
+      }
+    }
+  },
+  "lc": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · lsb-c1-Q1 queued: reply with the word lsb-c1ACK then continue with the remaining steps,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "◐ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND running · 1.8s QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790715256636
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · lsb-c1-Q1 queued: reply with the word lsb-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "⚠ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "BODY",
+      "t": 1790715256756
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "⚠ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715257316
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "⚠ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715258436
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715261277
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 555ms message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715264557
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 1.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715265595
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 2.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715266595
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 3.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715267596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 4.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715268596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 5.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715269596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 6.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715270596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 7.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715271596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 8.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715272596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 9.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715273596
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 10.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715274637
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 11.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715275636
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 12.6s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "TEXTAREA",
+      "t": 1790715276635
+    }
+  ],
+  "ll": [
+    {
+      "bands": "QUEUED · 1",
+      "btns": "QUEUED · 1\nsaved to server\n▾,delete · lsb-c1-Q1 queued: reply with the word lsb-c1ACK then continue with the remaining steps,Stopping…,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "◐ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND running QUEUED · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "",
+      "ta": true,
+      "act": "BUTTON",
+      "t": 1790715256636
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · lsb-c1-Q1 queued: reply with the word lsb-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "◐ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND running WILL SEND · 1"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790715256676
+    },
+    {
+      "bands": "WILL SEND · 1",
+      "btns": "delete · lsb-c1-Q1 queued: reply with the word lsb-c1ACK then continue with the remaining steps,Send now · Cmd/Ctrl+Enter to send · 1 message will send",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "⚠ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent idle · Send now delivers",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790715257078
+    },
+    {
+      "bands": "SENDING · 1",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "⚠ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": true,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790715258238
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "✓ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND 31.1s THINKING",
+        "⚠ Bash echo begin-b; end=$((SECONDS+30)); while [ $SECOND interrupted ·"
+      ],
+      "nc": 1,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715259116
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715263096
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV[data-last-row]",
+      "t": 1790715263116
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715264118
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715265116
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 2.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715266117
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 3.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715267036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 3.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715267116
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 4.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715268036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 4.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715268116
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 5.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715269036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 5.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715269117
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 6.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715270036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 6.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715270117
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 7.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715271036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 7.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715271117
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 8.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715272037
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 8.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715272156
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 9.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715273036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 9.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715273156
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 10.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715274036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 10.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715274156
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 11.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715275037
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 11.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715275156
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 12.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715276035
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 12.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715276155
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 13.0s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715277036
+    },
+    {
+      "bands": "",
+      "btns": "Stop,Queue · Cmd/Ctrl+Enter to send · 0 messages queued",
+      "pill": "Running",
+      "tools": [
+        "◐ Bash echo begin-a; end=$((SECONDS+30)); while [ $SECOND running · 13.1s message to steer-loop"
+      ],
+      "nc": 0,
+      "sendingRow": false,
+      "status": "agent generating",
+      "ta": true,
+      "act": "DIV",
+      "t": 1790715277156
+    }
+  ],
+  "T": 1790715257294,
+  "stop": {
+    "clicked": 1790715256596,
+    "resolved": 1790715256671,
+    "st": 200,
+    "body": "{\"success\":true,\"sub_state\":\"idle-after-interrupt\"}"
+  },
+  "send": {
+    "clicked": 1790715257271,
+    "sendResolved": 1790715257294,
+    "st": 200,
+    "url": "/api/workflows/runs/3cad326f60618b13df7e049f53b595c5/nodes/steer-loop/send",
+    "body": "{\"success\":true,\"message_id\":\"6a1d449c-0b4c-403b-8b72-a45d090b9b68\",\"state\":\"sent\"}"
+  }
+}

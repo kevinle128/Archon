@@ -1,0 +1,88 @@
+{
+  "post": 9,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-codex" },
+  "C": {
+    "neverSentAt": 412,
+    "pillAt": 412,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ shell sleep 25 && echo step-4 exit 0 ·",
+        "– shell sleep 25 && echo step-5 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -270,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [412, "NEVER SENT · 1", "", "Failed", 1],
+      [1023, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 137,
+    "pillAt": 137,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ shell sleep 25 && echo step-4 exit 0 ·",
+        "– shell sleep 25 && echo step-5 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -30,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cx-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [137, "NEVER SENT · 1", "", "Failed", 1],
+      [170, "NEVER SENT · 1", "", "Failed", 1],
+      [3143, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-303, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [385, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-303, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [105, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "c", "t": -1634, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "l", "t": -909, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "c", "t": -631, "k": "q", "es": "live", "no": null, "n": 4 },
+    { "s": "l", "t": 94, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "l", "t": 106, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 106, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "l", "t": 140, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 373, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 384, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "c", "t": 385, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 415, "k": "q", "es": "finished", "no": "failed", "n": 4 },
+    { "s": "c", "t": 1001, "k": "r", "st": "cancelled", "ns": "long-codex:failed" },
+    { "s": "l", "t": 3122, "k": "r", "st": "cancelled", "ns": "long-codex:failed" }
+  ]
+}

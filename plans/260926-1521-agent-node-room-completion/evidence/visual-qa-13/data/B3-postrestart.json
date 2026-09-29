@@ -1,0 +1,183 @@
+{
+  "B3F": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · sonnet"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", true, ["queued"]],
+    "draft": "B3F draft typed before restart",
+    "sv": {
+      "c": [
+        [7, "Running|WILL SEND · 1|TA"],
+        [
+          631,
+          "NOROOM:Archon / CONSOLE / PROJECTS / 3 / ⌕ / All projects / anhle128 / A / Archon / ~/Desktop/workspace/O"
+        ],
+        [30652, "Running||TA"],
+        [30657, "Recovery required|QUEUED · 1|"]
+      ],
+      "l": [
+        [4, "Running|WILL SEND · 1|TA"],
+        [4289, "Recovery required|QUEUED · 1|"]
+      ]
+    }
+  },
+  "B3LF": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · claude · haiku"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", false, ["queued"]],
+    "draft": null,
+    "sv": {
+      "c": [
+        [4, "Running|WILL SEND · 1|TA"],
+        [4849, "Recovery required|QUEUED · 1|"]
+      ],
+      "l": [
+        [2, "Running|WILL SEND · 1|TA"],
+        [4042, "Recovery required|QUEUED · 1|"]
+      ]
+    }
+  },
+  "B3R": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · omp · xai-oauth/grok-4.5"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", false, ["queued"]],
+    "draft": null,
+    "sv": {
+      "c": [
+        [3, "Running|WILL SEND · 1|TA"],
+        [4081, "Recovery required|QUEUED · 1|"]
+      ],
+      "l": [
+        [3, "Running|WILL SEND · 1|TA"],
+        [4323, "Recovery required|QUEUED · 1|"]
+      ]
+    }
+  },
+  "B3X": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      }
+    },
+    "surv": {
+      "c": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue",
+        "meta": "restored after server restart · codex · gpt-5.5"
+      }
+    },
+    "ta": [0, 0],
+    "codes": [409, 409],
+    "q": ["recovery_required", false, ["queued"]],
+    "draft": null,
+    "sv": {
+      "c": [
+        [9, "Running|WILL SEND · 1|TA"],
+        [4778, "Recovery required|QUEUED · 1|"]
+      ],
+      "l": [
+        [44, "Running|WILL SEND · 1|TA"],
+        [4031, "Recovery required|QUEUED · 1|"]
+      ]
+    }
+  }
+}

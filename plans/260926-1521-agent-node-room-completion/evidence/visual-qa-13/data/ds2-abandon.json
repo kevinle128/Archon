@@ -1,0 +1,97 @@
+{
+  "post": 5,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-deepseek" },
+  "C": {
+    "neverSentAt": 936,
+    "pillAt": 936,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– bash sleep 25 && echo step-1 output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -264,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        15,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [936, "NEVER SENT · 1", "", "Failed", 1],
+      [1255, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 578,
+    "pillAt": 578,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": ["– bash sleep 25 && echo step-1 output unknown ·"],
+      "ta": false
+    },
+    "frames": [
+      [
+        -263,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        496,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · ds2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [578, "NEVER SENT · 1", "", "Failed", 1],
+      [3592, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-304, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [912, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-304, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [554, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1470, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1105, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -522, "k": "r", "st": "running", "ns": "long-deepseek:running" },
+    { "s": "l", "t": -466, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -101, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 543, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 555, "k": "r", "st": "cancelled", "ns": "long-deepseek:failed" },
+    { "s": "l", "t": 556, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 580, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 904, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 913, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 913, "k": "r", "st": "cancelled", "ns": "long-deepseek:failed" },
+    { "s": "c", "t": 927, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 1224, "k": "r", "st": "cancelled", "ns": "long-deepseek:failed" },
+    { "s": "l", "t": 3567, "k": "r", "st": "cancelled", "ns": "long-deepseek:failed" }
+  ]
+}

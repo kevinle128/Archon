@@ -1,0 +1,45 @@
+{
+  "status": "failed",
+  "q": ["finished", "failed", [["I2-Q1 queued b", "never_sent"]]],
+  "ev": [
+    [
+      "node_failed",
+      "2026-09-29 21:07:32",
+      "{\"error\":\"interrupted by operator, no redirect received\",\"occurrence_id\":\"2e6fa9ed-272e-4838-a4c6-91561d2ad610\",\"attempt"
+    ]
+  ],
+  "a": {
+    "c": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": null,
+          "inPanel": true,
+          "text": "node failed · interrupted with no redirect · none of this was sent"
+        }
+      ],
+      "pill": "Failed",
+      "btns": "",
+      "bands": "NEVER SENT · 2",
+      "status": "node failed · interrupted with no redirect · none of this was sent",
+      "ta": false
+    },
+    "l": {
+      "alerts": [
+        {
+          "role": "alert",
+          "live": null,
+          "inPanel": true,
+          "text": "node failed · interrupted with no redirect · none of this was sent"
+        }
+      ],
+      "pill": "Failed",
+      "btns": "",
+      "bands": "NEVER SENT · 2",
+      "status": "node failed · interrupted with no redirect · none of this was sent",
+      "ta": false
+    }
+  },
+  "tc": " questions, don't stop early. If you feel the urge to switch that step to background to \"avoid\" being interrupted — that's the exact instinct to suppress.\n\nNothing here blocks. Proceed.\n▶\nsucceeded\n✓\nToolSearch\nselect:TaskCreate\n67ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n61ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n63ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n62ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n67ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n68ms\n▶\nsucceeded\n✓\nToolSearch\nselect:TaskUpdate\n110ms\nASSISTANT\n\nTodo list created. Now starting step 1.\n\n▶\nsucceeded\n✓\nTaskUpdate\ntodo updated\n90ms\n▶\ninterrupted\n⚠\nBash\necho begin-step-1; end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do :; done; echo step-1\ninterrupted\n·\n3.2s\nTODO\npending\n☐\nRun step 1 busy-wait command\n0/5\n▾\nNEVER SENT · 2\n▾\n1\nI2-Q1 queued before the idle stop\n2\nx\n\nnode failed · interrupted with no redirect · none of this was sent",
+  "tl": " questions, don't stop early. If you feel the urge to switch that step to background to \"avoid\" being interrupted — that's the exact instinct to suppress.\n\nNothing here blocks. Proceed.\n▶\nsucceeded\n✓\nToolSearch\nselect:TaskCreate\n67ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n61ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n63ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n62ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n67ms\n▶\nsucceeded\n✓\nTaskCreate\ntodo updated\n68ms\n▶\nsucceeded\n✓\nToolSearch\nselect:TaskUpdate\n110ms\nASSISTANT\n\nTodo list created. Now starting step 1.\n\n▶\nsucceeded\n✓\nTaskUpdate\ntodo updated\n90ms\n▶\ninterrupted\n⚠\nBash\necho begin-step-1; end=$((SECONDS+25)); while [ $SECONDS -lt $end ]; do :; done; echo step-1\ninterrupted\n·\n3.2s\nTODO\npending\n☐\nRun step 1 busy-wait command\n0/5\n▾\nNEVER SENT · 2\n▾\n1\nI2-Q1 queued before the idle stop\n2\nx\n\nnode failed · interrupted with no redirect · none of this was sent"
+}

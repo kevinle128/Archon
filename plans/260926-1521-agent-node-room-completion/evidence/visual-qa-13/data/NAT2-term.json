@@ -1,0 +1,16 @@
+{
+  "R": "8e7c4dd67a10149b1589fd1b39865a79",
+  "status": "completed",
+  "ev": [
+    ["node_completed", "2026-09-29 20:55:34"],
+    ["workflow_completed", "2026-09-29 20:55:34"]
+  ],
+  "c": [
+    [1790715319510, "Running||Stop,Queue|TA|||0|-1"],
+    [1790715334118, "Completed||||||0|-1"]
+  ],
+  "l": [
+    [1790715319510, "Running||Stop,Queue|TA|||0|-1"],
+    [1790715334112, "Completed||||||0|-1"]
+  ]
+}

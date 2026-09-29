@@ -1,0 +1,108 @@
+{
+  "post": 4,
+  "res": { "success": true, "message": "Abandoned workflow: vq13-claude" },
+  "C": {
+    "neverSentAt": 950,
+    "pillAt": 950,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ TaskUpdate todo updated 74ms ▶",
+        "– Bash echo begin-step-1; end=$((SECONDS+25)); while [ $S output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -263,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        96,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [950, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 583,
+    "pillAt": 583,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ TaskUpdate todo updated 74ms ▶",
+        "– Bash echo begin-step-1; end=$((SECONDS+25)); while [ $S output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -263,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        497,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        536,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl2-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [583, "NEVER SENT · 1", "", "Failed", 1],
+      [3587, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-301, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [919, "Failed||||QUEUED · 1||0|1"],
+      [944, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ],
+    "l": [
+      [-301, "Running||delete,Stop,Queue|TA|QUEUED · 1||0|1"],
+      [549, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1|1"]
+    ]
+  },
+  "gets": [
+    { "s": "l", "t": -1466, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -1065, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": -518, "k": "r", "st": "running", "ns": "long-claude:running" },
+    { "s": "l", "t": -464, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "c", "t": -61, "k": "q", "es": "live", "no": null, "n": 1 },
+    { "s": "l", "t": 538, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 549, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "l", "t": 549, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 585, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 908, "k": "r", "st": "cancelled", "ns": "long-claude:failed" },
+    { "s": "c", "t": 929, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "c", "t": 929, "k": "q", "es": "finished", "no": "failed", "n": 1 },
+    { "s": "l", "t": 3563, "k": "r", "st": "cancelled", "ns": "long-claude:failed" }
+  ]
+}
