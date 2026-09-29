@@ -3711,14 +3711,91 @@ async function executeNodeInternal(
           controller: undefined,
           interrupted: false,
         };
-        await runStreamPass(
-          reaskPrompt,
-          reaskAttempt === 0 ? turnResumeId : undefined,
-          reaskAttempt,
-          passTurn,
-          reaskAttempt === 0 ? pendingOperatorReceipt : undefined,
-          turnIsGuidance ? (turnGuidanceMessages[0]?.operator_user_id ?? null) : undefined
-        );
+        try {
+          await runStreamPass(
+            reaskPrompt,
+            reaskAttempt === 0 ? turnResumeId : undefined,
+            reaskAttempt,
+            passTurn,
+            reaskAttempt === 0 ? pendingOperatorReceipt : undefined,
+            turnIsGuidance ? (turnGuidanceMessages[0]?.operator_user_id ?? null) : undefined
+          );
+        } catch (passStreamError) {
+          // Retryable automatic-dispatch failure: a thrown provider/execution
+          // error (engine-integration.md #4, "provider or execution failure")
+          // on a guidance turn whose session `runStreamPass` never touched —
+          // it threw before producing a result, so `turnResumeId` (the
+          // session the PRIOR successful turn established) is still the
+          // session to use. Never a session-losing failure (that keeps
+          // `newSessionId` undefined too, but reaches its own explicit throw
+          // later via the "no session id to resume" check) and never an
+          // operator interrupt or node-level cancel (both classify inside
+          // `runStreamPass` itself, or abort this node's own controller —
+          // checked here so neither is ever swallowed as "retryable").
+          const err = passStreamError as Error;
+          const operatorInterrupted =
+            passTurn.token !== undefined &&
+            interruptibleHandle?.wasOperatorInterrupted(passTurn.token) === true;
+          if (
+            !turnIsGuidance ||
+            turnGuidanceMessages.length === 0 ||
+            turnResumeId === undefined ||
+            interruptibleHandle === undefined ||
+            passTurn.token === undefined ||
+            operatorInterrupted ||
+            nodeAbortController.signal.aborted ||
+            isAbortLikeStreamError(err)
+          ) {
+            throw err;
+          }
+          getLog().warn(
+            { err, nodeId: node.id, workflowRunId: workflowRun.id },
+            'dag.node_dispatch_failure_retryable'
+          );
+          await deps.store.revertSteeringQueueClaim(
+            workflowRun.id,
+            stepName,
+            turnGuidanceMessages.map(item => item.message_id),
+            err.message
+          );
+          // An observing tab has no other live signal that this turn just
+          // ended and parked idle — emit one so it refetches promptly and
+          // sees the reverted entry's failure evidence instead of waiting on
+          // the safety-net poll.
+          getWorkflowEventEmitter().emit({
+            type: 'node_turn_interrupted',
+            runId: workflowRun.id,
+            nodeId: node.id,
+          });
+          let wake = await raceIdleWake(
+            deps,
+            workflowRun.id,
+            interruptibleHandle.enterIdle(passTurn.token)
+          );
+          while (wake.kind === 'send_now') {
+            const claimed = await deps.store.claimSteeringQueue(workflowRun.id, stepName, 'all');
+            if (claimed.length > 0) {
+              turnGuidanceMessages = claimed;
+              turnIsGuidance = true;
+              continue turns;
+            }
+            wake = await raceIdleWake(
+              deps,
+              workflowRun.id,
+              interruptibleHandle.awaitSendNowAgain()
+            );
+          }
+          if (wake.kind === 'expired') {
+            const duration = Date.now() - nodeStartTime;
+            getLog().warn(
+              { runId: workflowRun.id, nodeId: node.id, durationMs: duration },
+              'dag.node_idle_await_expired'
+            );
+            throw new Error(IDLE_AWAIT_EXPIRED_ERROR);
+          }
+          nodeAbortController.abort();
+          return await finishCancelled();
+        }
         lastPassToken = passTurn.token;
         if (nodeCostUsd !== undefined) {
           accumulatedCostUsd = (accumulatedCostUsd ?? 0) + nodeCostUsd;
@@ -7515,6 +7592,106 @@ async function executeLoopNodeInner(
               },
               ASK_RESUME_FAILED_MESSAGE
             );
+          }
+          // Retryable automatic-dispatch failure (mirrors the AI-node pass
+          // above): a thrown provider/execution error on a guidance turn
+          // whose session `turnResumeId` (the session the PRIOR successful
+          // turn established) is still valid to resume — never a
+          // session-losing failure (Design decision 6 above still fails
+          // those outright) and never an operator interrupt or node-level
+          // cancel (both already classified and returned/broken above, so
+          // neither reaches here).
+          if (
+            turnIsGuidance &&
+            turnGuidanceMessages.length > 0 &&
+            turnResumeId !== undefined &&
+            interruptibleHandle !== undefined &&
+            turnToken !== undefined &&
+            !interruptibleHandle.wasOperatorInterrupted(turnToken) &&
+            !iterationAbortController.signal.aborted &&
+            !isAbortLikeStreamError(thrownError)
+          ) {
+            getLog().warn(
+              { err: thrownError, nodeId: node.id, runId: workflowRun.id, iteration: i },
+              'loop_node.dispatch_failure_retryable'
+            );
+            await deps.store.revertSteeringQueueClaim(
+              workflowRun.id,
+              stepName,
+              turnGuidanceMessages.map(item => item.message_id),
+              thrownError.message
+            );
+            // An observing tab has no other live signal that this turn just
+            // ended and parked idle — emit one so it refetches promptly and
+            // sees the reverted entry's failure evidence instead of waiting
+            // on the safety-net poll.
+            getWorkflowEventEmitter().emit({
+              type: 'node_turn_interrupted',
+              runId: workflowRun.id,
+              nodeId: node.id,
+            });
+            let wake = await raceIdleWake(
+              deps,
+              workflowRun.id,
+              interruptibleHandle.enterIdle(turnToken)
+            );
+            while (wake.kind === 'send_now') {
+              // Content-free wake: claim the durable queue to learn what to
+              // send. A race with a concurrent withdraw can legitimately
+              // claim nothing — re-wait rather than start a turn with no
+              // guidance.
+              const claimed = await deps.store.claimSteeringQueue(workflowRun.id, stepName, 'all');
+              if (claimed.length > 0) {
+                turnGuidanceMessages = claimed;
+                turnIsGuidance = true;
+                continue turns;
+              }
+              wake = await raceIdleWake(
+                deps,
+                workflowRun.id,
+                interruptibleHandle.awaitSendNowAgain()
+              );
+            }
+            if (wake.kind === 'expired') {
+              const duration = Date.now() - iterationStart;
+              getLog().warn(
+                { runId: workflowRun.id, nodeId: node.id, iteration: i, durationMs: duration },
+                'loop_node.idle_await_expired'
+              );
+              // Pass the exact error as both iteration and node error so the
+              // outer loop does not wrap it with "Loop iteration N failed: …".
+              return await failLoopIteration(
+                IDLE_AWAIT_EXPIRED_ERROR,
+                {
+                  costUsd: loopTotalCostUsd,
+                  ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+                  loopIterations: i,
+                  data: { iteration: i },
+                },
+                IDLE_AWAIT_EXPIRED_ERROR
+              );
+            }
+            // Discard / terminal-status wake — land on the existing cancel
+            // path so the run ends exactly as a mid-stream stop would. Close
+            // the handle synchronously BEFORE the status re-read / platform
+            // message so a losing inactivity timer cannot fire during those
+            // awaits (#192).
+            steering.steeringHandle?.close();
+            const effectiveStatus =
+              (await deps.store.getWorkflowRunStatus(workflowRun.id).catch(() => null)) ??
+              'cancelled';
+            await safeSendMessage(
+              platform,
+              conversationId,
+              `Loop node '${node.id}' stopped during iteration ${String(i)} (${effectiveStatus})`,
+              msgContext
+            );
+            return await failLoopIteration(`Workflow ${effectiveStatus}`, {
+              costUsd: loopTotalCostUsd,
+              ...(loopTotalTokens !== undefined ? { tokens: loopTotalTokens } : {}),
+              loopIterations: i,
+              data: { status: effectiveStatus, iteration: i },
+            });
           }
           const err = error as Error;
           getLog().error({ err, nodeId: node.id, iteration: i }, 'loop_node.iteration_failed');

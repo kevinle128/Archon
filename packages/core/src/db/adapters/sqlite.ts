@@ -616,6 +616,20 @@ export class SqliteAdapter implements IDatabase {
       allApplied = false;
     }
 
+    try {
+      const steeringQueueCols = this.queryRows<{ name: string }>(
+        "PRAGMA table_info('remote_agent_steering_queue_entries')"
+      );
+      if (!new Set(steeringQueueCols.map(c => c.name)).has('dispatch_failure_count')) {
+        this.db.run(
+          'ALTER TABLE remote_agent_steering_queue_entries ADD COLUMN dispatch_failure_count INTEGER NOT NULL DEFAULT 0'
+        );
+      }
+    } catch (e: unknown) {
+      getLog().warn({ err: e as Error }, 'db.sqlite_migration_steering_queue_columns_failed');
+      allApplied = false;
+    }
+
     // #1955: credential rows are vendor-keyed (claude→anthropic, codex→openai,
     // copilot→github-copilot). Idempotent data fix mirroring
     // migrations/000_combined.sql: where both a legacy and a vendor row exist
@@ -1181,6 +1195,7 @@ export class SqliteAdapter implements IDatabase {
         fifo_position INTEGER NOT NULL CHECK (fifo_position >= 1),
         state TEXT NOT NULL DEFAULT 'queued',
         last_error TEXT,
+        dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         CONSTRAINT uq_steering_queue_run_node_message

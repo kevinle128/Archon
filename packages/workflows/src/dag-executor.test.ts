@@ -178,6 +178,7 @@ function createMockSteeringStore(): Pick<
   | 'markSteeringMessageDelivered'
   | 'claimSteeringMessageForSoftInjection'
   | 'reconcileNeverSentSteeringMessages'
+  | 'revertSteeringQueueClaim'
 > {
   const drafts = new Map<string, SteeringDraft>();
   const settings = new Map<string, SteeringNodeSettings>();
@@ -253,6 +254,7 @@ function createMockSteeringStore(): Pick<
         fifo_position: scopedMax + 1,
         state: input.initial_state,
         last_error: null,
+        dispatch_failure_count: 0,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -363,6 +365,23 @@ function createMockSteeringStore(): Pick<
         }
       }
       return { count };
+    },
+    revertSteeringQueueClaim: async (workflowRunId, nodeId, messageIds, failureMessage) => {
+      const ids = new Set(messageIds);
+      const now = new Date();
+      for (const entry of queue) {
+        if (
+          entry.workflow_run_id === workflowRunId &&
+          entry.node_id === nodeId &&
+          entry.state === 'dispatching' &&
+          ids.has(entry.message_id)
+        ) {
+          entry.state = 'queued';
+          entry.last_error = failureMessage;
+          entry.dispatch_failure_count += 1;
+          entry.updated_at = now;
+        }
+      }
     },
   };
 }
@@ -27643,6 +27662,44 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     });
   }
 
+  /**
+   * Durably enqueue guidance exactly like the send route would for
+   * `intent: 'send_now'` — wakes an idle handle for a non-blank message,
+   * exactly like `NodeSteeringHandle.wakeForSendNow()`'s real caller.
+   */
+  function sendNow(
+    store: IWorkflowStore,
+    runId: string,
+    stepName: string,
+    messageId: string,
+    message: string,
+    operatorUserId: string | null = 'op-1'
+  ): void {
+    const handle = liveHandle(runId, stepName);
+    const idle = handle.steeringSubState() === 'idle-after-interrupt';
+    void store.enqueueSteeringMessage({
+      workflow_run_id: runId,
+      node_id: stepName,
+      message_id: messageId,
+      message,
+      operator_user_id: operatorUserId,
+      initial_state: idle ? 'awaiting_send_now' : 'queued',
+    });
+    if (idle && message.trim() !== '') {
+      handle.wakeForSendNow();
+    }
+  }
+
+  /** Poll until the handle projects the idle sub-state (or give up loudly). */
+  async function awaitIdle(runId: string, stepName: string): Promise<NodeSteeringHandle> {
+    for (let i = 0; i < 2000; i++) {
+      const handle = getSteeringRegistry().get(runId, stepName);
+      if (handle?.steeringSubState() === 'idle-after-interrupt') return handle;
+      await Bun.sleep(1);
+    }
+    throw new Error(`handle ${runId}/${stepName} never reached idle-after-interrupt`);
+  }
+
   type SteeringNodeMsg = Awaited<ReturnType<IWorkflowStore['listNodeMessages']>>[number];
   function isOperatorTextRow(row: SteeringNodeMsg): row is SteeringNodeMsg & {
     kind: 'text';
@@ -28383,7 +28440,7 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(operatorRows.map(r => r.payload.text)).toEqual(['one', 'three']);
   });
 
-  it('operator startup throw before first yield writes no operator row', async () => {
+  it('a guidance turn that throws before first yield reverts the entry to the front and parks idle, not fails the node', async () => {
     let calls = 0;
     mockSendQueryDag.mockImplementation(async function* () {
       calls++;
@@ -28393,13 +28450,191 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
         yield { type: 'result', sessionId: 's-1' };
         return;
       }
-      throw new Error('provider startup boom');
+      if (calls === 2) {
+        throw new Error('provider startup boom');
+      }
+      // The Send-now-driven retry succeeds.
+      yield { type: 'assistant', content: 'redelivered' };
+      yield { type: 'result', sessionId: 's-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+
+    const idle = await awaitIdle(RUN_ID, 'review');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.state).toBe('queued');
+    expect(queued[0]!.last_error).toBe('provider startup boom');
+    expect(queued[0]!.dispatch_failure_count).toBe(1);
+    const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
+    expect(operatorRows).toHaveLength(0);
+
+    // Auto-send never fires from this parked state (same rule as after
+    // Stop): merely re-enqueuing does not wake the node.
+    enqueue(store, RUN_ID, 'review', 'm-2', 'queued while parked');
+    await Bun.sleep(5);
+    expect(mockSendQueryDag.mock.calls.length).toBe(2);
+
+    // The operator's "Send now" retries on the exact same session the prior
+    // successful turn established, and it drains both the reverted entry
+    // (still at the front) and the one queued while parked, in order.
+    sendNow(store, RUN_ID, 'review', 'm-1', 'never written');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    expect(sendQueryArg<string>(2, 0)).toBe('never written\n\nqueued while parked');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('s-1');
+    expect(sendQueryArg<SendQueryOptions>(2, 3).forkSession).toBe(false);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(idle.isClosed()).toBe(true);
+  });
+
+  it('a repeated retryable dispatch failure keeps incrementing the count and keeps the entry ahead of later guidance', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'm-1', 'first');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      throw new Error(`dispatch boom ${String(calls)}`);
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    await awaitIdle(RUN_ID, 'review');
+
+    // A second operator message queues behind the reverted one while parked.
+    enqueue(store, RUN_ID, 'review', 'm-2', 'second');
+    sendNow(store, RUN_ID, 'review', 'm-1', 'first');
+    // Wait for the retry turn to actually run (substate briefly leaves
+    // idle-after-interrupt while generating) before polling for the SECOND
+    // idle-after-interrupt — otherwise a stale still-idle read races ahead
+    // of the second revert.
+    for (let i = 0; i < 2000 && mockSendQueryDag.mock.calls.length < 3; i++) {
+      await Bun.sleep(1);
+    }
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    await awaitIdle(RUN_ID, 'review');
+
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    const byId = new Map(queued.map(e => [e.message_id, e]));
+    expect(byId.get('m-1')!.dispatch_failure_count).toBe(2);
+    expect(byId.get('m-1')!.fifo_position).toBeLessThan(byId.get('m-2')!.fifo_position);
+
+    getSteeringRegistry().get(RUN_ID, 'review')?.expireIdleForTests();
+    await run;
+    expect(nodeFailedError(store, 'review')).toBe(IDLE_AWAIT_EXPIRED_ERROR);
+    const finalQueue = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(finalQueue.every(e => e.state === 'never_sent')).toBe(true);
+  });
+
+  it('a guidance turn with no established session still fails the node outright (session-losing, not retryable)', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'm-1', 'guided');
+        yield { type: 'assistant', content: 'prior' };
+        // Turn 1 returns no session id — Design decision 6: the executor
+        // never falls back to a fresh session, so it fails the node before
+        // any guidance turn could even start. This is the pre-existing
+        // session-losing path, unaffected by retryable classification.
+        yield { type: 'result' };
+        return;
+      }
+      throw new Error('unreachable: no guidance turn should start');
     });
     const store = createMockStore();
     await invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
-    expect(nodeFailedError(store, 'review')).toBe('provider startup boom');
+    expect(mockSendQueryDag.mock.calls.length).toBe(1);
+    expect(storedEventTypes(store)).toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queued.every(e => e.state === 'never_sent')).toBe(true);
+  });
+
+  it('a mid-stream throw after the operator receipt already committed still parks idle, and the revert is a no-op on the already-sent entry', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'review', 'm-1', 'guided');
+        yield { type: 'assistant', content: 'prior' };
+        yield { type: 'result', sessionId: 's-1' };
+        return;
+      }
+      if (calls === 2) {
+        // At least one chunk streams (so the operator receipt commits and
+        // the entry advances dispatching -> sent) before the provider throws.
+        yield { type: 'assistant', content: 'partial guided output' };
+        throw new Error('mid-stream boom');
+      }
+      yield { type: 'assistant', content: 'redirected output' };
+      yield { type: 'result', sessionId: 's-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [{ id: 'review', prompt: 'do work' }]);
+    await awaitIdle(RUN_ID, 'review');
+
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'review');
+    expect(queued).toHaveLength(1);
+    // Already 'sent' when the throw landed — the revert had nothing
+    // 'dispatching' to match, so it is a no-op; delivery is already proven
+    // and the node still parks for the operator to continue.
+    expect(queued[0]!.state).toBe('sent');
+    expect(queued[0]!.dispatch_failure_count).toBe(0);
     const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
-    expect(operatorRows).toHaveLength(0);
+    expect(operatorRows).toHaveLength(1);
+
+    sendNow(store, RUN_ID, 'review', 'm-2', 'redirect');
+    await run;
+    expect(storedEventTypes(store)).toContain('node_completed');
+  });
+
+  it('a loop node guidance turn that throws reverts the entry and parks idle, not fails the node', async () => {
+    let calls = 0;
+    mockSendQueryDag.mockImplementation(async function* () {
+      calls++;
+      if (calls === 1) {
+        enqueue(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+        yield { type: 'assistant', content: 'iteration one work' };
+        yield { type: 'result', sessionId: 'loop-sess-1' };
+        return;
+      }
+      if (calls === 2) {
+        throw new Error('loop dispatch boom');
+      }
+      yield { type: 'assistant', content: 'adjusted. <promise>COMPLETE</promise>' };
+      yield { type: 'result', sessionId: 'loop-sess-3' };
+    });
+    const store = createMockStore();
+    const run = invokeDag(store, [
+      {
+        id: 'my-loop',
+        loop: { prompt: 'Do a task.', until: 'COMPLETE', max_iterations: 5 },
+      },
+    ]);
+
+    await awaitIdle(RUN_ID, 'my-loop');
+    expect(storedEventTypes(store)).not.toContain('node_failed');
+    const queued = await store.listSteeringQueue(RUN_ID, 'my-loop');
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.state).toBe('queued');
+    expect(queued[0]!.last_error).toBe('loop dispatch boom');
+    expect(queued[0]!.dispatch_failure_count).toBe(1);
+
+    sendNow(store, RUN_ID, 'my-loop', 'm-1', 'redirect the loop');
+    await run;
+
+    expect(mockSendQueryDag.mock.calls.length).toBe(3);
+    expect(sendQueryArg<string>(2, 0)).toBe('redirect the loop');
+    expect(sendQueryArg<string | undefined>(2, 2)).toBe('loop-sess-1');
+    expect(sendQueryArg<SendQueryOptions>(2, 3).forkSession).toBe(false);
+    expect(storedEventTypes(store)).toContain('node_completed');
+    expect(getSteeringRegistry().get(RUN_ID, 'my-loop')).toBeUndefined();
   });
 
   it('operator first-yield seam records rows before the caused assistant chunk', async () => {

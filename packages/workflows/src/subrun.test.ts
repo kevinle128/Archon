@@ -149,6 +149,7 @@ class InMemoryStore implements IWorkflowStore {
         fifo_position: 1,
         state: input.initial_state,
         last_error: null,
+        dispatch_failure_count: 0,
         created_at: new Date(),
         updated_at: new Date(),
       },
@@ -159,6 +160,7 @@ class InMemoryStore implements IWorkflowStore {
   listSteeringQueue: IWorkflowStore['listSteeringQueue'] = () => Promise.resolve([]);
   claimSteeringQueue: IWorkflowStore['claimSteeringQueue'] = () => Promise.resolve([]);
   markSteeringMessagesSent: IWorkflowStore['markSteeringMessagesSent'] = () => Promise.resolve();
+  revertSteeringQueueClaim: IWorkflowStore['revertSteeringQueueClaim'] = () => Promise.resolve();
   markSteeringMessageDelivered: IWorkflowStore['markSteeringMessageDelivered'] = () =>
     Promise.resolve();
   claimSteeringMessageForSoftInjection: IWorkflowStore['claimSteeringMessageForSoftInjection'] =
