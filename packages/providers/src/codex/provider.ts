@@ -36,6 +36,13 @@ import {
   normalizeJsonSchemaForOpenAiStrict,
 } from '../shared/structured-output';
 import { withResumedOutcome, resumedOutcome } from '../shared/resumed';
+import {
+  defaultProcessTreeOps,
+  findCodexExecRoot,
+  collectDescendantPids,
+  reapCodexProcessTree,
+  type ProcessTreeOps,
+} from './process-tree-reap';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
@@ -317,6 +324,8 @@ const RETRY_BASE_DELAY_MS = 2000;
  * already knows its id synchronously, so this window never applies to it.
  */
 export const CODEX_INTERRUPT_THREAD_ID_WAIT_MS = 500;
+/** Grace between SIGTERM and SIGKILL for a tool-call descendant that outlives `codex exec`, matching the ACP providers' `reapChild` default. */
+const TREE_REAP_TERMINATE_GRACE_MS = 5_000;
 const RATE_LIMIT_PATTERNS = ['rate limit', 'too many requests', '429', 'overloaded'];
 const AUTH_PATTERNS = [
   'credit balance',
@@ -545,6 +554,12 @@ async function readFileChangePreview(
   }
 }
 
+/** A `codex exec` process and its full descendant tree, captured while alive. */
+interface TreeSnapshot {
+  readonly rootPid: number;
+  readonly descendantPids: readonly number[];
+}
+
 /**
  * Normalize raw Codex SDK events into Archon MessageChunks.
  * Handles structured output normalization (Codex returns JSON inline in text).
@@ -570,7 +585,15 @@ async function* streamCodexEvents(
   /** Identifies this turn. Defaulted so every call — a fresh turn or a cold
    *  retry of the same one — gets its own scope; injectable for deterministic
    *  tests. See `scopedItemId`. */
-  turnId: string = randomUUID()
+  turnId: string = randomUUID(),
+  /**
+   * Fired synchronously when a `command_execution` item starts — the SDK's
+   * own signal that `codex exec` just forked a shell subprocess, and the
+   * only reliable moment to snapshot it and its descendants (see
+   * `CodexProvider.captureTreeSnapshot`). Never called for `web_search` or
+   * `mcp_tool_call` items, neither of which forks a shell to reap.
+   */
+  onToolStarted?: () => void
 ): AsyncGenerator<MessageChunk> {
   const state: CodexStreamState = {
     startedToolItemIds: new Set<string>(),
@@ -663,6 +686,10 @@ async function* streamCodexEvents(
 
         let toolName: string | undefined;
         if (itemType === 'command_execution') {
+          // Fired regardless of whether `item.command` is present below: the
+          // SDK has already forked the shell subprocess by the time this
+          // event arrives, whether or not it also reports the command text.
+          onToolStarted?.();
           if (typeof item.command === 'string' && item.command.length > 0) {
             toolName = item.command;
           } else {
@@ -1080,11 +1107,99 @@ function classifyAndEnrichCodexError(
 export class CodexProvider implements IAgentProvider {
   private readonly retryBaseDelayMs: number;
   private readonly interruptThreadIdWaitMs: number;
+  private readonly processTreeOps: ProcessTreeOps;
+  private readonly treeReapTerminateGraceMs: number;
 
-  constructor(options?: { retryBaseDelayMs?: number; interruptThreadIdWaitMs?: number }) {
+  constructor(options?: {
+    retryBaseDelayMs?: number;
+    interruptThreadIdWaitMs?: number;
+    processTreeOps?: ProcessTreeOps;
+    treeReapTerminateGraceMs?: number;
+  }) {
     this.retryBaseDelayMs = options?.retryBaseDelayMs ?? RETRY_BASE_DELAY_MS;
     this.interruptThreadIdWaitMs =
       options?.interruptThreadIdWaitMs ?? CODEX_INTERRUPT_THREAD_ID_WAIT_MS;
+    this.processTreeOps = options?.processTreeOps ?? defaultProcessTreeOps;
+    this.treeReapTerminateGraceMs =
+      options?.treeReapTerminateGraceMs ?? TREE_REAP_TERMINATE_GRACE_MS;
+  }
+
+  /**
+   * Snapshot the `codex exec` process this attempt spawned, plus its full
+   * descendant tree, while a tool call is running — i.e. while `codex exec`
+   * is still definitely alive. This CANNOT be done at abort time: measured
+   * live, `codex exec`'s death from the SDK's own `spawn({ signal })`
+   * teardown is faster than this method's own `ps` round-trip, so a
+   * snapshot taken after `attemptController.abort()` always finds the root
+   * already a zombie and its children already reparented to init —
+   * unrecoverable, not merely late. Called from `streamCodexEvents`'s
+   * `command_execution` `item.started` handler (the SDK's own signal that a
+   * shell subprocess now exists), and re-armed on every subsequent tool
+   * call in the same attempt so a later command's descendants are captured
+   * too. Unsupported on Windows (`ps` is unavailable there): skipped
+   * silently, same OS signal abort still applies to `codex exec` itself.
+   */
+  private captureTreeSnapshot(
+    cwd: string,
+    thread: Thread,
+    onCaptured: (snapshot: TreeSnapshot | null) => void
+  ): void {
+    if (process.platform === 'win32') {
+      onCaptured(null);
+      return;
+    }
+    const parentPid = process.pid;
+    const knownThreadId = typeof thread.id === 'string' && thread.id.length > 0 ? thread.id : null;
+    void (async (): Promise<void> => {
+      let processes: Awaited<ReturnType<ProcessTreeOps['listProcesses']>>;
+      try {
+        processes = await this.processTreeOps.listProcesses();
+      } catch (err) {
+        getLog().warn({ err }, 'codex.tree_reap_snapshot_failed');
+        onCaptured(null);
+        return;
+      }
+      const root = findCodexExecRoot(processes, { parentPid, cwd, threadId: knownThreadId });
+      if (root === null) {
+        getLog().debug('codex.tree_reap_root_not_found');
+        onCaptured(null);
+        return;
+      }
+      if (root === 'ambiguous') {
+        getLog().warn('codex.tree_reap_root_ambiguous');
+        onCaptured(null);
+        return;
+      }
+      onCaptured({ rootPid: root.pid, descendantPids: collectDescendantPids(processes, root.pid) });
+    })().catch((err: unknown) => {
+      getLog().warn({ err }, 'codex.tree_reap_snapshot_failed');
+      onCaptured(null);
+    });
+  }
+
+  /**
+   * Best-effort: reap every still-alive pid from the last captured
+   * snapshot. Armed as a listener side effect at the same points that call
+   * `attemptController.abort()` — never dependent on the turn's generator
+   * being pulled again, since an external caller (the executor's
+   * idle-timeout wrapper) can stop pulling once it observes the abort and
+   * never resume it. A missing or empty snapshot (no tool call ever
+   * started, or the snapshot failed) is a silent no-op — the OS signal
+   * abort already ended `codex exec` itself either way.
+   */
+  private reapTreeSnapshot(snapshot: TreeSnapshot | null): void {
+    if (snapshot === null || snapshot.descendantPids.length === 0) return;
+    getLog().info(
+      { rootPid: snapshot.rootPid, descendantCount: snapshot.descendantPids.length },
+      'codex.tree_reap_armed'
+    );
+    void reapCodexProcessTree({
+      ops: this.processTreeOps,
+      descendantPids: snapshot.descendantPids,
+      terminateGraceMs: this.treeReapTerminateGraceMs,
+    }).catch((err: unknown) => {
+      getLog().warn({ err }, 'codex.tree_reap_failed');
+    });
   }
 
   private async createCodexClient(
@@ -1236,8 +1351,31 @@ export class CodexProvider implements IAgentProvider {
       // Codex CLI's startup banner, not an indicator of crash location.
       // See issue #1266.
       const attemptController = new AbortController();
-      const onCallerAbort = (): void => {
+      // Captured by `onToolStarted` (passed into `streamCodexEvents` below)
+      // the moment a command_execution tool starts — while `codex exec` is
+      // still alive, the only window in which its descendant tree can be
+      // read at all. Whatever is captured by abort time is what gets
+      // reaped; a tool that starts and is aborted within the snapshot's own
+      // `ps` round-trip is a documented, bounded gap (see
+      // `CodexProvider.captureTreeSnapshot`), not a regression — the prior
+      // behavior reaped nothing in every case.
+      let treeSnapshot: TreeSnapshot | null = null;
+      // Every trigger that ends this attempt goes through here so the tree
+      // reap is armed exactly once per attempt, from the same point that
+      // decides to abort — never a separate check the generator has to reach.
+      // `reapArmedForAttempt` guards the "exactly once": node-level Cancel
+      // and operator Stop can both fire for the same attempt (Cancel
+      // dominates, per `buildInterruptedResult`), and without this a race
+      // between the two would reap twice.
+      let reapArmedForAttempt = false;
+      const abortAttemptWithReap = (): void => {
         attemptController.abort();
+        if (reapArmedForAttempt) return;
+        reapArmedForAttempt = true;
+        this.reapTreeSnapshot(treeSnapshot);
+      };
+      const onCallerAbort = (): void => {
+        abortAttemptWithReap();
       };
       if (requestOptions?.abortSignal) {
         requestOptions.abortSignal.addEventListener('abort', onCallerAbort, { once: true });
@@ -1254,11 +1392,11 @@ export class CodexProvider implements IAgentProvider {
       let interruptDeferTimer: ReturnType<typeof setTimeout> | undefined;
       const onOperatorInterrupt = (): void => {
         if (typeof thread.id === 'string' && thread.id.length > 0) {
-          attemptController.abort();
+          abortAttemptWithReap();
           return;
         }
         interruptDeferTimer = setTimeout(() => {
-          attemptController.abort();
+          abortAttemptWithReap();
         }, this.interruptThreadIdWaitMs);
       };
       if (requestOptions?.interruptSignal) {
@@ -1306,7 +1444,13 @@ export class CodexProvider implements IAgentProvider {
                   requestOptions?.interruptSignal,
                   cwd,
                   Boolean(requestOptions?.nodeConfig?.mcp),
-                  threadOptions.model
+                  threadOptions.model,
+                  undefined,
+                  () => {
+                    this.captureTreeSnapshot(cwd, thread, snapshot => {
+                      treeSnapshot = snapshot;
+                    });
+                  }
                 ),
                 // Stamp from the attempt that produced the result: any retry
                 // (attempt > 0) re-runs on a fresh startThread (cold), so the prior

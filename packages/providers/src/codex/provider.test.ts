@@ -2995,6 +2995,191 @@ describe('operator interrupt (Stop, #8.4)', () => {
   });
 });
 
+describe('process-tree reap of an orphaned tool-call child on abort', () => {
+  const OUR_PID = process.pid;
+
+  beforeEach(() => {
+    resetCodexSingleton();
+    mockStartThread.mockClear();
+    mockResumeThread.mockClear();
+    mockRunStreamed.mockClear();
+    mockLogger.info.mockClear();
+    mockLogger.warn.mockClear();
+    mockLogger.error.mockClear();
+    mockLogger.debug.mockClear();
+    mockStartThread.mockReturnValue(createMockThread('new-thread-id'));
+    mockResumeThread.mockReturnValue(createMockThread('resumed-thread-id'));
+  });
+
+  /** A fake process tree + kill recorder, matching `ProcessTreeOps`. */
+  function fakeProcessTreeOps(
+    processes: { pid: number; ppid: number; command: string }[],
+    initiallyAlive: readonly number[]
+  ): {
+    ops: import('./process-tree-reap').ProcessTreeOps;
+    killed: { pid: number; signal: NodeJS.Signals }[];
+  } {
+    const alive = new Set(initiallyAlive);
+    const killed: { pid: number; signal: NodeJS.Signals }[] = [];
+    return {
+      killed,
+      ops: {
+        listProcesses: () => Promise.resolve(processes),
+        isAlive: (pid: number) => alive.has(pid),
+        kill: (pid: number, signal: NodeJS.Signals) => {
+          killed.push({ pid, signal });
+          if (signal === 'SIGTERM') alive.delete(pid); // tool child dies promptly on SIGTERM
+        },
+      },
+    };
+  }
+
+  async function waitUntil(check: () => boolean, timeoutMs = 500): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (!check() && Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    expect(check()).toBe(true);
+  }
+
+  /**
+   * The snapshot is captured on the `item.started` event (while `codex exec`
+   * is provably alive), not at abort time — so every fake turn below yields
+   * that event, waits a tick for the fake (already-resolved)
+   * `listProcesses()` to settle, and only THEN aborts, mirroring how a real
+   * tool call runs for seconds (plenty of time for a real `ps` round-trip)
+   * before any Stop/Cancel could arrive.
+   */
+  async function letSnapshotSettle(): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+
+  test('operator Stop mid-tool reaps the orphaned tool-call child, and same-thread continuation still works', async () => {
+    const { ops, killed } = fakeProcessTreeOps(
+      [
+        { pid: 9001, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9002, ppid: 9001, command: '/bin/zsh -c sleep 25 && echo step-1' },
+      ],
+      [9002] // codex exec (9001) is never in this set: the SDK's own SIGTERM already ended it by abort time, in every real case.
+    );
+    const interruptController = new AbortController();
+    const client = new CodexProvider({
+      retryBaseDelayMs: 1,
+      interruptThreadIdWaitMs: 5,
+      processTreeOps: ops,
+      treeReapTerminateGraceMs: 5,
+    });
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 25', id: 't1' },
+        };
+        await letSnapshotSettle();
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    const chunks = [];
+    for await (const chunk of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.at(-1)).toMatchObject({
+      type: 'result',
+      sessionId: 'new-thread-id',
+      terminalReason: 'stream_aborted',
+    });
+    await waitUntil(() => killed.some(k => k.pid === 9002));
+    expect(killed).toEqual([{ pid: 9002, signal: 'SIGTERM' }]);
+  });
+
+  test('node-level Cancel also reaps the orphaned tool-call child', async () => {
+    const { ops, killed } = fakeProcessTreeOps(
+      [
+        { pid: 9101, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9102, ppid: 9101, command: '/bin/zsh -c sleep 25' },
+      ],
+      [9102]
+    );
+    const cancelController = new AbortController();
+    const client = new CodexProvider({
+      retryBaseDelayMs: 1,
+      processTreeOps: ops,
+      treeReapTerminateGraceMs: 5,
+    });
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 25', id: 't1' },
+        };
+        await letSnapshotSettle();
+        cancelController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    await expect(
+      (async (): Promise<void> => {
+        for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+          abortSignal: cancelController.signal,
+        })) {
+          // consume
+        }
+      })()
+    ).rejects.toThrow('Query aborted');
+
+    await waitUntil(() => killed.some(k => k.pid === 9102));
+    expect(killed[0]).toEqual({ pid: 9102, signal: 'SIGTERM' });
+  });
+
+  test('two same-cwd exec candidates with no known thread id are logged as ambiguous, never killed', async () => {
+    const { ops, killed } = fakeProcessTreeOps(
+      [
+        { pid: 9201, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9202, ppid: OUR_PID, command: 'codex exec --experimental-json --cd /workspace' },
+        { pid: 9203, ppid: 9201, command: 'sleep 25' },
+      ],
+      [9203]
+    );
+    const interruptController = new AbortController();
+    const client = new CodexProvider({
+      retryBaseDelayMs: 1,
+      interruptThreadIdWaitMs: 5,
+      processTreeOps: ops,
+      treeReapTerminateGraceMs: 5,
+    });
+
+    mockRunStreamed.mockResolvedValue({
+      events: (async function* () {
+        yield {
+          type: 'item.started',
+          item: { type: 'command_execution', command: 'sleep 25', id: 't1' },
+        };
+        await letSnapshotSettle();
+        interruptController.abort();
+        throw Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' });
+      })(),
+    });
+
+    for await (const _ of client.sendQuery('test prompt', '/workspace', undefined, {
+      interruptSignal: interruptController.signal,
+    })) {
+      // consume
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(killed).toEqual([]);
+    expect(mockLogger.warn).toHaveBeenCalledWith('codex.tree_reap_root_ambiguous');
+  });
+});
+
 describe('usageBreakdown normalization (US-002)', () => {
   let client: CodexProvider;
 
