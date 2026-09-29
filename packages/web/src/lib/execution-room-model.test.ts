@@ -27,6 +27,7 @@ import {
   rememberRoomScroll,
   resetRoomVisit,
   resolveFinishedIterationView,
+  effectiveNodeRoomStatus,
   resolveFollowedRow,
   resolveGapHoldStatus,
   resolveRunDetailRefetchIntervalMs,
@@ -812,6 +813,34 @@ describe('statusPill', () => {
     expect(statusPill('completed', true)).toEqual({ label: 'Completed', tone: 'success' });
     expect(statusPill('cancelled', true)).toEqual({ label: 'Cancelled', tone: null });
     expect(statusPill('skipped', true)).toEqual({ label: 'Skipped', tone: null });
+  });
+});
+
+describe('effectiveNodeRoomStatus', () => {
+  test('a still-running/awaiting status is replaced by the dock-reported terminal outcome', () => {
+    expect(effectiveNodeRoomStatus('running', 'failed')).toBe('failed');
+    expect(effectiveNodeRoomStatus('running', 'completed')).toBe('completed');
+    expect(effectiveNodeRoomStatus('awaiting', 'skipped')).toBe('skipped');
+  });
+
+  test('null/undefined terminalOutcome leaves the status untouched', () => {
+    expect(effectiveNodeRoomStatus('running', null)).toBe('running');
+    expect(effectiveNodeRoomStatus('running', undefined)).toBe('running');
+  });
+
+  // Mirrors `statusPill`'s own `recoveryRequired` precedent: a status that
+  // already IS one of the durable terminal outcomes always wins, because it
+  // can only be terminal because something already settled it, while the
+  // dock's own read can still be momentarily behind a status the caller
+  // learned through a different, faster channel.
+  test('an already-terminal status wins over a dock-reported outcome that disagrees', () => {
+    expect(effectiveNodeRoomStatus('completed', 'failed')).toBe('completed');
+    expect(effectiveNodeRoomStatus('cancelled', 'failed')).toBe('cancelled');
+  });
+
+  test('feeding the resolved status into statusPill never renders Running once an outcome is known', () => {
+    const resolved = effectiveNodeRoomStatus('running', 'failed');
+    expect(statusPill(resolved)).toEqual({ label: 'Failed', tone: 'error' });
   });
 });
 

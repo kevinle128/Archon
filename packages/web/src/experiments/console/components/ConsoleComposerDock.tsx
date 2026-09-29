@@ -92,6 +92,7 @@ import {
   type SteeringDockMode,
   type SteeringDockState,
   type SteeringExecutionState,
+  type SteeringNodeOutcome,
   type SteeringQueueItemState,
   type SteeringSubState,
 } from '@/lib/steering-dock';
@@ -199,6 +200,14 @@ export interface ConsoleComposerDockProps {
    * currently read.
    */
   onExecutionStateChange?: (state: SteeringExecutionState | null) => void;
+  /**
+   * The node's own settled outcome, reported on every change (including
+   * back to null on a scope reset) so the room header pill can show the
+   * real terminal outcome the instant this dock's own queue read learns it
+   * — never left for the header's own, separately-cadenced row/run status
+   * to infer on its own.
+   */
+  onNodeOutcomeChange?: (outcome: SteeringNodeOutcome | null) => void;
   /**
    * Every message id's last-observed delivery state, reported on every
    * change so a transcript operator row can show the proven `sent` /
@@ -386,6 +395,7 @@ export function ConsoleComposerDock({
   autoFocusTarget = null,
   onAutoFocusApplied,
   onExecutionStateChange,
+  onNodeOutcomeChange,
   onDeliveryStatesChange,
   send = sendNodeGuidance,
   interrupt = interruptNode,
@@ -427,15 +437,17 @@ export function ConsoleComposerDock({
   const pollingHandleRef = useRef<QueuePollingHandle | null>(null);
 
   const [dock, setDock] = useState<SteeringDockState>(() => createSteeringDockState(subState));
-  // Bumped whenever a withdraw resolves successfully — the trigger for the
-  // immediate-re-read effect below. A ref bump alone would not schedule a
-  // render, and firing `.kick()` synchronously inside the withdraw promise
-  // handler reads `dockRef.current` before this render's `setDock` has
-  // committed, sampling the PRE-withdraw `queueGeneration` and making the
+  // Bumped whenever a withdraw or a Send-now resolves successfully — the
+  // trigger for the immediate-re-read effect below. A ref bump alone would
+  // not schedule a render, and firing `.kick()` synchronously inside the
+  // promise handler reads `dockRef.current` before this render's `setDock`
+  // has committed, sampling the PRE-resolve `queueGeneration` and making the
   // kicked read's generation check discard the very response meant to fix
   // this. State + effect defers the kick to after commit, when
-  // `dockRef.current` already reflects the resolved generation.
-  const [withdrawKickTick, setWithdrawKickTick] = useState(0);
+  // `dockRef.current` already reflects the resolved generation. Shared by
+  // both mutations rather than one counter each — either one just needs the
+  // dock's own poll to catch up immediately, not two independent triggers.
+  const [forceKickTick, setForceKickTick] = useState(0);
   const [draft, setDraft] = useState('');
   // Shared across the four mutually-exclusive band renders below; only one
   // ever mounts at a time. Default open matches the approved mockup.
@@ -570,12 +582,27 @@ export function ConsoleComposerDock({
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];
 
+  // Presentational only: a message already rendered as a delivered
+  // transcript row never shows twice in the pending band, even for the
+  // short window before this tab's own send-resolve or next queue poll
+  // would otherwise drop it. Declared before `mode` because `settling`
+  // (below) also needs it — every mode that can show an actively-dispatching
+  // row reads this one list.
+  const visibleSent = visiblePendingReceipts(dock.sent, deliveredMessageIds);
+
   // The `nodeTerminal` prop comes from the parent's run-detail poll; this
   // dock's own queue read can report `execution_state: 'finished'` first —
   // fold that signal in (mirrors ComposerDock.tsx) so this dock's mode and
   // one-shot terminal fetch react without waiting on the slower external
   // poll.
   const nodeIsTerminal = effectiveNodeTerminal(nodeTerminal, dock.executionState);
+
+  // See `steeringDockMode`'s own doc comment for `pendingSettlement`: true
+  // only in the gap between the terminal signal landing and THIS dock's own
+  // queue read reconciling it — once that read lands, `dock.executionState`
+  // is `finished` and this is false again (either `finishedEntries` already
+  // took over, or there is genuinely nothing left to show).
+  const pendingSettlement = dock.executionState !== 'finished' && visibleSent.length > 0;
 
   const mode = steeringDockMode({
     rowStatus,
@@ -586,6 +613,7 @@ export function ConsoleComposerDock({
     neverSent: finishedEntries,
     nodeTerminal: nodeIsTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
+    pendingSettlement,
   });
 
   // One-shot fetch on the terminal transition (never gated on any local
@@ -648,9 +676,22 @@ export function ConsoleComposerDock({
   // The only reader of the durable queue snapshot's execution state today —
   // report every change, including the reset back to null on a scope swap,
   // so a parent header can show `Recovery required` without polling twice.
-  useEffect(() => {
+  // Layout, not passive: `setDock` above resolves from a promise handler, so
+  // a passive effect's own callback (and the parent `setState` it triggers)
+  // can still land AFTER React has already painted this render's `settling`/
+  // `finished` band — the exact window a stale header pill was caught in
+  // (round-12 QA). A layout effect's parent update is flushed synchronously
+  // before paint, so the header and the dock settle in the same frame.
+  useLayoutEffect(() => {
     onExecutionStateChange?.(dock.executionState);
   }, [dock.executionState, onExecutionStateChange]);
+
+  // Same synchronous-before-paint reasoning as `onExecutionStateChange`
+  // above: the room header's pill must never lag one frame behind this
+  // dock's own terminal reconciliation.
+  useLayoutEffect(() => {
+    onNodeOutcomeChange?.(dock.nodeOutcome);
+  }, [dock.nodeOutcome, onNodeOutcomeChange]);
 
   useEffect(() => {
     onDeliveryStatesChange?.(dock.deliveryByMessageId);
@@ -691,16 +732,21 @@ export function ConsoleComposerDock({
     };
   }, [nodeIsTerminal, live, runId, nodeId, readQueue]);
 
-  // Shared-queue reads while composer/blocked/finished-iteration/recovery are
-  // mounted. Recovery keeps polling (not just a one-shot) so this dock can
-  // observe the moment Resume re-establishes a live handle and the mode
-  // reverts on its own. finished-iteration polls GET only (no mutation
-  // handlers bound). finished mode never polls — the one-shot above covers
-  // it, and nothing can mutate a terminal node's queue.
+  // Shared-queue reads while composer/blocked/finished-iteration/recovery/
+  // settling are mounted. Recovery keeps polling (not just a one-shot) so
+  // this dock can observe the moment Resume re-establishes a live handle
+  // and the mode reverts on its own. finished-iteration polls GET only (no
+  // mutation handlers bound). `settling` polls too: entering it from
+  // `composer`/`blocked` changes `mode`, which this effect depends on, so
+  // its cleanup+restart fires the SAME immediate `tick()` a fresh poll
+  // start always does — the forced re-read the terminal edge needs, with no
+  // separate mechanism. finished mode never polls — the one-shot above
+  // covers it, and nothing can mutate a terminal node's queue.
   const pollingEnabled =
     mode === 'composer' ||
     mode === 'blocked' ||
     mode === 'finished-iteration' ||
+    mode === 'settling' ||
     mode === 'recovery-required';
 
   useEffect(() => {
@@ -777,14 +823,14 @@ export function ConsoleComposerDock({
     // nodeExecutionKey: cleanup aborts the old poller on attempt reset.
   }, [runId, nodeId, readQueue, pollIntervalMs, pollingEnabled, mode, nodeExecutionKey]);
 
-  // Fires only after a withdraw resolves successfully — see
-  // `withdrawKickTick`'s declaration for why this runs as a post-commit
-  // effect rather than inline in the promise handler. `pollingHandleRef` is
-  // null while polling is disabled, making the kick a safe no-op then.
+  // Fires only after a withdraw or a Send-now resolves successfully — see
+  // `forceKickTick`'s declaration for why this runs as a post-commit effect
+  // rather than inline in the promise handler. `pollingHandleRef` is null
+  // while polling is disabled, making the kick a safe no-op then.
   useEffect(() => {
-    if (withdrawKickTick === 0) return;
+    if (forceKickTick === 0) return;
     pollingHandleRef.current?.kick();
-  }, [withdrawKickTick]);
+  }, [forceKickTick]);
 
   // When the dock's controls leave the DOM — terminal state hides the dock,
   // a 422 swaps it for the detached disclosure — focus must move to the
@@ -980,6 +1026,13 @@ export function ConsoleComposerDock({
         (receipt): void => {
           if (attemptGenerationRef.current !== attemptGen) return;
           setDock(current => resolveSendNowSuccess(current, receipt));
+          // A reply that ends the node in the same turn is otherwise only
+          // learned on this dock's own next scheduled poll (up to
+          // `pollIntervalMs` later) — force an immediate re-read (via the
+          // effect below, once this render commits) so `SENDING`/`Stop`/
+          // `Queue` never outlive a node this tab's own Send now just
+          // finished.
+          setForceKickTick(tick => tick + 1);
           setDraft(current => (current === submittedDraft ? '' : current));
           void clearDraft(runId, nodeId).then(
             () => {
@@ -1091,7 +1144,7 @@ export function ConsoleComposerDock({
         // the effect below, once this render commits) so a false "removed"
         // (the row was already claimed) is corrected by the true state
         // instead of trusting the optimistic removal above.
-        setWithdrawKickTick(tick => tick + 1);
+        setForceKickTick(tick => tick + 1);
       },
       (error: unknown): void => {
         if (attemptGenerationRef.current !== attemptGen) return;
@@ -1254,13 +1307,57 @@ export function ConsoleComposerDock({
     );
   }
 
-  // Presentational only: a message already rendered as a delivered
-  // transcript row never shows twice in the pending band, even for the
-  // short window before this tab's own send-resolve or next queue poll
-  // would otherwise drop it. Only 'finished-iteration' and 'composer'
-  // below can show an actively-dispatching row, so this is computed once
-  // for both.
-  const visibleSent = visiblePendingReceipts(dock.sent, deliveredMessageIds);
+  if (mode === 'settling') {
+    // Keeps the exact band the room showed a moment ago up, unrelabeled,
+    // while this dock's own queue read has not yet reconciled the terminal
+    // signal — see `steeringDockMode`'s `pendingSettlement` doc comment.
+    // No controls: the agent is already known to have stopped, so nothing
+    // here is actionable until the reconciled read lands and this render
+    // becomes either 'finished' (server truth) or hides outright.
+    const label = allPendingDispatching(visibleSent)
+      ? sendingBandHeader(visibleSent.length)
+      : queueBandHeader(pendingQueueCount(visibleSent));
+    return (
+      <section aria-label={label} className="flex-none border-t border-border bg-surface-elevated">
+        <QueueBandHeader
+          label={label}
+          savedLine={savedToServerLine(dock.autoSend)}
+          open={queueBandOpen}
+          onToggle={(): void => {
+            setQueueBandOpen(value => !value);
+          }}
+          bodyId={queueBodyId}
+        />
+        <div
+          id={queueBodyId}
+          hidden={!queueBandOpen}
+          className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
+        >
+          <ul
+            aria-label={
+              allPendingDispatching(visibleSent)
+                ? sendingListLabel(visibleSent.length)
+                : queueListLabel(pendingQueueCount(visibleSent))
+            }
+          >
+            {visibleSent.map((receipt, index) => (
+              <QueueBandItem
+                key={receipt.messageId}
+                dataMessageId={receipt.messageId}
+                ord={index + 1}
+                text={receipt.message}
+                accent={false}
+              >
+                {queueItemStatusLabel(receipt.state) === null ? null : (
+                  <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
+                )}
+              </QueueBandItem>
+            ))}
+          </ul>
+        </div>
+      </section>
+    );
+  }
 
   if (mode === 'finished-iteration' && usableFinishedIteration !== null) {
     const liveIteration = usableFinishedIteration.liveIteration;

@@ -8,12 +8,14 @@
 import type { CSSProperties } from 'react';
 
 import {
+  effectiveNodeRoomStatus,
   headerMetaLine,
   statusPill,
   type ExecutionHeaderModel,
   type NodeKindChip,
   type RunOfTotal,
 } from '@/lib/execution-room-model';
+import type { SteeringNodeOutcome } from '@/lib/steering-dock';
 import { cn } from '@/lib/utils';
 
 export interface ExecutionHeaderOption {
@@ -40,6 +42,14 @@ export interface NodeRoomHeaderProps {
   iterationPrefix?: number | null;
   /** Server-reported restart recovery for the selected row. Default false. */
   recoveryRequired?: boolean;
+  /**
+   * The node's own settled outcome, from the steering dock's own terminal
+   * reconciliation — folded onto `model.status` before either the pill or
+   * the meta line reads it, so a still-`running`/`awaiting` row status never
+   * outlives the proven outcome. Null/undefined leaves `model.status`
+   * unchanged.
+   */
+  terminalOutcome?: SteeringNodeOutcome | null;
 }
 
 // Tailwind's build scans source for literal class names, so a chip/pill tone
@@ -122,13 +132,15 @@ export function NodeRoomHeader({
   idleAwaitExpired = false,
   iterationPrefix = null,
   recoveryRequired = false,
+  terminalOutcome = null,
 }: NodeRoomHeaderProps): React.ReactElement {
-  const pill = statusPill(model.status, recoveryRequired);
+  const effectiveStatus = effectiveNodeRoomStatus(model.status, terminalOutcome);
+  const pill = statusPill(effectiveStatus, recoveryRequired);
   const pillStyle = pill.tone === null ? NEUTRAL_PILL_STYLE : STATUS_PILL_STYLE[pill.tone];
   const chipStyle = kindChip === null ? null : (KIND_CHIP_STYLE[kindChip.tone] ?? null);
   const metaLine = headerMetaLine({
     startedAt: model.startedAt,
-    status: model.status,
+    status: effectiveStatus,
     durationMs: model.durationMs,
     runOfTotal,
     provider: model.provider,

@@ -1770,7 +1770,10 @@ const readWorkflowNodeQueueRoute = createRoute({
     'live in-process handle, `recovery_required` for a durable non-terminal ' +
     'node with no live handle (a server restart), or `finished` for a ' +
     'terminal run/node — never a 409 for a terminal node, since its durable ' +
-    'content (including `never_sent` records) must stay readable.',
+    'content (including `never_sent` records) must stay readable. ' +
+    "`node_outcome` names the node's own settled status once `execution_state` " +
+    'is `finished`, from the same projection `GET /runs/:id` settles onto — ' +
+    'null until then.',
   request: {
     params: readWorkflowNodeQueueParamsSchema,
   },
@@ -6070,6 +6073,7 @@ export function registerApiRoutes(
         // awaited terminal write), so the hot path skips this read entirely.
         let nodeTerminal = false;
         let nodeKnown = handle !== undefined || durableSettings?.provider_id != null;
+        let projectedNodeState: ApiWorkflowNodeState | undefined;
         if (handle === undefined) {
           const events = await workflowEventDb.listWorkflowEvents(runId);
           const nodeState = projectApiWorkflowNodeStates(events).find(
@@ -6078,6 +6082,7 @@ export function registerApiRoutes(
           if (nodeState !== undefined) {
             nodeKnown = true;
             nodeTerminal = TERMINAL_API_NODE_STATUSES.includes(nodeState.status);
+            projectedNodeState = nodeState;
           }
         }
 
@@ -6101,11 +6106,39 @@ export function registerApiRoutes(
             ? 'live'
             : 'recovery_required';
 
+        // The node's own settled outcome, so a client room header can skip
+        // straight past a stale `running`/`awaiting` row status the instant
+        // THIS read already knows the node is done, instead of waiting on
+        // that status's own, separately-cadenced poll (round-12 QA: a
+        // restart-recovered node's Abandon settles the run before the node's
+        // own terminal event is folded in elsewhere). Computed only on this
+        // terminal edge. The cold path above already read the projection; a
+        // live/closed handle (hot path) has not, so read it now — the fold
+        // through `settleApiWorkflowNodeStatesForRunStatus` is the same one
+        // `GET /runs/:id` itself applies, so the two routes never disagree.
+        let nodeOutcome: 'completed' | 'failed' | 'skipped' | null = null;
+        if (isFinished) {
+          const finishedState =
+            projectedNodeState ??
+            projectApiWorkflowNodeStates(await workflowEventDb.listWorkflowEvents(runId)).find(
+              state => state.nodeId === nodeId
+            );
+          if (finishedState !== undefined) {
+            const [settled] = settleApiWorkflowNodeStatesForRunStatus(run.status, [finishedState]);
+            const outcome = settled.status;
+            nodeOutcome =
+              outcome === 'completed' || outcome === 'failed' || outcome === 'skipped'
+                ? outcome
+                : null;
+          }
+        }
+
         const queued = await workflowSteeringDb.listSteeringQueue(runId, nodeId);
         return c.json(
           {
             success: true as const,
             execution_state: executionState,
+            node_outcome: nodeOutcome,
             auto_send: autoSend,
             capabilities: responseCapabilities,
             queued: queued.map(entry => ({

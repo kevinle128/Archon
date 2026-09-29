@@ -815,6 +815,69 @@ describe('ConsoleNodeRoom', () => {
     invalidateSpy.mockRestore();
   });
 
+  // Same gap as the test above, but this time the dock's own queue read also
+  // carries the node's settled outcome (`node_outcome`), and no SECOND
+  // `renderRoom` call ever supplies a fresh, terminal `run` prop — the only
+  // signal this test gives the room that the node is done is this dock's
+  // own read. The pill must show the real outcome from that read alone,
+  // never waiting on a run refetch to land first.
+  test('the pill never shows Running once this dock reports the node terminal, even before any run refetch lands', async () => {
+    queueFetchSpy?.mockRestore();
+    queueFetchSpy = spyOn(globalThis, 'fetch').mockImplementation(((
+      input: RequestInfo | URL,
+      init?: RequestInit
+    ): Promise<Response> => {
+      const raw = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      const method = (init?.method ?? 'GET').toUpperCase();
+      let pathname = raw;
+      try {
+        pathname = new URL(raw, 'http://localhost').pathname;
+      } catch {
+        pathname = raw.split('?')[0] ?? raw;
+      }
+      if (method === 'GET' && pathname.endsWith('/queue')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              success: true,
+              execution_state: 'finished',
+              node_outcome: 'failed',
+              auto_send: false,
+              capabilities: { soft_injection: false, delivery_ack: false },
+              queued: [],
+              sub_state: null,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        );
+      }
+      if (method === 'GET' && pathname.endsWith('/draft')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ success: true, draft: null, auto_send: false }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        );
+      }
+      return Promise.reject(new Error(`unexpected fetch ${method} ${raw}`));
+    }) as typeof fetch);
+
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({ messages: [] });
+
+    await act(async () => {
+      renderRoom({
+        run: run({ id: 'run-outcome', status: 'running' }),
+        loadMessages,
+      });
+    });
+    await flushUntil('header settles to the terminal outcome', () =>
+      (host.textContent ?? '').includes('Failed')
+    );
+
+    expect(host.textContent).not.toContain('Running');
+    expect(host.textContent).toContain('Failed');
+  });
+
   // The literal server-reported `recovery_required` signal (a restart with
   // no live process behind this node) is the one and only source for the
   // pill — never inferred from any gap between two independently-cadenced
@@ -1890,6 +1953,61 @@ describe('ConsoleNodeRoom', () => {
     const scroller = host.querySelector('[data-testid="console-node-room-scroll"]');
     if (scroller === null) throw new Error('missing scroller');
     expect((win.document.activeElement as unknown) === scroller).toBe(true);
+  });
+
+  // The room follows a newly live loop iteration on its own — no Go click —
+  // so the effects above are the only thing standing between the removed
+  // row and `<body>`. The browser has already blurred the removed row (a
+  // real DOM removal, not merely losing `data-last-row`) by the time either
+  // effect runs; only `lastFocusedTranscriptRowRef` proves it was THIS
+  // specific row. The scope-keyed transcript query briefly parks focus on
+  // the scroller itself while the new iteration's content loads (no row
+  // exists yet); once it settles, focus self-heals onto the real last row.
+  test('a loop iteration boundary the operator did not drive never drops focus to body', async () => {
+    const loadMessages = async (): Promise<WorkflowNodeMessagesResponse> => ({
+      messages: [...FIXTURE],
+    });
+    await act(async () => {
+      renderRoom({
+        selectedRow: row({
+          id: 'review-iter-1',
+          nodeId: 'review',
+          label: 'Review',
+          status: 'running',
+        }),
+        loadMessages,
+      });
+    });
+    await flushUntil('iteration 1 content', () => (host.textContent ?? '').includes('first'));
+    const firstLastRow = host.querySelector('[data-last-row]');
+    if (firstLastRow === null) throw new Error('missing last-row marker');
+    await act(async () => {
+      (firstLastRow as unknown as HTMLElement).focus();
+    });
+    expect((win.document.activeElement as unknown) === firstLastRow).toBe(true);
+
+    await act(async () => {
+      renderRoom({
+        selectedRow: row({
+          id: 'review-iter-2',
+          nodeId: 'review',
+          label: 'Review ×2',
+          status: 'failed',
+          selection: { kind: 'loop_iteration', iteration: 2 },
+        }),
+        loadMessages,
+      });
+    });
+    await flushUntil(
+      'iteration 2 content settled onto a real last row',
+      () => !host.contains(firstLastRow) && host.querySelector('[data-last-row]') !== null
+    );
+
+    const newLastRow = host.querySelector('[data-last-row]');
+    expect(newLastRow).not.toBeNull();
+    expect((newLastRow as unknown) === firstLastRow).toBe(false);
+    expect(win.document.activeElement).not.toBe(win.document.body as unknown as HTMLElement);
+    expect((win.document.activeElement as unknown) === newLastRow).toBe(true);
   });
 
   describe('Console tool disclosure rows', () => {

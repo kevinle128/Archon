@@ -88,8 +88,11 @@ const REDIRECT_TEXT = `<<E2E_SCENARIO>>${REDIRECT_SCENARIO}<</E2E_SCENARIO>>thir
 const REDIRECT_ECHO = '[e2e-fake] resumed echo: first\n\nsecond\n\nthird';
 // Carries its own echoPrompt directive so the drained guidance turn proves it
 // ran on the resumed session, same pattern as REDIRECT_TEXT above — the
-// directive is stripped before the fake provider echoes it back.
-const BLANK_SEND_NOW_TEXT = '<<E2E_SCENARIO>>{"echoPrompt":true}<</E2E_SCENARIO>>first';
+// directive is stripped before the fake provider echoes it back. delayMs
+// holds the turn open long enough for the transient Stop/"agent generating"
+// state to become observable before the echo resolves.
+const BLANK_SEND_NOW_TEXT =
+  '<<E2E_SCENARIO>>{"echoPrompt":true,"delayMs":1500}<</E2E_SCENARIO>>first';
 const BLANK_SEND_NOW_ECHO = '[e2e-fake] resumed echo: first';
 const MULTILINE_FIRST =
   'line one of operator guidance\n\nline two keeps the breaks\nline three wraps in the narrow room';
