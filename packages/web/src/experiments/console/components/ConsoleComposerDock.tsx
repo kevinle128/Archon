@@ -572,12 +572,27 @@ export function ConsoleComposerDock({
     ...(draft.trim().length > 0 ? [{ messageId: null, message: draft }] : []),
   ];
 
+  // Presentational only: a message already rendered as a delivered
+  // transcript row never shows twice in the pending band, even for the
+  // short window before this tab's own send-resolve or next queue poll
+  // would otherwise drop it. Declared before `mode` because `settling`
+  // (below) also needs it — every mode that can show an actively-dispatching
+  // row reads this one list.
+  const visibleSent = visiblePendingReceipts(dock.sent, deliveredMessageIds);
+
   // The `nodeTerminal` prop comes from the parent's run-detail poll; this
   // dock's own queue read can report `execution_state: 'finished'` first —
   // fold that signal in (mirrors ComposerDock.tsx) so this dock's mode and
   // one-shot terminal fetch react without waiting on the slower external
   // poll.
   const nodeIsTerminal = effectiveNodeTerminal(nodeTerminal, dock.executionState);
+
+  // See `steeringDockMode`'s own doc comment for `pendingSettlement`: true
+  // only in the gap between the terminal signal landing and THIS dock's own
+  // queue read reconciling it — once that read lands, `dock.executionState`
+  // is `finished` and this is false again (either `finishedEntries` already
+  // took over, or there is genuinely nothing left to show).
+  const pendingSettlement = dock.executionState !== 'finished' && visibleSent.length > 0;
 
   const mode = steeringDockMode({
     rowStatus,
@@ -588,6 +603,7 @@ export function ConsoleComposerDock({
     neverSent: finishedEntries,
     nodeTerminal: nodeIsTerminal,
     recoveryRequired: dock.executionState === 'recovery_required',
+    pendingSettlement,
   });
 
   // One-shot fetch on the terminal transition (never gated on any local
@@ -693,16 +709,21 @@ export function ConsoleComposerDock({
     };
   }, [nodeIsTerminal, live, runId, nodeId, readQueue]);
 
-  // Shared-queue reads while composer/blocked/finished-iteration/recovery are
-  // mounted. Recovery keeps polling (not just a one-shot) so this dock can
-  // observe the moment Resume re-establishes a live handle and the mode
-  // reverts on its own. finished-iteration polls GET only (no mutation
-  // handlers bound). finished mode never polls — the one-shot above covers
-  // it, and nothing can mutate a terminal node's queue.
+  // Shared-queue reads while composer/blocked/finished-iteration/recovery/
+  // settling are mounted. Recovery keeps polling (not just a one-shot) so
+  // this dock can observe the moment Resume re-establishes a live handle
+  // and the mode reverts on its own. finished-iteration polls GET only (no
+  // mutation handlers bound). `settling` polls too: entering it from
+  // `composer`/`blocked` changes `mode`, which this effect depends on, so
+  // its cleanup+restart fires the SAME immediate `tick()` a fresh poll
+  // start always does — the forced re-read the terminal edge needs, with no
+  // separate mechanism. finished mode never polls — the one-shot above
+  // covers it, and nothing can mutate a terminal node's queue.
   const pollingEnabled =
     mode === 'composer' ||
     mode === 'blocked' ||
     mode === 'finished-iteration' ||
+    mode === 'settling' ||
     mode === 'recovery-required';
 
   useEffect(() => {
@@ -1263,13 +1284,57 @@ export function ConsoleComposerDock({
     );
   }
 
-  // Presentational only: a message already rendered as a delivered
-  // transcript row never shows twice in the pending band, even for the
-  // short window before this tab's own send-resolve or next queue poll
-  // would otherwise drop it. Only 'finished-iteration' and 'composer'
-  // below can show an actively-dispatching row, so this is computed once
-  // for both.
-  const visibleSent = visiblePendingReceipts(dock.sent, deliveredMessageIds);
+  if (mode === 'settling') {
+    // Keeps the exact band the room showed a moment ago up, unrelabeled,
+    // while this dock's own queue read has not yet reconciled the terminal
+    // signal — see `steeringDockMode`'s `pendingSettlement` doc comment.
+    // No controls: the agent is already known to have stopped, so nothing
+    // here is actionable until the reconciled read lands and this render
+    // becomes either 'finished' (server truth) or hides outright.
+    const label = allPendingDispatching(visibleSent)
+      ? sendingBandHeader(visibleSent.length)
+      : queueBandHeader(pendingQueueCount(visibleSent));
+    return (
+      <section aria-label={label} className="flex-none border-t border-border bg-surface-elevated">
+        <QueueBandHeader
+          label={label}
+          savedLine={savedToServerLine(dock.autoSend)}
+          open={queueBandOpen}
+          onToggle={(): void => {
+            setQueueBandOpen(value => !value);
+          }}
+          bodyId={queueBodyId}
+        />
+        <div
+          id={queueBodyId}
+          hidden={!queueBandOpen}
+          className="max-h-[33vh] overflow-y-auto px-[10px] pb-[8px] pt-[2px]"
+        >
+          <ul
+            aria-label={
+              allPendingDispatching(visibleSent)
+                ? sendingListLabel(visibleSent.length)
+                : queueListLabel(pendingQueueCount(visibleSent))
+            }
+          >
+            {visibleSent.map((receipt, index) => (
+              <QueueBandItem
+                key={receipt.messageId}
+                dataMessageId={receipt.messageId}
+                ord={index + 1}
+                text={receipt.message}
+                accent={false}
+              >
+                {queueItemStatusLabel(receipt.state) === null ? null : (
+                  <span className="flex-none">{queueItemStatusLabel(receipt.state)}</span>
+                )}
+              </QueueBandItem>
+            ))}
+          </ul>
+        </div>
+      </section>
+    );
+  }
 
   if (mode === 'finished-iteration' && usableFinishedIteration !== null) {
     const liveIteration = usableFinishedIteration.liveIteration;

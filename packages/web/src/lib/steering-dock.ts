@@ -186,7 +186,17 @@ export type SteeringDockMode =
   | 'recovery-required'
   | 'composer'
   | 'finished-iteration'
-  | 'finished';
+  | 'finished'
+  | 'settling';
+
+/**
+ * A finished node's own outcome, read once from the durable event
+ * projection the instant the node is known terminal — mirrored from the
+ * engine's terminal `NodeState` subset (`packages/workflows/src/schemas/workflow-run.ts`).
+ * Web must not import `@archon/workflows`; this is the intentional
+ * package-boundary mirror (same pattern as `SteeringQueueItemState`).
+ */
+export type SteeringNodeOutcome = 'completed' | 'failed' | 'skipped';
 
 /** The agent sub-state the dock renders — interrupting is UI-local only. */
 export type SteeringAgentMode = 'queue-only' | 'generating' | 'interrupting' | 'idle';
@@ -320,6 +330,22 @@ export const STEERING_RECOVERY_DISCLOSURE =
  * before the terminal and liveness checks: it comes from the server telling
  * the client the live process is gone, not from a guess this code makes, so
  * it overrides what `live`/`rowStatus` would otherwise imply.
+ *
+ * `pendingSettlement` covers the gap the checks above leave open: the
+ * terminal signal (`nodeTerminal`/`!live`) can land before THIS dock's own
+ * queue read has reconciled toward `finished`, and at that instant
+ * `neverSent` is still empty (it is only ever populated from this dock's own
+ * read — see `isPossiblyNeverSent`'s doc comment) even though a queued item
+ * is still sitting, unreconciled, in `dock.sent`. Hiding here would drop
+ * that item for a frame between two non-empty renders, exactly the gap
+ * VQ6-3 and VQ9-3 already ruled out for the pre-reconcile withdraw/abandon
+ * races. `settling` keeps the same band up, still labelled `queued`/`will
+ * send` (never relabeled `never sent` before the server actually says so),
+ * until the reconciled read lands and this function is called again — at
+ * that point `neverSent`/`nodeTerminal` (via `effectiveNodeTerminal`) settle
+ * the outcome for real. Gated on no `finishedIteration` so a completed
+ * occurrence on a genuinely still-live loop keeps winning that read-only
+ * view instead.
  */
 /**
  * A node counts as terminal for the dock's own read-only transitions the
@@ -348,6 +374,8 @@ export function steeringDockMode(input: {
   neverSent?: readonly NeverSentEntry[] | null;
   nodeTerminal?: boolean;
   recoveryRequired?: boolean;
+  /** See this function's own doc comment. Default false/undefined: no gap to bridge. */
+  pendingSettlement?: boolean;
 }): SteeringDockMode {
   if (input.recoveryRequired === true) return 'recovery-required';
   if (
@@ -357,6 +385,13 @@ export function steeringDockMode(input: {
     input.neverSent.length > 0
   ) {
     return 'finished';
+  }
+  if (
+    (input.nodeTerminal === true || !input.live) &&
+    input.pendingSettlement === true &&
+    (input.finishedIteration === null || input.finishedIteration === undefined)
+  ) {
+    return 'settling';
   }
   if (!input.live) return 'hidden';
   if (input.finishedIteration !== null && input.finishedIteration !== undefined) {

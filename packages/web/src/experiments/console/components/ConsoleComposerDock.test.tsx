@@ -2582,17 +2582,21 @@ describe('ConsoleComposerDock', () => {
     expect(neverSentItems().map(item => item.getAttribute('data-message-id'))).toEqual(['id-a']);
   });
 
-  test('a node that finishes while a send is still dispatching never shows a false never-sent band', async () => {
+  test('a node that finishes while a send is still dispatching keeps the sending band, never a false never-sent one', async () => {
     // A message actively dispatching is the opposite of undelivered — the
-    // node reaching terminal before the send resolves must not flash a
-    // "never sent" band for it ahead of the server's own reconciliation.
+    // node reaching terminal before the send resolves must not relabel it
+    // "never sent" ahead of the server's own reconciliation. It keeps
+    // showing as `sending` (the settling band, unrelabeled) until this
+    // dock's own terminal read reconciles it.
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
     await settleSnapshot(
       ctrl,
       okQueue([{ message_id: 'id-a', message: 'in flight', state: 'dispatching' }])
     );
-    expect(host.querySelector('ul')).toBeNull();
+    expect(host.querySelector('ul')).not.toBeNull();
+    expect(host.textContent ?? '').toContain('in flight');
+    expect(host.textContent ?? '').not.toContain('never sent');
     expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 
@@ -2600,12 +2604,12 @@ describe('ConsoleComposerDock', () => {
   // e.g. another tab's Send now completing the node) can flip true before
   // THIS dock's own next queue poll has reconciled the item that prop refers
   // to — this tab's last-known local snapshot can still call it `queued`
-  // even though the server already delivered it. The never-sent band must
-  // never render that stale local entry: it renders nothing until the
-  // server's own terminal reconciliation (`dock.neverSent`) says otherwise,
-  // then reflects exactly that — which, for an item that was actually
-  // delivered, is nothing at all.
-  test("nodeTerminal arriving ahead of this dock's own queue poll never paints a stale local queue row as never-sent", async () => {
+  // even though the server already delivered it. The band must keep
+  // showing that item, still labelled `queued`, through the gap (VQ6-3/
+  // VQ9-3: never an empty frame between two non-empty snapshots) — never
+  // relabeled `never sent` before the server's own terminal reconciliation
+  // (`dock.neverSent`) says so.
+  test("nodeTerminal arriving ahead of this dock's own queue poll keeps the band up, unrelabeled, until reconciled", async () => {
     const ctrl = controllableRead();
     await renderDock({ readQueue: ctrl.read, nodeTerminal: false, rowStatus: 'running' });
     await settleSnapshot(
@@ -2615,15 +2619,20 @@ describe('ConsoleComposerDock', () => {
     expect(host.querySelector('textarea')).not.toBeNull();
 
     // The host's faster external signal lands; this dock's own queue read
-    // has not caught up yet (no new snapshot settled).
+    // has not caught up yet (no new snapshot settled). No frame shows a
+    // terminal room with the item missing.
     await renderDock({ readQueue: ctrl.read, nodeTerminal: true, rowStatus: 'completed' });
     expect(neverSentList()).toBeNull();
-    expect(host.textContent ?? '').not.toContain('alpha');
+    expect(host.querySelector('ul')).not.toBeNull();
+    expect(host.textContent ?? '').toContain('alpha');
+    expect(host.textContent ?? '').not.toContain('never sent');
 
     // The dock's own terminal one-shot fetch resolves: the server says the
     // node is finished AND the item was actually delivered elsewhere, not
     // never-sent — the gate is open now (this read itself reports
-    // `finished`), but a `delivered` row is still excluded on its own merits.
+    // `finished`), but a `delivered` row is still excluded on its own
+    // merits, so the dock hides outright instead of showing a false
+    // never-sent band.
     await settleSnapshot(
       ctrl,
       okQueue([{ message_id: 'id-a', message: 'alpha', state: 'delivered' }], {
@@ -2632,6 +2641,34 @@ describe('ConsoleComposerDock', () => {
     );
     expect(neverSentList()).toBeNull();
     expect(host.textContent ?? '').not.toContain('alpha');
+  });
+
+  test('an item still queued when the run is abandoned stays visible through to the reconciled Never sent, with no empty frame', async () => {
+    const ctrl = controllableRead();
+    await renderDock({ readQueue: ctrl.read, nodeTerminal: false, rowStatus: 'running' });
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'queued' }])
+    );
+    expect(host.querySelector('textarea')).not.toBeNull();
+
+    // Abandon: the run turns non-live before this dock's own queue read has
+    // reconciled toward `finished`. The band stays up unchanged.
+    await renderDock({ readQueue: ctrl.read, live: false, rowStatus: 'completed' });
+    expect(host.querySelector('ul')).not.toBeNull();
+    expect(host.textContent ?? '').toContain('alpha');
+    expect(host.textContent ?? '').not.toContain('never sent');
+    expect(neverSentList()).toBeNull();
+
+    // The reconciled read lands: the item genuinely never made it out.
+    await settleSnapshot(
+      ctrl,
+      okQueue([{ message_id: 'id-a', message: 'alpha', state: 'never_sent' }], {
+        execution_state: 'finished',
+      })
+    );
+    expect(neverSentList()).not.toBeNull();
+    expect(host.textContent ?? '').toContain('alpha');
   });
 
   test('exact finished anatomy: heading, alert, and no controls', async () => {
