@@ -28,6 +28,7 @@ import {
   listPendingInteractions,
   resolvePendingInteraction,
 } from '../db/workflow-pending-interactions';
+import * as conversationDb from '../db/conversations';
 import * as workflowDb from '../db/workflows';
 import * as workflowEventDb from '../db/workflow-events';
 import * as workflowNodeSessionDb from '../db/workflow-node-sessions';
@@ -260,7 +261,8 @@ async function findParentBlockedOn(run: WorkflowRun): Promise<string | null> {
  * run itself is already cancelled either way.
  */
 async function writeTerminalNodeEventsForOrphanedNodes(run: WorkflowRun): Promise<void> {
-  if (getWorkflowEventEmitter().getConversationId(run.id) !== undefined) return;
+  const emitter = getWorkflowEventEmitter();
+  if (emitter.getConversationId(run.id) !== undefined) return;
   let nodes: readonly workflowEventDb.NonTerminalNode[];
   try {
     nodes = await workflowEventDb.findNonTerminalNodes(run.id);
@@ -271,25 +273,56 @@ async function writeTerminalNodeEventsForOrphanedNodes(run: WorkflowRun): Promis
     );
     return;
   }
-  for (const { nodeId, scope } of nodes) {
-    // Fire-and-forget internally (catches + logs); no workflow definition is
-    // loaded here, so nodeName falls back to the id, matching the executor's
-    // own fallback when a node declares no `command` label. `scope` (read
-    // off the node's own latest event) attaches this write to the same
-    // execution/iteration row a live cancel's own write would have.
-    await workflowEventDb.createWorkflowEvent({
-      workflow_run_id: run.id,
-      event_type: 'node_failed',
-      step_name: nodeId,
-      data: { ...scope, error: 'Cancelled by user' },
-    });
-    getWorkflowEventEmitter().emit({
-      type: 'node_failed',
-      runId: run.id,
-      nodeId,
-      nodeName: nodeId,
-      error: 'Cancelled by user',
-    });
+  if (nodes.length === 0) return;
+
+  // Register this run's own conversation with the emitter for the span of the
+  // writes below, so the SSE bridge's `getConversationId(event.runId)` lookup
+  // (workflow-bridge.ts) resolves and forwards the synthesized events to that
+  // conversation's already-open stream. Without this, an already-open
+  // Console/Legacy tab never learns the node settled — `getConversationId`
+  // returning undefined is exactly the signal this function itself reads to
+  // decide a live executor doesn't own the run, and the SSE bridge trusts the
+  // same signal to route events, so the two combine to strand a real-time
+  // update from ever reaching a browser tab watching the run. The durable
+  // event write below still lands either way; a lookup failure here only
+  // costs the live push, not the record.
+  let registeredConversationId: string | undefined;
+  try {
+    const conversation = await conversationDb.getConversationById(run.conversation_id);
+    if (conversation) {
+      registeredConversationId = conversation.platform_conversation_id;
+      emitter.registerRun(run.id, registeredConversationId);
+    }
+  } catch (err) {
+    getLog().warn({ err, runId: run.id }, 'operations.workflow_abandon_conversation_lookup_failed');
+  }
+
+  try {
+    for (const { nodeId, scope } of nodes) {
+      // Fire-and-forget internally (catches + logs); no workflow definition is
+      // loaded here, so nodeName falls back to the id, matching the executor's
+      // own fallback when a node declares no `command` label. `scope` (read
+      // off the node's own latest event) attaches this write to the same
+      // execution/iteration row a live cancel's own write would have.
+      await workflowEventDb.createWorkflowEvent({
+        workflow_run_id: run.id,
+        event_type: 'node_failed',
+        step_name: nodeId,
+        data: { ...scope, error: 'Cancelled by user' },
+      });
+      emitter.emit({
+        type: 'node_failed',
+        runId: run.id,
+        nodeId,
+        nodeName: nodeId,
+        error: 'Cancelled by user',
+      });
+    }
+  } finally {
+    // This run is terminal and these are the only events left to emit for
+    // it — unregister immediately rather than leaving the mapping to leak in
+    // a long-lived process that keeps abandoning restart-recovered runs.
+    if (registeredConversationId !== undefined) emitter.unregisterRun(run.id);
   }
 }
 
