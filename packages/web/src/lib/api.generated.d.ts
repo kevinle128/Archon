@@ -6106,6 +6106,8 @@ export interface components {
             state: "queued" | "awaiting_send_now" | "dispatching" | "sent" | "delivered" | "delivery_unknown" | "never_sent";
             last_error: string | null;
             dispatch_failure_count: number;
+            /** @enum {string|null} */
+            last_failure_kind: "automatic" | "send_now" | null;
         };
         SteeringDraftResponse: {
             /** @enum {boolean} */

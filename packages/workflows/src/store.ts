@@ -24,6 +24,7 @@ import type {
   ClaimedSteeringMessage,
   EnqueueSteeringMessageInput,
   EnqueueSteeringMessageResult,
+  SteeringDispatchFailureKind,
   SteeringDraft,
   SteeringDraftKey,
   SteeringNodeSettings,
@@ -351,14 +352,16 @@ export interface IWorkflowSteeringStore {
    * a thrown provider/execution error on a guidance turn whose session is
    * still established. `fifo_position` is left untouched (already the
    * front among claimable entries), and `last_error`/`dispatch_failure_count`
-   * carry the durable evidence. Idempotent: a no-op for an id no longer
-   * `dispatching`.
+   * carry the durable evidence. `failureKind` names the attempt that
+   * claimed the entry (`automatic` or `send_now`). Idempotent: a no-op for
+   * an id no longer `dispatching`.
    */
   revertSteeringQueueClaim(
     workflowRunId: string,
     nodeId: string,
     messageIds: readonly string[],
-    failureMessage: string
+    failureMessage: string,
+    failureKind: SteeringDispatchFailureKind
   ): Promise<void>;
   /**
    * `sent` -> `delivered`, once the live provider turn echoes a verified

@@ -1105,6 +1105,37 @@ describe('ConsoleComposerDock', () => {
     expect(sendNowButton()).not.toBeNull();
   });
 
+  // An operator's own Send now retry can fail again (same bad text, a
+  // still-unreachable provider) — the alert must name THAT attempt, never
+  // fall back to claiming it was automatic.
+  test('a retryable dispatch failure from an operator Send now retry names Send now, not automatic', async () => {
+    const ctrl = controllableRead();
+    await renderDock({
+      readQueue: ctrl.read,
+      pollIntervalMs: 60_000,
+      subState: 'idle-after-interrupt',
+    });
+    await settleSnapshot(
+      ctrl,
+      okQueue(
+        [
+          {
+            message_id: 'id-a',
+            message: 'redirect',
+            state: 'queued',
+            last_error: 'provider startup boom',
+            dispatch_failure_count: 2,
+            last_failure_kind: 'send_now',
+          },
+        ],
+        { sub_state: 'idle-after-interrupt' }
+      )
+    );
+    const alert = host.querySelector('[role="alert"]');
+    expect(alert?.getAttribute('aria-live')).toBe('assertive');
+    expect(alert?.textContent).toBe('Send now failed · provider startup boom · Send now to retry');
+  });
+
   test('an observer sees a durably-queued row stop offering withdraw the instant the projected sub-state advances past it, ahead of its own next poll', async () => {
     // Simulates the observer shell: it learns `idle-after-interrupt` →
     // `generating` from a faster external signal (a host prop backed by
@@ -1298,6 +1329,7 @@ describe('ConsoleComposerDock', () => {
       state?: ReadWorkflowNodeQueueResponse['queued'][number]['state'];
       last_error?: string | null;
       dispatch_failure_count?: number;
+      last_failure_kind?: 'automatic' | 'send_now' | null;
     }[],
     overrides?: Partial<Omit<ReadWorkflowNodeQueueResponse, 'success' | 'queued'>>
   ): ReadWorkflowNodeQueueResponse {
@@ -1313,6 +1345,7 @@ describe('ConsoleComposerDock', () => {
         state: row.state ?? 'queued',
         last_error: row.last_error ?? null,
         dispatch_failure_count: row.dispatch_failure_count ?? 0,
+        last_failure_kind: row.last_failure_kind ?? null,
       })),
       sub_state: overrides?.sub_state ?? null,
     };

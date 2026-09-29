@@ -445,13 +445,14 @@ describe('revertSteeringQueueClaim', () => {
       initial_state: 'queued',
     });
 
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'provider exploded');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'provider exploded', 'automatic');
 
     const rows = await listSteeringQueue('run-1', 'review');
     expect(rows.map(r => r.message_id)).toEqual(['m-1', 'm-2']);
     expect(rows[0]?.state).toBe('queued');
     expect(rows[0]?.last_error).toBe('provider exploded');
     expect(rows[0]?.dispatch_failure_count).toBe(1);
+    expect(rows[0]?.last_failure_kind).toBe('automatic');
 
     // Re-claiming picks the reverted entry, not the later one.
     const reclaimed = await claimSteeringQueue('run-1', 'review', 1);
@@ -468,14 +469,15 @@ describe('revertSteeringQueueClaim', () => {
       initial_state: 'queued',
     });
     await claimSteeringQueue('run-1', 'review', 1);
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'first failure');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'first failure', 'automatic');
     // Not re-claimed this time — state is already 'queued', not 'dispatching'.
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'second failure text');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'second failure text', 'send_now');
 
     const rows = await listSteeringQueue('run-1', 'review');
     expect(rows[0]?.state).toBe('queued');
     expect(rows[0]?.last_error).toBe('first failure');
     expect(rows[0]?.dispatch_failure_count).toBe(1);
+    expect(rows[0]?.last_failure_kind).toBe('automatic');
   });
 
   test('increments the count and updates the error text across repeated claim/revert cycles', async () => {
@@ -488,15 +490,16 @@ describe('revertSteeringQueueClaim', () => {
       initial_state: 'queued',
     });
     await claimSteeringQueue('run-1', 'review', 1);
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'first failure');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'first failure', 'automatic');
     // A later Send now re-claims the same reverted entry, then fails again.
     await claimSteeringQueue('run-1', 'review', 1);
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'second failure');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'second failure', 'send_now');
 
     const rows = await listSteeringQueue('run-1', 'review');
     expect(rows[0]?.state).toBe('queued');
     expect(rows[0]?.last_error).toBe('second failure');
     expect(rows[0]?.dispatch_failure_count).toBe(2);
+    expect(rows[0]?.last_failure_kind).toBe('send_now');
   });
 
   test('is a no-op for an id that was never claimed (still queued)', async () => {
@@ -508,11 +511,12 @@ describe('revertSteeringQueueClaim', () => {
       operator_user_id: 'op-1',
       initial_state: 'queued',
     });
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'should not apply');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'should not apply', 'automatic');
     const rows = await listSteeringQueue('run-1', 'review');
     expect(rows[0]?.state).toBe('queued');
     expect(rows[0]?.last_error).toBeNull();
     expect(rows[0]?.dispatch_failure_count).toBe(0);
+    expect(rows[0]?.last_failure_kind).toBeNull();
   });
 
   test('is a no-op for an id that already advanced past dispatching (sent)', async () => {
@@ -526,7 +530,7 @@ describe('revertSteeringQueueClaim', () => {
     });
     await claimSteeringQueue('run-1', 'review', 1);
     await markSteeringMessagesSent('run-1', 'review', ['m-1']);
-    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'too late');
+    await revertSteeringQueueClaim('run-1', 'review', ['m-1'], 'too late', 'automatic');
     const rows = await listSteeringQueue('run-1', 'review');
     expect(rows[0]?.state).toBe('sent');
     expect(rows[0]?.last_error).toBeNull();
@@ -534,7 +538,7 @@ describe('revertSteeringQueueClaim', () => {
 
   test('an empty id list is a no-op', async () => {
     await expect(
-      revertSteeringQueueClaim('run-1', 'review', [], 'unused')
+      revertSteeringQueueClaim('run-1', 'review', [], 'unused', 'automatic')
     ).resolves.toBeUndefined();
   });
 });

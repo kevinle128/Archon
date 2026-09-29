@@ -150,6 +150,7 @@ class InMemoryStore implements IWorkflowStore {
         state: input.initial_state,
         last_error: null,
         dispatch_failure_count: 0,
+        last_failure_kind: null,
         created_at: new Date(),
         updated_at: new Date(),
       },

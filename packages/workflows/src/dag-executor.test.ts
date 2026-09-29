@@ -255,6 +255,7 @@ function createMockSteeringStore(): Pick<
         state: input.initial_state,
         last_error: null,
         dispatch_failure_count: 0,
+        last_failure_kind: null,
         created_at: new Date(),
         updated_at: new Date(),
       };
@@ -366,7 +367,13 @@ function createMockSteeringStore(): Pick<
       }
       return { count };
     },
-    revertSteeringQueueClaim: async (workflowRunId, nodeId, messageIds, failureMessage) => {
+    revertSteeringQueueClaim: async (
+      workflowRunId,
+      nodeId,
+      messageIds,
+      failureMessage,
+      failureKind
+    ) => {
       const ids = new Set(messageIds);
       const now = new Date();
       for (const entry of queue) {
@@ -379,6 +386,7 @@ function createMockSteeringStore(): Pick<
           entry.state = 'queued';
           entry.last_error = failureMessage;
           entry.dispatch_failure_count += 1;
+          entry.last_failure_kind = failureKind;
           entry.updated_at = now;
         }
       }
@@ -28467,6 +28475,9 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     expect(queued[0]!.state).toBe('queued');
     expect(queued[0]!.last_error).toBe('provider startup boom');
     expect(queued[0]!.dispatch_failure_count).toBe(1);
+    // m-1 was drained by the executor's own automatic wake-and-claim after
+    // turn 1's natural boundary, never an operator Send now.
+    expect(queued[0]!.last_failure_kind).toBe('automatic');
     const operatorRows = (await store.listNodeMessages(RUN_ID, 'review')).filter(isOperatorTextRow);
     expect(operatorRows).toHaveLength(0);
 
@@ -28522,6 +28533,10 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
     const queued = await store.listSteeringQueue(RUN_ID, 'review');
     const byId = new Map(queued.map(e => [e.message_id, e]));
     expect(byId.get('m-1')!.dispatch_failure_count).toBe(2);
+    // The first failure was automatic (turn 1's own natural drain); the
+    // second was the operator's own Send now retry failing again — the
+    // durable record names the attempt that actually failed most recently.
+    expect(byId.get('m-1')!.last_failure_kind).toBe('send_now');
     expect(byId.get('m-1')!.fifo_position).toBeLessThan(byId.get('m-2')!.fifo_position);
 
     getSteeringRegistry().get(RUN_ID, 'review')?.expireIdleForTests();

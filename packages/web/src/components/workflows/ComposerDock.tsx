@@ -1493,7 +1493,10 @@ export function ComposerDock({
                 aria-live="assertive"
                 className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary"
               >
-                {dispatchFailureDisclosure(dispatchFailed.lastError ?? '')}
+                {dispatchFailureDisclosure(
+                  dispatchFailed.lastError ?? '',
+                  dispatchFailed.lastFailureKind
+                )}
               </p>
             ) : (
               <p className="mb-[6px] font-mono text-[10.5px] leading-[1.45] text-text-secondary">

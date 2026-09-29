@@ -112,7 +112,7 @@ import {
   type NodeSteeringHandle,
   type SteeringIdleWake,
 } from './steering-registry';
-import type { ClaimedSteeringMessage } from './schemas/steering';
+import type { ClaimedSteeringMessage, SteeringDispatchFailureKind } from './schemas/steering';
 import { evaluateCondition } from './condition-evaluator';
 import {
   declaredFieldsFromSchema,
@@ -3657,6 +3657,13 @@ async function executeNodeInternal(
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
     let turnGuidanceMessages: readonly ClaimedSteeringMessage[] = [];
+    // Which attempt claimed `turnGuidanceMessages` for the CURRENT turn — an
+    // explicit operator send_now wake, or the executor's own automatic
+    // wake-and-claim after a natural boundary. Read only if this turn's pass
+    // throws a retryable dispatch failure (see `revertSteeringQueueClaim`
+    // below), so the dock's failure copy names the attempt that actually
+    // failed rather than assuming automatic.
+    let turnGuidanceKind: SteeringDispatchFailureKind = 'automatic';
     // Token capture folds across every provider turn; re-ask passes inside a
     // turn keep their existing last-pass-wins semantics.
     let accumulatedTokens: TokenUsage | undefined;
@@ -3756,7 +3763,8 @@ async function executeNodeInternal(
             workflowRun.id,
             stepName,
             turnGuidanceMessages.map(item => item.message_id),
-            err.message
+            err.message,
+            turnGuidanceKind
           );
           // An observing tab has no other live signal that this turn just
           // ended and parked idle — emit one so it refetches promptly and
@@ -3777,6 +3785,7 @@ async function executeNodeInternal(
             if (claimed.length > 0) {
               turnGuidanceMessages = claimed;
               turnIsGuidance = true;
+              turnGuidanceKind = 'send_now';
               continue turns;
             }
             wake = await raceIdleWake(
@@ -4007,6 +4016,7 @@ async function executeNodeInternal(
             turnGuidanceMessages = claimed;
             turnResumeId = interruptedSessionId;
             turnIsGuidance = true;
+            turnGuidanceKind = 'send_now';
             continue turns;
           }
           wake = await raceIdleWake(deps, workflowRun.id, interruptibleHandle.awaitSendNowAgain());
@@ -4149,6 +4159,7 @@ async function executeNodeInternal(
           if (lastPassToken !== undefined) {
             interruptibleHandle?.settleTurn(lastPassToken, 'generating');
           }
+          turnGuidanceKind = 'automatic';
           turnGuidanceMessages = claimed;
           turnResumeId = newSessionId;
           turnIsGuidance = true;
@@ -6689,6 +6700,13 @@ async function executeLoopNodeInner(
     let turnGuidanceMessages: readonly ClaimedSteeringMessage[] = [];
     let turnResumeId: string | undefined = resumeSessionId;
     let turnIsGuidance = false;
+    // Which attempt claimed `turnGuidanceMessages` for the CURRENT turn — an
+    // explicit operator send_now wake, or the executor's own automatic
+    // wake-and-claim after a natural boundary. Read only if this turn's pass
+    // throws a retryable dispatch failure (see `revertSteeringQueueClaim`
+    // below), so the dock's failure copy names the attempt that actually
+    // failed rather than assuming automatic.
+    let turnGuidanceKind: SteeringDispatchFailureKind = 'automatic';
     // Completion verdict of the FINAL turn — re-evaluated after every settled
     // turn; the post-loop decisions below read only this latest-turn verdict.
     let completionDetected = false;
@@ -7619,7 +7637,8 @@ async function executeLoopNodeInner(
               workflowRun.id,
               stepName,
               turnGuidanceMessages.map(item => item.message_id),
-              thrownError.message
+              thrownError.message,
+              turnGuidanceKind
             );
             // An observing tab has no other live signal that this turn just
             // ended and parked idle — emit one so it refetches promptly and
@@ -7644,6 +7663,7 @@ async function executeLoopNodeInner(
               if (claimed.length > 0) {
                 turnGuidanceMessages = claimed;
                 turnIsGuidance = true;
+                turnGuidanceKind = 'send_now';
                 continue turns;
               }
               wake = await raceIdleWake(
@@ -7964,6 +7984,7 @@ async function executeLoopNodeInner(
           if (claimed.length > 0) {
             turnGuidanceMessages = claimed;
             turnResumeId = interruptedSessionId;
+            turnGuidanceKind = 'send_now';
             turnIsGuidance = true;
             continue turns;
           }
@@ -8238,6 +8259,7 @@ async function executeLoopNodeInner(
           if (turnToken !== undefined) {
             interruptibleHandle?.settleTurn(turnToken, 'generating');
           }
+          turnGuidanceKind = 'automatic';
           turnGuidanceMessages = claimed;
           turnResumeId = settledTurnSessionId;
           turnIsGuidance = true;

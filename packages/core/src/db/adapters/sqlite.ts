@@ -620,9 +620,15 @@ export class SqliteAdapter implements IDatabase {
       const steeringQueueCols = this.queryRows<{ name: string }>(
         "PRAGMA table_info('remote_agent_steering_queue_entries')"
       );
-      if (!new Set(steeringQueueCols.map(c => c.name)).has('dispatch_failure_count')) {
+      const steeringQueueColNames = new Set(steeringQueueCols.map(c => c.name));
+      if (!steeringQueueColNames.has('dispatch_failure_count')) {
         this.db.run(
           'ALTER TABLE remote_agent_steering_queue_entries ADD COLUMN dispatch_failure_count INTEGER NOT NULL DEFAULT 0'
+        );
+      }
+      if (!steeringQueueColNames.has('last_failure_kind')) {
+        this.db.run(
+          'ALTER TABLE remote_agent_steering_queue_entries ADD COLUMN last_failure_kind TEXT'
         );
       }
     } catch (e: unknown) {
@@ -1196,6 +1202,7 @@ export class SqliteAdapter implements IDatabase {
         state TEXT NOT NULL DEFAULT 'queued',
         last_error TEXT,
         dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
+        last_failure_kind TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         CONSTRAINT uq_steering_queue_run_node_message
