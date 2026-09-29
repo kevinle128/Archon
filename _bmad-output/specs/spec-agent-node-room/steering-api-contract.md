@@ -54,8 +54,9 @@ Schemas live in `packages/server/src/routes/schemas/`; derive types with `z.infe
   - terminal run/node or closed handle → **409** `node_finished`;
   - unknown run/node → **404**; unauthenticated → **401**.
     Bodyless POST; writes no durable row; same steering actor grant as send/interrupt.
-- **queue read** — `{ success: true, execution_state: 'live' | 'recovery_required' | 'finished', queued: [{ message_id: string, message: string, state: 'queued' | 'awaiting_send_now' | 'dispatching' | 'sent' | 'delivered' | 'delivery_unknown' }] }`.
+- **queue read** — `{ success: true, execution_state: 'live' | 'recovery_required' | 'finished', queued: [{ message_id: string, message: string, state: 'queued' | 'awaiting_send_now' | 'dispatching' | 'sent' | 'delivered' | 'delivery_unknown' | 'never_sent', last_error: string | null, dispatch_failure_count: number }] }`.
   `queued` contains durable node items in server FIFO order. A restart returns the same rows with `execution_state: 'recovery_required'` until the existing Resume flow establishes a live executor. Author attribution remains on transcript receipts and authorized server records rather than being inferred by the browser.
+  `last_error` and `dispatch_failure_count` carry failure evidence for an entry a retryable automatic-dispatch failure reverted to `queued`, or that terminal reconciliation marked `never_sent`; `last_error` is `null` and `dispatch_failure_count` is `0` for an entry that never failed. See "Retryable automatic-dispatch failure" below.
   Every queue-read outcome — 200 and each error status — carries `Cache-Control: no-store` so a live queue snapshot is never served from a shared cache.
 
 `delivered` is current scope where a provider returns verified acknowledgement for the stamped message id.
@@ -94,6 +95,19 @@ The user invokes the existing Resume action to re-establish execution.
 - **Read racing a send/withdraw** — a queue read reflects the last committed durable order. The initiating client never replaces a newer mutation response with an older snapshot.
 - **Process loss during dispatch** — a claimed message whose provider acknowledgement cannot be proven becomes `delivery_unknown` and is never automatically resent.
 - **Reads never mutate or log contents** — draft and queue reads perform no workflow or transcript mutation, and operator message text is never logged.
+
+## Retryable automatic-dispatch failure
+
+With auto-send enabled, the executor claims exactly one FIFO entry after each natural agent reply. If that automatic dispatch throws before delivery is proven — the live provider session is still usable, so the failure is not the session-losing case below — the executor:
+
+- reverts the claimed entry to `queued` at its existing `fifo_position`, which is already the front among claimable entries (it was claimed first), and records `last_error` (the failure message) and increments `dispatch_failure_count`;
+- never a distinct terminal `failed` state: the entry stays `queued` so it remains re-claimable through the same FIFO claim query, and a queue read exposes the evidence via `last_error`/`dispatch_failure_count` rather than a new value in the `state` enum;
+- parks the node in the existing idle-after-interrupt wait (the same machinery `POST .../interrupt` produces) — the node stays running, auto-send does not fire again from this state, and the operator's `Send now` retries on the same provider session, exactly like a redirect after an operator Stop;
+- the existing 30-minute idle-after-interrupt inactivity rule applies unchanged: expiry fails the node (queue rows reconcile to `never_sent`), content sent before expiry drains normally.
+
+Each `Send now` that fails again re-reverts the entry and increments `dispatch_failure_count` further — there is no retry cap and no automatic retry loop; every retry is operator-initiated.
+
+A failure that loses the session (the turn returns no session id to resume) is not retryable — it still fails the node outright, unchanged from the pre-existing "no session id to resume" behavior. This is the same flat classification as an operator interrupt or a node-level cancel, neither of which is ever treated as a retryable dispatch failure.
 
 ## Transcript operator row (read model)
 
