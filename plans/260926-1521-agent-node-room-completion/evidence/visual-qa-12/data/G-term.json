@@ -1,0 +1,34 @@
+{
+  "c": [
+    [-15722, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+    [-3047, "Running||Stop,Queue|TA|SENDING · 1||0"],
+    [-2148, "Running||Stop,Queue|TA|||0"],
+    [-37, "Running||||||0"],
+    [-23, "Completed||||||0"]
+  ],
+  "l": [
+    [-15722, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+    [-2329, "Running||Stop,Queue|TA|SENDING · 1||0"],
+    [-1397, "Running||Stop,Queue|TA|||0"],
+    [679, "Running||||||0"],
+    [702, "Completed||||||0"]
+  ],
+  "q": {
+    "success": true,
+    "execution_state": "finished",
+    "auto_send": true,
+    "capabilities": { "soft_injection": false, "delivery_ack": true },
+    "queued": [
+      {
+        "message_id": "dadaeb93-7158-425c-8caf-5b9f3243143e",
+        "message": "G-Q1 queued: reply with the single word GACK1 and nothing else",
+        "operator_user_id": "232e1ec0ae1f1a67c8e02b62ec99334a",
+        "state": "delivered",
+        "last_error": null,
+        "dispatch_failure_count": 0,
+        "last_failure_kind": null
+      }
+    ],
+    "sub_state": null
+  }
+}

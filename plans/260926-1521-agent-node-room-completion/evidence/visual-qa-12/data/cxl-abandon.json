@@ -1,0 +1,96 @@
+{
+  "post": 5,
+  "res": { "success": true, "message": "Abandoned workflow: vq12-codex-long" },
+  "C": {
+    "neverSentAt": 900,
+    "pillAt": 900,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "– shell sleep 90 && echo step-2 output unknown ·",
+        "– shell sleep 90 && echo step-2 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -267,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cxl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        498,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cxl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [900, "NEVER SENT · 1", "", "Failed", 1],
+      [2063, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "L": {
+    "neverSentAt": 512,
+    "pillAt": 512,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "– shell sleep 90 && echo step-2 output unknown ·",
+        "– shell sleep 90 && echo step-2 output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -267,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cxl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        176,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cxl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        294,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cxl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [512, "NEVER SENT · 1", "", "Failed", 1],
+      [533, "NEVER SENT · 1", "", "Failed", 1],
+      [3514, "NEVER SENT · 1", "", "Failed", 1]
+    ],
+    "rafEmpty": [],
+    "rafRec": 0
+  },
+  "raf": {
+    "c": [
+      [-297, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+      [863, "Running||||NEVER SENT · 1|node finished · none of this was sent|1"],
+      [893, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+    ],
+    "l": [
+      [-297, "Running||delete,Stop,Queue|TA|QUEUED · 1||0"],
+      [474, "Running||||NEVER SENT · 1|node finished · none of this was sent|1"],
+      [515, "Failed||||NEVER SENT · 1|node finished · none of this was sent|1"]
+    ]
+  }
+}

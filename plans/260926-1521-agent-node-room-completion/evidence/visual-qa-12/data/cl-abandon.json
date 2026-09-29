@@ -1,0 +1,74 @@
+{
+  "post": 4,
+  "res": { "success": true, "message": "Abandoned workflow: vq12-claude" },
+  "C": {
+    "neverSentAt": 657,
+    "pillAt": 699,
+    "missing": [],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ TaskUpdate todo updated 66ms ▶",
+        "– Bash echo begin-step-5; end=$((SECONDS+25)); while [ $S output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -265,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        615,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [657, "NEVER SENT · 1", "", "Running", 1],
+      [699, "NEVER SENT · 1", "", "Failed", 1],
+      [2144, "NEVER SENT · 1", "", "Failed", 1]
+    ]
+  },
+  "L": {
+    "neverSentAt": 100,
+    "pillAt": 85,
+    "missing": [[85, 100]],
+    "last": {
+      "bands": "NEVER SENT · 1",
+      "btns": "",
+      "pill": "Failed",
+      "status": "node finished · none of this was sent",
+      "tools": [
+        "✓ TaskUpdate todo updated 66ms ▶",
+        "– Bash echo begin-step-5; end=$((SECONDS+25)); while [ $S output unknown ·"
+      ],
+      "ta": false
+    },
+    "frames": [
+      [
+        -263,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [
+        16,
+        "QUEUED · 1",
+        "QUEUED · 1\nsaved to server\n▾,delete · cl-Q must survive abandon,Stop,Queue · Cmd/Ctrl+Enter to send · 1 message queued",
+        "Running",
+        1
+      ],
+      [85, "", "", "Failed", 0],
+      [100, "NEVER SENT · 1", "", "Failed", 1],
+      [3065, "NEVER SENT · 1", "", "Failed", 1]
+    ]
+  }
+}

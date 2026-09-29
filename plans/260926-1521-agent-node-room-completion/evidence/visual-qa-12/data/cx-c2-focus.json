@@ -1,0 +1,19 @@
+{
+  "fwc": [
+    [-1, "DIV#m0", true],
+    [702, "BUTTON[Send now · Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+    [719, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "fwl": [
+    [-1, "TEXTAREA#m0", true],
+    [30, "DIV[last-row]#m1", "prevConnected=true"],
+    [750, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "raf": {
+    "log": [
+      { "t": 1790687707845, "nc": 1, "sending": false, "k": "1|false" },
+      { "t": 1790687707862, "nc": 1, "sending": true, "k": "1|true" }
+    ],
+    "t0": 1790687707841
+  }
+}

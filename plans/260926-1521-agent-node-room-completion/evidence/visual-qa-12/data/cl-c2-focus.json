@@ -1,0 +1,20 @@
+{
+  "fwc": [
+    [0, "DIV#m0", true],
+    [781, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "fwl": [
+    [0, "TEXTAREA#m0", true],
+    [32, "BUTTON#m1", "prevConnected=true"],
+    [150, "DIV[last-row]#m2", "prevConnected=false"],
+    [781, "TEXTAREA#m0", "prevConnected=true"]
+  ],
+  "raf": {
+    "log": [
+      { "t": 1790687961222, "nc": 1, "sending": false, "k": "1|false" },
+      { "t": 1790687961246, "nc": 1, "sending": true, "k": "1|true" },
+      { "t": 1790687962407, "nc": 1, "sending": false, "k": "1|false" }
+    ],
+    "t0": 1790687961218
+  }
+}
