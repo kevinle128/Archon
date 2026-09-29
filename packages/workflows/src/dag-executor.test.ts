@@ -28538,10 +28538,10 @@ describe('executeDagWorkflow -- queued guidance (#181)', () => {
       if (calls === 1) {
         enqueue(store, RUN_ID, 'review', 'm-1', 'guided');
         yield { type: 'assistant', content: 'prior' };
-        // Turn 1 returns no session id — Design decision 6: the executor
-        // never falls back to a fresh session, so it fails the node before
-        // any guidance turn could even start. This is the pre-existing
-        // session-losing path, unaffected by retryable classification.
+        // Turn 1 returns no session id: the executor never falls back to a
+        // fresh session, so it fails the node before any guidance turn
+        // could even start. This is the pre-existing session-losing path,
+        // unaffected by retryable classification.
         yield { type: 'result' };
         return;
       }

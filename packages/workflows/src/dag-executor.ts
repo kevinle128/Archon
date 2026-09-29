@@ -7596,11 +7596,11 @@ async function executeLoopNodeInner(
           // Retryable automatic-dispatch failure (mirrors the AI-node pass
           // above): a thrown provider/execution error on a guidance turn
           // whose session `turnResumeId` (the session the PRIOR successful
-          // turn established) is still valid to resume — never a
-          // session-losing failure (Design decision 6 above still fails
-          // those outright) and never an operator interrupt or node-level
-          // cancel (both already classified and returned/broken above, so
-          // neither reaches here).
+          // turn established) is still valid to resume — never a turn that
+          // completed naturally with no session id to resume (that keeps
+          // failing the node outright, unchanged) and never an operator
+          // interrupt or node-level cancel (both already classified and
+          // returned/broken above, so neither reaches here).
           if (
             turnIsGuidance &&
             turnGuidanceMessages.length > 0 &&

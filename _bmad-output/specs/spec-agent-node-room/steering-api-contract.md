@@ -107,6 +107,8 @@ With auto-send enabled, the executor claims exactly one FIFO entry after each na
 
 Each `Send now` that fails again re-reverts the entry and increments `dispatch_failure_count` further — there is no retry cap and no automatic retry loop; every retry is operator-initiated.
 
+"Before delivery is proven" is bounded by the operator transcript receipt, not the whole turn: a throw that lands AFTER the receipt already committed (the provider streamed at least one chunk) still classifies as retryable and still parks the node, but the revert is a no-op — the entry already left `dispatching` for `sent`, so there is nothing left to claim back to the front. The dock still shows `Send now`; a blank `Send now` claims only what remains queued or awaiting-send-now, which may be nothing.
+
 A failure that loses the session (the turn returns no session id to resume) is not retryable — it still fails the node outright, unchanged from the pre-existing "no session id to resume" behavior. This is the same flat classification as an operator interrupt or a node-level cancel, neither of which is ever treated as a retryable dispatch failure.
 
 ## Transcript operator row (read model)
