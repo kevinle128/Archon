@@ -1,0 +1,34 @@
+[
+  {
+    "tag": "G-live",
+    "s": "c",
+    "r": [
+      {
+        "id": "color-contrast",
+        "n": 10,
+        "ex": [
+          "Element has insufficient color contrast of 4.11 (foreground color: #7d5ee0, background color: #0f1014, font size: 7.1pt (9.5px), font weight @ .text-\\[9\\.5px\\]",
+          "Element has insufficient color contrast of 4.11 (foreground color: #70757f, background color: #0f1014, font size: 8.3pt (11px), font weight: @ .truncate.text-\\[11px\\].text-text-tertiary",
+          "Element has insufficient color contrast of 4.11 (foreground color: #70757f, background color: #0f1014, font size: 8.3pt (11px), font weight: @ details[data-tool-id=\"toolu_01KCtFAdhRNNffGaC1HUHpgX\"] > sum",
+          "Element has insufficient color contrast of 4.11 (foreground color: #70757f, background color: #0f1014, font size: 8.3pt (11px), font weight: @ details[data-tool-id=\"toolu_01LFShHMhtDK1KK5i5iSHk2m\"] > sum"
+        ]
+      }
+    ]
+  },
+  {
+    "tag": "G-live",
+    "s": "l",
+    "r": [
+      {
+        "id": "color-contrast",
+        "n": 10,
+        "ex": [
+          "Element has insufficient color contrast of 4.06 (foreground color: #7d5ee0, background color: #101215, font size: 7.1pt (9.5px), font weight @ .text-\\[9\\.5px\\]",
+          "Element has insufficient color contrast of 2.5 (foreground color: #52555b, background color: #101215, font size: 8.3pt (11px), font weight:  @ .truncate.text-text-tertiary.text-\\[11px\\]",
+          "Element has insufficient color contrast of 2.66 (foreground color: #52555b, background color: #08090b, font size: 8.3pt (11px), font weight: @ details[data-tool-id=\"toolu_01KCtFAdhRNNffGaC1HUHpgX\"] > sum",
+          "Element has insufficient color contrast of 2.66 (foreground color: #52555b, background color: #08090b, font size: 8.3pt (11px), font weight: @ details[data-tool-id=\"toolu_01LFShHMhtDK1KK5i5iSHk2m\"] > sum"
+        ]
+      }
+    ]
+  }
+]
