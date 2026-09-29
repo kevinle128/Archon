@@ -29,6 +29,7 @@ import {
   resolvePendingInteraction,
 } from '../db/workflow-pending-interactions';
 import * as workflowDb from '../db/workflows';
+import * as workflowEventDb from '../db/workflow-events';
 import * as workflowNodeSessionDb from '../db/workflow-node-sessions';
 
 // Lazy logger — NEVER at module scope
@@ -233,6 +234,62 @@ async function findParentBlockedOn(run: WorkflowRun): Promise<string | null> {
       'operations.workflow_abandon_parent_lookup_failed'
     );
     return null;
+  }
+}
+
+/**
+ * Write the terminal `node_failed` event a live executor's own cancel path
+ * would have written, for every node this run left non-terminal — but only
+ * when no live executor in THIS process owns the run. Abandon is an explicit
+ * user action, not a guess about a process this one cannot observe: a node
+ * whose executor is live here keeps going through that executor's own
+ * cancel path unchanged, and this never runs for it.
+ *
+ * "No live executor here" is read off the same in-process registry the
+ * executor itself populates for a run's whole lifetime
+ * (`registerRun`/`unregisterRun` in `event-emitter.ts`) — a run this process
+ * did not start (e.g. one a prior, now-restarted process was driving) was
+ * never registered here, so an absent entry is exact, not inferred from a
+ * timer. `findNonTerminalNodes` is itself keyed only on the durable event
+ * log, so a run with a live executor elsewhere (a different process) whose
+ * own cancel path has not yet caught up is, at worst, double-written —
+ * accepted as rare and harmless (both writes carry the same terminal
+ * outcome) rather than coordinated across processes.
+ *
+ * Best-effort: a lookup or write failure is logged and never thrown — the
+ * run itself is already cancelled either way.
+ */
+async function writeTerminalNodeEventsForOrphanedNodes(run: WorkflowRun): Promise<void> {
+  if (getWorkflowEventEmitter().getConversationId(run.id) !== undefined) return;
+  let nodes: readonly workflowEventDb.NonTerminalNode[];
+  try {
+    nodes = await workflowEventDb.findNonTerminalNodes(run.id);
+  } catch (err) {
+    getLog().warn(
+      { err, runId: run.id },
+      'operations.workflow_abandon_orphaned_node_lookup_failed'
+    );
+    return;
+  }
+  for (const { nodeId, scope } of nodes) {
+    // Fire-and-forget internally (catches + logs); no workflow definition is
+    // loaded here, so nodeName falls back to the id, matching the executor's
+    // own fallback when a node declares no `command` label. `scope` (read
+    // off the node's own latest event) attaches this write to the same
+    // execution/iteration row a live cancel's own write would have.
+    await workflowEventDb.createWorkflowEvent({
+      workflow_run_id: run.id,
+      event_type: 'node_failed',
+      step_name: nodeId,
+      data: { ...scope, error: 'Cancelled by user' },
+    });
+    getWorkflowEventEmitter().emit({
+      type: 'node_failed',
+      runId: run.id,
+      nodeId,
+      nodeName: nodeId,
+      error: 'Cancelled by user',
+    });
   }
 }
 
@@ -468,6 +525,7 @@ export async function abandonWorkflow(runId: string): Promise<AbandonWorkflowRes
   let cascadeFailures = 0;
   if (cancelled) {
     ({ failures: cascadeFailures } = await cascadeCancelChildren(runId));
+    await writeTerminalNodeEventsForOrphanedNodes(run);
   }
   // Abandoning a CHILD strands a parent paused on it (the auto-resume hook only
   // fires from inside the child's own execution) — detect and surface that so the

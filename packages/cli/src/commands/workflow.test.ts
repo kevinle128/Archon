@@ -164,6 +164,11 @@ mock.module('@archon/workflows/event-emitter', () => ({
         return mockUnsubscribe;
       }
     ),
+    // No run in this test suite is ever "live" in-process — every CLI
+    // invocation here is its own fresh process — so abandonWorkflow's
+    // no-live-executor-here check always reads as true.
+    getConversationId: mock(() => undefined),
+    emit: mock(() => undefined),
   })),
 }));
 
@@ -307,6 +312,7 @@ mock.module('@archon/core/db/workflows', () => ({
 mock.module('@archon/core/db/workflow-events', () => ({
   listWorkflowEvents: mock(() => Promise.resolve([])),
   createWorkflowEvent: mock(() => Promise.resolve()),
+  findNonTerminalNodes: mock(() => Promise.resolve([])),
 }));
 
 mock.module('@archon/core/db/users', () => ({

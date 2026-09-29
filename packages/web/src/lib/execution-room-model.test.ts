@@ -802,6 +802,16 @@ describe('statusPill', () => {
   test('recoveryRequired defaults to false, leaving the ordinary pill untouched', () => {
     expect(statusPill('running')).toEqual({ label: 'Running', tone: 'accent' });
   });
+
+  // A recovery-required signal can clear (or a status catch up to terminal)
+  // in either order after Abandon of a restart-recovered node — the durable
+  // terminal outcome must never be masked by the other poll's timing.
+  test('a durable terminal status wins over a recovery-required flag that has not cleared yet', () => {
+    expect(statusPill('failed', true)).toEqual({ label: 'Failed', tone: 'error' });
+    expect(statusPill('completed', true)).toEqual({ label: 'Completed', tone: 'success' });
+    expect(statusPill('cancelled', true)).toEqual({ label: 'Cancelled', tone: null });
+    expect(statusPill('skipped', true)).toEqual({ label: 'Skipped', tone: null });
+  });
 });
 
 describe('disambiguateExecutionOptions', () => {
@@ -1668,6 +1678,76 @@ describe('buildExecutionHeader', () => {
     });
     expect(header.status).toBe('running');
     expect(header.statusReason).toBeNull();
+  });
+
+  // Abandon of a restart-recovered node (no live executor) can settle the
+  // RUN before the node's own durable write catches up — the header must
+  // never keep claiming a live process the run itself already says is gone.
+  describe('runStatus projection onto a still-running/awaiting node', () => {
+    test('a terminal run status settles a still-running node to failed (cancelled)', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+        runStatus: 'cancelled',
+      });
+      expect(header.status).toBe('failed');
+    });
+
+    test('a terminal run status settles a still-running node to failed (failed)', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+        runStatus: 'failed',
+      });
+      expect(header.status).toBe('failed');
+    });
+
+    test('a terminal run status settles a still-awaiting node to completed', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'awaiting',
+        runStatus: 'completed',
+      });
+      expect(header.status).toBe('completed');
+    });
+
+    test('a live (non-terminal) run status never overrides the node status', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+        runStatus: 'running',
+      });
+      expect(header.status).toBe('running');
+    });
+
+    test('a terminal run status never overrides a node status that is already terminal', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'completed',
+        runStatus: 'failed',
+      });
+      expect(header.status).toBe('completed');
+    });
+
+    test('an omitted run status leaves the node status exactly as reported', () => {
+      const header = buildExecutionHeader({
+        row: row({ id: 'solo', status: 'completed', order: 0 }),
+        events: [],
+        runStartedAt: RUN_STARTED_AT,
+        nodeStatus: 'running',
+      });
+      expect(header.status).toBe('running');
+    });
   });
 });
 

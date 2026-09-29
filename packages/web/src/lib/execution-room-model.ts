@@ -106,6 +106,21 @@ export interface ExecutionHeaderInput {
    */
   nodeStatus?: string | null;
   nodeError?: string | null;
+  /**
+   * The run's own overall status. When it is terminal
+   * (`completed`/`failed`/`cancelled`) and the node's own reported status is
+   * still `running`/`awaiting`, the header projects the run's outcome onto
+   * it instead — the durable write for an abandoned node with no live
+   * executor can lag one poll behind the run itself going terminal (e.g.
+   * right after Abandon of a restart-recovered node), and a stale `running`
+   * pill would claim a process that is already gone. Mirrors
+   * `settleRunningDagNodesForTerminalStatus` (Legacy's store) and
+   * `settleApiWorkflowNodeStatesForRunStatus` (the server's own read
+   * projection) — this is the same fold applied at the header's own read
+   * site so Console gets it too. Omitted callers (most test fixtures) keep
+   * the node's own reported status unprojected.
+   */
+  runStatus?: string;
   /** The node's live steering sub-state (from the same node state as
    * `nodeStatus`/`nodeError`), for `waitingOnOperator`. Omitted or any value
    * other than `'idle-after-interrupt'` leaves `waitingOnOperator` false. */
@@ -659,6 +674,25 @@ export function chooseExecutionForInteraction<
   );
 }
 
+const NON_TERMINAL_NODE_STATUSES = new Set(['running', 'awaiting']);
+
+/**
+ * Fold a terminal run outcome onto a node/row status still reading
+ * `running`/`awaiting` — the durable node-level write can lag one poll
+ * behind the run's own status, which a running executor's own process
+ * always keeps in step but an abandoned node's does not. `isTerminalRunStatus`
+ * is defined further below in this file; declarations hoist.
+ */
+function projectRunTerminalOntoNodeStatus(
+  runStatus: string | undefined,
+  nodeStatus: string
+): string {
+  if (runStatus === undefined) return nodeStatus;
+  if (!isTerminalRunStatus(runStatus)) return nodeStatus;
+  if (!NON_TERMINAL_NODE_STATUSES.has(nodeStatus)) return nodeStatus;
+  return runStatus === 'completed' ? 'completed' : 'failed';
+}
+
 export function runtimeForSelection(
   events: readonly WorkflowEvent[],
   row: ExecutionRow
@@ -696,7 +730,8 @@ export function buildExecutionHeader(input: ExecutionHeaderInput): ExecutionHead
     input.siblingRows !== undefined
       ? survivingRetryEpochs(input.siblingRows, input.row.selection)
       : null;
-  const status = input.nodeStatus ?? input.row.status;
+  const rawStatus = input.nodeStatus ?? input.row.status;
+  const status = projectRunTerminalOntoNodeStatus(input.runStatus, rawStatus);
   return {
     nodeId: input.row.nodeId,
     nodeLabel: bareNodeLabel(input.row.label),
@@ -772,15 +807,29 @@ const STATUS_PILL_LABEL: Readonly<Record<string, string>> = {
   cancelled: 'Cancelled',
 };
 
+/** Every status this pill treats as a settled, durable outcome. */
+const TERMINAL_PILL_STATUSES = new Set(['completed', 'failed', 'skipped', 'cancelled']);
+
 /**
  * A restart-recovery signal overrides the row's own lifecycle-status pill:
  * the row is still non-terminal (`running`/`awaiting`), but no live provider
  * process backs it, so `Running` would claim a process that no longer
  * exists. The server tells the client this explicitly (`execution_state` on
  * the steering queue read) — it is never guessed from a timer.
+ *
+ * That signal can clear (the queue read stops reporting recovery) before or
+ * after `status` itself catches up to a terminal outcome — e.g. right after
+ * Abandon of a restart-recovered node, whichever of the two polls lands
+ * first. A `status` that is ALREADY one of the durable terminal outcomes
+ * always wins over a `recoveryRequired` flag that has not caught down yet:
+ * the durable record is never stale in the direction that matters (it can
+ * only be terminal because something already settled it), while
+ * `recoveryRequired` is a live projection that can be momentarily behind.
  */
 export function statusPill(status: string, recoveryRequired = false): StatusPill {
-  if (recoveryRequired) return { label: 'Recovery required', tone: 'warning' };
+  if (recoveryRequired && !TERMINAL_PILL_STATUSES.has(status)) {
+    return { label: 'Recovery required', tone: 'warning' };
+  }
   return {
     label: STATUS_PILL_LABEL[status] ?? status,
     tone: STATUS_PILL_TONE[status] ?? null,

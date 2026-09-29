@@ -375,7 +375,7 @@ describe('ConsoleNodeRoom', () => {
 
     await act(async () => {
       renderRoom({
-        run: run({ id: 'run-agent' }),
+        run: run({ id: 'run-agent', status: 'running' }),
         loadMessages,
         nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'awaiting' })],
         selectedRow: row({
@@ -1066,6 +1066,7 @@ describe('ConsoleNodeRoom', () => {
     ];
     await act(async () => {
       renderRoom({
+        run: run({ status: 'running' }),
         selectedRow: row({ nodeId: 'review', label: 'Review', status: 'awaiting' }),
         nodeStates: [nodeState({ nodeId: 'review', name: 'Review', status: 'awaiting' })],
         pendingInteractions: [ask(), ask({ id: 'ask-2', tool_use_id: 'tool-2' })],
@@ -1367,6 +1368,7 @@ describe('ConsoleNodeRoom', () => {
   test('header meta appends waiting on operator when the node state reports idle-after-interrupt', async () => {
     await act(async () => {
       renderRoom({
+        run: run({ status: 'running' }),
         isLive: true,
         nodeStates: [
           nodeState({

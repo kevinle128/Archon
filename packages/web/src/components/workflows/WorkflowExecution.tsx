@@ -809,6 +809,7 @@ export function WorkflowExecution({ runId }: WorkflowExecutionProps): React.Reac
           nodeStatus: selectedRoomNodeState?.status,
           nodeError: selectedRoomNodeState?.error,
           nodeSteeringSubState: selectedRoomNodeState?.steeringSubState,
+          runStatus: workflow?.status,
         });
   const headerOptions =
     selectedExecutionRow === null

@@ -319,6 +319,7 @@ export function ConsoleInspectPane({
           nodeStatus: selectedNodeState?.status,
           nodeError: selectedNodeState?.error,
           nodeSteeringSubState: selectedNodeState?.steeringSubState,
+          runStatus: run.status,
         });
   const headerOptions =
     selectedNodeId === null
