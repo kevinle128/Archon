@@ -208,3 +208,11 @@ Status: DONE_WITH_CONCERNS
 Summary: VQ10-1, VQ10-2 and VQ10-3 are fixed, Story 7.5's failed automatic dispatch works on prompt and loop nodes, and every earlier finding stays fixed. Two new minor findings: Legacy shows a false `Recovery required` state at every observed node end (VQ11-1), and an observing shell paints a one-frame false `Never sent` when a node completes right after a Send now (VQ11-2). One cosmetic copy issue (VQ11-3).
 
 Verdict: REJECT
+
+## Decisions (2026-09-29)
+
+1. VQ11-1: the room shows recovery only when the server explicitly reports `recovery_required`; a transient gap between the dock finishing and the run turning terminal is never read as recovery, and a finished node never keeps a live dock. Regression tests cover both directions in both shells.
+2. VQ11-2: `Never sent` comes only from the server's terminal reconciliation, never from local queue leftovers.
+3. VQ11-3: the failure copy names the attempt that failed (automatic dispatch or `Send now`).
+
+Fixes are owned by the `qa11-fixes` follow-up work.
