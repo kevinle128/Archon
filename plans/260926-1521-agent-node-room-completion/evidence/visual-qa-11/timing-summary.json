@@ -1,0 +1,964 @@
+{
+  "cycles": {
+    "cl-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPOSTms": 69,
+      "sendPOSTms": 46,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 73,
+        "sendingAt": 132,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 240,
+        "sendingAt": 13,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cl-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 72,
+      "sendPOSTms": 36,
+      "probeClickRelMs": 14,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 170,
+        "sendingAt": 15,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 170,
+        "sendingAt": 52,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cl-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 66,
+      "sendPOSTms": 40,
+      "probeClickRelMs": 21,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 158,
+        "sendingAt": 18,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 159,
+        "sendingAt": 68,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cx-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPOSTms": 33,
+      "sendPOSTms": 26,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 43,
+        "sendingAt": 111,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 128,
+        "sendingAt": 25,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cx-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 25,
+      "sendPOSTms": 36,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 166,
+        "sendingAt": 14,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 167,
+        "sendingAt": 15,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "cx-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 24,
+      "sendPOSTms": 39,
+      "probeClickRelMs": 22,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 157,
+        "sendingAt": 21,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 158,
+        "sendingAt": 63,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "ds-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPOSTms": 1170,
+      "sendPOSTms": 44,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 1182,
+        "sendingAt": 110,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 1943,
+        "sendingAt": 310,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "ds-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 1003,
+      "sendPOSTms": 36,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1139,
+        "sendingAt": 1,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 1140,
+        "sendingAt": 11,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "ds-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 1105,
+      "sendPOSTms": 37,
+      "probeClickRelMs": 24,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 1241,
+        "sendingAt": 19,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 1242,
+        "sendingAt": 74,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "gk-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPOSTms": 7066,
+      "sendPOSTms": 33,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": 42,
+        "sendNowAt": 7071,
+        "sendingAt": 131,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 7614,
+        "sendingAt": 16,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "gk-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 3801,
+      "sendPOSTms": 38,
+      "probeClickRelMs": 13,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3939,
+        "sendingAt": 1,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 3940,
+        "sendingAt": 41,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "gk-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 3790,
+      "sendPOSTms": 36,
+      "probeClickRelMs": 27,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 3919,
+        "sendingAt": 21,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 3921,
+        "sendingAt": 61,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "omp-c1": {
+      "stopShell": "c",
+      "sendShell": "l",
+      "stopPOSTms": 58,
+      "sendPOSTms": 30,
+      "probeClickRelMs": null,
+      "C": {
+        "stoppingAt": 41,
+        "sendNowAt": 60,
+        "sendingAt": 126,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": null,
+        "sendNowAt": 784,
+        "sendingAt": 3,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "omp-c2": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 48,
+      "sendPOSTms": 37,
+      "probeClickRelMs": 11,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 180,
+        "sendingAt": 40,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 40,
+        "sendNowAt": 181,
+        "sendingAt": 41,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    },
+    "omp-c3": {
+      "stopShell": "l",
+      "sendShell": "c",
+      "stopPOSTms": 49,
+      "sendPOSTms": 37,
+      "probeClickRelMs": 23,
+      "C": {
+        "stoppingAt": null,
+        "sendNowAt": 186,
+        "sendingAt": 35,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      },
+      "L": {
+        "stoppingAt": 41,
+        "sendNowAt": 187,
+        "sendingAt": 75,
+        "flipBacks": 0,
+        "gaps": [],
+        "overlap": []
+      }
+    }
+  },
+  "abandons": {
+    "cl": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 542,
+        "pillAt": 542,
+        "missing": [],
+        "pills": ["Running", "Running", "Running", "Running", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 597,
+        "pillAt": 1385,
+        "missing": [],
+        "pills": [
+          [-263, "Running"],
+          [337, "Running"],
+          [416, "Running"],
+          [597, "Recovery required"],
+          [1336, "Recovery required"],
+          [1385, "Failed"]
+        ]
+      }
+    },
+    "cx": {
+      "post": 5,
+      "C": {
+        "neverSentAt": 855,
+        "pillAt": 855,
+        "missing": [],
+        "pills": ["Running", "Running", "Failed", "Failed", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 401,
+        "pillAt": 401,
+        "missing": [],
+        "pills": [
+          [-265, "Running"],
+          [401, "Failed"],
+          [416, "Failed"],
+          [3398, "Failed"]
+        ]
+      }
+    },
+    "cxl": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 429,
+        "pillAt": 429,
+        "missing": [],
+        "pills": ["Running", "Running", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 420,
+        "pillAt": 2220,
+        "missing": [],
+        "pills": [
+          [-264, "Running"],
+          [176, "Running"],
+          [257, "Running"],
+          [420, "Recovery required"],
+          [1176, "Recovery required"],
+          [1256, "Recovery required"],
+          [2176, "Recovery required"],
+          [2220, "Failed"]
+        ]
+      }
+    },
+    "ds": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 350,
+        "pillAt": 350,
+        "missing": [],
+        "pills": ["Running", "Running", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 55,
+        "pillAt": 837,
+        "missing": [],
+        "pills": [
+          [-144, "Running"],
+          [55, "Recovery required"],
+          [779, "Recovery required"],
+          [837, "Failed"]
+        ]
+      }
+    },
+    "gk": {
+      "post": 44,
+      "C": {
+        "neverSentAt": null,
+        "pillAt": 716,
+        "missing": [],
+        "pills": ["Running", "Failed"]
+      },
+      "L": {
+        "neverSentAt": null,
+        "pillAt": 2192,
+        "missing": [],
+        "pills": [
+          [-304, "Running"],
+          [375, "Recovery required"],
+          [2192, "Failed"]
+        ]
+      }
+    },
+    "gs": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 456,
+        "pillAt": 456,
+        "missing": [],
+        "pills": ["Running", "Failed", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 137,
+        "pillAt": 2903,
+        "missing": [],
+        "pills": [
+          [-64, "Running"],
+          [137, "Recovery required"],
+          [776, "Recovery required"],
+          [936, "Recovery required"],
+          [1776, "Recovery required"],
+          [1936, "Recovery required"],
+          [2775, "Recovery required"],
+          [2903, "Failed"]
+        ]
+      }
+    },
+    "ls": {
+      "post": 2,
+      "C": {
+        "neverSentAt": 790,
+        "pillAt": 790,
+        "missing": [],
+        "pills": ["Running", "Running", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 538,
+        "pillAt": 2457,
+        "missing": [],
+        "pills": [
+          [-262, "Running"],
+          [417, "Running"],
+          [457, "Running"],
+          [538, "Recovery required"],
+          [1417, "Recovery required"],
+          [1457, "Recovery required"],
+          [2417, "Recovery required"],
+          [2457, "Failed"]
+        ]
+      }
+    },
+    "omp2": {
+      "post": 4,
+      "C": {
+        "neverSentAt": 137,
+        "pillAt": 137,
+        "missing": [],
+        "pills": ["Running", "Failed", "Failed", "Failed"]
+      },
+      "L": {
+        "neverSentAt": 655,
+        "pillAt": 655,
+        "missing": [],
+        "pills": [
+          [-263, "Running"],
+          [616, "Running"],
+          [655, "Failed"],
+          [3655, "Failed"]
+        ]
+      }
+    }
+  },
+  "reap": {
+    "cl-reap": {
+      "dead_ms": {
+        "11686": 22,
+        "11782": 22,
+        "11131": 277,
+        "10940": 2805,
+        "8011": 3567,
+        "10979": 9964,
+        "11242": 9964,
+        "11243": 9964,
+        "11244": 9964,
+        "11293": 9964
+      },
+      "still_alive": [11038, 56738]
+    },
+    "cx-reap": {
+      "dead_ms": {
+        "88472": 1803,
+        "88617": 1803,
+        "88618": 1803,
+        "88620": 1803,
+        "90306": 1803,
+        "90307": 1803,
+        "88895": 1803
+      },
+      "still_alive": [56738]
+    },
+    "cxl-reap": {
+      "dead_ms": {
+        "60350": 790,
+        "60570": 790,
+        "60571": 790,
+        "60572": 790,
+        "62656": 790,
+        "62657": 790,
+        "60765": 790
+      },
+      "still_alive": [34824, 56738]
+    },
+    "cxl-stop1-stop-reap": {
+      "dead_ms": {
+        "44724": 280,
+        "45979": 280,
+        "45980": 280,
+        "45985": 280,
+        "53892": 280,
+        "53893": 280,
+        "46238": 280
+      },
+      "still_alive": [34824, 56738]
+    },
+    "cxl-stop2-stop-reap": {
+      "dead_ms": {
+        "55866": 277,
+        "56202": 277,
+        "56203": 277,
+        "56206": 277,
+        "58478": 277,
+        "58479": 277,
+        "56445": 277
+      },
+      "still_alive": [34824, 56738]
+    },
+    "ds-reap": {
+      "dead_ms": {
+        "26490": 781,
+        "26491": 781,
+        "25724": 2296,
+        "24078": 4837
+      },
+      "still_alive": [24260]
+    },
+    "gk-reap": {
+      "dead_ms": {
+        "54190": 532,
+        "49376": 2557,
+        "49377": 2557,
+        "49378": 2557,
+        "49380": 2557,
+        "49381": 2557,
+        "49383": 2557,
+        "49909": 2557,
+        "49864": 2557,
+        "49277": 5833
+      },
+      "still_alive": []
+    },
+    "gs-reap": {
+      "dead_ms": {
+        "4892": 2052,
+        "4893": 2052,
+        "4894": 2052,
+        "4895": 2052,
+        "4897": 2052,
+        "4898": 2052,
+        "12272": 2052,
+        "12310": 2052,
+        "7358": 2052,
+        "5743": 2052,
+        "4798": 4589
+      },
+      "still_alive": []
+    },
+    "ls-reap": {
+      "dead_ms": {
+        "58008": 3330,
+        "54631": 3836
+      },
+      "still_alive": [56738]
+    },
+    "omp2-reap": {
+      "dead_ms": {
+        "11038": 2309,
+        "13395": 5100,
+        "13648": 5100,
+        "13649": 5100,
+        "13651": 5100,
+        "13671": 5100,
+        "14405": 23352,
+        "14406": 23352
+      },
+      "still_alive": [13455, 56738]
+    },
+    "srcl-stop-reap": {
+      "dead_ms": {
+        "29965": 276,
+        "41116": 276,
+        "40463": 15458,
+        "34290": 17731
+      },
+      "still_alive": [33999, 34824, 56738]
+    },
+    "srds-stop-reap": {
+      "dead_ms": {
+        "15996": 277,
+        "15997": 277,
+        "13455": 1545
+      },
+      "still_alive": [56738]
+    },
+    "srgk-stop-reap": {
+      "dead_ms": {
+        "18049": 277,
+        "18050": 277,
+        "18051": 277,
+        "18052": 277,
+        "18053": 277,
+        "18055": 277,
+        "23067": 277,
+        "23100": 277,
+        "19653": 277,
+        "19347": 277,
+        "17905": 4077
+      },
+      "still_alive": [56738]
+    },
+    "sromp-stop-reap": {
+      "dead_ms": {},
+      "still_alive": [25631, 56738]
+    }
+  },
+  "focus": {
+    "cl-c1": {
+      "C": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [91, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "L": [
+        [0, "BODY", true],
+        [789, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m0", "prevConnected=true"],
+        [812, "TEXTAREA#m1", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 31
+      }
+    },
+    "cl-c2": {
+      "C": [
+        [-1, "DIV#m0", true],
+        [725, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [95, "DIV[last-row]#m2", "prevConnected=false"],
+        [751, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 25
+      }
+    },
+    "cl-c3": {
+      "C": [
+        [0, "TEXTAREA#m0", true],
+        [701, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [721, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [32, "BUTTON#m1", "prevConnected=true"],
+        [95, "DIV[last-row]#m2", "prevConnected=false"],
+        [752, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 28
+      }
+    },
+    "cx-c1": {
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "L": [
+        [0, "BODY", true],
+        [661, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 24
+      }
+    },
+    "cx-c2": {
+      "C": [
+        [-2, "DIV#m0", true],
+        [721, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [31, "DIV[last-row]#m1", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 28
+      }
+    },
+    "cx-c3": {
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [698, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [720, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [30, "DIV[last-row]#m1", "prevConnected=true"],
+        [750, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 28
+      }
+    },
+    "ds-c1": {
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [1171, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "L": [
+        [0, "BODY", true],
+        [2491, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 21
+      }
+    },
+    "ds-c2": {
+      "C": [
+        [0, "DIV#m0", true],
+        [1682, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [32, "BUTTON#m1", "prevConnected=true"],
+        [1025, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "raf": {
+        "firstSending": 21
+      }
+    },
+    "ds-c3": {
+      "C": [
+        [0, "TEXTAREA#m0", true],
+        [1782, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [1800, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [1111, "DIV[last-row]#m2", "prevConnected=false"],
+        [1831, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 27
+      }
+    },
+    "gk-c1": {
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [7079, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "L": [
+        [-1, "BODY", true],
+        [8165, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 24
+      }
+    },
+    "gk-c2": {
+      "C": [
+        [0, "DIV#m0", true],
+        [4480, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [4500, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [3812, "DIV[last-row]#m2", "prevConnected=false"],
+        [4500, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 27
+      }
+    },
+    "gk-c3": {
+      "C": [[-2, "TEXTAREA#m0", true]],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [3817, "DIV[last-row]#m2", "prevConnected=false"],
+        [4515, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 22
+      }
+    },
+    "omp-c1": {
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"]
+      ],
+      "L": [
+        [0, "BODY", true],
+        [1320, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 27
+      }
+    },
+    "omp-c2": {
+      "C": [
+        [-1, "DIV#m0", true],
+        [721, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [750, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [0, "TEXTAREA#m0", true],
+        [31, "BUTTON#m1", "prevConnected=true"],
+        [60, "DIV[last-row]#m2", "prevConnected=false"],
+        [753, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 23
+      }
+    },
+    "omp-c3": {
+      "C": [
+        [-1, "TEXTAREA#m0", true],
+        [725, "BUTTON[Send now \u00b7 Cmd/Ctrl+Enter to s]#m1", "prevConnected=true"],
+        [750, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "L": [
+        [-1, "TEXTAREA#m0", true],
+        [30, "BUTTON#m1", "prevConnected=true"],
+        [67, "DIV[last-row]#m2", "prevConnected=false"],
+        [787, "TEXTAREA#m0", "prevConnected=true"]
+      ],
+      "raf": {
+        "firstSending": 26
+      }
+    }
+  },
+  "finish": {
+    "FIN10": {
+      "falseNeverSent": {
+        "c": [],
+        "l": []
+      },
+      "legacyRecoveryFrames": [[140, "|Recovery required|agent idle \u00b7 Send now delivers|0"]],
+      "legacyCompletedAt": 1109,
+      "consoleCompletedAt": 119
+    },
+    "FIN5": {
+      "falseNeverSent": {
+        "c": [[120, "NEVER SENT \u00b7 1|Completed|node finished \u00b7 none of this was sent|1"]],
+        "l": []
+      },
+      "legacyRecoveryFrames": [[1005, "|Recovery required|agent generating|0"]],
+      "legacyCompletedAt": 1956,
+      "consoleCompletedAt": 120
+    },
+    "FIN6": {
+      "falseNeverSent": {
+        "c": [],
+        "l": []
+      },
+      "legacyRecoveryFrames": [[141, "|Recovery required|agent idle \u00b7 Send now delivers|0"]],
+      "legacyCompletedAt": 1109,
+      "consoleCompletedAt": 114
+    },
+    "FIN7": {
+      "falseNeverSent": {
+        "c": [[137, "NEVER SENT \u00b7 1|Completed|node finished \u00b7 none of this was sent|1"]],
+        "l": []
+      },
+      "legacyRecoveryFrames": [[1033, "|Recovery required|agent generating|0"]],
+      "legacyCompletedAt": 1979,
+      "consoleCompletedAt": 137
+    },
+    "FIN8": {
+      "falseNeverSent": {
+        "c": [],
+        "l": []
+      },
+      "legacyRecoveryFrames": [[174, "|Recovery required|agent idle \u00b7 Send now delivers|0"]],
+      "legacyCompletedAt": 1126,
+      "consoleCompletedAt": 120
+    },
+    "FIN9": {
+      "falseNeverSent": {
+        "c": [[110, "NEVER SENT \u00b7 1|Completed|node finished \u00b7 none of this was sent|1"]],
+        "l": []
+      },
+      "legacyRecoveryFrames": [[22, "|Recovery required|agent generating|0"]],
+      "legacyCompletedAt": 1971,
+      "consoleCompletedAt": 110
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "induction": "Server started with ARCHON_E2E_FAKE_PROVIDER=1. Node provider e2e-fake with scenario {emitTool, interruptible, delayMs 45000}. Auto-send on (PUT .../auto-send). The queued text contains an unclosed <<E2E_USAGE>> directive, so the guidance turn's sendQuery throws a plain Error before its first chunk while the session from turn 1 is established.",
+  "prompt_node_F75": {
+    "run": "aa287d1b40ff5e991120ceb3db98939b",
+    "server_warn_at": 1790673572518,
+    "alert_first_frame_ms_after_warn": { "console": 237, "legacy": 39 },
+    "alerts_per_shell": 1,
+    "alert_text": "automatic dispatch failed · e2e-fake: found <<E2E_USAGE>> without a closing <</E2E_USAGE>> in the usage directive · Send now to retry",
+    "alert_attrs": "role=alert aria-live=assertive, inside the room panel",
+    "pill": "Running (both shells)",
+    "band": "WILL SEND · 2, item 1 marked failed, Send now offered, generic Stop disclosure absent",
+    "queue_after_auto_failure": [
+      ["F75-Q1", "queued", 1],
+      ["F75-Q2", "queued", 0]
+    ],
+    "sub_state": "idle-after-interrupt",
+    "no_auto_send_while_parked_s": 48.6,
+    "send_now_retry_same_text": {
+      "result": "failed again",
+      "queue": [
+        ["F75-Q1", "queued", 2],
+        ["F75-Q2", "queued", 1]
+      ],
+      "legacy_alert_cleared_while_sending_ms": [16, 775]
+    },
+    "withdraw_failed_item": "DELETE 200, server withdraw removed:true",
+    "send_now_after_withdraw": {
+      "queue": [["F75-Q2", "sent", 1]],
+      "run": "completed",
+      "alert_after": 0
+    }
+  },
+  "loop_node_F75L": {
+    "run": "see F75L.run in scratch",
+    "alerts_per_shell": 1,
+    "queue_after_auto_failure": [["F75L-Q1", "queued", 1]],
+    "sub_state": "idle-after-interrupt",
+    "after_withdraw_and_typed_send_now": "typed item sent, iteration 1 completed, node completed"
+  },
+  "session_losing_failure": "not inducible on the fake provider (it always mints a session id); covered by packages/workflows/src/dag-executor.test.ts"
+}

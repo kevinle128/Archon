@@ -1,0 +1,44 @@
+{
+  "post": 28,
+  "res": { "success": true, "message": "Abandoned workflow: vq11-omp" },
+  "survC": [
+    [
+      -490,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [80, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue"],
+    [118, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "survCFailedAt": 80,
+  "survL": [
+    [
+      -490,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [211, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue"],
+    [232, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "survLFailedAt": 211,
+  "freshC": [
+    [
+      -489,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [470, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "freshCFailedAt": 470,
+  "freshL": [
+    [
+      -488,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [71, "Recovery required|NEVER SENT · 1|node finished · none of this was sent"],
+    [996, "Failed|NEVER SENT · 1|node finished · none of this was sent"]
+  ],
+  "freshLFailedAt": 996,
+  "status": "cancelled",
+  "ev": [
+    ["workflow_started", null, null, "2026-09-29 09:55:35"],
+    ["node_failed", "long-omp", "Cancelled by user", "2026-09-29 10:17:16"]
+  ]
+}

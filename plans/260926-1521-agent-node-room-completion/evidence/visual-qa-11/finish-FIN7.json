@@ -1,0 +1,24 @@
+{
+  "status": "completed",
+  "q": [
+    ["FIN7-Q1 queu", "sent"],
+    ["FIN7 typed r", "sent"]
+  ],
+  "falseNS": {
+    "c": [[137, "NEVER SENT · 1|Completed|node finished · none of this was sent|1"]],
+    "l": []
+  },
+  "c": [
+    [-27, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [137, "NEVER SENT · 1|Completed|node finished · none of this was sent|1"],
+    [141, "|Completed||0"]
+  ],
+  "l": [
+    [-27, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-2, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [7, "SENDING · 2|Running|agent generating|0"],
+    [26, "|Running|agent generating|0"],
+    [1033, "|Recovery required|agent generating|0"],
+    [1979, "|Completed||0"]
+  ]
+}

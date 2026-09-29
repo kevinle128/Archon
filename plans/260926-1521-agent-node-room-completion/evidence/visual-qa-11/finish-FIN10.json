@@ -1,0 +1,20 @@
+{
+  "status": "completed",
+  "q": [
+    ["FIN10-Q1 que", "sent"],
+    ["FIN10 typed ", "sent"]
+  ],
+  "falseNS": { "c": [], "l": [] },
+  "c": [
+    [-28, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [-2, "SENDING · 2|Running|agent idle · Send now delivers|0"],
+    [7, "SENDING · 2|Running|agent generating|0"],
+    [119, "|Completed||0"]
+  ],
+  "l": [
+    [-28, "WILL SEND · 1|Running|agent idle · Send now delivers|0"],
+    [135, "|Running|agent idle · Send now delivers|0"],
+    [140, "|Recovery required|agent idle · Send now delivers|0"],
+    [1109, "|Completed||0"]
+  ]
+}

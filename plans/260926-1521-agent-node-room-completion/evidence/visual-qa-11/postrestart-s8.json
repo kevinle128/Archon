@@ -1,0 +1,162 @@
+{
+  "F": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · claude · sonnet",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · claude · sonnet",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      }
+    },
+    "surviving": {
+      "c": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · claude · sonnet",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · claude · sonnet",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      }
+    },
+    "sel": {
+      "c": null,
+      "l": null
+    },
+    "ta": [0, 0],
+    "codes": [
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag",
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag",
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag"
+    ],
+    "q": {
+      "es": "recovery_required",
+      "auto": true,
+      "items": [["F-Q1 queued ", "queued"]]
+    },
+    "draft": "F draft typed before restart"
+  },
+  "LF": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "meta": "started 16:56 · restored after server restart · claude · haiku",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "meta": "started 16:56 · restored after server restart · claude · haiku",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      }
+    },
+    "surviving": {
+      "c": {
+        "pill": "Recovery required",
+        "meta": "started 16:56 · restored after server restart · claude · haiku",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "meta": "started 16:56 · restored after server restart · claude · haiku",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      }
+    },
+    "sel": {
+      "c": ["Iteration 1", "Iteration 2 · running*"],
+      "l": ["Iteration 1", "Iteration 2 · running*"]
+    },
+    "ta": [0, 0],
+    "codes": [
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag",
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag",
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag"
+    ],
+    "q": {
+      "es": "recovery_required",
+      "auto": false,
+      "items": [["LF-Q1 queued", "queued"]]
+    },
+    "draft": null
+  },
+  "R2": {
+    "fresh": {
+      "c": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · omp · xai-oauth/grok-4.5",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · omp · xai-oauth/grok-4.5",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      }
+    },
+    "surviving": {
+      "c": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · omp · xai-oauth/grok-4.5",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      },
+      "l": {
+        "pill": "Recovery required",
+        "meta": "started 16:55 · restored after server restart · omp · xai-oauth/grok-4.5",
+        "sel": null,
+        "band": "QUEUED · 1",
+        "restored": "restored after server restart · Resume the workflow to continue"
+      }
+    },
+    "sel": {
+      "c": null,
+      "l": null
+    },
+    "ta": [0, 0],
+    "codes": [
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag",
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag",
+      "409 {\"success\":false,\"error\":{\"code\":\"recovery_required\",\"messag"
+    ],
+    "q": {
+      "es": "recovery_required",
+      "auto": false,
+      "items": [["R2-Q1 queued", "queued"]]
+    },
+    "draft": null
+  },
+  "cold": {
+    "F": {
+      "c": ["BODY"],
+      "l": ["BODY"]
+    },
+    "LF": {
+      "c": ["BODY"],
+      "l": ["BODY"]
+    }
+  }
+}

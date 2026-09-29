@@ -1,0 +1,44 @@
+{
+  "post": 32,
+  "res": { "success": true, "message": "Abandoned workflow: vq11-claude" },
+  "survC": [
+    [
+      -493,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [127, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue"],
+    [146, "Failed|NEVER SENT · 2|node finished · none of this was sent"]
+  ],
+  "survCFailedAt": 127,
+  "survL": [
+    [
+      -493,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [32, "Failed|QUEUED · 1|restored after server restart · Resume the workflow to continue"],
+    [71, "Failed|NEVER SENT · 2|node finished · none of this was sent"]
+  ],
+  "survLFailedAt": 32,
+  "freshC": [
+    [
+      -492,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [409, "Failed|NEVER SENT · 2|node finished · none of this was sent"]
+  ],
+  "freshCFailedAt": 409,
+  "freshL": [
+    [
+      -492,
+      "Recovery required|QUEUED · 1|restored after server restart · Resume the workflow to continue"
+    ],
+    [29, "Recovery required|NEVER SENT · 2|node finished · none of this was sent"],
+    [912, "Failed|NEVER SENT · 2|node finished · none of this was sent"]
+  ],
+  "freshLFailedAt": 912,
+  "status": "cancelled",
+  "ev": [
+    ["workflow_started", null, null, "2026-09-29 09:55:33"],
+    ["node_failed", "long-claude", "Cancelled by user", "2026-09-29 10:16:08"]
+  ]
+}
