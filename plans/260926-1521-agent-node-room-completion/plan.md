@@ -51,3 +51,14 @@ mockups and `_bmad-output/specs/spec-agent-node-room/` define works end to end.
 ## Evidence
 
 Scout reports (partly inaccurate — verify every claim): `plans/reports/scout-260926-1516-*.md`.
+
+## Decision: failed automatic dispatch (2026-09-29)
+
+User decision: implement Story 7.5's "a failed automatic dispatch returns the item to the front of the queue".
+
+Coordinator mechanics, within that decision:
+
+- A non-interrupt exception on a guidance turn whose provider session is already established reverts the claimed entry to the front of the queue and stores failure evidence on it (additive fields, not a terminal `failed` state, so the entry stays claimable).
+- The node then enters the existing idle-after-interrupt wait. The dock shows one assertive error and offers `Send now`, which retries on the same session. Auto-send does not fire from this state, and the 30-minute inactivity rule applies.
+- There is no hidden automatic retry loop.
+- Session-losing failures (no session id to resume) still fail the node, as before.
