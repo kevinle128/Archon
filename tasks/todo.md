@@ -46,7 +46,7 @@ Plan: plans/260926-1521-agent-node-room-completion/plan.md
 - [x] QA round 10: REJECT (0 major, 3 minor); all VQ9 fixes hold except the two partial paths
 - [x] QA10 fixes + 7.5 failed auto-dispatch merged; validate, check:schema-upgrades, e2e 158/0/4 green on develop-2
 - [x] QA round 11: REJECT (0 major, 2 minor, 1 cosmetic); all VQ10 fixes hold; 7.5 verified live
-- [ ] QA11 fixes (Legacy false recovery on node end, observer never-sent frame, retry copy) — agent qa11-fixes
+- [x] QA11 fixes (Legacy false recovery on node end, observer never-sent frame, retry copy) — merged; e2e 158/0/4
 - [ ] QA round 12 (final acceptance, Verdict: ACCEPT required)
 
 ## Background processes started by this session
