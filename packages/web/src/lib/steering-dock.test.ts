@@ -2227,12 +2227,32 @@ describe('idle-await disclosure and keepalive coalescer', () => {
     expect(neverSentDisclosure(true)).toBe(STEERING_NEVER_SENT_IDLE_EXPIRED_DISCLOSURE);
   });
 
-  test('dispatchFailedEntry finds the one row with recorded failure evidence, null when none', () => {
+  test('dispatchFailedEntry finds the one queued row with recorded failure evidence, null when none', () => {
     const ok = receipt('a', 'alpha');
     const failed = { ...receipt('b', 'beta'), lastError: 'boom', dispatchFailureCount: 1 };
     expect(dispatchFailedEntry([ok, failed])).toEqual(failed);
     expect(dispatchFailedEntry([ok])).toBeNull();
     expect(dispatchFailedEntry([])).toBeNull();
+  });
+
+  test('dispatchFailedEntry ignores stale evidence on a re-claimed row no longer queued', () => {
+    // The server never clears lastError on a later successful claim — a
+    // retry that is in flight (dispatching) or already delivered must not
+    // keep showing the alert for a failure that no longer describes it.
+    const retrying = {
+      ...receipt('a', 'alpha'),
+      state: 'dispatching' as const,
+      lastError: 'boom',
+      dispatchFailureCount: 1,
+    };
+    const delivered = {
+      ...receipt('b', 'beta'),
+      state: 'delivered' as const,
+      lastError: 'boom',
+      dispatchFailureCount: 1,
+    };
+    expect(dispatchFailedEntry([retrying])).toBeNull();
+    expect(dispatchFailedEntry([delivered])).toBeNull();
   });
 
   test('dispatchFailureDisclosure names the exact failure evidence', () => {

@@ -1400,7 +1400,7 @@ export function ConsoleComposerDock({
                     accent={index === 0}
                   >
                     {statusLabel === null ? null : <span className="flex-none">{statusLabel}</span>}
-                    {receipt.lastError !== null ? (
+                    {receipt.state === 'queued' && receipt.lastError !== null ? (
                       <span className="flex-none text-text-secondary">failed</span>
                     ) : null}
                     {claimable && canSendItemNow ? (

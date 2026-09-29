@@ -218,9 +218,16 @@ export function neverSentDisclosure(idleAwaitExpired: boolean): string {
  * queue with failure evidence and parks the node idle-after-interrupt — this
  * is the head-most row still carrying that evidence, so the dock renders
  * exactly one assertive error rather than one per queue poll or one per row.
+ *
+ * `lastError` is never cleared by a later successful claim — the server
+ * keeps it as durable history once an entry has failed at least once — so
+ * this also requires `state === 'queued'`: the one state a revert actually
+ * leaves an entry in. A re-claimed entry moves to `dispatching`/`sent`/
+ * `delivered` without clearing `lastError`, and must not keep showing a
+ * stale alert for a retry that is in flight or already succeeded.
  */
 export function dispatchFailedEntry(sent: readonly LocalSentReceipt[]): LocalSentReceipt | null {
-  return sent.find(entry => entry.lastError !== null) ?? null;
+  return sent.find(entry => entry.state === 'queued' && entry.lastError !== null) ?? null;
 }
 
 /** Exact dispatch-failure alert copy, naming the reverted entry's evidence. */
